@@ -10,7 +10,9 @@ because the constructs live here.
 ## Installing and enabling
 
 A plugin is a directory on this machine, at
-`~/.local/share/board/plugins/<name>/`, holding `plugin.json` and its code. A
+`$XDG_DATA_HOME/board/plugins/<name>/` (by default
+`~/.local/share/board/plugins/<name>/`), holding `plugin.json` and its code. The
+directory may be a symlink, so a plugin can be installed from a checkout. A
 board enables plugins by name in `.board/board.json`. Board never loads a plugin
 from a board's tree, so cloning or mounting a board never runs code.
 
@@ -42,15 +44,21 @@ from a board's tree, so cloning or mounting a board never runs code.
 Plugin and capability names are lowercase ASCII letters, digits and hyphens.
 `metadata` is any JSON object, which `board plugin find` can match. `extract`
 lists the record types the plugin reads from the index (see Extraction). The
-manifest refuses unknown fields. Two installed plugins cannot share a name.
+manifest refuses unknown fields. Its `name` equals its directory's name, so two
+installed plugins cannot share one. `version` is `MAJOR.MINOR.PATCH` in digits.
+The schemas are compiled under the same rules as a mounted board's. A manifest
+that breaks any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
 
-`board plugin list` prints every installed plugin and its capabilities.
+`board plugin list` prints every installed plugin and its capabilities, and
+whether the current board enables it.
 `board plugin find --capability <name> [--meta <key>=<value>]` filters them.
 Finding is a filter, never a ranking.
 
-`board call --capability <name>` calls the one enabled plugin that offers a
+Only enabled plugins can be called: naming one that is installed but not
+enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls
+the one enabled plugin that offers a
 capability, so a plugin can use another by ability without knowing its name.
 When more than one offers it, the call is refused with
 `board::plugin::ambiguous`, naming each; the caller then names one.
@@ -62,7 +70,8 @@ on stdin and:
 
 1. validates it against `input_schema`;
 2. starts `run` in the plugin's directory, with an environment holding only
-   `PATH`, `HOME`, `LANG` and `BOARD_CALL_DEPTH`;
+   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `XDG_CACHE_HOME` and
+   `XDG_DATA_HOME` when set;
 3. writes one request to the plugin's stdin:
 
    ```json
@@ -77,16 +86,24 @@ on stdin and:
 4. reads exactly one document from the plugin's stdout: `board/call-result/v1`
    holding `output`, or `board/error/v1` holding `code`, `message` and typed
    `fields`;
-5. validates `output` against `output_schema` and prints it.
+5. validates `output` against `output_schema` and prints it: as JSON in text
+   mode, and wrapped in `board/call-report/v1` `{plugin, capability, output}`
+   with `--json`.
 
 A plugin exits 0 with a result and 1 with an error. Its stderr is for logs:
 Board keeps the last 64 KiB and shows it when the call fails. A call has 30
 seconds and 16 MiB of stdout; past either, Board stops the plugin and refuses
 with `board::plugin::timeout` or `board::plugin::too_large`. A plugin's error
-codes are `<plugin>::<area>::<reason>`, so its failures read like Board's.
+codes are `<plugin>::<area>::<reason>`, so its failures read like Board's. Board
+reports the plugin's code as its own, with the plugin's fields and `plugin`
+added. A code that does not start with the plugin's own name, a malformed
+document or an unknown `$type` is `board::plugin::bad_output`; a non-zero exit
+without an error document is `board::plugin::failed`.
 
-A plugin calls another plugin only through `board call`, so the same checks,
-limits and logs apply. Board increments `BOARD_CALL_DEPTH` on each nested call
+A plugin calls another plugin only through `board call`, and reads Board's
+`entries` only through `board query`, run as a child with its working directory
+at `board.root`. It never opens Board's index. So the same checks, limits and
+logs apply. Board increments `BOARD_CALL_DEPTH` on each nested call
 and refuses past 8 with `board::plugin::too_deep`.
 
 ## Extraction
@@ -104,9 +121,21 @@ blob. Board sends batches of at most 1,000 records or 16 MiB:
 }
 ```
 
-The plugin writes what it needs into its database, keyed by blob, and replies
-`board/extract-result/v1` naming the blobs it handled. Board remembers which
-blobs each plugin version has handled and sends only new ones.
+Each batch is one run of the plugin. `path` is the entry's display path, so a
+blob reached by several routes is sent once, and records in mounted boards are
+included. The plugin writes what it needs into its database, keyed by blob, and
+replies `board/extract-result/v1` naming the blobs it handled. Naming a blob
+it was not sent is `board::plugin::bad_output`; a blob it does not name is sent
+again next time.
+
+Board remembers in its index which blobs each plugin version has handled, sends
+only new ones, and forgets them when the plugin's database file is missing. A
+plugin may therefore receive a blob again, and replaces its rows for that blob.
+
+Extraction runs in the refresh before `query`, for every enabled plugin, and
+before `call`, for the plugin called. It never runs before `check`, so `check`
+runs no plugin code. When a plugin fails, `query` still answers and lists it
+under `plugins` in its report, with its code; `call` refuses with that code.
 
 Extraction must be a pure function of one record's bytes. Anything that spans
 records, like "tasks blocked by an open task", is a query that joins the
@@ -119,7 +148,8 @@ Board gives each plugin version one SQLite file in the board's cache directory
 and passes its path in every request. The plugin owns everything inside it and
 names its tables as it likes. `board query` attaches it read-only as `p_<name>`,
 with hyphens in the name turned into underscores. A new version starts with an
-empty file and extracts again. Deleting any plugin database is always safe.
+empty file and extracts again. Deleting any plugin database is always safe. When
+the index is in memory, each plugin database is a temporary file for that run.
 
 ## Codes
 
@@ -134,3 +164,9 @@ protocol above directly and keeps that code in one module. Its manifest's
 schemas are generated from its pydantic models. A shared `board-plugin` library
 is extracted once two plugins exist and their common code is visible; until
 then there is none.
+
+Each plugin lives in `plugins/<name>/` in this repository, with its lockfile and
+a committed `plugin.json` that a test compares with the generated one. Its
+pytest suite drives the real `board` binary against fixture boards. Board's own
+Rust tests use small shell-script plugins for the `board::plugin::` codes, so
+the Rust gate does not need uv.
