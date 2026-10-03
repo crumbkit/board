@@ -41,7 +41,14 @@ def list_page(fixture: dict, args: list[str]) -> None:
     cursor = option(args, "--cursor")
     if limit > 256 or (after is None) != (option(args, "--expect-record-set") is None):
         fail("invalid arguments")
-    states = [state for state in fixture["objects"] if not state["subject"].startswith("drop:")]
+    wanted = option(args, "--type")
+    # handlers.rs:4877: drops only when asked for by type.
+    states = [
+        state
+        for state in fixture["objects"]
+        if (wanted is None and not state["subject"].startswith("drop:"))
+        or (wanted is not None and state["subject"].partition(":")[0] == wanted)
+    ]
     start = 0
     position = after if fixture["paging"] == "after" else cursor
     if position is not None:
@@ -79,7 +86,7 @@ def list_page(fixture: dict, args: list[str]) -> None:
             "schema_version": 1,
             "operation": "objects.list",
             "source": source(),
-            "filter": {},
+            "filter": {"object_type": wanted} if wanted else {},
             "page": info,
             "objects": items,
         }

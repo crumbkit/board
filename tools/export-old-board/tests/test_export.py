@@ -120,52 +120,24 @@ def test_a_subject_that_is_not_a_logical_path_is_unmappable(
     assert report["record_count"] == 1
 
 
-def test_a_subject_listed_twice_is_exported_once_and_reported_once(tmp_path: Path) -> None:
-    out, report = export(tmp_path / "refused", [state("work:a"), state("work:a")])
-    assert reasons(report) == [("work:a", "duplicate")]
+def test_drops_hidden_by_the_default_list_are_exported(tmp_path: Path) -> None:
+    out, report = export(tmp_path, [state("work:a"), state("drop:2026/x")])
+    assert records(out) == ["drop/2026/x.json", "work/a.json"]
+    assert (report["listed_count"], report["drop_listed_count"], report["subject_count"]) == (1, 1, 2)
+    assert (out / ".board/types/legacy/drop/v1.schema.json").exists()
+
+
+def test_a_subject_listed_twice_is_one_subject(tmp_path: Path) -> None:
+    out, report = export(tmp_path, [state("work:a"), state("work:a")])
+    assert (report["listed_count"], report["subject_count"], report["record_count"]) == (2, 1, 1)
+    assert reasons(report) == []
     assert records(out) == ["work/a.json"]
-    out, report = export(tmp_path / "admitted", [state("work:a"), state("work:b")])
+
+
+def test_a_record_and_a_directory_of_the_same_name_are_both_exported(tmp_path: Path) -> None:
+    out, report = export(tmp_path, [state("project:board"), state("project:board/core"), state("work:a/b/c")])
     assert reasons(report) == []
-    assert records(out) == ["work/a.json", "work/b.json"]
-
-
-def test_a_record_beside_a_directory_of_the_same_name_is_shadowed(tmp_path: Path) -> None:
-    out, report = export(tmp_path / "refused", [state("work:a"), state("work:a/b"), state("work:z")])
-    assert reasons(report) == [("work:a", "shadowed"), ("work:a/b", "shadowed")]
-    assert records(out) == ["work/z.json"]
-    out, report = export(tmp_path / "admitted", [state("work:a"), state("work:ab/b"), state("work:z")])
-    assert reasons(report) == []
-    assert report["record_count"] == 3
-
-
-def test_everything_under_a_shadowed_name_is_unmappable(tmp_path: Path) -> None:
-    out, report = export(tmp_path / "refused", [state("work:a"), state("work:a/b/c"), state("work:a/b/d")])
-    assert reasons(report) == [("work:a", "shadowed"), ("work:a/b/c", "shadowed"), ("work:a/b/d", "shadowed")]
-    assert records(out) == []
-    out, report = export(tmp_path / "admitted", [state("work:e"), state("work:a/b/c"), state("work:a/b/d")])
-    assert reasons(report) == []
-    assert report["record_count"] == 3
-
-
-def test_a_record_file_name_over_255_bytes_is_reported_as_a_failed_write(tmp_path: Path) -> None:
-    refused = "work:" + "x" * 251
-    out, report = export(tmp_path / "refused", [state(refused), state("work:z")])
-    assert reasons(report) == [(refused, "write_failed")]
-    assert records(out) == ["work/z.json"]
-    out, report = export(tmp_path / "admitted", [state("work:" + "x" * 250), state("work:z")])
-    assert reasons(report) == []
-    assert report["record_count"] == 2
-
-
-def test_a_logical_path_over_4096_bytes_is_malformed() -> None:
-    # No filesystem holds the admitted twin, so this pair tests the rule directly.
-    sys.path.insert(0, str(SCRIPT.parent))
-    from export_old_board import path_problem  # noqa: PLC0415
-
-    name = "/".join(["x" * 200] * 20) + "/" + "y" * 70
-    assert len(f"/work/{name}".encode()) == 4096
-    assert path_problem("work", name) is None
-    assert path_problem("work", name + "y") == "path_malformed"
+    assert records(out) == ["project/board.json", "project/board/core.json", "work/a/b/c.json"]
 
 
 def test_names_that_differ_only_by_case_collide(tmp_path: Path) -> None:
@@ -185,6 +157,18 @@ def test_names_that_differ_only_by_case_collide(tmp_path: Path) -> None:
     assert report["record_count"] == 4
 
 
+def test_a_record_file_and_a_directory_differing_by_case_do_not_collide(tmp_path: Path) -> None:
+    # On disk they are `x.json` and `X/`, which a case-insensitive filesystem holds together.
+    out, report = export(tmp_path, [state("work:x"), state("work:X/y")])
+    assert reasons(report) == []
+    assert records(out) == ["work/X/y.json", "work/x.json"]
+
+
+def test_the_report_counts_each_reason(tmp_path: Path) -> None:
+    _, report = export(tmp_path, [state("Bad:x"), state("Bad:y"), state("work-a"), state("work:ok")])
+    assert report["per_reason"] == {"type_invalid": 2, "subject_malformed": 1}
+
+
 def test_an_object_the_old_board_cannot_show_is_reported_with_its_error(tmp_path: Path) -> None:
     out, report = export(tmp_path / "refused", [state("work:a"), state("work:b")], fail=("work:a",))
     assert reasons(report) == [("work:a", "show_failed")]
@@ -195,13 +179,14 @@ def test_an_object_the_old_board_cannot_show_is_reported_with_its_error(tmp_path
 
 
 @pytest.mark.parametrize("paging", ["after", "cursor"])
-def test_records_equal_listed_objects_minus_unmappable_ones_across_pages(tmp_path: Path, paging: str) -> None:
+def test_records_equal_distinct_listed_subjects_minus_unmappable_ones_across_pages(tmp_path: Path, paging: str) -> None:
     good = [state(f"work:n{index:04d}") for index in range(600)]
-    bad = [state("Bad:x"), state("work:n0001/shadowing"), state("work:n0002")]
-    out, report = export(tmp_path, [*good, *bad], paging=paging, fail=("work:n0003",))
-    assert report["listed_count"] == 603
-    assert len(report["unmappable"]) == 5
-    assert report["record_count"] == len(records(out)) == 603 - 5
+    drops = [state(f"drop:d{index:04d}") for index in range(300)]
+    bad = [state("Bad:x"), state("work:N0001"), state("work:n0002")]
+    out, report = export(tmp_path, [*good, *drops, *bad], paging=paging, fail=("work:n0003", "drop:d0004"))
+    assert (report["listed_count"], report["drop_listed_count"], report["subject_count"]) == (603, 300, 902)
+    assert report["per_reason"] == {"type_invalid": 1, "case_collision": 2, "show_failed": 2}
+    assert report["record_count"] == len(records(out)) == 902 - 5
 
 
 def test_the_output_must_hold_nothing_but_git(tmp_path: Path) -> None:

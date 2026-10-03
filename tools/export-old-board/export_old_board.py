@@ -44,12 +44,12 @@ def run_board(board: str, store: str | None, args: list[str]) -> dict:
     return json.loads(done.stdout)
 
 
-def list_subjects(board: str, store: str | None) -> list[str]:
+def list_subjects(board: str, store: str | None, filters: list[str]) -> list[str]:
     """Every subject `board objects list` returns, following both of its pagination forms."""
     subjects: list[str] = []
     paging: list[str] = []
     while True:
-        page = run_board(board, store, ["objects", "list", "--limit", str(PAGE_LIMIT), *paging])
+        page = run_board(board, store, ["objects", "list", *filters, "--limit", str(PAGE_LIMIT), *paging])
         subjects += [item["subject"] for item in page["objects"]]
         info = page["page"]
         if not info["truncated"]:
@@ -76,47 +76,41 @@ def path_problem(object_type: str, name: str) -> str | None:
     return None
 
 
-def collisions(paths: dict[str, tuple[str, ...]]) -> dict[str, str]:
-    """Subjects whose path passes through a shadowed or case-colliding name.
+def case_collisions(paths: dict[str, tuple[str, ...]]) -> set[str]:
+    """Subjects whose file or a directory on its path differs from another name only by ASCII case.
 
-    Distinct subjects map to distinct files, so these are the only collisions.
+    Distinct subjects map to distinct files, and a record `x.json` may sit beside a directory `x/`.
     """
-    files = set(paths.values())
-    directories = {segments[:depth] for segments in files for depth in range(1, len(segments))}
-    bad = dict.fromkeys(files & directories, "shadowed")
-    names = files | directories
+    names: set[tuple[str, ...]] = set()
+    for segments in paths.values():
+        names.update(segments[:depth] for depth in range(1, len(segments)))
+        names.add((*segments[:-1], segments[-1] + ".json"))
     by_folded: dict[tuple[str, ...], set[tuple[str, ...]]] = defaultdict(set)
-    for segments in names:
-        by_folded[(*segments[:-1], segments[-1].lower())].add(segments)
-    for group in by_folded.values():
-        if len(group) > 1:
-            for segments in group:
-                bad.setdefault(segments, "case_collision")
-    found: dict[str, str] = {}
+    for name in names:
+        by_folded[(*name[:-1], name[-1].lower())].add(name)
+    bad = {name for group in by_folded.values() if len(group) > 1 for name in group}
+    found: set[str] = set()
     for subject, segments in paths.items():
-        for depth in range(len(segments), 0, -1):
-            if segments[:depth] in bad:
-                found[subject] = bad[segments[:depth]]
-                break
+        on_disk = (*segments[:-1], segments[-1] + ".json")
+        if any(on_disk[:depth] in bad for depth in range(1, len(on_disk) + 1)):
+            found.add(subject)
     return found
 
 
 def plan(subjects: list[str]) -> tuple[dict[str, tuple[str, ...]], list[dict[str, str]]]:
-    """Split listed subjects into mappable paths and unmappable entries, one per listing."""
+    """Split distinct subjects into mappable paths and unmappable entries."""
     paths: dict[str, tuple[str, ...]] = {}
     refused: list[dict[str, str]] = []
     for subject in subjects:
         object_type, colon, name = subject.partition(":")
         problem = "subject_malformed" if not colon else path_problem(object_type, name)
-        if subject in paths:
-            problem = "duplicate"
         if problem:
             refused.append({"subject": subject, "reason": problem})
         else:
             paths[subject] = (object_type, *name.split("/"))
-    for subject, reason in collisions(paths).items():
+    for subject in case_collisions(paths):
         del paths[subject]
-        refused.append({"subject": subject, "reason": reason})
+        refused.append({"subject": subject, "reason": "case_collision"})
     return paths, refused
 
 
@@ -125,7 +119,10 @@ def show(board: str, store: str | None, subject: str) -> dict:
 
 
 def export(board: str, store: str | None, out: Path, jobs: int) -> dict:
-    subjects = list_subjects(board, store)
+    # The default list hides drops (old board-cli/src/boardcli/handlers.rs:4877).
+    listed = list_subjects(board, store, [])
+    drops = list_subjects(board, store, ["--type", "drop"])
+    subjects = list(dict.fromkeys(listed + drops))
     paths, refused = plan(subjects)
     shown: dict[str, dict] = {}
     with ThreadPoolExecutor(max_workers=jobs) as pool:
@@ -159,15 +156,18 @@ def export(board: str, store: str | None, out: Path, jobs: int) -> dict:
     (out / ".board" / "board.json").write_bytes(canonical(config))
     record_count = sum(per_type.values())
     report = {
-        "listed_count": len(subjects),
+        "listed_count": len(listed),
+        "drop_listed_count": len(drops),
+        "subject_count": len(subjects),
         "record_count": record_count,
         "per_type": dict(per_type),
+        "per_reason": dict(Counter(entry["reason"] for entry in refused)),
         "unmappable": sorted(refused, key=lambda entry: (entry["subject"], entry["reason"])),
         "show_record_sets": sorted(record_sets),
     }
     if record_count != len(subjects) - len(refused):
         raise OldBoardError(
-            f"count invariant broken: {record_count} records, {len(subjects)} listed, {len(refused)} unmappable"
+            f"count invariant broken: {record_count} records, {len(subjects)} subjects, {len(refused)} unmappable"
         )
     (out / "export-report.json").write_bytes(canonical(report))
     return report
@@ -190,8 +190,7 @@ def main() -> int:
     except OldBoardError as error:
         print(f"export failed: {error}", file=sys.stderr)
         return 1
-    summary = {key: report[key] for key in ("listed_count", "record_count", "per_type", "show_record_sets")}
-    summary["unmappable_count"] = len(report["unmappable"])
+    summary = {key: value for key, value in report.items() if key != "unmappable"}
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
