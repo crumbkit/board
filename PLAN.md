@@ -51,8 +51,7 @@ the code standards and the gates that enforce them.
 ## Scope of v0
 
 In: `check`, `get`, `ls`, `refs`, `put` (single and batch), `mount update`,
-`query`, `plugin list` and `find`, `call`, plugin extraction, the Python
-plugin library, macOS and Linux.
+`query`, `plugin list` and `find`, `call`, plugin extraction, macOS and Linux.
 
 Out, each until a real need has its own plan: authority and external effects;
 triggers and scheduling; review accounting; writes through mounts; pinned or
@@ -106,8 +105,8 @@ The duplicate-refusing parse, `$type`, schemas from the tree, typed references,
 canonical output, `board-validate`, and the commands `check`, `get` and `ls`.
 
 Done: a fixture board that produces every code in the code table; golden bytes
-for canonical output; property tests for the record and path parsers; a
-scheduled cargo-fuzz job over both.
+for canonical output; bolero targets for the record and path parsers, run in
+the gate and fuzzed by a scheduled job.
 
 ### M4 Index and query
 
@@ -130,11 +129,13 @@ one, never a partial file; a batch with one invalid record writes nothing.
 
 ### M6 Plugins
 
-`board-plugin`, the Python `board-plugin` library under `python/`, and one real
-plugin end to end (suggested: `tasks`, extracting status and due date from
-task records, with a `due` capability).
+`board-plugin` and one real plugin end to end (suggested: `tasks`, extracting
+status and due date from task records, with a `due` capability). Plugins are
+written in Python directly against the JSON contract, each keeping its protocol
+code in one module. A Python library is extracted from the plugins once two
+exist and their shared code is visible, not designed ahead of them.
 
-Done: the plugin's tests pass with the library's harness; `board query` joins
+Done: the plugin's tests pass against a real fixture board; `board query` joins
 its table with `entries`; a second plugin calls the first by capability through
 `board call`; every `board::plugin::` code has a test; CI runs the Python gates
 (STANDARDS.md P2).
@@ -163,17 +164,23 @@ Leave everything else: activation, authority, review accounting, coordination,
 triggers, skill projection, memory search, writer release, git transport and
 the Python plugin experiments.
 
-## Decisions for the owner
+## Settled decisions
 
-Each has a proposed answer that the plan assumes until the owner changes it.
+The owner settled these on 2026-10-03.
 
-1. The record tag: `"$type": "<namespace>/<kind>/v<n>"`.
-2. Whether `put` commits by default: yes in a board's own repository, set by
-   `commit_on_put` in `.board/board.json`.
-3. Where plugins are installed: `~/.local/share/board/plugins/<name>/`.
-4. The budget values in `lint.toml` (STANDARDS.md rule 22 gives the reasoning).
-5. The new repository's name, owner and visibility, and its licence (the seed
-   says MIT, as the current repository does).
+1. The name stays `board`: the binary, the `board-*` crates, `board::` codes and
+   the reserved `board` namespace. `viitta` is only the repository's name.
+2. The code is proprietary and unpublished.
+3. The record tag is `"$type": "<namespace>/<kind>/v<n>"`.
+4. `put` commits by default in a board's own repository, set by `commit_on_put`
+   in `.board/board.json`.
+5. Plugins are installed in `~/.local/share/board/plugins/<name>/`.
+6. The budget values in `lint.toml` stand; `context.max_words` counts the
+   default-loaded files together.
+7. proptest states invariants over generated structures; bolero fuzzes parsers
+   of untrusted bytes.
+8. A web UI and sharing are designed for, not built in v0. The positions are in
+   HANDOFF.md until they get a plan.
 
 ## Risks
 
