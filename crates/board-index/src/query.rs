@@ -1,5 +1,6 @@
 //! Reading the index with SQL (docs/architecture.md, The index).
 
+use rusqlite::ErrorCode;
 use rusqlite::types::ValueRef;
 use serde_json::Value;
 
@@ -18,9 +19,7 @@ impl Index {
     /// Runs one statement that cannot write, returning at most `limit` rows.
     pub fn query(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
         self.connection.pragma_update(None, "query_only", true)?;
-        let result = self
-            .read(sql, limit)
-            .map_err(|source| IndexError::Query { source });
+        let result = self.read(sql, limit).map_err(blame);
         self.connection.pragma_update(None, "query_only", false)?;
         result
     }
@@ -53,6 +52,23 @@ impl Index {
             rows,
             truncated,
         })
+    }
+}
+
+/// Whose fault a failed statement is: the index's when `SQLite` could not
+/// use its file or memory, the query's otherwise.
+pub(crate) fn blame(source: rusqlite::Error) -> IndexError {
+    match source.sqlite_error_code() {
+        Some(
+            ErrorCode::DatabaseBusy
+            | ErrorCode::DatabaseLocked
+            | ErrorCode::SystemIoFailure
+            | ErrorCode::DatabaseCorrupt
+            | ErrorCode::NotADatabase
+            | ErrorCode::OutOfMemory
+            | ErrorCode::CannotOpen,
+        ) => IndexError::Sql { source },
+        _ => IndexError::Query { source },
     }
 }
 
