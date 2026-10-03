@@ -24,21 +24,13 @@ const PER_DIRECTORY: usize = 100;
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Timed {
     pub(crate) operation: String,
-    pub(crate) budget: Budget,
+    pub(crate) budget: Duration,
     pub(crate) median: Duration,
-}
-
-/// An operation's budget, and whether it is only provisional: reported, but
-/// never failed, while a decision about it is open.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct Budget {
-    pub(crate) duration: Duration,
-    pub(crate) provisional: bool,
 }
 
 impl Timed {
     pub(crate) fn passed(&self) -> bool {
-        self.budget.provisional || self.median <= self.budget.duration * SLACK
+        self.median <= self.budget * SLACK
     }
 }
 
@@ -68,9 +60,8 @@ impl Options {
 }
 
 /// The budgets table in `docs`: each operation's name, exactly as written,
-/// and its budget, `<n> ms` or `<n> s`, followed by `, provisional` when it
-/// is.
-pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Budget)>, BenchError> {
+/// and its budget.
+pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Duration)>, BenchError> {
     let mut lines = docs
         .lines()
         .skip_while(|line| *line != "| Operation | Budget |");
@@ -87,23 +78,13 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Budget)>, BenchError> {
                     line: line.to_owned(),
                 });
             };
-            let (budget, provisional) = match budget.strip_suffix(", provisional") {
-                Some(budget) => (budget, true),
-                None => (budget, false),
-            };
             let duration = match budget.split_once(' ') {
                 Some((amount, "ms")) => amount.parse().ok().map(Duration::from_millis),
                 Some((amount, "s")) => amount.parse().ok().map(Duration::from_secs),
                 _ => None,
             };
             duration
-                .map(|duration| {
-                    let budget = Budget {
-                        duration,
-                        provisional,
-                    };
-                    (operation.to_owned(), budget)
-                })
+                .map(|duration| (operation.to_owned(), duration))
                 .ok_or_else(|| BenchError::Budget {
                     line: line.to_owned(),
                 })
@@ -113,7 +94,7 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Budget)>, BenchError> {
 
 /// Times every budgeted operation on the board at `root`, a repository root.
 /// `get` reads the first record a check finds.
-pub(crate) fn run(root: &Path, budgets: &[(String, Budget)]) -> Result<Vec<Timed>, BenchError> {
+pub(crate) fn run(root: &Path, budgets: &[(String, Duration)]) -> Result<Vec<Timed>, BenchError> {
     let failed = |error: &dyn std::fmt::Display| BenchError::Board {
         message: error.to_string(),
     };

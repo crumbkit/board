@@ -2,19 +2,12 @@ use std::time::Duration;
 
 use super::*;
 
-fn budget(millis: u64, provisional: bool) -> Budget {
-    Budget {
-        duration: Duration::from_millis(millis),
-        provisional,
-    }
-}
-
 const DOCS: &str = "## Performance
 
 | Operation | Budget |
 | --- | --- |
 | `board get`, warm | 50 ms |
-| full index, cold | 10 s, provisional |
+| full index, cold | 10 s |
 
 The timing job reports every run.
 ";
@@ -24,8 +17,8 @@ fn the_budgets_are_read_from_the_docs_table() {
     assert_eq!(
         budgets(DOCS).unwrap(),
         [
-            ("`board get`, warm".to_owned(), budget(50, false)),
-            ("full index, cold".to_owned(), budget(10_000, true)),
+            ("`board get`, warm".to_owned(), Duration::from_millis(50)),
+            ("full index, cold".to_owned(), Duration::from_secs(10)),
         ]
     );
 }
@@ -40,17 +33,13 @@ fn a_budget_row_without_a_unit_is_refused_and_one_with_is_admitted() {
 
 #[test]
 fn an_operation_passes_up_to_three_times_its_budget() {
-    let timed = |median, provisional| Timed {
+    let timed = |median| Timed {
         operation: "x".to_owned(),
-        budget: budget(100, provisional),
+        budget: Duration::from_millis(100),
         median: Duration::from_millis(median),
     };
-    assert!(timed(300, false).passed());
-    assert!(!timed(301, false).passed());
-    assert!(
-        timed(301, true).passed(),
-        "a provisional budget is only reported"
-    );
+    assert!(timed(300).passed());
+    assert!(!timed(301).passed());
 }
 
 #[test]
