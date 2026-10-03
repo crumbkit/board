@@ -22,6 +22,11 @@ pub const MAX_SEGMENT_BYTES: usize = 255;
 pub struct LogicalPath(String);
 
 impl LogicalPath {
+    /// `/`, the root of a board.
+    pub fn root() -> Self {
+        Self("/".to_owned())
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
