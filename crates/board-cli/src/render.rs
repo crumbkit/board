@@ -5,7 +5,7 @@
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-use board_model::{Code, Kind, Location, Source};
+use board_model::{Code, Location, Source};
 use board_ops::{CheckReport, GetReport, Listed, LsReport};
 use board_tree::Status;
 use serde_json::{Value, json};
@@ -40,7 +40,7 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
                     let mut value = json!({
                         "path": entry.path,
                         "logical": entry.logical.as_ref().map(ToString::to_string),
-                        "kind": kind_name(entry.kind),
+                        "kind": entry.kind.as_str(),
                     });
                     status_fields(&mut value, entry.status);
                     value
@@ -91,12 +91,7 @@ pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
                         let shown = logical
                             .as_ref()
                             .map_or_else(|| name.clone(), ToString::to_string);
-                        writeln!(
-                            text,
-                            "{} {} {shown}",
-                            kind_name(*kind),
-                            status_text(*status)
-                        )
+                        writeln!(text, "{} {} {shown}", kind.as_str(), status_text(*status))
                     }
                 };
             }
@@ -124,7 +119,7 @@ pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
                         let mut value = json!({
                             "name": name,
                             "logical": logical.as_ref().map(ToString::to_string),
-                            "kind": kind_name(*kind),
+                            "kind": kind.as_str(),
                         });
                         status_fields(&mut value, *status);
                         value
@@ -222,15 +217,5 @@ fn status_fields(value: &mut Value, status: Status) {
                 object.insert("code".to_owned(), json!(code.as_str()));
             }
         }
-    }
-}
-
-fn kind_name(kind: Kind) -> &'static str {
-    match kind {
-        Kind::Record => "record",
-        Kind::Pointer => "pointer",
-        Kind::Schema => "schema",
-        Kind::Json => "json",
-        Kind::File => "file",
     }
 }

@@ -4,10 +4,12 @@
 
 mod board;
 mod check;
+mod index;
 mod read;
 
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::check::{CheckError, CheckReport, Checked};
+pub use crate::index::{BuildError, Built};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 
 #[cfg(test)]

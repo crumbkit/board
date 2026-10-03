@@ -13,5 +13,6 @@ pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::path::{LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, Malformation, PathError};
 pub use crate::pointer::{MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer};
 pub use crate::record::{
-    CONFIG_TYPE, Classified, Content, Kind, RecordType, RecordTypeError, classify, needs_bytes,
+    CONFIG_TYPE, Classified, Content, Kind, RecordType, RecordTypeError, Role, classify,
+    needs_bytes,
 };
