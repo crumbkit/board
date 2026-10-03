@@ -82,8 +82,9 @@ reference is an absolute logical path, read in the referring record's board;
 `prefixItems`, `allOf` and local `$ref`; branches of `anyOf`, `oneOf` and
 `if` still validate but are not searched. A string that is not a logical path
 is `ref::malformed`. `check` reports the first failing reference in document
-order on the referring record: `ref::dangling`, or `ref::wrong_type` when it
-reaches something other than a record of an accepted type.
+order on the referring record: `ref::dangling`, or, when the schema names
+types, `ref::wrong_type` for anything but a record of one of them. Without
+`x-board-type`, a reference may reach any entry, such as a record's Markdown.
 
 Schemas from a mounted board are untrusted input. Board validates with
 `pattern` on a linear-time regex engine and never fetches a remote `$ref`.
