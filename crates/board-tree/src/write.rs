@@ -11,7 +11,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use board_model::{Code, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Source};
+use board_model::{
+    BINARY_NAME, Code, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Source,
+};
 
 use crate::address;
 use crate::git::{GitError, Repository, model_id};
@@ -451,7 +453,7 @@ impl Repository {
                     log: LogChange {
                         mode: RefLog::AndReference,
                         force_create_reflog: false,
-                        message: "commit: board put".into(),
+                        message: format!("commit: {BINARY_NAME} put").into(),
                     },
                     expected,
                     new: RefTarget::Object(commit),

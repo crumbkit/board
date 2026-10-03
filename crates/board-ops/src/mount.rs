@@ -1,7 +1,9 @@
 //! `board mount update`: advancing a mount to the commit its `follow` ref
 //! names (docs/architecture.md, Writes).
 
-use board_model::{Code, LogicalPath, Object, ObjectId, Pointer, canonical_json, parse_json};
+use board_model::{
+    BINARY_NAME, Code, LogicalPath, Object, ObjectId, Pointer, canonical_json, parse_json,
+};
 use serde_json::Value;
 
 use crate::board::Board;
@@ -75,7 +77,7 @@ impl Board {
             canonical,
             target,
         };
-        self.write_all(&[prepared], &format!("board mount update {path}"))
+        self.write_all(&[prepared], &format!("{BINARY_NAME} mount update {path}"))
             .map_err(|failure| {
                 MountError::Put(match failure {
                     Failure::Stale(mut stale) => stale.remove(0).1,

@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io::Read;
 
-use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId};
+use board_model::{BINARY_NAME, Code, DISPLAY_NAME, LogicalPath, MAX_RECORD_BYTES, ObjectId};
 use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, Target};
 
@@ -23,10 +23,7 @@ use crate::render::{self, Format};
 use crate::report::Output;
 
 #[derive(Debug, Parser)]
-#[command(
-    name = env!("CARGO_BIN_NAME"),
-    about = "Board: a fast, validated view of a git tree."
-)]
+#[command(name = BINARY_NAME, about = format!("{DISPLAY_NAME}: a fast, validated view of a git tree."))]
 struct Cli {
     /// Print one JSON document instead of text.
     #[arg(long, global = true)]

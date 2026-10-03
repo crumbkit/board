@@ -5,7 +5,7 @@
 
 mod references;
 
-use board_model::{Code, LogicalPath, RecordType};
+use board_model::{Code, DISPLAY_NAME, LogicalPath, RecordType};
 use jsonschema::{
     Draft, PatternOptions, Retrieve, Uri, ValidationError, Validator, error::ValidationErrorKind,
 };
@@ -100,7 +100,7 @@ impl Retrieve for Refuse {
         &self,
         uri: &Uri<String>,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
-        Err(format!("{uri} is outside the schema, and Board fetches nothing").into())
+        Err(format!("{uri} is outside the schema, and {DISPLAY_NAME} fetches nothing").into())
     }
 }
 

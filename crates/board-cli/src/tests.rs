@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::Path;
 
-use board_model::{Code, ObjectId};
+use board_model::{BINARY_NAME, Code, ObjectId};
 use board_scenario::{Item, Scenario};
 use serde_json::Value;
 
@@ -85,7 +85,7 @@ fn board_environment(
         plugins: plugins.map(Path::to_path_buf),
         environment,
     };
-    let arguments = std::iter::once(env!("CARGO_BIN_NAME"))
+    let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
         .map(OsString::from);
     run(arguments, &context, &mut &stdin[..])
@@ -126,6 +126,17 @@ fn help_prints_to_stdout_and_succeeds() {
     let output = board_in(Path::new("."), &["--help"]);
     assert_eq!(output.code, 0);
     assert!(text(&output.stdout).contains("Usage: board"));
+}
+
+#[test]
+fn the_command_line_names_the_app_through_its_constants() {
+    let help = text(&board_in(Path::new("."), &["--help"]).stdout);
+    assert!(
+        help.starts_with(&format!("{}: ", board_model::DISPLAY_NAME)),
+        "{help}"
+    );
+    assert!(help.contains(&format!("Usage: {BINARY_NAME} ")), "{help}");
+    assert_eq!(BINARY_NAME, env!("CARGO_BIN_NAME"));
 }
 
 #[test]
