@@ -95,5 +95,9 @@ and what it does not.
    exist (#33): carry validations from refresh into decide (about 25 ms), one
    join per run instead of point lookups (30 to 40 ms), and pointer facts for
    resolution (most of 52 ms, but it touches rule 3, so it needs a design call).
+   The stress test (crumbkit/viitta-stress-test at 372ab30) found warm
+   check is about 20 µs per entry, and that check is quadratic in pointer-chain
+   length: 3.1 s for 500 chains of 39 hops. Memoising was declined while real
+   chains stay short; those numbers are the baseline if that changes.
 3. Sharing is sketched as M8 in PLAN.md, with the owner's decisions; turn it
    into a design-gap list for a builder after M7.
