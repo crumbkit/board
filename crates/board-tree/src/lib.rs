@@ -4,6 +4,7 @@
 
 mod address;
 mod git;
+mod mounts;
 mod resolve;
 mod tree;
 mod trees;
@@ -15,6 +16,7 @@ mod write;
 mod tests;
 
 pub use crate::git::{GitError, Repository};
+pub use crate::mounts::{Cache, MountPoint, Mounted, Pin, PinError, Reached, Scopes, in_scope};
 pub use crate::resolve::{MAX_HOPS, ResolveError, Resolver};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Entry, Status};

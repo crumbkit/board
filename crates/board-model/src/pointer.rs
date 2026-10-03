@@ -6,7 +6,7 @@ use serde::de::IgnoredAny;
 use serde_json::Value;
 
 use crate::code::Code;
-use crate::json::{JsonError, parse_json};
+use crate::json::{JsonError, canonical_json, parse_json};
 use crate::location::ObjectId;
 use crate::path::LogicalPath;
 
@@ -101,6 +101,14 @@ pub(crate) fn pointer_from_value(value: &Value) -> Result<Pointer, PointerError>
         }
         _ => Err(PointerError::Target),
     }
+}
+
+/// The mount pointer `bytes` with its `commit` set to `commit`, in
+/// canonical form.
+pub fn repinned(bytes: &[u8], commit: ObjectId) -> Result<Vec<u8>, JsonError> {
+    let mut value = parse_json(bytes)?;
+    value["commit"] = Value::String(commit.to_string());
+    Ok(canonical_json(&value))
 }
 
 /// Whether `repo` names a remote repository: a URL, or git's scp-like

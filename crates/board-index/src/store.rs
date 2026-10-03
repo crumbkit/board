@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use board_model::{Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat};
-use board_tree::{TreeRow, TreeRows};
+use board_tree::{MountPoint, TreeRow, TreeRows};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::open::{Index, IndexError};
@@ -53,16 +53,6 @@ pub struct WorktreeRow {
 
 /// git's mode for a submodule, whose object is a commit.
 const SUBMODULE_MODE: u32 = 0o160_000;
-
-/// A mount point in a source, and the commit it reaches or why it cannot.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MountRow {
-    pub source: Source,
-    /// The pointer's physical path in its source.
-    pub path: String,
-    pub target: Option<ObjectId>,
-    pub code: Option<Code>,
-}
 
 /// How the index names a source: `worktree`, or a commit's id. A commit in
 /// two clones has the same content, so it is one source.
@@ -386,7 +376,7 @@ impl Writer<'_> {
     pub fn set_mounts(
         &self,
         sources: &[(Source, Option<ObjectId>, &Path)],
-        mounts: &[MountRow],
+        mounts: &[MountPoint],
     ) -> Result<(), IndexError> {
         self.transaction
             .execute_batch("DELETE FROM main.sources; DELETE FROM main.mounts;")?;
@@ -407,8 +397,8 @@ impl Writer<'_> {
                 .execute(params![
                     source_name(&mount.source),
                     mount.path,
-                    mount.target.map(|target| target.to_string()),
-                    mount.code.map(Code::as_str),
+                    mount.target.ok().map(|target| target.to_string()),
+                    mount.target.err().map(Code::as_str),
                 ])?;
         }
         Ok(())

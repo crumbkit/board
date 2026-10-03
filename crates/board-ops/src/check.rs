@@ -13,11 +13,10 @@ use board_model::{
     Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
     RecordType, Role, Source, Stat, classify,
 };
-use board_tree::{Entry, Repository, ResolveError, Status};
+use board_tree::{Entry, Repository, ResolveError, Status, in_scope};
 
 use crate::board::Board;
 use crate::index::{Indexed, RefreshError, Refreshed, schema_of, schema_path};
-use crate::mounts::{in_scope, join};
 
 /// One entry as `check` reports it.
 #[derive(Clone, Debug, PartialEq)]
@@ -94,7 +93,7 @@ impl Board {
         let refresh = self.refresh(&writer)?;
         let mut work = refresh.work;
         let mounts = self.mounts(&writer, &refresh, &mut work)?;
-        let scopes = mounts.scopes(scope);
+        let scopes = mounts.reached.scopes(scope);
         let stats: HashMap<&str, (Stat, ObjectId)> = refresh
             .entries
             .iter()
@@ -140,11 +139,11 @@ impl Board {
             )?;
         }
         drop(root);
-        for mounted in &mounts.sources {
+        for mounted in &mounts.reached.sources {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
                 writer: &writer,
-                facts: &mounted.facts,
+                facts: mounts.facts(mounted.commit),
                 resolve: RefCell::new(Box::new(|path: &LogicalPath| {
                     mounted.repository.resolve(&source, path)
                 })),
@@ -156,7 +155,7 @@ impl Board {
                 let logical = entry
                     .logical
                     .as_ref()
-                    .and_then(|logical| join(&mounted.route, logical).parse().ok());
+                    .and_then(|logical| mounted.display(logical));
                 decided.push(&decide, &source, entry, logical, Change::Committed)?;
             }
         }

@@ -207,7 +207,7 @@ impl Repository {
     /// The commit the mounted repository's `follow` ref names now. A
     /// missing repository is `mount::repo_missing`; a ref that is missing,
     /// not a valid name, or not peeled to a commit is `mount::follow_missing`.
-    pub fn followed(&self, mount: &Mount) -> Result<ObjectId, Code> {
+    pub(crate) fn followed(&self, mount: &Mount) -> Result<ObjectId, Code> {
         let mounted = self
             .mounted_repository(mount)
             .map_err(|_| Code::MountRepoMissing)?;
@@ -225,7 +225,7 @@ impl Repository {
 
     /// The repository `mount` names and the root tree of its commit, or the
     /// code that says why it cannot be read.
-    pub fn mounted(&self, mount: &Mount) -> Result<(Repository, ObjectId), Code> {
+    pub(crate) fn mounted(&self, mount: &Mount) -> Result<(Repository, ObjectId), Code> {
         self.open_mount(mount).map_err(|missing| match missing {
             MountMissing::Repo => Code::MountRepoMissing,
             MountMissing::Commit => Code::MountCommitMissing,

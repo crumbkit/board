@@ -1,10 +1,8 @@
 //! `board mount update`: advancing a mount to the commit its `follow` ref
 //! names (docs/architecture.md, Writes).
 
-use board_model::{
-    BINARY_NAME, Code, LogicalPath, Object, ObjectId, Pointer, canonical_json, parse_json,
-};
-use serde_json::Value;
+use board_model::{BINARY_NAME, Code, LogicalPath, ObjectId};
+use board_tree::{Pin, PinError};
 
 use crate::board::Board;
 use crate::put::{Expect, Failure, Prepared, PutError};
@@ -23,48 +21,22 @@ impl Board {
     /// commit its `follow` ref names now, through put with the pointer's
     /// blob as the expect. A mount already there is left as it is.
     pub fn mount_update(&self, path: &LogicalPath) -> Result<MountUpdateReport, MountError> {
-        let repository = self.repository();
-        let target = repository
-            .pointer_target(path)
-            .map_err(|error| MountError::Put(error.into()))?;
-        let Object::Blob(blob) = target.location.object else {
-            return Err(MountError::NotAMount { path: path.clone() });
-        };
-        let bytes = repository
-            .read_working_file(&target.path)
-            .map_err(|error| MountError::Put(error.into()))?
-            .ok_or_else(|| MountError::NotAMount { path: path.clone() })?;
-        let mount = match board_model::pointer(&bytes) {
-            Ok(Some(Pointer::Mount(mount))) => mount,
-            Ok(_) => return Err(MountError::NotAMount { path: path.clone() }),
-            Err(error) => {
-                return Err(MountError::Mount {
-                    path: path.clone(),
-                    code: error.code(),
-                });
-            }
-        };
-        let new = repository
-            .followed(&mount)
-            .map_err(|code| MountError::Mount {
-                path: path.clone(),
-                code,
-            })?;
+        let Pin {
+            target,
+            blob,
+            old,
+            new,
+            canonical,
+        } = self.repository().pin(path)?;
         let mut report = MountUpdateReport {
             path: path.clone(),
-            old: mount.commit,
+            old,
             new,
             wrote: false,
         };
-        if new == mount.commit {
+        if new == old {
             return Ok(report);
         }
-        let mut value: Value = parse_json(&bytes).map_err(|error| MountError::Mount {
-            path: path.clone(),
-            code: error.code(),
-        })?;
-        value["commit"] = Value::String(new.to_string());
-        let canonical = canonical_json(&value);
         self.check_record(&canonical).map_err(|code| {
             MountError::Put(PutError::Record {
                 path: path.clone(),
@@ -93,10 +65,8 @@ impl Board {
 /// but did not commit.
 #[derive(Debug, thiserror::Error)]
 pub enum MountError {
-    #[error("{path} is not a mount pointer")]
-    NotAMount { path: LogicalPath },
-    #[error("the mount at {path} cannot be updated: {code}")]
-    Mount { path: LogicalPath, code: Code },
+    #[error(transparent)]
+    Pin(#[from] PinError),
     #[error(transparent)]
     Put(#[from] PutError),
 }
@@ -104,8 +74,7 @@ pub enum MountError {
 impl MountError {
     pub fn code(&self) -> Code {
         match self {
-            Self::NotAMount { .. } => Code::MountInvalid,
-            Self::Mount { code, .. } => *code,
+            Self::Pin(error) => error.code(),
             Self::Put(error) => error.code(),
         }
     }

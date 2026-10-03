@@ -340,7 +340,7 @@ everything it was asked to or nothing.
 | Crate | Owns | Depends on |
 | --- | --- | --- |
 | `board-model` | pure types and decisions: logical paths, Locations, record types, codes, canonical JSON, the duplicate-key parse | serde, serde_json, thiserror |
-| `board-tree` | every read and write of git objects and the working tree; resolution and walking | board-model, gix |
+| `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
 | `board-index` | the index and the cache directory | the three above, rusqlite |
 | `board-plugin` | manifests, discovery, child processes | board-model, board-validate, board-index |

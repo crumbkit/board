@@ -14,7 +14,9 @@ pub use crate::code::Code;
 pub use crate::json::{JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::path::{LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, Malformation, PathError};
-pub use crate::pointer::{MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer};
+pub use crate::pointer::{
+    MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer, repinned,
+};
 pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, RecordType, RecordTypeError, Role, classify,
     needs_bytes,
