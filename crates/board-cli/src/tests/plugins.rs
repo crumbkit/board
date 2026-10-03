@@ -111,7 +111,11 @@ fn plugin_find_prints_one_line_per_matching_capability() {
 #[test]
 fn plugin_find_json_names_the_plugin_and_capability() {
     let (board, data) = installed();
-    let report = json(&plugin(&board, &data, &["--json", "plugin", "find"]));
+    let report = json(&plugin(
+        &board,
+        &data,
+        &["--json", "plugin", "find", "--capability", "due"],
+    ));
     assert_eq!(report["$type"], "board/plugin-find-report/v1");
     let found = &report["capabilities"][0];
     assert_eq!(
@@ -126,6 +130,7 @@ fn a_capability_or_filter_that_cannot_be_read_refuses_the_command_line() {
     for refused in [
         &["plugin", "find", "--capability", "Due"][..],
         &["plugin", "find", "--meta", "area"],
+        &["plugin", "find"],
     ] {
         assert_eq!(plugin(&board, &data, refused).code, 2, "{refused:?}");
     }

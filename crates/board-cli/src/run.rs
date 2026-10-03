@@ -73,6 +73,7 @@ enum PluginCommand {
     /// List the installed plugins, their capabilities and whether this board enables them.
     List,
     /// List the installed plugins' capabilities that match every filter.
+    #[command(group = clap::ArgGroup::new("filter").required(true).multiple(true).args(["capability", "filters"]))]
     Find {
         /// Only capabilities of this name.
         #[arg(long)]

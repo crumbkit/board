@@ -56,8 +56,9 @@ that breaks any of these is `board::plugin::bad_manifest`.
 whether the current board enables it. A broken install is listed with
 `board::plugin::bad_manifest`, and a name the board enables that is not
 installed with `board::plugin::not_installed`; either makes `list` exit 1.
-`board plugin find [--capability <name>] [--meta <key>=<value>]…` lists the
-capabilities of working installs that match every filter. A `--meta` filter
+`board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at
+least one filter, lists the capabilities of working installs that match every
+filter. A `--meta` filter
 matches a string value in the capability's metadata, or in the plugin's when
 the capability's lacks the key. Finding is a filter, never a ranking.
 
