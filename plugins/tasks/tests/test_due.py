@@ -1,13 +1,26 @@
 """The `due` capability and the tasks table, through the real `board`."""
 
 import json
+import time
 
 from conftest import Board, task
 
+# A board waits 5 s for a busy index before falling back to one in memory.
+BUSY_WAIT = 5.0
+
 
 def due(board: Board, before: str) -> list[tuple[str, str, str]]:
-    """The tasks `board call tasks.due` returns, as (path, title, due)."""
-    report = board.json("call", "tasks.due", stdin=json.dumps({"before": before}))
+    """The tasks `board call tasks.due` returns, as (path, title, due).
+
+    The nested `board query` must not wait on the index the call holds: that
+    would take the 5 s wait, and its fallback's temporary database would hold
+    no tasks table, so `due` would fail.
+    """
+    started = time.monotonic()
+    ran = board.run("--json", "call", "tasks.due", stdin=json.dumps({"before": before}))
+    assert time.monotonic() - started < BUSY_WAIT
+    assert "in memory" not in ran.stderr, ran.stderr
+    report = json.loads(ran.stdout)
     assert report["$type"] == "board/call-report/v1", report
     output = report["output"]
     assert output["truncated"] is False
