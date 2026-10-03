@@ -154,3 +154,19 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn bolero_any_text_is_admitted_exactly_or_refused_as_malformed() {
+    bolero::check!().for_each(|bytes: &[u8]| {
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return;
+        };
+        match text.parse::<LogicalPath>() {
+            Ok(path) => {
+                assert_eq!(path.as_str(), text);
+                assert_eq!(path.to_string().parse::<LogicalPath>().unwrap(), path);
+            }
+            Err(error) => assert_eq!(error.code(), Code::PathMalformed),
+        }
+    });
+}

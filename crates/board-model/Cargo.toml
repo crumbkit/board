@@ -11,6 +11,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+bolero.workspace = true
 proptest.workspace = true
 
 [lints]

@@ -1,0 +1,31 @@
+# STANDARDS.md 19: the bolero targets the gate runs as quick randomised tests
+# are fuzzed here, coverage-guided, on nightly.
+name: fuzz
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - json::tests::bolero_any_bytes_parse_to_a_value_that_parses_back_to_itself
+          - record::tests::bolero_classifying_any_bytes_never_panics_and_a_record_has_a_type
+          - path::tests::bolero_any_text_is_admitted_exactly_or_refused_as_malformed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - run: cargo +nightly install cargo-bolero --locked
+      - run: cargo +nightly bolero test --package board-model --time 10min ${{ matrix.target }}

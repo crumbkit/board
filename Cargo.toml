@@ -8,6 +8,7 @@ publish = false
 rust-version = "1.97"
 
 [workspace.dependencies]
+bolero = "0.13.4"
 board-model = { path = "crates/board-model", version = "0.0.0" }
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "sha1"] }
 glob = "0.3.3"
