@@ -418,6 +418,94 @@ fn a_grandchild_holding_the_pipes_cannot_keep_board_waiting_past_the_limit() {
 }
 
 #[test]
+fn a_plugin_past_its_time_limit_is_asked_to_stop_what_it_started() {
+    let limits = Limits {
+        time: Duration::from_millis(500),
+        ..Limits::default()
+    };
+    let script = "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; exec sleep 30' &\ntrap 'kill $!; exit 1' TERM\nwait\n";
+    let fixture = Fixture::tasks(script);
+    let error = fixture
+        .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
+        .unwrap_err();
+    assert_eq!(error.code(), Some(Code::PluginTimeout));
+    let pid = std::fs::read_to_string(fixture.plugin("tasks").join("grandchild.pid")).unwrap();
+    assert!(ends(pid.trim()));
+}
+
+#[test]
+fn a_plugin_that_ignores_sigterm_is_killed_after_the_grace_period() {
+    let limits = Limits {
+        time: Duration::from_millis(500),
+        ..Limits::default()
+    };
+    let script = "#!/bin/sh\ncat > /dev/null\ntrap '' TERM\nexec sleep 30\n";
+    let started = Instant::now();
+    let error = Fixture::tasks(script)
+        .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
+        .unwrap_err();
+    assert_eq!(error.code(), Some(Code::PluginTimeout));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn a_wrapper_that_execs_its_program_is_stopped_and_one_that_does_not_leaves_it() {
+    let limits = Limits {
+        time: Duration::from_millis(500),
+        ..Limits::default()
+    };
+    for (exec, stopped) in [("exec ", true), ("", false)] {
+        let script = format!(
+            "#!/bin/sh\ncat > /dev/null\n{exec}sh -c 'echo $$ > child.pid; exec sleep 30'\n"
+        );
+        let fixture = Fixture::tasks(&script);
+        let error = fixture
+            .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
+            .unwrap_err();
+        assert_eq!(error.code(), Some(Code::PluginTimeout));
+        let pid = std::fs::read_to_string(fixture.plugin("tasks").join("child.pid")).unwrap();
+        if stopped {
+            assert!(ends(pid.trim()), "the child of a wrapper that execs it");
+        } else {
+            assert!(running(pid.trim()), "the child of a wrapper without exec");
+            tool(&["kill", "-KILL", pid.trim()]);
+        }
+    }
+}
+
+/// Whether the process `pid` has ended within a bounded number of checks.
+fn ends(pid: &str) -> bool {
+    (0..500).any(|_| {
+        let ended = !running(pid);
+        if !ended {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        ended
+    })
+}
+
+/// Whether the process `pid` is running. A zombie is not: it holds nothing,
+/// and only waits for init to reap it.
+fn running(pid: &str) -> bool {
+    let state = tool(&["ps", "-o", "stat=", "-p", pid]);
+    !(state.trim().is_empty() || state.trim_start().starts_with('Z'))
+}
+
+/// The stdout of `command`, which asks about or stops a process a plugin
+/// started.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test inspects processes a plugin started"
+)]
+fn tool(command: &[&str]) -> String {
+    let output = std::process::Command::new(command[0])
+        .args(&command[1..])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
 fn a_plugin_writing_more_than_the_stdout_limit_is_stopped() {
     let limits = Limits {
         stdout: 1024,

@@ -17,6 +17,7 @@ deny = [
     { crate = "gix", wrappers = ["board-scenario", "board-tree"] },
     { crate = "rusqlite", wrappers = ["board-index"] },
     { crate = "jsonschema", wrappers = ["board-validate"] },
+    { crate = "rustix", wrappers = ["board-plugin", "gix-index", "tempfile"] },
 ]
 
 [licenses]

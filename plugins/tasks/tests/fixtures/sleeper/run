@@ -1,0 +1,8 @@
+#!/bin/sh
+# Python under the tasks plugin's own uv project, as `tasks` runs.
+project="$(cd -P "$(dirname "$0")" && cd ../../.. && pwd -P)"
+exec uv run --frozen --project "$project" python -c '
+import os, sys, time
+print(os.getpid(), file=sys.stderr, flush=True)
+time.sleep(120)
+'

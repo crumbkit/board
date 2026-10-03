@@ -350,7 +350,7 @@ everything it was asked to or nothing.
 | `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
 | `board-index` | the index and the cache directory | the three above, rusqlite |
-| `board-plugin` | manifests, discovery, child processes | board-model, board-validate, board-index |
+| `board-plugin` | manifests, discovery, child processes | board-model, board-validate, board-index, rustix (Unix) |
 | `board-ops` | every operation as a typed function returning its report | all of the above but `board-cli` |
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | `board-ops` |
 

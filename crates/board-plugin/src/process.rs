@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 
 /// How long Board sleeps between checks on a child whose pipes are closed.
 const POLL: Duration = Duration::from_millis(10);
+/// How long a plugin has to exit after SIGTERM before Board kills it.
+const GRACE: Duration = Duration::from_secs(1);
 
 /// What one run of a plugin may take.
 #[derive(Clone, Copy, Debug)]
@@ -169,8 +171,22 @@ fn read(mut pipe: impl Read + Send + 'static, sender: Sender<Event>, event: fn(V
     });
 }
 
-/// Kills the child and reaps it. A grandchild is not Board's to wait for.
+/// Sends the child SIGTERM, gives it `GRACE` to exit, then kills and reaps
+/// it. A plugin that starts other processes stops them on SIGTERM, as
+/// `uv run` does; a grandchild is not Board's to wait for. Off Unix, the
+/// child is killed at once.
 fn kill(child: &mut Child) {
+    // Only a child not yet reaped still owns its pid.
+    #[cfg(unix)]
+    if let Ok(None) = child.try_wait() {
+        let term = rustix::process::Signal::TERM;
+        if rustix::process::kill_process(rustix::process::Pid::from_child(child), term).is_ok() {
+            let deadline = Instant::now() + GRACE;
+            while Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+                thread::sleep(POLL);
+            }
+        }
+    }
     let _ = child.kill();
     let _ = child.wait();
 }

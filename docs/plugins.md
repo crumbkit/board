@@ -119,9 +119,11 @@ added. How Board reads a plugin's exit and stdout:
 - exit 1 with empty stdout, any other exit, or a signal:
   `board::plugin::failed`.
 
-Past the time limit Board kills the plugin and stops reading, so a grandchild
-still holding a pipe cannot keep it waiting; that grandchild may outlive the
-call.
+Past a limit, Board sends SIGTERM to the process it started, waits a second,
+then kills it, and stops reading, so a grandchild still holding a pipe cannot
+keep it waiting. Board signals only that process, so a `run` command must
+`exec` its final program or forward SIGTERM. `uv run` forwards it. A shell
+wrapper must use `exec`: `sh` without it leaves its child running.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory

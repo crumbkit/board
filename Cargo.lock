@@ -156,6 +156,7 @@ dependencies = [
  "board-model",
  "board-scenario",
  "board-validate",
+ "rustix",
  "serde",
  "serde_json",
  "thiserror",
