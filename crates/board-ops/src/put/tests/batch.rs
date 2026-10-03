@@ -130,7 +130,12 @@ fn two_lines_that_write_one_file_are_refused_and_two_files_are_admitted() {
     let refusal = batch(&scenario, &same).unwrap_err();
     assert_eq!(refusal.code(), Code::PutInvalid);
     assert!(refusal.to_string().contains("line 2"), "{refusal}");
-    assert!(refusal.to_string().contains("as line 1 does"), "{refusal}");
+    assert!(
+        refusal
+            .to_string()
+            .contains("it writes tasks/a.json as line 1 writes tasks/a.json"),
+        "{refusal}"
+    );
     let apart = line("/tasks/a", None, &task("")) + &line("/tasks/b", None, &task(""));
     assert!(batch(&scenario, &apart).is_ok());
 }
@@ -184,4 +189,21 @@ fn a_line_over_the_record_limit_is_too_large_and_one_at_it_is_admitted() {
         refused(batch(&scenario, &over)).1,
         [(1, Code::JsonTooLarge)]
     );
+}
+
+#[test]
+fn two_lines_differing_only_in_case_collide_and_two_names_are_admitted() {
+    let scenario = board();
+    let folded = line("/tasks/a", None, &task("")) + &line("/tasks/A", None, &task(""));
+    let refusal = batch(&scenario, &folded).unwrap_err();
+    assert!(
+        refusal.to_string().contains(
+            "line 2: board::path::case_collision: it writes tasks/A.json differing only in case from line 1 writes tasks/a.json"
+        ),
+        "{refusal}"
+    );
+    assert_eq!(refused(Err(refusal)).1, [(2, Code::PathCaseCollision)]);
+    assert!(file(&scenario, "tasks/a.json").is_none());
+    let apart = line("/tasks/a", None, &task("")) + &line("/tasks/b", None, &task(""));
+    assert_eq!(batch(&scenario, &apart).unwrap().writes.len(), 2);
 }
