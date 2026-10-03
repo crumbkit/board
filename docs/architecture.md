@@ -1,8 +1,9 @@
 # Architecture
 
 This is the v0 design. Built so far: logical paths, resolution and walking,
-links and mounts, records, schemas and references, the index, and the commands
-`check`, `get`, `ls`, `query` and `refs`. PLAN.md says what comes next.
+links and mounts, records, schemas and references, the index, canonical form,
+and the commands `check`, `get`, `ls`, `query`, `refs`, `put` and
+`mount update`. PLAN.md says what comes next.
 
 Board is a fast, validated view of a git tree. Git does history, branching,
 merging and transport. Board indexes what is in a tree, validates the records
@@ -100,9 +101,9 @@ line, `\n` endings, one trailing newline and no byte-order mark. Strings escape
 only `"`, `\` and control characters. Numbers are normalised: an integer as an
 integer, any other number as the shortest decimal that reads back to the same
 double, so `1e2` becomes `100.0`. A number that cannot be held exactly never
-parses, so it is never rounded. Golden bytes freeze this. Board reads any valid JSON;
-only `put` rewrites a file into canonical form. One key per line is what lets
-git's line merge combine most concurrent edits.
+parses, so it is never rounded. Golden bytes freeze this. Board reads any valid
+JSON; only `put` rewrites a file into canonical form. One key per line is what
+lets git's line merge combine most concurrent edits.
 
 ## Logical paths
 
@@ -264,9 +265,9 @@ when it resolves to its identity, whatever path it names.
    segment, so a write through a link lands at its target. A path through a
    mount is `board::put::through_mount`. Missing directories are created. A
    write that would leave its own path degraded is refused with that path's
-   code, such as `path::case_collision` or `path::shadowed`. A link at the last segment whose target does not
-   exist is refused with its resolution code; put does not create a link's
-   target;
+   code, such as `path::case_collision` or `path::shadowed`. A link at the last
+   segment whose target does not exist is refused with its resolution code;
+   put does not create a link's target;
 3. takes `board.lock` in the worktree's git directory, created exclusively as
    git creates its lock files, waiting up to 5 seconds and then refusing with
    `board::put::locked`, whose message says to remove the lock if no put is

@@ -109,15 +109,13 @@ measured and set in docs/architecture.md. Moved on: timing the M1 export,
 which the owner runs locally with `cargo xtask bench --board` once the export
 exists.
 
-### M5 Writes
+### M5 Writes: done
 
-`put` with compare-and-swap, canonical output (with golden bytes), the lock, optional commit and
-batches; `mount update`.
-
-Done: two concurrent puts with the same `--expect` produce exactly one write
-and one `board::put::stale`; a kill at any point leaves the old file or the new
-one, never a partial file; a batch with one invalid record writes nothing; a
-write through a link lands at its target and one through a mount is refused.
+Canonical form with golden bytes and the lossless number check, `put` with
+`--expect`, the lock, optional commit and `--batch`, and `mount update` (#35 to
+#40). Each done item has its test: one write and one `put::stale` from two
+concurrent puts, a killed put leaving the old or new file, an invalid line
+refusing a batch, and writes through a link and a mount.
 
 ### M6 Plugins
 
