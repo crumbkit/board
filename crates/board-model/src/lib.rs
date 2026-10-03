@@ -1,5 +1,6 @@
 //! Board's pure types and decisions. Nothing here performs I/O.
 
+mod app;
 mod code;
 mod json;
 mod location;
@@ -7,6 +8,7 @@ mod path;
 mod pointer;
 mod record;
 
+pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::code::Code;
 pub use crate::json::{JsonError, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
