@@ -90,8 +90,17 @@ impl Board {
         let location = self.locate(path)?;
         let display = display(&location, path);
         let repository = repository_of(&location)?;
+        // Only the listed directory, or a listed file's own directory, is
+        // walked, so a listing costs what it shows, not the whole board.
+        let scope = match location.object {
+            Object::Directory => location.path.as_str(),
+            Object::Blob(_) => location
+                .path
+                .rsplit_once('/')
+                .map_or("", |(parent, _)| parent),
+        };
         let entries = repository
-            .walk(&location.board.source)
+            .walk_under(&location.board.source, scope)
             .map_err(|source| ReadError::Git { source })?;
         let prefix = if location.path.is_empty() {
             String::new()

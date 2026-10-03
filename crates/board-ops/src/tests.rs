@@ -439,3 +439,46 @@ fn ls_of_a_file_lists_that_file() {
     assert_eq!(report.listed.len(), 1);
     assert!(matches!(&report.listed[0], crate::Listed::Entry { name, .. } if name == "p.json"));
 }
+
+#[test]
+fn ls_through_a_mount_lists_what_the_same_directory_lists_in_a_plain_board() {
+    let files = [
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        ("work/p.json", r#"{"$type": "lr/project/v1"}"#),
+        ("work/broken.json", "{"),
+        ("work/sub/x.md", ""),
+        ("elsewhere/q.json", r#"{"$type": "lr/project/v1"}"#),
+    ];
+    let plain = Scenario::new();
+    for (path, text) in files {
+        plain.write(path, Item::File(text));
+    }
+    let mounted = Scenario::new();
+    let commit = mounted.commit(&files);
+    let scenario = board();
+    scenario.write(
+        "shared.json",
+        Item::File(&format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            mounted.path()
+        )),
+    );
+    let through = open(&scenario).ls(&path("/shared/work")).unwrap();
+    let direct = open(&plain).ls(&path("/work")).unwrap();
+    let shape = |report: &crate::LsReport| -> Vec<(String, Option<Kind>, Option<Status>)> {
+        report
+            .listed
+            .iter()
+            .map(|listed| match listed {
+                crate::Listed::Entry {
+                    name, kind, status, ..
+                } => (name.clone(), Some(*kind), Some(*status)),
+                crate::Listed::Directory { name, .. } => (name.clone(), None, None),
+            })
+            .collect()
+    };
+    assert_eq!(shape(&through), shape(&direct));
+    assert_eq!(shape(&direct).len(), 3);
+    assert_eq!(through.display.as_str(), "/shared/work");
+}

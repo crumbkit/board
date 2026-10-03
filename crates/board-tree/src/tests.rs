@@ -4,6 +4,7 @@
 mod commits;
 mod links;
 mod mounts;
+mod scoped;
 mod trees;
 mod working_tree;
 

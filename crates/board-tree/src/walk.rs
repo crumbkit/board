@@ -45,9 +45,17 @@ impl Repository {
     /// cannot be read is an error: anything beneath it that cannot be read is
     /// one degraded entry, and the walk goes on.
     pub fn walk(&self, source: &Source) -> Result<Vec<Entry>, GitError> {
+        self.walk_under(source, "")
+    }
+
+    /// The files beneath the directory at the `/`-separated physical `path`
+    /// in `source`, as [`Repository::walk`] reports them, reading only that
+    /// directory's subtree and the directories on the way down to it. An
+    /// empty path is the root.
+    pub fn walk_under(&self, source: &Source, path: &str) -> Result<Vec<Entry>, GitError> {
         match source {
-            Source::Commit(commit) => walk_in(&mut self.commit_tree(*commit)?),
-            Source::WorkingTree => self.walk_working_tree(&mut |_, _| None),
+            Source::Commit(commit) => walk_from(&mut self.commit_tree(*commit)?, path),
+            Source::WorkingTree => walk_from(&mut self.working_tree(&mut |_, _| None)?, path),
         }
     }
 
@@ -63,17 +71,60 @@ impl Repository {
 }
 
 pub(crate) fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
-    let mut pending = vec![Pending {
+    walk_from(tree, "")
+}
+
+/// The directory at `path`, reached from the root as a walk reaches it: with
+/// its logical path and the code its ancestors pass down. `None` when no
+/// directory is there.
+fn descend<T: Tree>(tree: &mut T, path: &str) -> Result<Option<Pending<T::Directory>>, GitError> {
+    let mut at = Pending {
         directory: tree.root(),
         path: String::new(),
         logical: Some(LogicalPath::root()),
         inherited: None,
-    }];
+    };
+    for segment in path.split('/').filter(|segment| !segment.is_empty()) {
+        let listed = tree.list(&at.directory)?;
+        let addressed = match &at.logical {
+            Some(parent) => tree.address(&at.directory, parent, &listed),
+            None => vec![(None, None); listed.len()],
+        };
+        let found = listed
+            .iter()
+            .zip(addressed)
+            .find(|(entry, _)| entry.name == segment.as_bytes());
+        let Some((entry, (logical, own))) = found else {
+            return Ok(None);
+        };
+        let Kind::Directory(child) = &entry.kind else {
+            return Ok(None);
+        };
+        at = Pending {
+            directory: child.clone(),
+            path: if at.path.is_empty() {
+                segment.to_owned()
+            } else {
+                format!("{}/{segment}", at.path)
+            },
+            logical,
+            inherited: at.inherited.or(own),
+        };
+    }
+    Ok(Some(at))
+}
+
+pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>, GitError> {
+    let Some(start) = descend(tree, path)? else {
+        return Ok(Vec::new());
+    };
+    let start_path = start.path.clone();
+    let mut pending = vec![start];
     let mut entries = Vec::new();
     while let Some(directory) = pending.pop() {
         let listed = match tree.list(&directory.directory) {
             Ok(listed) => listed,
-            Err(error) if directory.path.is_empty() => return Err(error),
+            Err(error) if directory.path == start_path => return Err(error),
             Err(error) => {
                 let code = directory.inherited.unwrap_or(error.code());
                 entries.push(Entry {
