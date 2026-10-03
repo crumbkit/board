@@ -3,6 +3,7 @@
 //! reads configuration and prints.
 
 mod board;
+mod call;
 mod check;
 mod index;
 mod mount;

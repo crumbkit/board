@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use board_plugin::Environment;
+
 /// What the binary learns from its environment.
 #[derive(Debug)]
 pub(crate) struct Context {
@@ -14,6 +16,8 @@ pub(crate) struct Context {
     /// Where plugins are installed: `$XDG_DATA_HOME/board/plugins`, or
     /// `~/.local/share/board/plugins`.
     pub(crate) plugins: Option<PathBuf>,
+    /// What a called plugin inherits.
+    pub(crate) environment: Environment,
 }
 
 impl Context {
@@ -37,6 +41,14 @@ impl Context {
             home,
             cache,
             plugins,
+            environment: Environment {
+                path: std::env::var_os("PATH"),
+                home: std::env::var_os("HOME"),
+                lang: std::env::var_os("LANG"),
+                cache: std::env::var_os("XDG_CACHE_HOME"),
+                data: std::env::var_os("XDG_DATA_HOME"),
+                depth: std::env::var_os("BOARD_CALL_DEPTH"),
+            },
         }
     }
 }

@@ -3,7 +3,8 @@
 This is the v0 design. Built so far: logical paths, resolution and walking,
 links and mounts, records, schemas and references, the index, canonical form,
 plugin manifests and discovery, and the commands `check`, `get`, `ls`,
-`query`, `refs`, `put`, `mount update`, `plugin list` and `plugin find`.
+`query`, `refs`, `put`, `mount update`, `plugin list`, `plugin find` and
+`call`.
 PLAN.md says what comes next.
 
 Board is a fast, validated view of a git tree. Git does history, branching,

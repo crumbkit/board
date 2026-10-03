@@ -125,8 +125,8 @@ written in Python directly against the JSON contract, each keeping its protocol
 code in one module. A Python library is extracted from the plugins once two
 exist and their shared code is visible, not designed ahead of them.
 
-Built so far: `board-plugin` with manifests and discovery, and `plugin list`
-and `plugin find`.
+Built so far: `board-plugin` with manifests and discovery, `plugin list` and
+`plugin find`, and `call` with its limits and codes, without extraction.
 
 Done: the plugin's tests pass against a real fixture board; `board query` joins
 its table with `entries`; a second plugin calls the first by capability through

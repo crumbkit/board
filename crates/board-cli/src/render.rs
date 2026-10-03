@@ -17,7 +17,7 @@ use crate::report::Output;
 
 mod plugins;
 
-pub(crate) use plugins::{plugin_find, plugin_list};
+pub(crate) use plugins::{call, call_error, plugin_find, plugin_list};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {

@@ -2,11 +2,13 @@
 //! depends on rusqlite. It stores the facts it is given and decides nothing:
 //! deleting it changes no answer, only speed.
 
+mod database;
 mod open;
 mod query;
 mod schema;
 mod store;
 
+pub use crate::database::PluginDatabase;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::Rows;
 pub use crate::schema::INDEX_VERSION;
