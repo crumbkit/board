@@ -42,14 +42,53 @@ fn board() -> Scenario {
 }
 
 fn board_in(directory: &Path, arguments: &[&str]) -> Output {
+    board_cached(directory, None, arguments)
+}
+
+fn board_cached(directory: &Path, cache: Option<&Path>, arguments: &[&str]) -> Output {
+    board_with(directory, cache, arguments, b"")
+}
+
+/// Runs `board` with `stdin` as its standard input.
+fn board_with(directory: &Path, cache: Option<&Path>, arguments: &[&str], stdin: &[u8]) -> Output {
+    board_full(directory, cache, None, arguments, stdin)
+}
+
+/// Runs `board` with plugins installed in `plugins`.
+fn board_full(
+    directory: &Path,
+    cache: Option<&Path>,
+    plugins: Option<&Path>,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> Output {
+    let environment = board_plugin::Environment {
+        path: Some("/usr/bin:/bin".into()),
+        ..board_plugin::Environment::default()
+    };
+    board_environment(directory, cache, plugins, environment, arguments, stdin)
+}
+
+/// Runs `board` with plugins that inherit `environment`.
+fn board_environment(
+    directory: &Path,
+    cache: Option<&Path>,
+    plugins: Option<&Path>,
+    environment: board_plugin::Environment,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> Output {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
+        cache: cache.map(Path::to_path_buf),
+        plugins: plugins.map(Path::to_path_buf),
+        environment,
     };
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
         .map(OsString::from);
-    run(arguments, &context)
+    run(arguments, &context, &mut &stdin[..])
 }
 
 fn json(output: &Output) -> Value {
@@ -60,86 +99,23 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// Every code there is, so the fixture test knows what it must produce.
-const ALL: [Code; 27] = [
-    Code::JsonParse,
-    Code::JsonMergeConflict,
-    Code::JsonDuplicateKey,
-    Code::JsonTooLarge,
-    Code::JsonNotUtf8,
-    Code::RecordBadType,
-    Code::RecordUnknownType,
-    Code::RecordInvalid,
-    Code::RecordNotARecord,
-    Code::ConfigNotFound,
-    Code::ConfigInvalid,
-    Code::SchemaInvalid,
-    Code::RefMalformed,
-    Code::RefWrongType,
-    Code::PathMalformed,
-    Code::PathNotFound,
-    Code::PathShadowed,
-    Code::PathCaseCollision,
-    Code::RefDangling,
-    Code::MountInvalid,
-    Code::MountRepoMissing,
-    Code::MountCommitMissing,
-    Code::MountRemoteUnsupported,
-    Code::ResolveCycle,
-    Code::ResolveTooManyHops,
-    Code::RepoUnreadable,
-    Code::RepoSubmodule,
-];
-
-/// Fails to compile when a code is added, so `ALL` stays complete.
-fn listed(code: Code) {
-    match code {
-        Code::JsonParse
-        | Code::JsonMergeConflict
-        | Code::JsonDuplicateKey
-        | Code::JsonTooLarge
-        | Code::JsonNotUtf8
-        | Code::RecordBadType
-        | Code::RecordUnknownType
-        | Code::RecordInvalid
-        | Code::RecordNotARecord
-        | Code::ConfigNotFound
-        | Code::ConfigInvalid
-        | Code::SchemaInvalid
-        | Code::RefMalformed
-        | Code::RefWrongType
-        | Code::PathMalformed
-        | Code::PathNotFound
-        | Code::PathShadowed
-        | Code::PathCaseCollision
-        | Code::RefDangling
-        | Code::MountInvalid
-        | Code::MountRepoMissing
-        | Code::MountCommitMissing
-        | Code::MountRemoteUnsupported
-        | Code::ResolveCycle
-        | Code::ResolveTooManyHops
-        | Code::RepoUnreadable
-        | Code::RepoSubmodule => {}
-    }
-}
-
 fn code_named(name: &str) -> Code {
-    ALL.into_iter()
+    Code::ALL
+        .into_iter()
         .find(|code| code.as_str() == name)
         .unwrap_or_else(|| panic!("{name} is not a code"))
 }
 
-/// Every code in a JSON report: an error's, or each degraded entry's.
+/// Every code in a JSON report: an error's, or each degraded entry's or
+/// plugin's.
 fn codes(output: &Output) -> Vec<Code> {
     let document = json(output);
     if let Some(code) = document.get("code").and_then(Value::as_str) {
         return vec![code_named(code)];
     }
-    document["entries"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let listed = |key: &str| document[key].as_array().into_iter().flatten();
+    listed("entries")
+        .chain(listed("plugins"))
         .filter_map(|entry| entry.get("code")?.as_str())
         .map(code_named)
         .collect()
@@ -318,6 +294,10 @@ fn fixture() -> (Scenario, Scenario) {
         .write("json/conflict.json", Item::File("{\n<<<<<<< HEAD\n}\n"))
         .write("json/duplicate.json", Item::File(r#"{"a": 1, "a": 2}"#))
         .write(
+            "json/lossy.json",
+            Item::File(r#"{"a": 18446744073709551616}"#),
+        )
+        .write(
             "json/large.json",
             Item::File(&" ".repeat(16 * 1024 * 1024 + 1)),
         )
@@ -385,7 +365,7 @@ fn fixture() -> (Scenario, Scenario) {
 /// code `check`, `get` and `ls` can produce.
 #[test]
 fn the_fixture_board_produces_every_code() {
-    let (scenario, _mounted) = fixture();
+    let (scenario, mounted) = fixture();
     let mut produced: BTreeSet<&str> = BTreeSet::new();
     let mut take = |output: Output| {
         for code in codes(&output) {
@@ -398,6 +378,34 @@ fn the_fixture_board_produces_every_code() {
     take(board_in(dir, &["get", "/nowhere", "--json"]));
     take(board_in(dir, &["get", "/mount/m/gone", "--json"]));
     take(board_in(dir, &["ls", "/mount/m", "--json"]));
+    take(board_in(dir, &["query", "SELEC 1", "--json"]));
+    let put = |path: &str, record: &str| {
+        board_with(
+            dir,
+            None,
+            &["put", path, "--expect", "none", "--json"],
+            record.as_bytes(),
+        )
+    };
+    take(put("/projects/p", r#"{"$type": "lr/project/v1"}"#));
+    take(put("/projects/new", r#"{"name": "no type"}"#));
+    take(put("/mount/m/new", r#"{"$type": "lr/project/v1"}"#));
+    scenario.write(
+        "mount/unfollowed.json",
+        Item::File(
+            &mount_of(
+                mounted.workdir().to_str().unwrap(),
+                ObjectId::from_hex(&"1".repeat(40)).unwrap(),
+            )
+            .replace(r#""main""#, r#""gone""#),
+        ),
+    );
+    take(board_in(
+        dir,
+        &["mount", "update", "/mount/unfollowed", "--json"],
+    ));
+    scenario.write(".git/board.lock", Item::File(""));
+    take(put("/projects/locked", r#"{"$type": "lr/project/v1"}"#));
 
     let plain = Scenario::new();
     plain.write("x.json", Item::File("{}"));
@@ -408,12 +416,289 @@ fn the_fixture_board_produces_every_code() {
         Item::File(r#"{"$type": "board/config/v1", "x": 1}"#),
     );
     take(board_in(misconfigured.workdir(), &["check", "--json"]));
+    let (enabling, data) = plugins::installed();
+    data.write("plugins/tasks", Item::Deleted)
+        .write("plugins/broken/plugin.json", Item::File("{}"));
+    take(board_full(
+        enabling.workdir(),
+        None,
+        Some(&data.workdir().join("plugins")),
+        &["plugin", "list", "--json"],
+        b"",
+    ));
+    for output in plugins::refused_calls() {
+        take(output);
+    }
 
-    let missing: Vec<&str> = ALL
+    // The index fails only when SQLite does, even in memory, and a write
+    // only when the disk or its permissions refuse it, which no board can
+    // cause; whether git has an identity to commit as depends on the
+    // machine's own configuration; and HEAD moving needs a commit made in
+    // the middle of a put. A plugin's 30-second limit is too slow for this
+    // test. Each is tested where it can be made to happen.
+    let missing: Vec<&str> = Code::ALL
         .iter()
-        .inspect(|code| listed(**code))
+        .filter(|code| {
+            ![
+                Code::IndexFailed,
+                Code::PutFailed,
+                Code::PutNoIdentity,
+                Code::PutHeadMoved,
+                Code::PluginTimeout,
+            ]
+            .contains(code)
+        })
         .map(|code| code.as_str())
         .filter(|code| !produced.contains(code))
         .collect();
     assert!(missing.is_empty(), "not produced: {missing:?}");
 }
+
+#[test]
+fn check_says_on_stderr_when_the_index_is_in_memory() {
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    let kept = board_cached(scenario.workdir(), Some(cache.path()), &["check"]);
+    assert_eq!(kept.code, 0);
+    assert_eq!(text(&kept.stderr), "");
+    let memory = board_cached(scenario.workdir(), None, &["check"]);
+    assert_eq!(memory.stdout, kept.stdout);
+    assert_eq!(
+        text(&memory.stderr),
+        "note: the index is in memory for this run: there is no cache directory\n"
+    );
+}
+
+#[test]
+fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("notes/a.md", "a")]);
+    let scenario = board();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&mount_of(library.workdir().to_str().unwrap(), commit)),
+    );
+    let output = board_in(scenario.workdir(), &["check"]);
+    assert!(text(&output.stdout).contains("ok /vendor/lib/notes/a.md\n"));
+    assert!(text(&output.stdout).contains("ok vendor/lib.json\n"));
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let entry = report["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == "notes/a.md")
+        .unwrap();
+    assert_eq!(entry["source"], commit.to_string());
+    assert_eq!(entry["logical"], "/vendor/lib/notes/a.md");
+}
+
+#[test]
+fn query_prints_its_columns_then_one_json_row_per_line() {
+    let scenario = board();
+    let output = board_in(
+        scenario.workdir(),
+        &[
+            "query",
+            "SELECT path, status FROM entries WHERE path LIKE 'projects/%'",
+        ],
+    );
+    assert_eq!(output.code, 0);
+    assert_eq!(
+        text(&output.stdout),
+        "[\"path\",\"status\"]\n[\"projects/p.json\",\"ok\"]\n"
+    );
+    let report = json(&board_in(
+        scenario.workdir(),
+        &[
+            "query",
+            "SELECT path FROM entries",
+            "--limit",
+            "1",
+            "--json",
+        ],
+    ));
+    assert_eq!(report["$type"], "board/query-report/v1");
+    assert_eq!(report["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(report["truncated"], true);
+}
+
+#[test]
+fn a_limit_outside_one_to_ten_thousand_is_refused_and_the_bounds_are_admitted() {
+    let scenario = board();
+    let run =
+        |limit: &str| board_in(scenario.workdir(), &["query", "SELECT 1", "--limit", limit]).code;
+    assert_eq!(run("1"), 0);
+    assert_eq!(run("10000"), 0);
+    assert_eq!(run("0"), 2);
+    assert_eq!(run("10001"), 2);
+}
+
+#[test]
+fn sql_that_cannot_run_fails_with_its_code_and_a_read_succeeds() {
+    let scenario = board();
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["query", "DELETE FROM blobs", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::query::invalid");
+    let admitted = board_in(scenario.workdir(), &["query", "SELECT count(*) FROM blobs"]);
+    assert_eq!(admitted.code, 0);
+}
+
+#[test]
+fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
+    );
+    let from = board_in(scenario.workdir(), &["refs", "/tasks/a"]);
+    assert_eq!(text(&from.stdout), "from /project /projects/p ok\n");
+    let to = board_in(scenario.workdir(), &["refs", "/projects/p"]);
+    assert_eq!(text(&to.stdout), "to tasks/a.json /project\n");
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["refs", "/projects/p", "--json"],
+    ));
+    assert_eq!(report["$type"], "board/refs-report/v1");
+    assert_eq!(report["to"][0]["pointers"][0], "/project");
+}
+
+#[test]
+fn put_writes_the_record_on_stdin_and_reports_where() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let record = br#"{"title": "a", "$type": "lr/task/v1"}"#;
+    let output = board_with(scenario.workdir(), None, &["put", "/tasks/a"], record);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let blob = scenario.blob("{\n  \"$type\": \"lr/task/v1\",\n  \"title\": \"a\"\n}\n");
+    assert_eq!(text(&output.stdout), format!("wrote /tasks/a {blob}\n"));
+    let again = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a", "--expect", &blob.to_string(), "--json"],
+        record,
+    ));
+    assert_eq!(again["$type"], "board/put-report/v1");
+    assert_eq!(again["writes"][0]["previous"], blob.to_string());
+    assert_eq!(again["writes"][0]["display"], "/tasks/a");
+    assert_eq!(again["commit"], Value::Null);
+}
+
+#[test]
+fn put_refuses_a_stale_expect_with_exit_one_and_a_malformed_one_with_exit_two() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let run = |expect: &str| {
+        board_with(
+            scenario.workdir(),
+            None,
+            &["put", "/projects/p", "--expect", expect],
+            record,
+        )
+    };
+    let stale = run("none");
+    assert_eq!(stale.code, 1);
+    assert!(text(&stale.stderr).starts_with("error: board::put::stale"));
+    assert_eq!(run("not-a-blob").code, 2);
+    let current = scenario.blob(r#"{"$type": "lr/project/v1"}"#);
+    assert_eq!(run(&current.to_string()).code, 0);
+}
+
+#[test]
+fn put_batch_writes_every_line_or_lists_the_refused_ones() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let good = r#"{"path": "/tasks/a", "record": {"$type": "lr/task/v1", "title": "a"}}"#;
+    let bad = r#"{"path": "/tasks/b", "record": {"$type": "lr/task/v1"}}"#;
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch"],
+        format!("{good}\n{bad}\n").as_bytes(),
+    );
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: board::put::invalid: the batch is refused\n\
+         line 2: board::record::invalid: the record for /tasks/b is refused: board::record::invalid\n"
+    );
+    let document = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--json"],
+        format!("{good}\n{bad}\n").as_bytes(),
+    ));
+    assert_eq!(document["$type"], "board/error/v1");
+    assert_eq!(document["fields"]["refusals"][0]["line"], 2);
+    assert_eq!(
+        document["fields"]["refusals"][0]["code"],
+        "board::record::invalid"
+    );
+    assert!(!scenario.workdir().join("tasks/a.json").exists());
+    let written = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--json"],
+        format!("{good}\n").as_bytes(),
+    );
+    assert_eq!(written.code, 0, "{}", text(&written.stderr));
+    assert_eq!(json(&written)["writes"][0]["display"], "/tasks/a");
+}
+
+#[test]
+fn put_needs_a_path_or_batch_and_not_both() {
+    let scenario = board();
+    for arguments in [
+        &["put"][..],
+        &["put", "/tasks/a", "--batch"],
+        &["put", "--batch", "--expect", "none"],
+    ] {
+        let output = board_with(scenario.workdir(), None, arguments, b"");
+        assert_eq!(output.code, 2, "{arguments:?}");
+    }
+    assert_eq!(
+        board_with(scenario.workdir(), None, &["put", "--batch"], b"").code,
+        0
+    );
+}
+
+#[test]
+fn mount_update_reports_the_move_and_then_that_it_is_there() {
+    let library = Scenario::new();
+    let old = library.commit(&[("a.md", "one")]);
+    let new = library.commit(&[("a.md", "two")]);
+    let scenario = board();
+    scenario
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+        )
+        .write("lib.json", Item::File(&mount_of(&library.path(), old)));
+    let moved = board_in(scenario.workdir(), &["mount", "update", "/lib"]);
+    assert_eq!(moved.code, 0, "{}", text(&moved.stderr));
+    assert_eq!(
+        text(&moved.stdout),
+        format!("updated /lib {old} -> {new}\n")
+    );
+    let again = json(&board_in(
+        scenario.workdir(),
+        &["mount", "update", "/lib", "--json"],
+    ));
+    assert_eq!(again["$type"], "board/mount-update-report/v1");
+    assert_eq!(again["old"], new.to_string());
+    assert_eq!(again["new"], new.to_string());
+    assert_eq!(again["wrote"], false);
+}
+
+mod plugins;

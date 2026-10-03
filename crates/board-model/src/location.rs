@@ -44,9 +44,15 @@ impl ObjectId {
 
 impl fmt::Display for ObjectId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.as_bytes()
-            .iter()
-            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+        let mut hex = [0u8; 64];
+        let bytes = self.as_bytes();
+        for (at, byte) in bytes.iter().enumerate() {
+            hex[2 * at] = DIGITS[usize::from(byte >> 4)];
+            hex[2 * at + 1] = DIGITS[usize::from(byte & 0xf)];
+        }
+        // Only ASCII digits were written.
+        formatter.write_str(std::str::from_utf8(&hex[..2 * bytes.len()]).map_err(|_| fmt::Error)?)
     }
 }
 

@@ -144,6 +144,107 @@ pub enum Content {
     Unparsed(Kind),
 }
 
+impl Kind {
+    pub const ALL: [Kind; 5] = [
+        Self::Record,
+        Self::Pointer,
+        Self::Schema,
+        Self::Json,
+        Self::File,
+    ];
+
+    /// The name reports and the index give the kind.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Record => "record",
+            Self::Pointer => "pointer",
+            Self::Schema => "schema",
+            Self::Json => "json",
+            Self::File => "file",
+        }
+    }
+}
+
+/// How a `.json` entry's path says to read its bytes. A path that is not
+/// `.json` has no role: it is a file, never read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Role {
+    Json,
+    Schema,
+    /// A schema in the reserved `board` namespace, which no board may define.
+    ReservedSchema,
+}
+
+impl Role {
+    /// The role of the entry at the `/`-separated physical `path`. The
+    /// extension is matched exactly, so `x.JSON` is a file.
+    pub fn of(path: &str) -> Option<Self> {
+        if Path::new(path)
+            .extension()
+            .is_none_or(|extension| extension != "json")
+        {
+            return None;
+        }
+        if !(path.starts_with(TYPES_DIRECTORY) && path.ends_with(".schema.json")) {
+            return Some(Self::Json);
+        }
+        if path.starts_with(&format!("{TYPES_DIRECTORY}board/")) {
+            Some(Self::ReservedSchema)
+        } else {
+            Some(Self::Schema)
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Schema => "schema",
+            Self::ReservedSchema => "reserved_schema",
+        }
+    }
+
+    /// Classifies `bytes` read in this role, or `None` when they are over
+    /// the size limit. Board's own types are checked here; other records
+    /// wait for their schema.
+    pub fn classify(self, bytes: Option<&[u8]>) -> Classified {
+        let parsed_kind = if self == Self::Json {
+            Kind::Json
+        } else {
+            Kind::Schema
+        };
+        let Some(bytes) = bytes else {
+            return Classified::unparsed(parsed_kind, Code::JsonTooLarge);
+        };
+        let value = match parse_json(bytes) {
+            Ok(value) => value,
+            Err(error) => return Classified::unparsed(parsed_kind, error.code()),
+        };
+        if self != Self::Json {
+            return Classified {
+                content: Content::Schema { value },
+                code: (self == Self::ReservedSchema).then_some(Code::SchemaInvalid),
+            };
+        }
+        let Some(tag) = value.get("$type") else {
+            return Classified::ok(Content::Json { value });
+        };
+        let Some(record_type) = tag.as_str().and_then(|tag| tag.parse::<RecordType>().ok()) else {
+            return Classified::unparsed(Kind::Record, Code::RecordBadType);
+        };
+        match record_type.as_str() {
+            POINTER_TYPE => match pointer_from_value(&value) {
+                Ok(pointer) => Classified::ok(Content::Pointer { pointer, value }),
+                Err(error) => Classified::unparsed(Kind::Pointer, error.code()),
+            },
+            _ => Classified {
+                code: (record_type.is_board() && record_type.as_str() != CONFIG_TYPE)
+                    .then_some(Code::RecordUnknownType),
+                content: Content::Record { record_type, value },
+            },
+        }
+    }
+}
+
 impl Content {
     pub fn kind(&self) -> Kind {
         match self {
@@ -187,53 +288,15 @@ impl Classified {
 }
 
 /// Whether classifying the entry at `path` needs its bytes: only `.json`
-/// files are read. The extension is matched exactly, so `x.JSON` is a file.
+/// files are read.
 pub fn needs_bytes(path: &str) -> bool {
-    Path::new(path)
-        .extension()
-        .is_some_and(|extension| extension == "json")
+    Role::of(path).is_some()
 }
 
 /// Classifies the entry at the `/`-separated physical `path`, holding
-/// `bytes`, or `None` when it is over the size limit. Board's own types are
-/// checked here; other records wait for their schema.
+/// `bytes`, or `None` when it is over the size limit.
 pub fn classify(path: &str, bytes: Option<&[u8]>) -> Classified {
-    if !needs_bytes(path) {
-        return Classified::ok(Content::File);
-    }
-    let schema = path.starts_with(TYPES_DIRECTORY) && path.ends_with(".schema.json");
-    let parsed_kind = if schema { Kind::Schema } else { Kind::Json };
-    let Some(bytes) = bytes else {
-        return Classified::unparsed(parsed_kind, Code::JsonTooLarge);
-    };
-    let value = match parse_json(bytes) {
-        Ok(value) => value,
-        Err(error) => return Classified::unparsed(parsed_kind, error.code()),
-    };
-    if schema {
-        let reserved = path.starts_with(&format!("{TYPES_DIRECTORY}board/"));
-        return Classified {
-            content: Content::Schema { value },
-            code: reserved.then_some(Code::SchemaInvalid),
-        };
-    }
-    let Some(tag) = value.get("$type") else {
-        return Classified::ok(Content::Json { value });
-    };
-    let Some(record_type) = tag.as_str().and_then(|tag| tag.parse::<RecordType>().ok()) else {
-        return Classified::unparsed(Kind::Record, Code::RecordBadType);
-    };
-    match record_type.as_str() {
-        POINTER_TYPE => match pointer_from_value(&value) {
-            Ok(pointer) => Classified::ok(Content::Pointer { pointer, value }),
-            Err(error) => Classified::unparsed(Kind::Pointer, error.code()),
-        },
-        _ => Classified {
-            code: (record_type.is_board() && record_type.as_str() != CONFIG_TYPE)
-                .then_some(Code::RecordUnknownType),
-            content: Content::Record { record_type, value },
-        },
-    }
+    Role::of(path).map_or(Classified::ok(Content::File), |role| role.classify(bytes))
 }
 
 #[cfg(test)]

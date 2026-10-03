@@ -8,7 +8,7 @@ use crate::{Board, CheckReport};
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
 
-const TASK_SCHEMA: &str = r#"{
+pub(crate) const TASK_SCHEMA: &str = r#"{
   "type": "object",
   "required": ["title"],
   "properties": {
@@ -18,10 +18,10 @@ const TASK_SCHEMA: &str = r#"{
   }
 }"#;
 
-const PROJECT_SCHEMA: &str = r#"{"type": "object"}"#;
+pub(crate) const PROJECT_SCHEMA: &str = r#"{"type": "object"}"#;
 
 /// A board with the task and project types and one project.
-fn board() -> Scenario {
+pub(crate) fn board() -> Scenario {
     let scenario = Scenario::new();
     scenario
         .write(".board/board.json", Item::File(CONFIG))
@@ -40,12 +40,12 @@ fn board() -> Scenario {
     scenario
 }
 
-fn open(scenario: &Scenario) -> Board {
+pub(crate) fn open(scenario: &Scenario) -> Board {
     Board::open(scenario.workdir(), None).unwrap()
 }
 
 fn check(scenario: &Scenario) -> CheckReport {
-    open(scenario).check(None).unwrap()
+    open(scenario).check(None, None).unwrap()
 }
 
 /// The status `check` gives the entry at `path`.
@@ -58,7 +58,7 @@ fn status(scenario: &Scenario, path: &str) -> Status {
         .status
 }
 
-fn task(fields: &str) -> String {
+pub(crate) fn task(fields: &str) -> String {
     format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#)
 }
 
@@ -96,6 +96,8 @@ fn a_board_json_board_cannot_read_is_invalid() {
         r#"{"$type": "board/config/v1", "colour": "red"}"#,
         r#"{"$type": "board/config/v2"}"#,
         r#"{"$type": "board/config/v1", "plugins": [1]}"#,
+        r#"{"$type": "board/config/v1", "plugins": ["Tasks"]}"#,
+        r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes", "tasks"]}"#,
         "{",
     ] {
         let scenario = Scenario::new();
@@ -106,11 +108,19 @@ fn a_board_json_board_cannot_read_is_invalid() {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false, "plugins": ["tasks"]}"#),
+        Item::File(
+            r#"{"$type": "board/config/v1", "commit_on_put": false, "plugins": ["tasks", "notes"]}"#,
+        ),
     );
     let board = open(&scenario);
     assert!(!board.config().commit_on_put);
-    assert_eq!(board.config().plugins, ["tasks"]);
+    let plugins: Vec<&str> = board
+        .config()
+        .plugins
+        .iter()
+        .map(board_plugin::PluginName::as_str)
+        .collect();
+    assert_eq!(plugins, ["tasks", "notes"]);
 }
 
 #[test]
@@ -297,7 +307,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
         .write("work/t.json", Item::File(&task("")))
         .write("workshop/t.json", Item::File(&task("")));
     let scope: LogicalPath = "/work".parse().unwrap();
-    let report = open(&scenario).check(Some(&scope)).unwrap();
+    let report = open(&scenario).check(Some(&scope), None).unwrap();
     let paths: Vec<&str> = report
         .entries
         .iter()
@@ -305,7 +315,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
         .collect();
     assert_eq!(paths, ["work/t.json"]);
     let missing: LogicalPath = "/nowhere".parse().unwrap();
-    let error = open(&scenario).check(Some(&missing)).unwrap_err();
+    let error = open(&scenario).check(Some(&missing), None).unwrap_err();
     assert_eq!(error.code(), Code::PathNotFound);
 }
 

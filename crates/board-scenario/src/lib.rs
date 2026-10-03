@@ -11,6 +11,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use board_model::ObjectId;
 use gix::bstr::BStr;
@@ -20,7 +21,11 @@ use tempfile::TempDir;
 /// What a scenario puts at one path of a commit's tree.
 #[derive(Clone, Copy, Debug)]
 pub enum Item<'a> {
+    /// A file last modified an hour ago, so that the index's racy-clean
+    /// rule (docs/architecture.md, The index) trusts its metadata.
     File(&'a str),
+    /// A file modified just now, as an editor leaves it.
+    Fresh(&'a str),
     /// A file holding any bytes, UTF-8 or not.
     Bytes(&'a [u8]),
     Symlink(&'a str),
@@ -30,8 +35,17 @@ pub enum Item<'a> {
     MissingTree,
     /// A top-level file whose blob object is absent from the repository.
     MissingBlob,
+    /// Text added to the end of the file at the path, such as a section of
+    /// `.git/config`.
+    Appended(&'a str),
+    /// Nothing: the file or directory at the path is deleted; working tree
+    /// only.
+    Deleted,
     /// A file the walk's user cannot read (mode 000); working tree only.
     Unreadable(&'a str),
+    /// A file anyone may run (mode 755), such as a fixture plugin; working
+    /// tree only.
+    Executable(&'a str),
 }
 
 /// One repository in its own temporary directory.
@@ -68,7 +82,7 @@ impl Scenario {
     }
 
     /// Writes `item` at the `/`-separated `path` in the working tree, creating
-    /// its directories. A submodule is written as a nested repository: a
+    /// its directories. Every file but a fresh one is dated an hour ago. A submodule is written as a nested repository: a
     /// directory holding a `.git` file.
     #[expect(
         clippy::disallowed_methods,
@@ -77,17 +91,49 @@ impl Scenario {
     pub fn write(&self, path: &str, item: Item<'_>) -> &Self {
         let path = self.git.workdir().unwrap().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let backdate = |path: &Path| {
+            fs::File::options()
+                .write(true)
+                .open(path)
+                .unwrap()
+                .set_modified(SystemTime::now() - Duration::from_hours(1))
+                .unwrap();
+        };
         match item {
-            Item::File(text) => fs::write(path, text).unwrap(),
-            Item::Bytes(bytes) => fs::write(path, bytes).unwrap(),
+            Item::Fresh(text) => fs::write(path, text).unwrap(),
+            Item::File(text) => {
+                fs::write(&path, text).unwrap();
+                backdate(&path);
+            }
+            Item::Bytes(bytes) => {
+                fs::write(&path, bytes).unwrap();
+                backdate(&path);
+            }
             Item::Symlink(target) => std::os::unix::fs::symlink(target, path).unwrap(),
+            Item::Deleted if path.is_dir() => fs::remove_dir_all(path).unwrap(),
+            Item::Deleted => fs::remove_file(path).unwrap(),
+            Item::Appended(text) => {
+                use std::io::Write;
+                fs::File::options()
+                    .append(true)
+                    .create(true)
+                    .open(&path)
+                    .unwrap()
+                    .write_all(text.as_bytes())
+                    .unwrap();
+            }
             Item::Submodule => {
                 fs::create_dir_all(&path).unwrap();
                 fs::write(path.join(".git"), "gitdir: elsewhere").unwrap();
             }
             Item::Unreadable(text) => {
                 fs::write(&path, text).unwrap();
+                backdate(&path);
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+            }
+            Item::Executable(text) => {
+                fs::write(&path, text).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
             }
             Item::MissingTree | Item::MissingBlob => {
                 panic!("a working tree cannot hold a missing object")
@@ -125,7 +171,9 @@ impl Scenario {
         let mut editor = self.git.edit_tree(empty).unwrap();
         for (path, item) in items {
             let (kind, id) = match item {
-                Item::File(text) => (EntryKind::Blob, self.git.write_blob(text).unwrap().detach()),
+                Item::File(text) | Item::Fresh(text) => {
+                    (EntryKind::Blob, self.git.write_blob(text).unwrap().detach())
+                }
                 Item::Bytes(bytes) => (
                     EntryKind::Blob,
                     self.git.write_blob(bytes).unwrap().detach(),
@@ -136,6 +184,10 @@ impl Scenario {
                 ),
                 Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
+                Item::Executable(_) => panic!("fixture plugins live outside commits"),
+                Item::Deleted | Item::Appended(_) => {
+                    panic!("a commit is built from whole files")
+                }
                 Item::Submodule => (
                     EntryKind::Commit,
                     gix::ObjectId::from_hex(&[b'1'; 40]).unwrap(),
@@ -184,6 +236,57 @@ impl Scenario {
             .commit_as(signature, signature, "HEAD", "scenario", tree, parents)
             .unwrap();
         model(commit.detach())
+    }
+}
+
+/// The commit HEAD names, as a test reads it.
+#[derive(Debug)]
+pub struct HeadCommit {
+    pub id: ObjectId,
+    pub message: String,
+    pub parents: Vec<ObjectId>,
+    /// Every file in its tree, by `/`-separated path.
+    pub files: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+impl Scenario {
+    /// The commit HEAD names now, read afresh, or `None` before the first.
+    pub fn head(&self) -> Option<HeadCommit> {
+        let git = gix::open(self.workdir()).unwrap();
+        let id = git.head_id().ok()?.detach();
+        let commit = git.find_commit(id).unwrap();
+        let mut files = std::collections::BTreeMap::new();
+        let mut pending = vec![(String::new(), commit.tree_id().unwrap().detach())];
+        while let Some((prefix, tree)) = pending.pop() {
+            for entry in git.find_tree(tree).unwrap().decode().unwrap().entries {
+                let path = format!("{prefix}{}", entry.filename);
+                if entry.mode.is_tree() {
+                    pending.push((format!("{path}/"), entry.oid.to_owned()));
+                } else {
+                    files.insert(path, git.find_blob(entry.oid).unwrap().data.clone());
+                }
+            }
+        }
+        Some(HeadCommit {
+            id: model(id),
+            message: commit.message_raw_sloppy().to_string(),
+            parents: commit
+                .parent_ids()
+                .map(|parent| model(parent.detach()))
+                .collect(),
+            files,
+        })
+    }
+
+    /// The paths git's index holds, each with its blob.
+    pub fn index(&self) -> std::collections::BTreeMap<String, ObjectId> {
+        let git = gix::open(self.workdir()).unwrap();
+        let index = git.index_or_empty().unwrap();
+        index
+            .entries()
+            .iter()
+            .map(|entry| (entry.path(&index).to_string(), model(entry.id)))
+            .collect()
     }
 }
 

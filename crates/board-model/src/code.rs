@@ -11,6 +11,7 @@ pub enum Code {
     JsonDuplicateKey,
     JsonTooLarge,
     JsonNotUtf8,
+    JsonLossyNumber,
     RecordBadType,
     RecordUnknownType,
     RecordInvalid,
@@ -29,13 +30,90 @@ pub enum Code {
     MountRepoMissing,
     MountCommitMissing,
     MountRemoteUnsupported,
+    MountFollowMissing,
     ResolveCycle,
     ResolveTooManyHops,
     RepoUnreadable,
     RepoSubmodule,
+    IndexFailed,
+    QueryInvalid,
+    PutStale,
+    PutLocked,
+    PutThroughMount,
+    PutInvalid,
+    PutNoIdentity,
+    PutHeadMoved,
+    PutFailed,
+    PluginNotInstalled,
+    PluginBadManifest,
+    PluginNotEnabled,
+    PluginAmbiguous,
+    PluginBadInput,
+    PluginBadOutput,
+    PluginFailed,
+    PluginTimeout,
+    PluginTooLarge,
+    PluginTooDeep,
 }
 
 impl Code {
+    /// Every code, so a spelling can be read back.
+    pub const ALL: [Code; 48] = [
+        Self::JsonParse,
+        Self::JsonMergeConflict,
+        Self::JsonDuplicateKey,
+        Self::JsonTooLarge,
+        Self::JsonNotUtf8,
+        Self::JsonLossyNumber,
+        Self::RecordBadType,
+        Self::RecordUnknownType,
+        Self::RecordInvalid,
+        Self::RecordNotARecord,
+        Self::ConfigNotFound,
+        Self::ConfigInvalid,
+        Self::SchemaInvalid,
+        Self::RefMalformed,
+        Self::RefWrongType,
+        Self::PathMalformed,
+        Self::PathNotFound,
+        Self::PathShadowed,
+        Self::PathCaseCollision,
+        Self::RefDangling,
+        Self::MountInvalid,
+        Self::MountRepoMissing,
+        Self::MountCommitMissing,
+        Self::MountRemoteUnsupported,
+        Self::MountFollowMissing,
+        Self::ResolveCycle,
+        Self::ResolveTooManyHops,
+        Self::RepoUnreadable,
+        Self::RepoSubmodule,
+        Self::IndexFailed,
+        Self::QueryInvalid,
+        Self::PutStale,
+        Self::PutLocked,
+        Self::PutThroughMount,
+        Self::PutInvalid,
+        Self::PutNoIdentity,
+        Self::PutHeadMoved,
+        Self::PutFailed,
+        Self::PluginNotInstalled,
+        Self::PluginBadManifest,
+        Self::PluginNotEnabled,
+        Self::PluginAmbiguous,
+        Self::PluginBadInput,
+        Self::PluginBadOutput,
+        Self::PluginFailed,
+        Self::PluginTimeout,
+        Self::PluginTooLarge,
+        Self::PluginTooDeep,
+    ];
+
+    /// The code spelled `text`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|code| code.as_str() == text)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::JsonParse => "board::json::parse",
@@ -43,6 +121,7 @@ impl Code {
             Self::JsonDuplicateKey => "board::json::duplicate_key",
             Self::JsonTooLarge => "board::json::too_large",
             Self::JsonNotUtf8 => "board::json::not_utf8",
+            Self::JsonLossyNumber => "board::json::lossy_number",
             Self::RecordBadType => "board::record::bad_type",
             Self::RecordUnknownType => "board::record::unknown_type",
             Self::RecordInvalid => "board::record::invalid",
@@ -61,10 +140,30 @@ impl Code {
             Self::MountRepoMissing => "board::mount::repo_missing",
             Self::MountCommitMissing => "board::mount::commit_missing",
             Self::MountRemoteUnsupported => "board::mount::remote_unsupported",
+            Self::MountFollowMissing => "board::mount::follow_missing",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
             Self::RepoSubmodule => "board::repo::submodule",
+            Self::IndexFailed => "board::index::failed",
+            Self::QueryInvalid => "board::query::invalid",
+            Self::PutStale => "board::put::stale",
+            Self::PutLocked => "board::put::locked",
+            Self::PutThroughMount => "board::put::through_mount",
+            Self::PutInvalid => "board::put::invalid",
+            Self::PutNoIdentity => "board::put::no_identity",
+            Self::PutHeadMoved => "board::put::head_moved",
+            Self::PutFailed => "board::put::failed",
+            Self::PluginNotInstalled => "board::plugin::not_installed",
+            Self::PluginBadManifest => "board::plugin::bad_manifest",
+            Self::PluginNotEnabled => "board::plugin::not_enabled",
+            Self::PluginAmbiguous => "board::plugin::ambiguous",
+            Self::PluginBadInput => "board::plugin::bad_input",
+            Self::PluginBadOutput => "board::plugin::bad_output",
+            Self::PluginFailed => "board::plugin::failed",
+            Self::PluginTimeout => "board::plugin::timeout",
+            Self::PluginTooLarge => "board::plugin::too_large",
+            Self::PluginTooDeep => "board::plugin::too_deep",
         }
     }
 }
@@ -81,36 +180,6 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 27] = [
-        Code::JsonParse,
-        Code::JsonMergeConflict,
-        Code::JsonDuplicateKey,
-        Code::JsonTooLarge,
-        Code::JsonNotUtf8,
-        Code::RecordBadType,
-        Code::RecordUnknownType,
-        Code::RecordInvalid,
-        Code::RecordNotARecord,
-        Code::ConfigNotFound,
-        Code::ConfigInvalid,
-        Code::SchemaInvalid,
-        Code::RefMalformed,
-        Code::RefWrongType,
-        Code::PathMalformed,
-        Code::PathNotFound,
-        Code::PathShadowed,
-        Code::PathCaseCollision,
-        Code::RefDangling,
-        Code::MountInvalid,
-        Code::MountRepoMissing,
-        Code::MountCommitMissing,
-        Code::MountRemoteUnsupported,
-        Code::ResolveCycle,
-        Code::ResolveTooManyHops,
-        Code::RepoUnreadable,
-        Code::RepoSubmodule,
-    ];
-
     /// Fails to compile when a variant is added, so `ALL` stays complete.
     fn listed(code: Code) {
         match code {
@@ -119,6 +188,7 @@ mod tests {
             | Code::JsonDuplicateKey
             | Code::JsonTooLarge
             | Code::JsonNotUtf8
+            | Code::JsonLossyNumber
             | Code::RecordBadType
             | Code::RecordUnknownType
             | Code::RecordInvalid
@@ -137,16 +207,36 @@ mod tests {
             | Code::MountRepoMissing
             | Code::MountCommitMissing
             | Code::MountRemoteUnsupported
+            | Code::MountFollowMissing
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable
-            | Code::RepoSubmodule => {}
+            | Code::RepoSubmodule
+            | Code::IndexFailed
+            | Code::QueryInvalid
+            | Code::PutStale
+            | Code::PutLocked
+            | Code::PutThroughMount
+            | Code::PutInvalid
+            | Code::PutNoIdentity
+            | Code::PutHeadMoved
+            | Code::PutFailed
+            | Code::PluginNotInstalled
+            | Code::PluginBadManifest
+            | Code::PluginNotEnabled
+            | Code::PluginAmbiguous
+            | Code::PluginBadInput
+            | Code::PluginBadOutput
+            | Code::PluginFailed
+            | Code::PluginTimeout
+            | Code::PluginTooLarge
+            | Code::PluginTooDeep => {}
         }
     }
 
     #[test]
     fn every_code_is_board_area_reason_in_snake_case() {
-        for code in ALL {
+        for code in Code::ALL {
             listed(code);
             let parts: Vec<&str> = code.as_str().split("::").collect();
             assert_eq!(parts.len(), 3, "{code}");
@@ -164,8 +254,16 @@ mod tests {
 
     #[test]
     fn no_two_codes_share_a_spelling() {
-        let spellings: HashSet<&str> = ALL.iter().map(|code| code.as_str()).collect();
-        assert_eq!(spellings.len(), ALL.len());
+        let spellings: HashSet<&str> = Code::ALL.iter().map(|code| code.as_str()).collect();
+        assert_eq!(spellings.len(), Code::ALL.len());
+    }
+
+    #[test]
+    fn every_code_parses_back_from_its_spelling() {
+        for code in Code::ALL {
+            assert_eq!(Code::parse(code.as_str()), Some(code));
+        }
+        assert_eq!(Code::parse("board::json::parse "), None);
     }
 
     #[test]

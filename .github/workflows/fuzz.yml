@@ -20,6 +20,7 @@ jobs:
       matrix:
         target:
           - json::tests::bolero_any_bytes_parse_to_a_value_that_parses_back_to_itself
+          - json::tests::bolero_canonical_output_reads_back_as_the_same_value_and_bytes
           - record::tests::bolero_classifying_any_bytes_never_panics_and_unparsed_content_has_a_code
           - path::tests::bolero_any_text_is_admitted_exactly_or_refused_as_malformed
     runs-on: ubuntu-24.04
@@ -27,5 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install nightly --profile minimal
-      - run: cargo +nightly install cargo-bolero --locked
-      - run: cargo +nightly bolero test --package board-model --time 10min ${{ matrix.target }}
+      # Pinned so its flags cannot drift; -T is the total run time.
+      - run: cargo +nightly install cargo-bolero --version 0.13.5 --locked
+      - run: cargo +nightly bolero test --package board-model -T 10min ${{ matrix.target }}
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-${{ strategy.job-index }}
+          path: crates/board-model/src/**/__fuzz__/*/crashes/
+          if-no-files-found: ignore

@@ -12,8 +12,10 @@ open threads are settled or moved into PLAN.md.
   lean, reviews every builder PR against STANDARDS.md and docs/, and changes
   the docs when the design is wrong. It does not implement milestones.
 - **Builder session** `session_018fcBgd866UNNdTiVtbJpFc` ("Session task
-  coordination"): commissioned on 2026-10-03 for M2 in viitta, as small pull
+  coordination"): built M2 to M5 in viitta on 2026-10-03, as small pull
   requests that the vision session reviews and merges.
+- **M6 builder** `session_019veyTvU3AkfugjSEh9XC5c`: built M6 on 2026-10-03,
+  started fresh from the docs when the first builder's context ran long.
 - **M1 builder** `session_017XzJQ42de6xdS5bYk5GE9B`: commissioned on
   2026-10-03 for the export script under `tools/export-old-board/`, as one pull
   request; the owner runs it.
@@ -85,6 +87,14 @@ and what it does not.
 
 ## Next actions
 
-1. Commission M3 from the builder, as small pull requests, and review them.
-2. #11 (app-name constants) waits for the owner to confirm the request.
-3. The owner runs the M1 export; route problems to the M1 builder.
+1. M7 is the owner's: run the M1 export, time it with
+   `cargo xtask bench --board <export>`, enable `tasks` and use Board daily.
+   Route what that finds to a builder as small fixes; route export problems to
+   the M1 builder.
+2. #21 (app-name constants) waits for the owner to confirm the request.
+3. If a real board misses a budget, three measured speedups for a warm check
+   exist (#33): carry validations from refresh into decide (about 25 ms), one
+   join per run instead of point lookups (30 to 40 ms), and pointer facts for
+   resolution (most of 52 ms, but it touches rule 3, so it needs a design call).
+4. After v0, plan writes through mounts (open thread 1) only when the owner
+   asks for sharing.

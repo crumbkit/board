@@ -1,0 +1,45 @@
+[project]
+name = "board-tasks"
+version = "0.1.0"
+description = "Open tasks and their due dates, as a Board plugin."
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.11"]
+
+[dependency-groups]
+dev = ["pyright>=1.1.400", "pytest>=8.4", "ruff>=0.13"]
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # conflicts with the formatter
+  "CPY001", # the repository is proprietary; no file carries its own notice
+  "D203",   # conflicts with D211 (no blank line before a class docstring)
+  "D213",   # conflicts with D212 (the summary starts on the first line)
+  "D401",   # a docstring may name what a function returns, as Board's Rust does
+  "EM101",  # an error's message is written where it is raised
+  "EM102",  # as EM101
+  "TRY003", # as EM101
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "S101",   # pytest asserts
+  "S603",   # the tests run the real board, git and the plugin
+  "S607",   # board, git and uv are found on PATH
+  "INP001", # tests/ is a plain directory, not a package
+  "D103",   # a test's name is the sentence that describes it
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

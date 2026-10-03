@@ -95,50 +95,37 @@ working tree, resolution, walking, links and mounts (#3, #7, #9, #12 to #14).
 Moved on: the display-path round trip to M3, where `get` first prints one;
 walks through mounts to M4; the two write scenarios to M5.
 
-### M3 Records and validation
+### M3 Records and validation: done
 
-The duplicate-refusing parse, kinds, `$type`, schemas from the tree, typed
-references, `board-validate`, `board-ops`, and the commands `check`, `get` and
-`ls`. `check` covers the root board; walks reach mounts in M4.
+`board-validate`, `board-ops`, `board-cli` and the strict parse in
+`board-model`: kinds, schemas, typed references, `check`, `get` and `ls`
+(#17, #18, #20, #22). The first full fuzz run, after #23 and #24, passed.
 
-Done: a fixture board that produces every code `check`, `get` and `ls` can
-produce; bolero targets for the record and path parsers, run in the gate and
-fuzzed by a scheduled job; walks mark dangling references; the property that
-resolving a Location's display path returns that Location.
+### M4 Index and query: done
 
-### M4 Index and query
+`board-index`: the tables, refresh by tree diff, the working-tree overlay,
+mounts, and the commands `query` and `refs` (#27, #29 to #33). Budgets are
+measured and set in docs/architecture.md. Moved on: timing the M1 export,
+which the owner runs locally with `cargo xtask bench --board` once the export
+exists.
 
-`board-index`: the tables, refresh by tree diff, the working-tree overlay, and
-the commands `query` and `refs`.
+### M5 Writes: done
 
-Done: walks and the index descend mounts, each mounted commit indexed once;
-the warm-equals-cold property for every query; "one changed record
-parses one blob"; the timing job on the M1 export and a generated
-10,000-record board, with the budgets in docs/architecture.md replaced by
-measured ones.
+Canonical form with golden bytes and the lossless number check, `put` with
+`--expect`, the lock, optional commit and `--batch`, and `mount update` (#35 to
+#40). Each done item has its test: one write and one `put::stale` from two
+concurrent puts, a killed put leaving the old or new file, an invalid line
+refusing a batch, and writes through a link and a mount.
 
-### M5 Writes
+### M6 Plugins: done
 
-`put` with compare-and-swap, canonical output (with golden bytes), the lock, optional commit and
-batches; `mount update`.
-
-Done: two concurrent puts with the same `--expect` produce exactly one write
-and one `board::put::stale`; a kill at any point leaves the old file or the new
-one, never a partial file; a batch with one invalid record writes nothing; a
-write through a link lands at its target and one through a mount is refused.
-
-### M6 Plugins
-
-`board-plugin` and one real plugin end to end (suggested: `tasks`, extracting
-status and due date from task records, with a `due` capability). Plugins are
-written in Python directly against the JSON contract, each keeping its protocol
-code in one module. A Python library is extracted from the plugins once two
-exist and their shared code is visible, not designed ahead of them.
-
-Done: the plugin's tests pass against a real fixture board; `board query` joins
-its table with `entries`; a second plugin calls the first by capability through
-`board call`; every `board::plugin::` code has a test; CI runs the Python gates
-(STANDARDS.md P2).
+`board-plugin`, `plugin list` and `find`, `call` with its limits and codes,
+extraction with `query` attaching each plugin's database, and the `tasks`
+plugin in `plugins/tasks/` with its Python gates in CI (#42 to #46). Each done
+item has its test: `tasks` against fixture boards through the real `board`,
+`query` joining `p_tasks.tasks` with `entries`, the `digest` fixture calling
+`due` by capability, and every `board::plugin::` code. No Python library yet:
+there is one plugin.
 
 ### M7 Switch
 

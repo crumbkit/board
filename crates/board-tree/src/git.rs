@@ -2,6 +2,7 @@
 
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use board_model::{Code, MAX_RECORD_BYTES, ObjectId, Source};
 use gix::object::tree::EntryKind;
@@ -99,6 +100,19 @@ impl Repository {
 
     /// The entries of `tree`, in git's order.
     fn list_tree(&self, tree: ObjectId) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
+        Ok(self
+            .tree_entries(tree)?
+            .into_iter()
+            .map(|(entry, _, _)| entry)
+            .collect())
+    }
+
+    /// The entries of `tree`, in git's order, each with git's mode and the
+    /// object it names.
+    pub(crate) fn tree_entries(
+        &self,
+        tree: ObjectId,
+    ) -> Result<Vec<(RawEntry<ObjectId>, u32, ObjectId)>, GitError> {
         let found = self
             .git
             .find_tree(self.gix_id(tree)?)
@@ -109,7 +123,18 @@ impl Repository {
             .iter()
             .map(|entry| {
                 let id = model_id(entry.oid);
-                RawEntry {
+                let size = matches!(
+                    entry.mode.kind(),
+                    EntryKind::Blob | EntryKind::BlobExecutable | EntryKind::Link
+                )
+                .then(|| {
+                    self.git
+                        .find_header(entry.oid)
+                        .ok()
+                        .map(|header| header.size())
+                })
+                .flatten();
+                let raw = RawEntry {
                     name: entry.filename.to_vec(),
                     kind: match entry.mode.kind() {
                         EntryKind::Tree => Kind::Directory(id),
@@ -117,7 +142,10 @@ impl Repository {
                         EntryKind::Link => Kind::Symlink(id),
                         EntryKind::Commit => Kind::Submodule,
                     },
-                }
+                    stat: None,
+                    size,
+                };
+                (raw, u32::from(entry.mode.value()), id)
             })
             .collect())
     }
@@ -138,7 +166,7 @@ impl Repository {
 
     /// The bytes of blob `id`, or `None` when it holds more than
     /// [`MAX_RECORD_BYTES`]; the size is checked before the blob is loaded.
-    fn read_blob(&self, id: ObjectId) -> Result<Option<Vec<u8>>, GitError> {
+    pub(crate) fn read_blob(&self, id: ObjectId) -> Result<Option<Vec<u8>>, GitError> {
         let gix_id = self.gix_id(id)?;
         let header = self
             .git
@@ -178,8 +206,8 @@ impl Tree for CommitTree<'_> {
         self.root
     }
 
-    fn list(&mut self, directory: &ObjectId) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
-        self.repository.list_tree(*directory)
+    fn list(&mut self, directory: &ObjectId) -> Result<Rc<[RawEntry<ObjectId>]>, GitError> {
+        Ok(self.repository.list_tree(*directory)?.into())
     }
 
     fn read(

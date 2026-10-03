@@ -1,34 +1,47 @@
 //! `board check`: every entry of the working tree, parsed and validated, with
 //! its references and pointers followed (docs/architecture.md, Records;
-//! Pointers: links and mounts).
+//! Pointers: links and mounts; The index). What depends only on content
+//! comes from the index; whether a reference or pointer resolves depends on
+//! the whole tree, so each check decides it again.
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::Path;
 
+use board_index::{Fallback, Index, IndexError, Resolved, Storage, ValidationFact, Writer};
 use board_model::{
-    CONFIG_TYPE, Classified, Code, Content, Kind, Location, LogicalPath, Object, POINTER_TYPE,
-    RecordType, Source, classify,
+    Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
+    RecordType, Role, Source, Stat, classify,
 };
-use board_tree::{Change, Entry, GitError, Repository, ResolveError, Status};
-use board_validate::{Reference, Schema};
-use serde_json::Value;
+use board_tree::{Entry, Repository, ResolveError, Status};
 
-use crate::board::{Board, Config};
-use crate::read::classify_entry;
+use crate::board::Board;
+use crate::index::{Indexed, RefreshError, Refreshed, schema_of, schema_path};
+use crate::mounts::{in_scope, join};
 
 /// One entry as `check` reports it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Checked {
+    /// The working tree, or the mounted commit the entry is in.
+    pub source: Source,
+    /// The path inside its source.
     pub path: String,
+    /// The display path from the root board.
     pub logical: Option<LogicalPath>,
     pub kind: Kind,
     pub status: Status,
     pub change: Change,
 }
 
-/// Every entry `check` looked at, sorted by path.
+/// Every entry `check` looked at: the root's sorted by path, then each
+/// mounted source's, by route. And why the index was in memory if it was.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CheckReport {
     pub entries: Vec<Checked>,
+    pub memory: Option<Fallback>,
+    /// The work the check did; `hashed` counts files hashed to resolve
+    /// references and pointers too.
+    pub work: Refreshed,
 }
 
 impl CheckReport {
@@ -41,155 +54,335 @@ impl CheckReport {
 }
 
 impl Board {
-    /// Checks every entry of the working tree, or only those at or beneath
-    /// `scope`. An entry's status is the first problem found: its path, then
-    /// parsing, then its schema, validation and references, or for a pointer
-    /// its target.
-    pub fn check(&self, scope: Option<&LogicalPath>) -> Result<CheckReport, CheckError> {
-        let source = Source::WorkingTree;
-        if let Some(scope) = scope {
-            self.repository()
-                .resolve(&source, scope)
-                .map_err(|source| CheckError::Scope { source })?;
-        }
-        let entries = self
-            .repository()
-            .walk(&source)
-            .map_err(|source| CheckError::Git { source })?;
-        let classified: Vec<Classified> = entries
-            .iter()
-            .map(|entry| classify_entry(self.repository(), &source, entry))
-            .collect();
-        let schemas = compile_schemas(&entries, &classified);
-        let checked = entries
-            .into_iter()
-            .zip(classified)
-            .filter(|(entry, _)| within(entry.logical.as_ref(), scope))
-            .map(|(entry, classified)| {
-                let status = match entry.status {
-                    Status::Ok => self.status(&entry, &classified, &schemas),
-                    degraded @ Status::Degraded(_) => degraded,
-                };
-                Checked {
-                    path: entry.path,
-                    logical: entry.logical,
-                    kind: classified.kind(),
-                    status,
-                    change: entry.change,
-                }
-            })
-            .collect();
-        Ok(CheckReport { entries: checked })
+    /// Checks the working tree against the index kept under `cache`, or one
+    /// in memory when there is none.
+    pub fn check(
+        &self,
+        scope: Option<&LogicalPath>,
+        cache: Option<&Path>,
+    ) -> Result<CheckReport, CheckError> {
+        let mut index = Index::open(cache, self.repository().path())?;
+        self.check_in(&mut index, scope)
     }
 
-    /// The status of an entry whose path is fine.
-    fn status(
+    /// Checks every entry of the working tree, or only those at or beneath
+    /// `scope`, refreshing `index` first. An entry's status is the first
+    /// problem found: its path, then parsing, then its schema, validation and
+    /// references, or for a pointer its target. The `entries` view of
+    /// `index` then shows exactly what was checked.
+    pub fn check_in(
+        &self,
+        index: &mut Index,
+        scope: Option<&LogicalPath>,
+    ) -> Result<CheckReport, CheckError> {
+        Ok(self.decide(index, scope)?.0)
+    }
+
+    /// Checks as [`Board::check_in`] does, and also returns every reference
+    /// each checked record makes and where it led.
+    pub(crate) fn decide(
+        &self,
+        index: &mut Index,
+        scope: Option<&LogicalPath>,
+    ) -> Result<(CheckReport, Vec<Referenced>), CheckError> {
+        if let Some(scope) = scope {
+            self.repository()
+                .resolve(&Source::WorkingTree, scope)
+                .map_err(|source| CheckError::Scope { source })?;
+        }
+        let writer = index.write()?;
+        let refresh = self.refresh(&writer)?;
+        let mut work = refresh.work;
+        let mounts = self.mounts(&writer, &refresh, &mut work)?;
+        let scopes = mounts.scopes(scope);
+        let stats: HashMap<&str, (Stat, ObjectId)> = refresh
+            .entries
+            .iter()
+            .filter_map(|entry| Some((entry.path.as_str(), (entry.stat?, entry.blob?))))
+            .collect();
+        // A file this refresh saw as it is now need not be hashed again.
+        let hashed = Cell::new(work.hashed);
+        let mut known = |path: &str, stat: &Stat| {
+            let blob = stats
+                .get(path)
+                .filter(|(seen, _)| seen == stat)
+                .map(|(_, blob)| *blob);
+            if blob.is_none() {
+                hashed.set(hashed.get() + 1);
+            }
+            blob
+        };
+        let mut resolver = self
+            .repository()
+            .resolver(&mut known)
+            .map_err(RefreshError::from)?;
+        let mut decided = Decided::default();
+        let root = Decide {
+            writer: &writer,
+            facts: &refresh.facts,
+            resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
+        };
+        for entry in &refresh.entries {
+            if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
+                continue;
+            }
+            let change = if refresh.head.get(&entry.path) == Some(&entry.blob) {
+                Change::Committed
+            } else {
+                Change::Uncommitted
+            };
+            decided.push(
+                &root,
+                &Source::WorkingTree,
+                entry,
+                entry.logical.clone(),
+                change,
+            )?;
+        }
+        drop(root);
+        for mounted in &mounts.sources {
+            let source = Source::Commit(mounted.commit);
+            let decide = Decide {
+                writer: &writer,
+                facts: &mounted.facts,
+                resolve: RefCell::new(Box::new(|path: &LogicalPath| {
+                    mounted.repository.resolve(&source, path)
+                })),
+            };
+            for entry in &mounted.entries {
+                if !in_scope(&scopes, &source, entry.logical.as_ref()) {
+                    continue;
+                }
+                let logical = entry
+                    .logical
+                    .as_ref()
+                    .and_then(|logical| join(&mounted.route, logical).parse().ok());
+                decided.push(&decide, &source, entry, logical, Change::Committed)?;
+            }
+        }
+        mounts.record(&writer, self.repository())?;
+        writer.resolve(&decided.resolved)?;
+        writer.commit()?;
+        let memory = match index.storage() {
+            Storage::Memory(fallback) => Some(*fallback),
+            Storage::File(_) => None,
+        };
+        let report = CheckReport {
+            entries: decided.checked,
+            memory,
+            work: Refreshed {
+                hashed: hashed.get(),
+                ..work
+            },
+        };
+        Ok((report, decided.references))
+    }
+}
+
+/// What a check decided: the report's entries and the rows of `resolved`,
+/// built together so they cannot disagree.
+#[derive(Default)]
+struct Decided {
+    checked: Vec<Checked>,
+    resolved: Vec<Resolved>,
+    references: Vec<Referenced>,
+}
+
+/// One reference a record makes, and where it led this run.
+#[derive(Clone, Debug)]
+pub(crate) struct Reached {
+    pub(crate) pointer: String,
+    pub(crate) target: LogicalPath,
+    /// Where it resolved, or `None` when it dangles.
+    pub(crate) location: Option<Location>,
+    pub(crate) code: Option<Code>,
+}
+
+/// A reference, with the record that makes it.
+#[derive(Clone, Debug)]
+pub(crate) struct Referenced {
+    pub(crate) source: Source,
+    pub(crate) path: String,
+    pub(crate) logical: Option<LogicalPath>,
+    pub(crate) reached: Reached,
+}
+
+impl Decided {
+    /// Decides `entry` of `source`, named `logical` from the root.
+    fn push(
+        &mut self,
+        decide: &Decide<'_>,
+        source: &Source,
+        entry: &Entry,
+        logical: Option<LogicalPath>,
+        change: Change,
+    ) -> Result<(), IndexError> {
+        let fact = decide.facts.get(&entry.path);
+        let role = Role::of(&entry.path);
+        let kind = match (role, fact) {
+            (None, _) => Kind::File,
+            (Some(_), Some(fact)) => fact.fact.kind,
+            (Some(_), None) => Kind::Json,
+        };
+        let code = match entry.status {
+            Status::Degraded(code) => Some(code),
+            // Only a path too long under its mount point fails here.
+            Status::Ok if logical.is_none() => Some(Code::PathMalformed),
+            Status::Ok => {
+                let mut reached = Vec::new();
+                let code = decide.code(entry, &mut reached, role, fact)?;
+                self.references
+                    .extend(reached.into_iter().map(|reached| Referenced {
+                        source: source.clone(),
+                        path: entry.path.clone(),
+                        logical: logical.clone(),
+                        reached,
+                    }));
+                code
+            }
+        };
+        let schema = fact
+            .and_then(schema_path)
+            .and_then(|path| schema_of(decide.facts, &path));
+        self.resolved.push(Resolved {
+            source: source.clone(),
+            path: entry.path.clone(),
+            logical: logical.clone(),
+            blob: entry.blob,
+            size: entry.size,
+            role,
+            schema,
+            kind,
+            code,
+            change,
+        });
+        self.checked.push(Checked {
+            source: source.clone(),
+            path: entry.path.clone(),
+            logical,
+            kind,
+            status: code.map_or(Status::Ok, Status::Degraded),
+            change,
+        });
+        Ok(())
+    }
+}
+
+/// Resolves a path in the source being checked.
+type Resolve<'a> = Box<dyn FnMut(&LogicalPath) -> Result<Location, ResolveError> + 'a>;
+
+/// What deciding the status of a source's entries reads.
+struct Decide<'a> {
+    writer: &'a Writer<'a>,
+    /// What the index holds about the source's entries, by physical path.
+    facts: &'a HashMap<String, Indexed>,
+    resolve: RefCell<Resolve<'a>>,
+}
+
+impl Decide<'_> {
+    /// The code of an entry whose path is fine.
+    fn code(
         &self,
         entry: &Entry,
-        classified: &Classified,
-        schemas: &HashMap<String, Result<Schema, Code>>,
-    ) -> Status {
-        let code = classified.code.or_else(|| match &classified.content {
-            Content::Schema { .. } => schemas.get(&entry.path)?.as_ref().err().copied(),
-            Content::Pointer { .. } => {
-                let logical = entry.logical.as_ref()?;
-                self.repository()
-                    .resolve(&Source::WorkingTree, logical)
-                    .err()
-                    .map(|error| error.code())
-            }
-            Content::Record { record_type, value } => {
-                self.record(record_type, value, schemas).err()
-            }
-            Content::Json { .. } | Content::File | Content::Unparsed(_) => None,
-        });
-        code.map_or(Status::Ok, Status::Degraded)
+        reached: &mut Vec<Reached>,
+        role: Option<Role>,
+        fact: Option<&Indexed>,
+    ) -> Result<Option<Code>, IndexError> {
+        if role.is_none() {
+            return Ok(None);
+        }
+        let Some(fact) = fact else {
+            return Ok(Some(Code::RepoUnreadable));
+        };
+        if let Some(code) = fact.fact.code {
+            return Ok(Some(code));
+        }
+        match fact.fact.kind {
+            Kind::Pointer => Ok(entry
+                .logical
+                .as_ref()
+                .and_then(|logical| self.resolve(logical).err())
+                .map(|error| error.code())),
+            Kind::Record => self.record(fact, reached),
+            Kind::Schema | Kind::Json | Kind::File => Ok(None),
+        }
     }
 
     /// Checks a record against its schema and its references.
     fn record(
         &self,
-        record_type: &RecordType,
-        value: &Value,
-        schemas: &HashMap<String, Result<Schema, Code>>,
-    ) -> Result<(), Code> {
-        if record_type.as_str() == CONFIG_TYPE {
-            return Config::from_value(value)
-                .map(|_| ())
-                .ok_or(Code::ConfigInvalid);
-        }
-        if record_type.is_board() {
-            return Ok(());
-        }
-        let schema = match schemas.get(&record_type.schema_path()) {
-            None => return Err(Code::RecordUnknownType),
-            Some(Err(_)) => return Err(Code::SchemaInvalid),
-            Some(Ok(schema)) => schema,
+        record: &Indexed,
+        reached: &mut Vec<Reached>,
+    ) -> Result<Option<Code>, IndexError> {
+        let Some(schema_path) = schema_path(record) else {
+            return Ok(None);
         };
-        schema.validate(value).map_err(|error| error.code())?;
-        schema
-            .references(value)
-            .iter()
-            .try_for_each(|reference| self.reference(reference))
-    }
-
-    /// Checks that a reference resolves to something it accepts.
-    fn reference(&self, reference: &Reference) -> Result<(), Code> {
-        let location = self
-            .repository()
-            .resolve(&Source::WorkingTree, &reference.path)
-            .map_err(|_| Code::RefDangling)?;
-        let Some(accepts) = &reference.accepts else {
-            return Ok(());
+        let Some(schema) = schema_of(self.facts, &schema_path) else {
+            return Ok(Some(match self.facts.get(&schema_path) {
+                Some(found) if found.role == Role::Schema => Code::SchemaInvalid,
+                _ => Code::RecordUnknownType,
+            }));
         };
-        match record_type(&location) {
-            Some(found) if accepts.contains(&found) => Ok(()),
-            _ => Err(Code::RefWrongType),
-        }
-    }
-}
-
-/// Whether an entry at `logical` is at or beneath `scope`.
-fn within(logical: Option<&LogicalPath>, scope: Option<&LogicalPath>) -> bool {
-    let Some(scope) = scope else {
-        return true;
-    };
-    let Some(logical) = logical else {
-        return false;
-    };
-    let mut segments = logical.segments();
-    scope
-        .segments()
-        .all(|segment| segments.next() == Some(segment))
-}
-
-/// Every schema in the board, compiled, by physical path.
-fn compile_schemas(
-    entries: &[Entry],
-    classified: &[Classified],
-) -> HashMap<String, Result<Schema, Code>> {
-    entries
-        .iter()
-        .zip(classified)
-        .filter(|(_, classified)| classified.kind() == Kind::Schema)
-        .map(|(entry, classified)| {
-            let compiled = match classified {
-                Classified {
-                    content: Content::Schema { value },
-                    code: None,
-                } => Schema::compile(value.clone()).map_err(|error| error.code()),
-                _ => Err(Code::SchemaInvalid),
+        let references = match self.writer.validation(record.blob, schema)? {
+            None => return Ok(Some(Code::RepoUnreadable)),
+            Some(ValidationFact::Invalid { code, .. }) => return Ok(Some(code)),
+            Some(ValidationFact::Valid(references)) => references,
+        };
+        // Every reference is followed, not just those before the first
+        // failure, so `refs` can report each one.
+        let mut first = None;
+        for reference in references {
+            let (location, code) = match self.resolve(&reference.target) {
+                Err(_) => (None, Some(Code::RefDangling)),
+                Ok(location) => {
+                    let code = match &reference.accepts {
+                        None => None,
+                        Some(accepts) => match self.record_type(&location)? {
+                            Some(found) if accepts.contains(&found) => None,
+                            _ => Some(Code::RefWrongType),
+                        },
+                    };
+                    (Some(location), code)
+                }
             };
-            (entry.path.clone(), compiled)
+            first = first.or(code);
+            reached.push(Reached {
+                pointer: reference.pointer,
+                target: reference.target,
+                location,
+                code,
+            });
+        }
+        Ok(first)
+    }
+
+    fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        (self.resolve.borrow_mut())(path)
+    }
+
+    /// The `$type` of the record at `location`: from the index when it
+    /// holds the blob, which is a fact about content wherever it is, or read
+    /// in its own board.
+    fn record_type(&self, location: &Location) -> Result<Option<RecordType>, IndexError> {
+        let Object::Blob(blob) = location.object else {
+            return Ok(None);
+        };
+        let Some(role) = Role::of(&location.path) else {
+            return Ok(None);
+        };
+        let Some(fact) = self.writer.blob(blob, role)? else {
+            return Ok(read_type(location, blob));
+        };
+        Ok(match (fact.code, fact.kind) {
+            (Some(_), _) => None,
+            (None, Kind::Pointer) => POINTER_TYPE.parse().ok(),
+            (None, _) => fact.record_type,
         })
-        .collect()
+    }
 }
 
 /// The `$type` of the record at `location`, read in its own board.
-fn record_type(location: &Location) -> Option<RecordType> {
-    let Object::Blob(blob) = location.object else {
-        return None;
-    };
+fn read_type(location: &Location, blob: ObjectId) -> Option<RecordType> {
     let repository = Repository::open(&location.board.repository).ok()?;
     let bytes = repository
         .read(&location.board.source, &location.path, blob)
@@ -213,14 +406,26 @@ pub enum CheckError {
     #[error("cannot check {source}")]
     Scope { source: ResolveError },
     #[error(transparent)]
-    Git { source: GitError },
+    Refresh {
+        #[from]
+        source: RefreshError,
+    },
+    #[error(transparent)]
+    Index {
+        #[from]
+        source: IndexError,
+    },
 }
 
 impl CheckError {
     pub fn code(&self) -> Code {
         match self {
             Self::Scope { source } => source.code(),
-            Self::Git { source } => source.code(),
+            Self::Refresh { source } => source.code(),
+            Self::Index { source } => source.code(),
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

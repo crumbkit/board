@@ -217,7 +217,7 @@ impl<T: Tree> Tree for Counting<T> {
     fn list(
         &mut self,
         directory: &T::Directory,
-    ) -> Result<Vec<RawEntry<T::Directory>>, crate::GitError> {
+    ) -> Result<std::rc::Rc<[RawEntry<T::Directory>]>, crate::GitError> {
         self.inner.list(directory)
     }
 
@@ -242,7 +242,9 @@ fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
             inner: repository.commit_tree(commit).unwrap(),
             reads: 0,
         };
-        let location = repository.resolve_in(&mut tree, &path(start)).unwrap();
+        let location = repository
+            .resolve_in(&mut tree, &path(start), true)
+            .unwrap();
         assert_eq!(location.pointers.len(), hops);
         assert_eq!(tree.reads, hops + 1, "{hops} hops");
     }
@@ -257,7 +259,7 @@ fn resolving_a_directory_path_reads_no_blob() {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
-    repository.resolve_in(&mut tree, &path("/a")).unwrap();
+    repository.resolve_in(&mut tree, &path("/a"), true).unwrap();
     assert_eq!(tree.reads, 0);
 }
 

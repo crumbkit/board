@@ -1,8 +1,10 @@
 //! Resolution and walking over real repositories built by the scenario
 //! builder (docs/architecture.md, Testing).
 
+mod commits;
 mod links;
 mod mounts;
+mod trees;
 mod working_tree;
 
 use std::collections::HashSet;

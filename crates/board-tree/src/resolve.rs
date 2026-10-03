@@ -10,6 +10,7 @@ use board_model::{
 use crate::address::{self, Named};
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree};
+use crate::worktree::{Known, WorkingTree};
 
 /// The most pointers one resolution follows, as POSIX allows symlinks.
 pub const MAX_HOPS: usize = 40;
@@ -19,21 +20,39 @@ impl Repository {
     /// including one at the end.
     pub fn resolve(&self, source: &Source, path: &LogicalPath) -> Result<Location, ResolveError> {
         match source {
-            Source::Commit(commit) => self.resolve_in(&mut self.commit_tree(*commit)?, path),
-            Source::WorkingTree => self.resolve_in(&mut self.working_tree()?, path),
+            Source::Commit(commit) => self.resolve_in(&mut self.commit_tree(*commit)?, path, true),
+            Source::WorkingTree => self.resolver(&mut |_, _| None)?.resolve(path),
         }
+    }
+
+    /// Resolves `path` in the working tree as [`Repository::resolve`] does,
+    /// except that a pointer at the end is not followed, as `lstat` does
+    /// not follow a symlink.
+    pub fn resolve_pointer(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        self.resolve_in(&mut self.working_tree(&mut |_, _| None)?, path, false)
+    }
+
+    /// A resolver for many paths in one snapshot of the working tree, which
+    /// hashes a file only when `known` does not already know its blob.
+    pub fn resolver<'k>(&self, known: Known<'k>) -> Result<Resolver<'_, 'k>, GitError> {
+        Ok(Resolver {
+            repository: self,
+            tree: self.working_tree(known)?,
+        })
     }
 
     pub(crate) fn resolve_in<T: Tree>(
         &self,
         tree: &mut T,
         path: &LogicalPath,
+        follow_last: bool,
     ) -> Result<Location, ResolveError> {
         let mut trail = Trail {
             path: path.clone(),
             pointers: Vec::new(),
             visited: HashSet::new(),
             link: None,
+            follow_last,
         };
         let segments = path.segments().map(str::to_owned).collect();
         self.follow(tree, segments, 0, &mut trail)
@@ -91,6 +110,9 @@ impl Repository {
                 }
                 Kind::File(id) => {
                     object = Object::Blob(*id);
+                    if remaining.is_empty() && !trail.follow_last {
+                        continue;
+                    }
                     let Some(next) = pointer(tree, &current, entry, path)? else {
                         continue;
                     };
@@ -142,6 +164,58 @@ impl Repository {
         })
     }
 
+    /// The repository `mount` names, read against this one, or its home for
+    /// `~/`.
+    fn mounted_repository(&self, mount: &Mount) -> Result<Repository, MountMissing> {
+        let location = match mount.repo.strip_prefix("~/") {
+            Some(rest) => self.home().ok_or(MountMissing::Repo)?.join(rest),
+            None => self.path().join(&mount.repo),
+        };
+        let mut mounted = Repository::open(&location).map_err(|_| MountMissing::Repo)?;
+        if let Some(home) = self.home() {
+            mounted = mounted.with_home(home.to_path_buf());
+        }
+        Ok(mounted)
+    }
+
+    /// The repository `mount` names and the root tree of its commit.
+    fn open_mount(&self, mount: &Mount) -> Result<(Repository, ObjectId), MountMissing> {
+        let mounted = self.mounted_repository(mount)?;
+        let root = mounted
+            .commit_tree(mount.commit)
+            .map_err(|_| MountMissing::Commit)?
+            .root();
+        Ok((mounted, root))
+    }
+
+    /// The commit the mounted repository's `follow` ref names now. A
+    /// missing repository is `mount::repo_missing`; a ref that is missing,
+    /// not a valid name, or not peeled to a commit is `mount::follow_missing`.
+    pub fn followed(&self, mount: &Mount) -> Result<ObjectId, Code> {
+        let mounted = self
+            .mounted_repository(mount)
+            .map_err(|_| Code::MountRepoMissing)?;
+        let mut reference = mounted
+            .git()
+            .try_find_reference(mount.follow.as_str())
+            .ok()
+            .flatten()
+            .ok_or(Code::MountFollowMissing)?;
+        let commit = reference
+            .peel_to_commit()
+            .map_err(|_| Code::MountFollowMissing)?;
+        Ok(crate::git::model_id(&commit.id))
+    }
+
+    /// The repository `mount` names and the root tree of its commit, or the
+    /// code that says why it cannot be read.
+    pub fn mounted(&self, mount: &Mount) -> Result<(Repository, ObjectId), Code> {
+        self.open_mount(mount).map_err(|missing| match missing {
+            MountMissing::Repo => Code::MountRepoMissing,
+            MountMissing::Commit => Code::MountCommitMissing,
+        })
+    }
+
     /// Continues with `remaining` at the root of the tree `mount` names.
     fn enter(
         &self,
@@ -151,18 +225,16 @@ impl Repository {
         trail: &mut Trail,
     ) -> Result<Location, ResolveError> {
         let path = trail.path.clone();
-        let repo_missing = || ResolveError::RepoMissing {
-            path: path.clone(),
-            repo: mount.repo.clone(),
-        };
-        let location = match mount.repo.strip_prefix("~/") {
-            Some(rest) => self.home().ok_or_else(repo_missing)?.join(rest),
-            None => self.path().join(&mount.repo),
-        };
-        let mut mounted = Repository::open(&location).map_err(|_| repo_missing())?;
-        if let Some(home) = self.home() {
-            mounted = mounted.with_home(home.to_path_buf());
-        }
+        let (mounted, _) = self.open_mount(mount).map_err(|missing| match missing {
+            MountMissing::Repo => ResolveError::RepoMissing {
+                path: path.clone(),
+                repo: mount.repo.clone(),
+            },
+            MountMissing::Commit => ResolveError::CommitMissing {
+                path: path.clone(),
+                commit: mount.commit,
+            },
+        })?;
         let mut tree =
             mounted
                 .commit_tree(mount.commit)
@@ -184,6 +256,35 @@ impl Repository {
     }
 }
 
+/// Resolves paths in one snapshot of the working tree: each directory is
+/// listed once, however many paths pass through it.
+pub struct Resolver<'r, 'k> {
+    repository: &'r Repository,
+    tree: WorkingTree<'r, 'k>,
+}
+
+impl std::fmt::Debug for Resolver<'_, '_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Resolver")
+            .field("repository", &self.repository.path())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Resolver<'_, '_> {
+    /// Resolves `path` as [`Repository::resolve`] does in the working tree.
+    pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        self.repository.resolve_in(&mut self.tree, path, true)
+    }
+}
+
+/// What a mount names that cannot be read.
+enum MountMissing {
+    Repo,
+    Commit,
+}
+
 /// What one resolution carries across links and mounts.
 struct Trail {
     /// The path being resolved, for errors.
@@ -193,6 +294,8 @@ struct Trail {
     visited: HashSet<(Board, VecDeque<String>)>,
     /// The physical path of the last link followed.
     link: Option<String>,
+    /// Whether a pointer at the end is followed.
+    follow_last: bool,
 }
 
 /// The entry `segment` names in `entries`, the listing of `directory`, or
