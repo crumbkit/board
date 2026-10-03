@@ -3,7 +3,7 @@
 
 use std::error::Error;
 use std::fs::{self, FileType};
-use std::io::{self, BufReader, Read};
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
@@ -56,12 +56,9 @@ impl Repository {
 impl WorkingTree<'_> {
     /// What git sees at `relative`, or `None` when git does not see it: an
     /// untracked path that is ignored, or something other than a file,
-    /// directory or symlink. A path whose type, ignore rules or contents
-    /// cannot be read is `Unreadable`.
-    fn kind(&mut self, relative: &Path, file_type: io::Result<FileType>) -> Option<Kind<PathBuf>> {
-        let Ok(file_type) = file_type else {
-            return Some(Kind::Unreadable);
-        };
+    /// directory or symlink. A path whose ignore rules or contents cannot be
+    /// read is `Unreadable`.
+    fn kind(&mut self, relative: &Path, file_type: FileType) -> Option<Kind<PathBuf>> {
         let key = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative));
         let indexed = self.index.entry_by_path(key.as_ref());
         let tracked = indexed.is_some()
@@ -146,7 +143,11 @@ impl Tree for WorkingTree<'_> {
             if directory.as_os_str().is_empty() && name == ".git" {
                 continue;
             }
-            if let Some(kind) = self.kind(&directory.join(&name), item.file_type()) {
+            let kind = match item.file_type() {
+                Ok(file_type) => self.kind(&directory.join(&name), file_type),
+                Err(_) => Some(Kind::Unreadable),
+            };
+            if let Some(kind) = kind {
                 entries.push(RawEntry {
                     name: gix::path::into_bstr(Path::new(&name)).to_vec(),
                     kind,
