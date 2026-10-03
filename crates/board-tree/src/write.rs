@@ -326,6 +326,19 @@ impl Repository {
         if !matches!(git.committer(), Some(Ok(_))) || !matches!(git.author(), Some(Ok(_))) {
             return Err(WriteError::NoIdentity);
         }
+        // As `git commit <paths>`, which refuses a partial commit while an
+        // operation that would give the commit more parents is under way.
+        for (marker, operation) in [
+            ("MERGE_HEAD", "merge"),
+            ("CHERRY_PICK_HEAD", "cherry-pick"),
+            ("REVERT_HEAD", "revert"),
+            ("rebase-merge", "rebase"),
+            ("rebase-apply", "rebase or am"),
+        ] {
+            if self.git_dir().join(marker).exists() {
+                return Err(WriteError::InProgress { operation });
+            }
+        }
         let index_lock = self.git_dir().join("index.lock");
         match OpenOptions::new()
             .write(true)
@@ -423,8 +436,16 @@ impl Repository {
                 )?,
                 deref: true,
             };
-        if self.git().edit_reference(edit).is_err() {
-            return Err(WriteError::HeadMoved);
+        if let Err(error) = self.git().edit_reference(edit) {
+            use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
+            if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
+                || error.downcast_any_ref::<MustNotExist>().is_some()
+            {
+                return Err(WriteError::HeadMoved);
+            }
+            return Err(WriteError::Uncommitted {
+                source: error.into(),
+            });
         }
         let index_path = self.git_dir().join("index");
         let written = OpenOptions::new()
@@ -439,8 +460,8 @@ impl Repository {
                 file.sync_all()
             })
             .and_then(|()| fs::rename(&staged.index_lock, &index_path));
-        written.map_err(|source| WriteError::Io {
-            path: index_path,
+        written.map_err(|source| WriteError::IndexNotUpdated {
+            commit: staged.commit,
             source,
         })?;
         staged.finished = true;
@@ -534,6 +555,21 @@ pub enum WriteError {
     NoIdentity,
     #[error("HEAD moved while the put ran; its files are written but not committed")]
     HeadMoved,
+    #[error("HEAD could not be moved, so the files are written but not committed: {source}")]
+    Uncommitted {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error(
+        "committed {commit}, but git's index was not updated, so git status shows the written files as changed: {source}"
+    )]
+    IndexNotUpdated {
+        commit: ObjectId,
+        #[source]
+        source: io::Error,
+    },
+    #[error("git is in the middle of a {operation}; finish or abort it before a put commits")]
+    InProgress { operation: &'static str },
     #[error("the commit cannot be made")]
     Commit {
         #[source]
@@ -555,9 +591,13 @@ impl WriteError {
     pub fn code(&self) -> Code {
         match self {
             Self::Refused { code, .. } => *code,
-            Self::Locked { .. } => Code::PutLocked,
+            Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
             Self::Read { .. } => Code::RepoUnreadable,
-            Self::Io { .. } | Self::Unsynced { .. } | Self::Commit { .. } => Code::PutFailed,
+            Self::Io { .. }
+            | Self::Unsynced { .. }
+            | Self::Commit { .. }
+            | Self::Uncommitted { .. }
+            | Self::IndexNotUpdated { .. } => Code::PutFailed,
             Self::NoIdentity => Code::PutNoIdentity,
             Self::HeadMoved => Code::PutHeadMoved,
             Self::Git(error) => error.code(),
