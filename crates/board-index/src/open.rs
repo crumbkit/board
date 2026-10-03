@@ -198,12 +198,18 @@ pub enum IndexError {
     },
     #[error("a new index in memory reports another format")]
     Foreign,
+    #[error("the query cannot run: {source}")]
+    Query {
+        #[source]
+        source: rusqlite::Error,
+    },
 }
 
 impl IndexError {
     pub fn code(&self) -> Code {
         match self {
             Self::Sql { .. } | Self::Foreign => Code::IndexFailed,
+            Self::Query { .. } => Code::QueryInvalid,
         }
     }
 }

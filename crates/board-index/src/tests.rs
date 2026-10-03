@@ -205,3 +205,51 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
         .unwrap();
     assert_eq!(accepts, r#"["test/person/v1"]"#, "agents read it as JSON");
 }
+
+#[test]
+fn a_query_cannot_write_and_leaves_the_index_writable() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = filled(cache.path());
+    let refused = index.query("DELETE FROM blobs", 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let admitted = index.query("SELECT count(*) AS n FROM blobs", 10).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
+    assert!(
+        has_fact(&mut index),
+        "the write lock is still there to take"
+    );
+    let writer = index.write().unwrap();
+    writer.put_blob(blob(2), Role::Json, &record()).unwrap();
+    writer.commit().unwrap();
+}
+
+#[test]
+fn a_failure_of_the_database_is_the_indexs_and_any_other_is_the_querys() {
+    let failure = |code| rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None);
+    for code in [
+        rusqlite::ffi::SQLITE_BUSY,
+        rusqlite::ffi::SQLITE_LOCKED,
+        rusqlite::ffi::SQLITE_IOERR,
+        rusqlite::ffi::SQLITE_CORRUPT,
+        rusqlite::ffi::SQLITE_NOTADB,
+        rusqlite::ffi::SQLITE_NOMEM,
+        rusqlite::ffi::SQLITE_CANTOPEN,
+    ] {
+        assert_eq!(
+            crate::query::blame(failure(code)).code(),
+            Code::IndexFailed,
+            "{code}"
+        );
+    }
+    for code in [rusqlite::ffi::SQLITE_ERROR, rusqlite::ffi::SQLITE_READONLY] {
+        assert_eq!(
+            crate::query::blame(failure(code)).code(),
+            Code::QueryInvalid,
+            "{code}"
+        );
+    }
+    assert_eq!(
+        crate::query::blame(rusqlite::Error::MultipleStatement).code(),
+        Code::QueryInvalid
+    );
+}

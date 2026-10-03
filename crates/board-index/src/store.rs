@@ -82,6 +82,8 @@ pub struct Resolved {
     pub blob: Option<ObjectId>,
     pub size: Option<u64>,
     pub role: Option<Role>,
+    /// The schema blob a record was checked against.
+    pub schema: Option<ObjectId>,
     pub kind: Kind,
     pub code: Option<Code>,
     pub change: Change,
@@ -106,7 +108,9 @@ impl Writer<'_> {
     pub fn blob(&self, blob: ObjectId, role: Role) -> Result<Option<BlobFact>, IndexError> {
         let row: Option<(String, Option<String>, Option<String>)> = self
             .transaction
-            .prepare_cached("SELECT kind, type, code FROM blobs WHERE blob = ?1 AND role = ?2")?
+            .prepare_cached(
+                "SELECT kind, type, code FROM main.blobs WHERE blob = ?1 AND role = ?2",
+            )?
             .query_row(params![blob.to_string(), role.as_str()], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
@@ -129,7 +133,7 @@ impl Writer<'_> {
     pub fn put_blob(&self, blob: ObjectId, role: Role, fact: &BlobFact) -> Result<(), IndexError> {
         self.transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO blobs (blob, role, kind, type, code)
+                "INSERT OR REPLACE INTO main.blobs (blob, role, kind, type, code)
              VALUES (?1, ?2, ?3, ?4, ?5)",
             )?
             .execute(params![
@@ -153,7 +157,7 @@ impl Writer<'_> {
         let row: Option<(Option<String>, Option<String>)> = self
             .transaction
             .prepare_cached(
-                "SELECT code, pointer FROM validations WHERE record = ?1 AND schema = ?2",
+                "SELECT code, pointer FROM main.validations WHERE record = ?1 AND schema = ?2",
             )?
             .query_row(keys, |row| Ok((row.get(0)?, row.get(1)?)))
             .optional()?;
@@ -167,7 +171,7 @@ impl Writer<'_> {
             }));
         }
         let mut statement = self.transaction.prepare_cached(
-            "SELECT pointer, target, accepts FROM refs
+            "SELECT pointer, target, accepts FROM main.refs
              WHERE record = ?1 AND schema = ?2 ORDER BY ordinal",
         )?;
         let references = statement
@@ -203,7 +207,7 @@ impl Writer<'_> {
         };
         self.transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO validations (record, schema, code, pointer)
+                "INSERT OR REPLACE INTO main.validations (record, schema, code, pointer)
              VALUES (?1, ?2, ?3, ?4)",
             )?
             .execute(params![record, schema, code, pointer])?;
@@ -215,7 +219,7 @@ impl Writer<'_> {
                 serde_json::Value::from(types.iter().map(RecordType::as_str).collect::<Vec<_>>())
                     .to_string()
             });
-            self.transaction.prepare_cached("INSERT OR REPLACE INTO refs (record, schema, ordinal, pointer, target, accepts)
+            self.transaction.prepare_cached("INSERT OR REPLACE INTO main.refs (record, schema, ordinal, pointer, target, accepts)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
             .execute(params![
                     record,
@@ -234,7 +238,7 @@ impl Writer<'_> {
     pub fn refreshed_ns(&self) -> Result<Option<i64>, IndexError> {
         let value: Option<String> = self
             .transaction
-            .prepare_cached("SELECT value FROM state WHERE key = 'refreshed_ns'")?
+            .prepare_cached("SELECT value FROM main.state WHERE key = 'refreshed_ns'")?
             .query_row([], |row| row.get(0))
             .optional()?;
         Ok(value.and_then(|value| value.parse().ok()))
@@ -243,7 +247,7 @@ impl Writer<'_> {
     pub fn set_refreshed_ns(&self, started_ns: i64) -> Result<(), IndexError> {
         self.transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO state (key, value) VALUES ('refreshed_ns', ?1)",
+                "INSERT OR REPLACE INTO main.state (key, value) VALUES ('refreshed_ns', ?1)",
             )?
             .execute([started_ns.to_string()])?;
         Ok(())
@@ -253,7 +257,7 @@ impl Writer<'_> {
     pub fn worktree(&self) -> Result<HashMap<String, WorktreeRow>, IndexError> {
         let mut statement = self.transaction.prepare_cached(
             "SELECT path, logical, code, blob, size, modified_ns, changed_ns, inode, mode
-             FROM worktree",
+             FROM main.worktree",
         )?;
         let rows = statement.query_map([], |row| {
             let stat = match (
@@ -292,7 +296,7 @@ impl Writer<'_> {
         let stat = row.stat.as_ref();
         self.transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO worktree
+                "INSERT OR REPLACE INTO main.worktree
              (path, logical, code, blob, size, modified_ns, changed_ns, inode, mode)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             )?
@@ -312,7 +316,7 @@ impl Writer<'_> {
 
     pub fn delete_worktree(&self, path: &str) -> Result<(), IndexError> {
         self.transaction
-            .prepare_cached("DELETE FROM worktree WHERE path = ?1")?
+            .prepare_cached("DELETE FROM main.worktree WHERE path = ?1")?
             .execute([path])?;
         Ok(())
     }
@@ -320,7 +324,7 @@ impl Writer<'_> {
     pub fn has_tree(&self, tree: ObjectId) -> Result<bool, IndexError> {
         Ok(self
             .transaction
-            .prepare_cached("SELECT 1 FROM trees WHERE tree = ?1 LIMIT 1")?
+            .prepare_cached("SELECT 1 FROM main.trees WHERE tree = ?1 LIMIT 1")?
             .query_row([tree.to_string()], |_| Ok(()))
             .optional()?
             .is_some())
@@ -331,7 +335,7 @@ impl Writer<'_> {
         for row in &tree.rows {
             self.transaction
                 .prepare_cached(
-                    "INSERT OR REPLACE INTO trees (tree, name, mode, object, size, segment, code)
+                    "INSERT OR REPLACE INTO main.trees (tree, name, mode, object, size, segment, code)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 )?
                 .execute(params![
@@ -350,7 +354,7 @@ impl Writer<'_> {
     /// The rows of `tree`, or `None` when the index does not hold it.
     pub fn tree(&self, tree: ObjectId) -> Result<Option<Vec<TreeRow>>, IndexError> {
         let mut statement = self.transaction.prepare_cached(
-            "SELECT name, mode, object, size, segment, code FROM trees WHERE tree = ?1",
+            "SELECT name, mode, object, size, segment, code FROM main.trees WHERE tree = ?1",
         )?;
         let rows = statement
             .query_map([tree.to_string()], |row| {
@@ -385,11 +389,11 @@ impl Writer<'_> {
         mounts: &[MountRow],
     ) -> Result<(), IndexError> {
         self.transaction
-            .execute_batch("DELETE FROM sources; DELETE FROM mounts;")?;
+            .execute_batch("DELETE FROM main.sources; DELETE FROM main.mounts;")?;
         for (source, tree, repository) in sources {
             self.transaction
                 .prepare_cached(
-                    "INSERT OR REPLACE INTO sources (source, tree, repository) VALUES (?1, ?2, ?3)",
+                    "INSERT OR REPLACE INTO main.sources (source, tree, repository) VALUES (?1, ?2, ?3)",
                 )?
                 .execute(params![
                     source_name(source),
@@ -399,7 +403,7 @@ impl Writer<'_> {
         }
         for mount in mounts {
             self.transaction
-                .prepare_cached("INSERT OR REPLACE INTO mounts (source, path, target, code) VALUES (?1, ?2, ?3, ?4)")?
+                .prepare_cached("INSERT OR REPLACE INTO main.mounts (source, path, target, code) VALUES (?1, ?2, ?3, ?4)")?
                 .execute(params![
                     source_name(&mount.source),
                     mount.path,
@@ -415,10 +419,10 @@ impl Writer<'_> {
     pub fn files(&self, root: ObjectId) -> Result<HashMap<String, Option<ObjectId>>, IndexError> {
         let mut statement = self.transaction.prepare_cached(
             "WITH RECURSIVE walk (path, mode, object) AS (
-                 SELECT name, mode, object FROM trees WHERE tree = ?1
+                 SELECT name, mode, object FROM main.trees WHERE tree = ?1
                  UNION ALL
                  SELECT walk.path || '/' || trees.name, trees.mode, trees.object
-                 FROM walk JOIN trees ON trees.tree = walk.object
+                 FROM walk JOIN main.trees AS trees ON trees.tree = walk.object
                  WHERE walk.mode = 16384
              )
              SELECT path, mode, object FROM walk WHERE mode <> 16384",
@@ -445,8 +449,9 @@ impl Writer<'_> {
     pub fn resolve(&self, entries: &[Resolved]) -> Result<(), IndexError> {
         self.transaction.execute_batch(RESOLVED)?;
         let mut statement = self.transaction.prepare_cached(
-            "INSERT INTO resolved (source, path, logical, blob, size, role, kind, code, change)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO temp.resolved
+             (source, path, logical, blob, size, role, schema, kind, code, change)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )?;
         for entry in entries {
             statement.execute(params![
@@ -456,6 +461,7 @@ impl Writer<'_> {
                 entry.blob.map(|blob| blob.to_string()),
                 entry.size.map(u64::cast_signed),
                 entry.role.map(Role::as_str),
+                entry.schema.map(|schema| schema.to_string()),
                 entry.kind.as_str(),
                 entry.code.map(Code::as_str),
                 entry.change.as_str(),

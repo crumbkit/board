@@ -206,7 +206,8 @@ A run whose index is in memory says so in one line on stderr.
 
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
-`type`, `status`, `code` and `change`. Tables, views and columns are an
+`type`, `status`, `code`, `change`, `role` and `schema` (the schema blob a
+record was checked against). Tables, views and columns are an
 interface agents write SQL against; changing one changes the index format.
 A commit is one source however many places mount it, so its entries appear
 once, with `logical` through the first route: the shortest display path, then
@@ -232,8 +233,17 @@ use the index; `get` and `ls` resolve directly.
 `board query '<sql>'` runs one read-only statement against the index (opened
 with `query_only`). Each enabled plugin's database is attached read-only as
 `p_<name>`. Rows return as JSON, at most 500 unless `--limit` (at most 10,000)
-says otherwise, with `truncated` set when rows were left out. There is no query
-language beyond SQL: an agent writes SQL.
+says otherwise, with `truncated` set when rows were left out. The report is
+`columns` and `rows`, each row an array in column order, since a join can repeat
+a column name. SQL that does not parse, would write, or holds more than one
+statement is `board::query::invalid`. A query sees each fact table filtered to
+what the current tree reaches, so it answers the same warm as cold;
+`main.<table>` is the whole cache, which keeps facts for other branches. There
+is no query language beyond SQL: an agent writes SQL.
+
+`board refs <path>` reports each reference the record makes, resolved now with
+its status, and each record whose references reach it. A reference reaches it
+when it resolves to its identity, whatever path it names.
 
 ## Writes
 
@@ -316,6 +326,7 @@ after release. The v0 set:
 | `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
+| `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `put` | `stale`, `locked`, `through_mount`, `invalid` |
 | `plugin` | see docs/plugins.md |
 

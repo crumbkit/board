@@ -1,0 +1,130 @@
+//! `board refs`: the references a record makes and the records that make
+//! references to it (docs/architecture.md, Commands). Both come from what a
+//! check decides, so each reference is resolved once, as the tree is now.
+
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use board_index::{Fallback, Index};
+use board_model::{Code, Location, LogicalPath, Source};
+use board_tree::Status;
+
+use crate::board::Board;
+use crate::check::{CheckError, Referenced};
+use crate::read::{ReadError, display};
+
+/// One reference the record makes.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Outgoing {
+    /// Where it is in the record, as a JSON pointer.
+    pub pointer: String,
+    pub target: LogicalPath,
+    /// Where it resolved, or `None` when it dangles.
+    pub location: Option<Location>,
+    pub status: Status,
+}
+
+/// One record that makes references to the object, however it names it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Incoming {
+    pub source: Source,
+    pub path: String,
+    pub logical: Option<LogicalPath>,
+    /// The JSON pointers in that record whose references reach the object.
+    pub pointers: Vec<String>,
+}
+
+/// References from and to the object at one path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RefsReport {
+    pub location: Location,
+    pub display: LogicalPath,
+    pub from: Vec<Outgoing>,
+    pub to: Vec<Incoming>,
+    pub memory: Option<Fallback>,
+}
+
+impl Board {
+    /// Resolves `path`, then checks the board against the index kept under
+    /// `cache` and reports the references the object there makes and those
+    /// that reach it. Two references reach it when they resolve to its
+    /// identity, its board and physical path, whatever path they name.
+    pub fn refs(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<RefsReport, RefsError> {
+        let location = self
+            .repository()
+            .resolve(&Source::WorkingTree, path)
+            .map_err(|source| RefsError::Read {
+                source: ReadError::Resolve { source },
+            })?;
+        let mut index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
+        let (checked, references) = self.decide(&mut index, None)?;
+        let same = |source: &Source, physical: &str| {
+            *source == location.board.source && physical == location.path
+        };
+        let from = references
+            .iter()
+            .filter(|referenced| same(&referenced.source, &referenced.path))
+            .map(|referenced| Outgoing {
+                pointer: referenced.reached.pointer.clone(),
+                target: referenced.reached.target.clone(),
+                location: referenced.reached.location.clone(),
+                status: referenced.reached.code.map_or(Status::Ok, Status::Degraded),
+            })
+            .collect();
+        let mut to: BTreeMap<(String, String), Incoming> = BTreeMap::new();
+        for referenced in references.iter().filter(|referenced| {
+            referenced
+                .reached
+                .location
+                .as_ref()
+                .is_some_and(|reached| same(&reached.board.source, &reached.path))
+        }) {
+            let Referenced {
+                source,
+                path,
+                logical,
+                reached,
+            } = referenced;
+            to.entry((board_index::source_name(source), path.clone()))
+                .or_insert_with(|| Incoming {
+                    source: source.clone(),
+                    path: path.clone(),
+                    logical: logical.clone(),
+                    pointers: Vec::new(),
+                })
+                .pointers
+                .push(reached.pointer.clone());
+        }
+        Ok(RefsReport {
+            display: display(&location, path),
+            location,
+            from,
+            to: to.into_values().collect(),
+            memory: checked.memory,
+        })
+    }
+}
+
+/// A `refs` that could not run.
+#[derive(Debug, thiserror::Error)]
+pub enum RefsError {
+    #[error(transparent)]
+    Read { source: ReadError },
+    #[error(transparent)]
+    Check {
+        #[from]
+        source: CheckError,
+    },
+}
+
+impl RefsError {
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Read { source } => source.code(),
+            Self::Check { source } => source.code(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;

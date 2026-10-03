@@ -75,6 +75,16 @@ impl Board {
         index: &mut Index,
         scope: Option<&LogicalPath>,
     ) -> Result<CheckReport, CheckError> {
+        Ok(self.decide(index, scope)?.0)
+    }
+
+    /// Checks as [`Board::check_in`] does, and also returns every reference
+    /// each checked record makes and where it led.
+    pub(crate) fn decide(
+        &self,
+        index: &mut Index,
+        scope: Option<&LogicalPath>,
+    ) -> Result<(CheckReport, Vec<Referenced>), CheckError> {
         if let Some(scope) = scope {
             self.repository()
                 .resolve(&Source::WorkingTree, scope)
@@ -157,14 +167,15 @@ impl Board {
             Storage::Memory(fallback) => Some(*fallback),
             Storage::File(_) => None,
         };
-        Ok(CheckReport {
+        let report = CheckReport {
             entries: decided.checked,
             memory,
             work: Refreshed {
                 hashed: hashed.get(),
                 ..work
             },
-        })
+        };
+        Ok((report, decided.references))
     }
 }
 
@@ -174,6 +185,26 @@ impl Board {
 struct Decided {
     checked: Vec<Checked>,
     resolved: Vec<Resolved>,
+    references: Vec<Referenced>,
+}
+
+/// One reference a record makes, and where it led this run.
+#[derive(Clone, Debug)]
+pub(crate) struct Reached {
+    pub(crate) pointer: String,
+    pub(crate) target: LogicalPath,
+    /// Where it resolved, or `None` when it dangles.
+    pub(crate) location: Option<Location>,
+    pub(crate) code: Option<Code>,
+}
+
+/// A reference, with the record that makes it.
+#[derive(Clone, Debug)]
+pub(crate) struct Referenced {
+    pub(crate) source: Source,
+    pub(crate) path: String,
+    pub(crate) logical: Option<LogicalPath>,
+    pub(crate) reached: Reached,
 }
 
 impl Decided {
@@ -197,8 +228,22 @@ impl Decided {
             Status::Degraded(code) => Some(code),
             // Only a path too long under its mount point fails here.
             Status::Ok if logical.is_none() => Some(Code::PathMalformed),
-            Status::Ok => decide.code(entry, role, fact)?,
+            Status::Ok => {
+                let mut reached = Vec::new();
+                let code = decide.code(entry, &mut reached, role, fact)?;
+                self.references
+                    .extend(reached.into_iter().map(|reached| Referenced {
+                        source: source.clone(),
+                        path: entry.path.clone(),
+                        logical: logical.clone(),
+                        reached,
+                    }));
+                code
+            }
         };
+        let schema = fact
+            .and_then(schema_path)
+            .and_then(|path| schema_of(decide.facts, &path));
         self.resolved.push(Resolved {
             source: source.clone(),
             path: entry.path.clone(),
@@ -206,6 +251,7 @@ impl Decided {
             blob: entry.blob,
             size: entry.size,
             role,
+            schema,
             kind,
             code,
             change,
@@ -238,6 +284,7 @@ impl Decide<'_> {
     fn code(
         &self,
         entry: &Entry,
+        reached: &mut Vec<Reached>,
         role: Option<Role>,
         fact: Option<&Indexed>,
     ) -> Result<Option<Code>, IndexError> {
@@ -256,13 +303,17 @@ impl Decide<'_> {
                 .as_ref()
                 .and_then(|logical| self.resolve(logical).err())
                 .map(|error| error.code())),
-            Kind::Record => self.record(fact),
+            Kind::Record => self.record(fact, reached),
             Kind::Schema | Kind::Json | Kind::File => Ok(None),
         }
     }
 
     /// Checks a record against its schema and its references.
-    fn record(&self, record: &Indexed) -> Result<Option<Code>, IndexError> {
+    fn record(
+        &self,
+        record: &Indexed,
+        reached: &mut Vec<Reached>,
+    ) -> Result<Option<Code>, IndexError> {
         let Some(schema_path) = schema_path(record) else {
             return Ok(None);
         };
@@ -277,19 +328,32 @@ impl Decide<'_> {
             Some(ValidationFact::Invalid { code, .. }) => return Ok(Some(code)),
             Some(ValidationFact::Valid(references)) => references,
         };
+        // Every reference is followed, not just those before the first
+        // failure, so `refs` can report each one.
+        let mut first = None;
         for reference in references {
-            let Ok(location) = self.resolve(&reference.target) else {
-                return Ok(Some(Code::RefDangling));
+            let (location, code) = match self.resolve(&reference.target) {
+                Err(_) => (None, Some(Code::RefDangling)),
+                Ok(location) => {
+                    let code = match &reference.accepts {
+                        None => None,
+                        Some(accepts) => match self.record_type(&location)? {
+                            Some(found) if accepts.contains(&found) => None,
+                            _ => Some(Code::RefWrongType),
+                        },
+                    };
+                    (Some(location), code)
+                }
             };
-            let Some(accepts) = &reference.accepts else {
-                continue;
-            };
-            match self.record_type(&location)? {
-                Some(found) if accepts.contains(&found) => {}
-                _ => return Ok(Some(Code::RefWrongType)),
-            }
+            first = first.or(code);
+            reached.push(Reached {
+                pointer: reference.pointer,
+                target: reference.target,
+                location,
+                code,
+            });
         }
-        Ok(None)
+        Ok(first)
     }
 
     fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
