@@ -7,20 +7,26 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
     PathMalformed,
+    PathNotFound,
     PathShadowed,
     PathCaseCollision,
     ResolveCycle,
     ResolveTooManyHops,
+    RepoUnreadable,
+    RepoSubmodule,
 }
 
 impl Code {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::PathMalformed => "board::path::malformed",
+            Self::PathNotFound => "board::path::not_found",
             Self::PathShadowed => "board::path::shadowed",
             Self::PathCaseCollision => "board::path::case_collision",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
+            Self::RepoUnreadable => "board::repo::unreadable",
+            Self::RepoSubmodule => "board::repo::submodule",
         }
     }
 }
@@ -37,22 +43,28 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 5] = [
+    const ALL: [Code; 8] = [
         Code::PathMalformed,
+        Code::PathNotFound,
         Code::PathShadowed,
         Code::PathCaseCollision,
         Code::ResolveCycle,
         Code::ResolveTooManyHops,
+        Code::RepoUnreadable,
+        Code::RepoSubmodule,
     ];
 
     /// Fails to compile when a variant is added, so `ALL` stays complete.
     fn listed(code: Code) {
         match code {
             Code::PathMalformed
+            | Code::PathNotFound
             | Code::PathShadowed
             | Code::PathCaseCollision
             | Code::ResolveCycle
-            | Code::ResolveTooManyHops => {}
+            | Code::ResolveTooManyHops
+            | Code::RepoUnreadable
+            | Code::RepoSubmodule => {}
         }
     }
 
