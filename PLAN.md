@@ -99,7 +99,7 @@ walks through mounts to M4; the two write scenarios to M5.
 
 `board-validate`, `board-ops`, `board-cli` and the strict parse in
 `board-model`: kinds, schemas, typed references, `check`, `get` and `ls`
-(#17, #18, #20, #22). The fuzz job's first full run is still to come.
+(#17, #18, #20, #22). The first full fuzz run, after #23 and #24, passed.
 
 ### M4 Index and query
 
