@@ -325,7 +325,7 @@ fn fixture() -> (Scenario, Scenario) {
 /// code `check`, `get` and `ls` can produce.
 #[test]
 fn the_fixture_board_produces_every_code() {
-    let (scenario, _mounted) = fixture();
+    let (scenario, mounted) = fixture();
     let mut produced: BTreeSet<&str> = BTreeSet::new();
     let mut take = |output: Output| {
         for code in codes(&output) {
@@ -350,6 +350,20 @@ fn the_fixture_board_produces_every_code() {
     take(put("/projects/p", r#"{"$type": "lr/project/v1"}"#));
     take(put("/projects/new", r#"{"name": "no type"}"#));
     take(put("/mount/m/new", r#"{"$type": "lr/project/v1"}"#));
+    scenario.write(
+        "mount/unfollowed.json",
+        Item::File(
+            &mount_of(
+                mounted.workdir().to_str().unwrap(),
+                ObjectId::from_hex(&"1".repeat(40)).unwrap(),
+            )
+            .replace(r#""main""#, r#""gone""#),
+        ),
+    );
+    take(board_in(
+        dir,
+        &["mount", "update", "/mount/unfollowed", "--json"],
+    ));
     scenario.write(".git/board.lock", Item::File(""));
     take(put("/projects/locked", r#"{"$type": "lr/project/v1"}"#));
 
@@ -602,4 +616,32 @@ fn put_needs_a_path_or_batch_and_not_both() {
         board_with(scenario.workdir(), None, &["put", "--batch"], b"").code,
         0
     );
+}
+
+#[test]
+fn mount_update_reports_the_move_and_then_that_it_is_there() {
+    let library = Scenario::new();
+    let old = library.commit(&[("a.md", "one")]);
+    let new = library.commit(&[("a.md", "two")]);
+    let scenario = board();
+    scenario
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+        )
+        .write("lib.json", Item::File(&mount_of(&library.path(), old)));
+    let moved = board_in(scenario.workdir(), &["mount", "update", "/lib"]);
+    assert_eq!(moved.code, 0, "{}", text(&moved.stderr));
+    assert_eq!(
+        text(&moved.stdout),
+        format!("updated /lib {old} -> {new}\n")
+    );
+    let again = json(&board_in(
+        scenario.workdir(),
+        &["mount", "update", "/lib", "--json"],
+    ));
+    assert_eq!(again["$type"], "board/mount-update-report/v1");
+    assert_eq!(again["old"], new.to_string());
+    assert_eq!(again["new"], new.to_string());
+    assert_eq!(again["wrote"], false);
 }
