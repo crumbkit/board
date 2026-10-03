@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 
 use board_model::{
-    CONFIG_TYPE, Classified, Code, Kind, Location, LogicalPath, Object, RecordType, Source,
-    classify, needs_bytes,
+    CONFIG_TYPE, Classified, Code, Content, Kind, Location, LogicalPath, Object, POINTER_TYPE,
+    RecordType, Source, classify, needs_bytes,
 };
 use board_tree::{Change, Entry, GitError, Repository, ResolveError, Status};
 use board_validate::{Reference, Schema};
@@ -70,7 +70,7 @@ impl Board {
                 Checked {
                     path: entry.path,
                     logical: entry.logical,
-                    kind: classified.kind,
+                    kind: classified.kind(),
                     status,
                     change: entry.change,
                 }
@@ -93,10 +93,7 @@ impl Board {
         match read {
             Ok(bytes) => classify(&entry.path, bytes.as_deref()),
             Err(code) => Classified {
-                kind: Kind::Json,
-                record_type: None,
-                pointer: None,
-                value: None,
+                content: Content::Unparsed(Kind::Json),
                 code: Some(code),
             },
         }
@@ -109,21 +106,19 @@ impl Board {
         classified: &Classified,
         schemas: &HashMap<String, Result<Schema, Code>>,
     ) -> Status {
-        let code = classified.code.or_else(|| match classified.kind {
-            Kind::Schema => schemas.get(&entry.path)?.as_ref().err().copied(),
-            Kind::Pointer => {
+        let code = classified.code.or_else(|| match &classified.content {
+            Content::Schema { .. } => schemas.get(&entry.path)?.as_ref().err().copied(),
+            Content::Pointer { .. } => {
                 let logical = entry.logical.as_ref()?;
                 self.repository()
                     .resolve(&Source::WorkingTree, logical)
                     .err()
                     .map(|error| error.code())
             }
-            Kind::Record => {
-                let record_type = classified.record_type.as_ref()?;
-                let value = classified.value.as_ref()?;
+            Content::Record { record_type, value } => {
                 self.record(record_type, value, schemas).err()
             }
-            Kind::Json | Kind::File => None,
+            Content::Json { .. } | Content::File | Content::Unparsed(_) => None,
         });
         code.map_or(Status::Ok, Status::Degraded)
     }
@@ -193,10 +188,13 @@ fn compile_schemas(
     entries
         .iter()
         .zip(classified)
-        .filter(|(_, classified)| classified.kind == Kind::Schema)
+        .filter(|(_, classified)| classified.kind() == Kind::Schema)
         .map(|(entry, classified)| {
-            let compiled = match (&classified.code, &classified.value) {
-                (None, Some(value)) => Schema::compile(value.clone()).map_err(|error| error.code()),
+            let compiled = match classified {
+                Classified {
+                    content: Content::Schema { value },
+                    code: None,
+                } => Schema::compile(value.clone()).map_err(|error| error.code()),
                 _ => Err(Code::SchemaInvalid),
             };
             (entry.path.clone(), compiled)
@@ -213,9 +211,15 @@ fn record_type(location: &Location) -> Option<RecordType> {
     let bytes = repository
         .read(&location.board.source, &location.path, blob)
         .ok()?;
-    let classified = classify(&location.path, bytes.as_deref());
-    match (classified.kind, classified.code) {
-        (Kind::Record | Kind::Pointer, None) => classified.record_type,
+    match classify(&location.path, bytes.as_deref()) {
+        Classified {
+            content: Content::Record { record_type, .. },
+            code: None,
+        } => Some(record_type),
+        Classified {
+            content: Content::Pointer { .. },
+            code: None,
+        } => POINTER_TYPE.parse().ok(),
         _ => None,
     }
 }

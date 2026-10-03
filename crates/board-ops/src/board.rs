@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use board_model::{CONFIG_TYPE, Code, Kind, LogicalPath, Object, RecordType, Source, classify};
+use board_model::{CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, Source, classify};
 use board_tree::{GitError, Repository};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -81,14 +81,13 @@ fn read_config(repository: &Repository) -> Option<Config> {
     let bytes = repository
         .read(&Source::WorkingTree, &location.path, blob)
         .ok()?;
-    let classified = classify(&location.path, bytes.as_deref());
-    let is_config = classified.kind == Kind::Record
-        && classified.code.is_none()
-        && classified.record_type.as_ref().map(RecordType::as_str) == Some(CONFIG_TYPE);
-    if !is_config {
-        return None;
+    match classify(&location.path, bytes.as_deref()) {
+        Classified {
+            content: Content::Record { record_type, value },
+            code: None,
+        } if record_type.as_str() == CONFIG_TYPE => Config::from_value(&value),
+        _ => None,
     }
-    Config::from_value(classified.value.as_ref()?)
 }
 
 /// A board that cannot be opened.
