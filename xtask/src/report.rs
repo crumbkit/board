@@ -3,10 +3,13 @@
 use std::error::Error;
 use std::fmt::Write as _;
 
+use crate::bench::Timed;
+
 /// How many parts a report line names before summarising the rest.
 const SHOWN_PARTS: usize = 5;
 
-const USAGE: &str = "usage: cargo xtask lint\n";
+const USAGE: &str =
+    "usage: cargo xtask lint\n       cargo xtask bench [--board <dir>] [--records <n>]\n";
 
 #[derive(Debug)]
 pub(crate) struct Report {
@@ -123,6 +126,7 @@ impl Part {
 
 pub(crate) enum Output<'a> {
     Report(&'a Report),
+    Bench(&'a [Timed]),
     Failure {
         code: &'static str,
         error: &'a dyn Error,
@@ -138,9 +142,27 @@ pub(crate) enum Output<'a> {
 pub(crate) fn emit(output: &Output<'_>) {
     match output {
         Output::Report(report) => print!("{}", render(report)),
+        Output::Bench(timed) => print!("{}", render_bench(timed)),
         Output::Failure { code, error } => eprint!("{}", render_failure(code, *error)),
         Output::Usage => eprint!("{USAGE}"),
     }
+}
+
+/// One line per operation: its median, its budget and their ratio.
+pub(crate) fn render_bench(timed: &[Timed]) -> String {
+    let mut text = String::new();
+    for operation in timed {
+        let status = if operation.passed() { "pass" } else { "FAIL" };
+        let _ = writeln!(
+            text,
+            "{status}  {median:>8.1} ms  budget {budget:>6} ms  {ratio:>4.1}x  {name}",
+            median = operation.median.as_secs_f64() * 1_000.0,
+            budget = operation.budget.as_millis(),
+            ratio = operation.median.as_secs_f64() / operation.budget.as_secs_f64(),
+            name = operation.operation,
+        );
+    }
+    text
 }
 
 pub(crate) fn render(report: &Report) -> String {
