@@ -39,6 +39,9 @@ impl Board {
                 plugins,
             )?;
         }
+        // The plugin may run `board query` or `board call`, which open the
+        // same index; holding it here would make them wait and fall back.
+        drop(index);
         let report = board_plugin::invoke(
             &chosen,
             input,

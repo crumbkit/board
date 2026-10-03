@@ -1,0 +1,95 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "description": "Open tasks due before a date.",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Open tasks due before this date.",
+        "properties": {
+          "before": {
+            "format": "date",
+            "title": "Before",
+            "type": "string"
+          }
+        },
+        "required": [
+          "before"
+        ],
+        "title": "DueInput",
+        "type": "object"
+      },
+      "metadata": {},
+      "name": "due",
+      "output_schema": {
+        "$defs": {
+          "DueTask": {
+            "additionalProperties": false,
+            "description": "An open task and when it is due.",
+            "properties": {
+              "due": {
+                "format": "date",
+                "title": "Due",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "title",
+              "due"
+            ],
+            "title": "DueTask",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Open tasks due before the date asked for, by due date then path.",
+        "properties": {
+          "tasks": {
+            "items": {
+              "$ref": "#/$defs/DueTask"
+            },
+            "title": "Tasks",
+            "type": "array"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tasks",
+          "truncated"
+        ],
+        "title": "DueOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Open tasks and their due dates.",
+  "extract": [
+    "lr/task/v1"
+  ],
+  "metadata": {
+    "area": "planning"
+  },
+  "name": "tasks",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_tasks"
+  ],
+  "version": "0.1.0"
+}

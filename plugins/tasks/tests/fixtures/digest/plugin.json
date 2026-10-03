@@ -1,0 +1,15 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "name": "digest",
+  "version": "0.1.0",
+  "description": "Overdue tasks, from whichever plugin offers due.",
+  "run": ["./run"],
+  "capabilities": [
+    {
+      "name": "overdue",
+      "description": "Open tasks due before a date, by capability.",
+      "input_schema": {"type": "object", "required": ["before"]},
+      "output_schema": {"type": "object", "required": ["overdue"]}
+    }
+  ]
+}
