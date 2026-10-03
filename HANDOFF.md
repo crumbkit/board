@@ -19,6 +19,11 @@ open threads are settled or moved into PLAN.md.
 - **M1 builder** `session_017XzJQ42de6xdS5bYk5GE9B`: commissioned on
   2026-10-03 for the export script under `tools/export-old-board/`, as one pull
   request; the owner runs it.
+- **Design reviewer**: the seed's designer, `session_01YCLTnYNfyNqGPM5UDViA5C`,
+  reviews viitta against the original design at the owner's request. The
+  vision session lands the changes; the design reviewer reviews them.
+- **Mount-walk builder** `session_01RpFWrPnQzNsnZhrpKMUsou` and **docs builder**
+  `session_01Vzqbj3yKt1E4VR8cTLvFyn`: commissioned 2026-10-03 from that review.
 
 ## Where things are
 
@@ -63,25 +68,8 @@ and what it does not.
 
 ## Open threads
 
-1. **Web UI and sharing: designed for, not built in v0.** The adapter rule is in
-   docs/architecture.md (Crates). The rest waits for a plan:
-   - Every record type gets a view with no plugin work: a detail view and a
-     form derived from its JSON Schema. A plugin may override it with a
-     declarative view in its manifest (data, a small component vocabulary, field
-     bindings), so a list of a thousand records spawns no process. A sandboxed
-     web component is a later escape hatch for charts and editors. Views from a
-     mounted board are data, never code.
-   - Editing goes through `put` with `--expect`, which already gives a web form
-     safe concurrent saves.
-   - The unit of sharing is a repository: a shared project is its own board,
-     mounted into each person's board, with permissions from the git host.
-     Sharing needs writes through mounts (commit in the mounted repository, then
-     move the pin), so that is the first post-v0 feature to plan.
-   - Uploads are files in the tree; large binaries need git LFS or a content
-     store referenced by hash. Decide when the first real upload exists.
-   - The acceptance test, set by the owner: the UI is done when it can express
-     widgets's UI. Derive the component vocabulary from that UI when the UI is
-     planned; example-org/widgets is not yet in this session's access.
+1. **Web UI and sharing** moved to PLAN.md (M8, Views, Serving) on
+   2026-10-03.
 2. **M1, the old-corpus export.** The script is commissioned; the owner runs it
    against the installed old `board`, into its own repository.
 
@@ -100,4 +88,5 @@ and what it does not.
    length: 3.1 s for 500 chains of 39 hops. Memoising was declined while real
    chains stay short; those numbers are the baseline if that changes.
 3. Sharing is sketched as M8 in PLAN.md, with the owner's decisions; turn it
-   into a design-gap list for a builder after M7.
+   into a design-gap list for a builder after M7. Moving mount walking into
+   `board-tree` lands first.

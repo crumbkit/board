@@ -426,3 +426,11 @@ the other reference board.
 reports every run and fails above three times a budget. The owner times the
 M1 export locally with `--board`, since that data stays out of the repository.
 The work-count tests are the hard gate.
+
+Budgets are regression alarms, set from measurement. Targets are the speed an
+agent loop or a web view needs. None is met or enforced yet:
+
+| Operation | Target |
+| --- | --- |
+| `board check`, warm, nothing changed | 100 ms |
+| simple `board query`, warm | 100 ms |

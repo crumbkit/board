@@ -163,8 +163,46 @@ step. The owner's decisions so far:
   SSH and hosts work as they already do; gix keeps reading objects. The
   `git` child process gets one declared owner in `board-tree`.
 
-Open: whether jujutsu, with its first-class conflicts, sits behind the same
-seam later. Decide after M7 shows how sharing is actually used.
+- **Network safety.** A mount that names a remote lets its author choose
+  what the owner's machine fetches, with the owner's credentials. So Board
+  fetches only remotes the root board names in one of its own mount pointers.
+  To let a mounted board's nested remote be fetched, the owner mounts that
+  remote somewhere in the root board; until then it is listed, not fetched.
+  Approval is the tree, with no state beside it. The `git` child allows only
+  https and ssh (`-c protocol.allow=never -c protocol.https.allow=always
+  -c protocol.ssh.allow=always`), so `ext::` and `file://` are never
+  reachable from data. Every remote URL is passed after `--`, and a URL that
+  starts with `-` is refused, so data can never become a `git` option.
+
+Open:
+- Whether a remote mount is `board/mount/v2` or new values in v1. It changes
+  what `repo` means; the review recommends v2. The owner decides.
+- Whether jujutsu, with its first-class conflicts, sits behind the same seam
+  later. Decide after M7 shows how sharing is actually used.
+
+### Views (sketch; designed for, not built)
+
+Beside M8. Land the design before a second plugin exists, because the second
+plugin starts the Python library and views belong in it.
+
+- Every record type gets a detail view and a form derived from its schema,
+  with no plugin work.
+- A plugin declares views as data in a new `board/plugin-manifest/v2`: a small
+  component vocabulary and field bindings, so listing a thousand records spawns
+  no process.
+- A sandboxed component is a later escape hatch for charts and editors.
+- Edits go through `put --expect`, which gives a form safe concurrent saves.
+- Views from a mounted board are data, never code.
+- Uploads are files in the tree; large binaries wait for a real one.
+- Acceptance, set by the owner: the UI can express widgets's UI. The component
+  vocabulary is derived from it, which needs read access to example-org/widgets.
+
+### Serving (sketch)
+
+`board serve` is the one long-lived process allowed. It may keep the index
+warm for an agent loop or a web view; no answer may depend on it, and every
+answer equals a cold run's. The measured warm-check speedups (HANDOFF item 2)
+land after M7 gives real numbers.
 
 ## Taking from crumbkit/board
 
@@ -199,8 +237,8 @@ The owner settled these on 2026-10-03.
    default-loaded files together.
 7. proptest states invariants over generated structures; bolero fuzzes parsers
    of untrusted bytes.
-8. A web UI and sharing are designed for, not built in v0. The positions are in
-   HANDOFF.md until they get a plan.
+8. A web UI and sharing are designed for, not built in v0. Their sketches are
+   M8, Views and Serving above.
 
 ## Risks
 
