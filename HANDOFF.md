@@ -91,10 +91,9 @@ and what it does not.
    `cargo xtask bench --board <export>`, enable `tasks` and use Board daily.
    Route what that finds to a builder as small fixes; route export problems to
    the M1 builder.
-2. #21 (app-name constants) waits for the owner to confirm the request.
-3. If a real board misses a budget, three measured speedups for a warm check
+2. If a real board misses a budget, three measured speedups for a warm check
    exist (#33): carry validations from refresh into decide (about 25 ms), one
    join per run instead of point lookups (30 to 40 ms), and pointer facts for
    resolution (most of 52 ms, but it touches rule 3, so it needs a design call).
-4. After v0, plan writes through mounts (open thread 1) only when the owner
+3. After v0, plan writes through mounts (open thread 1) only when the owner
    asks for sharing.
