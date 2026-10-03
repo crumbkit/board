@@ -150,10 +150,10 @@ fn a_call_sends_one_request_and_returns_the_checked_output() {
     assert_eq!(request["$type"], "board/call/v1");
     assert_eq!(request["capability"], "due");
     assert_eq!(request["input"], json!({"n": 1}));
-    assert_eq!(
-        request["board"]["root"],
-        fixture.board.workdir().to_str().unwrap()
-    );
+    // Board sends the canonical root; on macOS a temporary directory under
+    // /var is reached through the symlink /private/var.
+    let root = fixture.board.workdir().canonicalize().unwrap();
+    assert_eq!(request["board"]["root"], root.to_str().unwrap());
     let database = PathBuf::from(request["board"]["database"].as_str().unwrap());
     assert!(database.starts_with(fixture.cache.path()), "{database:?}");
     assert!(
