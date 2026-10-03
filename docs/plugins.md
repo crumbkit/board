@@ -163,7 +163,9 @@ plugin may therefore receive a blob again, and replaces its rows for that blob.
 Extraction runs in the refresh before `query`, for every enabled plugin, and
 before `call`, for the plugin called. It never runs before `check`, so `check`
 runs no plugin code. When a plugin fails, `query` still answers and lists it
-under `plugins` in its report, with its code; `call` refuses with that code.
+under `plugins` in its report, with its code; `call` refuses with that code. A
+plugin database SQLite cannot read is not attached, and `query` lists its
+plugin with `board::plugin::failed` and runs.
 
 Extraction must be a pure function of one record's bytes. Anything that spans
 records, like "tasks blocked by an open task", is a query that joins the

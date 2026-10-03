@@ -20,6 +20,10 @@ pub struct Limits {
     pub stdout: usize,
     /// How much of the end of stderr Board keeps.
     pub stderr: usize,
+    /// The most records in one extraction batch.
+    pub batch_records: usize,
+    /// The most bytes of records in one extraction batch.
+    pub batch_bytes: usize,
 }
 
 impl Default for Limits {
@@ -28,6 +32,8 @@ impl Default for Limits {
             time: Duration::from_secs(30),
             stdout: 16 * 1024 * 1024,
             stderr: 64 * 1024,
+            batch_records: 1_000,
+            batch_bytes: 16 * 1024 * 1024,
         }
     }
 }

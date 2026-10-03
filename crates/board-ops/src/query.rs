@@ -124,10 +124,17 @@ impl Board {
             if database.fallback() {
                 report.fallbacks.push(name.clone());
             }
-            index.attach(
-                &format!("p_{}", name.as_str().replace('-', "_")),
-                database.path(),
-            )?;
+            let alias = format!("p_{}", name.as_str().replace('-', "_"));
+            if let Err(error) = index.attach(&alias, database.path()) {
+                report.plugins.push(failed(
+                    Code::PluginFailed.as_str(),
+                    format!(
+                        "plugin database {} cannot be read, so {alias} is not attached; \
+                         deleting it is safe: {error}",
+                        database.path().display()
+                    ),
+                ));
+            }
             databases.push(database);
         }
         let rows = index.query(sql, limit)?;

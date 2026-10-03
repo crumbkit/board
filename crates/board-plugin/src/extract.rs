@@ -9,12 +9,8 @@ use serde_json::{Value, json};
 
 use crate::call::{CallError, Context, exchange};
 use crate::manifest::Manifest;
+use crate::process::Limits;
 use crate::protocol::{BadOutput, EXTRACT_RESULT_TYPE, EXTRACT_TYPE, RawExtractResult};
-
-/// The most records in one batch.
-pub const MAX_BATCH_RECORDS: usize = 1_000;
-/// The most bytes of records in one batch.
-pub const MAX_BATCH_BYTES: usize = 16 * 1024 * 1024;
 
 /// One record to extract.
 #[derive(Clone, Debug)]
@@ -34,8 +30,8 @@ pub struct Extraction {
     pub failure: Option<CallError>,
 }
 
-/// Sends `records` to `manifest`'s plugin in `directory`, in batches of at
-/// most [`MAX_BATCH_RECORDS`] records or [`MAX_BATCH_BYTES`], one run each.
+/// Sends `records` to `manifest`'s plugin in `directory`, in batches within
+/// the context's limits, one run each.
 pub fn extract(
     manifest: &Manifest,
     directory: &Path,
@@ -50,7 +46,7 @@ pub fn extract(
             return extraction;
         }
     };
-    for batch in batches(records) {
+    for batch in batches(records, context.limits) {
         let sent: HashSet<ObjectId> = batch.iter().map(|(record, _)| record.blob).collect();
         let request = canonical_json(&json!({
             "$type": EXTRACT_TYPE,
@@ -81,7 +77,7 @@ pub fn extract(
 }
 
 /// `records` in order, each with the JSON it is sent as, cut into batches.
-fn batches(records: Vec<Record>) -> Vec<Vec<(Record, Value)>> {
+fn batches(records: Vec<Record>, limits: Limits) -> Vec<Vec<(Record, Value)>> {
     let mut batches: Vec<Vec<(Record, Value)>> = Vec::new();
     let mut bytes = 0;
     for record in records {
@@ -93,7 +89,9 @@ fn batches(records: Vec<Record>) -> Vec<Vec<(Record, Value)>> {
         });
         let size = value.to_string().len();
         match batches.last_mut() {
-            Some(batch) if batch.len() < MAX_BATCH_RECORDS && bytes + size <= MAX_BATCH_BYTES => {
+            Some(batch)
+                if batch.len() < limits.batch_records && bytes + size <= limits.batch_bytes =>
+            {
                 bytes += size;
                 batch.push((record, value));
             }

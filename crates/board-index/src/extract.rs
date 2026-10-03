@@ -104,7 +104,7 @@ impl Index {
     }
 
     /// Attaches the `SQLite` file at `path`, read-only, as `name`, which must
-    /// be a plain identifier.
+    /// be a plain identifier. `SQLite` refuses a file that is not a database.
     pub fn attach(&self, name: &str, path: &Path) -> Result<(), IndexError> {
         let escaped = path
             .to_string_lossy()

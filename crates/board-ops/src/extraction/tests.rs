@@ -75,6 +75,10 @@ impl Fixture {
     }
 
     fn query(&self, sql: &str) -> QueryReport {
+        self.query_with(sql, board_plugin::Limits::default())
+    }
+
+    fn query_with(&self, sql: &str, limits: board_plugin::Limits) -> QueryReport {
         let directory = self.plugins();
         let plugins = Plugins {
             directory: Some(&directory),
@@ -82,7 +86,7 @@ impl Fixture {
                 path: Some("/usr/bin:/bin".into()),
                 ..board_plugin::Environment::default()
             },
-            limits: board_plugin::Limits::default(),
+            limits,
         };
         open(&self.board)
             .query(sql, 500, Some(self.cache.workdir()), &plugins)
@@ -295,4 +299,60 @@ fn call_extracts_for_the_called_plugin_first_and_refuses_with_its_failure() {
         .call(&target, b"{}", &plugins, Some(failing.cache.workdir()))
         .unwrap_err();
     assert_eq!(error.code_text(), "board::plugin::failed");
+}
+
+#[test]
+fn a_plugin_database_sqlite_cannot_read_is_reported_and_the_query_still_answers() {
+    let fixture = Fixture::new(EXTRACTING);
+    fixture.query("SELECT 1");
+    let database = PathBuf::from(
+        fixture.extractions()[0]["board"]["database"]
+            .as_str()
+            .unwrap(),
+    );
+    let relative = database.strip_prefix(fixture.cache.workdir()).unwrap();
+    let healthy = fixture.query("SELECT count(*) FROM entries WHERE path = 'tasks/a.json'");
+    assert!(healthy.plugins.is_empty(), "{:?}", healthy.plugins);
+    fixture.cache.write(
+        relative.to_str().unwrap(),
+        Item::File(&"not a database ".repeat(100)),
+    );
+    let report = fixture.query("SELECT count(*) FROM entries WHERE path = 'tasks/a.json'");
+    assert_eq!(report.rows, [[json!(1)]]);
+    assert_eq!(report.plugins.len(), 1);
+    assert_eq!(report.plugins[0].code, "board::plugin::failed");
+    assert!(
+        report.plugins[0].message.contains("deleting it is safe"),
+        "{}",
+        report.plugins[0].message
+    );
+}
+
+#[test]
+fn batches_handled_before_a_failed_one_stay_handled() {
+    let fails_second =
+        EXTRACTING.replacen("if grep", "if [ \"$n\" = 1 ]; then exit 3; fi\nif grep", 1);
+    let fixture = Fixture::new(&fails_second);
+    fixture.board.write(
+        "tasks/c.json",
+        Item::File(&task(r#", "project": "/projects/q""#)),
+    );
+    let limits = board_plugin::Limits {
+        batch_records: 2,
+        ..board_plugin::Limits::default()
+    };
+    let report = fixture.query_with("SELECT count(*) FROM extracted", limits);
+    assert_eq!(report.plugins[0].code, "board::plugin::failed");
+    assert_eq!(report.rows, [[json!(2)]]);
+    let report = fixture.query_with("SELECT count(*) FROM extracted", limits);
+    assert!(report.plugins.is_empty(), "{:?}", report.plugins);
+    assert_eq!(report.rows, [[json!(3)]]);
+    assert_eq!(
+        fixture.sent(),
+        [
+            vec!["/tasks/a", "/tasks/b"],
+            vec!["/tasks/c"],
+            vec!["/tasks/c"]
+        ]
+    );
 }
