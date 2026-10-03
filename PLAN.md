@@ -88,44 +88,44 @@ Done: the export, committed in its own repository; a record count equal to
 with `rg` and agents during M2 and M3 is free evidence about what the core
 really needs.
 
-### M2 Paths and resolution
+### M2 Paths and resolution: done
 
-`board-model` (logical paths, Locations, codes) and `board-tree` (reading the
-working tree and commits, resolving, walking, links and mounts), with the
-scenario builder.
-
-Done: every scenario in docs/architecture.md (Testing) passes; the property
-tests pass (resolution ends, display paths round-trip, a link resolves as its
-target, a walk yields each identity once, results depend only on the root tree
-and path); the work-count test for pointers passes.
+`board-model` and `board-tree`: logical paths, Locations, codes, commits and the
+working tree, resolution, walking, links and mounts (#3, #7, #9, #12 to #14).
+Moved on: the display-path round trip to M3, where `get` first prints one;
+walks through mounts to M4; the two write scenarios to M5.
 
 ### M3 Records and validation
 
-The duplicate-refusing parse, `$type`, schemas from the tree, typed references,
-canonical output, `board-validate`, and the commands `check`, `get` and `ls`.
+The duplicate-refusing parse, kinds, `$type`, schemas from the tree, typed
+references, `board-validate`, `board-ops`, and the commands `check`, `get` and
+`ls`. `check` covers the root board; walks reach mounts in M4.
 
-Done: a fixture board that produces every code in the code table; golden bytes
-for canonical output; bolero targets for the record and path parsers, run in
-the gate and fuzzed by a scheduled job.
+Done: a fixture board that produces every code `check`, `get` and `ls` can
+produce; bolero targets for the record and path parsers, run in the gate and
+fuzzed by a scheduled job; walks mark dangling references; the property that
+resolving a Location's display path returns that Location.
 
 ### M4 Index and query
 
 `board-index`: the tables, refresh by tree diff, the working-tree overlay, and
 the commands `query` and `refs`.
 
-Done: the warm-equals-cold property for every query; "one changed record
+Done: walks and the index descend mounts, each mounted commit indexed once;
+the warm-equals-cold property for every query; "one changed record
 parses one blob"; the timing job on the M1 export and a generated
 10,000-record board, with the budgets in docs/architecture.md replaced by
 measured ones.
 
 ### M5 Writes
 
-`put` with compare-and-swap, canonical output, the lock, optional commit and
+`put` with compare-and-swap, canonical output (with golden bytes), the lock, optional commit and
 batches; `mount update`.
 
 Done: two concurrent puts with the same `--expect` produce exactly one write
 and one `board::put::stale`; a kill at any point leaves the old file or the new
-one, never a partial file; a batch with one invalid record writes nothing.
+one, never a partial file; a batch with one invalid record writes nothing; a
+write through a link lands at its target and one through a mount is refused.
 
 ### M6 Plugins
 
