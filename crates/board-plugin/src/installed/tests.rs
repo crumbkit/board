@@ -70,3 +70,16 @@ fn a_plugin_may_be_installed_as_a_symlink_to_its_checkout() {
     assert!(matches!(found[0].manifest, Err(ManifestError::Missing)));
     assert!(found[1].manifest.is_ok());
 }
+
+#[test]
+fn a_plugins_directory_that_cannot_be_listed_is_refused_as_not_installed() {
+    let scenario = Scenario::new();
+    scenario.write("plugins", Item::File(""));
+    let error = installed(&plugins(&scenario)).unwrap_err();
+    assert_eq!(error.code(), Code::PluginNotInstalled);
+    assert!(error.to_string().contains("plugins"), "{error}");
+    scenario
+        .write("plugins", Item::Deleted)
+        .write("plugins/tasks/plugin.json", Item::File(TASKS));
+    assert_eq!(names(&installed(&plugins(&scenario)).unwrap()), ["tasks"]);
+}

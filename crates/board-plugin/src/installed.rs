@@ -77,7 +77,7 @@ pub enum DiscoveryError {
 impl DiscoveryError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Unreadable { .. } => Code::PluginBadManifest,
+            Self::Unreadable { .. } => Code::PluginNotInstalled,
         }
     }
 }

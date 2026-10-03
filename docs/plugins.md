@@ -55,7 +55,9 @@ that breaks any of these is `board::plugin::bad_manifest`.
 `board plugin list` prints every installed plugin and its capabilities, and
 whether the current board enables it. A broken install is listed with
 `board::plugin::bad_manifest`, and a name the board enables that is not
-installed with `board::plugin::not_installed`; either makes `list` exit 1.
+installed with `board::plugin::not_installed`; either makes `list` exit 1. A
+plugins directory that cannot be listed refuses `list` and `find` with
+`board::plugin::not_installed`, naming the directory.
 `board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at
 least one filter, lists the capabilities of working installs that match every
 filter. A `--meta` filter
