@@ -1,8 +1,8 @@
 # Architecture
 
 This is the v0 design. Built so far: logical paths, resolution and walking,
-links and mounts, records, schemas and references, and the commands `check`,
-`get` and `ls`. PLAN.md says what comes next.
+links and mounts, records, schemas and references, the index, and the commands
+`check`, `get`, `ls`, `query` and `refs`. PLAN.md says what comes next.
 
 Board is a fast, validated view of a git tree. Git does history, branching,
 merging and transport. Board indexes what is in a tree, validates the records

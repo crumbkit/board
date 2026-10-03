@@ -101,16 +101,13 @@ walks through mounts to M4; the two write scenarios to M5.
 `board-model`: kinds, schemas, typed references, `check`, `get` and `ls`
 (#17, #18, #20, #22). The first full fuzz run, after #23 and #24, passed.
 
-### M4 Index and query
+### M4 Index and query: done
 
-`board-index`: the tables, refresh by tree diff, the working-tree overlay, and
-the commands `query` and `refs`.
-
-Done: walks and the index descend mounts, each mounted commit indexed once;
-the warm-equals-cold property for every query; "one changed record
-parses one blob"; the timing job on the M1 export and a generated
-10,000-record board, with the budgets in docs/architecture.md replaced by
-measured ones.
+`board-index`: the tables, refresh by tree diff, the working-tree overlay,
+mounts, and the commands `query` and `refs` (#27, #29 to #33). Budgets are
+measured and set in docs/architecture.md. Moved on: timing the M1 export,
+which the owner runs locally with `cargo xtask bench --board` once the export
+exists.
 
 ### M5 Writes
 
