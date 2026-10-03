@@ -107,12 +107,21 @@ seconds and 16 MiB of stdout; past either, Board stops the plugin and refuses
 with `board::plugin::timeout` or `board::plugin::too_large`. A plugin's error
 codes are `<plugin>::<area>::<reason>`, so its failures read like Board's. Board
 reports the plugin's code as its own, with the plugin's fields and `plugin`
-added. A code that does not start with the plugin's own name, a malformed
-document or an unknown `$type` is `board::plugin::bad_output`, and so is exit
-0 without a result or exit 1 with anything on stdout but an error. Exit 1 with
-empty stdout, any other exit or a signal is `board::plugin::failed`. Past the
-time limit Board kills the plugin and stops reading, so a grandchild still
-holding a pipe cannot keep it waiting; that grandchild may outlive the call.
+added. How Board reads a plugin's exit and stdout:
+
+- exit 0 with `board/call-result/v1`: the output, checked against
+  `output_schema`; an output that fails it is `board::plugin::bad_output`;
+- exit 1 with `board/error/v1` whose code starts with the plugin's own name:
+  that code;
+- exit 0 with anything else, or exit 1 with anything else on stdout (a result,
+  another plugin's code, a malformed document, an unknown `$type`):
+  `board::plugin::bad_output`;
+- exit 1 with empty stdout, any other exit, or a signal:
+  `board::plugin::failed`.
+
+Past the time limit Board kills the plugin and stops reading, so a grandchild
+still holding a pipe cannot keep it waiting; that grandchild may outlive the
+call.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory
