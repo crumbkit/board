@@ -114,6 +114,10 @@ non-empty UTF-8 of at most 255 bytes, without `/`, NUL or control characters,
 and is not `.` or `..`. A path is at most 4,096 bytes. A record's file name
 adds `.json`, so a record's segment is at most 250 bytes. Paths are absolute and
 are read against the root of the board that holds them.
+The operating system limits the working tree too: a file's absolute path,
+checkout prefix included, must fit `PATH_MAX`, which is 1,024 bytes on macOS
+and 4,096 on Linux. Board keeps its own limit, because paths read from git
+objects through mounts never touch the file system.
 
 In a directory, a segment `x` names one of:
 
