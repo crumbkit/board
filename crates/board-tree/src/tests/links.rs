@@ -289,3 +289,87 @@ proptest! {
         prop_assert_eq!(followed(&through), ["zz-link.json"]);
     }
 }
+
+/// A board of up to six names, each a record or a link to one of the names,
+/// possibly continuing into a child: links to links, cycles and dangling
+/// targets all occur.
+fn linked_board() -> impl Strategy<Value = Vec<(String, Option<String>)>> {
+    let target = (0..6usize, prop::option::of(Just("y"))).prop_map(|(name, child)| match child {
+        Some(child) => format!("/n{name}/{child}"),
+        None => format!("/n{name}"),
+    });
+    prop::collection::vec(prop::option::of(target), 1..6).prop_map(|targets| {
+        targets
+            .into_iter()
+            .enumerate()
+            .map(|(name, target)| (format!("n{name}.json"), target))
+            .collect()
+    })
+}
+
+/// The outcome of resolving `text`, without the repository's own path, so
+/// that two repositories holding the same tree can be compared.
+fn outcome(
+    repository: &Repository,
+    commit: ObjectId,
+    text: &str,
+) -> Result<(String, Object, Vec<String>), Code> {
+    repository
+        .resolve(&commit.source(), &path(text))
+        .map(|location| {
+            let pointers = location
+                .pointers
+                .iter()
+                .map(|pointer| pointer.path.clone())
+                .collect();
+            (location.path, location.object, pointers)
+        })
+        .map_err(|error| error.code())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn resolution_always_ends_with_a_location_or_a_resolution_code(board in linked_board()) {
+        let texts: Vec<(String, String)> = board
+            .iter()
+            .map(|(name, target)| (name.clone(), target.as_deref().map_or_else(|| "{}".to_owned(), link)))
+            .collect();
+        let files: Vec<(&str, &str)> = texts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
+        let scenario = Scenario::new();
+        let commit = scenario.commit(&files);
+        let repository = scenario.open();
+        for name in 0..6 {
+            for text in [format!("/n{name}"), format!("/n{name}/y")] {
+                match outcome(&repository, commit, &text) {
+                    Ok((_, _, pointers)) => prop_assert!(pointers.len() <= MAX_HOPS),
+                    Err(code) => prop_assert!(
+                        [Code::PathNotFound, Code::RefDangling, Code::ResolveCycle, Code::ResolveTooManyHops]
+                            .contains(&code),
+                        "{text}: {code}"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_result_depends_only_on_the_tree_and_the_path(board in linked_board()) {
+        let texts: Vec<(String, String)> = board
+            .iter()
+            .map(|(name, target)| (name.clone(), target.as_deref().map_or_else(|| "{}".to_owned(), link)))
+            .collect();
+        let files: Vec<(&str, &str)> = texts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
+        let (first, second) = (Scenario::new(), Scenario::new());
+        // The second repository has other history before the same tree.
+        second.commit(&[("unrelated.json", "{}")]);
+        let (one, two) = (first.commit(&files), second.commit(&files));
+        let (left, right) = (first.open(), second.open());
+        for name in 0..6 {
+            for text in [format!("/n{name}"), format!("/n{name}/y")] {
+                prop_assert_eq!(outcome(&left, one, &text), outcome(&right, two, &text), "{}", text);
+            }
+        }
+    }
+}
