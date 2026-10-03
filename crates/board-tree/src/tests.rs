@@ -3,7 +3,6 @@
 
 mod links;
 mod mounts;
-mod scenario;
 mod working_tree;
 
 use std::collections::HashSet;
@@ -11,11 +10,23 @@ use std::collections::HashSet;
 use board_model::{Code, Location, LogicalPath, Object, ObjectId, Source};
 use proptest::prelude::*;
 
-use self::scenario::{Item, Scenario};
+use board_scenario::{Item, Scenario};
+
 use crate::{Entry, Repository, Status};
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
+}
+
+/// Opens a scenario's repository as this crate's [`Repository`].
+trait Open {
+    fn open(&self) -> Repository;
+}
+
+impl Open for Scenario {
+    fn open(&self) -> Repository {
+        Repository::open(self.workdir()).unwrap()
+    }
 }
 
 /// What a test reads: a commit, or the working tree.

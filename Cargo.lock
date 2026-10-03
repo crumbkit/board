@@ -91,10 +91,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-ops"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-scenario",
+ "board-tree",
+ "board-validate",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "board-scenario"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "gix",
+ "tempfile",
+]
+
+[[package]]
 name = "board-tree"
 version = "0.0.0"
 dependencies = [
  "board-model",
+ "board-scenario",
  "gix",
  "proptest",
  "tempfile",
