@@ -36,11 +36,16 @@ pub enum Code {
     RepoSubmodule,
     IndexFailed,
     QueryInvalid,
+    PutStale,
+    PutLocked,
+    PutThroughMount,
+    PutInvalid,
+    PutFailed,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 30] = [
+    pub const ALL: [Code; 35] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -71,6 +76,11 @@ impl Code {
         Self::RepoSubmodule,
         Self::IndexFailed,
         Self::QueryInvalid,
+        Self::PutStale,
+        Self::PutLocked,
+        Self::PutThroughMount,
+        Self::PutInvalid,
+        Self::PutFailed,
     ];
 
     /// The code spelled `text`.
@@ -110,6 +120,11 @@ impl Code {
             Self::RepoSubmodule => "board::repo::submodule",
             Self::IndexFailed => "board::index::failed",
             Self::QueryInvalid => "board::query::invalid",
+            Self::PutStale => "board::put::stale",
+            Self::PutLocked => "board::put::locked",
+            Self::PutThroughMount => "board::put::through_mount",
+            Self::PutInvalid => "board::put::invalid",
+            Self::PutFailed => "board::put::failed",
         }
     }
 }
@@ -158,7 +173,12 @@ mod tests {
             | Code::RepoUnreadable
             | Code::RepoSubmodule
             | Code::IndexFailed
-            | Code::QueryInvalid => {}
+            | Code::QueryInvalid
+            | Code::PutStale
+            | Code::PutLocked
+            | Code::PutThroughMount
+            | Code::PutInvalid
+            | Code::PutFailed => {}
         }
     }
 

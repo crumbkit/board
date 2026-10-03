@@ -1,9 +1,10 @@
 //! The command line and what each command does with it.
 
 use std::ffi::OsString;
+use std::io::Read;
 
-use board_model::LogicalPath;
-use board_ops::{Board, DEFAULT_LIMIT, MAX_LIMIT};
+use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId};
+use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT};
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
 
@@ -34,6 +35,13 @@ enum Command {
     Ls { path: Option<LogicalPath> },
     /// List the references a record makes and the records that reach it.
     Refs { path: LogicalPath },
+    /// Check the record on stdin and write it, in canonical form, at a path.
+    Put {
+        path: LogicalPath,
+        /// The blob the file must hold, or `none` for a new file.
+        #[arg(long, value_parser = expect)]
+        expect: Option<Expect>,
+    },
     /// Run one read-only SQL statement over the index.
     Query {
         sql: String,
@@ -41,6 +49,16 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_LIMIT, value_parser = limit)]
         limit: usize,
     },
+}
+
+/// `none`, or a blob id in hex.
+fn expect(text: &str) -> Result<Expect, String> {
+    if text == "none" {
+        return Ok(Expect::Absent);
+    }
+    ObjectId::from_hex(text)
+        .map(Expect::Blob)
+        .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
 }
 
 /// A row limit from 1 to [`MAX_LIMIT`].
@@ -51,8 +69,13 @@ fn limit(text: &str) -> Result<usize, String> {
     }
 }
 
-/// Runs one command line against the board found from `context`.
-pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>, context: &Context) -> Output {
+/// Runs one command line against the board found from `context`, reading a
+/// record from `stdin` when the command takes one.
+pub(crate) fn run(
+    arguments: impl IntoIterator<Item = OsString>,
+    context: &Context,
+    stdin: &mut dyn Read,
+) -> Output {
     let cli = match Cli::try_parse_from(arguments) {
         Ok(cli) => cli,
         Err(error) => {
@@ -84,6 +107,24 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>, context: &Conte
             Ok(report) => render::get(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
+        Command::Put { path, expect } => {
+            let mut record = Vec::new();
+            // One byte past the bound, so the parse sees the input is too large.
+            if let Err(error) = stdin
+                .take(MAX_RECORD_BYTES as u64 + 1)
+                .read_to_end(&mut record)
+            {
+                return render::error(
+                    format,
+                    Code::RepoUnreadable,
+                    &format!("stdin cannot be read: {error}"),
+                );
+            }
+            match board.put(&path, expect.unwrap_or(Expect::Any), &record) {
+                Ok(report) => render::put(format, &report),
+                Err(error) => render::error(format, error.code(), &error),
+            }
+        }
         Command::Refs { path } => match board.refs(&path, context.cache.as_deref()) {
             Ok(report) => render::refs(format, &report),
             Err(error) => render::error(format, error.code(), &error),

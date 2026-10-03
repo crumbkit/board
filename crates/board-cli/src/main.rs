@@ -14,7 +14,7 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let context = config::Context::read();
-    let output = run::run(std::env::args_os(), &context);
+    let output = run::run(std::env::args_os(), &context, &mut std::io::stdin().lock());
     report::emit(&output);
     ExitCode::from(output.code)
 }

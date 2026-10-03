@@ -7,7 +7,8 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Fallback, GetReport, Listed, LsReport, QueryReport, RefsReport, source_name,
+    CheckReport, Fallback, GetReport, Listed, LsReport, PutReport, QueryReport, RefsReport,
+    source_name,
 };
 use board_tree::Status;
 use serde_json::{Value, json};
@@ -65,6 +66,48 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
         }
     };
     noted(output, report.memory, false)
+}
+
+/// `put`: as text, one line per write naming its display path and new
+/// blob, and the commit when one was made.
+pub(crate) fn put(format: Format, report: &PutReport) -> Output {
+    match format {
+        Format::Text => {
+            let mut text = String::new();
+            for written in &report.writes {
+                let _ = writeln!(text, "wrote {} {}", written.display, written.blob);
+            }
+            if let Some(commit) = report.commit {
+                let _ = writeln!(text, "committed {commit}");
+            }
+            Output {
+                stdout: text.into_bytes(),
+                ..Output::default()
+            }
+        }
+        Format::Json => {
+            let writes: Vec<Value> = report
+                .writes
+                .iter()
+                .map(|written| {
+                    json!({
+                        "location": location(&written.location, &written.display.to_string()),
+                        "display": written.display.to_string(),
+                        "previous": written.previous.map(|blob| blob.to_string()),
+                        "blob": written.blob.to_string(),
+                    })
+                })
+                .collect();
+            document(
+                &json!({
+                    "$type": "board/put-report/v1",
+                    "writes": writes,
+                    "commit": report.commit.map(|commit| commit.to_string()),
+                }),
+                0,
+            )
+        }
+    }
 }
 
 /// `refs`: as text, a `from` line per reference the object makes, with its

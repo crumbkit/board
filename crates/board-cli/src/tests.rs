@@ -46,6 +46,11 @@ fn board_in(directory: &Path, arguments: &[&str]) -> Output {
 }
 
 fn board_cached(directory: &Path, cache: Option<&Path>, arguments: &[&str]) -> Output {
+    board_with(directory, cache, arguments, b"")
+}
+
+/// Runs `board` with `stdin` as its standard input.
+fn board_with(directory: &Path, cache: Option<&Path>, arguments: &[&str], stdin: &[u8]) -> Output {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
@@ -54,7 +59,7 @@ fn board_cached(directory: &Path, cache: Option<&Path>, arguments: &[&str]) -> O
     let arguments = std::iter::once(env!("CARGO_BIN_NAME"))
         .chain(arguments.iter().copied())
         .map(OsString::from);
-    run(arguments, &context)
+    run(arguments, &context, &mut &stdin[..])
 }
 
 fn json(output: &Output) -> Value {
@@ -334,6 +339,19 @@ fn the_fixture_board_produces_every_code() {
     take(board_in(dir, &["get", "/mount/m/gone", "--json"]));
     take(board_in(dir, &["ls", "/mount/m", "--json"]));
     take(board_in(dir, &["query", "SELEC 1", "--json"]));
+    let put = |path: &str, record: &str| {
+        board_with(
+            dir,
+            None,
+            &["put", path, "--expect", "none", "--json"],
+            record.as_bytes(),
+        )
+    };
+    take(put("/projects/p", r#"{"$type": "lr/project/v1"}"#));
+    take(put("/projects/new", r#"{"name": "no type"}"#));
+    take(put("/mount/m/new", r#"{"$type": "lr/project/v1"}"#));
+    scenario.write(".git/board.lock", Item::File(""));
+    take(put("/projects/locked", r#"{"$type": "lr/project/v1"}"#));
 
     let plain = Scenario::new();
     plain.write("x.json", Item::File("{}"));
@@ -345,11 +363,12 @@ fn the_fixture_board_produces_every_code() {
     );
     take(board_in(misconfigured.workdir(), &["check", "--json"]));
 
-    // The index fails only when SQLite does, even in memory, which no board
-    // can cause.
+    // The index fails only when SQLite does, even in memory, and a write
+    // only when the disk or its permissions refuse it, which no board can
+    // cause; each mapping is tested where its error is made.
     let missing: Vec<&str> = Code::ALL
         .iter()
-        .filter(|code| **code != Code::IndexFailed)
+        .filter(|code| ![Code::IndexFailed, Code::PutFailed].contains(code))
         .map(|code| code.as_str())
         .filter(|code| !produced.contains(code))
         .collect();
@@ -464,4 +483,44 @@ fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
     ));
     assert_eq!(report["$type"], "board/refs-report/v1");
     assert_eq!(report["to"][0]["pointers"][0], "/project");
+}
+
+#[test]
+fn put_writes_the_record_on_stdin_and_reports_where() {
+    let scenario = board();
+    let record = br#"{"title": "a", "$type": "lr/task/v1"}"#;
+    let output = board_with(scenario.workdir(), None, &["put", "/tasks/a"], record);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let blob = scenario.blob("{\n  \"$type\": \"lr/task/v1\",\n  \"title\": \"a\"\n}\n");
+    assert_eq!(text(&output.stdout), format!("wrote /tasks/a {blob}\n"));
+    let again = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/tasks/a", "--expect", &blob.to_string(), "--json"],
+        record,
+    ));
+    assert_eq!(again["$type"], "board/put-report/v1");
+    assert_eq!(again["writes"][0]["previous"], blob.to_string());
+    assert_eq!(again["writes"][0]["display"], "/tasks/a");
+    assert_eq!(again["commit"], Value::Null);
+}
+
+#[test]
+fn put_refuses_a_stale_expect_with_exit_one_and_a_malformed_one_with_exit_two() {
+    let scenario = board();
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let run = |expect: &str| {
+        board_with(
+            scenario.workdir(),
+            None,
+            &["put", "/projects/p", "--expect", expect],
+            record,
+        )
+    };
+    let stale = run("none");
+    assert_eq!(stale.code, 1);
+    assert!(text(&stale.stderr).starts_with("error: board::put::stale"));
+    assert_eq!(run("not-a-blob").code, 2);
+    let current = scenario.blob(r#"{"$type": "lr/project/v1"}"#);
+    assert_eq!(run(&current.to_string()).code, 0);
 }
