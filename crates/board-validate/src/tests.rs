@@ -312,3 +312,35 @@ fn a_reference_that_is_not_a_json_pointer_is_refused_and_a_pointer_twin_admitted
     });
     assert!(Schema::compile(pointed).is_ok());
 }
+
+/// [`nested`], reached from `r` through `hops` single-`$ref` steps.
+fn behind_hops(depth: usize, hops: usize) -> Value {
+    let mut schema = nested(depth, LEVELS[0].1);
+    for index in 0..hops {
+        let next = if index + 1 == hops {
+            "#/$defs/d0".to_owned()
+        } else {
+            format!("#/$defs/h{}", index + 1)
+        };
+        schema["$defs"][format!("h{index}")] = json!({"$ref": next});
+    }
+    schema["properties"]["r"] = json!({"$ref": "#/$defs/h0"});
+    schema
+}
+
+#[test]
+fn a_ladder_past_the_ref_limit_is_still_refused_from_its_own_start_and_a_shallow_twin_admitted() {
+    let hops = 33;
+    let deep = behind_hops(22, hops);
+    // From `r`, the search gives up following `$ref`s before the ladder, so
+    // only starting at every subschema finds it.
+    let mut count = 0;
+    assert!(references::within_expansion(
+        &deep,
+        &deep["properties"]["r"],
+        0,
+        &mut count
+    ));
+    assert_eq!(compile_code(deep), Code::SchemaInvalid);
+    assert!(Schema::compile(behind_hops(3, hops)).is_ok());
+}
