@@ -177,6 +177,17 @@ step. The owner's decisions so far:
   reachable from data. Every remote URL is passed after `--`, and a URL that
   starts with `-` is refused, so data can never become a `git` option.
 
+- **Mechanics, from research.** A clone is `git init --bare` plus
+  `git remote add`, never `--mirror`, which force-fetches over unpushed
+  branches. Clones are full, not partial: partial clones reach the network on
+  read and gix cannot read them. Each pin keeps a ref
+  (`refs/board/keep/<commit>`) so garbage collection never drops a pinned
+  commit after a remote force-push. Fetches pass `-c fetch.fsckObjects=true`;
+  pushes use `--atomic --porcelain`. Board replays its own commits with gix's
+  tree editor, not `git replay`, which merges contents. When two pins diverge,
+  the one that descends from the other wins, as git does for submodules;
+  otherwise it is a conflict.
+
 Open:
 - Whether jujutsu, with its first-class conflicts, sits behind the same seam
   later. Decide after M7 shows how sharing is actually used.
@@ -195,6 +206,13 @@ plugin starts the Python library and views belong in it.
 - Edits go through `put --expect`, which gives a form safe concurrent saves.
 - Views from a mounted board are data, never code.
 - Uploads are files in the tree; large binaries wait for a real one.
+- Bindings copy A2UI's semantics without adopting it (pre-1.0): the
+  component catalogue is a JSON Schema, bindings are JSON Pointers, lists come
+  from templates and actions are named events. Forms use JSON Forms' UI-schema
+  semantics without function-based conditions.
+- The sandbox copies MCP Apps' rules: an iframe with `allow-scripts` and
+  without `allow-same-origin`, a host-set CSP with `connect-src 'none'`, and
+  postMessage messages checked against a schema. Charts are Vega-Lite inside it.
 - Acceptance, set by the owner: the UI can express widgets's UI. The component
   vocabulary is derived from it, which needs read access to example-org/widgets.
 
@@ -202,7 +220,9 @@ plugin starts the Python library and views belong in it.
 
 `board serve` is the one long-lived process allowed. It may keep the index
 warm for an agent loop or a web view; no answer may depend on it, and every
-answer equals a cold run's. The measured warm-check speedups (HANDOFF item 2)
+answer equals a cold run's. It is a small synchronous server; because a local
+server that writes is reachable through DNS rebinding, it checks the Host
+header and requires a token. The measured warm-check speedups (HANDOFF item 2)
 land after M7 gives real numbers.
 
 ## Taking from crumbkit/board
