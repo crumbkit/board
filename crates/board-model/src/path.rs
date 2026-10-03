@@ -1,0 +1,143 @@
+//! Logical paths: the addresses agents and records use, read against the root
+//! of the board that holds them (docs/architecture.md, Logical paths).
+
+use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
+
+use crate::code::Code;
+
+/// The longest logical path, in bytes.
+pub const MAX_PATH_BYTES: usize = 4096;
+
+/// The longest segment, in bytes. Most file systems refuse longer names.
+pub const MAX_SEGMENT_BYTES: usize = 255;
+
+/// An absolute logical path: `/` alone (the board root), or `/` followed by
+/// segments separated by `/`. A segment is non-empty, at most
+/// [`MAX_SEGMENT_BYTES`], holds no control character and is not `.` or `..`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct LogicalPath(String);
+
+impl LogicalPath {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The segments in order; the root has none.
+    pub fn segments(&self) -> impl Iterator<Item = &str> {
+        self.0
+            .split('/')
+            .skip(1)
+            .filter(|segment| !segment.is_empty())
+    }
+}
+
+impl TryFrom<String> for LogicalPath {
+    type Error = PathError;
+
+    fn try_from(path: String) -> Result<Self, PathError> {
+        match malformation(&path) {
+            None => Ok(Self(path)),
+            Some(reason) => Err(PathError::Malformed { path, reason }),
+        }
+    }
+}
+
+impl FromStr for LogicalPath {
+    type Err = PathError;
+
+    fn from_str(path: &str) -> Result<Self, PathError> {
+        Self::try_from(path.to_owned())
+    }
+}
+
+impl From<LogicalPath> for String {
+    fn from(path: LogicalPath) -> Self {
+        path.0
+    }
+}
+
+impl fmt::Display for LogicalPath {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// The first rule `path` breaks, if any. The whole-path length is checked
+/// first, so a huge input is refused before its segments are scanned.
+fn malformation(path: &str) -> Option<Malformation> {
+    if path.len() > MAX_PATH_BYTES {
+        return Some(Malformation::TooLong { bytes: path.len() });
+    }
+    let Some(rest) = path.strip_prefix('/') else {
+        return Some(Malformation::NotAbsolute);
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    rest.split('/').find_map(|segment| {
+        if segment.is_empty() {
+            Some(Malformation::EmptySegment)
+        } else if segment == "." || segment == ".." {
+            Some(Malformation::DotSegment)
+        } else if segment.len() > MAX_SEGMENT_BYTES {
+            Some(Malformation::SegmentTooLong {
+                bytes: segment.len(),
+            })
+        } else if segment.chars().any(char::is_control) {
+            Some(Malformation::ControlCharacter)
+        } else {
+            None
+        }
+    })
+}
+
+/// Why a logical path is malformed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Malformation {
+    NotAbsolute,
+    TooLong { bytes: usize },
+    EmptySegment,
+    DotSegment,
+    SegmentTooLong { bytes: usize },
+    ControlCharacter,
+}
+
+impl fmt::Display for Malformation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAbsolute => formatter.write_str("it does not start with /"),
+            Self::TooLong { bytes } => {
+                write!(formatter, "it is {bytes} bytes, over {MAX_PATH_BYTES}")
+            }
+            Self::EmptySegment => formatter.write_str("it has an empty segment"),
+            Self::DotSegment => formatter.write_str("it has a . or .. segment"),
+            Self::SegmentTooLong { bytes } => write!(
+                formatter,
+                "it has a segment of {bytes} bytes, over {MAX_SEGMENT_BYTES}"
+            ),
+            Self::ControlCharacter => formatter.write_str("it holds a control character"),
+        }
+    }
+}
+
+/// A refused logical path.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum PathError {
+    #[error("logical path {path:?} is malformed: {reason}")]
+    Malformed { path: String, reason: Malformation },
+}
+
+impl PathError {
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Malformed { .. } => Code::PathMalformed,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
