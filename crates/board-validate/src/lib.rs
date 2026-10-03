@@ -57,6 +57,11 @@ impl Schema {
         })
     }
 
+    /// The schema as written.
+    pub fn document(&self) -> &Value {
+        &self.document
+    }
+
     /// Checks `record` against the schema. Of every failure, the one at the
     /// first instance location in sorted order is reported, so the report
     /// does not depend on the validator's order.

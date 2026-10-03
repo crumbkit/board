@@ -44,11 +44,13 @@ pub enum Code {
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
+    PluginNotInstalled,
+    PluginBadManifest,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 38] = [
+    pub const ALL: [Code; 40] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -87,6 +89,8 @@ impl Code {
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
+        Self::PluginNotInstalled,
+        Self::PluginBadManifest,
     ];
 
     /// The code spelled `text`.
@@ -134,6 +138,8 @@ impl Code {
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
+            Self::PluginNotInstalled => "board::plugin::not_installed",
+            Self::PluginBadManifest => "board::plugin::bad_manifest",
         }
     }
 }
@@ -190,7 +196,9 @@ mod tests {
             | Code::PutInvalid
             | Code::PutNoIdentity
             | Code::PutHeadMoved
-            | Code::PutFailed => {}
+            | Code::PutFailed
+            | Code::PluginNotInstalled
+            | Code::PluginBadManifest => {}
         }
     }
 

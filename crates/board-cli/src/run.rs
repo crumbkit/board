@@ -5,6 +5,7 @@ use std::io::Read;
 
 use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId};
 use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT};
+use board_plugin::{CapabilityName, MetaFilter};
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
 
@@ -49,6 +50,9 @@ enum Command {
     /// Work with mounts.
     #[command(subcommand)]
     Mount(MountCommand),
+    /// Work with plugins.
+    #[command(subcommand)]
+    Plugin(PluginCommand),
     /// Run one read-only SQL statement over the index.
     Query {
         sql: String,
@@ -62,6 +66,21 @@ enum Command {
 enum MountCommand {
     /// Advance the mount at a path, which is not followed, to its `follow` ref.
     Update { path: LogicalPath },
+}
+
+#[derive(Debug, Subcommand)]
+enum PluginCommand {
+    /// List the installed plugins, their capabilities and whether this board enables them.
+    List,
+    /// List the installed plugins' capabilities that match every filter.
+    Find {
+        /// Only capabilities of this name.
+        #[arg(long)]
+        capability: Option<CapabilityName>,
+        /// `<key>=<value>`: the capability's metadata, or else its plugin's, holds this string.
+        #[arg(long = "meta")]
+        filters: Vec<MetaFilter>,
+    },
 }
 
 /// `none`, or a blob id in hex.
@@ -159,6 +178,18 @@ pub(crate) fn run(
         },
         Command::Query { sql, limit } => match board.query(&sql, limit, context.cache.as_deref()) {
             Ok(report) => render::query(format, &report),
+            Err(error) => render::error(format, error.code(), &error),
+        },
+        Command::Plugin(PluginCommand::List) => match board.plugin_list(context.plugins.as_deref())
+        {
+            Ok(report) => render::plugin_list(format, &report),
+            Err(error) => render::error(format, error.code(), &error),
+        },
+        Command::Plugin(PluginCommand::Find {
+            capability,
+            filters,
+        }) => match board.plugin_find(context.plugins.as_deref(), capability.as_ref(), &filters) {
+            Ok(report) => render::plugin_find(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
         Command::Ls { path } => match board.ls(&path.unwrap_or_else(LogicalPath::root)) {
