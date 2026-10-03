@@ -1,5 +1,7 @@
 //! What resolution and walking read: the directories of one source.
 
+use std::rc::Rc;
+
 use board_model::{ObjectId, Source, Stat};
 
 use crate::git::GitError;
@@ -13,11 +15,12 @@ pub(crate) trait Tree {
 
     fn root(&self) -> Self::Directory;
 
-    /// The entries of `directory`, in no particular order.
+    /// The entries of `directory`, in no particular order, shared so a
+    /// listing can be kept and handed out again.
     fn list(
         &mut self,
         directory: &Self::Directory,
-    ) -> Result<Vec<RawEntry<Self::Directory>>, GitError>;
+    ) -> Result<Rc<[RawEntry<Self::Directory>]>, GitError>;
 
     /// The bytes of the file `entry` in `directory`, or `None` when it holds
     /// more than [`board_model::MAX_RECORD_BYTES`].

@@ -44,7 +44,8 @@ fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_once() {
         Refreshed {
             hashed: 8,
             parsed: 6,
-            validated: 3
+            validated: 3,
+            ..Refreshed::default()
         }
     );
 }
@@ -68,7 +69,8 @@ fn one_changed_record_hashes_one_file_parses_one_blob_and_validates_one_record()
         Refreshed {
             hashed: 1,
             parsed: 1,
-            validated: 1
+            validated: 1,
+            ..Refreshed::default()
         }
     );
 }
@@ -87,7 +89,8 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
         Refreshed {
             hashed: 1,
             parsed: 1,
-            validated: 2
+            validated: 2,
+            ..Refreshed::default()
         }
     );
 }
@@ -239,4 +242,35 @@ fn the_index_keeps_each_entrys_address_code_blob_and_metadata() {
     let malformed = &rows["bad\tname.md"];
     assert_eq!(malformed.logical, None);
     assert_eq!(malformed.code, Some(Code::PathMalformed));
+}
+
+#[test]
+fn head_s_trees_are_listed_once_and_after_a_commit_only_the_changed_ones() {
+    let scenario = Scenario::new();
+    scenario.commit(&[
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        ("a/x.md", "1"),
+        ("b/y.md", "1"),
+    ]);
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1"}"#),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    assert_eq!(
+        build(&scenario, cache.path()).trees,
+        4,
+        "root, .board, a, b"
+    );
+    assert_eq!(build(&scenario, cache.path()).trees, 0);
+    scenario.commit(&[
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        ("a/x.md", "2"),
+        ("b/y.md", "1"),
+    ]);
+    assert_eq!(
+        build(&scenario, cache.path()).trees,
+        2,
+        "the new root and a"
+    );
 }

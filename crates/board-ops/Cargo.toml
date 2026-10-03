@@ -16,6 +16,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true
+proptest.workspace = true
 tempfile.workspace = true
 
 [lints]

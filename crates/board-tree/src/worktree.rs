@@ -1,10 +1,12 @@
 //! The one module that reads the working tree: every file git sees, which is
 //! tracked files and untracked files that are not ignored.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, FileType, Metadata};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::time::UNIX_EPOCH;
 
@@ -17,14 +19,17 @@ use crate::git::{GitError, Repository, model_id};
 use crate::tree::{Kind, RawEntry, Tree};
 
 /// Given a file's `/`-separated path and metadata, its blob if already known.
-pub(crate) type Known<'k> = &'k mut dyn FnMut(&str, &Stat) -> Option<ObjectId>;
+pub type Known<'k> = &'k mut dyn FnMut(&str, &Stat) -> Option<ObjectId>;
 
-/// The working tree of a repository, with its index and ignore rules.
+/// The working tree of a repository, with its index and ignore rules. Each
+/// directory is listed once, so the tree is one snapshot however often it is
+/// read.
 pub(crate) struct WorkingTree<'r, 'k> {
     repository: &'r Repository,
     index: gix::worktree::Index,
     excludes: gix::AttributeStack<'r>,
     known: Known<'k>,
+    listed: HashMap<PathBuf, Rc<[RawEntry<PathBuf>]>>,
 }
 
 impl Repository {
@@ -58,6 +63,7 @@ impl Repository {
             index,
             excludes,
             known,
+            listed: HashMap::new(),
         })
     }
 }
@@ -111,13 +117,19 @@ impl WorkingTree<'_, '_> {
         if !file_type.is_file() {
             return None;
         }
+        let Ok(seen) = fs::metadata(&absolute).map(|metadata| stat(&metadata)) else {
+            return Some((Kind::Unreadable, None));
+        };
+        if let Some(blob) = (self.known)(&path, &seen) {
+            return Some((Kind::File(blob), Some(seen)));
+        }
+        // The file hashed is the one opened, so its own metadata is kept.
         let Ok((stat, file)) =
             fs::File::open(&absolute).and_then(|file| Ok((stat(&file.metadata()?), file)))
         else {
             return Some((Kind::Unreadable, None));
         };
-        let blob =
-            (self.known)(&path, &stat).or_else(|| self.hash(&mut BufReader::new(file), stat.size));
+        let blob = self.hash(&mut BufReader::new(file), stat.size);
         Some((blob.map_or(Kind::Unreadable, Kind::File), Some(stat)))
     }
 
@@ -151,7 +163,10 @@ impl Tree for WorkingTree<'_, '_> {
         PathBuf::new()
     }
 
-    fn list(&mut self, directory: &PathBuf) -> Result<Vec<RawEntry<PathBuf>>, GitError> {
+    fn list(&mut self, directory: &PathBuf) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
+        if let Some(entries) = self.listed.get(directory) {
+            return Ok(Rc::clone(entries));
+        }
         let absolute = self.repository.path().join(directory);
         let unreadable = |source| GitError::File {
             path: absolute.clone(),
@@ -176,6 +191,8 @@ impl Tree for WorkingTree<'_, '_> {
                 });
             }
         }
+        let entries: Rc<[RawEntry<PathBuf>]> = entries.into();
+        self.listed.insert(directory.clone(), Rc::clone(&entries));
         Ok(entries)
     }
 

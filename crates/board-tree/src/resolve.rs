@@ -10,6 +10,7 @@ use board_model::{
 use crate::address::{self, Named};
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree};
+use crate::worktree::{Known, WorkingTree};
 
 /// The most pointers one resolution follows, as POSIX allows symlinks.
 pub const MAX_HOPS: usize = 40;
@@ -20,8 +21,17 @@ impl Repository {
     pub fn resolve(&self, source: &Source, path: &LogicalPath) -> Result<Location, ResolveError> {
         match source {
             Source::Commit(commit) => self.resolve_in(&mut self.commit_tree(*commit)?, path),
-            Source::WorkingTree => self.resolve_in(&mut self.working_tree(&mut |_, _| None)?, path),
+            Source::WorkingTree => self.resolver(&mut |_, _| None)?.resolve(path),
         }
+    }
+
+    /// A resolver for many paths in one snapshot of the working tree, which
+    /// hashes a file only when `known` does not already know its blob.
+    pub fn resolver<'k>(&self, known: Known<'k>) -> Result<Resolver<'_, 'k>, GitError> {
+        Ok(Resolver {
+            repository: self,
+            tree: self.working_tree(known)?,
+        })
     }
 
     pub(crate) fn resolve_in<T: Tree>(
@@ -181,6 +191,29 @@ impl Repository {
             return Err(ResolveError::Cycle { path });
         }
         mounted.follow(&mut tree, remaining, from_link, trail)
+    }
+}
+
+/// Resolves paths in one snapshot of the working tree: each directory is
+/// listed once, however many paths pass through it.
+pub struct Resolver<'r, 'k> {
+    repository: &'r Repository,
+    tree: WorkingTree<'r, 'k>,
+}
+
+impl std::fmt::Debug for Resolver<'_, '_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Resolver")
+            .field("repository", &self.repository.path())
+            .finish_non_exhaustive()
+    }
+}
+
+impl Resolver<'_, '_> {
+    /// Resolves `path` as [`Repository::resolve`] does in the working tree.
+    pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        self.repository.resolve_in(&mut self.tree, path)
     }
 }
 

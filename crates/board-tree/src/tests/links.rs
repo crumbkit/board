@@ -217,7 +217,7 @@ impl<T: Tree> Tree for Counting<T> {
     fn list(
         &mut self,
         directory: &T::Directory,
-    ) -> Result<Vec<RawEntry<T::Directory>>, crate::GitError> {
+    ) -> Result<std::rc::Rc<[RawEntry<T::Directory>]>, crate::GitError> {
         self.inner.list(directory)
     }
 

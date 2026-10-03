@@ -45,7 +45,7 @@ pub(crate) fn open(scenario: &Scenario) -> Board {
 }
 
 fn check(scenario: &Scenario) -> CheckReport {
-    open(scenario).check(None).unwrap()
+    open(scenario).check(None, None).unwrap()
 }
 
 /// The status `check` gives the entry at `path`.
@@ -297,7 +297,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
         .write("work/t.json", Item::File(&task("")))
         .write("workshop/t.json", Item::File(&task("")));
     let scope: LogicalPath = "/work".parse().unwrap();
-    let report = open(&scenario).check(Some(&scope)).unwrap();
+    let report = open(&scenario).check(Some(&scope), None).unwrap();
     let paths: Vec<&str> = report
         .entries
         .iter()
@@ -305,7 +305,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
         .collect();
     assert_eq!(paths, ["work/t.json"]);
     let missing: LogicalPath = "/nowhere".parse().unwrap();
-    let error = open(&scenario).check(Some(&missing)).unwrap_err();
+    let error = open(&scenario).check(Some(&missing), None).unwrap_err();
     assert_eq!(error.code(), Code::PathNotFound);
 }
 

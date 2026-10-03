@@ -59,7 +59,7 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>, context: &Conte
         Err(error) => return render::error(format, error.code(), &error),
     };
     match cli.command {
-        Command::Check { path } => match board.check(path.as_ref()) {
+        Command::Check { path } => match board.check(path.as_ref(), context.cache.as_deref()) {
             Ok(report) => render::check(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },

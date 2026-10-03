@@ -42,9 +42,14 @@ fn board() -> Scenario {
 }
 
 fn board_in(directory: &Path, arguments: &[&str]) -> Output {
+    board_cached(directory, None, arguments)
+}
+
+fn board_cached(directory: &Path, cache: Option<&Path>, arguments: &[&str]) -> Output {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
+        cache: cache.map(Path::to_path_buf),
     };
     let arguments = std::iter::once(env!("CARGO_BIN_NAME"))
         .chain(arguments.iter().copied())
@@ -60,72 +65,9 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
-/// Every code there is, so the fixture test knows what it must produce.
-const ALL: [Code; 27] = [
-    Code::JsonParse,
-    Code::JsonMergeConflict,
-    Code::JsonDuplicateKey,
-    Code::JsonTooLarge,
-    Code::JsonNotUtf8,
-    Code::RecordBadType,
-    Code::RecordUnknownType,
-    Code::RecordInvalid,
-    Code::RecordNotARecord,
-    Code::ConfigNotFound,
-    Code::ConfigInvalid,
-    Code::SchemaInvalid,
-    Code::RefMalformed,
-    Code::RefWrongType,
-    Code::PathMalformed,
-    Code::PathNotFound,
-    Code::PathShadowed,
-    Code::PathCaseCollision,
-    Code::RefDangling,
-    Code::MountInvalid,
-    Code::MountRepoMissing,
-    Code::MountCommitMissing,
-    Code::MountRemoteUnsupported,
-    Code::ResolveCycle,
-    Code::ResolveTooManyHops,
-    Code::RepoUnreadable,
-    Code::RepoSubmodule,
-];
-
-/// Fails to compile when a code is added, so `ALL` stays complete.
-fn listed(code: Code) {
-    match code {
-        Code::JsonParse
-        | Code::JsonMergeConflict
-        | Code::JsonDuplicateKey
-        | Code::JsonTooLarge
-        | Code::JsonNotUtf8
-        | Code::RecordBadType
-        | Code::RecordUnknownType
-        | Code::RecordInvalid
-        | Code::RecordNotARecord
-        | Code::ConfigNotFound
-        | Code::ConfigInvalid
-        | Code::SchemaInvalid
-        | Code::RefMalformed
-        | Code::RefWrongType
-        | Code::PathMalformed
-        | Code::PathNotFound
-        | Code::PathShadowed
-        | Code::PathCaseCollision
-        | Code::RefDangling
-        | Code::MountInvalid
-        | Code::MountRepoMissing
-        | Code::MountCommitMissing
-        | Code::MountRemoteUnsupported
-        | Code::ResolveCycle
-        | Code::ResolveTooManyHops
-        | Code::RepoUnreadable
-        | Code::RepoSubmodule => {}
-    }
-}
-
 fn code_named(name: &str) -> Code {
-    ALL.into_iter()
+    Code::ALL
+        .into_iter()
         .find(|code| code.as_str() == name)
         .unwrap_or_else(|| panic!("{name} is not a code"))
 }
@@ -398,11 +340,28 @@ fn the_fixture_board_produces_every_code() {
     );
     take(board_in(misconfigured.workdir(), &["check", "--json"]));
 
-    let missing: Vec<&str> = ALL
+    // The index fails only when SQLite does, even in memory, which no board
+    // can cause.
+    let missing: Vec<&str> = Code::ALL
         .iter()
-        .inspect(|code| listed(**code))
+        .filter(|code| **code != Code::IndexFailed)
         .map(|code| code.as_str())
         .filter(|code| !produced.contains(code))
         .collect();
     assert!(missing.is_empty(), "not produced: {missing:?}");
+}
+
+#[test]
+fn check_says_on_stderr_when_the_index_is_in_memory() {
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    let kept = board_cached(scenario.workdir(), Some(cache.path()), &["check"]);
+    assert_eq!(kept.code, 0);
+    assert_eq!(text(&kept.stderr), "");
+    let memory = board_cached(scenario.workdir(), None, &["check"]);
+    assert_eq!(memory.stdout, kept.stdout);
+    assert_eq!(
+        text(&memory.stderr),
+        "note: the index is in memory for this run: there is no cache directory\n"
+    );
 }
