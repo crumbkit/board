@@ -11,6 +11,7 @@ pub enum Code {
     JsonDuplicateKey,
     JsonTooLarge,
     JsonNotUtf8,
+    JsonLossyNumber,
     RecordBadType,
     RecordUnknownType,
     RecordInvalid,
@@ -39,12 +40,13 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 29] = [
+    pub const ALL: [Code; 30] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
         Self::JsonTooLarge,
         Self::JsonNotUtf8,
+        Self::JsonLossyNumber,
         Self::RecordBadType,
         Self::RecordUnknownType,
         Self::RecordInvalid,
@@ -83,6 +85,7 @@ impl Code {
             Self::JsonDuplicateKey => "board::json::duplicate_key",
             Self::JsonTooLarge => "board::json::too_large",
             Self::JsonNotUtf8 => "board::json::not_utf8",
+            Self::JsonLossyNumber => "board::json::lossy_number",
             Self::RecordBadType => "board::record::bad_type",
             Self::RecordUnknownType => "board::record::unknown_type",
             Self::RecordInvalid => "board::record::invalid",
@@ -131,6 +134,7 @@ mod tests {
             | Code::JsonDuplicateKey
             | Code::JsonTooLarge
             | Code::JsonNotUtf8
+            | Code::JsonLossyNumber
             | Code::RecordBadType
             | Code::RecordUnknownType
             | Code::RecordInvalid

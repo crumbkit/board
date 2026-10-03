@@ -13,7 +13,7 @@ use crate::pointer::MAX_RECORD_BYTES;
 /// Parses `bytes` as one JSON document. The first failure wins, in this
 /// order: too large, not UTF-8, git conflict markers, not JSON (a byte-order
 /// mark or nesting past `serde_json`'s limit included), a duplicate key at any
-/// depth.
+/// depth, a number that cannot be held exactly.
 pub fn parse_json(bytes: &[u8]) -> Result<Value, JsonError> {
     if bytes.len() > MAX_RECORD_BYTES {
         return Err(JsonError::TooLarge { bytes: bytes.len() });
@@ -33,6 +33,101 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, JsonError> {
         Some(key) => JsonError::DuplicateKey { key },
         None => JsonError::Parse { source },
     })
+    .and_then(|value| match lossy_number(text) {
+        Some(lexeme) => Err(JsonError::LossyNumber {
+            lexeme: lexeme.to_owned(),
+        }),
+        None => Ok(value),
+    })
+}
+
+/// The document's canonical bytes (docs/architecture.md, Canonical form):
+/// keys sorted by code point, two-space indentation, one key or array
+/// element per line, empty objects and arrays on one line, numbers as
+/// `serde_json` prints them, `\n` endings and one trailing newline.
+///
+/// # Panics
+///
+/// Never: a `Value`'s keys are all strings, and writing to a `Vec` cannot
+/// fail.
+pub fn canonical_json(value: &Value) -> Vec<u8> {
+    let mut bytes = serde_json::to_vec_pretty(value)
+        .expect("a Value writes to a Vec: every key is a string and no write can fail");
+    bytes.push(b'\n');
+    bytes
+}
+
+/// The first number in the valid JSON `text` that Board cannot hold exactly,
+/// as written. A number is held exactly when its value survives being read:
+/// an integer must fit `i64` or `u64`, and any other number must have the
+/// same decimal value as the shortest decimal that reads back to the same
+/// `f64`. So `0.1` and `1.50` are held, and `2.5e-324` and
+/// `9007199254740993.0` are not.
+fn lossy_number(text: &str) -> Option<&str> {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while let Some(&byte) = bytes.get(at) {
+        match byte {
+            b'"' => {
+                at += 1;
+                while let Some(&byte) = bytes.get(at) {
+                    at += if byte == b'\\' { 2 } else { 1 };
+                    if byte == b'"' {
+                        break;
+                    }
+                }
+            }
+            b'-' | b'0'..=b'9' => {
+                let start = at;
+                while bytes.get(at).is_some_and(|byte| {
+                    matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+                }) {
+                    at += 1;
+                }
+                let lexeme = text.get(start..at)?;
+                if !exact(lexeme) {
+                    return Some(lexeme);
+                }
+            }
+            _ => at += 1,
+        }
+    }
+    None
+}
+
+/// Whether the number written `lexeme` is held exactly; see [`lossy_number`].
+fn exact(lexeme: &str) -> bool {
+    if !lexeme.contains(['.', 'e', 'E']) {
+        return lexeme.parse::<i64>().is_ok() || lexeme.parse::<u64>().is_ok();
+    }
+    let Ok(value) = lexeme.parse::<f64>() else {
+        return false;
+    };
+    value.is_finite() && decimal(lexeme) == decimal(&format!("{value:e}"))
+}
+
+/// The value of a decimal as its sign, its significant digits and the power
+/// of ten of the last of them; zero is one value whatever its sign.
+fn decimal(text: &str) -> Option<(bool, String, i64)> {
+    let (negative, text) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, text),
+    };
+    let (mantissa, exponent) = match text.split_once(['e', 'E']) {
+        Some((mantissa, exponent)) => (mantissa, exponent.parse::<i64>().ok()?),
+        None => (text, 0),
+    };
+    let (whole, fraction) = mantissa.split_once('.').unwrap_or((mantissa, ""));
+    let digits = format!("{whole}{fraction}");
+    let significant = digits.trim_start_matches('0').trim_end_matches('0');
+    if significant.is_empty() {
+        return Some((false, String::new(), 0));
+    }
+    let trailing = digits.trim_start_matches('0').len() - significant.len();
+    let exponent = exponent
+        .checked_sub(i64::try_from(fraction.len()).ok()?)?
+        .checked_add(i64::try_from(trailing).ok()?)?;
+    Some((negative, significant.to_owned(), exponent))
 }
 
 /// The first line, counted from 1, that git writes to mark a conflict.
@@ -138,6 +233,8 @@ pub enum JsonError {
     },
     #[error("json repeats the key {key:?} in one object")]
     DuplicateKey { key: String },
+    #[error("number {lexeme} cannot be held exactly")]
+    LossyNumber { lexeme: String },
 }
 
 impl JsonError {
@@ -148,6 +245,7 @@ impl JsonError {
             Self::MergeConflict { .. } => Code::JsonMergeConflict,
             Self::Parse { .. } => Code::JsonParse,
             Self::DuplicateKey { .. } => Code::JsonDuplicateKey,
+            Self::LossyNumber { .. } => Code::JsonLossyNumber,
         }
     }
 }
