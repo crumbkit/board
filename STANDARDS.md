@@ -35,7 +35,7 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Tests
 
-19. **Tests come first and describe behaviour.** Keep unit tests inline or in a sibling `tests.rs`, and integration tests in `tests/`. Name each test as a sentence about behaviour. Test against real local dependencies: git repositories in temporary directories, SQLite, child processes. Pair every refusal test with an otherwise identical case that is admitted, and assert the exact code. State invariants as property tests (`proptest`) over generated input; every query has a property test that it answers the same from a cold rebuild as from a warm index. Freeze wire formats and canonical output with golden bytes. Fuzz every parser that reads untrusted input: `proptest` in the gate, and `cargo-fuzz` on nightly in a scheduled job outside it. Nextest uses `retries = 0` (a flaky test is a defect) and `fail-fast = false`. Run doctests separately.
+19. **Tests come first and describe behaviour.** Keep unit tests inline or in a sibling `tests.rs`, and integration tests in `tests/`. Name each test as a sentence about behaviour. Test against real local dependencies: git repositories in temporary directories, SQLite, child processes. Pair every refusal test with an otherwise identical case that is admitted, and assert the exact code. State invariants as property tests (`proptest`) over generated input; every query has a property test that it answers the same from a cold rebuild as from a warm index. Freeze wire formats and canonical output with golden bytes. Fuzz every parser that reads untrusted input with a `bolero` target: it runs as a randomised test in the gate and as coverage-guided fuzzing in a scheduled job, so the target cannot rot. Nextest uses `retries = 0` (a flaky test is a defect) and `fail-fast = false`. Run doctests separately.
 
 ## Performance
 
@@ -90,11 +90,11 @@ what enforces it. A rule without a gate is still a rule.
     print_stdout = "deny"
     print_stderr = "deny"
 
-## Python: the plugin library and plugins
+## Python: plugins
 
 - **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
 - **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`. CI runs them on macOS and Linux.
 - **P3. Typed edges.** Inputs and outputs are pydantic v2 models with `extra="forbid"`. The manifest's schemas are generated from those models, never written by hand.
 - **P4. Board's contract.** Rules 3, 4 and 17 apply to the protocol: every document carries `$type`, every error a stable code `<plugin>::<area>::<reason>`, the exit code is 0 or 1, and logs go to stderr only.
 - **P5. Pure extraction.** Extraction is a function of one record's bytes. Anything spanning records is a query.
-- **P6. Tests.** Use `board_plugin.testing` against real fixture boards and the real protocol. Rule 19 applies: sentences as names, every refusal paired with an admitted twin, no retries.
+- **P6. Tests.** Test against real fixture boards and the real protocol. Rule 19 applies: sentences as names, every refusal paired with an admitted twin, no retries.

@@ -3,7 +3,7 @@ name = "board-tree"
 version = "0.0.0"
 edition.workspace = true
 rust-version.workspace = true
-publish = false
+publish.workspace = true
 
 [dependencies]
 board-model.workspace = true

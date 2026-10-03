@@ -10,8 +10,9 @@ records easy to read and write.
 ## Boards and entries
 
 A board is a directory tree whose root holds `.board/board.json`. It is
-normally the root of a git repository. Every file under the root is an entry
-with a path, a blob hash, a size, a kind and a status.
+normally the root of a git repository. Every file git sees under the root is an
+entry: tracked files, and untracked files that are not ignored. `.git` is never
+an entry. An entry has a path, a blob hash, a size, a kind and a status.
 
 | Kind | What it is |
 | --- | --- |
@@ -23,6 +24,12 @@ with a path, a blob hash, a size, a kind and a status.
 
 An entry's status is `ok` or `degraded` with exactly one code (see Codes).
 Board never refuses to index a file; the worst it says is a path and a code.
+An entry under a directory that resolution cannot reach (a shadowed or
+malformed name) takes that directory's code.
+
+A symlink is a `file` entry and is never followed; Board's links are pointers.
+A submodule is degraded with `board::repo::submodule` and never descended:
+mounts do that job.
 
 `.board/board.json` is `board/config/v1`:
 
@@ -84,10 +91,18 @@ In a directory, a segment `x` names one of:
 - a non-JSON file whose whole name is `x`, such as `notes.md`.
 
 A `.json` file is addressed only without its extension, so every entry has one
-address. When a segment matches more than one entry, each is degraded with
-`board::path::shadowed` and resolution refuses with the same code. Two names in
+address. A record `x.json` and a directory `x/` may sit side by side, so a
+record can have children: `/x` names the record, `/x/y` continues into the
+directory, and `ls /x` lists the directory. Any other match of one segment to
+more than one entry, including a pointer beside a directory, degrades each with
+`board::path::shadowed`, and resolution refuses with the same code. Two names in
 one directory that differ only by ASCII case are degraded with
-`board::path::case_collision`, because a macOS working tree cannot hold both.
+`board::path::case_collision`, because a macOS working tree cannot hold both;
+resolution still matches names exactly. A name that is not a valid segment is
+degraded with `board::path::malformed` and cannot be reached. A path that names
+nothing, including one that continues through a file, is refused with
+`board::path::not_found`. A repository that cannot be opened, or a missing or
+corrupt object, is `board::repo::unreadable`.
 
 ## Pointers: links and mounts
 
@@ -131,8 +146,8 @@ through it. The semantics are POSIX symlinks':
   is ignored.
 
 Resolution returns a `Location`: the board (repository and source, either the
-working tree or a commit), the physical path, the blob hash, and every pointer
-followed. A Location's identity is its board, source and physical path. Two
+working tree or a commit), the physical path, the object (a blob hash, or a
+directory), and every pointer followed. A Location's identity is its board, source and physical path. Two
 logical paths that reach one identity are one object; backlinks and query
 results report the identity once. The display path replaces every link with its
 target and keeps mount points.
@@ -234,6 +249,10 @@ everything it was asked to or nothing.
 | `board-plugin` | manifests, discovery, child processes | board-model, board-index |
 | `board-cli` | the `board` binary: arguments, configuration, the one printer | all of the above |
 
+Every operation is a typed library function that returns its report.
+`board-cli` only parses arguments, reads configuration and prints, so a later
+adapter such as `board serve` needs no logic of its own.
+
 `deny.toml` lets only `board-tree` depend on gix, only `board-index` on rusqlite
 and only `board-validate` on jsonschema. `clippy.toml` names the owner of each
 effect. No crate uses an async runtime.
@@ -249,7 +268,8 @@ after release. The v0 set:
 | `record` | `bad_type`, `unknown_type`, `invalid` |
 | `schema` | `invalid` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
-| `path` | `malformed`, `shadowed`, `case_collision` |
+| `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
+| `repo` | `unreadable`, `submodule` |
 | `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `put` | `stale`, `locked`, `through_mount`, `invalid` |
@@ -266,7 +286,8 @@ scenarios run in every test run:
 - cycles: link to link, and a board that mounts its own parent;
 - 39, 40 and 41 hops;
 - a dangling link; a link whose target vanishes when its mount's commit moves;
-- a pointer and a directory at one path; names differing only by case;
+- a record beside its directory of children; a pointer and a directory at one
+  path; names differing only by case;
 - a write through a link (lands at the target) and through a mount (refused);
 - an uncommitted edit in the root beside committed mounted content.
 
