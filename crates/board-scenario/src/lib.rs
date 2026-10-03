@@ -38,7 +38,8 @@ pub enum Item<'a> {
     /// Text added to the end of the file at the path, such as a section of
     /// `.git/config`.
     Appended(&'a str),
-    /// Nothing: the file at the path is deleted; working tree only.
+    /// Nothing: the file or directory at the path is deleted; working tree
+    /// only.
     Deleted,
     /// A file the walk's user cannot read (mode 000); working tree only.
     Unreadable(&'a str),
@@ -106,6 +107,7 @@ impl Scenario {
                 backdate(&path);
             }
             Item::Symlink(target) => std::os::unix::fs::symlink(target, path).unwrap(),
+            Item::Deleted if path.is_dir() => fs::remove_dir_all(path).unwrap(),
             Item::Deleted => fs::remove_file(path).unwrap(),
             Item::Appended(text) => {
                 use std::io::Write;

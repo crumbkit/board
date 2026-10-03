@@ -127,15 +127,24 @@ impl Board {
             }
             match self.prepare_line(text) {
                 Ok(item) => {
+                    // Folded as the walk folds names, so two lines that a
+                    // case-insensitive file system would make one file clash.
+                    let folded = item.target.path.to_ascii_lowercase();
                     if let Some(first) = prepared
                         .iter()
-                        .position(|other| other.target.path == item.target.path)
+                        .position(|other| other.target.path.to_ascii_lowercase() == folded)
                     {
+                        let earlier = &prepared[first].target.path;
+                        let (code, message) = if *earlier == item.target.path {
+                            (Code::PutInvalid, "as")
+                        } else {
+                            (Code::PathCaseCollision, "differing only in case from")
+                        };
                         refusals.push(Refusal {
                             line: number,
-                            code: Code::PutInvalid,
+                            code,
                             message: format!(
-                                "it writes {} as line {} does",
+                                "it writes {} {message} line {} writes {earlier}",
                                 item.target.path, numbers[first]
                             ),
                         });

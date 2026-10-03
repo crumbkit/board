@@ -282,10 +282,13 @@ when it resolves to its identity, whatever path it names.
 6. commits, when `commit_on_put` is set, as `git commit <paths>` does: only the
    written paths, onto HEAD, with git's index updated for them under git's own
    `index.lock`. The author is git's `user.name` and `user.email`; without them
-   the put is refused before writing with `board::put::no_identity`. No hooks
-   run. The commit object is made before the renames, and HEAD moves only if it
+   the put is refused before writing with `board::put::no_identity`. During a
+   merge, cherry-pick, revert or rebase it is refused before writing with
+   `board::put::locked`, as git refuses a partial commit then. No hooks run.
+   The commit object is made before the renames, and HEAD moves only if it
    still holds the commit read under the lock; otherwise the report says the
-   files were written and not committed, with `board::put::head_moved`.
+   files were written and not committed, with `board::put::head_moved`. Any
+   other failure is `board::put::failed`, and says whether the commit was made.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
 record}`. Every line is checked and every expect compared under the lock
