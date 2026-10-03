@@ -197,9 +197,9 @@ deleted and rebuilt. SQLite is bundled, so every platform runs the same one.
 | `sources` | the root working tree and each mounted repository and commit | source |
 | `trees` | every entry in a tree: name, blob or subtree, mode | tree |
 | `worktree` | each working-tree file's stat (size, times, inode, mode) and blob | path |
-| `blobs` | parse result: kind, type, status, code | blob |
-| `validations` | schema result: status, code, failing JSON pointer | record blob, schema blob |
-| `refs` | references a record makes: JSON pointer, target path | blob |
+| `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
+| `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
+| `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `mounts` | each mount point and the source it reaches | source, path |
 | `state` | index format, root commit and working-tree stamp | key |
 

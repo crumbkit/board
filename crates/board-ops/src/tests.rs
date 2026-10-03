@@ -8,7 +8,7 @@ use crate::{Board, CheckReport};
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
 
-const TASK_SCHEMA: &str = r#"{
+pub(crate) const TASK_SCHEMA: &str = r#"{
   "type": "object",
   "required": ["title"],
   "properties": {
@@ -18,10 +18,10 @@ const TASK_SCHEMA: &str = r#"{
   }
 }"#;
 
-const PROJECT_SCHEMA: &str = r#"{"type": "object"}"#;
+pub(crate) const PROJECT_SCHEMA: &str = r#"{"type": "object"}"#;
 
 /// A board with the task and project types and one project.
-fn board() -> Scenario {
+pub(crate) fn board() -> Scenario {
     let scenario = Scenario::new();
     scenario
         .write(".board/board.json", Item::File(CONFIG))
@@ -40,7 +40,7 @@ fn board() -> Scenario {
     scenario
 }
 
-fn open(scenario: &Scenario) -> Board {
+pub(crate) fn open(scenario: &Scenario) -> Board {
     Board::open(scenario.workdir(), None).unwrap()
 }
 
@@ -58,7 +58,7 @@ fn status(scenario: &Scenario, path: &str) -> Status {
         .status
 }
 
-fn task(fields: &str) -> String {
+pub(crate) fn task(fields: &str) -> String {
     format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#)
 }
 

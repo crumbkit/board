@@ -36,6 +36,42 @@ pub enum Code {
 }
 
 impl Code {
+    /// Every code, so a spelling can be read back.
+    pub const ALL: [Code; 27] = [
+        Self::JsonParse,
+        Self::JsonMergeConflict,
+        Self::JsonDuplicateKey,
+        Self::JsonTooLarge,
+        Self::JsonNotUtf8,
+        Self::RecordBadType,
+        Self::RecordUnknownType,
+        Self::RecordInvalid,
+        Self::RecordNotARecord,
+        Self::ConfigNotFound,
+        Self::ConfigInvalid,
+        Self::SchemaInvalid,
+        Self::RefMalformed,
+        Self::RefWrongType,
+        Self::PathMalformed,
+        Self::PathNotFound,
+        Self::PathShadowed,
+        Self::PathCaseCollision,
+        Self::RefDangling,
+        Self::MountInvalid,
+        Self::MountRepoMissing,
+        Self::MountCommitMissing,
+        Self::MountRemoteUnsupported,
+        Self::ResolveCycle,
+        Self::ResolveTooManyHops,
+        Self::RepoUnreadable,
+        Self::RepoSubmodule,
+    ];
+
+    /// The code spelled `text`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|code| code.as_str() == text)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::JsonParse => "board::json::parse",
@@ -81,36 +117,6 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 27] = [
-        Code::JsonParse,
-        Code::JsonMergeConflict,
-        Code::JsonDuplicateKey,
-        Code::JsonTooLarge,
-        Code::JsonNotUtf8,
-        Code::RecordBadType,
-        Code::RecordUnknownType,
-        Code::RecordInvalid,
-        Code::RecordNotARecord,
-        Code::ConfigNotFound,
-        Code::ConfigInvalid,
-        Code::SchemaInvalid,
-        Code::RefMalformed,
-        Code::RefWrongType,
-        Code::PathMalformed,
-        Code::PathNotFound,
-        Code::PathShadowed,
-        Code::PathCaseCollision,
-        Code::RefDangling,
-        Code::MountInvalid,
-        Code::MountRepoMissing,
-        Code::MountCommitMissing,
-        Code::MountRemoteUnsupported,
-        Code::ResolveCycle,
-        Code::ResolveTooManyHops,
-        Code::RepoUnreadable,
-        Code::RepoSubmodule,
-    ];
-
     /// Fails to compile when a variant is added, so `ALL` stays complete.
     fn listed(code: Code) {
         match code {
@@ -146,7 +152,7 @@ mod tests {
 
     #[test]
     fn every_code_is_board_area_reason_in_snake_case() {
-        for code in ALL {
+        for code in Code::ALL {
             listed(code);
             let parts: Vec<&str> = code.as_str().split("::").collect();
             assert_eq!(parts.len(), 3, "{code}");
@@ -164,8 +170,16 @@ mod tests {
 
     #[test]
     fn no_two_codes_share_a_spelling() {
-        let spellings: HashSet<&str> = ALL.iter().map(|code| code.as_str()).collect();
-        assert_eq!(spellings.len(), ALL.len());
+        let spellings: HashSet<&str> = Code::ALL.iter().map(|code| code.as_str()).collect();
+        assert_eq!(spellings.len(), Code::ALL.len());
+    }
+
+    #[test]
+    fn every_code_parses_back_from_its_spelling() {
+        for code in Code::ALL {
+            assert_eq!(Code::parse(code.as_str()), Some(code));
+        }
+        assert_eq!(Code::parse("board::json::parse "), None);
     }
 
     #[test]

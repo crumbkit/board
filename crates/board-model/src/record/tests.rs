@@ -191,3 +191,30 @@ fn bolero_classifying_any_bytes_never_panics_and_unparsed_content_has_a_code() {
         }
     });
 }
+
+#[test]
+fn a_path_gives_the_role_its_bytes_are_read_in() {
+    assert_eq!(Role::of("notes.md"), None);
+    assert_eq!(Role::of("x.JSON"), None);
+    assert_eq!(Role::of("tasks/a.json"), Some(Role::Json));
+    assert_eq!(
+        Role::of(".board/types/lr/task/v1.schema.json"),
+        Some(Role::Schema)
+    );
+    assert_eq!(
+        Role::of(".board/types/board/x/v1.schema.json"),
+        Some(Role::ReservedSchema)
+    );
+}
+
+#[test]
+fn the_same_bytes_are_read_differently_in_each_role() {
+    let bytes = br#"{"$type": "lr/task/v1"}"#;
+    assert_eq!(Role::Json.classify(Some(bytes)).kind(), Kind::Record);
+    assert_eq!(Role::Schema.classify(Some(bytes)).kind(), Kind::Schema);
+    assert_eq!(Role::Schema.classify(Some(bytes)).code, None);
+    assert_eq!(
+        Role::ReservedSchema.classify(Some(bytes)).code,
+        Some(Code::SchemaInvalid)
+    );
+}
