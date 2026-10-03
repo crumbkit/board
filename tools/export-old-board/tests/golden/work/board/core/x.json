@@ -1,0 +1,44 @@
+{
+  "$type": "legacy/work/v1",
+  "authority_limitation": null,
+  "body": "line one\nline two\u0001",
+  "contract_violation": null,
+  "head_ids": [
+    "0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "head_kind": "object.declare",
+  "known_state_head_ids": [
+    "0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "metadata": {
+    "B": [
+      "upper"
+    ],
+    "a-key": [],
+    "z-key": [
+      "2",
+      "1"
+    ],
+    "é": [
+      "e"
+    ]
+  },
+  "observation_count": 0,
+  "opaque_record_ids": [],
+  "outcomes": {
+    "insufficient": 1,
+    "stale": 0,
+    "used": 3
+  },
+  "recorded_at_milliseconds": 1700000000000,
+  "relationships": [
+    {
+      "relation": "part-of",
+      "target": "project:board"
+    }
+  ],
+  "standing": "active",
+  "state_record_count": 1,
+  "subject": "work:board/core/x",
+  "summary": "café “quoted” 😀 tab\t\"q\" back\\slash"
+}

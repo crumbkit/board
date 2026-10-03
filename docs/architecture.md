@@ -24,6 +24,10 @@ an entry. An entry has a path, a blob hash, a size, a kind and a status.
 
 An entry's status is `ok` or `degraded` with exactly one code (see Codes).
 Board never refuses to index a file; the worst it says is a path and a code.
+A file or directory that cannot be read is degraded with
+`board::repo::unreadable`. Working-tree files are hashed as stored, with no
+clean filter (end-of-line conversion, LFS), so a file under one shows as
+uncommitted.
 A directory is not an entry, so a degraded directory name passes its code to
 every entry beneath it.
 
@@ -82,7 +86,8 @@ merge combine most concurrent edits.
 A logical path is `/` alone, the board's root, or `/` followed by segments
 separated by `/`. A segment is
 non-empty UTF-8 of at most 255 bytes, without `/`, NUL or control characters,
-and is not `.` or `..`. A path is at most 4,096 bytes. Paths are absolute and
+and is not `.` or `..`. A path is at most 4,096 bytes. A record's file name
+adds `.json`, so a record's segment is at most 250 bytes. Paths are absolute and
 are read against the root of the board that holds them.
 
 In a directory, a segment `x` names one of:
