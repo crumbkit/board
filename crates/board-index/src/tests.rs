@@ -205,3 +205,20 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
         .unwrap();
     assert_eq!(accepts, r#"["test/person/v1"]"#, "agents read it as JSON");
 }
+
+#[test]
+fn a_query_cannot_write_and_leaves_the_index_writable() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = filled(cache.path());
+    let refused = index.query("DELETE FROM blobs", 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let admitted = index.query("SELECT count(*) AS n FROM blobs", 10).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
+    assert!(
+        has_fact(&mut index),
+        "the write lock is still there to take"
+    );
+    let writer = index.write().unwrap();
+    writer.put_blob(blob(2), Role::Json, &record()).unwrap();
+    writer.commit().unwrap();
+}

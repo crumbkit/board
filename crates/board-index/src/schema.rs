@@ -71,9 +71,12 @@ CREATE TABLE refs (
 ) WITHOUT ROWID;
 ";
 
-/// What one run decides about each entry, and the view agents query. Both
-/// live on the connection that made them, so nothing decided per run is
-/// stored.
+/// What one run decides about each entry, the view agents query, and each
+/// fact table filtered to what the current entries reach. All live on the
+/// connection that made them, so nothing decided per run is stored. An
+/// unqualified name finds a temporary view before a table, so a query sees
+/// the same rows warm as cold; `main.<table>` is the whole cache, which
+/// keeps facts about content no longer in the tree so branches share them.
 pub(crate) const RESOLVED: &str = "
 CREATE TEMP TABLE IF NOT EXISTS resolved (
     source TEXT NOT NULL,
@@ -82,12 +85,13 @@ CREATE TEMP TABLE IF NOT EXISTS resolved (
     blob TEXT,
     size INTEGER,
     role TEXT,
+    schema TEXT,
     kind TEXT NOT NULL,
     code TEXT,
     change TEXT NOT NULL,
     PRIMARY KEY (source, path)
 ) WITHOUT ROWID;
-DELETE FROM resolved;
+DELETE FROM temp.resolved;
 CREATE TEMP VIEW IF NOT EXISTS entries AS
 SELECT
     r.source,
@@ -99,7 +103,26 @@ SELECT
     b.type,
     CASE WHEN r.code IS NULL THEN 'ok' ELSE 'degraded' END AS status,
     r.code,
-    r.change
-FROM resolved AS r
+    r.change,
+    r.role,
+    r.schema
+FROM temp.resolved AS r
 LEFT JOIN main.blobs AS b ON b.blob = r.blob AND b.role = r.role;
+CREATE TEMP VIEW IF NOT EXISTS blobs AS
+SELECT * FROM main.blobs
+WHERE (blob, role) IN (SELECT blob, role FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS validations AS
+SELECT * FROM main.validations
+WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS refs AS
+SELECT * FROM main.refs
+WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS trees AS
+WITH RECURSIVE reached (tree) AS (
+    SELECT tree FROM main.sources WHERE tree IS NOT NULL
+    UNION
+    SELECT t.object FROM main.trees AS t JOIN reached ON t.tree = reached.tree
+    WHERE t.mode = 16384
+)
+SELECT * FROM main.trees WHERE tree IN (SELECT tree FROM reached);
 ";

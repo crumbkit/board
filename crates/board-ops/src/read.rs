@@ -181,7 +181,7 @@ pub(crate) fn classify_entry(
 }
 
 /// The display path of `location`, or the path asked for if it has none.
-fn display(location: &Location, asked: &LogicalPath) -> LogicalPath {
+pub(crate) fn display(location: &Location, asked: &LogicalPath) -> LogicalPath {
     location.display_path().unwrap_or_else(|| asked.clone())
 }
 

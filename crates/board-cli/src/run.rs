@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 
 use board_model::LogicalPath;
-use board_ops::Board;
+use board_ops::{Board, DEFAULT_LIMIT, MAX_LIMIT};
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
 
@@ -32,6 +32,23 @@ enum Command {
     Get { path: LogicalPath },
     /// List the directory at a path, without following pointers inside it.
     Ls { path: Option<LogicalPath> },
+    /// List the references a record makes and the records that reach it.
+    Refs { path: LogicalPath },
+    /// Run one read-only SQL statement over the index.
+    Query {
+        sql: String,
+        /// The most rows to return.
+        #[arg(long, default_value_t = DEFAULT_LIMIT, value_parser = limit)]
+        limit: usize,
+    },
+}
+
+/// A row limit from 1 to [`MAX_LIMIT`].
+fn limit(text: &str) -> Result<usize, String> {
+    match text.parse::<usize>() {
+        Ok(limit) if (1..=MAX_LIMIT).contains(&limit) => Ok(limit),
+        _ => Err(format!("must be a whole number from 1 to {MAX_LIMIT}")),
+    }
 }
 
 /// Runs one command line against the board found from `context`.
@@ -65,6 +82,14 @@ pub(crate) fn run(arguments: impl IntoIterator<Item = OsString>, context: &Conte
         },
         Command::Get { path } => match board.get(&path) {
             Ok(report) => render::get(format, &report),
+            Err(error) => render::error(format, error.code(), &error),
+        },
+        Command::Refs { path } => match board.refs(&path, context.cache.as_deref()) {
+            Ok(report) => render::refs(format, &report),
+            Err(error) => render::error(format, error.code(), &error),
+        },
+        Command::Query { sql, limit } => match board.query(&sql, limit, context.cache.as_deref()) {
+            Ok(report) => render::query(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
         Command::Ls { path } => match board.ls(&path.unwrap_or_else(LogicalPath::root)) {

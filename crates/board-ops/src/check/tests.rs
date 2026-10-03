@@ -66,7 +66,10 @@ fn before_the_first_commit_every_entry_is_uncommitted() {
 /// What `entries` shows, as check reports it.
 fn viewed(index: &Index) -> Vec<Checked> {
     let rows = index
-        .query("SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path")
+        .query(
+            "SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path",
+            10_000,
+        )
         .unwrap();
     let text = |value: &Value| value.as_str().map(str::to_owned);
     rows.rows
@@ -223,6 +226,46 @@ fn write(
     }
 }
 
+/// Every table and view an agent can name, read whole. `state` leaves out
+/// when the last refresh began, which is a time.
+const EVERY_TABLE: [&str; 9] = [
+    "SELECT * FROM entries ORDER BY source, path",
+    "SELECT * FROM blobs ORDER BY blob, role",
+    "SELECT * FROM validations ORDER BY record, schema",
+    "SELECT * FROM refs ORDER BY record, schema, ordinal",
+    "SELECT * FROM trees ORDER BY tree, name",
+    "SELECT * FROM worktree ORDER BY path",
+    "SELECT * FROM sources ORDER BY source",
+    "SELECT * FROM mounts ORDER BY source, path",
+    "SELECT * FROM state WHERE key <> 'refreshed_ns' ORDER BY key",
+];
+
+#[test]
+fn a_query_sees_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
+    let scenario = board();
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    let cache = tempfile::tempdir().unwrap();
+    let root = open(&scenario).repository().path().to_path_buf();
+    let mut warm = Index::open(Some(cache.path()), &root).unwrap();
+    check_in(&scenario, &mut warm);
+    scenario.write(
+        "tasks/a.json",
+        Item::File(&task(r#", "see": "/projects/p""#)),
+    );
+    check_in(&scenario, &mut warm);
+    let mut cold = Index::open(None, &root).unwrap();
+    check_in(&scenario, &mut cold);
+    let count = |index: &Index, sql: &str| index.query(sql, 1).unwrap().rows[0][0].clone();
+    let seen = "SELECT count(*) FROM blobs";
+    assert_eq!(count(&warm, seen), count(&cold, seen));
+    let cached = "SELECT count(*) FROM main.blobs";
+    assert_eq!(
+        count(&warm, cached).as_i64().unwrap(),
+        count(&cold, cached).as_i64().unwrap() + 1,
+        "the first version of tasks/a is still cached"
+    );
+}
+
 /// Entries in the order the view's key gives them: by source, then path.
 fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
     entries.sort_by_key(|entry| (board_index::source_name(&entry.source), entry.path.clone()));
@@ -271,6 +314,9 @@ proptest! {
         prop_assert_eq!(&warmed.entries, &fresh.entries);
         prop_assert_eq!(viewed(&warm), sorted(warmed.entries.clone()));
         prop_assert_eq!(viewed(&cold), sorted(fresh.entries));
+        for sql in EVERY_TABLE {
+            prop_assert_eq!(warm.query(sql, 10_000).unwrap(), cold.query(sql, 10_000).unwrap(), "{}", sql);
+        }
     }
 }
 

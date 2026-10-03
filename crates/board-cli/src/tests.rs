@@ -329,6 +329,7 @@ fn the_fixture_board_produces_every_code() {
     take(board_in(dir, &["get", "/nowhere", "--json"]));
     take(board_in(dir, &["get", "/mount/m/gone", "--json"]));
     take(board_in(dir, &["ls", "/mount/m", "--json"]));
+    take(board_in(dir, &["query", "SELEC 1", "--json"]));
 
     let plain = Scenario::new();
     plain.write("x.json", Item::File("{}"));
@@ -387,4 +388,76 @@ fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
         .unwrap();
     assert_eq!(entry["source"], commit.to_string());
     assert_eq!(entry["logical"], "/vendor/lib/notes/a.md");
+}
+
+#[test]
+fn query_prints_its_columns_then_one_json_row_per_line() {
+    let scenario = board();
+    let output = board_in(
+        scenario.workdir(),
+        &[
+            "query",
+            "SELECT path, status FROM entries WHERE path LIKE 'projects/%'",
+        ],
+    );
+    assert_eq!(output.code, 0);
+    assert_eq!(
+        text(&output.stdout),
+        "[\"path\",\"status\"]\n[\"projects/p.json\",\"ok\"]\n"
+    );
+    let report = json(&board_in(
+        scenario.workdir(),
+        &[
+            "query",
+            "SELECT path FROM entries",
+            "--limit",
+            "1",
+            "--json",
+        ],
+    ));
+    assert_eq!(report["$type"], "board/query-report/v1");
+    assert_eq!(report["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(report["truncated"], true);
+}
+
+#[test]
+fn a_limit_outside_one_to_ten_thousand_is_refused_and_the_bounds_are_admitted() {
+    let scenario = board();
+    let run =
+        |limit: &str| board_in(scenario.workdir(), &["query", "SELECT 1", "--limit", limit]).code;
+    assert_eq!(run("1"), 0);
+    assert_eq!(run("10000"), 0);
+    assert_eq!(run("0"), 2);
+    assert_eq!(run("10001"), 2);
+}
+
+#[test]
+fn sql_that_cannot_run_fails_with_its_code_and_a_read_succeeds() {
+    let scenario = board();
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["query", "DELETE FROM blobs", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::query::invalid");
+    let admitted = board_in(scenario.workdir(), &["query", "SELECT count(*) FROM blobs"]);
+    assert_eq!(admitted.code, 0);
+}
+
+#[test]
+fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
+    );
+    let from = board_in(scenario.workdir(), &["refs", "/tasks/a"]);
+    assert_eq!(text(&from.stdout), "from /project /projects/p ok\n");
+    let to = board_in(scenario.workdir(), &["refs", "/projects/p"]);
+    assert_eq!(text(&to.stdout), "to tasks/a.json /project\n");
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["refs", "/projects/p", "--json"],
+    ));
+    assert_eq!(report["$type"], "board/refs-report/v1");
+    assert_eq!(report["to"][0]["pointers"][0], "/project");
 }

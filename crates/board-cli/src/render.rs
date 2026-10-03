@@ -5,8 +5,10 @@
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-use board_model::{Code, Location, Source};
-use board_ops::{CheckReport, Fallback, GetReport, Listed, LsReport, source_name};
+use board_model::{Code, Location, LogicalPath, Source};
+use board_ops::{
+    CheckReport, Fallback, GetReport, Listed, LsReport, QueryReport, RefsReport, source_name,
+};
 use board_tree::Status;
 use serde_json::{Value, json};
 
@@ -62,16 +64,132 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
             )
         }
     };
-    let Some(fallback) = report.memory else {
-        return output;
+    noted(output, report.memory, false)
+}
+
+/// `refs`: as text, a `from` line per reference the object makes, with its
+/// status, and a `to` line per record whose references reach it.
+pub(crate) fn refs(format: Format, report: &RefsReport) -> Output {
+    let named = |source: &Source, path: &str, logical: Option<&LogicalPath>| match (source, logical)
+    {
+        (Source::Commit(_), Some(logical)) => logical.to_string(),
+        _ => path.to_owned(),
     };
-    let why = match fallback {
-        Fallback::NoCache => "there is no cache directory",
-        Fallback::Busy => "another process held it past the wait",
-        Fallback::Unusable => "it could not be used, even rebuilt",
+    let output = match format {
+        Format::Text => {
+            let mut text = String::new();
+            for reference in &report.from {
+                let _ = writeln!(
+                    text,
+                    "from {} {} {}",
+                    reference.pointer,
+                    reference.target,
+                    status_text(reference.status)
+                );
+            }
+            for incoming in &report.to {
+                let name = named(&incoming.source, &incoming.path, incoming.logical.as_ref());
+                for pointer in &incoming.pointers {
+                    let _ = writeln!(text, "to {name} {pointer}");
+                }
+            }
+            Output {
+                stdout: text.into_bytes(),
+                ..Output::default()
+            }
+        }
+        Format::Json => {
+            let from: Vec<Value> = report
+                .from
+                .iter()
+                .map(|reference| {
+                    let mut value = json!({
+                        "pointer": reference.pointer,
+                        "target": reference.target.to_string(),
+                        "location": reference.location.as_ref().map(|location| {
+                            let display = location
+                                .display_path()
+                                .map_or_else(|| reference.target.to_string(), |path| path.to_string());
+                            self::location(location, &display)
+                        }),
+                    });
+                    status_fields(&mut value, reference.status);
+                    value
+                })
+                .collect();
+            let to: Vec<Value> = report
+                .to
+                .iter()
+                .map(|incoming| {
+                    json!({
+                        "source": source_name(&incoming.source),
+                        "path": incoming.path,
+                        "logical": incoming.logical.as_ref().map(ToString::to_string),
+                        "pointers": incoming.pointers,
+                    })
+                })
+                .collect();
+            document(
+                &json!({
+                    "$type": "board/refs-report/v1",
+                    "location": location(&report.location, &report.display.to_string()),
+                    "from": from,
+                    "to": to,
+                }),
+                0,
+            )
+        }
     };
+    noted(output, report.memory, false)
+}
+
+/// `query`'s rows: as text, one JSON array per line, the columns first.
+pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
+    let output = match format {
+        Format::Text => {
+            let mut text = format!("{}\n", json!(report.columns));
+            for row in &report.rows {
+                let _ = writeln!(text, "{}", json!(row));
+            }
+            Output {
+                stdout: text.into_bytes(),
+                ..Output::default()
+            }
+        }
+        Format::Json => document(
+            &json!({
+                "$type": "board/query-report/v1",
+                "columns": report.columns,
+                "rows": report.rows,
+                "truncated": report.truncated,
+            }),
+            0,
+        ),
+    };
+    noted(
+        output,
+        report.memory,
+        report.truncated && format == Format::Text,
+    )
+}
+
+/// `output` with a line on stderr for each thing a reader should know:
+/// that the index was in memory, or that rows were left out.
+fn noted(output: Output, memory: Option<Fallback>, truncated: bool) -> Output {
+    let mut stderr = String::new();
+    if let Some(fallback) = memory {
+        let why = match fallback {
+            Fallback::NoCache => "there is no cache directory",
+            Fallback::Busy => "another process held it past the wait",
+            Fallback::Unusable => "it could not be used, even rebuilt",
+        };
+        let _ = writeln!(stderr, "note: the index is in memory for this run: {why}");
+    }
+    if truncated {
+        let _ = writeln!(stderr, "note: more rows matched; raise --limit to see them");
+    }
     Output {
-        stderr: format!("note: the index is in memory for this run: {why}\n").into_bytes(),
+        stderr: stderr.into_bytes(),
         ..output
     }
 }
