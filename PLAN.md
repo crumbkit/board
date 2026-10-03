@@ -159,9 +159,12 @@ step. The owner's decisions so far:
 - **Nesting** is the same step applied recursively, bottom up: each level
   commits, then the level above moves its pin.
 
-Open: transport through gix or the `git` executable (which brings credential
-helpers); whether jujutsu, with its first-class conflicts, sits behind the
-same seam later. Decide after M7 shows how sharing is actually used.
+- **Transport runs the `git` executable** (owner's decision), so credentials,
+  SSH and hosts work as they already do; gix keeps reading objects. The
+  `git` child process gets one declared owner in `board-tree`.
+
+Open: whether jujutsu, with its first-class conflicts, sits behind the same
+seam later. Decide after M7 shows how sharing is actually used.
 
 ## Taking from crumbkit/board
 
