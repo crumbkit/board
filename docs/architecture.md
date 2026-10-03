@@ -10,14 +10,16 @@ records easy to read and write.
 
 ## Boards and entries
 
-A board is a directory tree whose root holds `.board/board.json`. It is
-normally the root of a git repository. Every file git sees under the root is an
+A board is the working tree of a git repository whose root holds
+`.board/board.json`. Board finds it by searching upward from the current
+directory, as git does; no board is `board::config::not_found`, and a
+`board.json` Board cannot read is `board::config::invalid`. Every file git sees under the root is an
 entry: tracked files, and untracked files that are not ignored. `.git` is never
 an entry. An entry has a path, a blob hash, a size, a kind and a status.
 
 | Kind | What it is |
 | --- | --- |
-| record | a `.json` file whose top-level object has a `$type` string |
+| record | a `.json` file whose top-level object has a `$type` string; `.board/board.json` is one |
 | pointer | a record of type `board/mount/v1` (a link or a mount) |
 | schema | a file under `.board/types/` ending `.schema.json` |
 | json | any other `.json` file |
@@ -56,9 +58,16 @@ record, so a mounted board's records are checked against the mounted board's
 schemas. Schemas are JSON Schema 2020-12. A released type never changes; a
 change is a new version.
 
-Parsing is strict and bounded: UTF-8, at most 16 MiB, no duplicate keys at any
-depth, and serde_json's nesting limit. A file that holds git conflict markers
-gets its own code, so a bad merge is named as one.
+Parsing is strict and bounded, and the first failure is the entry's code: over
+16 MiB (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not
+JSON (`parse`, including a byte-order mark or nesting past serde_json's limit),
+then a duplicate key at any depth. A `$type` that is not a string of the form
+above is `record::bad_type`; a type with no schema file is
+`record::unknown_type`. Board's own types are checked by Rust types, so a file
+under `.board/types/board/` is `schema::invalid`. A schema that does not compile
+is `schema::invalid`, and so is each record of its type, which cannot be
+checked. `record::invalid` names the first failing instance pointer in sorted
+order, so the report is deterministic.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
 their schema: a schema that allows extra fields gets extra fields.
@@ -67,9 +76,14 @@ their schema: a schema that allows extra fields gets extra fields.
 
 A schema marks a string as a reference with `"format": "board-ref"`, and may
 name the types it accepts with `"x-board-type"` (a string or a list). A
-reference is an absolute logical path. `put` refuses a reference that does not
-parse. `check` reports, on the referring record, a reference that does not
-resolve or resolves to the wrong type.
+reference is an absolute logical path, read in the referring record's board;
+`x-board-type` names exact `$type` values. Board finds references through
+`properties`, `patternProperties`, `additionalProperties`, `items`,
+`prefixItems`, `allOf` and local `$ref`; branches of `anyOf`, `oneOf` and
+`if` still validate but are not searched. A string that is not a logical path
+is `ref::malformed`. `check` reports the first failing reference in document
+order on the referring record: `ref::dangling`, or `ref::wrong_type` when it
+reaches something other than a record of an accepted type.
 
 Schemas from a mounted board are untrusted input. Board validates with
 `pattern` on a linear-time regex engine and never fetches a remote `$ref`.
@@ -230,7 +244,7 @@ rewrites `commit` through `put`.
 | Command | Does |
 | --- | --- |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>` | resolve and print a record with its Location |
+| `board get <path>` | resolve and print a record's stored bytes; `--json` adds its Location; anything but a record is `board::record::not_a_record` |
 | `board ls <path>` | list a directory without following pointers |
 | `board refs <path>` | references to and from an object |
 | `board put <path>` | validate and write a record |
@@ -254,7 +268,8 @@ everything it was asked to or nothing.
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
 | `board-index` | the index and the cache directory | the three above, rusqlite |
 | `board-plugin` | manifests, discovery, child processes | board-model, board-index |
-| `board-cli` | the `board` binary: arguments, configuration, the one printer | all of the above |
+| `board-ops` | every operation as a typed function returning its report | all of the above but `board-cli` |
+| `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | `board-ops` |
 
 Every operation is a typed library function that returns its report.
 `board-cli` only parses arguments, reads configuration and prints, so a later
@@ -272,7 +287,8 @@ after release. The v0 set:
 | Area | Reasons |
 | --- | --- |
 | `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8` |
-| `record` | `bad_type`, `unknown_type`, `invalid` |
+| `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
+| `config` | `not_found`, `invalid` |
 | `schema` | `invalid` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
