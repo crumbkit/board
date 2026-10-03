@@ -1,6 +1,7 @@
 # Architecture
 
-This is the v0 design. PLAN.md says which parts are built.
+This is the v0 design. Built so far: logical paths, resolution and walking,
+links and mounts (`board-model`, `board-tree`). PLAN.md says what comes next.
 
 Board is a fast, validated view of a git tree. Git does history, branching,
 merging and transport. Board indexes what is in a tree, validates the records
