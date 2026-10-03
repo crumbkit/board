@@ -11,6 +11,27 @@ pub enum ObjectId {
 }
 
 impl ObjectId {
+    /// The id spelled by 40 or 64 lowercase hex digits.
+    pub fn from_hex(hex: &str) -> Option<Self> {
+        if !hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return None;
+        }
+        let bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|at| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok())
+            .collect::<Option<_>>()?;
+        if let Ok(sha1) = <[u8; 20]>::try_from(bytes.as_slice()) {
+            Some(Self::Sha1(sha1))
+        } else {
+            <[u8; 32]>::try_from(bytes.as_slice())
+                .ok()
+                .map(Self::Sha256)
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             Self::Sha1(bytes) => bytes,

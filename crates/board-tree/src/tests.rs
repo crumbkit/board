@@ -2,6 +2,7 @@
 //! builder (docs/architecture.md, Testing).
 
 mod links;
+mod mounts;
 mod scenario;
 mod working_tree;
 

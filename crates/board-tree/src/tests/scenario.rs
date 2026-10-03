@@ -40,6 +40,11 @@ impl Scenario {
         }
     }
 
+    /// The working directory, as a mount's `repo` names it.
+    pub(crate) fn path(&self) -> String {
+        self.git.workdir().unwrap().to_str().unwrap().to_owned()
+    }
+
     pub(crate) fn open(&self) -> Repository {
         Repository::open(self.git.workdir().unwrap()).unwrap()
     }

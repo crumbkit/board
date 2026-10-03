@@ -13,6 +13,7 @@ use crate::tree::{Kind, RawEntry, Tree};
 pub struct Repository {
     path: PathBuf,
     git: gix::Repository,
+    home: Option<PathBuf>,
 }
 
 /// A commit's tree, read from the object database.
@@ -35,7 +36,23 @@ impl Repository {
             .unwrap_or_else(|| git.git_dir())
             .canonicalize()
             .map_err(|error| unreadable(Box::new(error)))?;
-        Ok(Self { path, git })
+        Ok(Self {
+            path,
+            git,
+            home: None,
+        })
+    }
+
+    /// Sets the home directory that a mount's `~/` repository path is read
+    /// against. The caller owns the environment, so Board reads it once.
+    #[must_use]
+    pub fn with_home(mut self, home: PathBuf) -> Self {
+        self.home = Some(home);
+        self
+    }
+
+    pub(crate) fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
     }
 
     /// The repository's canonical working directory, or its git directory
