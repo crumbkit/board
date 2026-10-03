@@ -240,3 +240,33 @@ fn a_cycle_through_a_mounted_board_is_refused() {
         Code::ResolveCycle
     );
 }
+
+#[test]
+fn a_display_path_keeps_mount_points_and_replaces_links() {
+    let inner = Scenario::new();
+    let inner_commit = inner.commit(&[("x.json", "deep")]);
+    let middle = Scenario::new();
+    let to_inner = mount(&inner.path(), inner_commit);
+    let to_x = link("/n/x");
+    let middle_commit = middle.commit(&[("n.json", &to_inner), ("l.json", &to_x)]);
+    let outer = Scenario::new();
+    let to_middle = mount(&middle.path(), middle_commit);
+    let to_deep = link("/m/l");
+    let commit = outer.commit(&[("m.json", &to_middle), ("k.json", &to_deep)]);
+    for (asked, display) in [
+        ("/m/n/x", "/m/n/x"),
+        ("/m/l", "/m/n/x"),
+        ("/k", "/m/n/x"),
+        ("/m", "/m"),
+        ("/m/n", "/m/n"),
+    ] {
+        let location = resolve(&outer, commit, asked).unwrap();
+        assert_eq!(
+            location.display_path().unwrap().as_str(),
+            display,
+            "{asked}"
+        );
+        let again = resolve(&outer, commit, display).unwrap();
+        assert_eq!(identity(&again), identity(&location), "{asked}");
+    }
+}

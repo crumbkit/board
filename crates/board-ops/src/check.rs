@@ -6,13 +6,14 @@ use std::collections::HashMap;
 
 use board_model::{
     CONFIG_TYPE, Classified, Code, Content, Kind, Location, LogicalPath, Object, POINTER_TYPE,
-    RecordType, Source, classify, needs_bytes,
+    RecordType, Source, classify,
 };
 use board_tree::{Change, Entry, GitError, Repository, ResolveError, Status};
 use board_validate::{Reference, Schema};
 use serde_json::Value;
 
 use crate::board::{Board, Config};
+use crate::read::classify_entry;
 
 /// One entry as `check` reports it.
 #[derive(Clone, Debug, PartialEq)]
@@ -55,8 +56,10 @@ impl Board {
             .repository()
             .walk(&source)
             .map_err(|source| CheckError::Git { source })?;
-        let classified: Vec<Classified> =
-            entries.iter().map(|entry| self.classify(entry)).collect();
+        let classified: Vec<Classified> = entries
+            .iter()
+            .map(|entry| classify_entry(self.repository(), &source, entry))
+            .collect();
         let schemas = compile_schemas(&entries, &classified);
         let checked = entries
             .into_iter()
@@ -77,26 +80,6 @@ impl Board {
             })
             .collect();
         Ok(CheckReport { entries: checked })
-    }
-
-    /// The entry's kind and what parsing found, reading it only when it is
-    /// a `.json` file.
-    fn classify(&self, entry: &Entry) -> Classified {
-        if !needs_bytes(&entry.path) {
-            return classify(&entry.path, None);
-        }
-        let read = entry.blob.ok_or(Code::RepoUnreadable).and_then(|blob| {
-            self.repository()
-                .read(&Source::WorkingTree, &entry.path, blob)
-                .map_err(|error| error.code())
-        });
-        match read {
-            Ok(bytes) => classify(&entry.path, bytes.as_deref()),
-            Err(code) => Classified {
-                content: Content::Unparsed(Kind::Json),
-                code: Some(code),
-            },
-        }
     }
 
     /// The status of an entry whose path is fine.

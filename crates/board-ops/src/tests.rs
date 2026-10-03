@@ -316,3 +316,116 @@ fn check_fails_when_any_entry_is_degraded() {
     scenario.write("bad.json", Item::File("{"));
     assert!(check(&scenario).degraded());
 }
+
+fn path(text: &str) -> LogicalPath {
+    text.parse().unwrap()
+}
+
+#[test]
+fn get_returns_a_records_stored_bytes_and_where_it_is() {
+    let scenario = board();
+    let stored = "{\n  \"title\": \"t\",   \"$type\": \"lr/task/v1\"\n}\n";
+    scenario.write("work/t.json", Item::File(stored));
+    let report = open(&scenario).get(&path("/work/t")).unwrap();
+    assert_eq!(report.bytes, stored.as_bytes());
+    assert_eq!(report.record["title"], "t");
+    assert_eq!(report.location.path, "work/t.json");
+    assert_eq!(report.display.as_str(), "/work/t");
+}
+
+#[test]
+fn get_follows_a_link_and_shows_where_it_landed() {
+    let scenario = board();
+    scenario.write(
+        "l.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/projects/p"}"#),
+    );
+    let report = open(&scenario).get(&path("/l")).unwrap();
+    assert_eq!(report.display.as_str(), "/projects/p");
+    assert_eq!(report.location.pointers.len(), 1);
+}
+
+#[test]
+fn get_refuses_anything_but_a_record() {
+    let scenario = board();
+    scenario
+        .write("data.json", Item::File("[1]"))
+        .write("notes.md", Item::File("# n"))
+        .write("bad.json", Item::File(r#"{"$type": "task"}"#));
+    assert!(open(&scenario).get(&path("/projects/p")).is_ok());
+    let code = |text: &str| open(&scenario).get(&path(text)).unwrap_err().code();
+    assert_eq!(code("/projects"), Code::RecordNotARecord);
+    assert_eq!(code("/data"), Code::RecordNotARecord);
+    assert_eq!(code("/notes.md"), Code::RecordNotARecord);
+    assert_eq!(code("/bad"), Code::RecordBadType);
+    assert_eq!(code("/missing"), Code::PathNotFound);
+}
+
+#[test]
+fn ls_lists_one_level_with_directories_kinds_and_statuses() {
+    let scenario = board();
+    scenario
+        .write("work/t.json", Item::File(&task("")))
+        .write("work/sub/x.md", Item::File(""))
+        .write("work/broken.json", Item::File("{"))
+        .write(
+            "work/l.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
+        );
+    let report = open(&scenario).ls(&path("/work")).unwrap();
+    assert_eq!(
+        report.listed,
+        [
+            crate::Listed::Entry {
+                name: "broken.json".to_owned(),
+                logical: Some(path("/work/broken")),
+                kind: Kind::Json,
+                status: Status::Degraded(Code::JsonParse),
+            },
+            crate::Listed::Entry {
+                name: "l.json".to_owned(),
+                logical: Some(path("/work/l")),
+                kind: Kind::Pointer,
+                status: Status::Ok,
+            },
+            crate::Listed::Directory {
+                name: "sub".to_owned(),
+                logical: path("/work/sub"),
+            },
+            crate::Listed::Entry {
+                name: "t.json".to_owned(),
+                logical: Some(path("/work/t")),
+                kind: Kind::Record,
+                status: Status::Ok,
+            },
+        ]
+    );
+}
+
+#[test]
+fn ls_follows_a_link_to_the_directory_it_lists_and_names_it_by_display_path() {
+    let scenario = board();
+    scenario.write(
+        "l.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
+    );
+    let report = open(&scenario).ls(&path("/l")).unwrap();
+    assert_eq!(report.display.as_str(), "/projects");
+    assert_eq!(
+        report.listed,
+        [crate::Listed::Entry {
+            name: "p.json".to_owned(),
+            logical: Some(path("/projects/p")),
+            kind: Kind::Record,
+            status: Status::Ok,
+        }]
+    );
+}
+
+#[test]
+fn ls_of_a_file_lists_that_file() {
+    let scenario = board();
+    let report = open(&scenario).ls(&path("/projects/p")).unwrap();
+    assert_eq!(report.listed.len(), 1);
+    assert!(matches!(&report.listed[0], crate::Listed::Entry { name, .. } if name == "p.json"));
+}
