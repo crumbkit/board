@@ -46,11 +46,19 @@ pub enum Code {
     PutFailed,
     PluginNotInstalled,
     PluginBadManifest,
+    PluginNotEnabled,
+    PluginAmbiguous,
+    PluginBadInput,
+    PluginBadOutput,
+    PluginFailed,
+    PluginTimeout,
+    PluginTooLarge,
+    PluginTooDeep,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 40] = [
+    pub const ALL: [Code; 48] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -91,6 +99,14 @@ impl Code {
         Self::PutFailed,
         Self::PluginNotInstalled,
         Self::PluginBadManifest,
+        Self::PluginNotEnabled,
+        Self::PluginAmbiguous,
+        Self::PluginBadInput,
+        Self::PluginBadOutput,
+        Self::PluginFailed,
+        Self::PluginTimeout,
+        Self::PluginTooLarge,
+        Self::PluginTooDeep,
     ];
 
     /// The code spelled `text`.
@@ -140,6 +156,14 @@ impl Code {
             Self::PutFailed => "board::put::failed",
             Self::PluginNotInstalled => "board::plugin::not_installed",
             Self::PluginBadManifest => "board::plugin::bad_manifest",
+            Self::PluginNotEnabled => "board::plugin::not_enabled",
+            Self::PluginAmbiguous => "board::plugin::ambiguous",
+            Self::PluginBadInput => "board::plugin::bad_input",
+            Self::PluginBadOutput => "board::plugin::bad_output",
+            Self::PluginFailed => "board::plugin::failed",
+            Self::PluginTimeout => "board::plugin::timeout",
+            Self::PluginTooLarge => "board::plugin::too_large",
+            Self::PluginTooDeep => "board::plugin::too_deep",
         }
     }
 }
@@ -198,7 +222,15 @@ mod tests {
             | Code::PutHeadMoved
             | Code::PutFailed
             | Code::PluginNotInstalled
-            | Code::PluginBadManifest => {}
+            | Code::PluginBadManifest
+            | Code::PluginNotEnabled
+            | Code::PluginAmbiguous
+            | Code::PluginBadInput
+            | Code::PluginBadOutput
+            | Code::PluginFailed
+            | Code::PluginTimeout
+            | Code::PluginTooLarge
+            | Code::PluginTooDeep => {}
         }
     }
 

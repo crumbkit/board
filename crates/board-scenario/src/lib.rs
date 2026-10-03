@@ -43,6 +43,9 @@ pub enum Item<'a> {
     Deleted,
     /// A file the walk's user cannot read (mode 000); working tree only.
     Unreadable(&'a str),
+    /// A file anyone may run (mode 755), such as a fixture plugin; working
+    /// tree only.
+    Executable(&'a str),
 }
 
 /// One repository in its own temporary directory.
@@ -128,6 +131,10 @@ impl Scenario {
                 backdate(&path);
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
             }
+            Item::Executable(text) => {
+                fs::write(&path, text).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+            }
             Item::MissingTree | Item::MissingBlob => {
                 panic!("a working tree cannot hold a missing object")
             }
@@ -177,6 +184,7 @@ impl Scenario {
                 ),
                 Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
+                Item::Executable(_) => panic!("fixture plugins live outside commits"),
                 Item::Deleted | Item::Appended(_) => {
                     panic!("a commit is built from whole files")
                 }

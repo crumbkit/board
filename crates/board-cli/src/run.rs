@@ -5,7 +5,7 @@ use std::io::Read;
 
 use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId};
 use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT};
-use board_plugin::{CapabilityName, MetaFilter};
+use board_plugin::{CapabilityName, Limits, MetaFilter, Target};
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
 
@@ -53,6 +53,15 @@ enum Command {
     /// Work with plugins.
     #[command(subcommand)]
     Plugin(PluginCommand),
+    /// Call a plugin's capability with the input JSON on stdin.
+    #[command(group = clap::ArgGroup::new("callee").required(true).args(["target", "capability"]))]
+    Call {
+        /// `<plugin>.<capability>`.
+        target: Option<Target>,
+        /// The capability of the one enabled plugin that offers it.
+        #[arg(long)]
+        capability: Option<CapabilityName>,
+    },
     /// Run one read-only SQL statement over the index.
     Query {
         sql: String,
@@ -151,18 +160,16 @@ pub(crate) fn run(
             expect,
             ..
         } => {
-            let mut record = Vec::new();
-            // One byte past the bound, so the parse sees the input is too large.
-            if let Err(error) = stdin
-                .take(MAX_RECORD_BYTES as u64 + 1)
-                .read_to_end(&mut record)
-            {
-                return render::error(
-                    format,
-                    Code::RepoUnreadable,
-                    &format!("stdin cannot be read: {error}"),
-                );
-            }
+            let record = match bounded(stdin) {
+                Ok(record) => record,
+                Err(error) => {
+                    return render::error(
+                        format,
+                        Code::RepoUnreadable,
+                        &format!("stdin cannot be read: {error}"),
+                    );
+                }
+            };
             match board.put(&path, expect.unwrap_or(Expect::Any), &record) {
                 Ok(report) => render::put(format, &report),
                 Err(error) => render::put_error(format, &error),
@@ -193,9 +200,59 @@ pub(crate) fn run(
             Ok(report) => render::plugin_find(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
+        Command::Call { target, capability } => {
+            call(&board, context, format, target, capability, stdin)
+        }
         Command::Ls { path } => match board.ls(&path.unwrap_or_else(LogicalPath::root)) {
             Ok(report) => render::ls(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
     }
+}
+
+/// `call`: the target, or the capability alone, with the input on stdin.
+fn call(
+    board: &Board,
+    context: &Context,
+    format: Format,
+    target: Option<Target>,
+    capability: Option<CapabilityName>,
+    stdin: &mut dyn Read,
+) -> Output {
+    let target = match (target, capability) {
+        (Some(target), _) => target,
+        (None, Some(capability)) => Target::Capability(capability),
+        (None, None) => unreachable!("clap requires a target or a capability"),
+    };
+    let input = match bounded(stdin) {
+        Ok(input) => input,
+        Err(error) => {
+            return render::error(
+                format,
+                Code::PluginBadInput,
+                &format!("stdin cannot be read: {error}"),
+            );
+        }
+    };
+    match board.call(
+        &target,
+        &input,
+        context.plugins.as_deref(),
+        &context.environment,
+        context.cache.as_deref(),
+        Limits::default(),
+    ) {
+        Ok(report) => render::call(format, &report),
+        Err(error) => render::call_error(format, &error),
+    }
+}
+
+/// stdin, read one byte past the record bound so a parse sees input that is
+/// too large.
+fn bounded(stdin: &mut dyn Read) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    stdin
+        .take(MAX_RECORD_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    Ok(bytes)
 }

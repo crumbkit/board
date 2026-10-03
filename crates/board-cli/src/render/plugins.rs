@@ -2,8 +2,9 @@
 
 use std::fmt::Write as _;
 
+use board_model::canonical_json;
 use board_ops::{PluginFindReport, PluginListReport, PluginState};
-use board_plugin::{Capability, Manifest};
+use board_plugin::{CallError, CallReport, Capability, Manifest};
 use serde_json::{Value, json};
 
 use super::{Format, document};
@@ -156,4 +157,53 @@ fn capability(capability: &Capability) -> Value {
         "output_schema": capability.output.document(),
         "metadata": capability.metadata,
     })
+}
+
+/// `call`: the output as JSON, or wrapped in `board/call-report/v1`.
+pub(crate) fn call(format: Format, report: &CallReport) -> Output {
+    match format {
+        Format::Text => Output {
+            stdout: canonical_json(&report.output),
+            ..Output::default()
+        },
+        Format::Json => document(
+            &json!({
+                "$type": "board/call-report/v1",
+                "plugin": report.plugin,
+                "capability": report.capability,
+                "output": report.output,
+            }),
+            0,
+        ),
+    }
+}
+
+/// A refused call, with its typed fields; as text, the end of the plugin's
+/// stderr follows the error line.
+pub(crate) fn call_error(format: Format, error: &CallError) -> Output {
+    match format {
+        Format::Text => {
+            let mut stderr = format!("error: {}: {error}\n", error.code_text()).into_bytes();
+            if let Some(tail) = error.stderr().filter(|tail| !tail.is_empty()) {
+                stderr.extend_from_slice(tail);
+                if !tail.ends_with(b"\n") {
+                    stderr.push(b'\n');
+                }
+            }
+            Output {
+                stderr,
+                code: 1,
+                ..Output::default()
+            }
+        }
+        Format::Json => document(
+            &json!({
+                "$type": "board/error/v1",
+                "code": error.code_text(),
+                "message": error.to_string(),
+                "fields": error.fields(),
+            }),
+            1,
+        ),
+    }
 }

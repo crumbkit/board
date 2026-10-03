@@ -62,11 +62,28 @@ fn board_full(
     arguments: &[&str],
     stdin: &[u8],
 ) -> Output {
+    let environment = board_plugin::Environment {
+        path: Some("/usr/bin:/bin".into()),
+        ..board_plugin::Environment::default()
+    };
+    board_environment(directory, cache, plugins, environment, arguments, stdin)
+}
+
+/// Runs `board` with plugins that inherit `environment`.
+fn board_environment(
+    directory: &Path,
+    cache: Option<&Path>,
+    plugins: Option<&Path>,
+    environment: board_plugin::Environment,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> Output {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
         cache: cache.map(Path::to_path_buf),
         plugins: plugins.map(Path::to_path_buf),
+        environment,
     };
     let arguments = std::iter::once(env!("CARGO_BIN_NAME"))
         .chain(arguments.iter().copied())
@@ -398,12 +415,16 @@ fn the_fixture_board_produces_every_code() {
         &["plugin", "list", "--json"],
         b"",
     ));
+    for output in plugins::refused_calls() {
+        take(output);
+    }
 
     // The index fails only when SQLite does, even in memory, and a write
     // only when the disk or its permissions refuse it, which no board can
     // cause; whether git has an identity to commit as depends on the
     // machine's own configuration; and HEAD moving needs a commit made in
-    // the middle of a put. Each is tested where it can be made to happen.
+    // the middle of a put. A plugin's 30-second limit is too slow for this
+    // test. Each is tested where it can be made to happen.
     let missing: Vec<&str> = Code::ALL
         .iter()
         .filter(|code| {
@@ -412,6 +433,7 @@ fn the_fixture_board_produces_every_code() {
                 Code::PutFailed,
                 Code::PutNoIdentity,
                 Code::PutHeadMoved,
+                Code::PluginTimeout,
             ]
             .contains(code)
         })

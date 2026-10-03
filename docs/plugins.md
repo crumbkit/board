@@ -69,7 +69,9 @@ enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls
 the one enabled plugin that offers a
 capability, so a plugin can use another by ability without knowing its name.
 When more than one offers it, the call is refused with
-`board::plugin::ambiguous`, naming each; the caller then names one.
+`board::plugin::ambiguous`, naming each; the caller then names one. A broken
+install offers nothing. A capability no installed plugin offers is
+`board::plugin::not_installed`.
 
 ## Calling a capability
 
@@ -77,7 +79,8 @@ When more than one offers it, the call is refused with
 on stdin and:
 
 1. validates it against `input_schema`;
-2. starts `run` in the plugin's directory, with an environment holding only
+2. starts `run` in the plugin's directory (a program whose name holds `/` is
+   found from there, any other through `PATH`), with an environment holding only
    `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `XDG_CACHE_HOME` and
    `XDG_DATA_HOME` when set;
 3. writes one request to the plugin's stdin:
@@ -104,15 +107,28 @@ seconds and 16 MiB of stdout; past either, Board stops the plugin and refuses
 with `board::plugin::timeout` or `board::plugin::too_large`. A plugin's error
 codes are `<plugin>::<area>::<reason>`, so its failures read like Board's. Board
 reports the plugin's code as its own, with the plugin's fields and `plugin`
-added. A code that does not start with the plugin's own name, a malformed
-document or an unknown `$type` is `board::plugin::bad_output`; a non-zero exit
-without an error document is `board::plugin::failed`.
+added. How Board reads a plugin's exit and stdout:
+
+- exit 0 with `board/call-result/v1`: the output, checked against
+  `output_schema`; an output that fails it is `board::plugin::bad_output`;
+- exit 1 with `board/error/v1` whose code starts with the plugin's own name:
+  that code;
+- exit 0 with anything else, or exit 1 with anything else on stdout (a result,
+  another plugin's code, a malformed document, an unknown `$type`):
+  `board::plugin::bad_output`;
+- exit 1 with empty stdout, any other exit, or a signal:
+  `board::plugin::failed`.
+
+Past the time limit Board kills the plugin and stops reading, so a grandchild
+still holding a pipe cannot keep it waiting; that grandchild may outlive the
+call.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory
 at `board.root`. It never opens Board's index. So the same checks, limits and
-logs apply. Board increments `BOARD_CALL_DEPTH` on each nested call
-and refuses past 8 with `board::plugin::too_deep`.
+logs apply. Board increments `BOARD_CALL_DEPTH` on each nested call (unset
+is 0) and refuses a call arriving at 8, or at a value that is not a whole
+number, with `board::plugin::too_deep`.
 
 ## Extraction
 
@@ -152,8 +168,9 @@ plugin's database correct on every branch and every commit.
 
 ## Databases
 
-Board gives each plugin version one SQLite file in the board's cache directory
-and passes its path in every request. The plugin owns everything inside it and
+Board gives each plugin version one SQLite file,
+`plugins/<name>@<version>.sqlite` beside the index, and passes its path in every
+request. The plugin owns everything inside it and
 names its tables as it likes. `board query` attaches it read-only as `p_<name>`,
 with hyphens in the name turned into underscores. A new version starts with an
 empty file and extracts again. Deleting any plugin database is always safe. When
