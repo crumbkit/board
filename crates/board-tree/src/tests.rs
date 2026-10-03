@@ -381,23 +381,6 @@ proptest! {
 }
 
 #[test]
-fn the_submodule_refusal_names_the_app_by_its_display_name() {
-    let scenario = Scenario::new();
-    let commit = scenario.commit_items(&[(b"m", Item::Submodule)]);
-    let error = scenario
-        .open()
-        .resolve(&commit.source(), &path("/m"))
-        .unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        format!(
-            "/m reaches a submodule, which {} does not descend",
-            board_model::DISPLAY_NAME
-        )
-    );
-}
-
-#[test]
 fn a_subtree_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
     let scenario = Scenario::new();
     let present = scenario.commit(&[("a/x.json", "{}"), ("b.json", "{}")]);

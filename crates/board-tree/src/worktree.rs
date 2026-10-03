@@ -103,9 +103,10 @@ impl WorkingTree<'_> {
     }
 
     /// The id git gives a blob of `length` bytes read from `stream`, in
-    /// constant memory; `None` if the stream fails or ends early.
+    /// constant memory; `None` if the stream fails, or yields fewer or more
+    /// bytes than `length` because the file changed while it was read.
     fn hash(&self, stream: &mut dyn Read, length: u64) -> Option<ObjectId> {
-        gix::objs::compute_stream_hash(
+        let id = gix::objs::compute_stream_hash(
             self.repository.git().object_hash(),
             gix::objs::Kind::Blob,
             stream,
@@ -113,8 +114,9 @@ impl WorkingTree<'_> {
             &mut gix::features::progress::Discard,
             &AtomicBool::new(false),
         )
-        .ok()
-        .map(|id| model_id(&id))
+        .ok()?;
+        let mut more = [0; 1];
+        (stream.read(&mut more).ok()? == 0).then(|| model_id(&id))
     }
 }
 
@@ -155,5 +157,23 @@ impl Tree for WorkingTree<'_> {
             }
         }
         Ok(entries)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stream_longer_or_shorter_than_its_length_has_no_id() {
+        let directory = tempfile::tempdir().unwrap();
+        gix::init(directory.path()).unwrap();
+        let repository = Repository::open(directory.path()).unwrap();
+        let tree = repository.working_tree().unwrap();
+        let expected =
+            gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, b"abc").unwrap();
+        assert_eq!(tree.hash(&mut &b"abc"[..], 3), Some(model_id(&expected)));
+        assert_eq!(tree.hash(&mut &b"abcd"[..], 3), None);
+        assert_eq!(tree.hash(&mut &b"ab"[..], 3), None);
     }
 }
