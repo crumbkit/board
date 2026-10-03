@@ -542,3 +542,64 @@ fn put_refuses_a_stale_expect_with_exit_one_and_a_malformed_one_with_exit_two() 
     let current = scenario.blob(r#"{"$type": "lr/project/v1"}"#);
     assert_eq!(run(&current.to_string()).code, 0);
 }
+
+#[test]
+fn put_batch_writes_every_line_or_lists_the_refused_ones() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let good = r#"{"path": "/tasks/a", "record": {"$type": "lr/task/v1", "title": "a"}}"#;
+    let bad = r#"{"path": "/tasks/b", "record": {"$type": "lr/task/v1"}}"#;
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch"],
+        format!("{good}\n{bad}\n").as_bytes(),
+    );
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: board::put::invalid: the batch is refused\n\
+         line 2: board::record::invalid: the record for /tasks/b is refused: board::record::invalid\n"
+    );
+    let document = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--json"],
+        format!("{good}\n{bad}\n").as_bytes(),
+    ));
+    assert_eq!(document["$type"], "board/error/v1");
+    assert_eq!(document["fields"]["refusals"][0]["line"], 2);
+    assert_eq!(
+        document["fields"]["refusals"][0]["code"],
+        "board::record::invalid"
+    );
+    assert!(!scenario.workdir().join("tasks/a.json").exists());
+    let written = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch", "--json"],
+        format!("{good}\n").as_bytes(),
+    );
+    assert_eq!(written.code, 0, "{}", text(&written.stderr));
+    assert_eq!(json(&written)["writes"][0]["display"], "/tasks/a");
+}
+
+#[test]
+fn put_needs_a_path_or_batch_and_not_both() {
+    let scenario = board();
+    for arguments in [
+        &["put"][..],
+        &["put", "/tasks/a", "--batch"],
+        &["put", "--batch", "--expect", "none"],
+    ] {
+        let output = board_with(scenario.workdir(), None, arguments, b"");
+        assert_eq!(output.code, 2, "{arguments:?}");
+    }
+    assert_eq!(
+        board_with(scenario.workdir(), None, &["put", "--batch"], b"").code,
+        0
+    );
+}

@@ -7,8 +7,8 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Fallback, GetReport, Listed, LsReport, PutReport, QueryReport, RefsReport,
-    source_name,
+    CheckReport, Fallback, GetReport, Listed, LsReport, PutError, PutReport, QueryReport,
+    RefsReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Value, json};
@@ -319,6 +319,52 @@ pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
 
 /// A failure: `error: <code>: <message>` on stderr, or a `board/error/v1`
 /// document on stdout. Either way the exit code is 1.
+/// A refused put. A refused batch lists each failing line: as text one line
+/// each after the error, and in JSON as `fields.refusals`.
+pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
+    let PutError::Batch { code, refusals } = error else {
+        return self::error(format, error.code(), error);
+    };
+    match format {
+        Format::Text => {
+            let mut text = format!("error: {code}: the batch is refused\n");
+            for refusal in refusals {
+                let _ = writeln!(
+                    text,
+                    "line {}: {}: {}",
+                    refusal.line, refusal.code, refusal.message
+                );
+            }
+            Output {
+                stderr: text.into_bytes(),
+                code: 1,
+                ..Output::default()
+            }
+        }
+        Format::Json => {
+            let refusals: Vec<Value> = refusals
+                .iter()
+                .map(|refusal| {
+                    json!({
+                        "line": refusal.line,
+                        "code": refusal.code.as_str(),
+                        "message": refusal.message,
+                    })
+                })
+                .collect();
+            document(
+                &json!({
+                    "$type": "board/error/v1",
+                    "code": code.as_str(),
+                    "message": "the batch is refused",
+                    "fields": {"refusals": refusals},
+                }),
+                1,
+            )
+        }
+    }
+}
+
 pub(crate) fn error(format: Format, code: Code, message: &dyn Display) -> Output {
     match format {
         Format::Text => Output {
