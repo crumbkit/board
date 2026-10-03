@@ -1,0 +1,100 @@
+# Standards
+
+Rules 1 to 22 cover the Rust workspace; P1 to P6 cover Python. Each rule says
+what enforces it. A rule without a gate is still a rule.
+
+## Types
+
+1. **Parse once at the boundary.** Convert input to its canonical type where it enters, and pass that type inward. A `.to_string()` that is parsed again further in is a defect. Use enums, not `bool`, `Option<Option<T>>` or `String`. Keep malformed, absent and unsupported values distinct.
+2. **A newtype holds an invariant.** Add one only to hold an invariant, to tell apart values that are easy to confuse, or to own a shared rule. Keep the field private. Implement `FromStr` and `TryFrom<String>`, with `#[serde(try_from = "String", into = "String")]`. Constructors and deserializers enforce the same invariant. Wire-only structs are named `Raw*`.
+3. **Board's own documents refuse what they do not understand.** Every `board/*` document (configuration, pointers, manifests, plugin messages, reports) uses `#[serde(deny_unknown_fields)]`, refuses duplicate keys and carries `"$type": "board/<kind>/v<n>"`. Never change a released schema; add a version. User records are different: their own schema decides, `put` refuses an invalid one, and the index marks it degraded instead of refusing it. serde's derived structs refuse duplicate fields, but `serde_json::Value` and maps keep the last one silently, so every untyped JSON read goes through `board-model`'s duplicate-refusing parse.
+
+## Errors
+
+4. **Every refusal carries a stable code.** Each owning module has one `thiserror` enum. Each variant has a code `<app>::<area>::<reason>`, spelled once, which never changes after release. The area is a stable domain noun (`mount`, `record`, `put`), never a module path, so moving code never changes a code. Reasons are snake_case. The message is one lower-case sentence that names the value at fault. Store typed fields, never a preformatted `String` or `Debug` output. A blanket `#[from] io::Error` is a fault. A degraded entry is a path and one of these codes.
+5. **`anyhow` only in a binary's `main`, if at all.** Library crates return typed errors.
+6. **Production code does not panic.** No `unwrap`, `dbg!`, `todo!`, `unimplemented!` or `panic!`. Use `expect` only for a proven invariant, and state the invariant in its message. Recover a poisoned lock through a helper, never `.lock().unwrap()`. Tests may unwrap, expect and panic on a broken fixture. Gate: `unwrap_used`, `dbg_macro`, `todo`, `unimplemented` and `panic` deny; `clippy.toml` sets `allow-unwrap-in-tests`, `allow-expect-in-tests` and `allow-panic-in-tests`.
+
+## Structure
+
+7. **One owner for each effect.** The environment, child processes, file writes, locks and stdout/stderr each have one owning module. Read configuration once at the boundary. Never mutate process-global state. A library that performs an effect has one owning crate: only `board-tree` depends on gix, only `board-index` on rusqlite, only `board-validate` on jsonschema. Tests write fixture files through one test-support function. Gate: clippy `disallowed-methods`, with a reason that names the owner; cargo-deny `wrappers` for crates. When you change the lint wiring, add a forbidden call and confirm that the gate refuses it.
+8. **Decisions are pure; effects can be replaced.** Decision code does no I/O. Put an effect behind a narrow trait with a recording fake only when a test needs it; do not add a trait for every helper. Split crates on this line. Production code has no `#[cfg(test)]` branch.
+9. **Narrow visibility.** Write `pub(crate)` by default. A `pub` item inside a private module is a mistake. Gate: `unreachable_pub`.
+10. **Module layout.** Use `foo.rs` beside a `foo/` directory, never `mod.rs`. Import production items by name; use `use super::*` only in tests. Put large tests in a sibling `tests.rs`. Gate: `mod_module_files`, `wildcard_imports`.
+11. **`unsafe` is forbidden.** Set `unsafe_code = "forbid"`. Where a platform needs `unsafe`, isolate it in one crate with `unsafe_op_in_unsafe_fn = "deny"`. Put a `SAFETY` comment on each block and a `# Safety` section on each `unsafe fn`. Gate: `undocumented_unsafe_blocks` deny; `missing_safety_doc` through `-D warnings`.
+12. **Suppress with `#[expect]`, never `#[allow]`.** Write `#[expect(lint, reason = "...")]` on the smallest item that needs it. On code only some platforms compile, write `#[cfg_attr(target_os = "...", expect(...))]`, or the expectation goes unfulfilled elsewhere and fails `-D warnings`. Gate: `allow_attributes` and `allow_attributes_without_reason` deny. `cargo xtask lint` counts the `#[expect]` attributes in production source and fails unless the count equals `expect.count` in `lint.toml`: adding one raises the number in the same change, removing one lowers it.
+13. **No guard that nobody asked for.** Add a defensive check or a gate only for a failure that has happened or, for untrusted input such as a mounted board, a known class of attack: huge files, deep nesting, cycles, pathological patterns. A refactor deletes code; report the net change in production lines.
+14. **Functions stay under 100 lines; files under 800.** Gate: `too_many_lines` through `pedantic`; each function over the limit carries its own `#[expect(clippy::too_many_lines, reason = "...")]`. `cargo xtask lint` fails a production source file over `source.max_lines`; `tests.rs` files and `tests/` directories are exempt. This limit passes rule 13: the old Board's `objects.rs` reached 11,000 lines.
+15. **A comment says why, and only when it constrains.** Prefer names and tests. Keep a comment for an upstream quirk, a wire requirement or a measured figure. Do not narrate history. Write a doc comment only when the signature does not already say it. Put notes for agents in `AGENTS.md`, within its budget (rule 22).
+16. **Secrets are never printed.** Wrap secrets in `secrecy`. Write a manual `Debug` that redacts them. Compare credentials in constant time.
+
+## Interfaces
+
+17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes a document tagged `board/<command>-report/v1`, and `board/error/v1` on failure. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
+18. **No async runtime.** Board is a local, synchronous CLI, and gix and rusqlite are synchronous. A dependency that brings in an async runtime states why in the change that adds it.
+
+## Tests
+
+19. **Tests come first and describe behaviour.** Keep unit tests inline or in a sibling `tests.rs`, and integration tests in `tests/`. Name each test as a sentence about behaviour. Test against real local dependencies: git repositories in temporary directories, SQLite, child processes. Pair every refusal test with an otherwise identical case that is admitted, and assert the exact code. State invariants as property tests (`proptest`) over generated input; every query has a property test that it answers the same from a cold rebuild as from a warm index. Freeze wire formats and canonical output with golden bytes. Fuzz every parser that reads untrusted input: `proptest` in the gate, and `cargo-fuzz` on nightly in a scheduled job outside it. Nextest uses `retries = 0` (a flaky test is a defect) and `fail-fast = false`. Run doctests separately.
+
+## Performance
+
+20. **Count work, not time, in the gate.** A work-count test asserts how much work an operation does: after one record changes, a refresh parses exactly one blob; resolving through `n` pointers reads at most `n` pointer records. Such tests never flake, and they catch work that should grow with the change but grows with the corpus. One timing job runs the reference boards against the budgets in `docs/architecture.md`, reports every run and fails above three times a budget. A bound on what an agent receives (rows, bytes) stays small and explicit; a bound that only sizes Board's own work is set for realistic growth.
+
+## Toolchain and gates
+
+21. **The same gates everywhere.**
+    - Use edition 2024 and the default rustfmt settings.
+    - Pin the toolchain in `rust-toolchain.toml`, and state the reason when it holds back a version.
+    - Declare `[workspace.lints]`, and set `[lints] workspace = true` in every member.
+    - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`.
+    - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests.
+    - CI runs both scripts on macOS and Linux, plus `cargo deny check` and `cargo audit --deny warnings`. An advisory exception names its id in both `deny.toml` and `.cargo/audit.toml`.
+
+## Documentation
+
+22. **Three word budgets, each set on its own in `lint.toml`.** `cargo xtask lint` counts whitespace-separated words, code blocks included; for English prose a word is roughly 1.3 to 1.5 tokens.
+
+    | Budget | Covers | Start | Why |
+    | --- | --- | --- | --- |
+    | N, `context.max_words` | `AGENTS.md`, `CLAUDE.md` and every file they import with `@path`, each counted once | 1,000 | Every agent session pays it, so it holds orientation and the rules tooling cannot enforce: about 1,400 tokens, four minutes to read. The old `AGENTS.md` alone was 5,879 words. |
+    | M, `docs_index.max_words` | `DOCS.md` | 400 | A map, one line per document. If it does not fit, `docs/` has too many files. |
+    | O, `docs.max_words` | `docs/*.md`, summed | 8,000 | What one person reads in one sitting, about 35 minutes. Past that, knowledge belongs in code, tests or schemas, or the design has grown too big. The old `docs/` held about 103,000 words. |
+
+    Raise a number only in a change that says why. Every run prints usage against each budget, so headroom shows before it runs out. The glob counts only the top level of `docs/`; `docs/**/*.md` counts subdirectories too. Root files other than `DOCS.md` are outside the budgets, and `PLAN.md` shrinks as milestones land.
+
+## Baseline lints
+
+    [workspace.lints.rust]
+    unsafe_code = "forbid"
+    unreachable_pub = "warn"
+    missing_debug_implementations = "warn"
+
+    [workspace.lints.clippy]
+    pedantic = { level = "warn", priority = -1 }
+    module_name_repetitions = "allow"
+    must_use_candidate = "allow"
+    missing_errors_doc = "allow"
+    dbg_macro = "deny"
+    unwrap_used = "deny"
+    todo = "deny"
+    unimplemented = "deny"
+    panic = "deny"
+    undocumented_unsafe_blocks = "deny"
+    disallowed_methods = "deny"
+    disallowed_macros = "deny"
+    disallowed_types = "deny"
+    allow_attributes = "deny"
+    allow_attributes_without_reason = "deny"
+    mod_module_files = "deny"
+    print_stdout = "deny"
+    print_stderr = "deny"
+
+## Python: the plugin library and plugins
+
+- **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
+- **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`. CI runs them on macOS and Linux.
+- **P3. Typed edges.** Inputs and outputs are pydantic v2 models with `extra="forbid"`. The manifest's schemas are generated from those models, never written by hand.
+- **P4. Board's contract.** Rules 3, 4 and 17 apply to the protocol: every document carries `$type`, every error a stable code `<plugin>::<area>::<reason>`, the exit code is 0 or 1, and logs go to stderr only.
+- **P5. Pure extraction.** Extraction is a function of one record's bytes. Anything spanning records is a query.
+- **P6. Tests.** Use `board_plugin.testing` against real fixture boards and the real protocol. Rule 19 applies: sentences as names, every refusal paired with an admitted twin, no retries.

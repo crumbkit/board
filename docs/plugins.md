@@ -1,0 +1,176 @@
+# Plugins
+
+This is the v0 design. PLAN.md says which parts are built.
+
+A plugin teaches Board a higher-level construct, such as tasks, a reading list
+or a changelog. It is a separate program that Board starts, talking JSON over
+stdin and stdout, with its own disposable SQLite database. Board stays small
+because the constructs live here.
+
+## Installing and enabling
+
+A plugin is a directory on this machine, at
+`~/.local/share/board/plugins/<name>/`, holding `plugin.json` and its code. A
+board enables plugins by name in `.board/board.json`. Board never loads a plugin
+from a board's tree, so cloning or mounting a board never runs code.
+
+## The manifest
+
+`plugin.json` is `board/plugin-manifest/v1`:
+
+```json
+{
+  "$type": "board/plugin-manifest/v1",
+  "name": "tasks",
+  "version": "0.1.0",
+  "description": "Open tasks and their due dates.",
+  "run": ["uv", "run", "--frozen", "python", "-m", "board_tasks"],
+  "metadata": { "area": "planning" },
+  "extract": ["lr/task/v1"],
+  "capabilities": [
+    {
+      "name": "due",
+      "description": "Open tasks due before a date.",
+      "input_schema": { "type": "object" },
+      "output_schema": { "type": "object" },
+      "metadata": {}
+    }
+  ]
+}
+```
+
+Plugin and capability names are lowercase ASCII letters, digits and hyphens.
+`metadata` is any JSON object, which `board plugin find` can match. `extract`
+lists the record types the plugin reads from the index (see Extraction). The
+manifest refuses unknown fields. Two installed plugins cannot share a name.
+
+## Finding plugins
+
+`board plugin list` prints every installed plugin and its capabilities.
+`board plugin find --capability <name> [--meta <key>=<value>]` filters them.
+Finding is a filter, never a ranking.
+
+`board call --capability <name>` calls the one enabled plugin that offers a
+capability, so a plugin can use another by ability without knowing its name.
+When more than one offers it, the call is refused with
+`board::plugin::ambiguous`, naming each; the caller then names one.
+
+## Calling a capability
+
+`board call <plugin>.<capability>` (or `--capability <name>`) reads input JSON
+on stdin and:
+
+1. validates it against `input_schema`;
+2. starts `run` in the plugin's directory, with an environment holding only
+   `PATH`, `HOME`, `LANG` and `BOARD_CALL_DEPTH`;
+3. writes one request to the plugin's stdin:
+
+   ```json
+   {
+     "$type": "board/call/v1",
+     "capability": "due",
+     "input": { "before": "2026-11-01" },
+     "board": { "root": "/Users/me/board", "database": "/Users/me/.cache/board/…/tasks@0.1.0.sqlite" }
+   }
+   ```
+
+4. reads exactly one document from the plugin's stdout: `board/call-result/v1`
+   holding `output`, or `board/error/v1` holding `code`, `message` and typed
+   `fields`;
+5. validates `output` against `output_schema` and prints it.
+
+A plugin exits 0 with a result and 1 with an error. Its stderr is for logs:
+Board keeps the last 64 KiB and shows it when the call fails. A call has 30
+seconds and 16 MiB of stdout; past either, Board stops the plugin and refuses
+with `board::plugin::timeout` or `board::plugin::too_large`. A plugin's error
+codes are `<plugin>::<area>::<reason>`, so its failures read like Board's.
+
+A plugin calls another plugin only through `board call`, so the same checks,
+limits and logs apply. Board increments `BOARD_CALL_DEPTH` on each nested call
+and refuses past 8 with `board::plugin::too_deep`.
+
+## Extraction
+
+A plugin that lists types in `extract` gets each record of those types once per
+blob. Board sends batches of at most 1,000 records or 16 MiB:
+
+```json
+{
+  "$type": "board/extract/v1",
+  "records": [
+    { "blob": "9c1e…", "path": "/tasks/write-plan", "type": "lr/task/v1", "record": {} }
+  ],
+  "board": { "root": "…", "database": "…" }
+}
+```
+
+The plugin writes what it needs into its database, keyed by blob, and replies
+`board/extract-result/v1` naming the blobs it handled. Board remembers which
+blobs each plugin version has handled and sends only new ones.
+
+Extraction must be a pure function of one record's bytes. Anything that spans
+records, like "tasks blocked by an open task", is a query that joins the
+plugin's tables with Board's `entries` view when it runs. That is what keeps a
+plugin's database correct on every branch and every commit.
+
+## Databases
+
+Board gives each plugin version one SQLite file in the board's cache directory
+and passes its path in every request. The plugin owns everything inside it and
+names its tables as it likes. `board query` attaches it read-only as `p_<name>`,
+with hyphens in the name turned into underscores. A new version starts with an
+empty file and extracts again. Deleting any plugin database is always safe.
+
+## Codes
+
+`board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`, `ambiguous`,
+`bad_input`, `bad_output`, `failed`, `timeout`, `too_large`, `too_deep`.
+
+## The Python library
+
+`board-plugin` is how most plugins get written. It is opinionated:
+Python 3.12 or newer, uv, pydantic v2 for inputs and outputs, ruff, pyright in
+strict mode and pytest. It provides:
+
+- the stdin and stdout protocol, error codes and exit codes;
+- the manifest, generated from code with `python -m board_plugin manifest`, so
+  the code is the single source;
+- a database helper that keys rows by blob;
+- `board_plugin.testing`: build a fixture board, call a capability both
+  in-process and through the real protocol, and check the rows extraction wrote;
+- `board-plugin new <name>`: a working plugin with tests and lint settings.
+
+A sketch of the API, to be settled in milestone M6:
+
+```python
+from datetime import date
+
+from pydantic import BaseModel
+
+from board_plugin import Context, Database, Plugin, Record
+
+plugin = Plugin(name="tasks", version="0.1.0", description="Open tasks and their due dates.")
+
+
+class DueInput(BaseModel):
+    before: date
+
+
+class DueOutput(BaseModel):
+    tasks: list[str]
+
+
+@plugin.extract("lr/task/v1")
+def extract(record: Record, db: Database) -> None:
+    db.put("tasks", blob=record.blob, status=record.data["status"], due=record.data.get("due"))
+
+
+@plugin.capability("due")
+def due(request: DueInput, context: Context) -> DueOutput:
+    rows = context.query(
+        "select e.path from p_tasks.tasks t join entries e on e.blob = t.blob "
+        "where t.status = 'open' and t.due < ?",
+        [request.before.isoformat()],
+    )
+    return DueOutput(tasks=[row["path"] for row in rows])
+```

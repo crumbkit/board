@@ -1,0 +1,31 @@
+"$type" = "board/lint-config/v1"
+
+# Budgets enforced by `cargo xtask lint`, which bin/lint runs. Words are
+# whitespace-separated, counted across the whole file, code blocks included.
+# Raise a number only in a change that says why; every run prints usage so the
+# headroom is visible. STANDARDS.md 22 explains the starting values.
+
+# N: everything an agent loads at session start. These files plus every file
+# they import with Claude Code's `@path` syntax, each counted once.
+[context]
+entry = ["AGENTS.md", "CLAUDE.md"]
+max_words = 1000
+
+# M: the documentation map.
+[docs_index]
+file = "DOCS.md"
+max_words = 400
+
+# O: the documentation itself, summed across every matching file.
+[docs]
+glob = "docs/*.md"
+max_words = 8000
+
+# Every Rust source file outside tests.rs files and tests/ directories.
+[source]
+max_lines = 800
+
+# The exact number of #[expect] attributes in that source. Adding one means
+# raising this in the same change; removing one means lowering it.
+[expect]
+count = 1

@@ -1,0 +1,5 @@
+# A flaky test is a defect, so nothing retries; one failure still lets the
+# rest of the suite report.
+[profile.default]
+retries = 0
+fail-fast = false
