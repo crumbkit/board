@@ -358,16 +358,16 @@ records.
 
 ## Performance
 
-These budgets are first guesses, to be measured and set at milestone M4. The
-reference boards are the exported old corpus (about 8,000 records) and a
-generated 10,000-record board.
+These budgets are macos-15 medians on the generated 10,000-record board,
+measured at M4 and rounded up. The exported old corpus (about 8,000 records) is
+the other reference board.
 
 | Operation | Budget |
 | --- | --- |
-| `board get`, warm | 50 ms |
-| `board check`, warm, nothing changed | 200 ms |
-| simple `board query`, warm | 100 ms, provisional |
-| full index, cold | 10 s |
+| `board get`, warm | 5 ms |
+| `board check`, warm, nothing changed | 500 ms |
+| simple `board query`, warm | 500 ms |
+| full index, cold | 1 s |
 
 `cargo xtask bench` is the timing job. It runs on a generated board in CI,
 reports every run and fails above three times a budget; a provisional budget
