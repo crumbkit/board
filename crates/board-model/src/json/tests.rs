@@ -116,3 +116,21 @@ fn bolero_any_bytes_parse_to_a_value_that_parses_back_to_itself() {
         }
     });
 }
+
+#[test]
+fn a_number_parses_back_to_the_same_value_after_printing() {
+    // Found by fuzzing: an integer too large for u64 parses as a float, and
+    // serde_json's default float parse is not exactly rounded, so this read
+    // back as 3.3032288278647182e22 instead of 3.3032288278647186e22.
+    for number in [
+        "33032288278647188139631",
+        "0.1",
+        "1e308",
+        "5e-324",
+        "123456789012345678",
+    ] {
+        let value = parse_json(number.as_bytes()).unwrap();
+        let printed = serde_json::to_vec(&value).unwrap();
+        assert_eq!(parse_json(&printed).unwrap(), value, "{number}");
+    }
+}
