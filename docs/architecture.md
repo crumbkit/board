@@ -79,7 +79,8 @@ merge combine most concurrent edits.
 
 ## Logical paths
 
-A logical path is `/` followed by segments separated by `/`. A segment is
+A logical path is `/` alone, the board's root, or `/` followed by segments
+separated by `/`. A segment is
 non-empty UTF-8 of at most 255 bytes, without `/`, NUL or control characters,
 and is not `.` or `..`. A path is at most 4,096 bytes. Paths are absolute and
 are read against the root of the board that holds them.
