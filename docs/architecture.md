@@ -24,8 +24,8 @@ an entry. An entry has a path, a blob hash, a size, a kind and a status.
 
 An entry's status is `ok` or `degraded` with exactly one code (see Codes).
 Board never refuses to index a file; the worst it says is a path and a code.
-An entry under a directory that resolution cannot reach (a shadowed or
-malformed name) takes that directory's code.
+A directory is not an entry, so a degraded directory name passes its code to
+every entry beneath it.
 
 A symlink is a `file` entry and is never followed; Board's links are pointers.
 A submodule is degraded with `board::repo::submodule` and never descended:
