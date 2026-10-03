@@ -12,7 +12,7 @@ open threads are settled or moved into PLAN.md.
   lean, reviews every builder PR against STANDARDS.md and docs/, and changes
   the docs when the design is wrong. It does not implement milestones.
 - **Builder session** `session_018fcBgd866UNNdTiVtbJpFc` ("Session task
-  coordination"): commissioned on 2026-10-03 for M2 in viitta, as small pull
+  coordination"): built M2 and M3 in viitta on 2026-10-03, as small pull
   requests that the vision session reviews and merges.
 - **M1 builder** `session_017XzJQ42de6xdS5bYk5GE9B`: commissioned on
   2026-10-03 for the export script under `tools/export-old-board/`, as one pull
@@ -85,6 +85,8 @@ and what it does not.
 
 ## Next actions
 
-1. Commission M3 from the builder, as small pull requests, and review them.
-2. #11 (app-name constants) waits for the owner to confirm the request.
-3. The owner runs the M1 export; route problems to the M1 builder.
+1. Commission M4 from the builder, starting with its design-gap list, and
+   review its pull requests.
+2. Dispatch the fuzz workflow once its flag fix lands, and read the result.
+3. #21 (app-name constants) waits for the owner to confirm the request.
+4. The owner runs the M1 export; route problems to the M1 builder.

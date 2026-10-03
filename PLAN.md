@@ -95,16 +95,11 @@ working tree, resolution, walking, links and mounts (#3, #7, #9, #12 to #14).
 Moved on: the display-path round trip to M3, where `get` first prints one;
 walks through mounts to M4; the two write scenarios to M5.
 
-### M3 Records and validation
+### M3 Records and validation: done
 
-The duplicate-refusing parse, kinds, `$type`, schemas from the tree, typed
-references, `board-validate`, `board-ops`, and the commands `check`, `get` and
-`ls`. `check` covers the root board; walks reach mounts in M4.
-
-Done: a fixture board that produces every code `check`, `get` and `ls` can
-produce; bolero targets for the record and path parsers, run in the gate and
-fuzzed by a scheduled job; walks mark dangling references; the property that
-resolving a Location's display path returns that Location.
+`board-validate`, `board-ops`, `board-cli` and the strict parse in
+`board-model`: kinds, schemas, typed references, `check`, `get` and `ls`
+(#17, #18, #20, #22). The fuzz job's first full run is still to come.
 
 ### M4 Index and query
 
