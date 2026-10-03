@@ -203,6 +203,8 @@ pub enum IndexError {
         #[source]
         source: rusqlite::Error,
     },
+    #[error("the query ran longer than {:?}", crate::query::QUERY_TIME)]
+    Timeout,
 }
 
 impl IndexError {
@@ -210,6 +212,7 @@ impl IndexError {
         match self {
             Self::Sql { .. } | Self::Foreign => Code::IndexFailed,
             Self::Query { .. } => Code::QueryInvalid,
+            Self::Timeout => Code::QueryTimeout,
         }
     }
 }

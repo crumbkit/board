@@ -253,3 +253,74 @@ fn a_failure_of_the_database_is_the_indexs_and_any_other_is_the_querys() {
         Code::QueryInvalid
     );
 }
+
+fn journal_mode(index: &Index) -> String {
+    index
+        .connection
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let refused = index.query("PRAGMA journal_mode=delete", 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    assert_eq!(journal_mode(&index), "wal");
+    let admitted = index
+        .query("SELECT name FROM pragma_table_info('blobs') LIMIT 1", 10)
+        .unwrap();
+    assert_eq!(admitted.rows.len(), 1);
+    assert_eq!(journal_mode(&index), "wal");
+}
+
+#[test]
+fn a_query_cannot_attach_a_database_but_a_plugin_database_attaches() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let target = cache.path().join("x.sqlite");
+    let sql = format!("ATTACH '{}' AS x", target.display());
+    let refused = index.query(&sql, 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    assert!(!target.exists(), "no file is created");
+    let refused = index.query("DETACH DATABASE temp", 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let plugin = cache.path().join("plugin.sqlite");
+    rusqlite::Connection::open(&plugin)
+        .unwrap()
+        .execute_batch("CREATE TABLE notes (n INTEGER); INSERT INTO notes VALUES (7)")
+        .unwrap();
+    index.attach("p_notes", &plugin).unwrap();
+    let admitted = index.query("SELECT n FROM p_notes.notes", 10).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
+}
+
+#[test]
+fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = filled(cache.path());
+    let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
+                     SELECT count(*) FROM c";
+    let refused = index.query(unbounded, 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryTimeout);
+    let bounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 10) \
+                   SELECT count(*) FROM c";
+    let admitted = index.query(bounded, 10).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(10)]]);
+    assert_eq!(journal_mode(&index), "wal");
+    assert!(has_fact(&mut index), "the index is still writable");
+}
+
+#[test]
+fn a_query_cannot_vacuum_into_a_file() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = filled(cache.path());
+    let target = cache.path().join("v.sqlite");
+    let sql = format!("VACUUM INTO '{}'", target.display());
+    let refused = index.query(&sql, 10).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    assert!(!target.exists(), "no file is created");
+    let admitted = index.query("SELECT count(*) AS n FROM blobs", 10).unwrap();
+    assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
+}

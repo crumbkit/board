@@ -379,6 +379,9 @@ fn the_fixture_board_produces_every_code() {
     take(board_in(dir, &["get", "/mount/m/gone", "--json"]));
     take(board_in(dir, &["ls", "/mount/m", "--json"]));
     take(board_in(dir, &["query", "SELEC 1", "--json"]));
+    let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
+                     SELECT count(*) FROM c";
+    take(board_in(dir, &["query", unbounded, "--json"]));
     let put = |path: &str, record: &str| {
         board_with(
             dir,

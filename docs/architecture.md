@@ -254,7 +254,9 @@ says otherwise, with `truncated` set when rows were left out. The report is
 `columns` and `rows`, each row an array in column order, since a join can repeat
 a column name; `plugins` lists any plugin whose extraction failed. SQL that does
 not parse, would write, or holds more than one statement is
-`board::query::invalid`. A query sees each fact table filtered to what the
+`board::query::invalid`; ATTACH, DETACH and PRAGMA statements count as writes,
+but table-valued pragma functions such as `pragma_table_info` are admitted. A
+query stopped after 1 s is `board::query::timeout`. A query sees each fact table filtered to what the
 current tree reaches, so it answers the same warm as cold; `main.<table>` is the
 whole cache, which keeps facts for other branches. There is no query language beyond SQL: an agent writes SQL.
 
@@ -387,6 +389,7 @@ after release. The v0 set:
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
+| `query` | `timeout`: the statement ran longer than 1 s |
 | `put` | `stale`, `locked`, `through_mount`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
 
