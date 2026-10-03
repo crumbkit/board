@@ -370,6 +370,6 @@ the other reference board.
 | full index, cold | 1 s |
 
 `cargo xtask bench` is the timing job. It runs on a generated board in CI,
-reports every run and fails above three times a budget. The owner times the M1 export locally with
-`--board`, since that data stays out of the repository. The work-count tests
-are the hard gate.
+reports every run and fails above three times a budget. The owner times the
+M1 export locally with `--board`, since that data stays out of the repository.
+The work-count tests are the hard gate.
