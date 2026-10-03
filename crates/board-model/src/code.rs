@@ -30,6 +30,7 @@ pub enum Code {
     MountRepoMissing,
     MountCommitMissing,
     MountRemoteUnsupported,
+    MountFollowMissing,
     ResolveCycle,
     ResolveTooManyHops,
     RepoUnreadable,
@@ -47,7 +48,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 37] = [
+    pub const ALL: [Code; 38] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -72,6 +73,7 @@ impl Code {
         Self::MountRepoMissing,
         Self::MountCommitMissing,
         Self::MountRemoteUnsupported,
+        Self::MountFollowMissing,
         Self::ResolveCycle,
         Self::ResolveTooManyHops,
         Self::RepoUnreadable,
@@ -118,6 +120,7 @@ impl Code {
             Self::MountRepoMissing => "board::mount::repo_missing",
             Self::MountCommitMissing => "board::mount::commit_missing",
             Self::MountRemoteUnsupported => "board::mount::remote_unsupported",
+            Self::MountFollowMissing => "board::mount::follow_missing",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
@@ -174,6 +177,7 @@ mod tests {
             | Code::MountRepoMissing
             | Code::MountCommitMissing
             | Code::MountRemoteUnsupported
+            | Code::MountFollowMissing
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable

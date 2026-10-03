@@ -44,11 +44,11 @@ pub struct PutReport {
 
 /// A record checked and placed, ready to be written.
 #[derive(Debug)]
-struct Prepared {
-    path: LogicalPath,
-    expect: Expect,
-    canonical: Vec<u8>,
-    target: board_tree::Target,
+pub(crate) struct Prepared {
+    pub(crate) path: LogicalPath,
+    pub(crate) expect: Expect,
+    pub(crate) canonical: Vec<u8>,
+    pub(crate) target: board_tree::Target,
 }
 
 /// One line of a batch that refused it, counted from 1.
@@ -239,7 +239,11 @@ impl Board {
     /// Takes the lock, compares every expect, and writes every prepared
     /// record in order, with one commit when `commit_on_put` is set. Writes
     /// nothing unless every expect holds.
-    fn write_all(&self, prepared: &[Prepared], message: &str) -> Result<PutReport, Failure> {
+    pub(crate) fn write_all(
+        &self,
+        prepared: &[Prepared],
+        message: &str,
+    ) -> Result<PutReport, Failure> {
         let repository = self.repository();
         let lock = repository
             .lock(LOCK_WAIT)
@@ -317,7 +321,7 @@ impl Board {
     /// Checks `bytes` as `check` checks a record, with its codes, and
     /// returns the parsed record and whether it is a pointer. Input that is
     /// not one JSON object with a `$type` is `put::invalid`.
-    fn check_record(&self, bytes: &[u8]) -> Result<(Value, bool), Code> {
+    pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<(Value, bool), Code> {
         let value = parse_json(bytes).map_err(|error| error.code())?;
         if value.get("$type").is_none() {
             return Err(Code::PutInvalid);
@@ -362,7 +366,7 @@ impl Board {
 /// Why `write_all` wrote nothing: stale expects, by their index among the
 /// prepared records, or any other error.
 #[derive(Debug)]
-enum Failure {
+pub(crate) enum Failure {
     Stale(Vec<(usize, PutError)>),
     Error(PutError),
 }

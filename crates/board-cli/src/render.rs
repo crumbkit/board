@@ -7,8 +7,8 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Fallback, GetReport, Listed, LsReport, PutError, PutReport, QueryReport,
-    RefsReport, source_name,
+    CheckReport, Fallback, GetReport, Listed, LsReport, MountUpdateReport, PutError, PutReport,
+    QueryReport, RefsReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Value, json};
@@ -319,6 +319,34 @@ pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
 
 /// A failure: `error: <code>: <message>` on stderr, or a `board/error/v1`
 /// document on stdout. Either way the exit code is 1.
+/// `mount update`: as text, what the mount moved from and to, or that it
+/// was already there.
+pub(crate) fn mount_update(format: Format, report: &MountUpdateReport) -> Output {
+    match format {
+        Format::Text => {
+            let text = if report.wrote {
+                format!("updated {} {} -> {}\n", report.path, report.old, report.new)
+            } else {
+                format!("{} is at {} already\n", report.path, report.new)
+            };
+            Output {
+                stdout: text.into_bytes(),
+                ..Output::default()
+            }
+        }
+        Format::Json => document(
+            &json!({
+                "$type": "board/mount-update-report/v1",
+                "path": report.path.to_string(),
+                "old": report.old.to_string(),
+                "new": report.new.to_string(),
+                "wrote": report.wrote,
+            }),
+            0,
+        ),
+    }
+}
+
 /// A refused put. A refused batch lists each failing line: as text one line
 /// each after the error, and in JSON as `fields.refusals`.
 pub(crate) fn put_error(format: Format, error: &PutError) -> Output {

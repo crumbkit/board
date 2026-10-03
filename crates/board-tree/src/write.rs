@@ -81,6 +81,33 @@ impl Repository {
         })
     }
 
+    /// The pointer file `path` names, which is not followed, for rewriting
+    /// in place. A path that reaches a mount on the way is refused, as is
+    /// one that names no file or a pointer left degraded.
+    pub fn pointer_target(&self, path: &LogicalPath) -> Result<Target, WriteError> {
+        let refused = |code| WriteError::Refused {
+            path: path.clone(),
+            code,
+        };
+        let location = self
+            .resolve_pointer(path)
+            .map_err(|error| refused(error.code()))?;
+        if location.board.source != Source::WorkingTree {
+            return Err(refused(Code::PutThroughMount));
+        }
+        let physical = match location.object {
+            Object::Blob(_) => record_file(&location).ok_or(refused(Code::RecordNotARecord))?,
+            Object::Directory => return Err(refused(Code::RecordNotARecord)),
+        };
+        if let Some(code) = self.degraded(&physical, true)? {
+            return Err(refused(code));
+        }
+        Ok(Target {
+            path: physical,
+            location,
+        })
+    }
+
     /// The new file `path` names: beneath its deepest ancestor that
     /// resolves, with the segments past it as directories to create.
     fn new_file(&self, path: &LogicalPath) -> Result<(Location, String), WriteError> {

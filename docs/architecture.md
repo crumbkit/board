@@ -301,8 +301,8 @@ The report is `board/put-report/v1`: `writes`, each with its Location, display
 path, `previous` blob (null for a new file) and `blob`; and `commit` (null when
 none was made).
 
-`board mount update <path>` names a mount pointer, which it does not follow.
-It reads the pointer's `follow` ref in the mounted repository (missing:
+`board mount update <path>` names a mount pointer, which it does not follow;
+anything else there is `board::mount::invalid`. It reads the pointer's `follow` ref in the mounted repository (missing:
 `board::mount::follow_missing`) and, if the commit changed, rewrites `commit`
 through `put` with `--expect` set to the pointer's blob. The report,
 `board/mount-update-report/v1`, gives the path, the old and new commit and

@@ -46,6 +46,9 @@ enum Command {
         #[arg(long, conflicts_with_all = ["path", "expect"])]
         batch: bool,
     },
+    /// Work with mounts.
+    #[command(subcommand)]
+    Mount(MountCommand),
     /// Run one read-only SQL statement over the index.
     Query {
         sql: String,
@@ -53,6 +56,12 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_LIMIT, value_parser = limit)]
         limit: usize,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum MountCommand {
+    /// Advance the mount at a path, which is not followed, to its `follow` ref.
+    Update { path: LogicalPath },
 }
 
 /// `none`, or a blob id in hex.
@@ -140,6 +149,10 @@ pub(crate) fn run(
             }
         }
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
+        Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
+            Ok(report) => render::mount_update(format, &report),
+            Err(error) => render::error(format, error.code(), &error),
+        },
         Command::Refs { path } => match board.refs(&path, context.cache.as_deref()) {
             Ok(report) => render::refs(format, &report),
             Err(error) => render::error(format, error.code(), &error),
