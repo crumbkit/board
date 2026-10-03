@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 
-use board_model::LogicalPath;
+use board_model::{BINARY_NAME, DISPLAY_NAME, LogicalPath};
 use board_ops::Board;
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
@@ -12,10 +12,7 @@ use crate::render::{self, Format};
 use crate::report::Output;
 
 #[derive(Debug, Parser)]
-#[command(
-    name = env!("CARGO_BIN_NAME"),
-    about = "Board: a fast, validated view of a git tree."
-)]
+#[command(name = BINARY_NAME, about = format!("{DISPLAY_NAME}: a fast, validated view of a git tree."))]
 struct Cli {
     /// Print one JSON document instead of text.
     #[arg(long, global = true)]
