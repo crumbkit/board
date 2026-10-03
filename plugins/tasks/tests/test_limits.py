@@ -12,11 +12,11 @@ def running(pid: str) -> bool:
     return not (state.strip() == "" or state.strip().startswith("Z"))
 
 
-def test_a_call_past_its_time_limit_leaves_no_python_running_under_uv(board: Board) -> None:
+def test_a_call_past_its_stdout_limit_leaves_no_python_running_under_uv(board: Board) -> None:
     (board.data / "board" / "plugins" / "sleeper").symlink_to(FIXTURES / "sleeper")
     board.enable("tasks", "digest", "sleeper")
     error = board.json("call", "sleeper.sleep", stdin="{}")
-    assert error["code"] == "board::plugin::timeout", error
+    assert error["code"] == "board::plugin::too_large", error
     pid = error["fields"]["stderr"].split()[-1]
     checks = 500
     while running(pid) and checks > 0:

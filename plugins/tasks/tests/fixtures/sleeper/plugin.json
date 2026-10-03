@@ -2,12 +2,12 @@
   "$type": "board/plugin-manifest/v1",
   "name": "sleeper",
   "version": "0.1.0",
-  "description": "Python under uv that outlasts the call limit.",
+  "description": "Python under uv that writes past the stdout limit, then sleeps.",
   "run": ["./run"],
   "capabilities": [
     {
       "name": "sleep",
-      "description": "Writes its pid to stderr, then sleeps past the limit.",
+      "description": "Writes its pid to stderr, then over 16 MiB to stdout, then sleeps.",
       "input_schema": {"type": "object"},
       "output_schema": {"type": "object"}
     }

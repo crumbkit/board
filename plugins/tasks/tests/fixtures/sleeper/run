@@ -4,5 +4,7 @@ project="$(cd -P "$(dirname "$0")" && cd ../../.. && pwd -P)"
 exec uv run --frozen --project "$project" python -c '
 import os, sys, time
 print(os.getpid(), file=sys.stderr, flush=True)
+sys.stdout.write("x" * (16 * 1024 * 1024 + 1))
+sys.stdout.flush()
 time.sleep(120)
 '
