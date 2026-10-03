@@ -2,7 +2,7 @@
 //! links and mounts; The index). board-tree walks them; this indexes each
 //! mounted commit once however many places mount it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use board_index::{IndexError, Writer};
 use board_model::{Kind, ObjectId, Source};
@@ -11,18 +11,15 @@ use board_tree::{Cache, Entry, Reached, Repository, TreeRow, TreeRows};
 use crate::board::Board;
 use crate::index::{Indexed, Refresh, RefreshError, Refreshed, facts};
 
-/// Every mounted source, and what the index holds about its entries.
-#[derive(Debug)]
-pub(crate) struct Mounts {
-    pub(crate) reached: Reached,
-    facts: HashMap<ObjectId, HashMap<String, Indexed>>,
-}
+/// What the index holds about one source's entries, by physical path.
+type Facts = HashMap<String, Indexed>;
+
+/// Every mounted source, with what the index holds about its entries.
+pub(crate) type Mounts = Reached<Facts>;
 
 /// The index as the cache a walk through mounts reads and fills.
 struct Indexing<'w, 't> {
     writer: &'w Writer<'t>,
-    root: &'w HashMap<String, Indexed>,
-    facts: HashMap<ObjectId, HashMap<String, Indexed>>,
     work: &'w mut Refreshed,
 }
 
@@ -35,24 +32,18 @@ impl Board {
         refresh: &Refresh,
         work: &mut Refreshed,
     ) -> Result<Mounts, RefreshError> {
-        let mut indexing = Indexing {
-            writer,
-            root: &refresh.facts,
-            facts: HashMap::new(),
-            work,
-        };
-        let reached = self
-            .repository()
-            .walk_mounts(&refresh.entries, &mut indexing)?;
-        Ok(Mounts {
-            reached,
-            facts: indexing.facts,
-        })
+        self.repository().walk_mounts(
+            &refresh.entries,
+            &refresh.facts,
+            &mut Indexing { writer, work },
+        )
     }
 }
 
+// A cache read that fails counts as a miss: the index is disposable.
 impl Cache for Indexing<'_, '_> {
     type Error = RefreshError;
+    type Facts = Facts;
 
     fn has_tree(&mut self, tree: ObjectId) -> bool {
         self.writer.has_tree(tree).unwrap_or(false)
@@ -68,54 +59,41 @@ impl Cache for Indexing<'_, '_> {
         self.writer.tree(tree).ok().flatten()
     }
 
-    /// Adds a mounted commit's blobs' facts first.
-    fn pointers(
+    fn facts(
         &mut self,
         repository: &Repository,
         source: &Source,
         entries: &[Entry],
-    ) -> Result<HashSet<String>, RefreshError> {
-        let facts = match source {
-            Source::WorkingTree => self.root,
-            Source::Commit(commit) => {
-                let found = facts(self.writer, repository, source, entries, self.work)?;
-                self.facts.entry(*commit).or_insert(found)
-            }
-        };
-        Ok(facts
-            .iter()
-            .filter(|(_, indexed)| {
-                indexed.fact.kind == Kind::Pointer && indexed.fact.code.is_none()
-            })
-            .map(|(path, _)| path.clone())
-            .collect())
+    ) -> Result<Facts, RefreshError> {
+        facts(self.writer, repository, source, entries, self.work)
+    }
+
+    fn is_pointer(facts: &Facts, path: &str) -> bool {
+        facts.get(path).is_some_and(|indexed| {
+            indexed.fact.kind == Kind::Pointer && indexed.fact.code.is_none()
+        })
     }
 }
 
-impl Mounts {
-    /// What the index holds about the entries of the mounted `commit`.
-    pub(crate) fn facts(&self, commit: ObjectId) -> &HashMap<String, Indexed> {
-        self.facts.get(&commit).expect(
-            "walk_mounts asks for the pointers of every source it reaches, which adds its facts",
+/// Stores every source, the root's repository first, and every mount.
+pub(crate) fn record(
+    mounts: &Mounts,
+    writer: &Writer<'_>,
+    root: &Repository,
+) -> Result<(), IndexError> {
+    let mut sources = vec![(
+        Source::WorkingTree,
+        root.head_tree().ok().flatten(),
+        root.path(),
+    )];
+    sources.extend(mounts.sources.iter().map(|mounted| {
+        (
+            Source::Commit(mounted.commit),
+            Some(mounted.root),
+            mounted.repository.path(),
         )
-    }
-
-    /// Stores every source, the root's repository first, and every mount.
-    pub(crate) fn record(&self, writer: &Writer<'_>, root: &Repository) -> Result<(), IndexError> {
-        let mut sources = vec![(
-            Source::WorkingTree,
-            root.head_tree().ok().flatten(),
-            root.path(),
-        )];
-        sources.extend(self.reached.sources.iter().map(|mounted| {
-            (
-                Source::Commit(mounted.commit),
-                Some(mounted.root),
-                mounted.repository.path(),
-            )
-        }));
-        writer.set_mounts(&sources, &self.reached.points)
-    }
+    }));
+    writer.set_mounts(&sources, &mounts.points)
 }
 
 #[cfg(test)]

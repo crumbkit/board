@@ -93,7 +93,7 @@ impl Board {
         let refresh = self.refresh(&writer)?;
         let mut work = refresh.work;
         let mounts = self.mounts(&writer, &refresh, &mut work)?;
-        let scopes = mounts.reached.scopes(scope);
+        let scopes = mounts.scopes(scope);
         let stats: HashMap<&str, (Stat, ObjectId)> = refresh
             .entries
             .iter()
@@ -139,11 +139,11 @@ impl Board {
             )?;
         }
         drop(root);
-        for mounted in &mounts.reached.sources {
+        for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
                 writer: &writer,
-                facts: mounts.facts(mounted.commit),
+                facts: &mounted.facts,
                 resolve: RefCell::new(Box::new(|path: &LogicalPath| {
                     mounted.repository.resolve(&source, path)
                 })),
@@ -159,7 +159,7 @@ impl Board {
                 decided.push(&decide, &source, entry, logical, Change::Committed)?;
             }
         }
-        mounts.record(&writer, self.repository())?;
+        crate::mounts::record(&mounts, &writer, self.repository())?;
         writer.resolve(&decided.resolved)?;
         writer.commit()?;
         let memory = match index.storage() {
