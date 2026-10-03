@@ -4,21 +4,21 @@ use board_index::{BlobFact, Index, RefFact, ValidationFact};
 use board_model::{Code, Kind, Role};
 use board_scenario::{Item, Scenario};
 
-use crate::index::Built;
+use crate::index::Refreshed;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 
-/// Builds `scenario` into the index in `cache`.
-fn build(scenario: &Scenario, cache: &std::path::Path) -> Built {
+/// Refreshes the index of `scenario` in `cache`.
+fn build(scenario: &Scenario, cache: &std::path::Path) -> Refreshed {
     let board = open(scenario);
     let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.build_index(&mut index).unwrap()
+    board.refresh_index(&mut index).unwrap()
 }
 
 /// The index of `scenario` in `cache`, built.
 fn built(scenario: &Scenario, cache: &std::path::Path) -> Index {
     let board = open(scenario);
     let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.build_index(&mut index).unwrap();
+    board.refresh_index(&mut index).unwrap();
     index
 }
 
@@ -34,14 +34,15 @@ fn tasks() -> Scenario {
 }
 
 #[test]
-fn a_cold_build_parses_each_json_blob_once_and_validates_each_record_once() {
+fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_once() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
-    // board.json, two schemas, the project, and two distinct task blobs;
-    // notes.md is never read.
+    // Eight files are hashed; board.json, two schemas, the project, and two
+    // distinct task blobs are parsed; notes.md is never read.
     assert_eq!(
         build(&scenario, cache.path()),
-        Built {
+        Refreshed {
+            hashed: 8,
             parsed: 6,
             validated: 3
         }
@@ -49,22 +50,23 @@ fn a_cold_build_parses_each_json_blob_once_and_validates_each_record_once() {
 }
 
 #[test]
-fn a_second_build_does_no_work() {
+fn a_second_refresh_does_no_work() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
     build(&scenario, cache.path());
-    assert_eq!(build(&scenario, cache.path()), Built::default());
+    assert_eq!(build(&scenario, cache.path()), Refreshed::default());
 }
 
 #[test]
-fn one_changed_record_parses_one_blob_and_validates_one_record() {
+fn one_changed_record_hashes_one_file_parses_one_blob_and_validates_one_record() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
     build(&scenario, cache.path());
     scenario.write("tasks/a.json", Item::File(&task(r#", "see": "/x""#)));
     assert_eq!(
         build(&scenario, cache.path()),
-        Built {
+        Refreshed {
+            hashed: 1,
             parsed: 1,
             validated: 1
         }
@@ -82,7 +84,8 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
     );
     assert_eq!(
         build(&scenario, cache.path()),
-        Built {
+        Refreshed {
+            hashed: 1,
             parsed: 1,
             validated: 2
         }
@@ -168,4 +171,72 @@ fn the_index_holds_each_validation_with_its_references_in_the_order_found() {
             .unwrap(),
         None
     );
+}
+
+#[test]
+fn a_file_modified_in_the_second_the_last_refresh_began_is_hashed_again() {
+    let scenario = tasks();
+    scenario.write("fresh.md", Item::Fresh("just saved"));
+    let cache = tempfile::tempdir().unwrap();
+    build(&scenario, cache.path());
+    assert_eq!(
+        build(&scenario, cache.path()),
+        Refreshed {
+            hashed: 1,
+            ..Refreshed::default()
+        },
+        "its metadata matches, but it could have changed unseen"
+    );
+}
+
+#[test]
+fn a_file_modified_before_the_last_refresh_began_is_trusted() {
+    let scenario = tasks();
+    scenario.write("fresh.md", Item::File("saved an hour ago"));
+    let cache = tempfile::tempdir().unwrap();
+    build(&scenario, cache.path());
+    assert_eq!(build(&scenario, cache.path()), Refreshed::default());
+}
+
+#[test]
+fn a_deleted_file_leaves_the_index_and_a_new_one_is_hashed() {
+    let scenario = tasks();
+    let cache = tempfile::tempdir().unwrap();
+    build(&scenario, cache.path());
+    scenario.write("notes.md", Item::Deleted);
+    scenario.write("more.md", Item::File("new"));
+    assert_eq!(
+        build(&scenario, cache.path()),
+        Refreshed {
+            hashed: 1,
+            ..Refreshed::default()
+        }
+    );
+    let mut index = built(&scenario, cache.path());
+    let paths: Vec<String> = {
+        let writer = index.write().unwrap();
+        let mut paths: Vec<String> = writer.worktree().unwrap().into_keys().collect();
+        paths.sort();
+        paths
+    };
+    assert!(paths.contains(&"more.md".to_owned()));
+    assert!(!paths.contains(&"notes.md".to_owned()));
+}
+
+#[test]
+fn the_index_keeps_each_entrys_address_code_blob_and_metadata() {
+    let scenario = tasks();
+    scenario.write("bad\tname.md", Item::File(""));
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = built(&scenario, cache.path());
+    let writer = index.write().unwrap();
+    let rows = writer.worktree().unwrap();
+    let a = &rows["tasks/a.json"];
+    assert_eq!(a.logical, Some("/tasks/a".parse().unwrap()));
+    assert_eq!(a.code, None);
+    assert_eq!(a.blob, Some(scenario.blob(&task(""))));
+    assert_eq!(a.stat.unwrap().size, task("").len() as u64);
+    let malformed = &rows["bad\tname.md"];
+    assert_eq!(malformed.logical, None);
+    assert_eq!(malformed.code, Some(Code::PathMalformed));
 }

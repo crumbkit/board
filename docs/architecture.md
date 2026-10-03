@@ -196,12 +196,12 @@ deleted and rebuilt. SQLite is bundled, so every platform runs the same one.
 | --- | --- | --- |
 | `sources` | the root working tree and each mounted repository and commit | source |
 | `trees` | every entry in a tree: name, blob or subtree, mode | tree |
-| `worktree` | each working-tree file's stat (size, times, inode, mode) and blob | path |
+| `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
 | `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `mounts` | each mount point and the source it reaches | source, path |
-| `state` | index format, root commit and working-tree stamp | key |
+| `state` | index format, root commit and when the last refresh began | key |
 
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
@@ -213,8 +213,8 @@ true at a commit exactly when its blob is in that commit's tree.
 
 Each command refreshes the index first: compare the root commit and working
 tree with `state`; diff old and new trees; hash only the working-tree files
-whose stat changed, or whose modification time is not before the last
-refresh began, as git does; parse and validate only blobs not yet in `blobs` and
+whose stat changed, or whose modification time is not before the second the
+last refresh began, as git does; parse and validate only blobs not yet in `blobs` and
 `validations`. Editing a schema invalidates exactly the validations that used
 it, because they are keyed by its blob. Whether a reference or pointer
 resolves depends on the whole tree, not one blob, so `check` recomputes it

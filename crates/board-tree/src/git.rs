@@ -117,6 +117,7 @@ impl Repository {
                         EntryKind::Link => Kind::Symlink(id),
                         EntryKind::Commit => Kind::Submodule,
                     },
+                    stat: None,
                 }
             })
             .collect())

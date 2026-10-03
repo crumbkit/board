@@ -8,7 +8,7 @@ mod store;
 
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::schema::INDEX_VERSION;
-pub use crate::store::{BlobFact, RefFact, ValidationFact, Writer};
+pub use crate::store::{BlobFact, RefFact, ValidationFact, WorktreeRow, Writer};
 
 #[cfg(test)]
 mod tests;

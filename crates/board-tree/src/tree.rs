@@ -1,6 +1,6 @@
 //! What resolution and walking read: the directories of one source.
 
-use board_model::{ObjectId, Source};
+use board_model::{ObjectId, Source, Stat};
 
 use crate::git::GitError;
 
@@ -44,4 +44,6 @@ pub(crate) enum Kind<D> {
 pub(crate) struct RawEntry<D> {
     pub(crate) name: Vec<u8>,
     pub(crate) kind: Kind<D>,
+    /// A working-tree file's or symlink's metadata.
+    pub(crate) stat: Option<Stat>,
 }
