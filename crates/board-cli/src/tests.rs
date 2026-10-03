@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::Path;
 
-use board_model::{BINARY_NAME, Code, ObjectId};
+use board_model::{Code, ObjectId};
 use board_scenario::{Item, Scenario};
 use serde_json::Value;
 
@@ -46,7 +46,7 @@ fn board_in(directory: &Path, arguments: &[&str]) -> Output {
         start: directory.to_path_buf(),
         home: None,
     };
-    let arguments = std::iter::once(BINARY_NAME)
+    let arguments = std::iter::once(env!("CARGO_BIN_NAME"))
         .chain(arguments.iter().copied())
         .map(OsString::from);
     run(arguments, &context)
