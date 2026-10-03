@@ -1,38 +1,61 @@
 //! Resolution and walking over real repositories built by the scenario
 //! builder (docs/architecture.md, Testing).
 
+mod scenario;
+mod working_tree;
+
 use std::collections::HashSet;
 
 use board_model::{Code, Location, LogicalPath, Object, ObjectId, Source};
 use proptest::prelude::*;
 
-use crate::scenario::{Item, Scenario};
+use self::scenario::{Item, Scenario};
 use crate::{Entry, Repository, Status};
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
 }
 
-fn resolve(scenario: &Scenario, commit: ObjectId, text: &str) -> Result<Location, Code> {
+/// What a test reads: a commit, or the working tree.
+trait At: Copy {
+    fn source(self) -> Source;
+}
+
+impl At for ObjectId {
+    fn source(self) -> Source {
+        Source::Commit(self)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct WorkingTree;
+
+impl At for WorkingTree {
+    fn source(self) -> Source {
+        Source::WorkingTree
+    }
+}
+
+fn resolve(scenario: &Scenario, at: impl At, text: &str) -> Result<Location, Code> {
     scenario
         .open()
-        .resolve(commit, &path(text))
+        .resolve(&at.source(), &path(text))
         .map_err(|error| error.code())
 }
 
 /// Asserts that `admitted` resolves to the physical `physical` and that
 /// `refused` is refused with `code`.
-fn pair(scenario: &Scenario, commit: ObjectId, admitted: (&str, &str), refused: &str, code: Code) {
-    let location = resolve(scenario, commit, admitted.0).unwrap();
+fn pair(scenario: &Scenario, at: impl At, admitted: (&str, &str), refused: &str, code: Code) {
+    let location = resolve(scenario, at, admitted.0).unwrap();
     assert_eq!(location.path, admitted.1);
-    assert_eq!(resolve(scenario, commit, refused).unwrap_err(), code);
+    assert_eq!(resolve(scenario, at, refused).unwrap_err(), code);
 }
 
 /// The walk's entries as (physical path, logical path, status).
-fn walk(scenario: &Scenario, commit: ObjectId) -> Vec<(String, Option<String>, Status)> {
+fn walk(scenario: &Scenario, at: impl At) -> Vec<(String, Option<String>, Status)> {
     scenario
         .open()
-        .walk(commit)
+        .walk(&at.source())
         .unwrap()
         .into_iter()
         .map(|entry: Entry| {
@@ -310,7 +333,7 @@ fn a_missing_commit_or_repository_is_unreadable() {
         resolve(&scenario, missing, "/x").unwrap_err(),
         Code::RepoUnreadable
     );
-    let error = scenario.open().walk(missing).unwrap_err();
+    let error = scenario.open().walk(&missing.source()).unwrap_err();
     assert_eq!(error.code(), Code::RepoUnreadable);
 
     let empty = tempfile::tempdir().unwrap();
@@ -343,13 +366,13 @@ proptest! {
         prop_assume!(files.iter().all(|file| !files.iter().any(|other| other.starts_with(&format!("{file}/")))));
         let commit = scenario.commit_items(&items);
         let repository = scenario.open();
-        let entries = repository.walk(commit).unwrap();
+        let entries = repository.walk(&commit.source()).unwrap();
         let physical: HashSet<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
         prop_assert_eq!(physical.len(), entries.len());
         for entry in &entries {
             if entry.status == Status::Ok {
                 let logical = entry.logical.as_ref().unwrap();
-                let location = repository.resolve(commit, logical).unwrap();
+                let location = repository.resolve(&commit.source(), logical).unwrap();
                 prop_assert_eq!(&location.path, &entry.path);
                 prop_assert_eq!(Some(location.object), entry.blob.map(Object::Blob));
             }
@@ -374,7 +397,7 @@ fn a_subtree_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
             ok("b.json", "/b"),
         ]
     );
-    let entries = scenario.open().walk(missing).unwrap();
+    let entries = scenario.open().walk(&missing.source()).unwrap();
     assert_eq!(entries[0].blob, None);
     assert_eq!(
         resolve(&scenario, missing, "/a/x").unwrap_err(),
@@ -386,7 +409,7 @@ fn a_subtree_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
 fn a_submodule_entry_carries_no_blob() {
     let scenario = Scenario::new();
     let commit = scenario.commit_items(&[(b"m", Item::Submodule), (b"x.json", Item::File("{}"))]);
-    let entries = scenario.open().walk(commit).unwrap();
+    let entries = scenario.open().walk(&commit.source()).unwrap();
     assert_eq!(entries[0].blob, None);
     assert_eq!(entries[1].blob, Some(scenario.blob("{}")));
 }

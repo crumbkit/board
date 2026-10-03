@@ -1,21 +1,33 @@
 //! Resolving a logical path to a Location (docs/architecture.md, Pointers:
 //! links and mounts). Pointers are not followed yet.
 
-use board_model::{Board, Code, Location, LogicalPath, Object, ObjectId, Source};
+use board_model::{Board, Code, Location, LogicalPath, Object, Source};
 
 use crate::address::{self, Named};
-use crate::git::{GitError, Kind, Repository};
+use crate::git::{GitError, Repository};
+use crate::tree::{Kind, Tree};
 
 impl Repository {
-    /// Resolves `path` in the tree of `commit`.
-    pub fn resolve(&self, commit: ObjectId, path: &LogicalPath) -> Result<Location, ResolveError> {
+    /// Resolves `path` in `source`.
+    pub fn resolve(&self, source: &Source, path: &LogicalPath) -> Result<Location, ResolveError> {
+        match source {
+            Source::Commit(commit) => self.resolve_in(&mut self.commit_tree(*commit)?, path),
+            Source::WorkingTree => self.resolve_in(&mut self.working_tree()?, path),
+        }
+    }
+
+    fn resolve_in<T: Tree>(
+        &self,
+        tree: &mut T,
+        path: &LogicalPath,
+    ) -> Result<Location, ResolveError> {
+        let not_found = || ResolveError::NotFound { path: path.clone() };
         let mut object = Object::Directory;
-        let mut tree = Some(self.root_tree(commit)?);
+        let mut directory = Some(tree.root());
         let mut physical: Vec<String> = Vec::new();
         let mut segments = path.segments().peekable();
         while let Some(segment) = segments.next() {
-            let not_found = || ResolveError::NotFound { path: path.clone() };
-            let entries = self.list(tree.ok_or_else(not_found)?)?;
+            let entries = tree.list(directory.as_ref().ok_or_else(not_found)?)?;
             let entry = match address::named(&entries, segment) {
                 Named::Nothing => return Err(not_found()),
                 Named::One(entry) => entry,
@@ -34,18 +46,21 @@ impl Repository {
                 }
             };
             physical.push(String::from_utf8_lossy(&entry.name).into_owned());
-            (object, tree) = match entry.kind {
-                Kind::Directory => (Object::Directory, Some(entry.id)),
-                Kind::File | Kind::Symlink => (Object::Blob(entry.id), None),
+            (object, directory) = match &entry.kind {
+                Kind::Directory(child) => (Object::Directory, Some(child.clone())),
+                Kind::File(id) | Kind::Symlink(id) => (Object::Blob(*id), None),
                 Kind::Submodule => {
                     return Err(ResolveError::Submodule { path: path.clone() });
+                }
+                Kind::Unreadable => {
+                    return Err(ResolveError::Unreadable { path: path.clone() });
                 }
             };
         }
         Ok(Location {
             board: Board {
                 repository: self.path().to_path_buf(),
-                source: Source::Commit(commit),
+                source: tree.source(),
             },
             path: physical.join("/"),
             object,
@@ -62,6 +77,8 @@ pub enum ResolveError {
     Shadowed { path: LogicalPath, segment: String },
     #[error("{path} reaches a submodule, which is not descended")]
     Submodule { path: LogicalPath },
+    #[error("{path} reaches a file that cannot be read")]
+    Unreadable { path: LogicalPath },
     #[error(transparent)]
     Git(#[from] GitError),
 }
@@ -72,6 +89,7 @@ impl ResolveError {
             Self::NotFound { .. } => Code::PathNotFound,
             Self::Shadowed { .. } => Code::PathShadowed,
             Self::Submodule { .. } => Code::RepoSubmodule,
+            Self::Unreadable { .. } => Code::RepoUnreadable,
             Self::Git(error) => error.code(),
         }
     }

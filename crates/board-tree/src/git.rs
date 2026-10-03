@@ -1,10 +1,12 @@
-//! The one module that reads git objects.
+//! The one module that reads git objects and references.
 
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use board_model::{Code, ObjectId};
+use board_model::{Code, ObjectId, Source};
 use gix::object::tree::EntryKind;
+
+use crate::tree::{Kind, RawEntry, Tree};
 
 /// A git repository opened for reading.
 #[derive(Debug)]
@@ -13,21 +15,12 @@ pub struct Repository {
     git: gix::Repository,
 }
 
-/// What a tree entry is, as git records it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Kind {
-    Directory,
-    File,
-    Symlink,
-    Submodule,
-}
-
-/// One entry of a git tree.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct RawEntry {
-    pub(crate) name: Vec<u8>,
-    pub(crate) kind: Kind,
-    pub(crate) id: ObjectId,
+/// A commit's tree, read from the object database.
+#[derive(Debug)]
+pub(crate) struct CommitTree<'r> {
+    repository: &'r Repository,
+    commit: ObjectId,
+    root: ObjectId,
 }
 
 impl Repository {
@@ -51,8 +44,28 @@ impl Repository {
         &self.path
     }
 
-    /// The root tree of `commit`.
-    pub(crate) fn root_tree(&self, commit: ObjectId) -> Result<ObjectId, GitError> {
+    pub(crate) fn git(&self) -> &gix::Repository {
+        &self.git
+    }
+
+    /// The commit `HEAD` names, or `None` before the first commit.
+    pub(crate) fn head(&self) -> Result<Option<ObjectId>, GitError> {
+        let unreadable = |source: Box<dyn Error + Send + Sync>| GitError::Unreadable {
+            repository: self.path.clone(),
+            source,
+        };
+        let mut head = self.git.head().map_err(|error| unreadable(error.into()))?;
+        if head.is_unborn() {
+            return Ok(None);
+        }
+        let id = head
+            .try_peel_to_id()
+            .map_err(|error| unreadable(error.into()))?;
+        Ok(id.map(|id| model_id(&id)))
+    }
+
+    /// The tree of `commit`.
+    pub(crate) fn commit_tree(&self, commit: ObjectId) -> Result<CommitTree<'_>, GitError> {
         let found = self
             .git
             .find_commit(self.gix_id(commit)?)
@@ -60,11 +73,15 @@ impl Repository {
         let tree = found
             .tree_id()
             .map_err(|error| self.missing(commit, error))?;
-        Ok(model_id(&tree))
+        Ok(CommitTree {
+            repository: self,
+            commit,
+            root: model_id(&tree),
+        })
     }
 
     /// The entries of `tree`, in git's order.
-    pub(crate) fn list(&self, tree: ObjectId) -> Result<Vec<RawEntry>, GitError> {
+    fn list_tree(&self, tree: ObjectId) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
         let found = self
             .git
             .find_tree(self.gix_id(tree)?)
@@ -73,15 +90,17 @@ impl Repository {
         Ok(decoded
             .entries
             .iter()
-            .map(|entry| RawEntry {
-                name: entry.filename.to_vec(),
-                kind: match entry.mode.kind() {
-                    EntryKind::Tree => Kind::Directory,
-                    EntryKind::Blob | EntryKind::BlobExecutable => Kind::File,
-                    EntryKind::Link => Kind::Symlink,
-                    EntryKind::Commit => Kind::Submodule,
-                },
-                id: model_id(entry.oid),
+            .map(|entry| {
+                let id = model_id(entry.oid);
+                RawEntry {
+                    name: entry.filename.to_vec(),
+                    kind: match entry.mode.kind() {
+                        EntryKind::Tree => Kind::Directory(id),
+                        EntryKind::Blob | EntryKind::BlobExecutable => Kind::File(id),
+                        EntryKind::Link => Kind::Symlink(id),
+                        EntryKind::Commit => Kind::Submodule,
+                    },
+                }
             })
             .collect())
     }
@@ -99,7 +118,23 @@ impl Repository {
     }
 }
 
-fn model_id(id: &gix::oid) -> ObjectId {
+impl Tree for CommitTree<'_> {
+    type Directory = ObjectId;
+
+    fn source(&self) -> Source {
+        Source::Commit(self.commit)
+    }
+
+    fn root(&self) -> ObjectId {
+        self.root
+    }
+
+    fn list(&mut self, directory: &ObjectId) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
+        self.repository.list_tree(*directory)
+    }
+}
+
+pub(crate) fn model_id(id: &gix::oid) -> ObjectId {
     let bytes = id.as_bytes();
     match <[u8; 32]>::try_from(bytes) {
         Ok(sha256) => ObjectId::Sha256(sha256),
@@ -119,6 +154,14 @@ pub enum GitError {
         #[source]
         source: Box<dyn Error + Send + Sync>,
     },
+    #[error("{repository:?} has no working tree")]
+    NoWorkingTree { repository: PathBuf },
+    #[error("{path:?} cannot be read")]
+    File {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     #[error("object {id} in {repository:?} cannot be read")]
     Object {
         repository: PathBuf,
@@ -131,7 +174,10 @@ pub enum GitError {
 impl GitError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Unreadable { .. } | Self::Object { .. } => Code::RepoUnreadable,
+            Self::Unreadable { .. }
+            | Self::NoWorkingTree { .. }
+            | Self::File { .. }
+            | Self::Object { .. } => Code::RepoUnreadable,
         }
     }
 }

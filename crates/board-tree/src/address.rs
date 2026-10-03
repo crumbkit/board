@@ -5,16 +5,16 @@ use std::collections::{HashMap, HashSet};
 
 use board_model::{Code, LogicalPath};
 
-use crate::git::{Kind, RawEntry};
+use crate::tree::{Kind, RawEntry};
 
 /// The segment that addresses an entry, if its name is UTF-8: a file's name
 /// without `.json`, or any other entry's whole name. The segment may still
 /// break the segment rules; parsing the child path decides that.
-pub(crate) fn segment(entry: &RawEntry) -> Option<&str> {
+pub(crate) fn segment<D>(entry: &RawEntry<D>) -> Option<&str> {
     let name = std::str::from_utf8(&entry.name).ok()?;
     Some(match entry.kind {
-        Kind::File => name.strip_suffix(".json").unwrap_or(name),
-        Kind::Directory | Kind::Symlink | Kind::Submodule => name,
+        Kind::File(_) | Kind::Unreadable => name.strip_suffix(".json").unwrap_or(name),
+        Kind::Directory(_) | Kind::Symlink(_) | Kind::Submodule => name,
     })
 }
 
@@ -34,19 +34,19 @@ pub(crate) fn child(parent: &LogicalPath, segment: &str) -> Option<LogicalPath> 
 
 /// What one segment names among the entries it matches: the sole entry, or a
 /// record beside its directory of children. Anything else is shadowed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Named<'a> {
+#[derive(Debug)]
+pub(crate) enum Named<'a, D> {
     Nothing,
-    One(&'a RawEntry),
+    One(&'a RawEntry<D>),
     RecordWithChildren {
-        record: &'a RawEntry,
-        children: &'a RawEntry,
+        record: &'a RawEntry<D>,
+        children: &'a RawEntry<D>,
     },
     Shadowed,
 }
 
 /// What `segment` names among `entries`.
-pub(crate) fn named<'a>(entries: &'a [RawEntry], segment: &str) -> Named<'a> {
+pub(crate) fn named<'a, D>(entries: &'a [RawEntry<D>], segment: &str) -> Named<'a, D> {
     classify(
         entries
             .iter()
@@ -55,16 +55,16 @@ pub(crate) fn named<'a>(entries: &'a [RawEntry], segment: &str) -> Named<'a> {
 }
 
 /// What the entries matching one segment name.
-fn classify<'a>(mut matches: impl Iterator<Item = &'a RawEntry>) -> Named<'a> {
+fn classify<'a, D>(mut matches: impl Iterator<Item = &'a RawEntry<D>>) -> Named<'a, D> {
     match (matches.next(), matches.next(), matches.next()) {
         (None, _, _) => Named::Nothing,
         (Some(one), None, _) => Named::One(one),
-        (Some(a), Some(b), None) => match (a.kind, b.kind) {
-            (Kind::File, Kind::Directory) => Named::RecordWithChildren {
+        (Some(a), Some(b), None) => match (&a.kind, &b.kind) {
+            (Kind::File(_) | Kind::Unreadable, Kind::Directory(_)) => Named::RecordWithChildren {
                 record: a,
                 children: b,
             },
-            (Kind::Directory, Kind::File) => Named::RecordWithChildren {
+            (Kind::Directory(_), Kind::File(_) | Kind::Unreadable) => Named::RecordWithChildren {
                 record: b,
                 children: a,
             },
@@ -80,11 +80,11 @@ fn classify<'a>(mut matches: impl Iterator<Item = &'a RawEntry>) -> Named<'a> {
 /// than one, or a record and its children, is `path::shadowed`; names equal
 /// but for ASCII case are `path::case_collision`; a submodule is
 /// `repo::submodule`.
-pub(crate) fn directory(
+pub(crate) fn directory<D>(
     parent: &LogicalPath,
-    entries: &[RawEntry],
+    entries: &[RawEntry<D>],
 ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
-    let mut segments: HashMap<&str, Vec<&RawEntry>> = HashMap::new();
+    let mut segments: HashMap<&str, Vec<&RawEntry<D>>> = HashMap::new();
     let mut folded: HashMap<Vec<u8>, usize> = HashMap::new();
     for entry in entries {
         if let Some(segment) = segment(entry) {
@@ -94,7 +94,7 @@ pub(crate) fn directory(
     }
     let shadowed: HashSet<&str> = segments
         .into_iter()
-        .filter(|(_, group)| classify(group.iter().copied()) == Named::Shadowed)
+        .filter(|(_, group)| matches!(classify(group.iter().copied()), Named::Shadowed))
         .map(|(segment, _)| segment)
         .collect();
     entries
@@ -109,8 +109,10 @@ pub(crate) fn directory(
                 Some(Code::PathShadowed)
             } else if folded[&entry.name.to_ascii_lowercase()] > 1 {
                 Some(Code::PathCaseCollision)
-            } else if entry.kind == Kind::Submodule {
+            } else if matches!(entry.kind, Kind::Submodule) {
                 Some(Code::RepoSubmodule)
+            } else if matches!(entry.kind, Kind::Unreadable) {
+                Some(Code::RepoUnreadable)
             } else {
                 None
             };
