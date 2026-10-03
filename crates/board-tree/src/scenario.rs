@@ -15,6 +15,8 @@ pub(crate) enum Item<'a> {
     Symlink(&'a str),
     /// A submodule pinned to an arbitrary commit id.
     Submodule,
+    /// A top-level directory whose tree object is absent from the repository.
+    MissingTree,
 }
 
 /// One repository in its own temporary directory.
@@ -62,6 +64,7 @@ impl Scenario {
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),
                 ),
+                Item::MissingTree => continue,
                 Item::Submodule => (
                     EntryKind::Commit,
                     gix::ObjectId::from_hex(&[b'1'; 40]).unwrap(),
@@ -69,7 +72,27 @@ impl Scenario {
             };
             editor.upsert(BStr::new(path), kind, id).unwrap();
         }
-        let tree = editor.write().unwrap().detach();
+        let mut tree = editor.write().unwrap().detach();
+        // The editor refuses a tree it cannot find, so absent subtrees are
+        // added to the root tree object directly.
+        let missing: Vec<&[u8]> = items
+            .iter()
+            .filter(|(_, item)| matches!(item, Item::MissingTree))
+            .map(|(path, _)| *path)
+            .collect();
+        if !missing.is_empty() {
+            let root = self.git.find_tree(tree).unwrap();
+            let mut root: gix::objs::Tree = root.decode().unwrap().into();
+            for name in missing {
+                root.entries.push(gix::objs::tree::Entry {
+                    mode: EntryKind::Tree.into(),
+                    filename: name.into(),
+                    oid: gix::ObjectId::from_hex(&[b'2'; 40]).unwrap(),
+                });
+            }
+            root.entries.sort();
+            tree = self.git.write_object(&root).unwrap().detach();
+        }
         let signature = gix::actor::SignatureRef {
             name: "scenario".into(),
             email: "scenario@example.com".into(),

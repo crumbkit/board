@@ -351,7 +351,7 @@ proptest! {
                 let logical = entry.logical.as_ref().unwrap();
                 let location = repository.resolve(commit, logical).unwrap();
                 prop_assert_eq!(&location.path, &entry.path);
-                prop_assert_eq!(location.object, Object::Blob(entry.blob));
+                prop_assert_eq!(Some(location.object), entry.blob.map(Object::Blob));
             }
         }
     }
@@ -369,4 +369,38 @@ fn the_submodule_refusal_names_the_app_by_its_display_name() {
             board_model::DISPLAY_NAME
         )
     );
+}
+
+#[test]
+fn a_subtree_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
+    let scenario = Scenario::new();
+    let present = scenario.commit(&[("a/x.json", "{}"), ("b.json", "{}")]);
+    assert_eq!(
+        walk(&scenario, present),
+        [ok("a/x.json", "/a/x"), ok("b.json", "/b")]
+    );
+    let missing =
+        scenario.commit_items(&[(b"a", Item::MissingTree), (b"b.json", Item::File("{}"))]);
+    assert_eq!(
+        walk(&scenario, missing),
+        [
+            degraded("a", Some("/a"), Code::RepoUnreadable),
+            ok("b.json", "/b"),
+        ]
+    );
+    let entries = scenario.open().walk(missing).unwrap();
+    assert_eq!(entries[0].blob, None);
+    assert_eq!(
+        resolve(&scenario, missing, "/a/x").unwrap_err(),
+        Code::RepoUnreadable
+    );
+}
+
+#[test]
+fn a_submodule_entry_carries_no_blob() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit_items(&[(b"m", Item::Submodule), (b"x.json", Item::File("{}"))]);
+    let entries = scenario.open().walk(commit).unwrap();
+    assert_eq!(entries[0].blob, None);
+    assert_eq!(entries[1].blob, Some(scenario.blob("{}")));
 }
