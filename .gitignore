@@ -1,1 +1,3 @@
 /target/
+# cargo-bolero's corpus and crashes, written next to each target.
+__fuzz__/

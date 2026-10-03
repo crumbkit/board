@@ -27,5 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install nightly --profile minimal
-      - run: cargo +nightly install cargo-bolero --locked
-      - run: cargo +nightly bolero test --package board-model --time 10min ${{ matrix.target }}
+      # Pinned so its flags cannot drift; -T is the total run time.
+      - run: cargo +nightly install cargo-bolero --version 0.13.5 --locked
+      - run: cargo +nightly bolero test --package board-model -T 10min ${{ matrix.target }}
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crashes-${{ strategy.job-index }}
+          path: crates/board-model/src/**/__fuzz__/*/crashes/
+          if-no-files-found: ignore
