@@ -189,6 +189,7 @@ version = "0.0.0"
 dependencies = [
  "board-model",
  "jsonschema",
+ "jsonschema-regex",
  "regex",
  "serde_json",
  "thiserror",

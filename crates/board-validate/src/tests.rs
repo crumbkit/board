@@ -344,3 +344,27 @@ fn a_ladder_past_the_ref_limit_is_still_refused_from_its_own_start_and_a_shallow
     assert_eq!(compile_code(deep), Code::SchemaInvalid);
     assert!(Schema::compile(behind_hops(3, hops)).is_ok());
 }
+
+#[test]
+fn a_key_a_pattern_matches_only_under_rust_rules_is_no_reference_and_its_ascii_twin_is() {
+    let schema = Schema::compile(json!({
+        "patternProperties": {"^\\d+$": {"type": "string", "format": "board-ref"}}
+    }))
+    .unwrap();
+    for (key, marked) in [("3", true), ("٣", false)] {
+        let pointers: Vec<String> = schema
+            .references(&json!({key: "/x"}))
+            .into_iter()
+            .map(|reference| reference.pointer)
+            .collect();
+        let expected: Vec<String> = if marked {
+            vec![format!("/{key}")]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(pointers, expected, "{key}");
+        // The validator agrees: only a marked key's value must be a path.
+        let checked = schema.validate(&json!({key: "not a path!"})).is_err();
+        assert_eq!(checked, marked, "{key}");
+    }
+}

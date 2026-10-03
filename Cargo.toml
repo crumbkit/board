@@ -32,6 +32,7 @@ clap = { version = "4.6.7", default-features = false, features = ["derive", "err
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "sha1"] }
 glob = "0.3.3"
 jsonschema = { version = "0.58.5", default-features = false }
+jsonschema-regex = "0.58.5"
 proptest = "1.11.0"
 regex = "1.12.2"
 # bundled: every platform runs the same SQLite, built from source.

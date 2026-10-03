@@ -235,7 +235,7 @@ impl Search<'_> {
             .and_then(Value::as_object)
             .into_iter()
             .flatten()
-            .filter_map(|(pattern, schema)| Some((Regex::new(pattern).ok()?, schema)))
+            .filter_map(|(pattern, schema)| Some((ecma(pattern)?, schema)))
             .collect();
         let additional = keywords.get("additionalProperties");
         for (key, value) in members {
@@ -272,6 +272,12 @@ impl Search<'_> {
             }
         }
     }
+}
+
+/// `pattern` compiled as the validator compiles it: read with ECMAScript
+/// rules, so `\d` is an ASCII digit, then built for the linear-time engine.
+fn ecma(pattern: &str) -> Option<Regex> {
+    Regex::new(&jsonschema_regex::to_rust_regex(pattern).ok()?).ok()
 }
 
 /// The subschema a local `$ref` names in `root`: `#`, or a JSON pointer
