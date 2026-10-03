@@ -35,6 +35,9 @@ pub enum Item<'a> {
     MissingTree,
     /// A top-level file whose blob object is absent from the repository.
     MissingBlob,
+    /// Text added to the end of the file at the path, such as a section of
+    /// `.git/config`.
+    Appended(&'a str),
     /// Nothing: the file at the path is deleted; working tree only.
     Deleted,
     /// A file the walk's user cannot read (mode 000); working tree only.
@@ -104,6 +107,16 @@ impl Scenario {
             }
             Item::Symlink(target) => std::os::unix::fs::symlink(target, path).unwrap(),
             Item::Deleted => fs::remove_file(path).unwrap(),
+            Item::Appended(text) => {
+                use std::io::Write;
+                fs::File::options()
+                    .append(true)
+                    .create(true)
+                    .open(&path)
+                    .unwrap()
+                    .write_all(text.as_bytes())
+                    .unwrap();
+            }
             Item::Submodule => {
                 fs::create_dir_all(&path).unwrap();
                 fs::write(path.join(".git"), "gitdir: elsewhere").unwrap();
@@ -162,7 +175,9 @@ impl Scenario {
                 ),
                 Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
-                Item::Deleted => panic!("a commit is built from nothing, so nothing is deleted"),
+                Item::Deleted | Item::Appended(_) => {
+                    panic!("a commit is built from whole files")
+                }
                 Item::Submodule => (
                     EntryKind::Commit,
                     gix::ObjectId::from_hex(&[b'1'; 40]).unwrap(),
@@ -211,6 +226,57 @@ impl Scenario {
             .commit_as(signature, signature, "HEAD", "scenario", tree, parents)
             .unwrap();
         model(commit.detach())
+    }
+}
+
+/// The commit HEAD names, as a test reads it.
+#[derive(Debug)]
+pub struct HeadCommit {
+    pub id: ObjectId,
+    pub message: String,
+    pub parents: Vec<ObjectId>,
+    /// Every file in its tree, by `/`-separated path.
+    pub files: std::collections::BTreeMap<String, Vec<u8>>,
+}
+
+impl Scenario {
+    /// The commit HEAD names now, read afresh, or `None` before the first.
+    pub fn head(&self) -> Option<HeadCommit> {
+        let git = gix::open(self.workdir()).unwrap();
+        let id = git.head_id().ok()?.detach();
+        let commit = git.find_commit(id).unwrap();
+        let mut files = std::collections::BTreeMap::new();
+        let mut pending = vec![(String::new(), commit.tree_id().unwrap().detach())];
+        while let Some((prefix, tree)) = pending.pop() {
+            for entry in git.find_tree(tree).unwrap().decode().unwrap().entries {
+                let path = format!("{prefix}{}", entry.filename);
+                if entry.mode.is_tree() {
+                    pending.push((format!("{path}/"), entry.oid.to_owned()));
+                } else {
+                    files.insert(path, git.find_blob(entry.oid).unwrap().data.clone());
+                }
+            }
+        }
+        Some(HeadCommit {
+            id: model(id),
+            message: commit.message_raw_sloppy().to_string(),
+            parents: commit
+                .parent_ids()
+                .map(|parent| model(parent.detach()))
+                .collect(),
+            files,
+        })
+    }
+
+    /// The paths git's index holds, each with its blob.
+    pub fn index(&self) -> std::collections::BTreeMap<String, ObjectId> {
+        let git = gix::open(self.workdir()).unwrap();
+        let index = git.index_or_empty().unwrap();
+        index
+            .entries()
+            .iter()
+            .map(|entry| (entry.path(&index).to_string(), model(entry.id)))
+            .collect()
     }
 }
 
