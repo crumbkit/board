@@ -10,8 +10,9 @@ records easy to read and write.
 ## Boards and entries
 
 A board is a directory tree whose root holds `.board/board.json`. It is
-normally the root of a git repository. Every file under the root is an entry
-with a path, a blob hash, a size, a kind and a status.
+normally the root of a git repository. Every file git sees under the root is an
+entry: tracked files, and untracked files that are not ignored. `.git` is never
+an entry. An entry has a path, a blob hash, a size, a kind and a status.
 
 | Kind | What it is |
 | --- | --- |
@@ -23,6 +24,12 @@ with a path, a blob hash, a size, a kind and a status.
 
 An entry's status is `ok` or `degraded` with exactly one code (see Codes).
 Board never refuses to index a file; the worst it says is a path and a code.
+An entry under a directory that resolution cannot reach (a shadowed or
+malformed name) takes that directory's code.
+
+A symlink is a `file` entry and is never followed; Board's links are pointers.
+A submodule is degraded with `board::repo::submodule` and never descended:
+mounts do that job.
 
 `.board/board.json` is `board/config/v1`:
 
@@ -87,7 +94,12 @@ A `.json` file is addressed only without its extension, so every entry has one
 address. When a segment matches more than one entry, each is degraded with
 `board::path::shadowed` and resolution refuses with the same code. Two names in
 one directory that differ only by ASCII case are degraded with
-`board::path::case_collision`, because a macOS working tree cannot hold both.
+`board::path::case_collision`, because a macOS working tree cannot hold both;
+resolution still matches names exactly. A name that is not a valid segment is
+degraded with `board::path::malformed` and cannot be reached. A path that names
+nothing, including one that continues through a file, is refused with
+`board::path::not_found`. A repository that cannot be opened, or a missing or
+corrupt object, is `board::repo::unreadable`.
 
 ## Pointers: links and mounts
 
@@ -131,8 +143,8 @@ through it. The semantics are POSIX symlinks':
   is ignored.
 
 Resolution returns a `Location`: the board (repository and source, either the
-working tree or a commit), the physical path, the blob hash, and every pointer
-followed. A Location's identity is its board, source and physical path. Two
+working tree or a commit), the physical path, the object (a blob hash, or a
+directory), and every pointer followed. A Location's identity is its board, source and physical path. Two
 logical paths that reach one identity are one object; backlinks and query
 results report the identity once. The display path replaces every link with its
 target and keeps mount points.
@@ -253,7 +265,8 @@ after release. The v0 set:
 | `record` | `bad_type`, `unknown_type`, `invalid` |
 | `schema` | `invalid` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
-| `path` | `malformed`, `shadowed`, `case_collision` |
+| `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
+| `repo` | `unreadable`, `submodule` |
 | `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `put` | `stale`, `locked`, `through_mount`, `invalid` |
