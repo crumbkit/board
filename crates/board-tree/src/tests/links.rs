@@ -289,3 +289,28 @@ proptest! {
         prop_assert_eq!(followed(&through), ["zz-link.json"]);
     }
 }
+
+#[test]
+fn a_record_beside_its_directory_that_cannot_be_read_degrades_both() {
+    let scenario = Scenario::new();
+    let readable = scenario.commit(&[("x.json", "{}"), ("x/z.json", "{}")]);
+    assert_eq!(
+        walk(&scenario, readable),
+        [ok("x.json", "/x"), ok("x/z.json", "/x/z")]
+    );
+    let missing = scenario.commit_items(&[
+        (b"x.json", Item::MissingBlob),
+        (b"x/z.json", Item::File("{}")),
+    ]);
+    assert_eq!(
+        walk(&scenario, missing),
+        [
+            degraded("x.json", Some("/x"), Code::RepoUnreadable),
+            degraded("x/z.json", Some("/x/z"), Code::RepoUnreadable),
+        ]
+    );
+    assert_eq!(
+        resolve(&scenario, missing, "/x/z").unwrap_err(),
+        Code::RepoUnreadable
+    );
+}
