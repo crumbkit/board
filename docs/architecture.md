@@ -254,11 +254,6 @@ Every operation is a typed library function that returns its report.
 `board-cli` only parses arguments, reads configuration and prints, so a later
 adapter such as `board serve` needs no logic of its own.
 
-The app presents its names only through two constants in `board-model`:
-`DISPLAY_NAME` (`Board`) for prose and messages, and `BINARY_NAME` (`board`)
-for the executable and command lines. No other code spells either name, and
-neither governs the `board::` codes, the `board` type namespace or crate names.
-
 `deny.toml` lets only `board-tree` depend on gix, only `board-index` on rusqlite
 and only `board-validate` on jsonschema. `clippy.toml` names the owner of each
 effect. No crate uses an async runtime.
