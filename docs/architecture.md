@@ -234,6 +234,10 @@ everything it was asked to or nothing.
 | `board-plugin` | manifests, discovery, child processes | board-model, board-index |
 | `board-cli` | the `board` binary: arguments, configuration, the one printer | all of the above |
 
+Every operation is a typed library function that returns its report.
+`board-cli` only parses arguments, reads configuration and prints, so a later
+adapter such as `board serve` needs no logic of its own.
+
 `deny.toml` lets only `board-tree` depend on gix, only `board-index` on rusqlite
 and only `board-validate` on jsonschema. `clippy.toml` names the owner of each
 effect. No crate uses an async runtime.

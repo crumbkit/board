@@ -126,51 +126,11 @@ empty file and extracts again. Deleting any plugin database is always safe.
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`, `ambiguous`,
 `bad_input`, `bad_output`, `failed`, `timeout`, `too_large`, `too_deep`.
 
-## The Python library
+## Writing a plugin in Python
 
-`board-plugin` is how most plugins get written. It is opinionated:
-Python 3.12 or newer, uv, pydantic v2 for inputs and outputs, ruff, pyright in
-strict mode and pytest. It provides:
-
-- the stdin and stdout protocol, error codes and exit codes;
-- the manifest, generated from code with `python -m board_plugin manifest`, so
-  the code is the single source;
-- a database helper that keys rows by blob;
-- `board_plugin.testing`: build a fixture board, call a capability both
-  in-process and through the real protocol, and check the rows extraction wrote;
-- `board-plugin new <name>`: a working plugin with tests and lint settings.
-
-A sketch of the API, to be settled in milestone M6:
-
-```python
-from datetime import date
-
-from pydantic import BaseModel
-
-from board_plugin import Context, Database, Plugin, Record
-
-plugin = Plugin(name="tasks", version="0.1.0", description="Open tasks and their due dates.")
-
-
-class DueInput(BaseModel):
-    before: date
-
-
-class DueOutput(BaseModel):
-    tasks: list[str]
-
-
-@plugin.extract("lr/task/v1")
-def extract(record: Record, db: Database) -> None:
-    db.put("tasks", blob=record.blob, status=record.data["status"], due=record.data.get("due"))
-
-
-@plugin.capability("due")
-def due(request: DueInput, context: Context) -> DueOutput:
-    rows = context.query(
-        "select e.path from p_tasks.tasks t join entries e on e.blob = t.blob "
-        "where t.status = 'open' and t.due < ?",
-        [request.before.isoformat()],
-    )
-    return DueOutput(tasks=[row["path"] for row in rows])
-```
+Plugins are written in Python 3.12 or newer with uv, pydantic v2, ruff, pyright
+in strict mode and pytest (STANDARDS.md P1 to P6). Each plugin talks the
+protocol above directly and keeps that code in one module. Its manifest's
+schemas are generated from its pydantic models. A shared `board-plugin` library
+is extracted once two plugins exist and their common code is visible; until
+then there is none.
