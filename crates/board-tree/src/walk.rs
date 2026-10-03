@@ -3,7 +3,6 @@
 
 use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
-use crate::address;
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, Tree};
 
@@ -21,6 +20,8 @@ pub struct Entry {
     pub status: Status,
     /// A working-tree file's or symlink's metadata.
     pub stat: Option<Stat>,
+    /// The blob's size in bytes, when known.
+    pub size: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +62,7 @@ impl Repository {
     }
 }
 
-fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
+pub(crate) fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
     let mut pending = vec![Pending {
         directory: tree.root(),
         path: String::new(),
@@ -81,20 +82,13 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                     blob: None,
                     status: Status::Degraded(code),
                     stat: None,
+                    size: None,
                 });
                 continue;
             }
         };
         let addressed = match &directory.logical {
-            Some(parent) => address::directory(parent, &listed, |record| {
-                // A record beside its directory is read only to learn
-                // whether it is a pointer, which shadows the directory.
-                match tree.read(&directory.directory, record) {
-                    Ok(Some(bytes)) => Some(!matches!(board_model::pointer(&bytes), Ok(None))),
-                    Ok(None) => Some(false),
-                    Err(_) => None,
-                }
-            }),
+            Some(parent) => tree.address(&directory.directory, parent, &listed),
             None => vec![(None, None); listed.len()],
         };
         for (entry, (logical, own)) in listed.iter().zip(addressed) {
@@ -124,6 +118,7 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                 blob,
                 status: code.map_or(Status::Ok, Status::Degraded),
                 stat: entry.stat,
+                size: blob.and(entry.size),
             });
         }
     }

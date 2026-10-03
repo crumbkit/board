@@ -152,6 +152,33 @@ impl Repository {
         })
     }
 
+    /// The repository `mount` names, read against this one, or its home for
+    /// `~/`, and the commit's tree in it.
+    fn open_mount(&self, mount: &Mount) -> Result<(Repository, ObjectId), MountMissing> {
+        let location = match mount.repo.strip_prefix("~/") {
+            Some(rest) => self.home().ok_or(MountMissing::Repo)?.join(rest),
+            None => self.path().join(&mount.repo),
+        };
+        let mut mounted = Repository::open(&location).map_err(|_| MountMissing::Repo)?;
+        if let Some(home) = self.home() {
+            mounted = mounted.with_home(home.to_path_buf());
+        }
+        let root = mounted
+            .commit_tree(mount.commit)
+            .map_err(|_| MountMissing::Commit)?
+            .root();
+        Ok((mounted, root))
+    }
+
+    /// The repository `mount` names and the root tree of its commit, or the
+    /// code that says why it cannot be read.
+    pub fn mounted(&self, mount: &Mount) -> Result<(Repository, ObjectId), Code> {
+        self.open_mount(mount).map_err(|missing| match missing {
+            MountMissing::Repo => Code::MountRepoMissing,
+            MountMissing::Commit => Code::MountCommitMissing,
+        })
+    }
+
     /// Continues with `remaining` at the root of the tree `mount` names.
     fn enter(
         &self,
@@ -161,18 +188,16 @@ impl Repository {
         trail: &mut Trail,
     ) -> Result<Location, ResolveError> {
         let path = trail.path.clone();
-        let repo_missing = || ResolveError::RepoMissing {
-            path: path.clone(),
-            repo: mount.repo.clone(),
-        };
-        let location = match mount.repo.strip_prefix("~/") {
-            Some(rest) => self.home().ok_or_else(repo_missing)?.join(rest),
-            None => self.path().join(&mount.repo),
-        };
-        let mut mounted = Repository::open(&location).map_err(|_| repo_missing())?;
-        if let Some(home) = self.home() {
-            mounted = mounted.with_home(home.to_path_buf());
-        }
+        let (mounted, _) = self.open_mount(mount).map_err(|missing| match missing {
+            MountMissing::Repo => ResolveError::RepoMissing {
+                path: path.clone(),
+                repo: mount.repo.clone(),
+            },
+            MountMissing::Commit => ResolveError::CommitMissing {
+                path: path.clone(),
+                commit: mount.commit,
+            },
+        })?;
         let mut tree =
             mounted
                 .commit_tree(mount.commit)
@@ -215,6 +240,12 @@ impl Resolver<'_, '_> {
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
         self.repository.resolve_in(&mut self.tree, path)
     }
+}
+
+/// What a mount names that cannot be read.
+enum MountMissing {
+    Repo,
+    Commit,
 }
 
 /// What one resolution carries across links and mounts.

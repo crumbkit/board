@@ -62,34 +62,13 @@ impl Board {
         let started_ns = now_ns();
         let mut work = Refreshed::default();
         let entries = self.walk(writer, &mut work.hashed)?;
-        let mut values = Values::new();
-        let mut facts: HashMap<String, Indexed> = HashMap::new();
-        for entry in &entries {
-            let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
-                continue;
-            };
-            let fact = if let Some(fact) = writer.blob(blob, role)? {
-                fact
-            } else {
-                // A blob that cannot be read has no content fact to store.
-                let Ok(bytes) = self
-                    .repository()
-                    .read(&Source::WorkingTree, &entry.path, blob)
-                else {
-                    continue;
-                };
-                let classified = role.classify(bytes.as_deref());
-                let fact = blob_fact(&classified);
-                writer.put_blob(blob, role, &fact)?;
-                work.parsed += 1;
-                if let Some(value) = value(classified) {
-                    values.insert((blob, role), value);
-                }
-                fact
-            };
-            facts.insert(entry.path.clone(), Indexed { blob, role, fact });
-        }
-        work.validated = self.validate(writer, &facts, &values)?;
+        let facts = facts(
+            writer,
+            self.repository(),
+            &Source::WorkingTree,
+            &entries,
+            &mut work,
+        )?;
         let head = self.head(writer, &mut work.trees)?;
         writer.set_refreshed_ns(started_ns)?;
         Ok(Refresh {
@@ -154,46 +133,90 @@ impl Board {
         }
         Ok(entries)
     }
+}
 
-    /// Validates each record against its schema, unless the index already
-    /// holds that pair, and returns how many it validated.
-    fn validate(
-        &self,
-        writer: &Writer<'_>,
-        facts: &HashMap<String, Indexed>,
-        values: &Values,
-    ) -> Result<usize, RefreshError> {
-        let repository = self.repository();
-        let mut compiled: HashMap<ObjectId, Option<Schema>> = HashMap::new();
-        let mut validated = 0;
-        for (path, record) in facts {
-            let Some(schema_path) = schema_path(record) else {
+/// What the index holds about each entry of `source` in `repository`,
+/// parsing each blob and validating each record it does not hold yet.
+pub(crate) fn facts(
+    writer: &Writer<'_>,
+    repository: &Repository,
+    source: &Source,
+    entries: &[Entry],
+    work: &mut Refreshed,
+) -> Result<HashMap<String, Indexed>, RefreshError> {
+    let mut values = Values::new();
+    let mut facts: HashMap<String, Indexed> = HashMap::new();
+    for entry in entries {
+        let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
+            continue;
+        };
+        let fact = if let Some(fact) = writer.blob(blob, role)? {
+            fact
+        } else {
+            // A blob that cannot be read has no content fact to store.
+            let Ok(bytes) = repository.read(source, &entry.path, blob) else {
                 continue;
             };
-            let Some(schema) = schema_of(facts, &schema_path) else {
-                continue;
-            };
-            if writer.validation(record.blob, schema)?.is_some() {
-                continue;
+            let classified = role.classify(bytes.as_deref());
+            let fact = blob_fact(&classified);
+            writer.put_blob(blob, role, &fact)?;
+            work.parsed += 1;
+            if let Some(value) = value(classified) {
+                values.insert((blob, role), value);
             }
-            let Some(compiled) = compiled
-                .entry(schema)
-                .or_insert_with(|| {
-                    known(values, repository, &schema_path, schema, Role::Schema)
-                        .and_then(|value| Schema::compile(value).ok())
-                })
-                .as_ref()
-            else {
-                continue;
-            };
-            let Some(value) = known(values, repository, path, record.blob, Role::Json) else {
-                continue;
-            };
-            writer.put_validation(record.blob, schema, &validate(compiled, &value))?;
-            validated += 1;
-        }
-        Ok(validated)
+            fact
+        };
+        facts.insert(entry.path.clone(), Indexed { blob, role, fact });
     }
+    work.validated += validate_all(writer, repository, source, &facts, &values)?;
+    Ok(facts)
+}
+
+/// Validates each record against its schema, unless the index already
+/// holds that pair, and returns how many it validated.
+fn validate_all(
+    writer: &Writer<'_>,
+    repository: &Repository,
+    source: &Source,
+    facts: &HashMap<String, Indexed>,
+    values: &Values,
+) -> Result<usize, RefreshError> {
+    let mut compiled: HashMap<ObjectId, Option<Schema>> = HashMap::new();
+    let mut validated = 0;
+    for (path, record) in facts {
+        let Some(schema_path) = schema_path(record) else {
+            continue;
+        };
+        let Some(schema) = schema_of(facts, &schema_path) else {
+            continue;
+        };
+        if writer.validation(record.blob, schema)?.is_some() {
+            continue;
+        }
+        let Some(compiled) = compiled
+            .entry(schema)
+            .or_insert_with(|| {
+                known(
+                    values,
+                    repository,
+                    source,
+                    &schema_path,
+                    schema,
+                    Role::Schema,
+                )
+                .and_then(|value| Schema::compile(value).ok())
+            })
+            .as_ref()
+        else {
+            continue;
+        };
+        let Some(value) = known(values, repository, source, path, record.blob, Role::Json) else {
+            continue;
+        };
+        writer.put_validation(record.blob, schema, &validate(compiled, &value))?;
+        validated += 1;
+    }
+    Ok(validated)
 }
 
 /// The schema path of a record that is checked against a schema: one that
@@ -267,6 +290,7 @@ fn value(classified: Classified) -> Option<Value> {
 fn known(
     values: &HashMap<(ObjectId, Role), Value>,
     repository: &Repository,
+    source: &Source,
     path: &str,
     blob: ObjectId,
     role: Role,
@@ -274,7 +298,7 @@ fn known(
     if let Some(value) = values.get(&(blob, role)) {
         return Some(value.clone());
     }
-    let bytes = repository.read(&Source::WorkingTree, path, blob).ok()??;
+    let bytes = repository.read(source, path, blob).ok()??;
     value(role.classify(Some(&bytes)))
 }
 

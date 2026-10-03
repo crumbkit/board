@@ -2,8 +2,9 @@
 
 use std::rc::Rc;
 
-use board_model::{ObjectId, Source, Stat};
+use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
+use crate::address;
 use crate::git::GitError;
 
 /// One source's directory tree: a commit's, or the working tree.
@@ -29,6 +30,25 @@ pub(crate) trait Tree {
         directory: &Self::Directory,
         entry: &RawEntry<Self::Directory>,
     ) -> Result<Option<Vec<u8>>, GitError>;
+
+    /// Each entry's logical path and own code in `directory`, whose logical
+    /// path is `parent`, in the order of `entries`.
+    fn address(
+        &mut self,
+        directory: &Self::Directory,
+        parent: &LogicalPath,
+        entries: &[RawEntry<Self::Directory>],
+    ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
+        address::directory(parent, entries, |record| {
+            // A record beside its directory is read only to learn whether it
+            // is a pointer, which shadows the directory.
+            match self.read(directory, record) {
+                Ok(Some(bytes)) => Some(!matches!(board_model::pointer(&bytes), Ok(None))),
+                Ok(None) => Some(false),
+                Err(_) => None,
+            }
+        })
+    }
 }
 
 /// What an entry is, as git records it.
@@ -49,4 +69,6 @@ pub(crate) struct RawEntry<D> {
     pub(crate) kind: Kind<D>,
     /// A working-tree file's or symlink's metadata.
     pub(crate) stat: Option<Stat>,
+    /// A file's or symlink's size in bytes, when known.
+    pub(crate) size: Option<u64>,
 }

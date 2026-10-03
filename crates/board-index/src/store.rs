@@ -3,8 +3,10 @@
 
 use std::collections::HashMap;
 
-use board_model::{Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Stat};
-use board_tree::TreeRows;
+use std::path::Path;
+
+use board_model::{Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat};
+use board_tree::{TreeRow, TreeRows};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::open::{Index, IndexError};
@@ -52,10 +54,33 @@ pub struct WorktreeRow {
 /// git's mode for a submodule, whose object is a commit.
 const SUBMODULE_MODE: u32 = 0o160_000;
 
-/// What one run decided about one working-tree entry.
+/// A mount point in a source, and the commit it reaches or why it cannot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MountRow {
+    pub source: Source,
+    /// The pointer's physical path in its source.
+    pub path: String,
+    pub target: Option<ObjectId>,
+    pub code: Option<Code>,
+}
+
+/// How the index names a source: `worktree`, or a commit's id. A commit in
+/// two clones has the same content, so it is one source.
+pub fn source_name(source: &Source) -> String {
+    match source {
+        Source::WorkingTree => "worktree".to_owned(),
+        Source::Commit(commit) => commit.to_string(),
+    }
+}
+
+/// What one run decided about one entry.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Resolved {
+    pub source: Source,
     pub path: String,
+    pub logical: Option<LogicalPath>,
+    pub blob: Option<ObjectId>,
+    pub size: Option<u64>,
     pub role: Option<Role>,
     pub kind: Kind,
     pub code: Option<Code>,
@@ -306,16 +331,80 @@ impl Writer<'_> {
         for row in &tree.rows {
             self.transaction
                 .prepare_cached(
-                    "INSERT OR REPLACE INTO trees (tree, name, mode, object, segment, code)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    "INSERT OR REPLACE INTO trees (tree, name, mode, object, size, segment, code)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 )?
                 .execute(params![
                     id,
                     row.name,
                     row.mode,
                     row.object.to_string(),
+                    row.size.map(u64::cast_signed),
                     row.segment,
                     row.code.map(Code::as_str),
+                ])?;
+        }
+        Ok(())
+    }
+
+    /// The rows of `tree`, or `None` when the index does not hold it.
+    pub fn tree(&self, tree: ObjectId) -> Result<Option<Vec<TreeRow>>, IndexError> {
+        let mut statement = self.transaction.prepare_cached(
+            "SELECT name, mode, object, size, segment, code FROM trees WHERE tree = ?1",
+        )?;
+        let rows = statement
+            .query_map([tree.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, u32>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })?
+            .map(|row| {
+                let (name, mode, object, size, segment, code) = row?;
+                Ok(ObjectId::from_hex(&object).map(|object| TreeRow {
+                    name,
+                    mode,
+                    object,
+                    size: size.map(i64::cast_unsigned),
+                    segment,
+                    code: code.and_then(|code| Code::parse(&code)),
+                }))
+            })
+            .collect::<Result<Option<Vec<TreeRow>>, IndexError>>()?;
+        Ok(rows.filter(|rows| !rows.is_empty()))
+    }
+
+    /// Replaces the sources and mounts the last refresh found.
+    pub fn set_mounts(
+        &self,
+        sources: &[(Source, Option<ObjectId>, &Path)],
+        mounts: &[MountRow],
+    ) -> Result<(), IndexError> {
+        self.transaction
+            .execute_batch("DELETE FROM sources; DELETE FROM mounts;")?;
+        for (source, tree, repository) in sources {
+            self.transaction
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO sources (source, tree, repository) VALUES (?1, ?2, ?3)",
+                )?
+                .execute(params![
+                    source_name(source),
+                    tree.map(|tree| tree.to_string()),
+                    repository.to_string_lossy(),
+                ])?;
+        }
+        for mount in mounts {
+            self.transaction
+                .prepare_cached("INSERT OR REPLACE INTO mounts (source, path, target, code) VALUES (?1, ?2, ?3, ?4)")?
+                .execute(params![
+                    source_name(&mount.source),
+                    mount.path,
+                    mount.target.map(|target| target.to_string()),
+                    mount.code.map(Code::as_str),
                 ])?;
         }
         Ok(())
@@ -356,12 +445,16 @@ impl Writer<'_> {
     pub fn resolve(&self, entries: &[Resolved]) -> Result<(), IndexError> {
         self.transaction.execute_batch(RESOLVED)?;
         let mut statement = self.transaction.prepare_cached(
-            "INSERT INTO resolved (source, path, role, kind, code, change)
-             VALUES ('worktree', ?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO resolved (source, path, logical, blob, size, role, kind, code, change)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
         for entry in entries {
             statement.execute(params![
+                source_name(&entry.source),
                 entry.path,
+                entry.logical.as_ref().map(ToString::to_string),
+                entry.blob.map(|blob| blob.to_string()),
+                entry.size.map(u64::cast_signed),
                 entry.role.map(Role::as_str),
                 entry.kind.as_str(),
                 entry.code.map(Code::as_str),

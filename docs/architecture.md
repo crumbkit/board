@@ -195,19 +195,23 @@ A run whose index is in memory says so in one line on stderr.
 
 | Table | Holds | Keyed by |
 | --- | --- | --- |
-| `sources` | the root working tree and each mounted repository and commit | source |
+| `sources` | the root working tree and each mounted commit: its root tree and the repository it was first read from | source: `worktree` or a commit id |
 | `trees` | every entry in a tree: name, mode, object, logical segment and path code | tree |
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
 | `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
-| `mounts` | each mount point and the source it reaches | source, path |
+| `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `state` | index format, root commit and when the last refresh began | key |
 
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 `type`, `status`, `code` and `change`. Tables, views and columns are an
 interface agents write SQL against; changing one changes the index format.
+A commit is one source however many places mount it, so its entries appear
+once, with `logical` through the first route: the shortest display path, then
+the first lexically. A scoped check takes an entry reached by any route at or
+beneath the scope. Text output names a mounted entry by its logical path.
 Each run decides `kind`, `code` and `change` and keeps them in a temporary
 table on its own connection, so `entries` shows what that run checked and
 nothing decided per run is stored.
