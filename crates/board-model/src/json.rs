@@ -45,9 +45,14 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, JsonError> {
 /// keys sorted by code point, two-space indentation, one key or array
 /// element per line, empty objects and arrays on one line, numbers as
 /// `serde_json` prints them, `\n` endings and one trailing newline.
+///
+/// # Panics
+///
+/// Never: a `Value`'s keys are all strings, and writing to a `Vec` cannot
+/// fail.
 pub fn canonical_json(value: &Value) -> Vec<u8> {
-    // Writing a Value to a Vec cannot fail: every key is a string.
-    let mut bytes = serde_json::to_vec_pretty(value).unwrap_or_default();
+    let mut bytes = serde_json::to_vec_pretty(value)
+        .expect("a Value writes to a Vec: every key is a string and no write can fail");
     bytes.push(b'\n');
     bytes
 }
