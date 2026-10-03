@@ -284,6 +284,228 @@ impl Repository {
     }
 }
 
+/// A commit made ready before a put renames anything: the commit object is
+/// written and git's `index.lock` is held, but HEAD has not moved. Dropping
+/// it unfinished releases the index lock and changes nothing.
+#[derive(Debug)]
+pub struct Staged {
+    commit: ObjectId,
+    parent: Option<ObjectId>,
+    index: gix::index::File,
+    index_lock: PathBuf,
+    finished: bool,
+}
+
+impl Staged {
+    pub fn commit(&self) -> ObjectId {
+        self.commit
+    }
+}
+
+impl Drop for Staged {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = fs::remove_file(&self.index_lock);
+        }
+    }
+}
+
+impl Repository {
+    /// Makes a commit of `writes`, each a `/`-separated path and the bytes it
+    /// will hold, onto HEAD as `git commit <paths>` would, without moving
+    /// HEAD: checks there is an identity to commit as, takes git's
+    /// `index.lock` without waiting, and writes the blobs, trees and commit
+    /// object. The board lock must be held, so HEAD is read under it.
+    pub fn stage_commit(
+        &self,
+        _lock: &Lock,
+        writes: &[(&str, &[u8])],
+        message: &str,
+    ) -> Result<Staged, WriteError> {
+        let git = self.git();
+        if !matches!(git.committer(), Some(Ok(_))) || !matches!(git.author(), Some(Ok(_))) {
+            return Err(WriteError::NoIdentity);
+        }
+        // As `git commit <paths>`, which refuses a partial commit while an
+        // operation that would give the commit more parents is under way.
+        for (marker, operation) in [
+            ("MERGE_HEAD", "merge"),
+            ("CHERRY_PICK_HEAD", "cherry-pick"),
+            ("REVERT_HEAD", "revert"),
+            ("rebase-merge", "rebase"),
+            ("rebase-apply", "rebase or am"),
+        ] {
+            if self.git_dir().join(marker).exists() {
+                return Err(WriteError::InProgress { operation });
+            }
+        }
+        let index_lock = self.git_dir().join("index.lock");
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&index_lock)
+        {
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                return Err(WriteError::Locked { lock: index_lock });
+            }
+            Err(source) => {
+                return Err(WriteError::Io {
+                    path: index_lock,
+                    source,
+                });
+            }
+        }
+        let mut staged = Staged {
+            commit: ObjectId::Sha1([0; 20]),
+            parent: self.head()?,
+            index: self.load_index()?,
+            index_lock,
+            finished: false,
+        };
+        let failed =
+            |source: Box<dyn std::error::Error + Send + Sync>| WriteError::Commit { source };
+        let base = match staged.parent {
+            Some(parent) => self.commit_tree(parent)?.root(),
+            None => model_id(&gix::ObjectId::empty_tree(git.object_hash())),
+        };
+        let base =
+            gix::ObjectId::try_from(base.as_bytes()).map_err(|error| failed(error.into()))?;
+        let mut editor = git.edit_tree(base).map_err(|error| failed(error.into()))?;
+        for (path, bytes) in writes {
+            let blob = git
+                .write_blob(bytes)
+                .map_err(|error| failed(error.into()))?
+                .detach();
+            editor
+                .upsert(*path, gix::object::tree::EntryKind::Blob, blob)
+                .map_err(|error| failed(error.into()))?;
+            stage_entry(&mut staged.index, path, blob);
+        }
+        let tree = editor
+            .write()
+            .map_err(|error| failed(error.into()))?
+            .detach();
+        let parents: Vec<gix::ObjectId> = staged
+            .parent
+            .iter()
+            .filter_map(|parent| gix::ObjectId::try_from(parent.as_bytes()).ok())
+            .collect();
+        let commit = git
+            .new_commit(message, tree, parents)
+            .map_err(|error| failed(error.into()))?;
+        staged.commit = model_id(&commit.id);
+        Ok(staged)
+    }
+
+    /// Finishes `staged` once its files are in place: moves HEAD to the
+    /// commit only if HEAD still holds the commit read when it was staged,
+    /// then writes git's index for the committed paths. If HEAD moved, the
+    /// index is left as it was and the put's files stay uncommitted edits.
+    pub fn finish_commit(&self, mut staged: Staged) -> Result<ObjectId, WriteError> {
+        use gix::refs::Target as RefTarget;
+        use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
+        let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {
+            WriteError::Commit {
+                source: error.into(),
+            }
+        })?;
+        let expected = match staged.parent {
+            Some(parent) => PreviousValue::MustExistAndMatch(RefTarget::Object(
+                gix::ObjectId::try_from(parent.as_bytes()).map_err(|error| WriteError::Commit {
+                    source: error.into(),
+                })?,
+            )),
+            None => PreviousValue::MustNotExist,
+        };
+        let edit =
+            RefEdit {
+                change: Change::Update {
+                    log: LogChange {
+                        mode: RefLog::AndReference,
+                        force_create_reflog: false,
+                        message: "commit: board put".into(),
+                    },
+                    expected,
+                    new: RefTarget::Object(commit),
+                },
+                name: "HEAD".try_into().map_err(
+                    |error: gix::validate::reference::name::Error| WriteError::Commit {
+                        source: error.into(),
+                    },
+                )?,
+                deref: true,
+            };
+        if let Err(error) = self.git().edit_reference(edit) {
+            use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
+            if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
+                || error.downcast_any_ref::<MustNotExist>().is_some()
+            {
+                return Err(WriteError::HeadMoved);
+            }
+            return Err(WriteError::Uncommitted {
+                source: error.into(),
+            });
+        }
+        let index_path = self.git_dir().join("index");
+        let written = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&staged.index_lock)
+            .and_then(|mut file| {
+                staged
+                    .index
+                    .write_to(&mut file, gix::index::write::Options::default())
+                    .map_err(io::Error::other)?;
+                file.sync_all()
+            })
+            .and_then(|()| fs::rename(&staged.index_lock, &index_path));
+        written.map_err(|source| WriteError::IndexNotUpdated {
+            commit: staged.commit,
+            source,
+        })?;
+        staged.finished = true;
+        Ok(staged.commit)
+    }
+
+    /// Git's index for this working tree, or an empty one before the first
+    /// `git add`.
+    fn load_index(&self) -> Result<gix::index::File, WriteError> {
+        let git = self.git();
+        if git.index_path().exists() {
+            git.open_index().map_err(|error| WriteError::Commit {
+                source: error.into(),
+            })
+        } else {
+            Ok(gix::index::File::from_state(
+                gix::index::State::new(git.object_hash()),
+                git.index_path(),
+            ))
+        }
+    }
+}
+
+/// Points the index entry for `path` at `blob`, adding it when new. Its
+/// stat is cleared, so git hashes the file again before trusting it.
+fn stage_entry(index: &mut gix::index::File, path: &str, blob: gix::ObjectId) {
+    use gix::bstr::ByteSlice;
+    index.remove_tree();
+    if let Ok(at) = index.entry_index_by_path(path.as_bytes().as_bstr()) {
+        let entry = &mut index.entries_mut()[at];
+        entry.id = blob;
+        entry.stat = gix::index::entry::Stat::default();
+    } else {
+        index.dangerously_push_entry(
+            gix::index::entry::Stat::default(),
+            blob,
+            gix::index::entry::Flags::empty(),
+            gix::index::entry::Mode::FILE,
+            path.as_bytes().as_bstr(),
+        );
+        index.sort_entries();
+    }
+}
+
 /// Writes and fsyncs the temporary file, with the target's permissions when
 /// the target exists.
 fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -329,6 +551,30 @@ pub enum WriteError {
         #[source]
         source: io::Error,
     },
+    #[error("git has no user.name and user.email to commit as")]
+    NoIdentity,
+    #[error("HEAD moved while the put ran; its files are written but not committed")]
+    HeadMoved,
+    #[error("HEAD could not be moved, so the files are written but not committed: {source}")]
+    Uncommitted {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error(
+        "committed {commit}, but git's index was not updated, so git status shows the written files as changed: {source}"
+    )]
+    IndexNotUpdated {
+        commit: ObjectId,
+        #[source]
+        source: io::Error,
+    },
+    #[error("git is in the middle of a {operation}; finish or abort it before a put commits")]
+    InProgress { operation: &'static str },
+    #[error("the commit cannot be made")]
+    Commit {
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
     #[error(
         "{path:?} may already be in place, but its directory could not be synced, so a crash could lose it"
     )]
@@ -345,9 +591,15 @@ impl WriteError {
     pub fn code(&self) -> Code {
         match self {
             Self::Refused { code, .. } => *code,
-            Self::Locked { .. } => Code::PutLocked,
+            Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
             Self::Read { .. } => Code::RepoUnreadable,
-            Self::Io { .. } | Self::Unsynced { .. } => Code::PutFailed,
+            Self::Io { .. }
+            | Self::Unsynced { .. }
+            | Self::Commit { .. }
+            | Self::Uncommitted { .. }
+            | Self::IndexNotUpdated { .. } => Code::PutFailed,
+            Self::NoIdentity => Code::PutNoIdentity,
+            Self::HeadMoved => Code::PutHeadMoved,
             Self::Git(error) => error.code(),
         }
     }

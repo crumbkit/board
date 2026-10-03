@@ -61,7 +61,7 @@ fn a_put_killed_at_any_moment_leaves_the_old_file_or_the_new_one() {
     scenario
         .write(
             ".board/board.json",
-            Item::File(r#"{"$type": "board/config/v1"}"#),
+            Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
         )
         .write(
             ".board/types/lr/note/v1.schema.json",

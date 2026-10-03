@@ -71,23 +71,38 @@ impl Board {
                 found: previous,
             });
         }
-        repository.write_file(&lock, &target.path, &canonical)?;
-        drop(lock);
         let blob = repository.blob_id(&canonical);
         let location = Location {
-            path: target.path,
+            path: target.path.clone(),
             object: Object::Blob(blob),
             ..target.location
         };
-        Ok(PutReport {
-            writes: vec![Written {
-                display: location.display_path().unwrap_or_else(|| path.clone()),
-                location,
-                previous,
-                blob,
-            }],
-            commit: None,
-        })
+        let written = Written {
+            display: location.display_path().unwrap_or_else(|| path.clone()),
+            location,
+            previous,
+            blob,
+        };
+        // The commit is made ready before anything is renamed, so a put
+        // with no identity to commit as writes nothing.
+        let staged = if self.config().commit_on_put {
+            let message = format!("board put {}", written.display);
+            Some(repository.stage_commit(&lock, &[(&target.path, &canonical)], &message)?)
+        } else {
+            None
+        };
+        repository.write_file(&lock, &target.path, &canonical)?;
+        let writes = vec![written];
+        let commit = match staged {
+            None => None,
+            Some(staged) => match repository.finish_commit(staged) {
+                Ok(commit) => Some(commit),
+                Err(WriteError::HeadMoved) => return Err(PutError::HeadMoved { writes }),
+                Err(error) => return Err(error.into()),
+            },
+        };
+        drop(lock);
+        Ok(PutReport { writes, commit })
     }
 
     /// Checks `bytes` as `check` checks a record, with its codes, and
@@ -145,6 +160,11 @@ pub enum PutError {
         path: LogicalPath,
         found: Option<ObjectId>,
     },
+    #[error(
+        "HEAD moved while the put ran, so {} written but not committed",
+        writes.iter().map(|written| written.display.to_string()).collect::<Vec<_>>().join(", ") + if writes.len() == 1 { " is" } else { " are" }
+    )]
+    HeadMoved { writes: Vec<Written> },
     #[error(transparent)]
     Write(#[from] WriteError),
 }
@@ -154,6 +174,7 @@ impl PutError {
         match self {
             Self::Record { code, .. } => *code,
             Self::Stale { .. } => Code::PutStale,
+            Self::HeadMoved { .. } => Code::PutHeadMoved,
             Self::Write(error) => error.code(),
         }
     }

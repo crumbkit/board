@@ -365,10 +365,20 @@ fn the_fixture_board_produces_every_code() {
 
     // The index fails only when SQLite does, even in memory, and a write
     // only when the disk or its permissions refuse it, which no board can
-    // cause; each mapping is tested where its error is made.
+    // cause; whether git has an identity to commit as depends on the
+    // machine's own configuration; and HEAD moving needs a commit made in
+    // the middle of a put. Each is tested where it can be made to happen.
     let missing: Vec<&str> = Code::ALL
         .iter()
-        .filter(|code| ![Code::IndexFailed, Code::PutFailed].contains(code))
+        .filter(|code| {
+            ![
+                Code::IndexFailed,
+                Code::PutFailed,
+                Code::PutNoIdentity,
+                Code::PutHeadMoved,
+            ]
+            .contains(code)
+        })
         .map(|code| code.as_str())
         .filter(|code| !produced.contains(code))
         .collect();
@@ -488,6 +498,10 @@ fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
 #[test]
 fn put_writes_the_record_on_stdin_and_reports_where() {
     let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
     let record = br#"{"title": "a", "$type": "lr/task/v1"}"#;
     let output = board_with(scenario.workdir(), None, &["put", "/tasks/a"], record);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
@@ -508,6 +522,10 @@ fn put_writes_the_record_on_stdin_and_reports_where() {
 #[test]
 fn put_refuses_a_stale_expect_with_exit_one_and_a_malformed_one_with_exit_two() {
     let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
     let record = br#"{"$type": "lr/project/v1"}"#;
     let run = |expect: &str| {
         board_with(

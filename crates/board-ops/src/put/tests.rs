@@ -7,7 +7,18 @@ use board_scenario::{Item, Scenario};
 use board_tree::{LOCK_WAIT, Status};
 
 use crate::put::{Expect, PutReport};
-use crate::tests::{board, open, task};
+use crate::tests::{open, task};
+
+/// The test board, set not to commit: committing is tested on its own,
+/// with an identity in the repository's own configuration.
+fn board() -> Scenario {
+    let scenario = crate::tests::board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    scenario
+}
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
@@ -339,6 +350,80 @@ fn two_puts_with_the_same_expect_make_one_write_and_one_stale() {
             .iter()
             .all(|entry| entry.status == Status::Ok)
     );
+}
+
+/// The test board, committing on put, with an identity in the repository's
+/// own configuration and an uncommitted note beside the records.
+fn committing() -> Scenario {
+    let scenario = crate::tests::board();
+    scenario
+        .write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        )
+        .write("notes.md", Item::File("not committed"));
+    scenario
+}
+
+#[test]
+fn a_put_commits_only_the_paths_it_wrote_onto_head() {
+    let scenario = committing();
+    let report = put(&scenario, "/tasks/a", Expect::Absent, &task("")).unwrap();
+    let head = scenario.head().unwrap();
+    assert_eq!(Some(head.id), report.commit);
+    assert_eq!(head.message, "board put /tasks/a");
+    assert_eq!(head.parents, []);
+    assert_eq!(
+        head.files.keys().collect::<Vec<_>>(),
+        ["tasks/a.json"],
+        "the uncommitted note and records stay out"
+    );
+    assert_eq!(head.files["tasks/a.json"], canonical(&task("")));
+    assert_eq!(
+        scenario.index().get("tasks/a.json"),
+        Some(&report.writes[0].blob),
+        "git's index holds what was committed"
+    );
+    let second = put(
+        &scenario,
+        "/tasks/a",
+        Expect::Any,
+        &task(r#", "see": "/x""#),
+    )
+    .unwrap();
+    assert_eq!(scenario.head().unwrap().parents, [report.commit.unwrap()]);
+    assert_eq!(scenario.head().unwrap().id, second.commit.unwrap());
+}
+
+#[test]
+fn a_committed_put_checks_as_committed_and_the_rest_as_before() {
+    let scenario = committing();
+    put(&scenario, "/tasks/a", Expect::Absent, &task("")).unwrap();
+    let report = open(&scenario).check(None, None).unwrap();
+    let change = |path: &str| {
+        report
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .unwrap()
+            .change
+    };
+    assert_eq!(change("tasks/a.json"), board_model::Change::Committed);
+    assert_eq!(change("notes.md"), board_model::Change::Uncommitted);
+}
+
+#[test]
+fn a_held_git_index_lock_refuses_a_committing_put_before_it_writes() {
+    let scenario = committing();
+    scenario.write(".git/index.lock", Item::File(""));
+    assert_eq!(
+        put(&scenario, "/tasks/a", Expect::Any, &task("")).unwrap_err(),
+        Code::PutLocked
+    );
+    assert!(file(&scenario, "tasks/a.json").is_none());
+    assert!(scenario.head().is_none());
+    scenario.write(".git/index.lock", Item::Deleted);
+    assert!(put(&scenario, "/tasks/a", Expect::Any, &task("")).is_ok());
 }
 
 #[test]
