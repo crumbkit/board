@@ -58,6 +58,8 @@ pub struct Location {
     /// The path inside the board's tree, `/`-separated, empty for the root.
     pub path: String,
     pub object: Object,
+    /// Each pointer followed to get here, in order.
+    pub pointers: Vec<Location>,
 }
 
 #[cfg(test)]

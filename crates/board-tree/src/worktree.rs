@@ -7,7 +7,7 @@ use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use board_model::{ObjectId, Source};
+use board_model::{MAX_RECORD_BYTES, ObjectId, Source};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
@@ -155,5 +155,27 @@ impl Tree for WorkingTree<'_> {
             }
         }
         Ok(entries)
+    }
+
+    fn read(
+        &mut self,
+        directory: &PathBuf,
+        entry: &RawEntry<PathBuf>,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        let path = self
+            .repository
+            .path()
+            .join(directory)
+            .join(gix::path::from_bstr(entry.name.as_bstr()));
+        let unreadable = |source| GitError::File {
+            path: path.clone(),
+            source,
+        };
+        let file = fs::File::open(&path).map_err(unreadable)?;
+        let mut bytes = Vec::new();
+        file.take(MAX_RECORD_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(unreadable)?;
+        Ok((bytes.len() <= MAX_RECORD_BYTES).then_some(bytes))
     }
 }

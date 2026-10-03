@@ -10,6 +10,8 @@ pub enum Code {
     PathNotFound,
     PathShadowed,
     PathCaseCollision,
+    RefDangling,
+    MountInvalid,
     ResolveCycle,
     ResolveTooManyHops,
     RepoUnreadable,
@@ -23,6 +25,8 @@ impl Code {
             Self::PathNotFound => "board::path::not_found",
             Self::PathShadowed => "board::path::shadowed",
             Self::PathCaseCollision => "board::path::case_collision",
+            Self::RefDangling => "board::ref::dangling",
+            Self::MountInvalid => "board::mount::invalid",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
@@ -43,11 +47,13 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 8] = [
+    const ALL: [Code; 10] = [
         Code::PathMalformed,
         Code::PathNotFound,
         Code::PathShadowed,
         Code::PathCaseCollision,
+        Code::RefDangling,
+        Code::MountInvalid,
         Code::ResolveCycle,
         Code::ResolveTooManyHops,
         Code::RepoUnreadable,
@@ -61,6 +67,8 @@ mod tests {
             | Code::PathNotFound
             | Code::PathShadowed
             | Code::PathCaseCollision
+            | Code::RefDangling
+            | Code::MountInvalid
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable

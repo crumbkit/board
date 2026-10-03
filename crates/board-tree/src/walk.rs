@@ -100,7 +100,14 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
             }
         };
         let addressed = match &directory.logical {
-            Some(parent) => address::directory(parent, &listed),
+            Some(parent) => address::directory(parent, &listed, |record| {
+                // A record beside its directory is read only to learn
+                // whether it is a pointer, which shadows the directory.
+                tree.read(&directory.directory, record)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|bytes| !matches!(board_model::pointer(&bytes), Ok(None)))
+            }),
             None => vec![(None, None); listed.len()],
         };
         for (entry, (logical, own)) in listed.into_iter().zip(addressed) {

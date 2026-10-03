@@ -76,13 +76,15 @@ fn classify<'a, D>(mut matches: impl Iterator<Item = &'a RawEntry<D>>) -> Named<
 
 /// Each entry's logical path and own status in one directory, in the same
 /// order as `entries`. The first that applies wins: a name that is not a
-/// valid segment is `path::malformed`; a segment that names entries other
-/// than one, or a record and its children, is `path::shadowed`; names equal
+/// valid segment is `path::malformed`; a segment that names more than one
+/// entry, other than a record that is not a pointer beside its children, is
+/// `path::shadowed`; names equal
 /// but for ASCII case are `path::case_collision`; a submodule is
 /// `repo::submodule`.
 pub(crate) fn directory<D>(
     parent: &LogicalPath,
     entries: &[RawEntry<D>],
+    mut is_pointer: impl FnMut(&RawEntry<D>) -> bool,
 ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
     let mut segments: HashMap<&str, Vec<&RawEntry<D>>> = HashMap::new();
     let mut folded: HashMap<Vec<u8>, usize> = HashMap::new();
@@ -94,7 +96,11 @@ pub(crate) fn directory<D>(
     }
     let shadowed: HashSet<&str> = segments
         .into_iter()
-        .filter(|(_, group)| matches!(classify(group.iter().copied()), Named::Shadowed))
+        .filter(|(_, group)| match classify(group.iter().copied()) {
+            Named::Shadowed => true,
+            Named::RecordWithChildren { record, .. } => is_pointer(record),
+            Named::Nothing | Named::One(_) => false,
+        })
         .map(|(segment, _)| segment)
         .collect();
     entries
