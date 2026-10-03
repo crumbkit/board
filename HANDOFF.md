@@ -14,13 +14,16 @@ open threads are settled or moved into PLAN.md.
 - **Builder session** `session_018fcBgd866UNNdTiVtbJpFc` ("Session task
   coordination"): commissioned on 2026-10-03 for M2 in viitta, as small pull
   requests that the vision session reviews and merges.
+- **M1 builder** `session_017XzJQ42de6xdS5bYk5GE9B`: commissioned on
+  2026-10-03 for the export script under `tools/export-old-board/`, as one pull
+  request; the owner runs it.
 
 ## Where things are
 
 - The seed was designed as `next/` on crumbkit/board and merged here as
   PR #1 on 2026-10-03, with CI green on Linux and macOS (lint, tests,
   cargo-deny and cargo-audit). The board branch that held it is to be
-  deleted by the owner.
+  deleted by the owner; the git proxy refused the deletion.
 - The owner's answers to the seed's open decisions are in PLAN.md (Settled
   decisions).
 
@@ -77,8 +80,8 @@ and what it does not.
    - The acceptance test, set by the owner: the UI is done when it can express
      widgets's UI. Derive the component vocabulary from that UI when the UI is
      planned; example-org/widgets is not yet in this session's access.
-2. **M1, the old-corpus export.** Run by the owner against the installed old
-   `board`, into its own repository. Not yet commissioned.
+2. **M1, the old-corpus export.** The script is commissioned; the owner runs it
+   against the installed old `board`, into its own repository.
 
 ## Next actions
 
