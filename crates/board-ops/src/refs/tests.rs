@@ -118,3 +118,39 @@ fn refs_of_a_path_that_names_nothing_is_refused_and_one_that_names_a_record_is_a
         Code::PathNotFound
     );
 }
+
+#[test]
+fn refs_inside_a_mounted_board_finds_the_records_there_that_reach_it() {
+    use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA};
+    let library = Scenario::new();
+    let commit = library.commit(&[
+        (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+        ("tasks/ok.json", &task(r#", "project": "/projects/p""#)),
+    ]);
+    let scenario = linked();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            library.path()
+        )),
+    );
+    let report = refs(&scenario, "/vendor/lib/projects/p").unwrap();
+    let to: Vec<(String, &str)> = report
+        .to
+        .iter()
+        .map(|incoming| {
+            (
+                incoming.logical.as_ref().unwrap().to_string(),
+                incoming.path.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        to,
+        [("/vendor/lib/tasks/ok".to_owned(), "tasks/ok.json")],
+        "only the mounted task reaches the mounted project"
+    );
+}
