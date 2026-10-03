@@ -164,22 +164,45 @@ impl Tree for WorkingTree<'_> {
         directory: &PathBuf,
         entry: &RawEntry<PathBuf>,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        let path = self
-            .repository
-            .path()
-            .join(directory)
-            .join(gix::path::from_bstr(entry.name.as_bstr()));
-        let unreadable = |source| GitError::File {
-            path: path.clone(),
-            source,
-        };
-        let file = fs::File::open(&path).map_err(unreadable)?;
-        let mut bytes = Vec::new();
-        file.take(MAX_RECORD_BYTES as u64 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(unreadable)?;
-        Ok((bytes.len() <= MAX_RECORD_BYTES).then_some(bytes))
+        read_file(
+            &self
+                .repository
+                .path()
+                .join(directory)
+                .join(gix::path::from_bstr(entry.name.as_bstr())),
+        )
     }
+}
+
+/// The bytes of the file at `path`, or `None` when it holds more than
+/// [`MAX_RECORD_BYTES`].
+pub(crate) fn read_file(path: &Path) -> Result<Option<Vec<u8>>, GitError> {
+    let unreadable = |source| GitError::File {
+        path: path.to_path_buf(),
+        source,
+    };
+    let file = fs::File::open(path).map_err(unreadable)?;
+    let mut bytes = Vec::new();
+    file.take(MAX_RECORD_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(unreadable)?;
+    Ok((bytes.len() <= MAX_RECORD_BYTES).then_some(bytes))
+}
+
+/// Whether `directory` is the root of a repository's working tree: it holds
+/// `.git`, as a directory or as the file a linked worktree has.
+pub fn is_repository_root(directory: &Path) -> bool {
+    directory.join(".git").exists()
+}
+
+/// The directory holding `.board/board.json` nearest above `start`, or
+/// `start` itself, searching upward as git does.
+pub fn discover(start: &Path) -> Option<PathBuf> {
+    let start = start.canonicalize().ok()?;
+    start
+        .ancestors()
+        .find(|directory| directory.join(".board").join("board.json").is_file())
+        .map(Path::to_path_buf)
 }
 
 #[cfg(test)]

@@ -122,6 +122,20 @@ impl Repository {
             .collect())
     }
 
+    /// The bytes of the file at the `/`-separated `path` in `source`, whose
+    /// blob is `blob`, or `None` when it holds more than [`MAX_RECORD_BYTES`].
+    pub fn read(
+        &self,
+        source: &Source,
+        path: &str,
+        blob: ObjectId,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        match source {
+            Source::Commit(_) => self.read_blob(blob),
+            Source::WorkingTree => crate::worktree::read_file(&self.path.join(path)),
+        }
+    }
+
     /// The bytes of blob `id`, or `None` when it holds more than
     /// [`MAX_RECORD_BYTES`]; the size is checked before the blob is loaded.
     fn read_blob(&self, id: ObjectId) -> Result<Option<Vec<u8>>, GitError> {

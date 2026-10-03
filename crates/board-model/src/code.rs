@@ -14,8 +14,12 @@ pub enum Code {
     RecordBadType,
     RecordUnknownType,
     RecordInvalid,
+    RecordNotARecord,
+    ConfigNotFound,
+    ConfigInvalid,
     SchemaInvalid,
     RefMalformed,
+    RefWrongType,
     PathMalformed,
     PathNotFound,
     PathShadowed,
@@ -42,8 +46,12 @@ impl Code {
             Self::RecordBadType => "board::record::bad_type",
             Self::RecordUnknownType => "board::record::unknown_type",
             Self::RecordInvalid => "board::record::invalid",
+            Self::RecordNotARecord => "board::record::not_a_record",
+            Self::ConfigNotFound => "board::config::not_found",
+            Self::ConfigInvalid => "board::config::invalid",
             Self::SchemaInvalid => "board::schema::invalid",
             Self::RefMalformed => "board::ref::malformed",
+            Self::RefWrongType => "board::ref::wrong_type",
             Self::PathMalformed => "board::path::malformed",
             Self::PathNotFound => "board::path::not_found",
             Self::PathShadowed => "board::path::shadowed",
@@ -73,7 +81,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 23] = [
+    const ALL: [Code; 27] = [
         Code::JsonParse,
         Code::JsonMergeConflict,
         Code::JsonDuplicateKey,
@@ -82,8 +90,12 @@ mod tests {
         Code::RecordBadType,
         Code::RecordUnknownType,
         Code::RecordInvalid,
+        Code::RecordNotARecord,
+        Code::ConfigNotFound,
+        Code::ConfigInvalid,
         Code::SchemaInvalid,
         Code::RefMalformed,
+        Code::RefWrongType,
         Code::PathMalformed,
         Code::PathNotFound,
         Code::PathShadowed,
@@ -110,8 +122,12 @@ mod tests {
             | Code::RecordBadType
             | Code::RecordUnknownType
             | Code::RecordInvalid
+            | Code::RecordNotARecord
+            | Code::ConfigNotFound
+            | Code::ConfigInvalid
             | Code::SchemaInvalid
             | Code::RefMalformed
+            | Code::RefWrongType
             | Code::PathMalformed
             | Code::PathNotFound
             | Code::PathShadowed
