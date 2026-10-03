@@ -24,6 +24,10 @@ an entry. An entry has a path, a blob hash, a size, a kind and a status.
 
 An entry's status is `ok` or `degraded` with exactly one code (see Codes).
 Board never refuses to index a file; the worst it says is a path and a code.
+A file or directory that cannot be read is degraded with
+`board::repo::unreadable`. Working-tree files are hashed as stored, with no
+clean filter (end-of-line conversion, LFS), so a file under one shows as
+uncommitted.
 A directory is not an entry, so a degraded directory name passes its code to
 every entry beneath it.
 
@@ -82,7 +86,8 @@ merge combine most concurrent edits.
 A logical path is `/` alone, the board's root, or `/` followed by segments
 separated by `/`. A segment is
 non-empty UTF-8 of at most 255 bytes, without `/`, NUL or control characters,
-and is not `.` or `..`. A path is at most 4,096 bytes. Paths are absolute and
+and is not `.` or `..`. A path is at most 4,096 bytes. A record's file name
+adds `.json`, so a record's segment is at most 250 bytes. Paths are absolute and
 are read against the root of the board that holds them.
 
 In a directory, a segment `x` names one of:
@@ -253,11 +258,6 @@ everything it was asked to or nothing.
 Every operation is a typed library function that returns its report.
 `board-cli` only parses arguments, reads configuration and prints, so a later
 adapter such as `board serve` needs no logic of its own.
-
-The app presents its names only through two constants in `board-model`:
-`DISPLAY_NAME` (`Board`) for prose and messages, and `BINARY_NAME` (`board`)
-for the executable and command lines. No other code spells either name, and
-neither governs the `board::` codes, the `board` type namespace or crate names.
 
 `deny.toml` lets only `board-tree` depend on gix, only `board-index` on rusqlite
 and only `board-validate` on jsonschema. `clippy.toml` names the owner of each
