@@ -366,8 +366,11 @@ generated 10,000-record board.
 | --- | --- |
 | `board get`, warm | 50 ms |
 | `board check`, warm, nothing changed | 200 ms |
-| simple `board query`, warm | 100 ms |
+| simple `board query`, warm | 100 ms, provisional |
 | full index, cold | 10 s |
 
-The timing job reports every run and fails above three times a budget. The
-work-count tests are the hard gate.
+`cargo xtask bench` is the timing job. It runs on a generated board in CI,
+reports every run and fails above three times a budget; a provisional budget
+is reported but never fails. The owner times the M1 export locally with
+`--board`, since that data stays out of the repository. The work-count tests
+are the hard gate.

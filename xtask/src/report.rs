@@ -152,13 +152,18 @@ pub(crate) fn emit(output: &Output<'_>) {
 pub(crate) fn render_bench(timed: &[Timed]) -> String {
     let mut text = String::new();
     for operation in timed {
-        let status = if operation.passed() { "pass" } else { "FAIL" };
+        let status = match (operation.passed(), operation.budget.provisional) {
+            (_, true) => "note",
+            (true, false) => "pass",
+            (false, false) => "FAIL",
+        };
+        let budget = operation.budget.duration;
         let _ = writeln!(
             text,
-            "{status}  {median:>8.1} ms  budget {budget:>6} ms  {ratio:>4.1}x  {name}",
+            "{status}  {median:>8.1} ms  budget {millis:>6} ms  {ratio:>4.1}x  {name}",
             median = operation.median.as_secs_f64() * 1_000.0,
-            budget = operation.budget.as_millis(),
-            ratio = operation.median.as_secs_f64() / operation.budget.as_secs_f64(),
+            millis = budget.as_millis(),
+            ratio = operation.median.as_secs_f64() / budget.as_secs_f64(),
             name = operation.operation,
         );
     }
