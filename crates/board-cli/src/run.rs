@@ -37,10 +37,14 @@ enum Command {
     Refs { path: LogicalPath },
     /// Check the record on stdin and write it, in canonical form, at a path.
     Put {
-        path: LogicalPath,
+        #[arg(required_unless_present = "batch")]
+        path: Option<LogicalPath>,
         /// The blob the file must hold, or `none` for a new file.
         #[arg(long, value_parser = expect)]
         expect: Option<Expect>,
+        /// Read JSON Lines of `{path, expect, record}` and write them all or none.
+        #[arg(long, conflicts_with_all = ["path", "expect"])]
+        batch: bool,
     },
     /// Run one read-only SQL statement over the index.
     Query {
@@ -107,7 +111,17 @@ pub(crate) fn run(
             Ok(report) => render::get(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
-        Command::Put { path, expect } => {
+        Command::Put { batch: true, .. } => {
+            match board.put_batch(&mut std::io::BufReader::new(stdin)) {
+                Ok(report) => render::put(format, &report),
+                Err(error) => render::put_error(format, &error),
+            }
+        }
+        Command::Put {
+            path: Some(path),
+            expect,
+            ..
+        } => {
             let mut record = Vec::new();
             // One byte past the bound, so the parse sees the input is too large.
             if let Err(error) = stdin
@@ -122,9 +136,10 @@ pub(crate) fn run(
             }
             match board.put(&path, expect.unwrap_or(Expect::Any), &record) {
                 Ok(report) => render::put(format, &report),
-                Err(error) => render::error(format, error.code(), &error),
+                Err(error) => render::put_error(format, &error),
             }
         }
+        Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Refs { path } => match board.refs(&path, context.cache.as_deref()) {
             Ok(report) => render::refs(format, &report),
             Err(error) => render::error(format, error.code(), &error),

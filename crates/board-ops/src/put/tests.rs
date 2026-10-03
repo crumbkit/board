@@ -9,6 +9,8 @@ use board_tree::{LOCK_WAIT, Status};
 use crate::put::{Expect, PutReport};
 use crate::tests::{open, task};
 
+mod batch;
+
 /// The test board, set not to commit: committing is tested on its own,
 /// with an identity in the repository's own configuration.
 fn board() -> Scenario {

@@ -293,8 +293,9 @@ when it resolves to its identity, whatever path it names.
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
 record}`. Every line is checked and every expect compared under the lock
 before any write; two lines resolving to one file, one invalid line or one
-stale expect refuse the whole batch, listing each failing line with its code.
-Writes go in input order, then one commit.
+stale expect refuse the whole batch, listing each failing line with its code
+(in `board/error/v1` as `fields.refusals`). Writes go in input order, then one
+commit.
 
 The report is `board/put-report/v1`: `writes`, each with its Location, display
 path, `previous` blob (null for a new file) and `blob`; and `commit` (null when
