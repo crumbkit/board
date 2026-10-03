@@ -242,11 +242,11 @@ with `query_only`). Each enabled plugin's database is attached read-only as
 `p_<name>`. Rows return as JSON, at most 500 unless `--limit` (at most 10,000)
 says otherwise, with `truncated` set when rows were left out. The report is
 `columns` and `rows`, each row an array in column order, since a join can repeat
-a column name. SQL that does not parse, would write, or holds more than one
-statement is `board::query::invalid`. A query sees each fact table filtered to
-what the current tree reaches, so it answers the same warm as cold;
-`main.<table>` is the whole cache, which keeps facts for other branches. There
-is no query language beyond SQL: an agent writes SQL.
+a column name; `plugins` lists any plugin whose extraction failed. SQL that does
+not parse, would write, or holds more than one statement is
+`board::query::invalid`. A query sees each fact table filtered to what the
+current tree reaches, so it answers the same warm as cold; `main.<table>` is the
+whole cache, which keeps facts for other branches. There is no query language beyond SQL: an agent writes SQL.
 
 `board refs <path>` reports each reference the record makes, resolved now with
 its status, and each record whose references reach it. A reference reaches it
@@ -337,7 +337,7 @@ everything it was asked to or nothing.
 | `board-tree` | every read and write of git objects and the working tree; resolution and walking | board-model, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
 | `board-index` | the index and the cache directory | the three above, rusqlite |
-| `board-plugin` | manifests, discovery, child processes | board-model, board-index |
+| `board-plugin` | manifests, discovery, child processes | board-model, board-validate, board-index |
 | `board-ops` | every operation as a typed function returning its report | all of the above but `board-cli` |
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | `board-ops` |
 
