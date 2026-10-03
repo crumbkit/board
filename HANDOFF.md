@@ -95,5 +95,5 @@ and what it does not.
    exist (#33): carry validations from refresh into decide (about 25 ms), one
    join per run instead of point lookups (30 to 40 ms), and pointer facts for
    resolution (most of 52 ms, but it touches rule 3, so it needs a design call).
-3. After v0, plan writes through mounts (open thread 1) only when the owner
-   asks for sharing.
+3. Sharing is sketched as M8 in PLAN.md, with the owner's decisions; turn it
+   into a design-gap list for a builder after M7.

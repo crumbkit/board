@@ -133,6 +133,36 @@ The owner uses the new Board for daily work and archives the old one.
 
 Done: the owner says so.
 
+### M8 Sharing (sketch; after M7)
+
+A shared project is its own repository, mounted into each person's board. This
+milestone lets a `put` write through a mount and keeps every mounted copy in
+step. The owner's decisions so far:
+
+- **Board owns its copies.** A mount names a remote; Board keeps a clone of
+  each under `$XDG_DATA_HOME/board/repos/`, with no checkout to fall out of
+  step. `board sync` fetches every clone, pushes pending commits and moves
+  each pin, so keeping up to date is one command a scheduler can run. Reads
+  never touch the network.
+- **A write through a mount** commits in the mounted clone, moves its branch
+  only if it still holds the pinned commit, then moves the pin with an
+  ordinary `put`. A kill between the two leaves only a stale pin, which
+  `mount update` repairs. A pin behind its branch refuses the write with
+  `put::stale`.
+- **Push after write.** A write pushes its commits; one that cannot leaves
+  them for the next `sync` and says so. Mounted repositories push innermost
+  first, so no pushed pin names a commit others cannot fetch.
+- **Conflicts.** When the remote moved, Board replays its own commits on top
+  only if they touch none of the same files; any overlap stops for the owner
+  to resolve in git. Board never merges file contents.
+- **Batches** write to one repository each.
+- **Nesting** is the same step applied recursively, bottom up: each level
+  commits, then the level above moves its pin.
+
+Open: transport through gix or the `git` executable (which brings credential
+helpers); whether jujutsu, with its first-class conflicts, sits behind the
+same seam later. Decide after M7 shows how sharing is actually used.
+
 ## Taking from crumbkit/board
 
 Take ideas and tests, not files. Each piece is rewritten under the new
