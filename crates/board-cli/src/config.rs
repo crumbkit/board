@@ -11,6 +11,9 @@ pub(crate) struct Context {
     pub(crate) home: Option<PathBuf>,
     /// Where the index is kept: `$XDG_CACHE_HOME`, or `~/.cache`.
     pub(crate) cache: Option<PathBuf>,
+    /// Where plugins are installed: `$XDG_DATA_HOME/board/plugins`, or
+    /// `~/.local/share/board/plugins`.
+    pub(crate) plugins: Option<PathBuf>,
 }
 
 impl Context {
@@ -21,14 +24,19 @@ impl Context {
     pub(crate) fn read() -> Self {
         let home = std::env::home_dir();
         // The XDG base directory rule: a relative path is ignored.
-        let cache = std::env::var_os("XDG_CACHE_HOME")
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .or_else(|| home.as_ref().map(|home| home.join(".cache")));
+        let base = |variable: &str, default: &str| {
+            std::env::var_os(variable)
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .or_else(|| home.as_ref().map(|home| home.join(default)))
+        };
+        let cache = base("XDG_CACHE_HOME", ".cache");
+        let plugins = base("XDG_DATA_HOME", ".local/share").map(|data| data.join("board/plugins"));
         Self {
             start: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             home,
             cache,
+            plugins,
         }
     }
 }

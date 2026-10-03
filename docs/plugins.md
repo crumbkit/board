@@ -13,7 +13,8 @@ A plugin is a directory on this machine, at
 `$XDG_DATA_HOME/board/plugins/<name>/` (by default
 `~/.local/share/board/plugins/<name>/`), holding `plugin.json` and its code. The
 directory may be a symlink, so a plugin can be installed from a checkout. A
-board enables plugins by name in `.board/board.json`. Board never loads a plugin
+board enables plugins by name in `.board/board.json`; a name that is not a plugin
+name, or one listed twice, makes it `board::config::invalid`. Board never loads a plugin
 from a board's tree, so cloning or mounting a board never runs code.
 
 ## The manifest
@@ -52,9 +53,16 @@ that breaks any of these is `board::plugin::bad_manifest`.
 ## Finding plugins
 
 `board plugin list` prints every installed plugin and its capabilities, and
-whether the current board enables it.
-`board plugin find --capability <name> [--meta <key>=<value>]` filters them.
-Finding is a filter, never a ranking.
+whether the current board enables it. A broken install is listed with
+`board::plugin::bad_manifest`, and a name the board enables that is not
+installed with `board::plugin::not_installed`; either makes `list` exit 1. A
+plugins directory that cannot be listed refuses `list` and `find` with
+`board::plugin::not_installed`, naming the directory.
+`board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at
+least one filter, lists the capabilities of working installs that match every
+filter. A `--meta` filter
+matches a string value in the capability's metadata, or in the plugin's when
+the capability's lacks the key. Finding is a filter, never a ranking.
 
 Only enabled plugins can be called: naming one that is installed but not
 enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls

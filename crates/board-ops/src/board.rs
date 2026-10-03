@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use board_model::{CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, Source, classify};
+use board_plugin::PluginName;
 use board_tree::{GitError, Repository};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -17,7 +18,7 @@ pub struct Config {
     #[serde(default = "commits_on_put")]
     pub commit_on_put: bool,
     #[serde(default)]
-    pub plugins: Vec<String>,
+    pub plugins: Vec<PluginName>,
 }
 
 fn commits_on_put() -> bool {
@@ -25,9 +26,14 @@ fn commits_on_put() -> bool {
 }
 
 impl Config {
-    /// The configuration a parsed `board/config/v1` record holds.
+    /// The configuration a parsed `board/config/v1` record holds. A plugin
+    /// enabled twice is refused.
     pub(crate) fn from_value(value: &Value) -> Option<Self> {
-        Self::deserialize(value).ok()
+        let config = Self::deserialize(value).ok()?;
+        let mut plugins: Vec<&PluginName> = config.plugins.iter().collect();
+        plugins.sort();
+        plugins.dedup();
+        (plugins.len() == config.plugins.len()).then_some(config)
     }
 }
 

@@ -51,10 +51,22 @@ fn board_cached(directory: &Path, cache: Option<&Path>, arguments: &[&str]) -> O
 
 /// Runs `board` with `stdin` as its standard input.
 fn board_with(directory: &Path, cache: Option<&Path>, arguments: &[&str], stdin: &[u8]) -> Output {
+    board_full(directory, cache, None, arguments, stdin)
+}
+
+/// Runs `board` with plugins installed in `plugins`.
+fn board_full(
+    directory: &Path,
+    cache: Option<&Path>,
+    plugins: Option<&Path>,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> Output {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
         cache: cache.map(Path::to_path_buf),
+        plugins: plugins.map(Path::to_path_buf),
     };
     let arguments = std::iter::once(env!("CARGO_BIN_NAME"))
         .chain(arguments.iter().copied())
@@ -77,16 +89,16 @@ fn code_named(name: &str) -> Code {
         .unwrap_or_else(|| panic!("{name} is not a code"))
 }
 
-/// Every code in a JSON report: an error's, or each degraded entry's.
+/// Every code in a JSON report: an error's, or each degraded entry's or
+/// plugin's.
 fn codes(output: &Output) -> Vec<Code> {
     let document = json(output);
     if let Some(code) = document.get("code").and_then(Value::as_str) {
         return vec![code_named(code)];
     }
-    document["entries"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let listed = |key: &str| document[key].as_array().into_iter().flatten();
+    listed("entries")
+        .chain(listed("plugins"))
         .filter_map(|entry| entry.get("code")?.as_str())
         .map(code_named)
         .collect()
@@ -376,6 +388,16 @@ fn the_fixture_board_produces_every_code() {
         Item::File(r#"{"$type": "board/config/v1", "x": 1}"#),
     );
     take(board_in(misconfigured.workdir(), &["check", "--json"]));
+    let (enabling, data) = plugins::installed();
+    data.write("plugins/tasks", Item::Deleted)
+        .write("plugins/broken/plugin.json", Item::File("{}"));
+    take(board_full(
+        enabling.workdir(),
+        None,
+        Some(&data.workdir().join("plugins")),
+        &["plugin", "list", "--json"],
+        b"",
+    ));
 
     // The index fails only when SQLite does, even in memory, and a write
     // only when the disk or its permissions refuse it, which no board can
@@ -645,3 +667,5 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
     assert_eq!(again["new"], new.to_string());
     assert_eq!(again["wrote"], false);
 }
+
+mod plugins;

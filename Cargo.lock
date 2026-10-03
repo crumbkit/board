@@ -100,6 +100,7 @@ version = "0.0.0"
 dependencies = [
  "board-model",
  "board-ops",
+ "board-plugin",
  "board-scenario",
  "board-tree",
  "clap",
@@ -137,6 +138,7 @@ version = "0.0.0"
 dependencies = [
  "board-index",
  "board-model",
+ "board-plugin",
  "board-scenario",
  "board-tree",
  "board-validate",
@@ -144,6 +146,18 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "board-plugin"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-scenario",
+ "board-validate",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

@@ -15,6 +15,10 @@ use serde_json::{Value, json};
 
 use crate::report::Output;
 
+mod plugins;
+
+pub(crate) use plugins::{plugin_find, plugin_list};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
     Text,

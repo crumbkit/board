@@ -96,6 +96,8 @@ fn a_board_json_board_cannot_read_is_invalid() {
         r#"{"$type": "board/config/v1", "colour": "red"}"#,
         r#"{"$type": "board/config/v2"}"#,
         r#"{"$type": "board/config/v1", "plugins": [1]}"#,
+        r#"{"$type": "board/config/v1", "plugins": ["Tasks"]}"#,
+        r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes", "tasks"]}"#,
         "{",
     ] {
         let scenario = Scenario::new();
@@ -106,11 +108,19 @@ fn a_board_json_board_cannot_read_is_invalid() {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false, "plugins": ["tasks"]}"#),
+        Item::File(
+            r#"{"$type": "board/config/v1", "commit_on_put": false, "plugins": ["tasks", "notes"]}"#,
+        ),
     );
     let board = open(&scenario);
     assert!(!board.config().commit_on_put);
-    assert_eq!(board.config().plugins, ["tasks"]);
+    let plugins: Vec<&str> = board
+        .config()
+        .plugins
+        .iter()
+        .map(board_plugin::PluginName::as_str)
+        .collect();
+    assert_eq!(plugins, ["tasks", "notes"]);
 }
 
 #[test]
