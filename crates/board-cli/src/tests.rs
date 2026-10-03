@@ -249,6 +249,10 @@ fn fixture() -> (Scenario, Scenario) {
         .write("json/conflict.json", Item::File("{\n<<<<<<< HEAD\n}\n"))
         .write("json/duplicate.json", Item::File(r#"{"a": 1, "a": 2}"#))
         .write(
+            "json/lossy.json",
+            Item::File(r#"{"a": 18446744073709551616}"#),
+        )
+        .write(
             "json/large.json",
             Item::File(&" ".repeat(16 * 1024 * 1024 + 1)),
         )

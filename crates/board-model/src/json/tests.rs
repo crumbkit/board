@@ -122,15 +122,81 @@ fn a_number_parses_back_to_the_same_value_after_printing() {
     // Found by fuzzing: an integer too large for u64 parses as a float, and
     // serde_json's default float parse is not exactly rounded, so this read
     // back as 3.3032288278647182e22 instead of 3.3032288278647186e22.
-    for number in [
-        "33032288278647188139631",
-        "0.1",
-        "1e308",
-        "5e-324",
-        "123456789012345678",
-    ] {
+    for number in ["0.1", "1e308", "5e-324", "123456789012345678"] {
         let value = parse_json(number.as_bytes()).unwrap();
         let printed = serde_json::to_vec(&value).unwrap();
         assert_eq!(parse_json(&printed).unwrap(), value, "{number}");
     }
+}
+
+#[test]
+fn a_number_that_cannot_be_held_exactly_is_refused_and_its_twin_is_admitted() {
+    for (refused, admitted) in [
+        ("18446744073709551616", "18446744073709551615"),
+        ("-9223372036854775809", "-9223372036854775808"),
+        ("33032288278647188139631", "3.3032288278647186e22"),
+        ("0.30000000000000000001", "0.3"),
+        ("9007199254740993.0", "9007199254740992.0"),
+        ("2.5e-324", "5e-324"),
+        ("1.00000000000000000001", "1.00000000000000000000"),
+    ] {
+        let lossy = parse_json(refused.as_bytes()).unwrap_err();
+        assert_eq!(lossy.code(), Code::JsonLossyNumber, "{refused}");
+        assert_eq!(
+            lossy.to_string(),
+            format!("number {refused} cannot be held exactly")
+        );
+        assert!(parse_json(admitted.as_bytes()).is_ok(), "{admitted}");
+    }
+}
+
+#[test]
+fn a_number_inside_a_string_is_not_a_number() {
+    assert!(parse_json(br#"{"18446744073709551616": "1e999 \" 2.5e-324"}"#).is_ok());
+    assert_eq!(
+        code(br#"{"a": "\"", "b": 18446744073709551616}"#),
+        Code::JsonLossyNumber
+    );
+}
+
+#[test]
+fn canonical_output_matches_its_golden_bytes() {
+    for (input, output) in [
+        (
+            &include_bytes!("golden/nesting.in.json")[..],
+            &include_bytes!("golden/nesting.out.json")[..],
+        ),
+        (
+            include_bytes!("golden/numbers.in.json"),
+            include_bytes!("golden/numbers.out.json"),
+        ),
+        (
+            include_bytes!("golden/strings.in.json"),
+            include_bytes!("golden/strings.out.json"),
+        ),
+    ] {
+        let canonical = canonical_json(&parse_json(input).unwrap());
+        assert_eq!(
+            String::from_utf8(canonical).unwrap(),
+            String::from_utf8(output.to_vec()).unwrap()
+        );
+    }
+}
+
+#[test]
+fn canonical_output_has_no_byte_order_mark_and_ends_in_one_newline() {
+    let canonical = canonical_json(&parse_json(b"{}").unwrap());
+    assert_eq!(canonical, b"{}\n");
+}
+
+#[test]
+fn bolero_canonical_output_reads_back_as_the_same_value_and_bytes() {
+    bolero::check!().for_each(|bytes: &[u8]| {
+        if let Ok(value) = parse_json(bytes) {
+            let canonical = canonical_json(&value);
+            let again = parse_json(&canonical).unwrap();
+            assert_eq!(again, value);
+            assert_eq!(canonical_json(&again), canonical);
+        }
+    });
 }
