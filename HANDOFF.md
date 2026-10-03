@@ -87,6 +87,5 @@ and what it does not.
 
 1. Commission M4 from the builder, starting with its design-gap list, and
    review its pull requests.
-2. Dispatch the fuzz workflow once its flag fix lands, and read the result.
-3. #21 (app-name constants) waits for the owner to confirm the request.
-4. The owner runs the M1 export; route problems to the M1 builder.
+2. #21 (app-name constants) waits for the owner to confirm the request.
+3. The owner runs the M1 export; route problems to the M1 builder.
