@@ -1,7 +1,7 @@
 //! Resolving a logical path to a Location (docs/architecture.md, Pointers:
 //! links and mounts). Pointers are not followed yet.
 
-use board_model::{Board, Code, Location, LogicalPath, Object, Source};
+use board_model::{Board, Code, DISPLAY_NAME, Location, LogicalPath, Object, Source};
 
 use crate::address::{self, Named};
 use crate::git::{GitError, Repository};
@@ -72,7 +72,7 @@ pub enum ResolveError {
     NotFound { path: LogicalPath },
     #[error("{segment:?} in {path} names more than one entry")]
     Shadowed { path: LogicalPath, segment: String },
-    #[error("{path} reaches a submodule, which Board does not descend")]
+    #[error("{path} reaches a submodule, which {} does not descend", DISPLAY_NAME)]
     Submodule { path: LogicalPath },
     #[error(transparent)]
     Git(#[from] GitError),
