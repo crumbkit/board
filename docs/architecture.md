@@ -91,8 +91,11 @@ In a directory, a segment `x` names one of:
 - a non-JSON file whose whole name is `x`, such as `notes.md`.
 
 A `.json` file is addressed only without its extension, so every entry has one
-address. When a segment matches more than one entry, each is degraded with
-`board::path::shadowed` and resolution refuses with the same code. Two names in
+address. A record `x.json` and a directory `x/` may sit side by side, so a
+record can have children: `/x` names the record, `/x/y` continues into the
+directory, and `ls /x` lists the directory. Any other match of one segment to
+more than one entry, including a pointer beside a directory, degrades each with
+`board::path::shadowed`, and resolution refuses with the same code. Two names in
 one directory that differ only by ASCII case are degraded with
 `board::path::case_collision`, because a macOS working tree cannot hold both;
 resolution still matches names exactly. A name that is not a valid segment is
@@ -283,7 +286,8 @@ scenarios run in every test run:
 - cycles: link to link, and a board that mounts its own parent;
 - 39, 40 and 41 hops;
 - a dangling link; a link whose target vanishes when its mount's commit moves;
-- a pointer and a directory at one path; names differing only by case;
+- a record beside its directory of children; a pointer and a directory at one
+  path; names differing only by case;
 - a write through a link (lands at the target) and through a mount (refused);
 - an uncommitted edit in the root beside committed mounted content.
 
