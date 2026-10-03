@@ -120,33 +120,68 @@ pub enum Kind {
     File,
 }
 
-/// An entry's kind, what parsing found in it, and the code it is degraded
-/// with, if any. Schema compilation, validation and references are checked
-/// later, by the crates that own them.
+/// What parsing found in an entry. Each kind carries exactly what it has.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Content {
+    Record {
+        record_type: RecordType,
+        value: Value,
+    },
+    Pointer {
+        pointer: Pointer,
+        value: Value,
+    },
+    Schema {
+        value: Value,
+    },
+    Json {
+        value: Value,
+    },
+    File,
+    /// A `.json` entry whose bytes could not be read as its kind needs: they
+    /// do not parse, the `$type` is malformed, or the pointer is invalid.
+    /// Its code says which.
+    Unparsed(Kind),
+}
+
+impl Content {
+    pub fn kind(&self) -> Kind {
+        match self {
+            Self::Record { .. } => Kind::Record,
+            Self::Pointer { .. } => Kind::Pointer,
+            Self::Schema { .. } => Kind::Schema,
+            Self::Json { .. } => Kind::Json,
+            Self::File => Kind::File,
+            Self::Unparsed(kind) => *kind,
+        }
+    }
+}
+
+/// An entry's content and the code it is degraded with, if any. Content is
+/// `Unparsed` only with a code. Schema compilation, validation and
+/// references are checked later, by the crates that own them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Classified {
-    pub kind: Kind,
-    pub record_type: Option<RecordType>,
-    pub pointer: Option<Pointer>,
-    pub value: Option<Value>,
+    pub content: Content,
     pub code: Option<Code>,
 }
 
 impl Classified {
-    fn of(kind: Kind) -> Self {
+    pub fn kind(&self) -> Kind {
+        self.content.kind()
+    }
+
+    fn ok(content: Content) -> Self {
         Self {
-            kind,
-            record_type: None,
-            pointer: None,
-            value: None,
+            content,
             code: None,
         }
     }
 
-    fn degraded(kind: Kind, code: Code) -> Self {
+    fn unparsed(kind: Kind, code: Code) -> Self {
         Self {
+            content: Content::Unparsed(kind),
             code: Some(code),
-            ..Self::of(kind)
         }
     }
 }
@@ -164,52 +199,40 @@ pub fn needs_bytes(path: &str) -> bool {
 /// checked here; other records wait for their schema.
 pub fn classify(path: &str, bytes: Option<&[u8]>) -> Classified {
     if !needs_bytes(path) {
-        return Classified::of(Kind::File);
+        return Classified::ok(Content::File);
     }
     let schema = path.starts_with(TYPES_DIRECTORY) && path.ends_with(".schema.json");
     let parsed_kind = if schema { Kind::Schema } else { Kind::Json };
     let Some(bytes) = bytes else {
-        return Classified::degraded(parsed_kind, Code::JsonTooLarge);
+        return Classified::unparsed(parsed_kind, Code::JsonTooLarge);
     };
     let value = match parse_json(bytes) {
         Ok(value) => value,
-        Err(error) => return Classified::degraded(parsed_kind, error.code()),
+        Err(error) => return Classified::unparsed(parsed_kind, error.code()),
     };
     if schema {
         let reserved = path.starts_with(&format!("{TYPES_DIRECTORY}board/"));
         return Classified {
-            value: Some(value),
+            content: Content::Schema { value },
             code: reserved.then_some(Code::SchemaInvalid),
-            ..Classified::of(Kind::Schema)
         };
     }
     let Some(tag) = value.get("$type") else {
-        return Classified {
-            value: Some(value),
-            ..Classified::of(Kind::Json)
-        };
+        return Classified::ok(Content::Json { value });
     };
     let Some(record_type) = tag.as_str().and_then(|tag| tag.parse::<RecordType>().ok()) else {
-        return Classified {
-            value: Some(value),
-            ..Classified::degraded(Kind::Record, Code::RecordBadType)
-        };
+        return Classified::unparsed(Kind::Record, Code::RecordBadType);
     };
-    let (kind, pointer, code) = match record_type.as_str() {
+    match record_type.as_str() {
         POINTER_TYPE => match pointer_from_value(&value) {
-            Ok(pointer) => (Kind::Pointer, Some(pointer), None),
-            Err(error) => (Kind::Pointer, None, Some(error.code())),
+            Ok(pointer) => Classified::ok(Content::Pointer { pointer, value }),
+            Err(error) => Classified::unparsed(Kind::Pointer, error.code()),
         },
-        CONFIG_TYPE => (Kind::Record, None, None),
-        _ if record_type.is_board() => (Kind::Record, None, Some(Code::RecordUnknownType)),
-        _ => (Kind::Record, None, None),
-    };
-    Classified {
-        kind,
-        record_type: Some(record_type),
-        pointer,
-        value: Some(value),
-        code,
+        _ => Classified {
+            code: (record_type.is_board() && record_type.as_str() != CONFIG_TYPE)
+                .then_some(Code::RecordUnknownType),
+            content: Content::Record { record_type, value },
+        },
     }
 }
 
