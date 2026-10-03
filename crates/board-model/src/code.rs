@@ -6,6 +6,14 @@ use std::fmt;
 /// release; docs/architecture.md (Codes) lists the v0 set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
+    JsonParse,
+    JsonMergeConflict,
+    JsonDuplicateKey,
+    JsonTooLarge,
+    JsonNotUtf8,
+    RecordBadType,
+    RecordUnknownType,
+    SchemaInvalid,
     PathMalformed,
     PathNotFound,
     PathShadowed,
@@ -24,6 +32,14 @@ pub enum Code {
 impl Code {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::JsonParse => "board::json::parse",
+            Self::JsonMergeConflict => "board::json::merge_conflict",
+            Self::JsonDuplicateKey => "board::json::duplicate_key",
+            Self::JsonTooLarge => "board::json::too_large",
+            Self::JsonNotUtf8 => "board::json::not_utf8",
+            Self::RecordBadType => "board::record::bad_type",
+            Self::RecordUnknownType => "board::record::unknown_type",
+            Self::SchemaInvalid => "board::schema::invalid",
             Self::PathMalformed => "board::path::malformed",
             Self::PathNotFound => "board::path::not_found",
             Self::PathShadowed => "board::path::shadowed",
@@ -53,7 +69,15 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 13] = [
+    const ALL: [Code; 21] = [
+        Code::JsonParse,
+        Code::JsonMergeConflict,
+        Code::JsonDuplicateKey,
+        Code::JsonTooLarge,
+        Code::JsonNotUtf8,
+        Code::RecordBadType,
+        Code::RecordUnknownType,
+        Code::SchemaInvalid,
         Code::PathMalformed,
         Code::PathNotFound,
         Code::PathShadowed,
@@ -72,7 +96,15 @@ mod tests {
     /// Fails to compile when a variant is added, so `ALL` stays complete.
     fn listed(code: Code) {
         match code {
-            Code::PathMalformed
+            Code::JsonParse
+            | Code::JsonMergeConflict
+            | Code::JsonDuplicateKey
+            | Code::JsonTooLarge
+            | Code::JsonNotUtf8
+            | Code::RecordBadType
+            | Code::RecordUnknownType
+            | Code::SchemaInvalid
+            | Code::PathMalformed
             | Code::PathNotFound
             | Code::PathShadowed
             | Code::PathCaseCollision
@@ -98,7 +130,8 @@ mod tests {
             for part in &parts[1..] {
                 assert!(!part.is_empty(), "{code}");
                 assert!(
-                    part.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
+                    part.bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_'),
                     "{code}"
                 );
             }

@@ -3,8 +3,10 @@
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
+use serde_json::Value;
 
 use crate::code::Code;
+use crate::json::{JsonError, parse_json};
 use crate::location::ObjectId;
 use crate::path::LogicalPath;
 
@@ -54,7 +56,7 @@ struct RawPointer {
 /// The pointer `bytes` hold, if they are a record whose `$type` is
 /// [`POINTER_TYPE`]. Anything else, including bytes that are not a JSON
 /// object, is not a pointer; deciding what it is instead is not this
-/// function's job.
+/// function's job. A pointer must also pass the strict parse.
 pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
     if bytes.len() > MAX_RECORD_BYTES {
         return Ok(None);
@@ -63,8 +65,13 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
         Ok(RawTag { tag: Some(tag) }) if tag == POINTER_TYPE => {}
         _ => return Ok(None),
     }
-    let raw: RawPointer =
-        serde_json::from_slice(bytes).map_err(|source| PointerError::Invalid { source })?;
+    let value = parse_json(bytes).map_err(|source| PointerError::Json { source })?;
+    pointer_from_value(&value).map(Some)
+}
+
+/// The pointer a parsed record of type [`POINTER_TYPE`] holds.
+pub(crate) fn pointer_from_value(value: &Value) -> Result<Pointer, PointerError> {
+    let raw = RawPointer::deserialize(value).map_err(|source| PointerError::Invalid { source })?;
     match raw {
         RawPointer {
             path: Some(path),
@@ -72,7 +79,7 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
             follow: None,
             commit: None,
             ..
-        } => Ok(Some(Pointer::Link(path))),
+        } => Ok(Pointer::Link(path)),
         RawPointer {
             path: None,
             repo: Some(repo),
@@ -86,11 +93,11 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
             let Some(commit) = ObjectId::from_hex(&commit) else {
                 return Err(PointerError::Commit { commit });
             };
-            Ok(Some(Pointer::Mount(Mount {
+            Ok(Pointer::Mount(Mount {
                 repo,
                 follow,
                 commit,
-            })))
+            }))
         }
         _ => Err(PointerError::Target),
     }
@@ -108,6 +115,11 @@ fn is_remote(repo: &str) -> bool {
 /// A record that claims to be a pointer but is not a valid one.
 #[derive(Debug, thiserror::Error)]
 pub enum PointerError {
+    #[error("pointer is not strict json: {source}")]
+    Json {
+        #[source]
+        source: JsonError,
+    },
     #[error("pointer is invalid: {source}")]
     Invalid {
         #[source]
@@ -124,6 +136,7 @@ pub enum PointerError {
 impl PointerError {
     pub fn code(&self) -> Code {
         match self {
+            Self::Json { source } => source.code(),
             Self::Invalid { .. } | Self::Target | Self::Commit { .. } => Code::MountInvalid,
             Self::Remote { .. } => Code::MountRemoteUnsupported,
         }
@@ -170,10 +183,17 @@ mod tests {
         for refused in [
             &br#"{"$type": "board/mount/v1", "path": "x"}"#[..],
             br#"{"$type": "board/mount/v1"}"#,
-            br#"{"$type": "board/mount/v1", "path": "/x", "path": "/y"}"#,
         ] {
             assert_eq!(pointer(refused).unwrap_err().code(), Code::MountInvalid);
         }
+    }
+
+    #[test]
+    fn a_pointer_must_pass_the_strict_parse() {
+        let admitted = br#"{"$type": "board/mount/v1", "path": "/x"}"#;
+        assert!(pointer(admitted).is_ok());
+        let refused = br#"{"$type": "board/mount/v1", "path": "/x", "path": "/y"}"#;
+        assert_eq!(pointer(refused).unwrap_err().code(), Code::JsonDuplicateKey);
     }
 
     #[test]
