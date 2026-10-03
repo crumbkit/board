@@ -1,8 +1,9 @@
 # export-old-board
 
 A throwaway script for PLAN.md milestone M1. It reads every object the old
-`board objects list` returns, plus the drops that list hides, and writes each one as a canonical record in a new
-board. Delete this directory once the export repository exists.
+`board objects list` returns, plus the drops that list hides (old
+`crates/board-cli/src/boardcli/handlers.rs:4877`), and writes each one as a
+canonical record in a new board. Delete this directory once the export repository exists.
 
 ## Run it
 
@@ -43,6 +44,7 @@ The script exits 1 if it does not. Unmappable reasons:
 | `type_invalid` | the type is empty or not `[a-z0-9-]` |
 | `path_malformed` | `/<type>/<name>` is not a logical path (docs/architecture.md) |
 | `case_collision` | the record file, or a directory on its path, differs from another name only by ASCII case |
+| `type_key_present` | the old object already has a top-level `$type`, which the export would overwrite |
 | `show_failed` | `objects show` failed; `detail` holds its error |
 | `write_failed` | the file could not be written, such as a name over 255 bytes; `detail` holds the error |
 

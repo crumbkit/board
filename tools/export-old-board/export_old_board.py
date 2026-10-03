@@ -136,6 +136,9 @@ def export(board: str, store: str | None, out: Path, jobs: int) -> dict:
     record_sets: set[str] = set()
     for subject, value in shown.items():
         segments = paths[subject]
+        if "$type" in value["object"]:
+            refused.append({"subject": subject, "reason": "type_key_present"})
+            continue
         record = {**value["object"], "$type": f"legacy/{segments[0]}/v1"}
         target = out.joinpath(*segments[:-1], segments[-1] + ".json")
         try:

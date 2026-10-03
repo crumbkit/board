@@ -169,6 +169,15 @@ def test_the_report_counts_each_reason(tmp_path: Path) -> None:
     assert report["per_reason"] == {"type_invalid": 2, "subject_malformed": 1}
 
 
+def test_an_object_that_already_has_a_type_key_is_not_overwritten(tmp_path: Path) -> None:
+    out, report = export(tmp_path / "refused", [state("work:a", **{"$type": "x/y/v1"}), state("work:z")])
+    assert reasons(report) == [("work:a", "type_key_present")]
+    assert records(out) == ["work/z.json"]
+    out, report = export(tmp_path / "admitted", [state("work:a", type="x/y/v1"), state("work:z")])
+    assert reasons(report) == []
+    assert json.loads((out / "work/a.json").read_text())["type"] == "x/y/v1"
+
+
 def test_an_object_the_old_board_cannot_show_is_reported_with_its_error(tmp_path: Path) -> None:
     out, report = export(tmp_path / "refused", [state("work:a"), state("work:b")], fail=("work:a",))
     assert reasons(report) == [("work:a", "show_failed")]
