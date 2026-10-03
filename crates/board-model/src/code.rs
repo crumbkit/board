@@ -12,6 +12,9 @@ pub enum Code {
     PathCaseCollision,
     RefDangling,
     MountInvalid,
+    MountRepoMissing,
+    MountCommitMissing,
+    MountRemoteUnsupported,
     ResolveCycle,
     ResolveTooManyHops,
     RepoUnreadable,
@@ -27,6 +30,9 @@ impl Code {
             Self::PathCaseCollision => "board::path::case_collision",
             Self::RefDangling => "board::ref::dangling",
             Self::MountInvalid => "board::mount::invalid",
+            Self::MountRepoMissing => "board::mount::repo_missing",
+            Self::MountCommitMissing => "board::mount::commit_missing",
+            Self::MountRemoteUnsupported => "board::mount::remote_unsupported",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
@@ -47,13 +53,16 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 10] = [
+    const ALL: [Code; 13] = [
         Code::PathMalformed,
         Code::PathNotFound,
         Code::PathShadowed,
         Code::PathCaseCollision,
         Code::RefDangling,
         Code::MountInvalid,
+        Code::MountRepoMissing,
+        Code::MountCommitMissing,
+        Code::MountRemoteUnsupported,
         Code::ResolveCycle,
         Code::ResolveTooManyHops,
         Code::RepoUnreadable,
@@ -69,6 +78,9 @@ mod tests {
             | Code::PathCaseCollision
             | Code::RefDangling
             | Code::MountInvalid
+            | Code::MountRepoMissing
+            | Code::MountCommitMissing
+            | Code::MountRemoteUnsupported
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable
