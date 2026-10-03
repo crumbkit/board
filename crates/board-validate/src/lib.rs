@@ -38,6 +38,7 @@ impl Schema {
             });
         }
         references::check_types(&document)?;
+        references::check_expansion(&document)?;
         let validator = jsonschema::options()
             .with_draft(Draft::Draft202012)
             .with_pattern_options(PatternOptions::regex())
@@ -105,6 +106,11 @@ pub enum SchemaError {
     Draft { draft: String },
     #[error("schema x-board-type {value} is not a record type or a list of them")]
     BoardType { value: String },
+    #[error(
+        "schema expands to more than {} subschemas at one record location through allOf and $ref",
+        references::MAX_EXPANSION
+    )]
+    TooComplex,
     #[error("schema does not compile: {source}")]
     Compile {
         #[source]
@@ -115,9 +121,10 @@ pub enum SchemaError {
 impl SchemaError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Draft { .. } | Self::BoardType { .. } | Self::Compile { .. } => {
-                Code::SchemaInvalid
-            }
+            Self::Draft { .. }
+            | Self::BoardType { .. }
+            | Self::TooComplex
+            | Self::Compile { .. } => Code::SchemaInvalid,
         }
     }
 }

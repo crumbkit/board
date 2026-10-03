@@ -193,3 +193,36 @@ fn a_ref_cycle_in_a_schema_ends() {
     .unwrap();
     assert!(schema.references(&json!({"a": "/x"})).is_empty());
 }
+
+#[test]
+fn a_schema_whose_branches_multiply_without_bound_is_refused_at_compile() {
+    let exploding = json!({"allOf": [{"$ref": "#"}, {"$ref": "#"}]});
+    assert_eq!(compile_code(exploding), Code::SchemaInvalid);
+    let nested = json!({"properties": {"a": {"allOf": [{"$ref": "#/properties/a"}, {"$ref": "#/properties/a"}]}}});
+    assert_eq!(compile_code(nested), Code::SchemaInvalid);
+}
+
+#[test]
+fn a_deep_but_linear_schema_is_admitted() {
+    // A chain of 30 `$defs`, each a `$ref` to the next, ending in a reference.
+    let mut defs = serde_json::Map::new();
+    for index in 0..30 {
+        defs.insert(
+            format!("d{index}"),
+            json!({"$ref": format!("#/$defs/d{}", index + 1)}),
+        );
+    }
+    defs.insert(
+        "d30".to_owned(),
+        json!({"type": "string", "format": "board-ref"}),
+    );
+    let chain =
+        Schema::compile(json!({"$defs": defs, "properties": {"r": {"$ref": "#/$defs/d0"}}}))
+            .unwrap();
+    let record = json!({"r": "/x"});
+    assert!(chain.validate(&record).is_ok());
+    assert_eq!(chain.references(&record).len(), 1);
+    // Wide but flat: 200 branches, each a leaf.
+    let wide: Vec<Value> = (0..200).map(|_| json!({"type": "object"})).collect();
+    assert!(Schema::compile(json!({"allOf": wide})).is_ok());
+}
