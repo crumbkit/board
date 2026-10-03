@@ -125,36 +125,39 @@ fn a_path_cannot_continue_through_a_file() {
 }
 
 #[test]
-fn a_record_and_a_directory_at_one_path_are_shadowed() {
+fn a_record_beside_its_directory_names_the_record_and_continues_into_the_directory() {
     let scenario = Scenario::new();
-    let clear = scenario.commit(&[("a.json", "{}"), ("c/b.json", "{}")]);
-    assert_eq!(resolve(&scenario, clear, "/a").unwrap().path, "a.json");
-    let shadowed = scenario.commit(&[("a.json", "{}"), ("a/b.json", "{}")]);
+    let commit = scenario.commit(&[("a.json", "{}"), ("a/b.json", "{}")]);
+    let record = resolve(&scenario, commit, "/a").unwrap();
+    assert_eq!(record.path, "a.json");
+    let child = resolve(&scenario, commit, "/a/b").unwrap();
+    assert_eq!(child.path, "a/b.json");
     assert_eq!(
-        resolve(&scenario, shadowed, "/a").unwrap_err(),
-        Code::PathShadowed
-    );
-    assert_eq!(
-        resolve(&scenario, shadowed, "/a/b").unwrap_err(),
-        Code::PathShadowed
+        walk(&scenario, commit),
+        [ok("a.json", "/a"), ok("a/b.json", "/a/b")]
     );
 }
 
 #[test]
-fn walking_marks_both_shadowing_entries_and_everything_beneath() {
+fn a_record_and_a_file_of_the_same_name_are_shadowed() {
     let scenario = Scenario::new();
-    let clear = scenario.commit(&[("a.json", "{}"), ("c/b.json", "{}")]);
+    let clear = scenario.commit(&[("a.json", "{}"), ("a.md", "")]);
     assert_eq!(
         walk(&scenario, clear),
-        [ok("a.json", "/a"), ok("c/b.json", "/c/b")]
+        [ok("a.json", "/a"), ok("a.md", "/a.md")]
     );
-    let shadowed = scenario.commit(&[("a.json", "{}"), ("a/b.json", "{}")]);
+    assert_eq!(resolve(&scenario, clear, "/a").unwrap().path, "a.json");
+    let shadowed = scenario.commit(&[("a.json", "{}"), ("a", "")]);
     assert_eq!(
         walk(&scenario, shadowed),
         [
+            degraded("a", Some("/a"), Code::PathShadowed),
             degraded("a.json", Some("/a"), Code::PathShadowed),
-            degraded("a/b.json", Some("/a/b"), Code::PathShadowed),
         ]
+    );
+    assert_eq!(
+        resolve(&scenario, shadowed, "/a").unwrap_err(),
+        Code::PathShadowed
     );
 }
 
@@ -247,20 +250,15 @@ fn a_path_over_4096_bytes_is_malformed() {
 }
 
 #[test]
-fn symlinks_and_submodules_are_entries_that_are_never_followed() {
+fn a_symlink_is_a_file_that_is_never_followed() {
     let scenario = Scenario::new();
     let commit = scenario.commit_items(&[
         (b"work/x.json", Item::File("{}")),
         (b"s.json", Item::Symlink("work")),
-        (b"m", Item::Submodule),
     ]);
     assert_eq!(
         walk(&scenario, commit),
-        [
-            ok("m", "/m"),
-            ok("s.json", "/s.json"),
-            ok("work/x.json", "/work/x")
-        ]
+        [ok("s.json", "/s.json"), ok("work/x.json", "/work/x")]
     );
     let link = resolve(&scenario, commit, "/s.json").unwrap();
     assert_eq!(link.object, Object::Blob(scenario.blob("work")));
@@ -271,7 +269,25 @@ fn symlinks_and_submodules_are_entries_that_are_never_followed() {
         "/s.json/x",
         Code::PathNotFound,
     );
-    pair(&scenario, commit, ("/m", "m"), "/m/x", Code::PathNotFound);
+}
+
+#[test]
+fn a_submodule_is_degraded_and_never_descended() {
+    let scenario = Scenario::new();
+    let clear = scenario.commit(&[("m/x.json", "{}")]);
+    assert_eq!(walk(&scenario, clear), [ok("m/x.json", "/m/x")]);
+    assert_eq!(resolve(&scenario, clear, "/m/x").unwrap().path, "m/x.json");
+    let submodule = scenario.commit_items(&[(b"m", Item::Submodule)]);
+    assert_eq!(
+        walk(&scenario, submodule),
+        [degraded("m", Some("/m"), Code::RepoSubmodule)]
+    );
+    for path in ["/m", "/m/x"] {
+        assert_eq!(
+            resolve(&scenario, submodule, path).unwrap_err(),
+            Code::RepoSubmodule
+        );
+    }
 }
 
 #[test]
@@ -292,16 +308,16 @@ fn a_missing_commit_or_repository_is_unreadable() {
     let missing = ObjectId::Sha1([7; 20]);
     assert_eq!(
         resolve(&scenario, missing, "/x").unwrap_err(),
-        Code::TreeUnreadable
+        Code::RepoUnreadable
     );
     let error = scenario.open().walk(missing).unwrap_err();
-    assert_eq!(error.code(), Code::TreeUnreadable);
+    assert_eq!(error.code(), Code::RepoUnreadable);
 
     let empty = tempfile::tempdir().unwrap();
     assert!(Repository::open(scenario.open().path()).is_ok());
     assert_eq!(
         Repository::open(empty.path()).unwrap_err().code(),
-        Code::TreeUnreadable
+        Code::RepoUnreadable
     );
 }
 

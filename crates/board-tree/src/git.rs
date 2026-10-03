@@ -131,7 +131,7 @@ pub enum GitError {
 impl GitError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Unreadable { .. } | Self::Object { .. } => Code::TreeUnreadable,
+            Self::Unreadable { .. } | Self::Object { .. } => Code::RepoUnreadable,
         }
     }
 }

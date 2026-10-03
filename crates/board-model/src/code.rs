@@ -12,7 +12,8 @@ pub enum Code {
     PathCaseCollision,
     ResolveCycle,
     ResolveTooManyHops,
-    TreeUnreadable,
+    RepoUnreadable,
+    RepoSubmodule,
 }
 
 impl Code {
@@ -24,7 +25,8 @@ impl Code {
             Self::PathCaseCollision => "board::path::case_collision",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
-            Self::TreeUnreadable => "board::tree::unreadable",
+            Self::RepoUnreadable => "board::repo::unreadable",
+            Self::RepoSubmodule => "board::repo::submodule",
         }
     }
 }
@@ -41,14 +43,15 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 7] = [
+    const ALL: [Code; 8] = [
         Code::PathMalformed,
         Code::PathNotFound,
         Code::PathShadowed,
         Code::PathCaseCollision,
         Code::ResolveCycle,
         Code::ResolveTooManyHops,
-        Code::TreeUnreadable,
+        Code::RepoUnreadable,
+        Code::RepoSubmodule,
     ];
 
     /// Fails to compile when a variant is added, so `ALL` stays complete.
@@ -60,7 +63,8 @@ mod tests {
             | Code::PathCaseCollision
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
-            | Code::TreeUnreadable => {}
+            | Code::RepoUnreadable
+            | Code::RepoSubmodule => {}
         }
     }
 

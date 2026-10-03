@@ -3,7 +3,7 @@
 
 use board_model::{Board, Code, Location, LogicalPath, Object, ObjectId, Source};
 
-use crate::address;
+use crate::address::{self, Named};
 use crate::git::{GitError, Kind, Repository};
 
 impl Repository {
@@ -12,23 +12,34 @@ impl Repository {
         let mut object = Object::Directory;
         let mut tree = Some(self.root_tree(commit)?);
         let mut physical: Vec<String> = Vec::new();
-        for segment in path.segments() {
+        let mut segments = path.segments().peekable();
+        while let Some(segment) = segments.next() {
             let not_found = || ResolveError::NotFound { path: path.clone() };
             let entries = self.list(tree.ok_or_else(not_found)?)?;
-            let mut matches = entries
-                .iter()
-                .filter(|entry| address::segment(entry) == Some(segment));
-            let entry = matches.next().ok_or_else(not_found)?;
-            if matches.next().is_some() {
-                return Err(ResolveError::Shadowed {
-                    path: path.clone(),
-                    segment: segment.to_owned(),
-                });
-            }
+            let entry = match address::named(&entries, segment) {
+                Named::Nothing => return Err(not_found()),
+                Named::One(entry) => entry,
+                Named::RecordWithChildren { record, children } => {
+                    if segments.peek().is_some() {
+                        children
+                    } else {
+                        record
+                    }
+                }
+                Named::Shadowed => {
+                    return Err(ResolveError::Shadowed {
+                        path: path.clone(),
+                        segment: segment.to_owned(),
+                    });
+                }
+            };
             physical.push(String::from_utf8_lossy(&entry.name).into_owned());
             (object, tree) = match entry.kind {
                 Kind::Directory => (Object::Directory, Some(entry.id)),
-                Kind::File | Kind::Symlink | Kind::Submodule => (Object::Blob(entry.id), None),
+                Kind::File | Kind::Symlink => (Object::Blob(entry.id), None),
+                Kind::Submodule => {
+                    return Err(ResolveError::Submodule { path: path.clone() });
+                }
             };
         }
         Ok(Location {
@@ -49,6 +60,8 @@ pub enum ResolveError {
     NotFound { path: LogicalPath },
     #[error("{segment:?} in {path} names more than one entry")]
     Shadowed { path: LogicalPath, segment: String },
+    #[error("{path} reaches a submodule, which Board does not descend")]
+    Submodule { path: LogicalPath },
     #[error(transparent)]
     Git(#[from] GitError),
 }
@@ -58,6 +71,7 @@ impl ResolveError {
         match self {
             Self::NotFound { .. } => Code::PathNotFound,
             Self::Shadowed { .. } => Code::PathShadowed,
+            Self::Submodule { .. } => Code::RepoSubmodule,
             Self::Git(error) => error.code(),
         }
     }
