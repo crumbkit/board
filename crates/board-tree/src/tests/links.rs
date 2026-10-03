@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::MAX_HOPS;
+use crate::resolve::Pointers;
 use crate::tree::{RawEntry, Tree};
 
 fn link(target: &str) -> String {
@@ -243,11 +244,90 @@ fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
             reads: 0,
         };
         let location = repository
-            .resolve_in(&mut tree, &path(start), true)
+            .resolve_in(&mut tree, &path(start), true, &mut Pointers::new())
             .unwrap();
         assert_eq!(location.pointers.len(), hops);
         assert_eq!(tree.reads, hops + 1, "{hops} hops");
     }
+}
+
+#[test]
+fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
+    let scenario = Scenario::new();
+    let repository = scenario.open();
+    for hops in [1, 5, 39] {
+        let commit = chain(&scenario, hops);
+        let mut tree = Counting {
+            inner: repository.commit_tree(commit).unwrap(),
+            reads: 0,
+        };
+        let mut pointers = Pointers::new();
+        for start in 0..hops {
+            let location = repository
+                .resolve_in(&mut tree, &path(&format!("/l{start}")), true, &mut pointers)
+                .unwrap();
+            assert_eq!(location.pointers.len(), hops - start);
+        }
+        // Each pointer and the record at the end, not one read per hop of
+        // every resolution.
+        assert_eq!(tree.reads, hops + 1, "{hops} hops");
+    }
+}
+
+#[test]
+fn many_references_to_one_record_read_it_once_in_one_run() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit(&[("projects/hub.json", r#"{"$type": "lr/project/v1"}"#)]);
+    let repository = scenario.open();
+    let mut tree = Counting {
+        inner: repository.commit_tree(commit).unwrap(),
+        reads: 0,
+    };
+    let mut pointers = Pointers::new();
+    for _ in 0..1_000 {
+        repository
+            .resolve_in(&mut tree, &path("/projects/hub"), true, &mut pointers)
+            .unwrap();
+    }
+    assert_eq!(tree.reads, 1);
+}
+
+#[test]
+fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit(&[
+        (
+            "bad.json",
+            r#"{"$type": "board/mount/v1", "path": "/x", "extra": 1}"#,
+        ),
+        ("good.json", &link("/x")),
+        ("x.json", "{}"),
+    ]);
+    let repository = scenario.open();
+    let mut tree = Counting {
+        inner: repository.commit_tree(commit).unwrap(),
+        reads: 0,
+    };
+    let mut pointers = Pointers::new();
+    let mut refused = || {
+        repository
+            .resolve_in(&mut tree, &path("/bad"), true, &mut pointers)
+            .unwrap_err()
+    };
+    let (first, second) = (refused(), refused());
+    assert_eq!(first.code(), Code::MountInvalid);
+    assert_eq!(
+        (second.code(), second.to_string()),
+        (first.code(), first.to_string())
+    );
+    let mut admitted = || {
+        repository
+            .resolve_in(&mut tree, &path("/good"), true, &mut pointers)
+            .unwrap()
+    };
+    assert_eq!(admitted(), admitted());
+    // The invalid pointer once, then the link and its target once each.
+    assert_eq!(tree.reads, 3);
 }
 
 #[test]
@@ -259,7 +339,9 @@ fn resolving_a_directory_path_reads_no_blob() {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
-    repository.resolve_in(&mut tree, &path("/a"), true).unwrap();
+    repository
+        .resolve_in(&mut tree, &path("/a"), true, &mut Pointers::new())
+        .unwrap();
     assert_eq!(tree.reads, 0);
 }
 

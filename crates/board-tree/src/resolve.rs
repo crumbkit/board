@@ -1,7 +1,9 @@
 //! Resolving a logical path to a Location (docs/architecture.md, Pointers:
 //! links and mounts). Pointers are followed with POSIX symlink semantics.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::rc::Rc;
 
 use board_model::{
     Board, Code, Location, LogicalPath, Mount, Object, ObjectId, Pointer, PointerError, Source,
@@ -20,7 +22,12 @@ impl Repository {
     /// including one at the end.
     pub fn resolve(&self, source: &Source, path: &LogicalPath) -> Result<Location, ResolveError> {
         match source {
-            Source::Commit(commit) => self.resolve_in(&mut self.commit_tree(*commit)?, path, true),
+            Source::Commit(commit) => self.resolve_in(
+                &mut self.commit_tree(*commit)?,
+                path,
+                true,
+                &mut Pointers::new(),
+            ),
             Source::WorkingTree => self.resolver(&mut |_, _| None)?.resolve(path),
         }
     }
@@ -29,7 +36,12 @@ impl Repository {
     /// except that a pointer at the end is not followed, as `lstat` does
     /// not follow a symlink.
     pub fn resolve_pointer(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        self.resolve_in(&mut self.working_tree(&mut |_, _| None)?, path, false)
+        self.resolve_in(
+            &mut self.working_tree(&mut |_, _| None)?,
+            path,
+            false,
+            &mut Pointers::new(),
+        )
     }
 
     /// A resolver for many paths in one snapshot of the working tree, which
@@ -38,6 +50,7 @@ impl Repository {
         Ok(Resolver {
             repository: self,
             tree: self.working_tree(known)?,
+            pointers: Pointers::new(),
         })
     }
 
@@ -46,6 +59,7 @@ impl Repository {
         tree: &mut T,
         path: &LogicalPath,
         follow_last: bool,
+        pointers: &mut Pointers,
     ) -> Result<Location, ResolveError> {
         let mut trail = Trail {
             path: path.clone(),
@@ -55,7 +69,7 @@ impl Repository {
             follow_last,
         };
         let segments = path.segments().map(str::to_owned).collect();
-        self.follow(tree, segments, 0, &mut trail)
+        self.follow(tree, segments, 0, &mut trail, pointers)
     }
 
     /// Resolves `remaining` from the root of `tree`, which is this
@@ -69,6 +83,7 @@ impl Repository {
         mut remaining: VecDeque<String>,
         mut from_link: usize,
         trail: &mut Trail,
+        pointers: &mut Pointers,
     ) -> Result<Location, ResolveError> {
         let path = &trail.path.clone();
         let board = Board {
@@ -97,6 +112,7 @@ impl Repository {
                 segment,
                 remaining.is_empty(),
                 path,
+                pointers,
             )?
             else {
                 return Err(missing(from_link, trail));
@@ -113,7 +129,7 @@ impl Repository {
                     if remaining.is_empty() && !trail.follow_last {
                         continue;
                     }
-                    let Some(next) = pointer(tree, &current, entry, path)? else {
+                    let Some(next) = pointer(tree, &current, entry, path, pointers)? else {
                         continue;
                     };
                     trail.pointers.push(Location {
@@ -143,7 +159,7 @@ impl Repository {
                             object = Object::Directory;
                         }
                         Pointer::Mount(mount) => {
-                            return self.enter(&mount, remaining, from_link, trail);
+                            return self.enter(&mount, remaining, from_link, trail, pointers);
                         }
                     }
                 }
@@ -223,6 +239,7 @@ impl Repository {
         remaining: VecDeque<String>,
         from_link: usize,
         trail: &mut Trail,
+        pointers: &mut Pointers,
     ) -> Result<Location, ResolveError> {
         let path = trail.path.clone();
         let (mounted, _) = self.open_mount(mount).map_err(|missing| match missing {
@@ -252,7 +269,7 @@ impl Repository {
         if !trail.visited.insert((board, remaining.clone())) {
             return Err(ResolveError::Cycle { path });
         }
-        mounted.follow(&mut tree, remaining, from_link, trail)
+        mounted.follow(&mut tree, remaining, from_link, trail, pointers)
     }
 }
 
@@ -261,6 +278,7 @@ impl Repository {
 pub struct Resolver<'r, 'k> {
     repository: &'r Repository,
     tree: WorkingTree<'r, 'k>,
+    pointers: Pointers,
 }
 
 impl std::fmt::Debug for Resolver<'_, '_> {
@@ -275,9 +293,16 @@ impl std::fmt::Debug for Resolver<'_, '_> {
 impl Resolver<'_, '_> {
     /// Resolves `path` as [`Repository::resolve`] does in the working tree.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        self.repository.resolve_in(&mut self.tree, path, true)
+        self.repository
+            .resolve_in(&mut self.tree, path, true, &mut self.pointers)
     }
 }
+
+/// What each `.json` blob read during one run holds as a pointer, by blob id:
+/// a pointer, nothing, or why it is not a valid one. A blob id names its
+/// bytes, so an entry is true in every source, and it lives only as long as
+/// the resolution or [`Resolver`] that made it.
+pub(crate) type Pointers = HashMap<ObjectId, Result<Option<Pointer>, Rc<PointerError>>>;
 
 /// What a mount names that cannot be read.
 enum MountMissing {
@@ -309,6 +334,7 @@ fn pick<'e, T: Tree>(
     segment: String,
     last: bool,
     path: &LogicalPath,
+    pointers: &mut Pointers,
 ) -> Result<Option<&'e RawEntry<T::Directory>>, ResolveError> {
     let shadowed = |segment| ResolveError::Shadowed {
         path: path.clone(),
@@ -318,7 +344,7 @@ fn pick<'e, T: Tree>(
         Named::Nothing => Ok(None),
         Named::One(entry) => Ok(Some(entry)),
         Named::RecordWithChildren { record, children } => {
-            if pointer(tree, directory, record, path)?.is_some() {
+            if pointer(tree, directory, record, path, pointers)?.is_some() {
                 return Err(shadowed(segment));
             }
             Ok(Some(if last { record } else { children }))
@@ -327,20 +353,32 @@ fn pick<'e, T: Tree>(
     }
 }
 
-/// The pointer `entry` holds, if it is a `.json` file whose record is one.
+/// The pointer `entry` holds, if it is a `.json` file whose record is one,
+/// parsed at most once per blob in `pointers`.
 fn pointer<T: Tree>(
     tree: &mut T,
     directory: &T::Directory,
     entry: &RawEntry<T::Directory>,
     path: &LogicalPath,
+    pointers: &mut Pointers,
 ) -> Result<Option<Pointer>, ResolveError> {
-    if !matches!(entry.kind, Kind::File(_)) || !entry.name.ends_with(b".json") {
-        return Ok(None);
-    }
-    let Some(bytes) = tree.read(directory, entry)? else {
+    let Kind::File(blob) = entry.kind else {
         return Ok(None);
     };
-    board_model::pointer(&bytes).map_err(|source| ResolveError::InvalidPointer {
+    if !entry.name.ends_with(b".json") {
+        return Ok(None);
+    }
+    let parsed = match pointers.entry(blob) {
+        Entry::Occupied(known) => known.get().clone(),
+        Entry::Vacant(unknown) => {
+            let parsed = match tree.read(directory, entry)? {
+                Some(bytes) => board_model::pointer(&bytes).map_err(Rc::new),
+                None => Ok(None),
+            };
+            unknown.insert(parsed).clone()
+        }
+    };
+    parsed.map_err(|source| ResolveError::InvalidPointer {
         path: path.clone(),
         pointer: String::from_utf8_lossy(&entry.name).into_owned(),
         source,
@@ -365,7 +403,7 @@ pub enum ResolveError {
         path: LogicalPath,
         pointer: String,
         #[source]
-        source: PointerError,
+        source: Rc<PointerError>,
     },
     #[error("{path} mounts the repository {repo:?}, which cannot be opened")]
     RepoMissing { path: LogicalPath, repo: String },
