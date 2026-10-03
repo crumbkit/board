@@ -9,7 +9,7 @@ rust-version = "1.97"
 
 [workspace.dependencies]
 board-model = { path = "crates/board-model", version = "0.0.0" }
-gix = { version = "0.88.0", default-features = false, features = ["sha1"] }
+gix = { version = "0.88.0", default-features = false, features = ["excludes", "sha1"] }
 glob = "0.3.3"
 proptest = "1.11.0"
 serde = { version = "1.0.228", features = ["derive"] }
