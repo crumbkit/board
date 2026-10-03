@@ -13,7 +13,9 @@ pub enum Code {
     JsonNotUtf8,
     RecordBadType,
     RecordUnknownType,
+    RecordInvalid,
     SchemaInvalid,
+    RefMalformed,
     PathMalformed,
     PathNotFound,
     PathShadowed,
@@ -39,7 +41,9 @@ impl Code {
             Self::JsonNotUtf8 => "board::json::not_utf8",
             Self::RecordBadType => "board::record::bad_type",
             Self::RecordUnknownType => "board::record::unknown_type",
+            Self::RecordInvalid => "board::record::invalid",
             Self::SchemaInvalid => "board::schema::invalid",
+            Self::RefMalformed => "board::ref::malformed",
             Self::PathMalformed => "board::path::malformed",
             Self::PathNotFound => "board::path::not_found",
             Self::PathShadowed => "board::path::shadowed",
@@ -69,7 +73,7 @@ mod tests {
 
     use super::*;
 
-    const ALL: [Code; 21] = [
+    const ALL: [Code; 23] = [
         Code::JsonParse,
         Code::JsonMergeConflict,
         Code::JsonDuplicateKey,
@@ -77,7 +81,9 @@ mod tests {
         Code::JsonNotUtf8,
         Code::RecordBadType,
         Code::RecordUnknownType,
+        Code::RecordInvalid,
         Code::SchemaInvalid,
+        Code::RefMalformed,
         Code::PathMalformed,
         Code::PathNotFound,
         Code::PathShadowed,
@@ -103,7 +109,9 @@ mod tests {
             | Code::JsonNotUtf8
             | Code::RecordBadType
             | Code::RecordUnknownType
+            | Code::RecordInvalid
             | Code::SchemaInvalid
+            | Code::RefMalformed
             | Code::PathMalformed
             | Code::PathNotFound
             | Code::PathShadowed

@@ -22,7 +22,7 @@ deny = [
 [licenses]
 # The workspace is proprietary and unpublished; only dependencies are checked.
 private = { ignore = true }
-allow = ["Apache-2.0", "MIT", "Unicode-3.0", "Zlib"]
+allow = ["Apache-2.0", "MIT", "MIT-0", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.9
 
 [sources]
