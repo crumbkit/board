@@ -5,10 +5,4 @@ cd "$(dirname "$0")/.."
 
 cargo nextest run --workspace --all-features --locked
 
-# Doctests need a library target, and xtask is only a binary. The first
-# library crate (milestone M2) makes this branch permanent; delete the check then.
-if cargo metadata --no-deps --format-version 1 --locked | grep -q '"kind":\["lib"\]'; then
-  cargo test --workspace --all-features --locked --doc
-else
-  echo "doctests: no library targets yet"
-fi
+cargo test --workspace --all-features --locked --doc
