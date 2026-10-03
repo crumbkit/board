@@ -20,6 +20,8 @@ pub(crate) enum Item<'a> {
     Submodule,
     /// A top-level directory whose tree object is absent from the repository.
     MissingTree,
+    /// A top-level file whose blob object is absent from the repository.
+    MissingBlob,
     /// A file the walk's user cannot read (mode 000); working tree only.
     Unreadable(&'a str),
 }
@@ -70,7 +72,9 @@ impl Scenario {
                 fs::write(&path, text).unwrap();
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
             }
-            Item::MissingTree => panic!("a working tree cannot hold a missing tree object"),
+            Item::MissingTree | Item::MissingBlob => {
+                panic!("a working tree cannot hold a missing object")
+            }
         }
         self
     }
@@ -109,7 +113,7 @@ impl Scenario {
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),
                 ),
-                Item::MissingTree => continue,
+                Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
                 Item::Submodule => (
                     EntryKind::Commit,
@@ -119,21 +123,24 @@ impl Scenario {
             editor.upsert(BStr::new(path), kind, id).unwrap();
         }
         let mut tree = editor.write().unwrap().detach();
-        // The editor refuses a tree it cannot find, so absent subtrees are
+        // The editor refuses an object it cannot find, so absent ones are
         // added to the root tree object directly.
-        let missing: Vec<&[u8]> = items
+        let missing: Vec<(&[u8], EntryKind, u8)> = items
             .iter()
-            .filter(|(_, item)| matches!(item, Item::MissingTree))
-            .map(|(path, _)| *path)
+            .filter_map(|(path, item)| match item {
+                Item::MissingTree => Some((*path, EntryKind::Tree, b'2')),
+                Item::MissingBlob => Some((*path, EntryKind::Blob, b'3')),
+                _ => None,
+            })
             .collect();
         if !missing.is_empty() {
             let root = self.git.find_tree(tree).unwrap();
             let mut root: gix::objs::Tree = root.decode().unwrap().into();
-            for name in missing {
+            for (name, kind, digit) in missing {
                 root.entries.push(gix::objs::tree::Entry {
-                    mode: EntryKind::Tree.into(),
+                    mode: kind.into(),
                     filename: name.into(),
-                    oid: gix::ObjectId::from_hex(&[b'2'; 40]).unwrap(),
+                    oid: gix::ObjectId::from_hex(&[digit; 40]).unwrap(),
                 });
             }
             root.entries.sort();

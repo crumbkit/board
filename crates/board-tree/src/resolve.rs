@@ -174,6 +174,9 @@ impl Repository {
             repository: mounted.path().to_path_buf(),
             source: tree.source(),
         };
+        // Mounts alone cannot cycle: each pins a commit, and no commit can
+        // hold its own id. A cycle needs a link, and the hop limit bounds
+        // the rest; this key catches a link cycle met through a mount.
         if !trail.visited.insert((board, remaining.clone())) {
             return Err(ResolveError::Cycle { path });
         }
