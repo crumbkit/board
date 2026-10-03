@@ -163,6 +163,9 @@ step. The owner's decisions so far:
   SSH and hosts work as they already do; gix keeps reading objects. The
   `git` child process gets one declared owner in `board-tree`.
 
+- **Remote mounts change `board/mount/v1` in place** (owner's decision):
+  Board is still being built and has no data to migrate, so `repo` gains its
+  remote meaning in v1 with no new version.
 - **Network safety.** A mount that names a remote lets its author choose
   what the owner's machine fetches, with the owner's credentials. So Board
   fetches only remotes the root board names in one of its own mount pointers.
@@ -175,8 +178,6 @@ step. The owner's decisions so far:
   starts with `-` is refused, so data can never become a `git` option.
 
 Open:
-- Whether a remote mount is `board/mount/v2` or new values in v1. It changes
-  what `repo` means; the review recommends v2. The owner decides.
 - Whether jujutsu, with its first-class conflicts, sits behind the same seam
   later. Decide after M7 shows how sharing is actually used.
 
