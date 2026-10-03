@@ -97,13 +97,14 @@ walks through mounts to M4; the two write scenarios to M5.
 
 ### M3 Records and validation
 
-The duplicate-refusing parse, `$type`, schemas from the tree, typed references,
-canonical output, `board-validate`, and the commands `check`, `get` and `ls`.
+The duplicate-refusing parse, kinds, `$type`, schemas from the tree, typed
+references, `board-validate`, `board-ops`, and the commands `check`, `get` and
+`ls`. `check` covers the root board; walks reach mounts in M4.
 
-Done: a fixture board that produces every code in the code table; golden bytes
-for canonical output; bolero targets for the record and path parsers, run in
-the gate and fuzzed by a scheduled job; walks mark dangling references; the
-property that resolving a Location's display path returns that Location.
+Done: a fixture board that produces every code `check`, `get` and `ls` can
+produce; bolero targets for the record and path parsers, run in the gate and
+fuzzed by a scheduled job; walks mark dangling references; the property that
+resolving a Location's display path returns that Location.
 
 ### M4 Index and query
 
@@ -118,7 +119,7 @@ measured ones.
 
 ### M5 Writes
 
-`put` with compare-and-swap, canonical output, the lock, optional commit and
+`put` with compare-and-swap, canonical output (with golden bytes), the lock, optional commit and
 batches; `mount update`.
 
 Done: two concurrent puts with the same `--expect` produce exactly one write
