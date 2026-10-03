@@ -363,11 +363,12 @@ fn the_fixture_board_produces_every_code() {
     );
     take(board_in(misconfigured.workdir(), &["check", "--json"]));
 
-    // The index fails only when SQLite does, even in memory, which no board
-    // can cause.
+    // The index fails only when SQLite does, even in memory, and a write
+    // only when the disk or its permissions refuse it, which no board can
+    // cause; each mapping is tested where its error is made.
     let missing: Vec<&str> = Code::ALL
         .iter()
-        .filter(|code| **code != Code::IndexFailed)
+        .filter(|code| ![Code::IndexFailed, Code::PutFailed].contains(code))
         .map(|code| code.as_str())
         .filter(|code| !produced.contains(code))
         .collect();

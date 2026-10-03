@@ -264,7 +264,9 @@ when it resolves to its identity, whatever path it names.
    segment, so a write through a link lands at its target. A path through a
    mount is `board::put::through_mount`. Missing directories are created. A
    write that would leave its own path degraded is refused with that path's
-   code, such as `path::case_collision` or `path::shadowed`;
+   code, such as `path::case_collision` or `path::shadowed`. A link at the last segment whose target does not
+   exist is refused with its resolution code; put does not create a link's
+   target;
 3. takes `board.lock` in the worktree's git directory, created exclusively as
    git creates its lock files, waiting up to 5 seconds and then refusing with
    `board::put::locked`, whose message says to remove the lock if no put is
@@ -360,7 +362,7 @@ after release. The v0 set:
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
-| `put` | `stale`, `locked`, `through_mount`, `invalid`, `no_identity`, `head_moved` |
+| `put` | `stale`, `locked`, `through_mount`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
 
 ## Testing

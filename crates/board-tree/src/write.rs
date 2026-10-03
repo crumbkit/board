@@ -192,7 +192,7 @@ impl Repository {
         match read {
             Ok(bytes) => Ok(Some(bytes)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(WriteError::Io {
+            Err(source) => Err(WriteError::Read {
                 path: absolute,
                 source,
             }),
@@ -230,7 +230,7 @@ impl Repository {
         match fs::read(&absolute) {
             Ok(bytes) => Ok(Some(self.blob_id(&bytes))),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(WriteError::Io {
+            Err(source) => Err(WriteError::Read {
                 path: absolute,
                 source,
             }),
@@ -277,7 +277,10 @@ impl Repository {
         }
         fs::File::open(&directory)
             .and_then(|directory| directory.sync_all())
-            .map_err(io(&directory))
+            .map_err(|source| WriteError::Unsynced {
+                path: target,
+                source,
+            })
     }
 }
 
@@ -314,8 +317,22 @@ pub enum WriteError {
     Refused { path: LogicalPath, code: Code },
     #[error("{lock:?} is held; if no put is running, remove it")]
     Locked { lock: PathBuf },
-    #[error("{path:?} cannot be written")]
+    #[error("{path:?} cannot be read")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{path:?} could not be written")]
     Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error(
+        "{path:?} may already be in place, but its directory could not be synced, so a crash could lose it"
+    )]
+    Unsynced {
         path: PathBuf,
         #[source]
         source: io::Error,
@@ -329,8 +346,42 @@ impl WriteError {
         match self {
             Self::Refused { code, .. } => *code,
             Self::Locked { .. } => Code::PutLocked,
-            Self::Io { .. } => Code::RepoUnreadable,
+            Self::Read { .. } => Code::RepoUnreadable,
+            Self::Io { .. } | Self::Unsynced { .. } => Code::PutFailed,
             Self::Git(error) => error.code(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn failure() -> io::Error {
+        io::Error::other("the disk is full")
+    }
+
+    #[test]
+    fn a_write_that_fails_is_put_failed_and_a_read_that_fails_is_unreadable() {
+        let path = PathBuf::from("/board/tasks/a.json");
+        let write = WriteError::Io {
+            path: path.clone(),
+            source: failure(),
+        };
+        let unsynced = WriteError::Unsynced {
+            path: path.clone(),
+            source: failure(),
+        };
+        let read = WriteError::Read {
+            path,
+            source: failure(),
+        };
+        assert_eq!(write.code(), Code::PutFailed);
+        assert_eq!(unsynced.code(), Code::PutFailed);
+        assert!(
+            unsynced.to_string().contains("may already be in place"),
+            "nobody may read it as nothing written"
+        );
+        assert_eq!(read.code(), Code::RepoUnreadable);
     }
 }

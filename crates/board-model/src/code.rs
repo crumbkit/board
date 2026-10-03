@@ -40,11 +40,12 @@ pub enum Code {
     PutLocked,
     PutThroughMount,
     PutInvalid,
+    PutFailed,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 34] = [
+    pub const ALL: [Code; 35] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -79,6 +80,7 @@ impl Code {
         Self::PutLocked,
         Self::PutThroughMount,
         Self::PutInvalid,
+        Self::PutFailed,
     ];
 
     /// The code spelled `text`.
@@ -122,6 +124,7 @@ impl Code {
             Self::PutLocked => "board::put::locked",
             Self::PutThroughMount => "board::put::through_mount",
             Self::PutInvalid => "board::put::invalid",
+            Self::PutFailed => "board::put::failed",
         }
     }
 }
@@ -174,7 +177,8 @@ mod tests {
             | Code::PutStale
             | Code::PutLocked
             | Code::PutThroughMount
-            | Code::PutInvalid => {}
+            | Code::PutInvalid
+            | Code::PutFailed => {}
         }
     }
 

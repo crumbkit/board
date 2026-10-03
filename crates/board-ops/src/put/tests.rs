@@ -340,3 +340,27 @@ fn two_puts_with_the_same_expect_make_one_write_and_one_stale() {
             .all(|entry| entry.status == Status::Ok)
     );
 }
+
+#[test]
+fn a_link_whose_target_is_missing_is_refused_and_one_whose_target_exists_is_followed() {
+    let scenario = board();
+    scenario
+        .write(
+            "links/gone.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/projects/gone"}"#),
+        )
+        .write(
+            "links/here.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/projects/p"}"#),
+        );
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    assert_eq!(
+        put(&scenario, "/links/gone", Expect::Any, project).unwrap_err(),
+        Code::RefDangling
+    );
+    assert!(
+        file(&scenario, "projects/gone.json").is_none(),
+        "put does not create a link's target"
+    );
+    assert!(put(&scenario, "/links/here", Expect::Any, project).is_ok());
+}
