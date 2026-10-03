@@ -185,30 +185,40 @@ Only `board-tree` reads pointers. Every other crate receives Locations.
 
 The index is SQLite under `$XDG_CACHE_HOME/board/<root-hash>/` (by default
 `~/.cache/board/<root-hash>/`), where
-`<root-hash>` is the SHA-256 of the board root's canonical path. It is
-disposable: deleting it changes no answer, only speed.
+`<root-hash>` is the SHA-256 of the board root's canonical path, on macOS
+too. It is disposable: deleting it changes no answer, only speed. An index
+another process holds past a five-second wait is skipped for that run in
+favour of one in memory; a corrupt index, or one of another format, is
+deleted and rebuilt. SQLite is bundled, so every platform runs the same one.
 
 | Table | Holds | Keyed by |
 | --- | --- | --- |
 | `sources` | the root working tree and each mounted repository and commit | source |
-| `trees` | every entry in a source: path, blob, mode | source, path |
+| `trees` | every entry in a tree: name, blob or subtree, mode | tree |
+| `worktree` | each working-tree file's stat (size, times, inode, mode) and blob | path |
 | `blobs` | parse result: kind, type, status, code | blob |
 | `validations` | schema result: status, code, failing JSON pointer | record blob, schema blob |
 | `refs` | references a record makes: JSON pointer, target path | blob |
 | `mounts` | each mount point and the source it reaches | source, path |
 | `state` | index format, root commit and working-tree stamp | key |
 
-The `entries` view joins `trees`, `blobs` and `validations` across the root and
-its mounts, with logical paths. Everything derived is keyed by content (blob or
+The `entries` view joins these across the root and its mounts, one row per
+entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
+`type`, `status`, `code` and `change`. Tables, views and columns are an
+interface agents write SQL against; changing one changes the index format.
+Everything derived is keyed by content (blob or
 tree hash) and never by commit or time, so branches share results and a fact is
 true at a commit exactly when its blob is in that commit's tree.
 
 Each command refreshes the index first: compare the root commit and working
 tree with `state`; diff old and new trees; hash only the working-tree files
-whose metadata changed; parse and validate only blobs not yet in `blobs` and
+whose stat changed, or whose modification time is not before the last
+refresh began, as git does; parse and validate only blobs not yet in `blobs` and
 `validations`. Editing a schema invalidates exactly the validations that used
-it, because they are keyed by its blob. A change to the index format deletes
-the index and rebuilds it.
+it, because they are keyed by its blob. Whether a reference or pointer
+resolves depends on the whole tree, not one blob, so `check` recomputes it
+from `refs` on each run rather than storing it. `check`, `refs` and `query`
+use the index; `get` and `ls` resolve directly.
 
 `board query '<sql>'` runs one read-only statement against the index (opened
 with `query_only`). Each enabled plugin's database is attached read-only as
