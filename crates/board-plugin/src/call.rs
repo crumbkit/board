@@ -7,12 +7,13 @@ use std::str::FromStr;
 
 use board_model::{Code, JsonError, parse_json};
 use board_validate::RecordError;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
 use crate::installed::{DiscoveryError, Installed};
 use crate::manifest::{Capability, CapabilityName, Manifest, ManifestError, NameError, PluginName};
 use crate::process::{self, Limits, Stopped};
-use crate::protocol::{self, BadOutput, PluginFailure, Reply};
+use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallResult, Reply};
 
 /// The deepest nesting of calls: a call that arrives at this depth is refused.
 pub const MAX_DEPTH: u32 = 8;
@@ -186,10 +187,6 @@ pub struct Context<'a> {
 
 /// Checks `input` against the capability's schema, runs the plugin with one
 /// request, and checks its one reply.
-///
-/// # Panics
-///
-/// Never: a manifest's `run` is never empty.
 pub fn invoke(
     chosen: &Chosen,
     input: &[u8],
@@ -203,21 +200,58 @@ pub fn invoke(
         .validate(&input)
         .map_err(|source| CallError::Input { source })?;
     let request = protocol::request(&capability.name, &input, context.root, context.database);
-    let (program, arguments) = chosen
-        .manifest
+    let plugin = &chosen.manifest.name;
+    let result: RawCallResult = exchange(
+        &chosen.manifest,
+        &chosen.directory,
+        request,
+        context,
+        depth,
+        CALL_RESULT_TYPE,
+    )?;
+    capability
+        .output
+        .validate(&result.output)
+        .map_err(|source| CallError::BadOutput {
+            plugin: plugin.clone(),
+            reason: BadOutput::Output { source },
+            stderr: Vec::new(),
+        })?;
+    Ok(CallReport {
+        plugin: plugin.clone(),
+        capability: capability.name.clone(),
+        output: result.output,
+    })
+}
+
+/// Runs `manifest`'s plugin in `directory` at `depth` with one request and
+/// reads its one reply: a result of type `expected`, or its own error.
+///
+/// # Panics
+///
+/// Never: a manifest's `run` is never empty.
+pub(crate) fn exchange<T: DeserializeOwned>(
+    manifest: &Manifest,
+    directory: &Path,
+    request: Vec<u8>,
+    context: &Context<'_>,
+    depth: u32,
+    expected: &'static str,
+) -> Result<T, CallError> {
+    let (program, arguments) = manifest
         .run
         .split_first()
         .expect("a manifest's run is never empty: Manifest::parse refuses it");
     let program = if program.contains('/') {
-        chosen.directory.join(program)
+        directory.join(program)
     } else {
         PathBuf::from(program)
     };
-    let plugin = chosen.manifest.name.clone();
+    let plugin = manifest.name.clone();
     let finished = process::run(
         &program,
         arguments,
-        &chosen.directory,
+        directory,
         &environment(context.environment, depth + 1),
         request,
         context.limits,
@@ -243,18 +277,11 @@ pub fn invoke(
         stderr: stderr.clone(),
     };
     let written = !finished.stdout.trim_ascii().is_empty();
-    match (finished.code, protocol::reply(&plugin, &finished.stdout)) {
-        (Some(0), Ok(Reply::Result(output))) => {
-            capability
-                .output
-                .validate(&output)
-                .map_err(|source| bad(BadOutput::Output { source }))?;
-            Ok(CallReport {
-                plugin: plugin.clone(),
-                capability: capability.name.clone(),
-                output,
-            })
-        }
+    match (
+        finished.code,
+        protocol::reply::<T>(&plugin, &finished.stdout, expected),
+    ) {
+        (Some(0), Ok(Reply::Result(result))) => Ok(result),
         (Some(1), Ok(Reply::Error(failure))) => Err(CallError::Plugin {
             plugin: plugin.clone(),
             failure,

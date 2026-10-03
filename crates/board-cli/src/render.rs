@@ -17,7 +17,7 @@ use crate::report::Output;
 
 mod plugins;
 
-pub(crate) use plugins::{call, call_error, plugin_find, plugin_list};
+pub(crate) use plugins::{call, call_error, plugin_find, plugin_list, temporary};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -203,21 +203,47 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
                 ..Output::default()
             }
         }
-        Format::Json => document(
-            &json!({
-                "$type": "board/query-report/v1",
-                "columns": report.columns,
-                "rows": report.rows,
-                "truncated": report.truncated,
-            }),
-            0,
-        ),
+        Format::Json => {
+            let plugins: Vec<Value> = report
+                .plugins
+                .iter()
+                .map(|failed| {
+                    json!({
+                        "plugin": failed.plugin,
+                        "code": failed.code,
+                        "message": failed.message,
+                    })
+                })
+                .collect();
+            document(
+                &json!({
+                    "$type": "board/query-report/v1",
+                    "columns": report.columns,
+                    "rows": report.rows,
+                    "truncated": report.truncated,
+                    "plugins": plugins,
+                }),
+                0,
+            )
+        }
     };
-    noted(
+    let mut output = noted(
         output,
         report.memory,
         report.truncated && format == Format::Text,
-    )
+    );
+    if format == Format::Text {
+        for failed in &report.plugins {
+            output.stderr.extend_from_slice(
+                format!(
+                    "note: plugin {} did not extract: {}: {}\n",
+                    failed.plugin, failed.code, failed.message
+                )
+                .as_bytes(),
+            );
+        }
+    }
+    temporary(output, &report.fallbacks)
 }
 
 /// `output` with a line on stderr for each thing a reader should know:

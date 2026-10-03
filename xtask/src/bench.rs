@@ -124,7 +124,12 @@ pub(crate) fn run(root: &Path, budgets: &[(String, Duration)]) -> Result<Vec<Tim
                         .map(drop)
                         .map_err(|e| failed(&e)),
                     "simple `board query`, warm" => board
-                        .query("SELECT count(*) FROM entries", 1, Some(warm.path()))
+                        .query(
+                            "SELECT count(*) FROM entries",
+                            1,
+                            Some(warm.path()),
+                            &board_ops::Plugins::default(),
+                        )
                         .map(drop)
                         .map_err(|e| failed(&e)),
                     "full index, cold" => board

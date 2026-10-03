@@ -3,11 +3,12 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use board_model::Code;
-use board_plugin::{CallError, CallReport, Environment, Limits, Target};
+use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use crate::tests::open;
+use crate::{CallFailed, Plugins};
 
 /// Takes a number and answers it.
 const INPUT_SCHEMA: &str =
@@ -95,22 +96,23 @@ impl Fixture {
         input: &str,
         environment: &Environment,
         limits: Limits,
-    ) -> Result<CallReport, CallError> {
+    ) -> Result<CallReport, CallFailed> {
         let target = match target.strip_prefix("--capability ") {
             Some(capability) => Target::Capability(capability.parse().unwrap()),
             None => target.parse().unwrap(),
         };
-        open(&self.board).call(
-            &target,
-            input.as_bytes(),
-            Some(&self.data.workdir().join("plugins")),
-            environment,
-            Some(self.cache.path()),
+        let directory = self.data.workdir().join("plugins");
+        let plugins = Plugins {
+            directory: Some(&directory),
+            environment: environment.clone(),
             limits,
-        )
+        };
+        open(&self.board)
+            .call(&target, input.as_bytes(), &plugins, Some(self.cache.path()))
+            .map(|called| called.report)
     }
 
-    fn call(&self, target: &str, input: &str) -> Result<CallReport, CallError> {
+    fn call(&self, target: &str, input: &str) -> Result<CallReport, CallFailed> {
         self.call_with(target, input, &environment(), Limits::default())
     }
 
@@ -456,15 +458,14 @@ fn a_call_nested_eight_deep_is_refused() {
 fn without_a_cache_the_database_is_a_temporary_file_for_the_run() {
     let fixture = Fixture::tasks(RECORDING);
     let target: Target = "tasks.due".parse().unwrap();
+    let directory = fixture.data.workdir().join("plugins");
+    let plugins = Plugins {
+        directory: Some(&directory),
+        environment: environment(),
+        limits: Limits::default(),
+    };
     open(&fixture.board)
-        .call(
-            &target,
-            br#"{"n": 1}"#,
-            Some(&fixture.data.workdir().join("plugins")),
-            &environment(),
-            None,
-            Limits::default(),
-        )
+        .call(&target, br#"{"n": 1}"#, &plugins, None)
         .unwrap();
     let request: Value = serde_json::from_slice(
         &std::fs::read(fixture.plugin("tasks").join("request.json")).unwrap(),

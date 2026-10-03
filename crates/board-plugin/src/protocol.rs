@@ -6,6 +6,7 @@ use std::path::Path;
 
 use board_model::{JsonError, canonical_json, parse_json};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
 use crate::manifest::{CapabilityName, PluginName};
@@ -13,6 +14,8 @@ use crate::manifest::{CapabilityName, PluginName};
 pub const CALL_TYPE: &str = "board/call/v1";
 pub const CALL_RESULT_TYPE: &str = "board/call-result/v1";
 pub const ERROR_TYPE: &str = "board/error/v1";
+pub const EXTRACT_TYPE: &str = "board/extract/v1";
+pub const EXTRACT_RESULT_TYPE: &str = "board/extract-result/v1";
 
 /// The `board/call/v1` request's bytes.
 pub(crate) fn request(
@@ -73,19 +76,29 @@ pub struct PluginFailure {
     pub fields: Map<String, Value>,
 }
 
-/// One document a plugin wrote.
+/// One document a plugin wrote: the result asked for, or an error.
 #[derive(Debug)]
-pub(crate) enum Reply {
-    Result(Value),
+pub(crate) enum Reply<T> {
+    Result(T),
     Error(PluginFailure),
 }
 
-#[derive(Deserialize)]
+/// `board/call-result/v1`.
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawResult {
+pub(crate) struct RawCallResult {
     #[serde(rename = "$type")]
     _tag: String,
-    output: Value,
+    pub(crate) output: Value,
+}
+
+/// `board/extract-result/v1`: the blobs the plugin handled.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RawExtractResult {
+    #[serde(rename = "$type")]
+    _tag: String,
+    pub(crate) blobs: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -99,14 +112,18 @@ struct RawError {
     fields: Map<String, Value>,
 }
 
-/// Reads the one document `plugin` wrote to stdout.
-pub(crate) fn reply(plugin: &PluginName, stdout: &[u8]) -> Result<Reply, BadOutput> {
+/// Reads the one document `plugin` wrote to stdout: a result of type
+/// `expected`, read as `T`, or an error.
+pub(crate) fn reply<T: DeserializeOwned>(
+    plugin: &PluginName,
+    stdout: &[u8],
+    expected: &'static str,
+) -> Result<Reply<T>, BadOutput> {
     let value = parse_json(stdout).map_err(|source| BadOutput::Json { source })?;
     let shape = |source| BadOutput::Shape { source };
     match value.get("$type").and_then(Value::as_str) {
-        Some(CALL_RESULT_TYPE) => {
-            let raw = RawResult::deserialize(value).map_err(shape)?;
-            Ok(Reply::Result(raw.output))
+        Some(found) if found == expected => {
+            Ok(Reply::Result(T::deserialize(value).map_err(shape)?))
         }
         Some(ERROR_TYPE) => {
             let raw = RawError::deserialize(value).map_err(shape)?;
@@ -118,6 +135,7 @@ pub(crate) fn reply(plugin: &PluginName, stdout: &[u8]) -> Result<Reply, BadOutp
         }
         found => Err(BadOutput::Type {
             found: found.map(str::to_owned),
+            expected,
         }),
     }
 }
@@ -129,12 +147,17 @@ pub enum BadOutput {
     Json { source: JsonError },
     #[error("its document has the wrong fields: {source}")]
     Shape { source: serde_json::Error },
-    #[error("its document has $type {found:?}, not {CALL_RESULT_TYPE} or {ERROR_TYPE}")]
-    Type { found: Option<String> },
+    #[error("its document has $type {found:?}, not {expected} or {ERROR_TYPE}")]
+    Type {
+        found: Option<String>,
+        expected: &'static str,
+    },
     #[error("its error code {code:?} is not <plugin>::<area>::<reason> with its own name")]
     Code { code: String },
     #[error("it exited {exit} with {written}")]
     Exit { exit: i32, written: &'static str },
     #[error("its output fails the output schema: {source}")]
     Output { source: board_validate::RecordError },
+    #[error("it names blob {blob:?}, which it was not sent")]
+    Unsent { blob: String },
 }

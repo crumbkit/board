@@ -133,7 +133,9 @@ number, with `board::plugin::too_deep`.
 ## Extraction
 
 A plugin that lists types in `extract` gets each record of those types once per
-blob. Board sends batches of at most 1,000 records or 16 MiB:
+blob, if the blob validates against its schema through some route. Codes that
+depend on the tree, such as `ref::dangling`, do not hold a record back. Board
+sends batches, in display path order, of at most 1,000 records or 16 MiB:
 
 ```json
 {
@@ -148,12 +150,14 @@ blob. Board sends batches of at most 1,000 records or 16 MiB:
 Each batch is one run of the plugin. `path` is the entry's display path, so a
 blob reached by several routes is sent once, and records in mounted boards are
 included. The plugin writes what it needs into its database, keyed by blob, and
-replies `board/extract-result/v1` naming the blobs it handled. Naming a blob
-it was not sent is `board::plugin::bad_output`; a blob it does not name is sent
-again next time.
+replies `{"$type": "board/extract-result/v1", "blobs": […]}` naming the blobs
+it handled; exit and stdout are read as for a call. Naming a blob it was not
+sent is `board::plugin::bad_output`; a blob it does not name is sent again next
+time. Blobs handled by batches before one that fails stay handled.
 
-Board remembers in its index which blobs each plugin version has handled, sends
-only new ones, and forgets them when the plugin's database file is missing. A
+Board remembers in its index's `extracted` table which blobs each plugin
+version has handled, sends only new ones, and forgets them when the plugin's
+database file is missing. A
 plugin may therefore receive a blob again, and replaces its rows for that blob.
 
 Extraction runs in the refresh before `query`, for every enabled plugin, and
@@ -174,7 +178,11 @@ request. The plugin owns everything inside it and
 names its tables as it likes. `board query` attaches it read-only as `p_<name>`,
 with hyphens in the name turned into underscores. A new version starts with an
 empty file and extracts again. Deleting any plugin database is always safe. When
-the index is in memory, each plugin database is a temporary file for that run.
+the index is in memory, each plugin database is a temporary file for that run;
+when the index is kept but the database's directory cannot be made, the
+database is a temporary file too, and `query` and `call` say so on stderr.
+Board creates a missing database file empty, so `p_<name>` attaches for every
+enabled plugin before its first extraction.
 
 ## Codes
 

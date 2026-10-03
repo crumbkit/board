@@ -2,7 +2,7 @@
 //! to them is a new index format.
 
 /// The index format. An index of any other format is deleted and rebuilt.
-pub const INDEX_VERSION: &str = "5";
+pub const INDEX_VERSION: &str = "6";
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -69,6 +69,12 @@ CREATE TABLE refs (
     accepts TEXT,
     PRIMARY KEY (record, schema, ordinal)
 ) WITHOUT ROWID;
+CREATE TABLE extracted (
+    plugin TEXT NOT NULL,
+    version TEXT NOT NULL,
+    blob TEXT NOT NULL,
+    PRIMARY KEY (plugin, version, blob)
+) WITHOUT ROWID;
 ";
 
 /// What one run decides about each entry, the view agents query, and each
@@ -117,6 +123,9 @@ WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS refs AS
 SELECT * FROM main.refs
 WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS extracted AS
+SELECT * FROM main.extracted
+WHERE blob IN (SELECT blob FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS trees AS
 WITH RECURSIVE reached (tree) AS (
     SELECT tree FROM main.sources WHERE tree IS NOT NULL
