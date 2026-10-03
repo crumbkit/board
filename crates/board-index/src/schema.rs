@@ -125,7 +125,12 @@ SELECT * FROM main.refs
 WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS extracted AS
 SELECT * FROM main.extracted
-WHERE blob IN (SELECT blob FROM temp.resolved);
+WHERE blob IN (
+    SELECT r.blob FROM temp.resolved AS r
+    JOIN main.blobs AS b ON b.blob = r.blob AND b.role = r.role
+    JOIN main.validations AS v ON v.record = r.blob AND v.schema = r.schema
+    WHERE b.code IS NULL AND v.code IS NULL
+);
 CREATE TEMP VIEW IF NOT EXISTS trees AS
 WITH RECURSIVE reached (tree) AS (
     SELECT tree FROM main.sources WHERE tree IS NOT NULL
