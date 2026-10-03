@@ -49,8 +49,11 @@ impl Repository {
             (object, directory) = match &entry.kind {
                 Kind::Directory(child) => (Object::Directory, Some(child.clone())),
                 Kind::File(id) | Kind::Symlink(id) => (Object::Blob(*id), None),
-                Kind::Submodule(_) => {
+                Kind::Submodule => {
                     return Err(ResolveError::Submodule { path: path.clone() });
+                }
+                Kind::Unreadable => {
+                    return Err(ResolveError::Unreadable { path: path.clone() });
                 }
             };
         }
@@ -74,6 +77,8 @@ pub enum ResolveError {
     Shadowed { path: LogicalPath, segment: String },
     #[error("{path} reaches a submodule, which {} does not descend", DISPLAY_NAME)]
     Submodule { path: LogicalPath },
+    #[error("{path} reaches a file that cannot be read")]
+    Unreadable { path: LogicalPath },
     #[error(transparent)]
     Git(#[from] GitError),
 }
@@ -84,6 +89,7 @@ impl ResolveError {
             Self::NotFound { .. } => Code::PathNotFound,
             Self::Shadowed { .. } => Code::PathShadowed,
             Self::Submodule { .. } => Code::RepoSubmodule,
+            Self::Unreadable { .. } => Code::RepoUnreadable,
             Self::Git(error) => error.code(),
         }
     }

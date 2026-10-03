@@ -17,8 +17,8 @@ pub struct Entry {
     pub path: String,
     /// The address, unless the path or one of its directories is malformed.
     pub logical: Option<LogicalPath>,
-    /// The blob, or a submodule's commit; `None` only for an untracked nested
-    /// repository.
+    /// The blob; `None` for a submodule or a file or directory that cannot be
+    /// read, since derived data is keyed by blob alone.
     pub blob: Option<ObjectId>,
     pub status: Status,
     pub change: Change,
@@ -48,7 +48,9 @@ struct Pending<D> {
 
 impl Repository {
     /// Every file in `source`, sorted by path. An entry's status is the first
-    /// problem on its path, its directories' included. In the working tree,
+    /// problem on its path, its directories' included. Only a root that
+    /// cannot be read is an error: anything beneath it that cannot be read is
+    /// one degraded entry, and the walk goes on. In the working tree,
     /// an entry that differs from `HEAD` is marked uncommitted.
     pub fn walk(&self, source: &Source) -> Result<Vec<Entry>, GitError> {
         match source {
@@ -82,7 +84,21 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
     }];
     let mut entries = Vec::new();
     while let Some(directory) = pending.pop() {
-        let listed = tree.list(&directory.directory)?;
+        let listed = match tree.list(&directory.directory) {
+            Ok(listed) => listed,
+            Err(error) if directory.path.is_empty() => return Err(error),
+            Err(error) => {
+                let code = directory.inherited.unwrap_or(error.code());
+                entries.push(Entry {
+                    path: directory.path,
+                    logical: directory.logical,
+                    blob: None,
+                    status: Status::Degraded(code),
+                    change: Change::Committed,
+                });
+                continue;
+            }
+        };
         let addressed = match &directory.logical {
             Some(parent) => address::directory(parent, &listed),
             None => vec![(None, None); listed.len()],
@@ -106,7 +122,7 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                     continue;
                 }
                 Kind::File(id) | Kind::Symlink(id) => Some(id),
-                Kind::Submodule(commit) => commit,
+                Kind::Submodule | Kind::Unreadable => None,
             };
             entries.push(Entry {
                 path,

@@ -13,8 +13,8 @@ use crate::tree::{Kind, RawEntry};
 pub(crate) fn segment<D>(entry: &RawEntry<D>) -> Option<&str> {
     let name = std::str::from_utf8(&entry.name).ok()?;
     Some(match entry.kind {
-        Kind::File(_) => name.strip_suffix(".json").unwrap_or(name),
-        Kind::Directory(_) | Kind::Symlink(_) | Kind::Submodule(_) => name,
+        Kind::File(_) | Kind::Unreadable => name.strip_suffix(".json").unwrap_or(name),
+        Kind::Directory(_) | Kind::Symlink(_) | Kind::Submodule => name,
     })
 }
 
@@ -60,11 +60,11 @@ fn classify<'a, D>(mut matches: impl Iterator<Item = &'a RawEntry<D>>) -> Named<
         (None, _, _) => Named::Nothing,
         (Some(one), None, _) => Named::One(one),
         (Some(a), Some(b), None) => match (&a.kind, &b.kind) {
-            (Kind::File(_), Kind::Directory(_)) => Named::RecordWithChildren {
+            (Kind::File(_) | Kind::Unreadable, Kind::Directory(_)) => Named::RecordWithChildren {
                 record: a,
                 children: b,
             },
-            (Kind::Directory(_), Kind::File(_)) => Named::RecordWithChildren {
+            (Kind::Directory(_), Kind::File(_) | Kind::Unreadable) => Named::RecordWithChildren {
                 record: b,
                 children: a,
             },
@@ -109,8 +109,10 @@ pub(crate) fn directory<D>(
                 Some(Code::PathShadowed)
             } else if folded[&entry.name.to_ascii_lowercase()] > 1 {
                 Some(Code::PathCaseCollision)
-            } else if matches!(entry.kind, Kind::Submodule(_)) {
+            } else if matches!(entry.kind, Kind::Submodule) {
                 Some(Code::RepoSubmodule)
+            } else if matches!(entry.kind, Kind::Unreadable) {
+                Some(Code::RepoUnreadable)
             } else {
                 None
             };

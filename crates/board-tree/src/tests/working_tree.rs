@@ -191,3 +191,59 @@ proptest! {
         prop_assert_eq!(working, committed);
     }
 }
+
+#[test]
+fn a_file_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
+    let readable = Scenario::new();
+    readable
+        .write("a.json", Item::File("{}"))
+        .write("b.json", Item::File("{}"));
+    assert_eq!(
+        walk(&readable, WorkingTree),
+        [ok("a.json", "/a"), ok("b.json", "/b")]
+    );
+
+    let locked = Scenario::new();
+    locked
+        .write("a.json", Item::Unreadable("{}"))
+        .write("b.json", Item::File("{}"));
+    // A superuser reads a mode-000 file anyway, so the fixture cannot stage
+    // the failure; CI runs as an ordinary user.
+    let path = locked.open().path().join("a.json");
+    if std::fs::File::open(path).is_ok() {
+        return;
+    }
+    assert_eq!(
+        walk(&locked, WorkingTree),
+        [
+            degraded("a.json", Some("/a"), Code::RepoUnreadable),
+            ok("b.json", "/b"),
+        ]
+    );
+    let entries = locked.open().walk(&Source::WorkingTree).unwrap();
+    assert_eq!(entries[0].blob, None);
+    assert_eq!(
+        resolve(&locked, WorkingTree, "/a").unwrap_err(),
+        Code::RepoUnreadable
+    );
+}
+
+#[test]
+fn a_large_file_hashes_to_the_blob_git_would_store() {
+    let text = "0123456789abcdef".repeat(70_000) + "tail";
+    let scenario = Scenario::new();
+    scenario.write("big.bin", Item::File(&text));
+    let location = resolve(&scenario, WorkingTree, "/big.bin").unwrap();
+    assert_eq!(location.object, Object::Blob(scenario.blob(&text)));
+}
+
+#[test]
+fn a_submodule_in_the_working_tree_carries_no_blob() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit_items(&[(b"m", Item::Submodule)]);
+    scenario.track(commit).write("m", Item::Submodule);
+    let entries = scenario.open().walk(&Source::WorkingTree).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].blob, None);
+    assert_eq!(entries[0].status, Status::Degraded(Code::RepoSubmodule));
+}

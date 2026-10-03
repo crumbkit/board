@@ -26,8 +26,9 @@ pub(crate) enum Kind<D> {
     Directory(D),
     File(ObjectId),
     Symlink(ObjectId),
-    /// A submodule's commit, unknown for an untracked nested repository.
-    Submodule(Option<ObjectId>),
+    Submodule,
+    /// A file or symlink whose contents could not be read.
+    Unreadable,
 }
 
 /// One entry of a directory.

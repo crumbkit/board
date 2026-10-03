@@ -98,7 +98,7 @@ impl Repository {
                         EntryKind::Tree => Kind::Directory(id),
                         EntryKind::Blob | EntryKind::BlobExecutable => Kind::File(id),
                         EntryKind::Link => Kind::Symlink(id),
-                        EntryKind::Commit => Kind::Submodule(Some(id)),
+                        EntryKind::Commit => Kind::Submodule,
                     },
                 }
             })

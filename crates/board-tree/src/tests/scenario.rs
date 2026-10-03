@@ -2,6 +2,7 @@
 //! written with gix so that no test runs `git`.
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 
 use board_model::ObjectId;
 use gix::bstr::BStr;
@@ -17,6 +18,10 @@ pub(crate) enum Item<'a> {
     Symlink(&'a str),
     /// A submodule pinned to an arbitrary commit id.
     Submodule,
+    /// A top-level directory whose tree object is absent from the repository.
+    MissingTree,
+    /// A file the walk's user cannot read (mode 000); working tree only.
+    Unreadable(&'a str),
 }
 
 /// One repository in its own temporary directory.
@@ -56,6 +61,11 @@ impl Scenario {
                 fs::create_dir_all(&path).unwrap();
                 fs::write(path.join(".git"), "gitdir: elsewhere").unwrap();
             }
+            Item::Unreadable(text) => {
+                fs::write(&path, text).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+            }
+            Item::MissingTree => panic!("a working tree cannot hold a missing tree object"),
         }
         self
     }
@@ -94,6 +104,8 @@ impl Scenario {
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),
                 ),
+                Item::MissingTree => continue,
+                Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
                 Item::Submodule => (
                     EntryKind::Commit,
                     gix::ObjectId::from_hex(&[b'1'; 40]).unwrap(),
@@ -101,7 +113,27 @@ impl Scenario {
             };
             editor.upsert(BStr::new(path), kind, id).unwrap();
         }
-        let tree = editor.write().unwrap().detach();
+        let mut tree = editor.write().unwrap().detach();
+        // The editor refuses a tree it cannot find, so absent subtrees are
+        // added to the root tree object directly.
+        let missing: Vec<&[u8]> = items
+            .iter()
+            .filter(|(_, item)| matches!(item, Item::MissingTree))
+            .map(|(path, _)| *path)
+            .collect();
+        if !missing.is_empty() {
+            let root = self.git.find_tree(tree).unwrap();
+            let mut root: gix::objs::Tree = root.decode().unwrap().into();
+            for name in missing {
+                root.entries.push(gix::objs::tree::Entry {
+                    mode: EntryKind::Tree.into(),
+                    filename: name.into(),
+                    oid: gix::ObjectId::from_hex(&[b'2'; 40]).unwrap(),
+                });
+            }
+            root.entries.sort();
+            tree = self.git.write_object(&root).unwrap().detach();
+        }
         let signature = gix::actor::SignatureRef {
             name: "scenario".into(),
             email: "scenario@example.com".into(),

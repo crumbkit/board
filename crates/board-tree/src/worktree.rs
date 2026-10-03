@@ -3,7 +3,9 @@
 
 use std::error::Error;
 use std::fs::{self, FileType};
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use board_model::{ObjectId, Source};
 use gix::bstr::{BString, ByteSlice};
@@ -54,12 +56,12 @@ impl Repository {
 impl WorkingTree<'_> {
     /// What git sees at `relative`, or `None` when git does not see it: an
     /// untracked path that is ignored, or something other than a file,
-    /// directory or symlink.
-    fn kind(
-        &mut self,
-        relative: &Path,
-        file_type: FileType,
-    ) -> Result<Option<Kind<PathBuf>>, GitError> {
+    /// directory or symlink. A path whose type, ignore rules or contents
+    /// cannot be read is `Unreadable`.
+    fn kind(&mut self, relative: &Path, file_type: io::Result<FileType>) -> Option<Kind<PathBuf>> {
+        let Ok(file_type) = file_type else {
+            return Some(Kind::Unreadable);
+        };
         let key = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative));
         let indexed = self.index.entry_by_path(key.as_ref());
         let tracked = indexed.is_some()
@@ -68,52 +70,54 @@ impl WorkingTree<'_> {
                 prefix.push(b'/');
                 self.index.prefixed_entries(prefix.as_ref()).is_some()
             };
-        let absolute = self.repository.path().join(relative);
-        let unreadable = |source| GitError::File {
-            path: absolute.clone(),
-            source,
-        };
         if !tracked {
             let mode = file_type.is_dir().then_some(Mode::DIR);
-            let excluded = self
-                .excludes
-                .at_path(relative, mode)
-                .map_err(unreadable)?
-                .is_excluded();
-            if excluded {
-                return Ok(None);
+            match self.excludes.at_path(relative, mode) {
+                Ok(platform) if platform.is_excluded() => return None,
+                Ok(_) => {}
+                Err(_) => return Some(Kind::Unreadable),
             }
         }
-        Ok(Some(if file_type.is_dir() {
+        let absolute = self.repository.path().join(relative);
+        let kind = if file_type.is_dir() {
             match indexed {
-                Some(entry) if entry.mode == Mode::COMMIT => {
-                    Kind::Submodule(Some(model_id(&entry.id)))
-                }
-                _ if absolute.join(".git").exists() => Kind::Submodule(None),
+                Some(entry) if entry.mode == Mode::COMMIT => Kind::Submodule,
+                _ if absolute.join(".git").exists() => Kind::Submodule,
                 _ => Kind::Directory(relative.to_path_buf()),
             }
         } else if file_type.is_symlink() {
-            let target = fs::read_link(&absolute).map_err(unreadable)?;
-            Kind::Symlink(self.blob(&gix::path::into_bstr(target))?)
+            fs::read_link(&absolute)
+                .ok()
+                .and_then(|target| {
+                    let target = gix::path::into_bstr(target);
+                    self.hash(&mut target.as_bytes(), target.len() as u64)
+                })
+                .map_or(Kind::Unreadable, Kind::Symlink)
         } else if file_type.is_file() {
-            Kind::File(self.blob(&fs::read(&absolute).map_err(unreadable)?)?)
+            fs::File::open(&absolute)
+                .and_then(|file| Ok((file.metadata()?.len(), file)))
+                .ok()
+                .and_then(|(length, file)| self.hash(&mut BufReader::new(file), length))
+                .map_or(Kind::Unreadable, Kind::File)
         } else {
-            return Ok(None);
-        }))
+            return None;
+        };
+        Some(kind)
     }
 
-    /// The id git gives a blob holding `bytes`.
-    fn blob(&self, bytes: &[u8]) -> Result<ObjectId, GitError> {
-        gix::objs::compute_hash(
+    /// The id git gives a blob of `length` bytes read from `stream`, in
+    /// constant memory; `None` if the stream fails or ends early.
+    fn hash(&self, stream: &mut dyn Read, length: u64) -> Option<ObjectId> {
+        gix::objs::compute_stream_hash(
             self.repository.git().object_hash(),
             gix::objs::Kind::Blob,
-            bytes,
+            stream,
+            length,
+            &mut gix::features::progress::Discard,
+            &AtomicBool::new(false),
         )
+        .ok()
         .map(|id| model_id(&id))
-        .map_err(|error| GitError::Unreadable {
-            repository: self.repository.path().to_path_buf(),
-            source: error.into(),
-        })
     }
 }
 
@@ -142,8 +146,7 @@ impl Tree for WorkingTree<'_> {
             if directory.as_os_str().is_empty() && name == ".git" {
                 continue;
             }
-            let file_type = item.file_type().map_err(unreadable)?;
-            if let Some(kind) = self.kind(&directory.join(&name), file_type)? {
+            if let Some(kind) = self.kind(&directory.join(&name), item.file_type()) {
                 entries.push(RawEntry {
                     name: gix::path::into_bstr(Path::new(&name)).to_vec(),
                     kind,
