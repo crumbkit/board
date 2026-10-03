@@ -14,7 +14,7 @@ wildcards = "deny"
 # owner crate exists cargo-deny warns `unused-wrapper`, and the crate is
 # refused everywhere.
 deny = [
-    { crate = "gix", wrappers = ["board-tree"] },
+    { crate = "gix", wrappers = ["board-scenario", "board-tree"] },
     { crate = "rusqlite", wrappers = ["board-index"] },
     { crate = "jsonschema", wrappers = ["board-validate"] },
 ]

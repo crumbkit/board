@@ -1,5 +1,13 @@
 [workspace]
-members = ["crates/board-model", "crates/board-tree", "crates/board-validate", "xtask"]
+members = [
+    "crates/board-cli",
+    "crates/board-model",
+    "crates/board-ops",
+    "crates/board-scenario",
+    "crates/board-tree",
+    "crates/board-validate",
+    "xtask",
+]
 resolver = "3"
 
 [workspace.package]
@@ -11,7 +19,12 @@ rust-version = "1.97"
 # 0.13.5 and later depend on bolero-generator-derive, which pins indexmap =2.11.2
 # and so conflicts with toml's indexmap ^2.13 (xtask).
 bolero = "0.13.4"
+board-ops = { path = "crates/board-ops", version = "0.0.0" }
 board-model = { path = "crates/board-model", version = "0.0.0" }
+board-scenario = { path = "crates/board-scenario", version = "0.0.0" }
+board-tree = { path = "crates/board-tree", version = "0.0.0" }
+board-validate = { path = "crates/board-validate", version = "0.0.0" }
+clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "usage"] }
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "sha1"] }
 glob = "0.3.3"
 jsonschema = { version = "0.58.5", default-features = false }

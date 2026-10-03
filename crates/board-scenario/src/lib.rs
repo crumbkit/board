@@ -1,20 +1,28 @@
 //! The scenario builder: real git repositories in temporary directories,
-//! written with gix so that no test runs `git`.
+//! written with gix so that no test runs `git`. Test support only: every
+//! crate uses it as a dev-dependency, and a broken fixture fails the test.
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::missing_panics_doc,
+    reason = "test support: a fixture that cannot be built fails the test"
+)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 use board_model::ObjectId;
 use gix::bstr::BStr;
 use gix::object::tree::EntryKind;
 use tempfile::TempDir;
 
-use crate::git::Repository;
-
 /// What a scenario puts at one path of a commit's tree.
 #[derive(Clone, Copy, Debug)]
-pub(crate) enum Item<'a> {
+pub enum Item<'a> {
     File(&'a str),
+    /// A file holding any bytes, UTF-8 or not.
+    Bytes(&'a [u8]),
     Symlink(&'a str),
     /// A submodule pinned to an arbitrary commit id.
     Submodule,
@@ -27,13 +35,20 @@ pub(crate) enum Item<'a> {
 }
 
 /// One repository in its own temporary directory.
-pub(crate) struct Scenario {
+#[derive(Debug)]
+pub struct Scenario {
     _directory: TempDir,
     git: gix::Repository,
 }
 
+impl Default for Scenario {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scenario {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
         let git = gix::init(directory.path()).unwrap();
         Self {
@@ -43,12 +58,13 @@ impl Scenario {
     }
 
     /// The working directory, as a mount's `repo` names it.
-    pub(crate) fn path(&self) -> String {
+    pub fn path(&self) -> String {
         self.git.workdir().unwrap().to_str().unwrap().to_owned()
     }
 
-    pub(crate) fn open(&self) -> Repository {
-        Repository::open(self.git.workdir().unwrap()).unwrap()
+    /// The working directory.
+    pub fn workdir(&self) -> &Path {
+        self.git.workdir().unwrap()
     }
 
     /// Writes `item` at the `/`-separated `path` in the working tree, creating
@@ -58,11 +74,12 @@ impl Scenario {
         clippy::disallowed_methods,
         reason = "the scenario builder is the one writer of test files"
     )]
-    pub(crate) fn write(&self, path: &str, item: Item<'_>) -> &Self {
+    pub fn write(&self, path: &str, item: Item<'_>) -> &Self {
         let path = self.git.workdir().unwrap().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         match item {
             Item::File(text) => fs::write(path, text).unwrap(),
+            Item::Bytes(bytes) => fs::write(path, bytes).unwrap(),
             Item::Symlink(target) => std::os::unix::fs::symlink(target, path).unwrap(),
             Item::Submodule => {
                 fs::create_dir_all(&path).unwrap();
@@ -80,7 +97,7 @@ impl Scenario {
     }
 
     /// Makes the index hold the tree of `commit`, so its files are tracked.
-    pub(crate) fn track(&self, commit: ObjectId) -> &Self {
+    pub fn track(&self, commit: ObjectId) -> &Self {
         let commit = gix::ObjectId::try_from(commit.as_bytes()).unwrap();
         let tree = self.git.find_commit(commit).unwrap().tree_id().unwrap();
         let mut index = self.git.index_from_tree(&tree).unwrap();
@@ -89,12 +106,12 @@ impl Scenario {
     }
 
     /// The id of a blob holding `text`.
-    pub(crate) fn blob(&self, text: &str) -> ObjectId {
+    pub fn blob(&self, text: &str) -> ObjectId {
         model(self.git.write_blob(text).unwrap().detach())
     }
 
     /// Commits a tree of text files at `/`-separated paths.
-    pub(crate) fn commit(&self, files: &[(&str, &str)]) -> ObjectId {
+    pub fn commit(&self, files: &[(&str, &str)]) -> ObjectId {
         let items: Vec<(&[u8], Item<'_>)> = files
             .iter()
             .map(|(path, text)| (path.as_bytes(), Item::File(text)))
@@ -103,12 +120,16 @@ impl Scenario {
     }
 
     /// Commits a tree holding each item at its path, which may be any bytes.
-    pub(crate) fn commit_items(&self, items: &[(&[u8], Item<'_>)]) -> ObjectId {
+    pub fn commit_items(&self, items: &[(&[u8], Item<'_>)]) -> ObjectId {
         let empty = gix::ObjectId::empty_tree(self.git.object_hash());
         let mut editor = self.git.edit_tree(empty).unwrap();
         for (path, item) in items {
             let (kind, id) = match item {
                 Item::File(text) => (EntryKind::Blob, self.git.write_blob(text).unwrap().detach()),
+                Item::Bytes(bytes) => (
+                    EntryKind::Blob,
+                    self.git.write_blob(bytes).unwrap().detach(),
+                ),
                 Item::Symlink(target) => (
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),

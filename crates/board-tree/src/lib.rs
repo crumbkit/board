@@ -15,3 +15,4 @@ mod tests;
 pub use crate::git::{GitError, Repository};
 pub use crate::resolve::{MAX_HOPS, ResolveError};
 pub use crate::walk::{Change, Entry, Status};
+pub use crate::worktree::{discover, is_repository_root};

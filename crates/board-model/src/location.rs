@@ -3,6 +3,8 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use crate::path::LogicalPath;
+
 /// A git object id. Holding the bytes makes every value well formed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ObjectId {
@@ -81,6 +83,47 @@ pub struct Location {
     pub object: Object,
     /// Each pointer followed to get here, in order.
     pub pointers: Vec<Location>,
+}
+
+impl Location {
+    /// The path that names this Location from the root board, with every
+    /// link replaced by its target and every mount point kept
+    /// (docs/architecture.md, Pointers: links and mounts). A pointer is a
+    /// mount exactly when what follows it is in another board, since links
+    /// stay inside theirs. `None` only if a physical path is not a valid
+    /// logical one, which resolution never produces.
+    pub fn display_path(&self) -> Option<LogicalPath> {
+        let mut segments: Vec<&str> = Vec::new();
+        let next_boards = self
+            .pointers
+            .iter()
+            .skip(1)
+            .chain(std::iter::once(self))
+            .map(|step| &step.board);
+        for (pointer, next) in self.pointers.iter().zip(next_boards) {
+            if pointer.board != *next {
+                segments.extend(addressed(&pointer.path, true));
+            }
+        }
+        segments.extend(addressed(
+            &self.path,
+            matches!(self.object, Object::Blob(_)),
+        ));
+        format!("/{}", segments.join("/")).parse().ok()
+    }
+}
+
+/// The segments that address the physical `path`: a file's `.json` is
+/// dropped, since records are addressed without it.
+fn addressed(path: &str, file: bool) -> Vec<&str> {
+    let mut segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if file && let Some(last) = segments.last_mut() {
+        *last = last.strip_suffix(".json").unwrap_or(last);
+    }
+    segments
 }
 
 #[cfg(test)]
