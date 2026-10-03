@@ -14,6 +14,61 @@ use crate::{Accepts, REFERENCE_FORMAT, SchemaError};
 /// `$ref` cycle in a schema ends.
 const MAX_REFS: usize = 32;
 
+/// The most subschemas one record location may expand to through `allOf`
+/// and local `$ref`. Branches multiply, so without this a small schema from
+/// a mounted board could make one record cost billions of visits.
+pub(crate) const MAX_EXPANSION: usize = 256;
+
+/// Refuses a schema in which some subschema expands, through `allOf` and
+/// local `$ref`, to more than [`MAX_EXPANSION`] subschemas at one record
+/// location. Every subschema in the document is tried, since any of them
+/// can be where a record location starts.
+pub(crate) fn check_expansion(schema: &Value) -> Result<(), SchemaError> {
+    let mut pending = vec![schema];
+    while let Some(node) = pending.pop() {
+        match node {
+            Value::Object(object) => {
+                let mut count = 0;
+                if !within_expansion(schema, node, 0, &mut count) {
+                    return Err(SchemaError::TooComplex);
+                }
+                pending.extend(object.values());
+            }
+            Value::Array(items) => pending.extend(items),
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Whether `node` expands to at most [`MAX_EXPANSION`] subschemas, adding
+/// each to `count`.
+fn within_expansion(root: &Value, node: &Value, refs: usize, count: &mut usize) -> bool {
+    *count += 1;
+    if *count > MAX_EXPANSION {
+        return false;
+    }
+    let Value::Object(keywords) = node else {
+        return true;
+    };
+    let branches = keywords
+        .get("allOf")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten();
+    for branch in branches {
+        if !within_expansion(root, branch, refs, count) {
+            return false;
+        }
+    }
+    match keywords.get("$ref").and_then(Value::as_str) {
+        Some(target) if refs < MAX_REFS => {
+            local(root, target).is_none_or(|target| within_expansion(root, target, refs + 1, count))
+        }
+        _ => true,
+    }
+}
+
 /// A reference a record makes.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reference {
@@ -61,7 +116,7 @@ pub(crate) fn collect(schema: &Value, record: &Value) -> Vec<Reference> {
         root: schema,
         found: &mut found,
     }
-    .visit(schema, record, &mut Vec::new(), 0);
+    .visit(schema, record, &mut Vec::new(), 0, &mut 0);
     found.sort_by(|a, b| a.0.cmp(&b.0));
     found.dedup_by(|a, b| a.0 == b.0);
     found.into_iter().map(|(_, reference)| reference).collect()
@@ -90,7 +145,21 @@ struct Search<'a> {
 }
 
 impl Search<'_> {
-    fn visit(&mut self, schema: &Value, instance: &Value, steps: &mut Vec<Step>, refs: usize) {
+    /// Visits `schema` at one instance location. `expanded` counts the
+    /// subschemas visited there through `allOf` and `$ref`, which compile
+    /// already bounds; the count here only guards that bound.
+    fn visit(
+        &mut self,
+        schema: &Value,
+        instance: &Value,
+        steps: &mut Vec<Step>,
+        refs: usize,
+        expanded: &mut usize,
+    ) {
+        *expanded += 1;
+        if *expanded > MAX_EXPANSION {
+            return;
+        }
         let Value::Object(keywords) = schema else {
             return;
         };
@@ -108,7 +177,7 @@ impl Search<'_> {
             && refs < MAX_REFS
             && let Some(target) = local(self.root, target)
         {
-            self.visit(target, instance, steps, refs + 1);
+            self.visit(target, instance, steps, refs + 1, expanded);
         }
         for branch in keywords
             .get("allOf")
@@ -116,7 +185,7 @@ impl Search<'_> {
             .into_iter()
             .flatten()
         {
-            self.visit(branch, instance, steps, refs);
+            self.visit(branch, instance, steps, refs, expanded);
         }
         match instance {
             Value::Object(members) => self.members(keywords, members, steps),
@@ -145,16 +214,16 @@ impl Search<'_> {
             let mut matched = false;
             if let Some(schema) = properties.and_then(|properties| properties.get(key)) {
                 matched = true;
-                self.visit(schema, value, steps, 0);
+                self.visit(schema, value, steps, 0, &mut 0);
             }
             for (pattern, schema) in &patterns {
                 if pattern.is_match(key) {
                     matched = true;
-                    self.visit(schema, value, steps, 0);
+                    self.visit(schema, value, steps, 0, &mut 0);
                 }
             }
             if !matched && let Some(schema) = additional {
-                self.visit(schema, value, steps, 0);
+                self.visit(schema, value, steps, 0, &mut 0);
             }
             steps.pop();
         }
@@ -169,7 +238,7 @@ impl Search<'_> {
             let schema = prefix.get(index).or_else(|| keywords.get("items"));
             if let Some(schema) = schema {
                 steps.push(Step::Index(index));
-                self.visit(schema, value, steps, 0);
+                self.visit(schema, value, steps, 0, &mut 0);
                 steps.pop();
             }
         }

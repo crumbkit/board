@@ -2,7 +2,7 @@ use super::*;
 
 fn classified(path: &str, text: &str) -> (Kind, Option<Code>) {
     let classified = classify(path, Some(text.as_bytes()));
-    (classified.kind, classified.code)
+    (classified.kind(), classified.code)
 }
 
 #[test]
@@ -51,14 +51,18 @@ fn only_json_files_are_read() {
     assert!(needs_bytes("work/x.json"));
     assert!(!needs_bytes("notes.md"));
     assert!(!needs_bytes("x.JSON"));
-    assert_eq!(classify("notes.md", None), Classified::of(Kind::File));
+    assert_eq!(classify("notes.md", None), Classified::ok(Content::File));
 }
 
 #[test]
 fn a_json_object_with_a_type_string_is_a_record() {
     let record = classify("x.json", Some(br#"{"$type": "lr/task/v1", "title": "t"}"#));
-    assert_eq!((record.kind, record.code), (Kind::Record, None));
-    assert_eq!(record.record_type.unwrap().as_str(), "lr/task/v1");
+    assert_eq!(record.code, None);
+    let Content::Record { record_type, value } = record.content else {
+        panic!("{record:?} is not a record");
+    };
+    assert_eq!(record_type.as_str(), "lr/task/v1");
+    assert_eq!(value["title"], "t");
     assert_eq!(
         classified("x.json", r#"{"title": "t"}"#),
         (Kind::Json, None)
@@ -106,8 +110,11 @@ fn a_pointer_record_is_a_pointer_and_an_invalid_one_is_degraded() {
         "l.json",
         Some(br#"{"$type": "board/mount/v1", "path": "/x"}"#),
     );
-    assert_eq!((link.kind, link.code), (Kind::Pointer, None));
-    assert_eq!(link.pointer, Some(Pointer::Link("/x".parse().unwrap())));
+    assert_eq!(link.code, None);
+    assert!(matches!(
+        link.content,
+        Content::Pointer { pointer: Pointer::Link(ref path), .. } if path.as_str() == "/x"
+    ));
     assert_eq!(
         classified(
             "l.json",
@@ -159,7 +166,7 @@ fn a_file_that_does_not_parse_keeps_its_kind_and_takes_the_parse_code() {
     );
     let oversized = classify("x.json", None);
     assert_eq!(
-        (oversized.kind, oversized.code),
+        (oversized.kind(), oversized.code),
         (Kind::Json, Some(Code::JsonTooLarge))
     );
 }
@@ -176,14 +183,11 @@ fn the_board_configuration_is_a_record() {
 }
 
 #[test]
-fn bolero_classifying_any_bytes_never_panics_and_a_record_has_a_type() {
+fn bolero_classifying_any_bytes_never_panics_and_unparsed_content_has_a_code() {
     bolero::check!().for_each(|bytes: &[u8]| {
         let classified = classify("x.json", Some(bytes));
-        if classified.kind == Kind::Record && classified.code != Some(Code::RecordBadType) {
-            assert!(classified.record_type.is_some());
-        }
-        if classified.code.is_none() {
-            assert!(classified.value.is_some());
+        if matches!(classified.content, Content::Unparsed(_)) {
+            assert!(classified.code.is_some());
         }
     });
 }
