@@ -191,11 +191,12 @@ too. It is disposable: deleting it changes no answer, only speed. An index
 another process holds past a five-second wait is skipped for that run in
 favour of one in memory; a corrupt index, or one of another format, is
 deleted and rebuilt. SQLite is bundled, so every platform runs the same one.
+A run whose index is in memory says so in one line on stderr.
 
 | Table | Holds | Keyed by |
 | --- | --- | --- |
 | `sources` | the root working tree and each mounted repository and commit | source |
-| `trees` | every entry in a tree: name, blob or subtree, mode | tree |
+| `trees` | every entry in a tree: name, mode, object, logical segment and path code | tree |
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
 | `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
@@ -207,6 +208,9 @@ The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 `type`, `status`, `code` and `change`. Tables, views and columns are an
 interface agents write SQL against; changing one changes the index format.
+Each run decides `kind`, `code` and `change` and keeps them in a temporary
+table on its own connection, so `entries` shows what that run checked and
+nothing decided per run is stored.
 Everything derived is keyed by content (blob or
 tree hash) and never by commit or time, so branches share results and a fact is
 true at a commit exactly when its blob is in that commit's tree.
@@ -307,6 +311,7 @@ after release. The v0 set:
 | `repo` | `unreadable`, `submodule` |
 | `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported` |
 | `resolve` | `cycle`, `too_many_hops` |
+| `index` | `failed`: the disposable index could not be used, even in memory |
 | `put` | `stale`, `locked`, `through_mount`, `invalid` |
 | `plugin` | see docs/plugins.md |
 

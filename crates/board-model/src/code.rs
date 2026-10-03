@@ -33,11 +33,12 @@ pub enum Code {
     ResolveTooManyHops,
     RepoUnreadable,
     RepoSubmodule,
+    IndexFailed,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 27] = [
+    pub const ALL: [Code; 28] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -65,6 +66,7 @@ impl Code {
         Self::ResolveTooManyHops,
         Self::RepoUnreadable,
         Self::RepoSubmodule,
+        Self::IndexFailed,
     ];
 
     /// The code spelled `text`.
@@ -101,6 +103,7 @@ impl Code {
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
             Self::RepoSubmodule => "board::repo::submodule",
+            Self::IndexFailed => "board::index::failed",
         }
     }
 }
@@ -146,7 +149,8 @@ mod tests {
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable
-            | Code::RepoSubmodule => {}
+            | Code::RepoSubmodule
+            | Code::IndexFailed => {}
         }
     }
 

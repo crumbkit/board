@@ -9,13 +9,26 @@ pub(crate) struct Context {
     pub(crate) start: PathBuf,
     /// What a mount's `~/` means.
     pub(crate) home: Option<PathBuf>,
+    /// Where the index is kept: `$XDG_CACHE_HOME`, or `~/.cache`.
+    pub(crate) cache: Option<PathBuf>,
 }
 
 impl Context {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "this module reads the environment, once"
+    )]
     pub(crate) fn read() -> Self {
+        let home = std::env::home_dir();
+        // The XDG base directory rule: a relative path is ignored.
+        let cache = std::env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| home.as_ref().map(|home| home.join(".cache")));
         Self {
             start: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            home: std::env::home_dir(),
+            home,
+            cache,
         }
     }
 }

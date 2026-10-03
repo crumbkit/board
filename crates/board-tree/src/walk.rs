@@ -1,8 +1,6 @@
 //! Walking every entry of a source without following pointers
 //! (docs/architecture.md, Boards and entries).
 
-use std::collections::HashMap;
-
 use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
 use crate::address;
@@ -21,7 +19,6 @@ pub struct Entry {
     /// read, since derived data is keyed by blob alone.
     pub blob: Option<ObjectId>,
     pub status: Status,
-    pub change: Change,
     /// A working-tree file's or symlink's metadata.
     pub stat: Option<Stat>,
 }
@@ -30,13 +27,6 @@ pub struct Entry {
 pub enum Status {
     Ok,
     Degraded(Code),
-}
-
-/// Whether an entry is what `HEAD` holds at its path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Change {
-    Committed,
-    Uncommitted,
 }
 
 /// A directory still to be listed, with the code it passes to everything
@@ -52,8 +42,7 @@ impl Repository {
     /// Every file in `source`, sorted by path. An entry's status is the first
     /// problem on its path, its directories' included. Only a root that
     /// cannot be read is an error: anything beneath it that cannot be read is
-    /// one degraded entry, and the walk goes on. In the working tree,
-    /// an entry that differs from `HEAD` is marked uncommitted.
+    /// one degraded entry, and the walk goes on.
     pub fn walk(&self, source: &Source) -> Result<Vec<Entry>, GitError> {
         match source {
             Source::Commit(commit) => walk_in(&mut self.commit_tree(*commit)?),
@@ -68,20 +57,7 @@ impl Repository {
         &self,
         known: &mut dyn FnMut(&str, &Stat) -> Option<ObjectId>,
     ) -> Result<Vec<Entry>, GitError> {
-        let mut entries = walk_in(&mut self.working_tree(known)?)?;
-        let committed: HashMap<String, Option<ObjectId>> = match self.head()? {
-            Some(head) => walk_in(&mut self.commit_tree(head)?)?
-                .into_iter()
-                .map(|entry| (entry.path, entry.blob))
-                .collect(),
-            None => HashMap::new(),
-        };
-        for entry in &mut entries {
-            if committed.get(&entry.path) != Some(&entry.blob) {
-                entry.change = Change::Uncommitted;
-            }
-        }
-        Ok(entries)
+        walk_in(&mut self.working_tree(known)?)
     }
 }
 
@@ -104,7 +80,6 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                     logical: directory.logical,
                     blob: None,
                     status: Status::Degraded(code),
-                    change: Change::Committed,
                     stat: None,
                 });
                 continue;
@@ -122,7 +97,7 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
             }),
             None => vec![(None, None); listed.len()],
         };
-        for (entry, (logical, own)) in listed.into_iter().zip(addressed) {
+        for (entry, (logical, own)) in listed.iter().zip(addressed) {
             let name = String::from_utf8_lossy(&entry.name);
             let path = if directory.path.is_empty() {
                 name.into_owned()
@@ -130,17 +105,17 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                 format!("{}/{name}", directory.path)
             };
             let code = directory.inherited.or(own);
-            let blob = match entry.kind {
+            let blob = match &entry.kind {
                 Kind::Directory(child) => {
                     pending.push(Pending {
-                        directory: child,
+                        directory: child.clone(),
                         path,
                         logical,
                         inherited: code,
                     });
                     continue;
                 }
-                Kind::File(id) | Kind::Symlink(id) => Some(id),
+                Kind::File(id) | Kind::Symlink(id) => Some(*id),
                 Kind::Submodule | Kind::Unreadable => None,
             };
             entries.push(Entry {
@@ -148,7 +123,6 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                 logical,
                 blob,
                 status: code.map_or(Status::Ok, Status::Degraded),
-                change: Change::Committed,
                 stat: entry.stat,
             });
         }

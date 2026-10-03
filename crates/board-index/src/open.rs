@@ -6,6 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use board_model::Code;
 use rusqlite::{Connection, ErrorCode, TransactionBehavior};
 use sha2::{Digest, Sha256};
 
@@ -18,12 +19,16 @@ const BUSY_WAIT: Duration = Duration::from_secs(5);
 /// cache directory `cache`.
 pub fn location(cache: &Path, root: &Path) -> PathBuf {
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
-    let hex = digest.iter().fold(String::new(), |mut hex, byte| {
+    cache.join("board").join(hex(&digest)).join("index.sqlite")
+}
+
+/// `bytes` in lowercase hex.
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut hex, byte| {
         // Writing to a String cannot fail.
         let _ = write!(hex, "{byte:02x}");
         hex
-    });
-    cache.join("board").join(hex).join("index.sqlite")
+    })
 }
 
 /// An open index.
@@ -147,6 +152,8 @@ impl From<rusqlite::Error> for Prepared {
 /// confirms the format of a filled one.
 fn prepare(connection: &mut Connection) -> Result<(), Prepared> {
     connection.busy_timeout(BUSY_WAIT)?;
+    // Room for every statement the writer runs, so each is compiled once.
+    connection.set_prepared_statement_cache_capacity(32);
     connection.pragma_update(None, "journal_mode", "WAL")?;
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let tables: i64 =
@@ -181,6 +188,7 @@ fn failure(error: &rusqlite::Error) -> Failure {
 }
 
 /// An index that cannot be used even in memory, or a statement that failed.
+/// Since the index is disposable, a failure here is never the tree's fault.
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
     #[error("the index failed: {source}")]
@@ -190,4 +198,12 @@ pub enum IndexError {
     },
     #[error("a new index in memory reports another format")]
     Foreign,
+}
+
+impl IndexError {
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Sql { .. } | Self::Foreign => Code::IndexFailed,
+        }
+    }
 }

@@ -7,6 +7,8 @@ mod check;
 mod index;
 mod read;
 
+pub use board_index::Fallback;
+
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::check::{CheckError, CheckReport, Checked};
 pub use crate::index::{RefreshError, Refreshed};

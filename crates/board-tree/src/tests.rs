@@ -3,6 +3,7 @@
 
 mod links;
 mod mounts;
+mod trees;
 mod working_tree;
 
 use std::collections::HashSet;

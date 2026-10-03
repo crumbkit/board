@@ -1,23 +1,8 @@
-//! The working-tree source: every file git sees, with uncommitted edits
-//! marked (docs/architecture.md, Boards and entries).
+//! The working-tree source: every file git sees (docs/architecture.md,
+//! Boards and entries).
 
 use super::*;
-use crate::{Change, Entry};
-
-/// The working tree's entries as (physical path, change).
-fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
-    scenario
-        .open()
-        .walk(&Source::WorkingTree)
-        .unwrap()
-        .into_iter()
-        .map(|entry| (entry.path, entry.change))
-        .collect()
-}
-
-fn change(path: &str, change: Change) -> (String, Change) {
-    (path.to_owned(), change)
-}
+use crate::Entry;
 
 #[test]
 fn a_file_in_the_working_tree_resolves_to_the_blob_git_would_store() {
@@ -87,32 +72,6 @@ fn a_tracked_file_is_an_entry_even_when_ignored() {
             ok("keep.log", "/keep.log"),
         ]
     );
-}
-
-#[test]
-fn an_entry_that_differs_from_head_is_uncommitted() {
-    let scenario = Scenario::new();
-    let commit = scenario.commit(&[("same.json", "1"), ("edited.json", "1")]);
-    scenario
-        .track(commit)
-        .write("same.json", Item::File("1"))
-        .write("edited.json", Item::File("2"))
-        .write("new.json", Item::File("1"));
-    assert_eq!(
-        changes(&scenario),
-        [
-            change("edited.json", Change::Uncommitted),
-            change("new.json", Change::Uncommitted),
-            change("same.json", Change::Committed),
-        ]
-    );
-}
-
-#[test]
-fn before_the_first_commit_every_entry_is_uncommitted() {
-    let scenario = Scenario::new();
-    scenario.write("x.json", Item::File("{}"));
-    assert_eq!(changes(&scenario), [change("x.json", Change::Uncommitted)]);
 }
 
 #[test]
@@ -187,7 +146,6 @@ proptest! {
         let repository = scenario.open();
         let committed = repository.walk(&commit.source()).unwrap();
         let working = repository.walk(&Source::WorkingTree).unwrap();
-        prop_assert!(working.iter().all(|entry| entry.change == Change::Committed));
         prop_assert!(working.iter().all(|entry| entry.stat.is_some()), "a working-tree file has metadata");
         let unstated: Vec<Entry> = working.into_iter().map(|entry| Entry { stat: None, ..entry }).collect();
         prop_assert_eq!(unstated, committed);
@@ -285,4 +243,20 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         ],
         "the known blob is taken as given, which shows the file was not hashed"
     );
+}
+
+#[test]
+fn resolution_takes_a_known_blob_as_given_and_hashes_the_rest() {
+    let scenario = Scenario::new();
+    scenario
+        .write("work/known.json", Item::File("{}"))
+        .write("work/other.json", Item::File("[]"));
+    let stand_in = scenario.blob("not what the file holds");
+    let repository = scenario.open();
+    let mut known =
+        |path: &str, _: &board_model::Stat| (path == "work/known.json").then_some(stand_in);
+    let mut resolver = repository.resolver(&mut known).unwrap();
+    let mut resolve = |text: &str| resolver.resolve(&path(text)).unwrap().object;
+    assert_eq!(resolve("/work/known"), Object::Blob(stand_in));
+    assert_eq!(resolve("/work/other"), Object::Blob(scenario.blob("[]")));
 }

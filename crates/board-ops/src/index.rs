@@ -7,17 +7,19 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_index::{BlobFact, Index, IndexError, RefFact, ValidationFact, WorktreeRow, Writer};
-use board_model::{Classified, Code, Content, ObjectId, Role, Source, Stat};
+use board_model::{CONFIG_TYPE, Classified, Code, Content, ObjectId, Role, Source, Stat};
 use board_tree::{Entry, GitError, Repository, Status};
 use board_validate::Schema;
 use serde_json::Value;
 
-use crate::board::Board;
+use crate::board::{Board, Config};
 
 /// The work a refresh did: files hashed, blobs parsed and records
 /// validated. Work-count tests assert these.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Refreshed {
+    /// Trees of `HEAD` listed.
+    pub trees: usize,
     pub hashed: usize,
     pub parsed: usize,
     pub validated: usize,
@@ -26,16 +28,42 @@ pub struct Refreshed {
 /// Parsed values from this refresh, so validation need not read them again.
 type Values = HashMap<(ObjectId, Role), Value>;
 
+/// One entry's blob, the role its path gives it, and what the index holds
+/// about it.
+#[derive(Clone, Debug)]
+pub(crate) struct Indexed {
+    pub(crate) blob: ObjectId,
+    pub(crate) role: Role,
+    pub(crate) fact: BlobFact,
+}
+
+/// What a refresh found, for a check to decide each entry's status.
+#[derive(Debug)]
+pub(crate) struct Refresh {
+    pub(crate) entries: Vec<Entry>,
+    /// The fact for each entry that has one, by physical path.
+    pub(crate) facts: HashMap<String, Indexed>,
+    /// What `HEAD` holds at each path; empty before the first commit.
+    pub(crate) head: HashMap<String, Option<ObjectId>>,
+    pub(crate) work: Refreshed,
+}
+
 impl Board {
     /// Brings `index` up to date with the working tree, adding every fact it
     /// does not yet hold.
     pub fn refresh_index(&self, index: &mut Index) -> Result<Refreshed, RefreshError> {
-        let started_ns = now_ns();
         let writer = index.write()?;
-        let mut refreshed = Refreshed::default();
-        let entries = self.walk(&writer, &mut refreshed.hashed)?;
+        let refresh = self.refresh(&writer)?;
+        writer.commit()?;
+        Ok(refresh.work)
+    }
+
+    pub(crate) fn refresh(&self, writer: &Writer<'_>) -> Result<Refresh, RefreshError> {
+        let started_ns = now_ns();
+        let mut work = Refreshed::default();
+        let entries = self.walk(writer, &mut work.hashed)?;
         let mut values = Values::new();
-        let mut facts: Vec<(&Entry, ObjectId, Role, BlobFact)> = Vec::new();
+        let mut facts: HashMap<String, Indexed> = HashMap::new();
         for entry in &entries {
             let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
                 continue;
@@ -53,18 +81,41 @@ impl Board {
                 let classified = role.classify(bytes.as_deref());
                 let fact = blob_fact(&classified);
                 writer.put_blob(blob, role, &fact)?;
-                refreshed.parsed += 1;
+                work.parsed += 1;
                 if let Some(value) = value(classified) {
                     values.insert((blob, role), value);
                 }
                 fact
             };
-            facts.push((entry, blob, role, fact));
+            facts.insert(entry.path.clone(), Indexed { blob, role, fact });
         }
-        refreshed.validated = self.validate(&writer, &facts, &values)?;
+        work.validated = self.validate(writer, &facts, &values)?;
+        let head = self.head(writer, &mut work.trees)?;
         writer.set_refreshed_ns(started_ns)?;
-        writer.commit()?;
-        Ok(refreshed)
+        Ok(Refresh {
+            entries,
+            facts,
+            head,
+            work,
+        })
+    }
+
+    /// Adds `HEAD`'s trees the index does not hold, and returns its files.
+    fn head(
+        &self,
+        writer: &Writer<'_>,
+        listed: &mut usize,
+    ) -> Result<HashMap<String, Option<ObjectId>>, RefreshError> {
+        let repository = self.repository();
+        let Some(root) = repository.head_tree()? else {
+            return Ok(HashMap::new());
+        };
+        let mut known = |tree| writer.has_tree(tree).unwrap_or(false);
+        for tree in repository.trees(root, &mut known)? {
+            writer.put_tree(&tree)?;
+            *listed += 1;
+        }
+        Ok(writer.files(root)?)
     }
 
     /// Walks the working tree, hashing only files whose metadata the index
@@ -109,32 +160,23 @@ impl Board {
     fn validate(
         &self,
         writer: &Writer<'_>,
-        facts: &[(&Entry, ObjectId, Role, BlobFact)],
+        facts: &HashMap<String, Indexed>,
         values: &Values,
     ) -> Result<usize, RefreshError> {
-        let schemas: HashMap<&str, ObjectId> = facts
-            .iter()
-            .filter(|(_, _, role, fact)| *role == Role::Schema && fact.code.is_none())
-            .map(|(entry, blob, _, _)| (entry.path.as_str(), *blob))
-            .collect();
+        let repository = self.repository();
         let mut compiled: HashMap<ObjectId, Option<Schema>> = HashMap::new();
         let mut validated = 0;
-        for (entry, record, _, fact) in facts {
-            let Some(record_type) = fact.record_type.as_ref() else {
+        for (path, record) in facts {
+            let Some(schema_path) = schema_path(record) else {
                 continue;
             };
-            let schema_path = record_type.schema_path();
-            let Some(&schema) = schemas.get(schema_path.as_str()) else {
+            let Some(schema) = schema_of(facts, &schema_path) else {
                 continue;
             };
-            if fact.code.is_some()
-                || record_type.is_board()
-                || writer.validation(*record, schema)?.is_some()
-            {
+            if writer.validation(record.blob, schema)?.is_some() {
                 continue;
             }
-            let repository = self.repository();
-            let Some(schema_value) = compiled
+            let Some(compiled) = compiled
                 .entry(schema)
                 .or_insert_with(|| {
                     known(values, repository, &schema_path, schema, Role::Schema)
@@ -144,14 +186,29 @@ impl Board {
             else {
                 continue;
             };
-            let Some(value) = known(values, repository, &entry.path, *record, Role::Json) else {
+            let Some(value) = known(values, repository, path, record.blob, Role::Json) else {
                 continue;
             };
-            writer.put_validation(*record, schema, &validate(schema_value, &value))?;
+            writer.put_validation(record.blob, schema, &validate(compiled, &value))?;
             validated += 1;
         }
         Ok(validated)
     }
+}
+
+/// The schema path of a record that is checked against a schema: one that
+/// parsed, with a type outside the `board` namespace.
+pub(crate) fn schema_path(record: &Indexed) -> Option<String> {
+    let record_type = record.fact.record_type.as_ref()?;
+    (record.fact.code.is_none() && !record_type.is_board()).then(|| record_type.schema_path())
+}
+
+/// The blob of the usable schema at `path`.
+pub(crate) fn schema_of(facts: &HashMap<String, Indexed>, path: &str) -> Option<ObjectId> {
+    facts
+        .get(path)
+        .filter(|schema| schema.role == Role::Schema && schema.fact.code.is_none())
+        .map(|schema| schema.blob)
 }
 
 /// Whether a file whose metadata is unchanged can be trusted to be
@@ -175,12 +232,18 @@ fn now_ns() -> i64 {
 }
 
 /// What the index keeps of a classification. A schema that parses is also
-/// compiled, since whether it compiles depends on its bytes alone.
+/// compiled, and Board's configuration read, since whether either is usable
+/// depends on its bytes alone.
 fn blob_fact(classified: &Classified) -> BlobFact {
     let code = classified.code.or_else(|| match &classified.content {
         Content::Schema { value } => Schema::compile(value.clone())
             .err()
             .map(|error| error.code()),
+        Content::Record { record_type, value } if record_type.as_str() == CONFIG_TYPE => {
+            Config::from_value(value)
+                .is_none()
+                .then_some(Code::ConfigInvalid)
+        }
         _ => None,
     });
     BlobFact {
@@ -254,11 +317,10 @@ pub enum RefreshError {
 }
 
 impl RefreshError {
-    /// The code of a git failure; an index failure has none yet.
-    pub fn code(&self) -> Option<Code> {
+    pub fn code(&self) -> Code {
         match self {
-            Self::Git { source } => Some(source.code()),
-            Self::Index { .. } => None,
+            Self::Git { source } => source.code(),
+            Self::Index { source } => source.code(),
         }
     }
 }

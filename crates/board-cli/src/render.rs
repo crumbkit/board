@@ -6,7 +6,7 @@ use std::fmt::Display;
 use std::fmt::Write as _;
 
 use board_model::{Code, Location, Source};
-use board_ops::{CheckReport, GetReport, Listed, LsReport};
+use board_ops::{CheckReport, Fallback, GetReport, Listed, LsReport};
 use board_tree::Status;
 use serde_json::{Value, json};
 
@@ -20,7 +20,7 @@ pub(crate) enum Format {
 
 pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
     let code = u8::from(report.degraded());
-    match format {
+    let output = match format {
         Format::Text => {
             let mut text = String::new();
             for entry in &report.entries {
@@ -55,6 +55,18 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
                 code,
             )
         }
+    };
+    let Some(fallback) = report.memory else {
+        return output;
+    };
+    let why = match fallback {
+        Fallback::NoCache => "there is no cache directory",
+        Fallback::Busy => "another process held it past the wait",
+        Fallback::Unusable => "it could not be used, even rebuilt",
+    };
+    Output {
+        stderr: format!("note: the index is in memory for this run: {why}\n").into_bytes(),
+        ..output
     }
 }
 
