@@ -275,6 +275,58 @@ fn a_path_that_names_a_file_that_is_not_a_record_is_refused() {
 }
 
 #[test]
+fn a_write_into_git_is_refused_under_any_spelling_and_its_twin_is_admitted() {
+    let scenario = board();
+    scenario.write("sub/x.json", Item::File(&task(""))).write(
+        "links/sub.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/sub"}"#),
+    );
+    let cases = [
+        (
+            "/.git/hooks/x",
+            ".git/hooks/x.json",
+            "/git/hooks/x",
+            "git/hooks/x.json",
+        ),
+        ("/.GIT/x", ".GIT/x.json", "/.GITS/x", ".GITS/x.json"),
+        ("/sub/.git/y", "sub/.git", "/sub/gitx/y", "sub/gitx/y.json"),
+        (
+            "/sub/GIT~1/y",
+            "sub/GIT~1",
+            "/sub/GIT~2/y",
+            "sub/GIT~2/y.json",
+        ),
+        (
+            "/links/sub/.git/y",
+            "sub/.git",
+            "/links/sub/gity/y",
+            "sub/gity/y.json",
+        ),
+    ];
+    for (refused, unwritten, admitted, written) in cases {
+        assert_eq!(
+            put(&scenario, refused, Expect::Any, &task("")).unwrap_err(),
+            Code::PathMalformed,
+            "{refused}"
+        );
+        assert!(file(&scenario, unwritten).is_none(), "{unwritten}");
+        assert!(!scenario.workdir().join(unwritten).exists(), "{unwritten}");
+        put(&scenario, admitted, Expect::Any, &task("")).unwrap();
+        assert!(file(&scenario, written).is_some(), "{written}");
+    }
+    // A link whose target is in `.git` names nothing: reads never see `.git`.
+    scenario.write(
+        "links/git.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/.git/hooks/z"}"#),
+    );
+    assert_eq!(
+        put(&scenario, "/links/git", Expect::Any, &task("")).unwrap_err(),
+        Code::RefDangling
+    );
+    assert!(!scenario.workdir().join(".git/hooks/z.json").exists());
+}
+
+#[test]
 fn an_existing_file_keeps_its_permissions() {
     let scenario = board();
     put(&scenario, "/tasks/a", Expect::Any, &task("")).unwrap();

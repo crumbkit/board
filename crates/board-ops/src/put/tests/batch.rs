@@ -207,3 +207,17 @@ fn two_lines_differing_only_in_case_collide_and_two_names_are_admitted() {
     let apart = line("/tasks/a", None, &task("")) + &line("/tasks/b", None, &task(""));
     assert_eq!(batch(&scenario, &apart).unwrap().writes.len(), 2);
 }
+
+#[test]
+fn a_batch_line_into_git_refuses_the_batch_and_its_twin_writes_all() {
+    let scenario = board();
+    let valid = line("/tasks/a", None, &task(""));
+    let into_git = line("/.git/hooks/x", None, &task(""));
+    let (code, refusals) = refused(batch(&scenario, &(valid.clone() + &into_git)));
+    assert_eq!(code, Code::PutInvalid);
+    assert_eq!(refusals, [(2, Code::PathMalformed)]);
+    assert!(file(&scenario, "tasks/a.json").is_none());
+    assert!(file(&scenario, ".git/hooks/x.json").is_none());
+    let twin = line("/git/hooks/x", None, &task(""));
+    assert_eq!(batch(&scenario, &(valid + &twin)).unwrap().writes.len(), 2);
+}

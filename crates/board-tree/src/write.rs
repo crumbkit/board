@@ -74,6 +74,9 @@ impl Repository {
         if location.board.source != Source::WorkingTree {
             return Err(refused(Code::PutThroughMount));
         }
+        if names_git(&physical) {
+            return Err(refused(Code::PathMalformed));
+        }
         if let Some(code) = self.degraded(&physical, is_pointer)? {
             return Err(refused(code));
         }
@@ -101,6 +104,9 @@ impl Repository {
             Object::Blob(_) => record_file(&location).ok_or(refused(Code::RecordNotARecord))?,
             Object::Directory => return Err(refused(Code::RecordNotARecord)),
         };
+        if names_git(&physical) {
+            return Err(refused(Code::PathMalformed));
+        }
         if let Some(code) = self.degraded(&physical, true)? {
             return Err(refused(code));
         }
@@ -559,6 +565,20 @@ fn record_file(location: &Location) -> Option<String> {
         Object::Directory if location.path.is_empty() => None,
         Object::Directory => Some(format!("{}.json", location.path)),
     }
+}
+
+/// Whether a segment of the `/`-separated `file` is one git keeps for
+/// itself: `.git` under any spelling that HFS+ or NTFS opens as it, such as
+/// `.GIT` or `GIT~1`.
+fn names_git(file: &str) -> bool {
+    use gix::validate::path::component;
+    let options = component::Options {
+        protect_windows: false,
+        protect_hfs: true,
+        protect_ntfs: true,
+    };
+    file.split('/')
+        .any(|segment| gix::validate::path::component(segment.into(), None, options).is_err())
 }
 
 /// A write that cannot be made.

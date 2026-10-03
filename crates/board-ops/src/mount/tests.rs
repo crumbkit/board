@@ -162,6 +162,21 @@ fn a_path_that_is_not_a_mount_is_refused_and_a_mount_is_admitted() {
 }
 
 #[test]
+fn a_mount_under_a_name_git_keeps_is_refused_and_its_twin_is_admitted() {
+    let (scenario, library, old, _) = moved();
+    let pinned = mount(&library.path(), "main", old);
+    scenario
+        .write("GIT~1/lib.json", Item::File(&pinned))
+        .write("GIT~2/lib.json", Item::File(&pinned));
+    assert_eq!(
+        update(&scenario, "/GIT~1/lib").unwrap_err(),
+        Code::PathMalformed
+    );
+    assert_eq!(file(&scenario, "GIT~1/lib.json"), pinned.as_bytes());
+    assert!(update(&scenario, "/GIT~2/lib").unwrap().wrote);
+}
+
+#[test]
 fn a_mount_inside_a_mounted_board_is_refused() {
     let inner = Scenario::new();
     let inner_commit = inner.commit(&[("x.json", r#"{"$type": "lr/project/v1"}"#)]);

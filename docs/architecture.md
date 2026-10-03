@@ -269,7 +269,10 @@ when it resolves to its identity, whatever path it names.
    and `board/config/v1` are checked as their own types;
 2. resolves the path, following pointers, including a link at the last
    segment, so a write through a link lands at its target. A path through a
-   mount is `board::put::through_mount`. Missing directories are created. A
+   mount is `board::put::through_mount`. A file whose path has a segment git
+   keeps, `.git` under any spelling HFS+ or NTFS opens as it, is
+   `board::path::malformed`; `mount update` refuses it too. Missing
+   directories are created. A
    write that would leave its own path degraded is refused with that path's
    code, such as `path::case_collision` or `path::shadowed`. A link at the last
    segment whose target does not exist is refused with its resolution code;
