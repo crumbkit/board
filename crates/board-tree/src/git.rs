@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use board_model::{Code, ObjectId, Source};
+use board_model::{Code, MAX_RECORD_BYTES, ObjectId, Source};
 use gix::object::tree::EntryKind;
 
 use crate::tree::{Kind, RawEntry, Tree};
@@ -105,6 +105,24 @@ impl Repository {
             .collect())
     }
 
+    /// The bytes of blob `id`, or `None` when it holds more than
+    /// [`MAX_RECORD_BYTES`]; the size is checked before the blob is loaded.
+    fn read_blob(&self, id: ObjectId) -> Result<Option<Vec<u8>>, GitError> {
+        let gix_id = self.gix_id(id)?;
+        let header = self
+            .git
+            .find_header(gix_id)
+            .map_err(|error| self.missing(id, error))?;
+        if header.size() > MAX_RECORD_BYTES as u64 {
+            return Ok(None);
+        }
+        let blob = self
+            .git
+            .find_blob(gix_id)
+            .map_err(|error| self.missing(id, error))?;
+        Ok(Some(blob.data.clone()))
+    }
+
     fn gix_id(&self, id: ObjectId) -> Result<gix::ObjectId, GitError> {
         gix::ObjectId::try_from(id.as_bytes()).map_err(|error| self.missing(id, error))
     }
@@ -131,6 +149,17 @@ impl Tree for CommitTree<'_> {
 
     fn list(&mut self, directory: &ObjectId) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
         self.repository.list_tree(*directory)
+    }
+
+    fn read(
+        &mut self,
+        _directory: &ObjectId,
+        entry: &RawEntry<ObjectId>,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        let Kind::File(id) = entry.kind else {
+            return Ok(None);
+        };
+        self.repository.read_blob(id)
     }
 }
 

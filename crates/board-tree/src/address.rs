@@ -1,7 +1,7 @@
 //! How tree entries are addressed by logical path segments
 //! (docs/architecture.md, Logical paths). Pure decisions over one directory.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use board_model::{Code, LogicalPath};
 
@@ -76,13 +76,16 @@ fn classify<'a, D>(mut matches: impl Iterator<Item = &'a RawEntry<D>>) -> Named<
 
 /// Each entry's logical path and own status in one directory, in the same
 /// order as `entries`. The first that applies wins: a name that is not a
-/// valid segment is `path::malformed`; a segment that names entries other
-/// than one, or a record and its children, is `path::shadowed`; names equal
-/// but for ASCII case are `path::case_collision`; a submodule is
-/// `repo::submodule`.
+/// valid segment is `path::malformed`; a segment that names more than one
+/// entry, other than a record that is not a pointer beside its children, is
+/// `path::shadowed`, and one whose record cannot be read to tell is
+/// `repo::unreadable`; names equal but for ASCII case are
+/// `path::case_collision`; a submodule is `repo::submodule`. `is_pointer`
+/// reads a record beside its children: `None` when it cannot be read.
 pub(crate) fn directory<D>(
     parent: &LogicalPath,
     entries: &[RawEntry<D>],
+    mut is_pointer: impl FnMut(&RawEntry<D>) -> Option<bool>,
 ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
     let mut segments: HashMap<&str, Vec<&RawEntry<D>>> = HashMap::new();
     let mut folded: HashMap<Vec<u8>, usize> = HashMap::new();
@@ -92,10 +95,20 @@ pub(crate) fn directory<D>(
         }
         *folded.entry(entry.name.to_ascii_lowercase()).or_default() += 1;
     }
-    let shadowed: HashSet<&str> = segments
+    let grouped: HashMap<&str, Code> = segments
         .into_iter()
-        .filter(|(_, group)| matches!(classify(group.iter().copied()), Named::Shadowed))
-        .map(|(segment, _)| segment)
+        .filter_map(|(segment, group)| {
+            let code = match classify(group.iter().copied()) {
+                Named::Shadowed => Code::PathShadowed,
+                Named::RecordWithChildren { record, .. } => match is_pointer(record) {
+                    Some(true) => Code::PathShadowed,
+                    Some(false) => return None,
+                    None => Code::RepoUnreadable,
+                },
+                Named::Nothing | Named::One(_) => return None,
+            };
+            Some((segment, code))
+        })
         .collect();
     entries
         .iter()
@@ -105,8 +118,8 @@ pub(crate) fn directory<D>(
             else {
                 return (None, Some(Code::PathMalformed));
             };
-            let code = if shadowed.contains(segment) {
-                Some(Code::PathShadowed)
+            let code = if let Some(code) = grouped.get(segment) {
+                Some(*code)
             } else if folded[&entry.name.to_ascii_lowercase()] > 1 {
                 Some(Code::PathCaseCollision)
             } else if matches!(entry.kind, Kind::Submodule) {

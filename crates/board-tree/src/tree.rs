@@ -18,6 +18,14 @@ pub(crate) trait Tree {
         &mut self,
         directory: &Self::Directory,
     ) -> Result<Vec<RawEntry<Self::Directory>>, GitError>;
+
+    /// The bytes of the file `entry` in `directory`, or `None` when it holds
+    /// more than [`board_model::MAX_RECORD_BYTES`].
+    fn read(
+        &mut self,
+        directory: &Self::Directory,
+        entry: &RawEntry<Self::Directory>,
+    ) -> Result<Option<Vec<u8>>, GitError>;
 }
 
 /// What an entry is, as git records it.
