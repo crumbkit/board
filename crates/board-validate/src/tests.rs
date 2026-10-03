@@ -226,3 +226,89 @@ fn a_deep_but_linear_schema_is_admitted() {
     let wide: Vec<Value> = (0..200).map(|_| json!({"type": "object"})).collect();
     assert!(Schema::compile(json!({"allOf": wide})).is_ok());
 }
+
+/// A schema whose `$defs` chain `depth` levels deep, each level applying the
+/// next through `level`.
+fn nested(depth: usize, level: Level) -> Value {
+    let mut defs = serde_json::Map::new();
+    for index in 0..depth {
+        defs.insert(
+            format!("d{index}"),
+            level(json!({"$ref": format!("#/$defs/d{}", index + 1)})),
+        );
+    }
+    defs.insert(format!("d{depth}"), json!({"type": "string"}));
+    json!({"$defs": defs, "properties": {"r": {"$ref": "#/$defs/d0"}}})
+}
+
+/// Turns a `$ref` to the next level into one level's keywords.
+type Level = fn(Value) -> Value;
+
+const LEVELS: [(&str, Level); 6] = [
+    ("oneOf", |next| json!({"oneOf": [next, next]})),
+    ("anyOf", |next| json!({"anyOf": [next, next]})),
+    (
+        "if/then/else",
+        |next| json!({"if": next, "then": next, "else": next}),
+    ),
+    (
+        "not",
+        |next| json!({"allOf": [{"not": next}, {"not": {"not": next}}]}),
+    ),
+    (
+        "dependentSchemas",
+        |next| json!({"dependentSchemas": {"a": next, "b": next}}),
+    ),
+    ("$dynamicRef", |next| {
+        let target = next["$ref"].clone();
+        json!({"anyOf": [{"$dynamicRef": target}, next]})
+    }),
+];
+
+#[test]
+fn branches_multiplying_through_any_in_place_keyword_are_refused_and_a_shallow_twin_admitted() {
+    for (keyword, level) in LEVELS {
+        assert_eq!(
+            compile_code(nested(16, level)),
+            Code::SchemaInvalid,
+            "{keyword}"
+        );
+        assert!(Schema::compile(nested(3, level)).is_ok(), "{keyword}");
+    }
+}
+
+#[test]
+fn refusing_an_exploding_schema_stops_after_the_bound_at_each_start() {
+    for (keyword, level) in LEVELS {
+        let schema = nested(22, level);
+        let mut count = 0;
+        assert!(
+            !references::within_expansion(&schema, &schema["$defs"]["d0"], 0, &mut count),
+            "{keyword}"
+        );
+        assert_eq!(count, references::MAX_EXPANSION + 1, "{keyword}");
+        let schema = nested(3, level);
+        let mut count = 0;
+        assert!(references::within_expansion(
+            &schema,
+            &schema["$defs"]["d0"],
+            0,
+            &mut count
+        ));
+        assert!(count <= references::MAX_EXPANSION, "{keyword}: {count}");
+    }
+}
+
+#[test]
+fn a_reference_that_is_not_a_json_pointer_is_refused_and_a_pointer_twin_admitted() {
+    let anchored = json!({
+        "$defs": {"leaf": {"$anchor": "leaf", "type": "string"}},
+        "properties": {"r": {"$ref": "#leaf"}}
+    });
+    assert_eq!(compile_code(anchored), Code::SchemaInvalid);
+    let pointed = json!({
+        "$defs": {"leaf": {"$anchor": "leaf", "type": "string"}},
+        "properties": {"r": {"$ref": "#/$defs/leaf"}}
+    });
+    assert!(Schema::compile(pointed).is_ok());
+}

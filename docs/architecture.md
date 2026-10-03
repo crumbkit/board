@@ -92,7 +92,11 @@ types, `ref::wrong_type` for anything but a record of one of them. Without
 `x-board-type`, a reference may reach any entry, such as a record's Markdown.
 
 Schemas from a mounted board are untrusted input. Board validates with
-`pattern` on a linear-time regex engine and never fetches a remote `$ref`.
+`pattern` on a linear-time regex engine and never fetches a remote `$ref`. A
+schema is `schema::invalid` when one record location would expand to more than
+256 subschemas through `allOf`, `anyOf`, `oneOf`, `not`, `if`, `then`, `else`,
+`dependentSchemas`, `$ref` and `$dynamicRef`, or when a `$ref` or `$dynamicRef`
+is not `#` or a JSON pointer into the schema.
 
 ### Canonical form
 

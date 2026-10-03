@@ -14,15 +14,30 @@ use crate::{Accepts, REFERENCE_FORMAT, SchemaError};
 /// `$ref` cycle in a schema ends.
 const MAX_REFS: usize = 32;
 
-/// The most subschemas one record location may expand to through `allOf`
-/// and local `$ref`. Branches multiply, so without this a small schema from
-/// a mounted board could make one record cost billions of visits.
+/// The most subschemas one record location may expand to through the
+/// keywords in [`IN_PLACE`]. Branches multiply, so without this a small
+/// schema from a mounted board could make one record cost billions of
+/// visits, in this search or in the validator.
 pub(crate) const MAX_EXPANSION: usize = 256;
 
-/// Refuses a schema in which some subschema expands, through `allOf` and
-/// local `$ref`, to more than [`MAX_EXPANSION`] subschemas at one record
-/// location. Every subschema in the document is tried, since any of them
-/// can be where a record location starts.
+/// The keywords that apply subschemas at the instance location they sit at,
+/// besides `$ref` and `$dynamicRef`.
+const IN_PLACE: [&str; 8] = [
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependentSchemas",
+];
+
+/// Refuses a schema in which some subschema expands, through [`IN_PLACE`]
+/// keywords and local references, to more than [`MAX_EXPANSION`]
+/// subschemas at one record location, or makes a reference this search
+/// cannot follow. Every subschema in the document is tried, since any of
+/// them can be where a record location starts.
 pub(crate) fn check_expansion(schema: &Value) -> Result<(), SchemaError> {
     let mut pending = vec![schema];
     while let Some(node) = pending.pop() {
@@ -42,8 +57,9 @@ pub(crate) fn check_expansion(schema: &Value) -> Result<(), SchemaError> {
 }
 
 /// Whether `node` expands to at most [`MAX_EXPANSION`] subschemas, adding
-/// each to `count`.
-fn within_expansion(root: &Value, node: &Value, refs: usize, count: &mut usize) -> bool {
+/// each to `count`. A reference that is not `#` or a JSON pointer to a
+/// subschema of `root` fails, as it could hide any expansion.
+pub(crate) fn within_expansion(root: &Value, node: &Value, refs: usize, count: &mut usize) -> bool {
     *count += 1;
     if *count > MAX_EXPANSION {
         return false;
@@ -51,22 +67,35 @@ fn within_expansion(root: &Value, node: &Value, refs: usize, count: &mut usize) 
     let Value::Object(keywords) = node else {
         return true;
     };
-    let branches = keywords
-        .get("allOf")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten();
+    let branches = IN_PLACE
+        .iter()
+        .flat_map(|keyword| match keywords.get(*keyword) {
+            Some(Value::Array(branches)) => branches.iter().collect(),
+            Some(Value::Object(by_name)) if *keyword == "dependentSchemas" => {
+                by_name.values().collect()
+            }
+            Some(schema) => vec![schema],
+            None => Vec::new(),
+        });
     for branch in branches {
         if !within_expansion(root, branch, refs, count) {
             return false;
         }
     }
-    match keywords.get("$ref").and_then(Value::as_str) {
-        Some(target) if refs < MAX_REFS => {
-            local(root, target).is_none_or(|target| within_expansion(root, target, refs + 1, count))
+    for keyword in ["$ref", "$dynamicRef"] {
+        let Some(target) = keywords.get(keyword).and_then(Value::as_str) else {
+            continue;
+        };
+        if refs >= MAX_REFS {
+            continue;
         }
-        _ => true,
+        let followed = local(root, target)
+            .is_some_and(|target| within_expansion(root, target, refs + 1, count));
+        if !followed {
+            return false;
+        }
     }
+    true
 }
 
 /// A reference a record makes.

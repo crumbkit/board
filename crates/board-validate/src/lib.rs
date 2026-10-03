@@ -112,7 +112,7 @@ pub enum SchemaError {
     #[error("schema x-board-type {value} is not a record type or a list of them")]
     BoardType { value: String },
     #[error(
-        "schema expands to more than {} subschemas at one record location through allOf and $ref",
+        "schema expands to more than {} subschemas at one record location, or makes a $ref that is not a JSON pointer inside it",
         references::MAX_EXPANSION
     )]
     TooComplex,
