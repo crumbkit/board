@@ -5,9 +5,10 @@
 mod board;
 mod check;
 mod index;
+mod mounts;
 mod read;
 
-pub use board_index::Fallback;
+pub use board_index::{Fallback, source_name};
 
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::check::{CheckError, CheckReport, Checked};

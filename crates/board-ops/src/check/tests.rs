@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use board_index::Index;
-use board_model::{Change, Code, Kind};
+use board_model::{Change, Code, Kind, ObjectId, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 use proptest::prelude::*;
@@ -66,7 +66,7 @@ fn before_the_first_commit_every_entry_is_uncommitted() {
 /// What `entries` shows, as check reports it.
 fn viewed(index: &Index) -> Vec<Checked> {
     let rows = index
-        .query("SELECT path, logical, kind, code, change, status FROM entries ORDER BY path")
+        .query("SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path")
         .unwrap();
     let text = |value: &Value| value.as_str().map(str::to_owned);
     rows.rows
@@ -78,6 +78,10 @@ fn viewed(index: &Index) -> Vec<Checked> {
                 if code.is_some() { "degraded" } else { "ok" }
             );
             Checked {
+                source: match text(&row[6]).unwrap().as_str() {
+                    "worktree" => Source::WorkingTree,
+                    commit => Source::Commit(ObjectId::from_hex(commit).unwrap()),
+                },
                 path: text(&row[0]).unwrap(),
                 logical: text(&row[1]).map(|logical| logical.parse().unwrap()),
                 kind: Kind::ALL
@@ -135,7 +139,58 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             vec![link("/projects/p"), link("/gone"), link("/links/l")],
         ),
         ("notes.md", vec!["a".to_owned(), "b".to_owned()]),
+        (
+            "vendor.json",
+            vec![
+                "MOUNT first".to_owned(),
+                "MOUNT second".to_owned(),
+                "MOUNT gone".to_owned(),
+            ],
+        ),
     ]
+}
+
+/// A library board with two commits, for generated boards to mount.
+struct Library {
+    scenario: Scenario,
+    first: ObjectId,
+    second: ObjectId,
+}
+
+impl Library {
+    fn new() -> Self {
+        let scenario = Scenario::new();
+        let files = [
+            (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
+            (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+            ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+        ];
+        let first = scenario.commit(&files);
+        let ok = task(r#", "project": "/projects/p""#);
+        let mut more = files.to_vec();
+        more.push(("tasks/ok.json", &ok));
+        let second = scenario.commit(&more);
+        Self {
+            scenario,
+            first,
+            second,
+        }
+    }
+
+    /// `content` with a mount placeholder made real.
+    fn materialize(&self, content: &str) -> String {
+        let mount = |repo: &str, commit: ObjectId| {
+            format!(
+                r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
+            )
+        };
+        match content {
+            "MOUNT first" => mount(&self.scenario.path(), self.first),
+            "MOUNT second" => mount(&self.scenario.path(), self.second),
+            "MOUNT gone" => mount("/no/such/repository", self.first),
+            _ => content.to_owned(),
+        }
+    }
 }
 
 /// For each file in [`variants`], which content it holds, if any.
@@ -148,12 +203,17 @@ fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
 }
 
 /// Writes the generated board over whatever the working tree holds.
-fn write(scenario: &Scenario, choice: &[Option<usize>], present: &mut BTreeMap<String, bool>) {
+fn write(
+    scenario: &Scenario,
+    library: &Library,
+    choice: &[Option<usize>],
+    present: &mut BTreeMap<String, bool>,
+) {
     for ((path, contents), chosen) in variants().into_iter().zip(choice) {
         let was = present.insert(path.to_owned(), chosen.is_some()) == Some(true);
         match chosen {
             Some(at) => {
-                scenario.write(path, Item::File(&contents[*at]));
+                scenario.write(path, Item::File(&library.materialize(&contents[*at])));
             }
             None if was => {
                 scenario.write(path, Item::Deleted);
@@ -161,6 +221,12 @@ fn write(scenario: &Scenario, choice: &[Option<usize>], present: &mut BTreeMap<S
             None => {}
         }
     }
+}
+
+/// Entries in the order the view's key gives them: by source, then path.
+fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
+    entries.sort_by_key(|entry| (board_index::source_name(&entry.source), entry.path.clone()));
+    entries
 }
 
 fn check_in(scenario: &Scenario, index: &mut Index) -> CheckReport {
@@ -178,14 +244,15 @@ proptest! {
     ) {
         let scenario = Scenario::new();
         scenario.write(".board/board.json", Item::File(r#"{"$type": "board/config/v1"}"#));
+        let library = Library::new();
         let mut present = BTreeMap::new();
-        write(&scenario, &before, &mut present);
+        write(&scenario, &library, &before, &mut present);
         if committed {
             let files: Vec<(String, String)> = variants()
                 .into_iter()
                 .zip(&before)
                 .filter_map(|((path, contents), chosen)| {
-                    Some((path.to_owned(), contents[(*chosen)?].clone()))
+                    Some((path.to_owned(), library.materialize(&contents[(*chosen)?])))
                 })
                 .collect();
             let files: Vec<(&str, &str)> =
@@ -196,14 +263,14 @@ proptest! {
         let root = open(&scenario).repository().path().to_path_buf();
         let mut warm = Index::open(Some(cache.path()), &root).unwrap();
         check_in(&scenario, &mut warm);
-        write(&scenario, &after, &mut present);
+        write(&scenario, &library, &after, &mut present);
 
         let warmed = check_in(&scenario, &mut warm);
         let mut cold = Index::open(None, &root).unwrap();
         let fresh = check_in(&scenario, &mut cold);
         prop_assert_eq!(&warmed.entries, &fresh.entries);
-        prop_assert_eq!(viewed(&warm), warmed.entries.clone());
-        prop_assert_eq!(viewed(&cold), fresh.entries);
+        prop_assert_eq!(viewed(&warm), sorted(warmed.entries.clone()));
+        prop_assert_eq!(viewed(&cold), sorted(fresh.entries));
     }
 }
 

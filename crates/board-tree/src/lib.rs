@@ -15,6 +15,6 @@ mod tests;
 
 pub use crate::git::{GitError, Repository};
 pub use crate::resolve::{MAX_HOPS, ResolveError, Resolver};
-pub use crate::trees::{TreeRow, TreeRows};
+pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Entry, Status};
 pub use crate::worktree::{Known, discover, is_repository_root};

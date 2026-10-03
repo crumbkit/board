@@ -123,6 +123,17 @@ impl Repository {
             .iter()
             .map(|entry| {
                 let id = model_id(entry.oid);
+                let size = matches!(
+                    entry.mode.kind(),
+                    EntryKind::Blob | EntryKind::BlobExecutable | EntryKind::Link
+                )
+                .then(|| {
+                    self.git
+                        .find_header(entry.oid)
+                        .ok()
+                        .map(|header| header.size())
+                })
+                .flatten();
                 let raw = RawEntry {
                     name: entry.filename.to_vec(),
                     kind: match entry.mode.kind() {
@@ -132,6 +143,7 @@ impl Repository {
                         EntryKind::Commit => Kind::Submodule,
                     },
                     stat: None,
+                    size,
                 };
                 (raw, u32::from(entry.mode.value()), id)
             })

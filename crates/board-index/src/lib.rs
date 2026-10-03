@@ -10,7 +10,9 @@ mod store;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::Rows;
 pub use crate::schema::INDEX_VERSION;
-pub use crate::store::{BlobFact, RefFact, Resolved, ValidationFact, WorktreeRow, Writer};
+pub use crate::store::{
+    BlobFact, MountRow, RefFact, Resolved, ValidationFact, WorktreeRow, Writer, source_name,
+};
 
 #[cfg(test)]
 mod tests;

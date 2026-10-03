@@ -6,7 +6,7 @@ use std::fmt::Display;
 use std::fmt::Write as _;
 
 use board_model::{Code, Location, Source};
-use board_ops::{CheckReport, Fallback, GetReport, Listed, LsReport};
+use board_ops::{CheckReport, Fallback, GetReport, Listed, LsReport, source_name};
 use board_tree::Status;
 use serde_json::{Value, json};
 
@@ -24,7 +24,12 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
         Format::Text => {
             let mut text = String::new();
             for entry in &report.entries {
-                let _ = writeln!(text, "{} {}", status_text(entry.status), entry.path);
+                // A mounted entry's path means nothing in the root board.
+                let shown = match (&entry.source, &entry.logical) {
+                    (Source::Commit(_), Some(logical)) => logical.to_string(),
+                    _ => entry.path.clone(),
+                };
+                let _ = writeln!(text, "{} {shown}", status_text(entry.status));
             }
             Output {
                 stdout: text.into_bytes(),
@@ -38,6 +43,7 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
                 .iter()
                 .map(|entry| {
                     let mut value = json!({
+                        "source": source_name(&entry.source),
                         "path": entry.path,
                         "logical": entry.logical.as_ref().map(ToString::to_string),
                         "kind": entry.kind.as_str(),

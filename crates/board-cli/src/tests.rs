@@ -365,3 +365,26 @@ fn check_says_on_stderr_when_the_index_is_in_memory() {
         "note: the index is in memory for this run: there is no cache directory\n"
     );
 }
+
+#[test]
+fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("notes/a.md", "a")]);
+    let scenario = board();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&mount_of(library.workdir().to_str().unwrap(), commit)),
+    );
+    let output = board_in(scenario.workdir(), &["check"]);
+    assert!(text(&output.stdout).contains("ok /vendor/lib/notes/a.md\n"));
+    assert!(text(&output.stdout).contains("ok vendor/lib.json\n"));
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let entry = report["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == "notes/a.md")
+        .unwrap();
+    assert_eq!(entry["source"], commit.to_string());
+    assert_eq!(entry["logical"], "/vendor/lib/notes/a.md");
+}

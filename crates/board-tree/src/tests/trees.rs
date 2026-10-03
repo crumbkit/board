@@ -102,3 +102,56 @@ fn head_names_no_tree_before_the_first_commit_and_its_commits_tree_after() {
         "a detached HEAD names the same tree"
     );
 }
+
+/// Paths from a pool that exercises addressing: records beside their
+/// directories, a pointer that shadows one, case collisions, a malformed
+/// name and a name long enough to overflow a path when nested.
+fn commit_files() -> impl Strategy<Value = Vec<(String, String)>> {
+    let long = "l".repeat(250);
+    let segment = prop::sample::select(vec![
+        "a".to_owned(),
+        "a.json".to_owned(),
+        "A".to_owned(),
+        "b.md".to_owned(),
+        "bad\tname".to_owned(),
+        long,
+    ]);
+    let content = prop::sample::select(vec![
+        "{}".to_owned(),
+        r#"{"$type": "board/mount/v1", "path": "/a"}"#.to_owned(),
+        "text".to_owned(),
+    ]);
+    let file = (prop::collection::vec(segment, 1..18), content)
+        .prop_map(|(segments, content)| (segments.join("/"), content));
+    prop::collection::vec(file, 1..10)
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(48))]
+
+    #[test]
+    fn walking_a_commits_stored_trees_gives_what_walking_the_commit_gives(
+        files in commit_files(),
+    ) {
+        // A path cannot be both a file and a directory in one tree.
+        let files: Vec<&(String, String)> = files
+            .iter()
+            .filter(|(path, _)| {
+                !files.iter().any(|(other, _)| {
+                    other.starts_with(&format!("{path}/")) || path.starts_with(&format!("{other}/"))
+                })
+            })
+            .collect();
+        prop_assume!(!files.is_empty());
+        let scenario = Scenario::new();
+        let pairs: Vec<(&str, &str)> =
+            files.iter().map(|(path, text)| (path.as_str(), text.as_str())).collect();
+        let commit = scenario.commit(&pairs);
+        let repository = scenario.open();
+        let root = repository.head_tree().unwrap().unwrap();
+        let stored: Vec<TreeRows> = repository.trees(root, &mut |_| false).unwrap();
+        let mut rows = |id| stored.iter().find(|tree| tree.id == id).map(|tree| tree.rows.clone());
+        let walked = crate::walk_stored(repository.path(), commit, root, &mut rows).unwrap();
+        prop_assert_eq!(walked, repository.walk(&commit.source()).unwrap());
+    }
+}

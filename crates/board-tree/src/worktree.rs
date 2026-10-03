@@ -188,6 +188,7 @@ impl Tree for WorkingTree<'_, '_> {
                     name: gix::path::into_bstr(Path::new(&name)).to_vec(),
                     kind,
                     stat,
+                    size: stat.map(|stat| stat.size),
                 });
             }
         }
