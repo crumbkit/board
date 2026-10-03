@@ -4,8 +4,8 @@
 use std::io::{BufRead, Read};
 
 use board_model::{
-    CONFIG_TYPE, Code, Content, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Role,
-    canonical_json, parse_json,
+    BINARY_NAME, CONFIG_TYPE, Code, Content, Location, LogicalPath, MAX_RECORD_BYTES, Object,
+    ObjectId, Role, canonical_json, parse_json,
 };
 use board_tree::{LOCK_WAIT, WriteError};
 use board_validate::Schema;
@@ -83,7 +83,7 @@ impl Board {
         bytes: &[u8],
     ) -> Result<PutReport, PutError> {
         let prepared = self.prepare(path, expect, bytes)?;
-        let message = format!("board put {path}");
+        let message = format!("{BINARY_NAME} put {path}");
         self.write_all(&[prepared], &message)
             .map_err(|failure| match failure {
                 Failure::Stale(mut stale) => stale.remove(0).1,
@@ -171,7 +171,7 @@ impl Board {
                 commit: None,
             });
         }
-        let message = format!("board put --batch ({} records)", prepared.len());
+        let message = format!("{BINARY_NAME} put --batch ({} records)", prepared.len());
         self.write_all(&prepared, &message)
             .map_err(|failure| match failure {
                 Failure::Stale(stale) => PutError::Batch {

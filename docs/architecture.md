@@ -347,10 +347,12 @@ Every operation is a typed library function that returns its report.
 `board-cli` only parses arguments, reads configuration and prints, so a later
 adapter such as `board serve` needs no logic of its own.
 
-The app presents its names only through two constants in `board-model`:
-`DISPLAY_NAME` (`Board`) for prose and messages, and `BINARY_NAME` (`board`)
-for the executable and command lines. No other code spells either name, and
-neither governs the `board::` codes, the `board` type namespace or crate names.
+The app has two names, held as constants in `board-model`: `DISPLAY_NAME`
+(`Board`) for prose and messages, and `BINARY_NAME` (`board`) for the
+executable and command lines. Board's Rust code names the app only through these
+two constants; neither governs the `board::` codes, the `board` type namespace,
+crate names or paths. A plugin runs the installed executable by its name, so a
+rename also changes plugins such as `tasks`.
 
 `deny.toml` lets only `board-tree` depend on gix, only `board-index` on rusqlite
 and only `board-validate` on jsonschema. `clippy.toml` names the owner of each
