@@ -4,8 +4,17 @@ use std::ffi::OsString;
 use std::io::Read;
 
 use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId};
-use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT};
+use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, Target};
+
+/// What a plugin run gets from this command line's context.
+fn plugins(context: &Context) -> Plugins<'_> {
+    Plugins {
+        directory: context.plugins.as_deref(),
+        environment: context.environment.clone(),
+        limits: Limits::default(),
+    }
+}
 use clap::error::ErrorKind;
 use clap::{Parser, Subcommand};
 
@@ -184,10 +193,12 @@ pub(crate) fn run(
             Ok(report) => render::refs(format, &report),
             Err(error) => render::error(format, error.code(), &error),
         },
-        Command::Query { sql, limit } => match board.query(&sql, limit, context.cache.as_deref()) {
-            Ok(report) => render::query(format, &report),
-            Err(error) => render::error(format, error.code(), &error),
-        },
+        Command::Query { sql, limit } => {
+            match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
+                Ok(report) => render::query(format, &report),
+                Err(error) => render::error(format, error.code(), &error),
+            }
+        }
         Command::Plugin(PluginCommand::List) => match board.plugin_list(context.plugins.as_deref())
         {
             Ok(report) => render::plugin_list(format, &report),
@@ -234,14 +245,7 @@ fn call(
             );
         }
     };
-    match board.call(
-        &target,
-        &input,
-        context.plugins.as_deref(),
-        &context.environment,
-        context.cache.as_deref(),
-        Limits::default(),
-    ) {
+    match board.call(&target, &input, &plugins(context), context.cache.as_deref()) {
         Ok(report) => render::call(format, &report),
         Err(error) => render::call_error(format, &error),
     }

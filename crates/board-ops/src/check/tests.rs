@@ -228,7 +228,7 @@ fn write(
 
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time.
-const EVERY_TABLE: [&str; 9] = [
+const EVERY_TABLE: [&str; 10] = [
     "SELECT * FROM entries ORDER BY source, path",
     "SELECT * FROM blobs ORDER BY blob, role",
     "SELECT * FROM validations ORDER BY record, schema",
@@ -238,7 +238,31 @@ const EVERY_TABLE: [&str; 9] = [
     "SELECT * FROM sources ORDER BY source",
     "SELECT * FROM mounts ORDER BY source, path",
     "SELECT * FROM state WHERE key <> 'refreshed_ns' ORDER BY key",
+    "SELECT * FROM extracted ORDER BY plugin, version, blob",
 ];
+
+/// Marks every record the index would send a plugin extracting every type
+/// as handled, as a plugin naming every blob it was sent does.
+fn extract_everything(index: &Index) {
+    let types = index
+        .query(
+            "SELECT DISTINCT type FROM entries WHERE type IS NOT NULL",
+            10_000,
+        )
+        .unwrap();
+    let types: Vec<&str> = types
+        .rows
+        .iter()
+        .filter_map(|row| row[0].as_str())
+        .collect();
+    let blobs: Vec<_> = index
+        .unhandled("p", "1.0.0", &types)
+        .unwrap()
+        .into_iter()
+        .map(|unhandled| unhandled.blob)
+        .collect();
+    index.handled("p", "1.0.0", &blobs).unwrap();
+}
 
 #[test]
 fn a_query_sees_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
@@ -306,11 +330,14 @@ proptest! {
         let root = open(&scenario).repository().path().to_path_buf();
         let mut warm = Index::open(Some(cache.path()), &root).unwrap();
         check_in(&scenario, &mut warm);
+        extract_everything(&warm);
         write(&scenario, &library, &after, &mut present);
 
         let warmed = check_in(&scenario, &mut warm);
+        extract_everything(&warm);
         let mut cold = Index::open(None, &root).unwrap();
         let fresh = check_in(&scenario, &mut cold);
+        extract_everything(&cold);
         prop_assert_eq!(&warmed.entries, &fresh.entries);
         prop_assert_eq!(viewed(&warm), sorted(warmed.entries.clone()));
         prop_assert_eq!(viewed(&cold), sorted(fresh.entries));

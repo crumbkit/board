@@ -1,52 +1,58 @@
 //! `call` (docs/plugins.md, Calling a capability).
 
-use std::path::Path;
-
-use board_index::PluginDatabase;
-use board_plugin::{CallError, CallReport, Context, Environment, Limits, Target};
+use board_index::Index;
+use board_plugin::{CallReport, Context, Target};
 
 use crate::Board;
+use crate::extraction::{CallFailed, Plugins, database};
+
+/// What a capability returned, and whether its plugin's database was a
+/// temporary file though the index is kept.
+#[derive(Debug)]
+pub struct Called {
+    pub report: CallReport,
+    pub fallback: bool,
+}
 
 impl Board {
-    /// Runs the capability `target` names with `input`, in a plugin from
-    /// `plugins` that this board enables.
+    /// Runs the capability `target` names with `input`, in an installed plugin
+    /// that this board enables, after extracting for it under the index kept
+    /// in `cache`.
     pub fn call(
         &self,
         target: &Target,
         input: &[u8],
-        plugins: Option<&Path>,
-        environment: &Environment,
-        cache: Option<&Path>,
-        limits: Limits,
-    ) -> Result<CallReport, CallError> {
-        environment.depth()?;
-        let installed = match plugins {
-            Some(plugins) => board_plugin::installed(plugins)
-                .map_err(|source| CallError::Discovery { source })?,
-            None => Vec::new(),
-        };
-        let chosen = board_plugin::choose(installed, &self.config().plugins, target)?;
-        let root = self.repository().path();
-        let manifest = &chosen.manifest;
-        let database = PluginDatabase::open(
-            cache,
-            root,
-            &format!("{}@{}.sqlite", manifest.name, manifest.version),
-        )
-        .map_err(|source| CallError::Database {
-            plugin: manifest.name.clone(),
-            source,
-        })?;
-        board_plugin::invoke(
+        plugins: &Plugins<'_>,
+        cache: Option<&std::path::Path>,
+    ) -> Result<Called, CallFailed> {
+        plugins.environment.depth()?;
+        let chosen = board_plugin::choose(plugins.installed()?, &self.config().plugins, target)?;
+        let mut index = Index::open(cache, self.repository().path())?;
+        let database = database(index.storage(), &chosen.manifest)?;
+        if !chosen.manifest.extract.is_empty() {
+            self.check_in(&mut index, None)?;
+            self.extract_into(
+                &index,
+                &chosen.manifest,
+                &chosen.directory,
+                &database,
+                plugins,
+            )?;
+        }
+        let report = board_plugin::invoke(
             &chosen,
             input,
             &Context {
-                root,
+                root: self.repository().path(),
                 database: database.path(),
-                environment,
-                limits,
+                environment: &plugins.environment,
+                limits: plugins.limits,
             },
-        )
+        )?;
+        Ok(Called {
+            report,
+            fallback: database.fallback(),
+        })
     }
 }
 

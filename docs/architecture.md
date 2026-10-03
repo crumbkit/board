@@ -2,10 +2,9 @@
 
 This is the v0 design. Built so far: logical paths, resolution and walking,
 links and mounts, records, schemas and references, the index, canonical form,
-plugin manifests and discovery, and the commands `check`, `get`, `ls`,
-`query`, `refs`, `put`, `mount update`, `plugin list`, `plugin find` and
-`call`.
-PLAN.md says what comes next.
+plugins with extraction, and the commands `check`, `get`, `ls`, `query`,
+`refs`, `put`, `mount update`, `plugin list`, `plugin find` and `call`. PLAN.md
+says what comes next.
 
 Board is a fast, validated view of a git tree. Git does history, branching,
 merging and transport. Board indexes what is in a tree, validates the records
@@ -210,6 +209,7 @@ A run whose index is in memory says so in one line on stderr.
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
 | `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
+| `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `state` | index format, root commit and when the last refresh began | key |
 

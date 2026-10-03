@@ -5,6 +5,7 @@
 mod board;
 mod call;
 mod check;
+mod extraction;
 mod index;
 mod mount;
 mod mounts;
@@ -17,12 +18,14 @@ mod refs;
 pub use board_index::{Fallback, source_name};
 
 pub use crate::board::{Board, Config, OpenError};
+pub use crate::call::Called;
 pub use crate::check::{CheckError, CheckReport, Checked};
+pub use crate::extraction::{CallFailed, Plugins};
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::mount::{MountError, MountUpdateReport};
 pub use crate::plugins::{Found, Plugin, PluginFindReport, PluginListReport, PluginState};
 pub use crate::put::{Expect, MAX_BATCH_LINES, PutError, PutReport, Refusal, Written};
-pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, QueryError, QueryReport};
+pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, PluginFailed, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Incoming, Outgoing, RefsError, RefsReport};
 

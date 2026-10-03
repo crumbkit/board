@@ -13,7 +13,7 @@ fn query(sql: &str, limit: usize) -> Result<QueryReport, Code> {
         .write("tasks/a.json", Item::File(&task("")))
         .write("tasks/b.json", Item::File(r#"{"$type": "lr/task/v1"}"#));
     open(&scenario)
-        .query(sql, limit, None)
+        .query(sql, limit, None, &crate::Plugins::default())
         .map_err(|error| error.code())
 }
 

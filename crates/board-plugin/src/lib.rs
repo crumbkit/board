@@ -1,6 +1,7 @@
 //! Plugins: manifests, discovery and child processes (docs/plugins.md).
 
 mod call;
+mod extract;
 mod installed;
 mod manifest;
 mod process;
@@ -9,6 +10,7 @@ mod protocol;
 pub use crate::call::{
     CallError, CallReport, Chosen, Context, Environment, MAX_DEPTH, Target, choose, invoke,
 };
+pub use crate::extract::{Extraction, Record, extract};
 pub use crate::installed::{DiscoveryError, Installed, MANIFEST_FILE, installed};
 pub use crate::manifest::{
     Capability, CapabilityName, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,
@@ -16,5 +18,6 @@ pub use crate::manifest::{
 };
 pub use crate::process::Limits;
 pub use crate::protocol::{
-    BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, PluginCode, PluginFailure,
+    BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, EXTRACT_RESULT_TYPE, EXTRACT_TYPE,
+    PluginCode, PluginFailure,
 };

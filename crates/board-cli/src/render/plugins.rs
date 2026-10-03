@@ -3,8 +3,8 @@
 use std::fmt::Write as _;
 
 use board_model::canonical_json;
-use board_ops::{PluginFindReport, PluginListReport, PluginState};
-use board_plugin::{CallError, CallReport, Capability, Manifest};
+use board_ops::{CallFailed, Called, PluginFindReport, PluginListReport, PluginState};
+use board_plugin::{Capability, Manifest, PluginName};
 use serde_json::{Value, json};
 
 use super::{Format, document};
@@ -160,8 +160,14 @@ fn capability(capability: &Capability) -> Value {
 }
 
 /// `call`: the output as JSON, or wrapped in `board/call-report/v1`.
-pub(crate) fn call(format: Format, report: &CallReport) -> Output {
-    match format {
+pub(crate) fn call(format: Format, called: &Called) -> Output {
+    let report = &called.report;
+    let fallbacks: &[PluginName] = if called.fallback {
+        std::slice::from_ref(&report.plugin)
+    } else {
+        &[]
+    };
+    let output = match format {
         Format::Text => Output {
             stdout: canonical_json(&report.output),
             ..Output::default()
@@ -175,12 +181,28 @@ pub(crate) fn call(format: Format, report: &CallReport) -> Output {
             }),
             0,
         ),
+    };
+    temporary(output, fallbacks)
+}
+
+/// `output` with a line on stderr for each plugin whose database is a
+/// temporary file though the index is kept.
+pub(crate) fn temporary(mut output: Output, fallbacks: &[PluginName]) -> Output {
+    for plugin in fallbacks {
+        output.stderr.extend_from_slice(
+            format!(
+                "note: plugin {plugin}'s database is a temporary file for this run: \
+                 no directory for it can be made beside the index\n"
+            )
+            .as_bytes(),
+        );
     }
+    output
 }
 
 /// A refused call, with its typed fields; as text, the end of the plugin's
 /// stderr follows the error line.
-pub(crate) fn call_error(format: Format, error: &CallError) -> Output {
+pub(crate) fn call_error(format: Format, error: &CallFailed) -> Output {
     match format {
         Format::Text => {
             let mut stderr = format!("error: {}: {error}\n", error.code_text()).into_bytes();
