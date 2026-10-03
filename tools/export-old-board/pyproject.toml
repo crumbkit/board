@@ -1,0 +1,21 @@
+[project]
+name = "export-old-board"
+version = "0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812",  # conflicts with the formatter
+  "D",       # a throwaway script; names and tests carry the meaning
+  "EM102",   # error messages are written where they are raised
+  "INP001",  # tests/ is a plain directory, not a package
+  "PLR2004", # tests assert literal counts
+  "S101",    # pytest asserts
+  "S603",    # the script exists to run the old board executable
+  "TRY003",  # as EM102
+  "T201",    # the script prints its summary and the fake prints CLI output
+]
