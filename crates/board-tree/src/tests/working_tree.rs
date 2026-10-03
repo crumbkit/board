@@ -2,7 +2,7 @@
 //! marked (docs/architecture.md, Boards and entries).
 
 use super::*;
-use crate::Change;
+use crate::{Change, Entry};
 
 /// The working tree's entries as (physical path, change).
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
@@ -188,7 +188,9 @@ proptest! {
         let committed = repository.walk(&commit.source()).unwrap();
         let working = repository.walk(&Source::WorkingTree).unwrap();
         prop_assert!(working.iter().all(|entry| entry.change == Change::Committed));
-        prop_assert_eq!(working, committed);
+        prop_assert!(working.iter().all(|entry| entry.stat.is_some()), "a working-tree file has metadata");
+        let unstated: Vec<Entry> = working.into_iter().map(|entry| Entry { stat: None, ..entry }).collect();
+        prop_assert_eq!(unstated, committed);
     }
 }
 
@@ -246,4 +248,41 @@ fn a_submodule_in_the_working_tree_carries_no_blob() {
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].blob, None);
     assert_eq!(entries[0].status, Status::Degraded(Code::RepoSubmodule));
+}
+
+#[test]
+fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
+    let scenario = Scenario::new();
+    scenario
+        .write("known.json", Item::File("{}"))
+        .write("dir/unknown.json", Item::File("[]"));
+    let stand_in = scenario.blob("not what the file holds");
+    let mut asked = Vec::new();
+    let entries = scenario
+        .open()
+        .walk_working_tree(&mut |path, stat| {
+            asked.push((path.to_owned(), stat.size));
+            (path == "known.json").then_some(stand_in)
+        })
+        .unwrap();
+    asked.sort();
+    assert_eq!(
+        asked,
+        [
+            ("dir/unknown.json".to_owned(), 2),
+            ("known.json".to_owned(), 2)
+        ]
+    );
+    let blobs: Vec<_> = entries
+        .iter()
+        .map(|entry| (&*entry.path, entry.blob))
+        .collect();
+    assert_eq!(
+        blobs,
+        [
+            ("dir/unknown.json", Some(scenario.blob("[]"))),
+            ("known.json", Some(stand_in)),
+        ],
+        "the known blob is taken as given, which shows the file was not hashed"
+    );
 }

@@ -6,6 +6,7 @@ mod location;
 mod path;
 mod pointer;
 mod record;
+mod stat;
 
 pub use crate::code::Code;
 pub use crate::json::{JsonError, parse_json};
@@ -16,3 +17,4 @@ pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, RecordType, RecordTypeError, Role, classify,
     needs_bytes,
 };
+pub use crate::stat::Stat;

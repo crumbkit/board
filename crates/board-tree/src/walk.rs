@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use board_model::{Code, LogicalPath, ObjectId, Source};
+use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
 use crate::address;
 use crate::git::{GitError, Repository};
@@ -22,6 +22,8 @@ pub struct Entry {
     pub blob: Option<ObjectId>,
     pub status: Status,
     pub change: Change,
+    /// A working-tree file's or symlink's metadata.
+    pub stat: Option<Stat>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,23 +57,31 @@ impl Repository {
     pub fn walk(&self, source: &Source) -> Result<Vec<Entry>, GitError> {
         match source {
             Source::Commit(commit) => walk_in(&mut self.commit_tree(*commit)?),
-            Source::WorkingTree => {
-                let mut entries = walk_in(&mut self.working_tree()?)?;
-                let committed: HashMap<String, Option<ObjectId>> = match self.head()? {
-                    Some(head) => walk_in(&mut self.commit_tree(head)?)?
-                        .into_iter()
-                        .map(|entry| (entry.path, entry.blob))
-                        .collect(),
-                    None => HashMap::new(),
-                };
-                for entry in &mut entries {
-                    if committed.get(&entry.path) != Some(&entry.blob) {
-                        entry.change = Change::Uncommitted;
-                    }
-                }
-                Ok(entries)
+            Source::WorkingTree => self.walk_working_tree(&mut |_, _| None),
+        }
+    }
+
+    /// Walks the working tree as [`Repository::walk`] does, but hashes a
+    /// file only when `known`, given its `/`-separated path and metadata,
+    /// does not already know its blob.
+    pub fn walk_working_tree(
+        &self,
+        known: &mut dyn FnMut(&str, &Stat) -> Option<ObjectId>,
+    ) -> Result<Vec<Entry>, GitError> {
+        let mut entries = walk_in(&mut self.working_tree(known)?)?;
+        let committed: HashMap<String, Option<ObjectId>> = match self.head()? {
+            Some(head) => walk_in(&mut self.commit_tree(head)?)?
+                .into_iter()
+                .map(|entry| (entry.path, entry.blob))
+                .collect(),
+            None => HashMap::new(),
+        };
+        for entry in &mut entries {
+            if committed.get(&entry.path) != Some(&entry.blob) {
+                entry.change = Change::Uncommitted;
             }
         }
+        Ok(entries)
     }
 }
 
@@ -95,6 +105,7 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                     blob: None,
                     status: Status::Degraded(code),
                     change: Change::Committed,
+                    stat: None,
                 });
                 continue;
             }
@@ -138,6 +149,7 @@ fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
                 blob,
                 status: code.map_or(Status::Ok, Status::Degraded),
                 change: Change::Committed,
+                stat: entry.stat,
             });
         }
     }

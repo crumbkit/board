@@ -2,7 +2,7 @@
 //! to them is a new index format.
 
 /// The index format. An index of any other format is deleted and rebuilt.
-pub const INDEX_VERSION: &str = "1";
+pub const INDEX_VERSION: &str = "2";
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -11,6 +11,17 @@ pub(crate) const TABLES: &str = "
 CREATE TABLE state (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE worktree (
+    path TEXT PRIMARY KEY,
+    logical TEXT,
+    code TEXT,
+    blob TEXT,
+    size INTEGER,
+    modified_ns INTEGER,
+    changed_ns INTEGER,
+    inode INTEGER,
+    mode INTEGER
 ) WITHOUT ROWID;
 CREATE TABLE blobs (
     blob TEXT NOT NULL,

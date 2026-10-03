@@ -9,7 +9,7 @@ mod read;
 
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::check::{CheckError, CheckReport, Checked};
-pub use crate::index::{BuildError, Built};
+pub use crate::index::{RefreshError, Refreshed};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 
 #[cfg(test)]

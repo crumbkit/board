@@ -20,7 +20,7 @@ impl Repository {
     pub fn resolve(&self, source: &Source, path: &LogicalPath) -> Result<Location, ResolveError> {
         match source {
             Source::Commit(commit) => self.resolve_in(&mut self.commit_tree(*commit)?, path),
-            Source::WorkingTree => self.resolve_in(&mut self.working_tree()?, path),
+            Source::WorkingTree => self.resolve_in(&mut self.working_tree(&mut |_, _| None)?, path),
         }
     }
 
