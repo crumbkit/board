@@ -1,0 +1,26 @@
+# Tests may panic on a broken fixture; production code may not (STANDARDS.md 6).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+
+# Each effect has one owning module (STANDARDS.md 7). The owner carries an
+# #[expect(clippy::disallowed_methods, reason = "...")] naming itself.
+disallowed-methods = [
+    { path = "std::env::var", reason = "configuration is read once, by board-cli's config module" },
+    { path = "std::env::var_os", reason = "configuration is read once, by board-cli's config module" },
+    { path = "std::env::vars", reason = "configuration is read once, by board-cli's config module" },
+    { path = "std::env::vars_os", reason = "configuration is read once, by board-cli's config module" },
+    { path = "std::env::set_current_dir", reason = "never mutate process-global state" },
+    { path = "std::process::exit", reason = "only main chooses the exit code, by returning it" },
+    { path = "std::process::Command::new", reason = "child processes are owned by board-plugin" },
+    { path = "std::fs::write", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::File::create", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::OpenOptions::open", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::create_dir", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::create_dir_all", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::rename", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::remove_file", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::fs::remove_dir_all", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "std::io::stdout", reason = "stdout is owned by the report module of each binary" },
+    { path = "std::io::stderr", reason = "stderr is owned by the report module of each binary" },
+]

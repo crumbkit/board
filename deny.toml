@@ -1,0 +1,28 @@
+[graph]
+all-features = true
+
+[advisories]
+# An exception names the advisory id and why it does not apply, and goes in
+# .cargo/audit.toml too.
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# A wrapped crate may only be a direct dependency of the crates listed, so the
+# rest of the workspace cannot reach past the owner (STANDARDS.md 7). Until an
+# owner crate exists cargo-deny warns `unused-wrapper`, and the crate is
+# refused everywhere.
+deny = [
+    { crate = "gix", wrappers = ["board-tree"] },
+    { crate = "rusqlite", wrappers = ["board-index"] },
+    { crate = "jsonschema", wrappers = ["board-validate"] },
+]
+
+[licenses]
+allow = ["Apache-2.0", "MIT", "Unicode-3.0"]
+confidence-threshold = 0.9
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
