@@ -331,6 +331,32 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
 
     #[test]
+    fn resolving_a_display_path_returns_the_same_location(board in linked_board()) {
+        let texts: Vec<(String, String)> = board
+            .iter()
+            .map(|(name, target)| (name.clone(), target.as_deref().map_or_else(|| "{}".to_owned(), link)))
+            .collect();
+        let files: Vec<(&str, &str)> = texts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
+        let scenario = Scenario::new();
+        let commit = scenario.commit(&files);
+        let repository = scenario.open();
+        for name in 0..6 {
+            for text in [format!("/n{name}"), format!("/n{name}/y")] {
+                if let Ok(location) = repository.resolve(&commit.source(), &path(&text)) {
+                    let display = location.display_path().unwrap();
+                    let again = repository.resolve(&commit.source(), &display).unwrap();
+                    prop_assert_eq!(
+                        (&again.board, &again.path, again.object),
+                        (&location.board, &location.path, location.object),
+                        "{} displayed as {}", text, display
+                    );
+                    prop_assert!(again.pointers.is_empty(), "{} displayed as {}", text, display);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn resolution_always_ends_with_a_location_or_a_resolution_code(board in linked_board()) {
         let texts: Vec<(String, String)> = board
             .iter()

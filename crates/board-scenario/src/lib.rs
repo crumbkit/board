@@ -21,6 +21,8 @@ use tempfile::TempDir;
 #[derive(Clone, Copy, Debug)]
 pub enum Item<'a> {
     File(&'a str),
+    /// A file holding any bytes, UTF-8 or not.
+    Bytes(&'a [u8]),
     Symlink(&'a str),
     /// A submodule pinned to an arbitrary commit id.
     Submodule,
@@ -77,6 +79,7 @@ impl Scenario {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         match item {
             Item::File(text) => fs::write(path, text).unwrap(),
+            Item::Bytes(bytes) => fs::write(path, bytes).unwrap(),
             Item::Symlink(target) => std::os::unix::fs::symlink(target, path).unwrap(),
             Item::Submodule => {
                 fs::create_dir_all(&path).unwrap();
@@ -123,6 +126,10 @@ impl Scenario {
         for (path, item) in items {
             let (kind, id) = match item {
                 Item::File(text) => (EntryKind::Blob, self.git.write_blob(text).unwrap().detach()),
+                Item::Bytes(bytes) => (
+                    EntryKind::Blob,
+                    self.git.write_blob(bytes).unwrap().detach(),
+                ),
                 Item::Symlink(target) => (
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),
