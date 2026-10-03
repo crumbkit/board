@@ -85,7 +85,6 @@ and what it does not.
 
 ## Next actions
 
-1. Review each M2 pull request from the builder against STANDARDS.md and
-   docs/; merge when right.
-2. When M2 lands, move its settled design from PLAN.md into docs/ and
-   commission M3.
+1. Commission M3 from the builder, as small pull requests, and review them.
+2. #11 (app-name constants) waits for the owner to confirm the request.
+3. The owner runs the M1 export; route problems to the M1 builder.
