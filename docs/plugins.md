@@ -207,6 +207,8 @@ Rust tests use small shell-script plugins for the `board::plugin::` codes, so
 the Rust gate does not need uv. CI runs each plugin's gates in its own job.
 
 The one plugin so far is `tasks`: it extracts each `lr/task/v1` record's title,
-status and due date into a `tasks` table keyed by blob, and its `due`
+status and due date into a `tasks` table keyed by blob (a record its board's
+schema admits but the plugin cannot read gets no row, is still handled and is
+logged), and its `due`
 capability finds open tasks due before a date by running `board query`, which
 joins that table with `entries`.

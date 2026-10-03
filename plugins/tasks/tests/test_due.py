@@ -5,8 +5,9 @@ import time
 
 from conftest import Board, task
 
-# A board waits 5 s for a busy index before falling back to one in memory.
-BUSY_WAIT = 5.0
+# A board waits 5 s for a busy index before falling back to one in memory;
+# a call well inside that did not wait.
+WELL_UNDER_BUSY_WAIT = 3.0
 
 
 def due(board: Board, before: str) -> list[tuple[str, str, str]]:
@@ -18,7 +19,7 @@ def due(board: Board, before: str) -> list[tuple[str, str, str]]:
     """
     started = time.monotonic()
     ran = board.run("--json", "call", "tasks.due", stdin=json.dumps({"before": before}))
-    assert time.monotonic() - started < BUSY_WAIT
+    assert time.monotonic() - started < WELL_UNDER_BUSY_WAIT
     assert "in memory" not in ran.stderr, ran.stderr
     report = json.loads(ran.stdout)
     assert report["$type"] == "board/call-report/v1", report
@@ -83,3 +84,24 @@ def test_a_second_plugin_calls_due_by_capability(board: Board) -> None:
     assert report["output"] == {
         "overdue": {"tasks": [{"path": "/tasks/a", "title": "A", "due": "2026-10-01"}], "truncated": False},
     }
+
+
+def tasks_table(board: Board) -> tuple[list[list[object]], list[object]]:
+    """The tasks table's titles through `board query`, and the plugins it reports."""
+    report = board.json("query", "SELECT title FROM p_tasks.tasks ORDER BY title")
+    return report["rows"], report["plugins"]
+
+
+def test_a_record_the_boards_schema_admits_but_the_plugin_cannot_read_gets_no_row(board: Board) -> None:
+    board.write(".board/types/lr/task/v1.schema.json", '{"type": "object"}')
+    board.write("tasks/good.json", task("Good"))
+    board.write("tasks/misfit.json", '{"$type": "lr/task/v1", "title": "Misfit", "status": "someday"}')
+    assert tasks_table(board) == ([["Good"]], [])
+    assert tasks_table(board) == ([["Good"]], [])
+
+
+def test_two_records_the_plugin_reads_get_two_rows(board: Board) -> None:
+    board.write(".board/types/lr/task/v1.schema.json", '{"type": "object"}')
+    board.write("tasks/good.json", task("Good"))
+    board.write("tasks/other.json", task("Other", status="done"))
+    assert tasks_table(board) == ([["Good"], ["Other"]], [])

@@ -81,3 +81,20 @@ def test_a_request_board_would_not_send_is_refused(tmp_path: Path) -> None:
     assert (code, document["code"]) == (1, "tasks::protocol::bad_request")
     del request["colour"]
     assert plugin(request, tmp_path)[0] == 0
+
+
+def test_a_record_the_plugin_cannot_read_is_handled_without_a_row_and_logged(tmp_path: Path) -> None:
+    database = tmp_path / "tasks@0.1.0.sqlite"
+    misfit = '{"$type": "lr/task/v1", "title": "Misfit", "status": "someday"}'
+    ran = subprocess.run(
+        [sys.executable, "-m", "board_tasks"],
+        cwd=tmp_path,
+        input=json.dumps(extract_request(database, ("a1", task("A")), ("m2", misfit))),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (ran.returncode, json.loads(ran.stdout)["blobs"]) == (0, ["a1", "m2"])
+    assert rows(database) == [("a1", "A", "open", None)]
+    assert ran.stderr.count("\n") == 1
+    assert "/tasks/m2" in ran.stderr
