@@ -4,9 +4,9 @@
 use std::error::Error;
 use std::fs::{self, FileType, Metadata};
 use std::io::{BufReader, Read};
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::time::UNIX_EPOCH;
 
 use board_model::{MAX_RECORD_BYTES, ObjectId, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
@@ -194,19 +194,40 @@ impl Tree for WorkingTree<'_, '_> {
     }
 }
 
+/// A file's metadata. Where the platform has no inode, change time or mode,
+/// each is 0: a matching stat only lets hashing be skipped, and the
+/// racy-clean rule still hashes anything modified recently.
 fn stat(metadata: &Metadata) -> Stat {
-    let nanoseconds = |seconds: i64, nanoseconds: i64| {
-        seconds
-            .saturating_mul(1_000_000_000)
-            .saturating_add(nanoseconds)
-    };
+    let modified_ns = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .and_then(|since| i64::try_from(since.as_nanos()).ok())
+        .unwrap_or(0);
+    let (changed_ns, inode, mode) = unix_stat(metadata);
     Stat {
         size: metadata.len(),
-        modified_ns: nanoseconds(metadata.mtime(), metadata.mtime_nsec()),
-        changed_ns: nanoseconds(metadata.ctime(), metadata.ctime_nsec()),
-        inode: metadata.ino(),
-        mode: metadata.mode(),
+        modified_ns,
+        changed_ns,
+        inode,
+        mode,
     }
+}
+
+/// The change time in nanoseconds, the inode and the mode.
+#[cfg(unix)]
+fn unix_stat(metadata: &Metadata) -> (i64, u64, u32) {
+    use std::os::unix::fs::MetadataExt;
+    let changed_ns = metadata
+        .ctime()
+        .saturating_mul(1_000_000_000)
+        .saturating_add(metadata.ctime_nsec());
+    (changed_ns, metadata.ino(), metadata.mode())
+}
+
+#[cfg(not(unix))]
+fn unix_stat(_metadata: &Metadata) -> (i64, u64, u32) {
+    (0, 0, 0)
 }
 
 /// The bytes of the file at `path`, or `None` when it holds more than
