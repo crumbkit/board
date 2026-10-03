@@ -62,7 +62,9 @@ change is a new version.
 Parsing is strict and bounded, and the first failure is the entry's code: over
 16 MiB (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not
 JSON (`parse`, including a byte-order mark or nesting past serde_json's limit),
-then a duplicate key at any depth. A `$type` that is not a string of the form
+then a duplicate key at any depth, then a number that a double or a 64-bit
+integer cannot hold exactly (`lossy_number`), so nothing reads a rounded value.
+A `$type` that is not a string of the form
 above is `record::bad_type`; a type with no schema file is
 `record::unknown_type`. Board's own types are checked by Rust types, so a file
 under `.board/types/board/` is `schema::invalid`. A schema that does not compile
@@ -93,10 +95,14 @@ Schemas from a mounted board are untrusted input. Board validates with
 ### Canonical form
 
 Every file Board writes is canonical: keys sorted by code point, two-space
-indentation, one key or array element per line, `\n` endings, one trailing
-newline. Golden bytes freeze this. Board reads any valid JSON; only `put`
-rewrites a file into canonical form. One key per line is what lets git's line
-merge combine most concurrent edits.
+indentation, one key or array element per line, empty `{}` and `[]` on one
+line, `\n` endings, one trailing newline and no byte-order mark. Strings escape
+only `"`, `\` and control characters. Numbers are normalised: an integer as an
+integer, any other number as the shortest decimal that reads back to the same
+double, so `1e2` becomes `100.0`. A number that cannot be held exactly never
+parses, so it is never rounded. Golden bytes freeze this. Board reads any valid JSON;
+only `put` rewrites a file into canonical form. One key per line is what lets
+git's line merge combine most concurrent edits.
 
 ## Logical paths
 
@@ -249,25 +255,52 @@ when it resolves to its identity, whatever path it names.
 
 `board put <path>` reads one JSON record from stdin, then:
 
-1. checks it as a record: `$type` present, schema found, schema valid,
-   references parse;
-2. resolves the path; a path through a mount is refused with
-   `board::put::through_mount`, and a link writes to its target;
-3. with `--expect <blob>` (or `--expect none` for a new file), refuses with
-   `board::put::stale` unless the current blob matches;
-4. writes canonical bytes to a temporary file and renames it into place;
-5. commits, when `commit_on_put` is set.
+1. checks it as a record, with the codes `check` uses: strict parse within the
+   record size bound, `$type` present, schema found and valid, the record valid
+   against it, references parse. A reference need not resolve. Input that is
+   not one JSON object with a `$type` is `board::put::invalid`. `board/mount/v1`
+   and `board/config/v1` are checked as their own types;
+2. resolves the path, following pointers, including a link at the last
+   segment, so a write through a link lands at its target. A path through a
+   mount is `board::put::through_mount`. Missing directories are created. A
+   write that would leave its own path degraded is refused with that path's
+   code, such as `path::case_collision` or `path::shadowed`;
+3. takes `board.lock` in the worktree's git directory, created exclusively as
+   git creates its lock files, waiting up to 5 seconds and then refusing with
+   `board::put::locked`, whose message says to remove the lock if no put is
+   running;
+4. with `--expect <blob>`, or `--expect none` for a new file, refuses with
+   `board::put::stale` unless the target's current blob matches. Without
+   `--expect`, a put overwrites;
+5. writes canonical bytes to `.<name>.board-tmp` beside the target, fsyncs it,
+   renames it into place and fsyncs the directory. An existing file keeps its
+   mode. A kill leaves the old file or the new one; a leftover temporary file is
+   an ordinary file that `check` shows. Board claims kill safety, not durability
+   across power loss;
+6. commits, when `commit_on_put` is set, as `git commit <paths>` does: only the
+   written paths, onto HEAD, with git's index updated for them under git's own
+   `index.lock`. The author is git's `user.name` and `user.email`; without them
+   the put is refused before writing with `board::put::no_identity`. No hooks
+   run. The commit object is made before the renames, and HEAD moves only if it
+   still holds the commit read under the lock; otherwise the report says the
+   files were written and not committed, with `board::put::head_moved`.
 
-Board holds `board.lock` in the repository's git directory, created
-exclusively as git creates its own lock files, from step 3 to step 5. A lock left by a crash is refused with
-`board::put::locked`, and the message says to remove it, as git does.
+`board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
+record}`. Every line is checked and every expect compared under the lock
+before any write; two lines resolving to one file, one invalid line or one
+stale expect refuse the whole batch, listing each failing line with its code.
+Writes go in input order, then one commit.
 
-`board put --batch` reads JSON Lines of `{path, expect, record}`, checks every
-record before writing any, and makes one commit. A crash after some renames
-leaves those files as uncommitted edits, which the next `check` shows.
+The report is `board/put-report/v1`: `writes`, each with its Location, display
+path, `previous` blob (null for a new file) and `blob`; and `commit` (null when
+none was made).
 
-`board mount update <path>` reads `follow` in the mounted repository and
-rewrites `commit` through `put`.
+`board mount update <path>` names a mount pointer, which it does not follow.
+It reads the pointer's `follow` ref in the mounted repository (missing:
+`board::mount::follow_missing`) and, if the commit changed, rewrites `commit`
+through `put` with `--expect` set to the pointer's blob. The report,
+`board/mount-update-report/v1`, gives the path, the old and new commit and
+whether it wrote.
 
 ## Commands
 
@@ -316,18 +349,18 @@ after release. The v0 set:
 
 | Area | Reasons |
 | --- | --- |
-| `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8` |
+| `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8`, `lossy_number` |
 | `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
 | `config` | `not_found`, `invalid` |
 | `schema` | `invalid` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
 | `repo` | `unreadable`, `submodule` |
-| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported` |
+| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
-| `put` | `stale`, `locked`, `through_mount`, `invalid` |
+| `put` | `stale`, `locked`, `through_mount`, `invalid`, `no_identity`, `head_moved` |
 | `plugin` | see docs/plugins.md |
 
 ## Testing
