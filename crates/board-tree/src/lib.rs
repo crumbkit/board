@@ -9,6 +9,7 @@ mod tree;
 mod trees;
 mod walk;
 mod worktree;
+mod write;
 
 #[cfg(test)]
 mod tests;
@@ -18,3 +19,4 @@ pub use crate::resolve::{MAX_HOPS, ResolveError, Resolver};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Entry, Status};
 pub use crate::worktree::{Known, discover, is_repository_root};
+pub use crate::write::{LOCK_WAIT, Lock, Target, WriteError};
