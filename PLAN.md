@@ -117,23 +117,15 @@ Canonical form with golden bytes and the lossless number check, `put` with
 concurrent puts, a killed put leaving the old or new file, an invalid line
 refusing a batch, and writes through a link and a mount.
 
-### M6 Plugins
+### M6 Plugins: done
 
-`board-plugin` and one real plugin end to end (suggested: `tasks`, extracting
-status and due date from task records, with a `due` capability). Plugins are
-written in Python directly against the JSON contract, each keeping its protocol
-code in one module. A Python library is extracted from the plugins once two
-exist and their shared code is visible, not designed ahead of them.
-
-Built so far: `board-plugin` with manifests and discovery, `plugin list` and
-`plugin find`, `call` with its limits and codes, extraction, with `query`
-attaching each plugin's database, and the `tasks` plugin in `plugins/tasks/`
-with its gates in CI.
-
-Done: the plugin's tests pass against a real fixture board; `board query` joins
-its table with `entries`; a second plugin calls the first by capability through
-`board call`; every `board::plugin::` code has a test; CI runs the Python gates
-(STANDARDS.md P2).
+`board-plugin`, `plugin list` and `find`, `call` with its limits and codes,
+extraction with `query` attaching each plugin's database, and the `tasks`
+plugin in `plugins/tasks/` with its Python gates in CI (#42 to #46). Each done
+item has its test: `tasks` against fixture boards through the real `board`,
+`query` joining `p_tasks.tasks` with `entries`, the `digest` fixture calling
+`due` by capability, and every `board::plugin::` code. No Python library yet:
+there is one plugin.
 
 ### M7 Switch
 
