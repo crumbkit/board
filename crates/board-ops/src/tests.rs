@@ -272,19 +272,22 @@ fn a_pointer_whose_target_is_missing_is_dangling_in_the_walk() {
 
 #[test]
 fn parse_problems_and_path_problems_come_first() {
+    // Every name here is one a case-insensitive file system can hold; case
+    // collisions are covered on commits in board-tree, on every platform.
     let scenario = board();
     scenario
         .write("dup.json", Item::File(r#"{"a": 1, "a": 2}"#))
-        .write("A.json", Item::File(&task("")))
-        .write("a.json", Item::File(&task("")));
+        .write(".json", Item::File("{"))
+        .write("t.json", Item::File(&task("")));
     assert_eq!(
         status(&scenario, "dup.json"),
         Status::Degraded(Code::JsonDuplicateKey)
     );
     assert_eq!(
-        status(&scenario, "a.json"),
-        Status::Degraded(Code::PathCaseCollision)
+        status(&scenario, ".json"),
+        Status::Degraded(Code::PathMalformed)
     );
+    assert_eq!(status(&scenario, "t.json"), Status::Ok);
 }
 
 #[test]
