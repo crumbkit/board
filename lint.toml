@@ -16,10 +16,11 @@ max_words = 1000
 file = "DOCS.md"
 max_words = 400
 
-# O: the documentation itself, summed across every matching file.
+# O: the documentation itself, summed across every matching file. Set to
+# 5,000 by the owner after the altitude pass (PLAN, settled decision 6).
 [docs]
 glob = "docs/*.md"
-max_words = 8000
+max_words = 5000
 
 # Every Rust source file outside tests.rs files and tests/ directories.
 [source]

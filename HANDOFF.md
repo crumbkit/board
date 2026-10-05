@@ -24,6 +24,11 @@ open threads are settled or moved into PLAN.md.
   vision session lands the changes; the design reviewer reviews them.
 - **Mount-walk builder** `session_01RpFWrPnQzNsnZhrpKMUsou` and **docs builder**
   `session_01Vzqbj3yKt1E4VR8cTLvFyn`: commissioned 2026-10-03 from that review.
+- **Query builder** `session_01B4LeTuRjaTLC2nLYxzkpTu` (#70) and **capability
+  builder** `session_018BtKUJoH2X4FhBkv9CtrqG` (PRs A and B below).
+- **Stop, 2026-10-04.** The owner stopped all work. Every builder was told to
+  push what it had as a draft PR with a handoff in its body, then stop. Check
+  open draft PRs before starting anything.
 
 ## Where things are
 
@@ -66,27 +71,79 @@ sometimes Elixir. They liked domain-named error codes. Nothing depends on the
 old Board. macOS first, with other platforms soon. Explain what a test proves
 and what it does not.
 
+## State on 2026-10-05
+
+Main is at 3e01665. Landed since the design review (#58 to #70): mount walking
+moved into `board-tree` (rule 3); `put` refuses `.git` in any spelling; plugins
+get SIGTERM, a 1 s grace, then SIGKILL; schema expansion is bounded across every
+in-place applicator; reference search matches patterns as the validator does;
+`query` refuses ATTACH, DETACH, PRAGMA and any non-read-only statement and stops
+after 1 s. Each has a refusal test with an admitted twin. Since the stop, #77
+stopped the plugin time-limit tests failing when the full suite runs on macOS,
+and #76 added warm-against-cold tests for `query` and `refs`.
+
+Owner decisions this round: remote mounts change `board/mount/v1` in place
+(#59); the docs budget is 5,000 words (PLAN decision 6); #57, the chain memo,
+is closed (its branch and numbers are the baseline if long chains appear).
+
+Open pull requests and the agreed plan for each:
+
+- **#78** adds the Adoption sketch to PLAN.md: plugins import widgets, then JIRA,
+  records as typed Board records. It merges.
+- **#73** (branch `vision-handoff`) carries #60's docs altitude pass with main
+  merged in, and this file. It merges, and #60 closes as superseded.
+- **#55** (the M9 and M10 sketch) is superseded by a forthcoming PR from branch
+  `plan-cross-repo-design`, a "Repositories across boards" PLAN.md proposal
+  that keeps M9 and drops M10. #55 closes when that PR opens.
+- **#72** is reduced to its test, which pins the default 64 KiB plugin stderr
+  tail, and then merges. Its HANDOFF.md section is dropped.
+- **#71** (PR A, plugin capabilities as MCP Tool objects) is being finished.
+- **#74** and **#75** close. They hold only builder handoffs, and the queue
+  below already lists their work: the tooling pass and gix-lock.
+
 ## Open threads
 
-1. **Web UI and sharing** moved to PLAN.md (M8, Views, Serving) on
-   2026-10-03.
-2. **M1, the old-corpus export.** The script is commissioned; the owner runs it
-   against the installed old `board`, into its own repository.
+1. **M1, the old-corpus export.** The owner runs it against the installed old
+   `board`, into its own repository.
+2. **Queued work, owner-approved, in order** (spec in the design reviewer's
+   messages; each a small PR):
+   - Tooling: drop cargo-audit for `cargo deny` advisories with
+     `yanked = "deny"`; pin install-action versions; zizmor with actions pinned
+     by SHA; cargo-mutants `--in-diff`, non-blocking. Also remove the
+     STANDARDS.md and deny.toml text that pairs exceptions with
+     `.cargo/audit.toml`, which does not exist; add cargo-shear and typos only
+     if they pass cleanly.
+   - PR A: plugin capabilities become MCP Tool objects (`name`, `title`,
+     `description`, `inputSchema`, `outputSchema`, `annotations`, `_meta`;
+     object roots required; `icons` and `execution` refused). Wire protocol
+     unchanged. This is #71, being finished.
+   - PR B: `main.bodies(blob, body)` holding `canonical_json` of each parsed
+     record, and a temp view `records` (source, path, logical, blob, type,
+     status, code, body), degraded records included. INDEX_VERSION bump. Not
+     started; it waits for #71.
+   - gix-lock and `Repository::state()` in write.rs, expected net negative:
+     replace the `board.lock` wait loop, the `index.lock` handling and the
+     in-progress check, and call `sync_all` before committing a lock. The
+     existing put, lock and kill tests pass unchanged.
+   - Docs notes: mergiraf as the JSON merge driver; the canonical form named
+     (JCS escaping, code-point key order, serde_json numbers; RFC 7493 as the
+     parse base); extraction keyed by plugin version, so a symlinked plugin
+     serves stale rows until its version changes.
+3. **widgets.** The Adoption sketch (#78) and the forthcoming "Repositories
+   across boards" proposal replace #55. The views vocabulary needs read access
+   to example-org/widgets, which this session does not have.
 
 ## Next actions
 
-1. M7 is the owner's: run the M1 export, time it with
-   `cargo xtask bench --board <export>`, enable `tasks` and use Board daily.
-   Route what that finds to a builder as small fixes; route export problems to
-   the M1 builder.
-2. If a real board misses a budget, three measured speedups for a warm check
-   exist (#33): carry validations from refresh into decide (about 25 ms), one
-   join per run instead of point lookups (30 to 40 ms), and pointer facts for
-   resolution (most of 52 ms, but it touches rule 3, so it needs a design call).
-   The stress test (crumbkit/viitta-stress-test at 372ab30) found warm
-   check is about 20 µs per entry, and that check is quadratic in pointer-chain
-   length: 3.1 s for 500 chains of 39 hops. Memoising was declined while real
-   chains stay short; those numbers are the baseline if that changes.
-3. Sharing is sketched as M8 in PLAN.md, with the owner's decisions; turn it
-   into a design-gap list for a builder after M7. Moving mount walking into
-   `board-tree` lands first.
+1. Carry out the plan for each open PR above: merge #78 and #73, close #60,
+   #74 and #75, finish #71 and the reduced #72, and close #55 once the
+   `plan-cross-repo-design` PR opens.
+2. M7 is the owner's: run the M1 export, time it with
+   `cargo xtask bench --board <export>`, choose a real task type (the export
+   writes `legacy/*` records, and `tasks` reads `lr/task/v1`), enable `tasks`
+   and use Board daily. Route findings to builders as small fixes.
+3. Performance baselines: warm check is about 20 µs per entry; three measured
+   speedups exist (#33); the chain numbers are in #57 and viitta-stress-test
+   9d557d1. Targets (100 ms) are goals; budgets are alarms.
+4. Sharing is sketched as M8 in PLAN.md, with network safety and research
+   notes; turn it into a design-gap list for a builder after M7.
