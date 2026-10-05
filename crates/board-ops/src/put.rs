@@ -4,9 +4,10 @@
 use std::io::{BufRead, Read};
 
 use board_model::{
-    BINARY_NAME, CONFIG_TYPE, Code, Content, JsonError, Location, LogicalPath, MAX_RECORD_BYTES,
-    Object, ObjectId, Role, canonical_json, parse_json,
+    BINARY_NAME, CONFIG_TYPE, Code, Content, JsonError, Location, LogicalPath, MANIFEST_TYPE,
+    MAX_RECORD_BYTES, Object, ObjectId, Role, canonical_json, parse_json,
 };
+use board_plugin::{Manifest, ManifestError};
 use board_tree::{LOCK_WAIT, WriteError};
 use board_validate::{RecordError, Schema};
 use serde_json::Value;
@@ -347,6 +348,11 @@ impl Board {
                 .map(|_| (value, false))
                 .ok_or(Refused::Code(Code::ConfigInvalid));
         }
+        if record_type.as_str() == MANIFEST_TYPE {
+            return Manifest::from_value(value.clone())
+                .map(|_| (value, false))
+                .map_err(Refused::from);
+        }
         let schema_path = record_type.schema_path();
         let schema_bytes = self
             .repository()
@@ -373,6 +379,8 @@ pub enum Refused {
     Json(#[from] JsonError),
     #[error(transparent)]
     Schema(#[from] RecordError),
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
     #[error("{0}")]
     Code(Code),
 }
@@ -382,6 +390,7 @@ impl Refused {
         match self {
             Self::Json(error) => error.code(),
             Self::Schema(error) => error.code(),
+            Self::Manifest(error) => error.code(),
             Self::Code(code) => *code,
         }
     }

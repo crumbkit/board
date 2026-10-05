@@ -107,6 +107,11 @@ fn a_name_other_than_its_directory_is_refused() {
 }
 
 #[test]
+fn checking_the_content_alone_ignores_the_directory() {
+    assert!(Manifest::from_value(manifest()).is_ok());
+}
+
+#[test]
 fn names_are_lowercase_ascii_letters_digits_and_hyphens() {
     for good in ["tasks", "reading-list", "v2", "-"] {
         assert!(good.parse::<PluginName>().is_ok(), "{good}");

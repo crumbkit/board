@@ -142,10 +142,10 @@ optionally, a rule a program can check, such as a word budget.
 
 **What works today.** A trial on a scratch clone of viitta found:
 
-- `board check` indexes all 176 files. Six are degraded with
-  `record::unknown_type`: the three `plugin.json` files, the export golden
-  record (`legacy/work/v1`) and the canonical-form fixture
-  `nesting.in.json`/`.out.json` (`lr/task/v1`).
+- `board check` indexes all 176 files. Three are degraded with
+  `record::unknown_type`: the export golden record (`legacy/work/v1`) and the
+  canonical-form fixture `nesting.in.json`/`.out.json` (`lr/task/v1`). The
+  three `plugin.json` files check clean.
 - A control can already be a plain record. A schema field of
   `board-ref` strings, without `x-board-type`, may reference any file.
   `check` reports `ref::dangling` when a referenced file is renamed or

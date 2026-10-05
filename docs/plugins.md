@@ -53,7 +53,8 @@ match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
 holds only MCP's five hint keys, which Board stores and never acts on. `_meta`
 is any JSON object. `icons` and `execution` are refused. `extract`
 lists the record types the plugin reads (see Extraction). The manifest refuses
-unknown fields. Its `name` equals its directory's name. `version` is
+unknown fields. An installed plugin's `name` equals its directory's name;
+`check` and `put` check only the content. `version` is
 `MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted board's
 rules. A manifest that breaks any of these is `board::plugin::bad_manifest`.
 

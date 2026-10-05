@@ -172,6 +172,27 @@ fn a_record_whose_type_has_no_schema_is_unknown() {
     );
 }
 
+/// A plugin manifest that Board admits, with one capability.
+pub(crate) const MANIFEST: &str = r#"{"$type": "board/plugin-manifest/v1", "name": "p", "version": "0.1.0",
+  "description": "d", "run": ["./run"], "capabilities": [{"name": "c", "description": "d",
+  "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"}}]}"#;
+
+#[test]
+fn a_plugin_manifest_is_checked_by_its_content_and_a_broken_one_is_a_bad_manifest() {
+    let scenario = board();
+    let broken = MANIFEST.replace(r#"["./run"]"#, "[]");
+    // Neither directory is named p: an installed plugin's directory rule
+    // does not apply to a manifest in a board.
+    scenario
+        .write("plugins/q/plugin.json", Item::File(MANIFEST))
+        .write("plugins/r/plugin.json", Item::File(&broken));
+    assert_eq!(status(&scenario, "plugins/q/plugin.json"), Status::Ok);
+    assert_eq!(
+        status(&scenario, "plugins/r/plugin.json"),
+        Status::Degraded(Code::PluginBadManifest)
+    );
+}
+
 #[test]
 fn a_schema_that_does_not_compile_degrades_itself_and_its_records() {
     let scenario = board();

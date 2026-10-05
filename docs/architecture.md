@@ -70,7 +70,11 @@ compile is `schema::invalid`, and so is each record of its type.
 `record::invalid` names the first failing instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
-their schema.
+their schema. Board knows `board/config/v1`, `board/mount/v1` and
+`board/plugin-manifest/v1` wherever they are stored, so a repository holding a
+plugin's source checks clean. A manifest is checked by its content alone; a
+broken one is `plugin::bad_manifest`. Any other `board/*` type is
+`record::unknown_type`.
 
 ### Typed references
 

@@ -7,7 +7,10 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_index::{BlobFact, Index, IndexError, RefFact, ValidationFact, WorktreeRow, Writer};
-use board_model::{CONFIG_TYPE, Classified, Code, Content, ObjectId, Role, Source, Stat};
+use board_model::{
+    CONFIG_TYPE, Classified, Code, Content, MANIFEST_TYPE, ObjectId, Role, Source, Stat,
+};
+use board_plugin::Manifest;
 use board_tree::{Entry, GitError, Repository, Status};
 use board_validate::Schema;
 use serde_json::Value;
@@ -258,8 +261,8 @@ fn now_ns() -> i64 {
 }
 
 /// What the index keeps of a classification. A schema that parses is also
-/// compiled, and Board's configuration read, since whether either is usable
-/// depends on its bytes alone.
+/// compiled, and Board's configuration and plugin manifests read, since
+/// whether each is usable depends on its bytes alone.
 fn blob_fact(classified: &Classified) -> BlobFact {
     let code = classified.code.or_else(|| match &classified.content {
         Content::Schema { value } => Schema::compile(value.clone())
@@ -269,6 +272,11 @@ fn blob_fact(classified: &Classified) -> BlobFact {
             Config::from_value(value)
                 .is_none()
                 .then_some(Code::ConfigInvalid)
+        }
+        Content::Record { record_type, value } if record_type.as_str() == MANIFEST_TYPE => {
+            Manifest::from_value(value.clone())
+                .err()
+                .map(|error| error.code())
         }
         _ => None,
     });

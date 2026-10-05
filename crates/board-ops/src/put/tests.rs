@@ -7,7 +7,7 @@ use board_scenario::{Item, Scenario};
 use board_tree::{LOCK_WAIT, Status};
 
 use crate::put::{Expect, PutReport};
-use crate::tests::{open, task};
+use crate::tests::{MANIFEST, open, task};
 
 mod batch;
 
@@ -502,4 +502,16 @@ fn a_link_whose_target_is_missing_is_refused_and_one_whose_target_exists_is_foll
         "put does not create a link's target"
     );
     assert!(put(&scenario, "/links/here", Expect::Any, project).is_ok());
+}
+
+#[test]
+fn put_refuses_a_broken_plugin_manifest_and_writes_a_valid_one() {
+    let scenario = board();
+    let broken = MANIFEST.replace(r#"["./run"]"#, "[]");
+    let refused = open(&scenario)
+        .put(&path("/plugins/p/plugin"), Expect::Any, broken.as_bytes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PluginBadManifest);
+    assert!(refused.to_string().contains("empty run"), "{refused}");
+    assert!(put(&scenario, "/plugins/p/plugin", Expect::Any, MANIFEST).is_ok());
 }

@@ -15,6 +15,9 @@ use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
 /// The `$type` of `.board/board.json`.
 pub const CONFIG_TYPE: &str = "board/config/v1";
 
+/// The `$type` of a plugin's `plugin.json`.
+pub const MANIFEST_TYPE: &str = "board/plugin-manifest/v1";
+
 /// The directory that holds schemas.
 const TYPES_DIRECTORY: &str = ".board/types/";
 
@@ -237,8 +240,9 @@ impl Role {
                 Err(error) => Classified::unparsed(Kind::Pointer, error.code()),
             },
             _ => Classified {
-                code: (record_type.is_board() && record_type.as_str() != CONFIG_TYPE)
-                    .then_some(Code::RecordUnknownType),
+                code: (record_type.is_board()
+                    && !matches!(record_type.as_str(), CONFIG_TYPE | MANIFEST_TYPE))
+                .then_some(Code::RecordUnknownType),
                 content: Content::Record { record_type, value },
             },
         }

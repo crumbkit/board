@@ -18,7 +18,7 @@ pub use crate::pointer::{
     MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer, repinned,
 };
 pub use crate::record::{
-    CONFIG_TYPE, Classified, Content, Kind, RecordType, RecordTypeError, Role, classify,
-    needs_bytes,
+    CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RecordType, RecordTypeError, Role,
+    classify, needs_bytes,
 };
 pub use crate::stat::{Change, Stat};

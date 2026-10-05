@@ -128,7 +128,7 @@ pub(crate) fn hint(code: Code) -> &'static str {
             "run `board plugin list` to see the installed plugins and their capabilities"
         }
         Code::PluginBadManifest => {
-            "fix the plugin's `plugin.json`, or reinstall the plugin; the message names the problem"
+            "fix the plugin manifest the message names, or reinstall the plugin"
         }
         Code::PluginNotEnabled => "add the plugin's name to `plugins` in `.board/board.json`",
         Code::PluginAmbiguous => {

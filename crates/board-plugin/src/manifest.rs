@@ -4,12 +4,11 @@
 use std::fmt;
 use std::str::FromStr;
 
+pub use board_model::MANIFEST_TYPE;
 use board_model::{Code, JsonError, RecordType, parse_json};
 use board_validate::{Schema, SchemaError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-
-pub const MANIFEST_TYPE: &str = "board/plugin-manifest/v1";
 
 /// Lowercase ASCII letters, digits and hyphens, at least one.
 fn is_name(text: &str) -> bool {
@@ -207,16 +206,22 @@ impl Manifest {
     /// Parses the manifest in the directory named `directory`.
     pub fn parse(directory: &str, bytes: &[u8]) -> Result<Self, ManifestError> {
         let value = parse_json(bytes).map_err(|source| ManifestError::Json { source })?;
+        let manifest = Self::from_value(value)?;
+        if manifest.name.as_str() != directory {
+            return Err(ManifestError::Directory {
+                name: manifest.name,
+                directory: directory.to_owned(),
+            });
+        }
+        Ok(manifest)
+    }
+
+    /// Reads a parsed manifest by its content alone, wherever it is stored.
+    pub fn from_value(value: Value) -> Result<Self, ManifestError> {
         let raw =
             RawManifest::deserialize(value).map_err(|source| ManifestError::Shape { source })?;
         if raw.tag != MANIFEST_TYPE {
             return Err(ManifestError::Type { found: raw.tag });
-        }
-        if raw.name.as_str() != directory {
-            return Err(ManifestError::Directory {
-                name: raw.name,
-                directory: directory.to_owned(),
-            });
         }
         if raw.run.is_empty() {
             return Err(ManifestError::EmptyRun);
@@ -338,24 +343,24 @@ pub struct MetaFilterError {
 pub enum ManifestError {
     #[error("the plugin directory holds no readable plugin.json")]
     Missing,
-    #[error("plugin.json is not strict JSON: {source}")]
+    #[error("the manifest is not strict JSON: {source}")]
     Json { source: JsonError },
-    #[error("plugin.json is not a plugin manifest: {source}")]
+    #[error("the manifest is not a plugin manifest: {source}")]
     Shape { source: serde_json::Error },
-    #[error("plugin.json has $type {found:?}, not {MANIFEST_TYPE}")]
+    #[error("the manifest has $type {found:?}, not {MANIFEST_TYPE}")]
     Type { found: String },
     #[error("plugin.json names {name}, but its directory is {directory:?}")]
     Directory { name: PluginName, directory: String },
-    #[error("plugin.json has an empty run")]
+    #[error("the manifest has an empty run")]
     EmptyRun,
-    #[error("plugin.json offers capability {name} twice")]
+    #[error("the manifest offers capability {name} twice")]
     DuplicateCapability { name: CapabilityName },
-    #[error("plugin.json capability {capability} has an {side} whose root is not an object type")]
+    #[error("the manifest capability {capability} has an {side} whose root is not an object type")]
     NotObject {
         capability: CapabilityName,
         side: Side,
     },
-    #[error("plugin.json capability {capability} has an {side} that cannot be used: {source}")]
+    #[error("the manifest capability {capability} has an {side} that cannot be used: {source}")]
     Schema {
         capability: CapabilityName,
         side: Side,

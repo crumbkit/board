@@ -99,6 +99,10 @@ fn a_board_type_board_does_not_define_is_unknown() {
         (Kind::Record, None)
     );
     assert_eq!(
+        classified("x.json", r#"{"$type": "board/plugin-manifest/v1"}"#),
+        (Kind::Record, None)
+    );
+    assert_eq!(
         classified("x.json", r#"{"$type": "board/widget/v1"}"#),
         (Kind::Record, Some(Code::RecordUnknownType))
     );
