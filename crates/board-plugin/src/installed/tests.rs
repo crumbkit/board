@@ -84,23 +84,50 @@ fn a_plugins_directory_that_cannot_be_listed_is_refused_as_not_installed() {
     assert_eq!(names(&installed(&plugins(&scenario)).unwrap()), ["tasks"]);
 }
 
+const NOTES: &str = r#"{
+  "$type": "board/plugin-manifest/v1",
+  "name": "notes",
+  "version": "1.0.0",
+  "description": "Notes.",
+  "run": ["./run"],
+  "types": ["notes/note/v1"]
+}"#;
+
+const SHIPPED: &str = "plugins/notes/types/notes/note/v1.schema.json";
+
 #[test]
-fn a_shipped_schema_is_read_from_the_plugins_types_and_a_missing_one_is_none() {
+fn a_type_whose_shipped_schema_is_missing_or_unusable_is_a_bad_manifest_naming_the_file() {
     let scenario = Scenario::new();
-    scenario.write(
-        "plugins/notes/types/notes/note/v1.schema.json",
-        Item::File(r#"{"type": "object"}"#),
-    );
-    let directory = plugins(&scenario).join("notes");
-    let note: RecordType = "notes/note/v1".parse().unwrap();
+    scenario.write("plugins/notes/plugin.json", Item::File(NOTES));
+    let shipped = plugins(&scenario).join("notes/types/notes/note/v1.schema.json");
+    for (schema, reason) in [
+        (None, "is missing or cannot be read"),
+        (Some("{"), "is not strict JSON"),
+        (Some(r#"{"type": 5}"#), "does not compile"),
+    ] {
+        if let Some(schema) = schema {
+            scenario.write(SHIPPED, Item::File(schema));
+        }
+        let found = installed(&plugins(&scenario)).unwrap();
+        let error = found[0].manifest.as_ref().unwrap_err();
+        assert_eq!(error.code(), Code::PluginBadManifest);
+        let message = error.to_string();
+        assert!(
+            message.contains(&shipped.display().to_string()),
+            "{message}"
+        );
+        assert!(message.contains("notes/note/v1"), "{message}");
+        assert!(message.contains(reason), "{message}");
+        assert!(found[0].schemas.is_empty());
+    }
+    scenario.write(SHIPPED, Item::File(r#"{"type": "object"}"#));
+    let found = installed(&plugins(&scenario)).unwrap();
+    assert!(found[0].manifest.is_ok());
     assert_eq!(
-        shipped_schema_path(&note),
-        "types/notes/note/v1.schema.json"
+        found[0].schemas,
+        [(
+            "notes/note/v1".parse().unwrap(),
+            serde_json::json!({"type": "object"})
+        )]
     );
-    assert_eq!(
-        shipped_schema(&directory, &note).as_deref(),
-        Some(&br#"{"type": "object"}"#[..])
-    );
-    let other: RecordType = "notes/note/v2".parse().unwrap();
-    assert_eq!(shipped_schema(&directory, &other), None);
 }

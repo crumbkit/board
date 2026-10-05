@@ -346,6 +346,30 @@ fn a_named_plugin_with_a_bad_manifest_is_refused_and_skipped_by_capability() {
 }
 
 #[test]
+fn a_plugin_shipping_an_unusable_schema_is_a_bad_manifest_and_a_usable_one_is_called() {
+    let fixture = Fixture::tasks(RECORDING);
+    let manifest = fixture.plugin("tasks").join("plugin.json");
+    let mut value: Value = serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+    value["types"] = json!(["tasks/note/v1"]);
+    fixture
+        .data
+        .write("plugins/tasks/plugin.json", Item::File(&value.to_string()))
+        .write(
+            "plugins/tasks/types/tasks/note/v1.schema.json",
+            Item::File(r#"{"type": 3}"#),
+        );
+    assert_eq!(
+        fixture.refused("tasks.due", r#"{"n": 1}"#),
+        Code::PluginBadManifest
+    );
+    fixture.data.write(
+        "plugins/tasks/types/tasks/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
+}
+
+#[test]
 fn input_that_is_not_strict_json_or_fails_the_schema_is_refused_before_the_plugin_runs() {
     let fixture = Fixture::tasks(RECORDING);
     for input in ["{", r#"{"n": 1, "n": 2}"#, r#"{"n": "one"}"#, "{}"] {

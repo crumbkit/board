@@ -248,34 +248,37 @@ fn a_plugin_the_board_does_not_enable_needs_no_schema() {
 }
 
 #[test]
-fn an_enabled_plugin_shipping_no_usable_schema_names_the_shipped_file_and_a_usable_one_is_clean() {
-    let (board, data, plugins) = shipping(r#"["notes"]"#);
-    board.write(
-        ".board/types/notes/note/v1.schema.json",
-        Item::File(r#"{"type": "object"}"#),
-    );
-    data.write(
-        "plugins/notes/types/notes/note/v1.schema.json",
-        Item::File(r#"{"type": 3}"#),
-    );
-    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
-    assert_eq!(
-        schemas(&report),
-        [(
-            "notes/note/v1".to_owned(),
-            plugins
-                .join("notes/types/notes/note/v1.schema.json")
-                .display()
-                .to_string(),
-            Code::PluginBadManifest
-        )]
-    );
-    data.write(
-        "plugins/notes/types/notes/note/v1.schema.json",
-        Item::File(r#"{"type": "object"}"#),
-    );
-    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
-    assert_eq!(listed(&report), [("notes", true, None)]);
+fn a_plugin_shipping_no_usable_schema_is_a_bad_manifest_offering_nothing_and_a_usable_one_is_offered()
+ {
+    for enabled in ["[]", r#"["notes"]"#] {
+        let (board, data, plugins) = shipping(enabled);
+        board.write(
+            ".board/types/notes/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+        data.write(
+            "plugins/notes/types/notes/note/v1.schema.json",
+            Item::File(r#"{"type": 3}"#),
+        );
+        let board = open(&board);
+        let report = board.plugin_list(Some(&plugins)).unwrap();
+        assert_eq!(
+            listed(&report),
+            [("notes", enabled != "[]", Some(Code::PluginBadManifest))]
+        );
+        assert!(report.plugins[0].schemas.is_empty());
+        let found = board.plugin_find(Some(&plugins), None, &[]).unwrap();
+        assert!(found.plugins.is_empty(), "{enabled}");
+
+        data.write(
+            "plugins/notes/types/notes/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+        let report = board.plugin_list(Some(&plugins)).unwrap();
+        assert_eq!(listed(&report), [("notes", enabled != "[]", None)]);
+        let found = board.plugin_find(Some(&plugins), None, &[]).unwrap();
+        assert_eq!(found.plugins.len(), 1, "{enabled}");
+    }
 }
 
 #[test]

@@ -4,11 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, LogicalPath, RecordType, canonical_json, parse_json};
-use board_plugin::{
-    DiscoveryError, ManifestError, PluginName, installed, shipped_schema, shipped_schema_path,
-};
+use board_plugin::{DiscoveryError, ManifestError, PluginName, installed, shipped_schema_path};
 use board_tree::WriteError;
-use board_validate::Schema;
 use serde_json::Value;
 
 use crate::Board;
@@ -42,25 +39,26 @@ impl Board {
         .into_iter()
         .find(|installed| installed.name == name.as_str())
         .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
-        let manifest = found.manifest.map_err(|source| EnableError::Manifest {
-            name: name.clone(),
-            source,
-        })?;
-        let mut prepared = Vec::new();
-        for record_type in &manifest.types {
-            let unusable = || EnableError::Schema {
+        if let Err(source) = found.manifest {
+            return Err(EnableError::Manifest {
                 name: name.clone(),
-                record_type: record_type.clone(),
-            };
-            let (shipped, held) = self
-                .held(&found.directory, record_type)?
-                .ok_or_else(unusable)?;
-            match held {
+                source,
+            });
+        }
+        let mut prepared = Vec::new();
+        for (record_type, shipped) in &found.schemas {
+            match self.held(record_type, shipped)? {
                 Held::Absent => {
                     let physical = record_type.schema_path();
                     let stem = physical.strip_suffix(".json").unwrap_or(&physical);
-                    let path: LogicalPath = format!("/{stem}").parse().map_err(|_| unusable())?;
-                    prepared.push(self.schema(path, &shipped)?);
+                    let path: LogicalPath =
+                        format!("/{stem}")
+                            .parse()
+                            .map_err(|_| EnableError::Schema {
+                                name: name.clone(),
+                                record_type: record_type.clone(),
+                            })?;
+                    prepared.push(self.schema(path, shipped)?);
                 }
                 Held::Same => {}
                 Held::Other => {
@@ -104,29 +102,23 @@ impl Board {
         })
     }
 
-    /// The schema the plugin installed in `directory` ships for
-    /// `record_type`, and how the working tree holds it; `None` when the
-    /// plugin ships no schema that parses and compiles.
+    /// How the working tree holds `shipped`, the schema a plugin ships for
+    /// `record_type`.
     pub(crate) fn held(
         &self,
-        directory: &Path,
         record_type: &RecordType,
-    ) -> Result<Option<(Value, Held)>, WriteError> {
-        let Some(shipped) = shipped_schema(directory, record_type)
-            .and_then(|bytes| parse_json(&bytes).ok())
-            .filter(|value| Schema::compile(value.clone()).is_ok())
-        else {
-            return Ok(None);
-        };
-        let held = match self
-            .repository()
-            .read_working_file(&record_type.schema_path())?
-        {
-            None => Held::Absent,
-            Some(bytes) if parse_json(&bytes).ok().as_ref() == Some(&shipped) => Held::Same,
-            Some(_) => Held::Other,
-        };
-        Ok(Some((shipped, held)))
+        shipped: &Value,
+    ) -> Result<Held, WriteError> {
+        Ok(
+            match self
+                .repository()
+                .read_working_file(&record_type.schema_path())?
+            {
+                None => Held::Absent,
+                Some(bytes) if parse_json(&bytes).ok().as_ref() == Some(shipped) => Held::Same,
+                Some(_) => Held::Other,
+            },
+        )
     }
 
     /// A shipped schema, to be written where nothing is.
@@ -166,8 +158,8 @@ pub enum EnableError {
         source: ManifestError,
     },
     #[error(
-        "the {name} plugin ships no usable schema for {record_type} at {}",
-        shipped_schema_path(record_type)
+        "the {name} plugin ships {record_type}, whose path in the board, {}, is too long; shorten the type's name",
+        record_type.schema_path()
     )]
     Schema {
         name: PluginName,

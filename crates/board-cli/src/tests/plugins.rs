@@ -471,6 +471,34 @@ fn shipping() -> (Scenario, Scenario) {
     (board, data)
 }
 
+#[test]
+fn plugin_list_prints_why_a_shipped_schema_is_unusable_and_a_usable_one_is_ok() {
+    let (board, data) = shipping();
+    data.write(
+        "plugins/notes/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": 3}"#),
+    );
+    let output = plugin(&board, &data, &["plugin", "list"]);
+    assert_eq!(output.code, 1);
+    let shipped = data
+        .workdir()
+        .join("plugins/notes/types/notes/note/v1.schema.json");
+    let prefix = format!(
+        "degraded board::plugin::bad_manifest notes disabled: the schema the plugin ships for \
+         notes/note/v1 at {} does not compile: ",
+        shipped.display()
+    );
+    let stdout = text(&output.stdout);
+    assert!(stdout.starts_with(&prefix), "{stdout}");
+    data.write(
+        "plugins/notes/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    let output = plugin(&board, &data, &["plugin", "list"]);
+    assert_eq!(output.code, 0);
+    assert_eq!(text(&output.stdout), "ok notes 1.0.0 disabled\n");
+}
+
 /// `plugin enable` refused because the board holds another schema.
 pub(super) fn enable_over_another_schema() -> Output {
     let (board, data) = shipping();

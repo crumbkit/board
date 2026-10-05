@@ -61,19 +61,18 @@ lists the record types the plugin reads (see Extraction). `types` lists the
 types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`
 in its directory. Each type's namespace is the plugin's name, never
 `board`. The manifest refuses
-unknown fields. An installed plugin's `name` equals its directory's name;
-`check` and `put` check only the content. `version` is
-`MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted board's
-rules. A manifest that breaks any of these is `board::plugin::bad_manifest`.
+unknown fields. An installed plugin's `name` equals its directory's name, and
+ships each type's schema; `check` and `put` check only the content.
+`version` is `MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted
+board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
 
 `board plugin list` prints every installed plugin, its capabilities, and
 whether the board enables it. It exits 1 on a broken install
 (`board::plugin::bad_manifest`), an enabled name not installed
-(`not_installed`), or an enabled plugin's schema that it ships unusable
-(`bad_manifest`), the board lacks (`schema_missing`) or holds differently
-(`schema_differs`), naming the file.
+(`not_installed`), or an enabled plugin's schema that the board lacks
+(`schema_missing`) or holds differently (`schema_differs`), naming the file.
 `board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at least
 one filter, lists the capabilities of working installs that match every filter.
 A `--meta` filter matches a string value in the capability's `_meta`, or in the

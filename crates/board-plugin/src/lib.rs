@@ -13,7 +13,7 @@ pub use crate::call::{
 };
 pub use crate::extract::{Extraction, Record, extract};
 pub use crate::installed::{
-    DiscoveryError, Installed, MANIFEST_FILE, installed, shipped_schema, shipped_schema_path,
+    DiscoveryError, Installed, MANIFEST_FILE, installed, shipped_schema_path,
 };
 pub use crate::manifest::{
     Annotations, Capability, CapabilityName, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,

@@ -54,7 +54,7 @@ pub(crate) fn plugin_list(
                     "{status} {}{version} {}{}",
                     plugin.name,
                     enabled(plugin.enabled),
-                    schemas(plugin)
+                    problems(plugin)
                 );
                 for capability in *capabilities {
                     let _ = writeln!(text, "  {} {}", capability.name, capability.description);
@@ -114,8 +114,12 @@ pub(crate) fn plugin_list(
     }
 }
 
-/// Each schema problem as its code and file, after `: `; empty when none.
-fn schemas(plugin: &Plugin) -> String {
+/// A refused manifest's message, or each schema problem as its code and
+/// file, after `: `; empty when none.
+fn problems(plugin: &Plugin) -> String {
+    if let PluginState::BadManifest(error) = &plugin.state {
+        return format!(": {error}");
+    }
     let problems: Vec<String> = plugin
         .schemas
         .iter()

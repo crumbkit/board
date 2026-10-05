@@ -5,8 +5,8 @@ use std::path::Path;
 use board_model::{Code, RecordType};
 use board_plugin::{
     CapabilityName, DiscoveryError, Manifest, ManifestError, MetaFilter, PluginName, installed,
-    shipped_schema_path,
 };
+use serde_json::Value;
 
 use crate::Board;
 use crate::enable::Held;
@@ -41,8 +41,7 @@ pub struct Plugin {
 #[derive(Debug)]
 pub struct SchemaProblem {
     pub record_type: RecordType,
-    /// Where the board keeps it, from the root; for a schema the plugin
-    /// ships unusable, the shipped file.
+    /// Where the board keeps it, from the root.
     pub path: String,
     pub code: Code,
 }
@@ -90,13 +89,14 @@ impl Board {
             .into_iter()
             .map(|installed| {
                 let enabled = enabled.iter().any(|name| name.as_str() == installed.name);
-                let schemas = match (&installed.manifest, enabled) {
-                    (Ok(manifest), true) => manifest
-                        .types
+                let schemas = if enabled {
+                    installed
+                        .schemas
                         .iter()
-                        .filter_map(|record_type| self.problem(&installed.directory, record_type))
-                        .collect(),
-                    _ => Vec::new(),
+                        .filter_map(|(record_type, shipped)| self.problem(record_type, shipped))
+                        .collect()
+                } else {
+                    Vec::new()
                 };
                 Plugin {
                     enabled,
@@ -123,23 +123,13 @@ impl Board {
         Ok(PluginListReport { plugins: listed })
     }
 
-    /// What is wrong with the schema the plugin in `directory` ships for
-    /// `record_type`, as `plugin enable` would find it.
-    fn problem(&self, directory: &Path, record_type: &RecordType) -> Option<SchemaProblem> {
-        let code = match self.held(directory, record_type) {
-            Ok(Some((_, Held::Same))) => return None,
-            Ok(Some((_, Held::Absent))) => Code::PluginSchemaMissing,
-            Ok(Some((_, Held::Other))) => Code::PluginSchemaDiffers,
-            Ok(None) => {
-                return Some(SchemaProblem {
-                    record_type: record_type.clone(),
-                    path: directory
-                        .join(shipped_schema_path(record_type))
-                        .display()
-                        .to_string(),
-                    code: Code::PluginBadManifest,
-                });
-            }
+    /// What is wrong with how the board holds `shipped`, the schema a
+    /// plugin ships for `record_type`, as `plugin enable` would find it.
+    fn problem(&self, record_type: &RecordType, shipped: &Value) -> Option<SchemaProblem> {
+        let code = match self.held(record_type, shipped) {
+            Ok(Held::Same) => return None,
+            Ok(Held::Absent) => Code::PluginSchemaMissing,
+            Ok(Held::Other) => Code::PluginSchemaDiffers,
             Err(error) => error.code(),
         };
         Some(SchemaProblem {

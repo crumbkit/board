@@ -216,7 +216,7 @@ fn generic(code: Code) -> &'static str {
             "run `board plugin list` to see the installed plugins and their capabilities"
         }
         Code::PluginBadManifest => {
-            "fix the plugin manifest the message names, or reinstall the plugin"
+            "fix the plugin's `plugin.json` or the shipped schema the message names, or reinstall the plugin"
         }
         Code::PluginNotEnabled => "run `board plugin enable <name>`",
         Code::PluginSchemaMissing => {

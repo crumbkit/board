@@ -5,7 +5,9 @@ use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
-use board_model::{Code, MAX_RECORD_BYTES, RecordType};
+use board_model::{Code, MAX_RECORD_BYTES, RecordType, parse_json};
+use board_validate::Schema;
+use serde_json::Value;
 
 use crate::manifest::{Manifest, ManifestError};
 
@@ -18,6 +20,9 @@ pub struct Installed {
     pub name: String,
     pub directory: PathBuf,
     pub manifest: Result<Manifest, ManifestError>,
+    /// Each type the manifest declares and the schema the plugin ships for
+    /// it, in the manifest's order; empty when the manifest is refused.
+    pub schemas: Vec<(RecordType, Value)>,
 }
 
 /// Every entry of `plugins`, sorted by name. A directory that does not exist
@@ -39,13 +44,22 @@ pub fn installed(plugins: &Path) -> Result<Vec<Installed>, DiscoveryError> {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let manifest = read_bounded(&directory.join(MANIFEST_FILE))
+        let loaded = read_bounded(&directory.join(MANIFEST_FILE))
             .ok_or(ManifestError::Missing)
-            .and_then(|bytes| Manifest::parse(&name, &bytes));
+            .and_then(|bytes| Manifest::parse(&name, &bytes))
+            .and_then(|manifest| {
+                let schemas = shipped(&directory, &manifest)?;
+                Ok((manifest, schemas))
+            });
+        let (manifest, schemas) = match loaded {
+            Ok((manifest, schemas)) => (Ok(manifest), schemas),
+            Err(error) => (Err(error), Vec::new()),
+        };
         found.push(Installed {
             name,
             directory,
             manifest,
+            schemas,
         });
     }
     found.sort_by(|a, b| a.name.cmp(&b.name));
@@ -58,10 +72,34 @@ pub fn shipped_schema_path(record_type: &RecordType) -> String {
     format!("types/{}.schema.json", record_type.as_str())
 }
 
-/// The bytes of the schema the plugin in `directory` ships for
-/// `record_type`, or `None` when it cannot be read.
-pub fn shipped_schema(directory: &Path, record_type: &RecordType) -> Option<Vec<u8>> {
-    read_bounded(&directory.join(shipped_schema_path(record_type)))
+/// The schema the plugin in `directory` ships for each of `manifest`'s types,
+/// each parsed and compiled.
+fn shipped(
+    directory: &Path,
+    manifest: &Manifest,
+) -> Result<Vec<(RecordType, Value)>, ManifestError> {
+    manifest
+        .types
+        .iter()
+        .map(|record_type| {
+            let path = directory.join(shipped_schema_path(record_type));
+            let bytes = read_bounded(&path).ok_or_else(|| ManifestError::ShippedMissing {
+                record_type: record_type.clone(),
+                path: path.clone(),
+            })?;
+            let schema = parse_json(&bytes).map_err(|source| ManifestError::ShippedJson {
+                record_type: record_type.clone(),
+                path: path.clone(),
+                source,
+            })?;
+            Schema::compile(schema.clone()).map_err(|source| ManifestError::ShippedSchema {
+                record_type: record_type.clone(),
+                path,
+                source,
+            })?;
+            Ok((record_type.clone(), schema))
+        })
+        .collect()
 }
 
 /// A file's bytes, one past the record bound so the parse sees one too

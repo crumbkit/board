@@ -210,6 +210,43 @@ printf '{"$type": "board/extract-result/v1", "blobs": [%s]}' "$blobs"
     plugins
 }
 
+#[test]
+fn a_plugin_shipping_an_unusable_schema_fails_the_query_as_a_bad_manifest_and_a_usable_one_does_not()
+ {
+    let board = Scenario::new();
+    board.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#),
+    );
+    let installed = tasks_plugin();
+    let manifest = std::fs::read(installed.workdir().join("tasks/plugin.json")).unwrap();
+    let mut manifest: serde_json::Value = serde_json::from_slice(&manifest).unwrap();
+    manifest["types"] = json!(["tasks/note/v1"]);
+    installed
+        .write("tasks/plugin.json", Item::File(&manifest.to_string()))
+        .write(
+            "tasks/types/tasks/note/v1.schema.json",
+            Item::File(r#"{"type": 3}"#),
+        );
+    let plugins = Plugins {
+        directory: Some(installed.workdir()),
+        ..Plugins::default()
+    };
+    let report = open(&board).query("SELECT 1", 10, None, &plugins).unwrap();
+    let codes: Vec<&str> = report
+        .plugins
+        .iter()
+        .map(|failed| failed.code.as_str())
+        .collect();
+    assert_eq!(codes, ["board::plugin::bad_manifest"]);
+    installed.write(
+        "tasks/types/tasks/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    let report = open(&board).query("SELECT 1", 10, None, &plugins).unwrap();
+    assert!(report.plugins.is_empty(), "{:?}", report.plugins);
+}
+
 /// What `sql` answers through the index under `cache`, less whether that
 /// index was in memory.
 fn answered(

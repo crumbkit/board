@@ -2,6 +2,7 @@
 //! manifest).
 
 use std::fmt;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 pub use board_model::MANIFEST_TYPE;
@@ -395,6 +396,23 @@ pub enum ManifestError {
         side: Side,
         source: SchemaError,
     },
+    #[error("the schema the plugin ships for {record_type} at {} is missing or cannot be read", path.display())]
+    ShippedMissing {
+        record_type: RecordType,
+        path: PathBuf,
+    },
+    #[error("the schema the plugin ships for {record_type} at {} is not strict JSON: {source}", path.display())]
+    ShippedJson {
+        record_type: RecordType,
+        path: PathBuf,
+        source: JsonError,
+    },
+    #[error("the schema the plugin ships for {record_type} at {} does not compile: {source}", path.display())]
+    ShippedSchema {
+        record_type: RecordType,
+        path: PathBuf,
+        source: SchemaError,
+    },
 }
 
 impl ManifestError {
@@ -411,7 +429,10 @@ impl ManifestError {
             | Self::DuplicateType { .. }
             | Self::DuplicateCapability { .. }
             | Self::NotObject { .. }
-            | Self::Schema { .. } => Code::PluginBadManifest,
+            | Self::Schema { .. }
+            | Self::ShippedMissing { .. }
+            | Self::ShippedJson { .. }
+            | Self::ShippedSchema { .. } => Code::PluginBadManifest,
         }
     }
 }

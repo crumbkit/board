@@ -72,6 +72,7 @@ fn plugin(name: &str, capabilities: &[&str], input: &Value) -> Installed {
         name: name.to_owned(),
         directory: PathBuf::from(name),
         manifest: Ok(Manifest::parse(name, manifest.to_string().as_bytes()).unwrap()),
+        schemas: Vec::new(),
     }
 }
 
