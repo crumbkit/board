@@ -49,7 +49,9 @@ impl Fixture {
     }
 
     /// Installs `name`, offering `capabilities`, whose `run` script is
-    /// `script`.
+    /// `script`, run by the system `sh`. macOS scans a new file the first
+    /// time it is executed, which took up to 4 s with 40 starting at once,
+    /// longer than the time-limit tests allow.
     fn install(&self, name: &str, capabilities: &[&str], script: &str) -> &Self {
         let capabilities: Vec<Value> = capabilities
             .iter()
@@ -67,7 +69,7 @@ impl Fixture {
             "name": name,
             "version": "0.1.0",
             "description": "",
-            "run": ["./run"],
+            "run": ["sh", "./run"],
             "capabilities": capabilities,
         });
         self.data
@@ -75,7 +77,7 @@ impl Fixture {
                 &format!("plugins/{name}/plugin.json"),
                 Item::File(&manifest.to_string()),
             )
-            .write(&format!("plugins/{name}/run"), Item::Executable(script));
+            .write(&format!("plugins/{name}/run"), Item::File(script));
         self
     }
 
@@ -196,15 +198,14 @@ fn a_plugin_sees_only_the_variables_board_passes_and_one_more_depth() {
 #[test]
 fn a_bare_program_name_is_found_through_path() {
     let fixture = Fixture::tasks(RECORDING);
+    assert!(
+        fixture.call("tasks.due", r#"{"n": 1}"#).is_ok(),
+        "sh is found"
+    );
     let manifest = fixture.plugin("tasks").join("plugin.json");
-    let text = std::fs::read_to_string(&manifest)
-        .unwrap()
-        .replace(r#"["./run"]"#, r#"["sh","run"]"#);
-    fixture
-        .data
-        .write("plugins/tasks/plugin.json", Item::File(&text));
-    assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
-    let missing = text.replace(r#"["sh","run"]"#, r#"["no-such-program-anywhere"]"#);
+    let text = std::fs::read_to_string(&manifest).unwrap();
+    let missing = text.replace(r#"["sh","./run"]"#, r#"["no-such-program-anywhere"]"#);
+    assert_ne!(missing, text);
     fixture
         .data
         .write("plugins/tasks/plugin.json", Item::File(&missing));
