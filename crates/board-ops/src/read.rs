@@ -11,14 +11,14 @@ use serde_json::Value;
 
 use crate::board::Board;
 
-/// A record as `get` returns it: where it is, its stored bytes, and its
-/// parsed value.
+/// A file as `get` returns it: where it is, its stored bytes, and its parsed
+/// record or the code that says why it has none.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GetReport {
     pub location: Location,
     pub display: LogicalPath,
     pub bytes: Vec<u8>,
-    pub record: Value,
+    pub record: Result<Value, Code>,
 }
 
 /// One line of `ls`: a directory, or an entry with its kind and the status
@@ -46,8 +46,9 @@ pub struct LsReport {
 }
 
 impl Board {
-    /// Resolves `path`, following pointers, and returns the record there.
-    /// Anything but a record is `record::not_a_record`.
+    /// Resolves `path`, following pointers, and returns the file there. A
+    /// directory is `record::not_a_record`, and a file over 16 MiB is
+    /// `json::too_large`.
     pub fn get(&self, path: &LogicalPath) -> Result<GetReport, ReadError> {
         let location = self.locate(path)?;
         let not_a_record = || ReadError::NotARecord { path: path.clone() };
@@ -62,25 +63,22 @@ impl Board {
                 path: path.clone(),
                 code: Code::JsonTooLarge,
             })?;
-        match classify(&location.path, Some(&bytes)) {
+        let record = match classify(&location.path, Some(&bytes)) {
             Classified {
                 content: Content::Record { value, .. },
                 ..
-            } => Ok(GetReport {
-                display: display(&location, path),
-                location,
-                bytes,
-                record: value,
-            }),
+            } => Ok(value),
             Classified {
-                content: Content::Unparsed(Kind::Record),
-                code: Some(code),
-            } => Err(ReadError::Unread {
-                path: path.clone(),
-                code,
-            }),
-            _ => Err(not_a_record()),
-        }
+                code: Some(code), ..
+            } => Err(code),
+            Classified { code: None, .. } => Err(Code::RecordNotARecord),
+        };
+        Ok(GetReport {
+            display: display(&location, path),
+            location,
+            bytes,
+            record,
+        })
     }
 
     /// Resolves `path`, following pointers, and lists the directory there
@@ -211,7 +209,7 @@ pub enum ReadError {
     Resolve { source: ResolveError },
     #[error("{path} is not a record")]
     NotARecord { path: LogicalPath },
-    #[error("{path} cannot be read as a record: {code}")]
+    #[error("{path} cannot be read: {code}")]
     Unread { path: LogicalPath, code: Code },
     #[error(transparent)]
     Git { source: GitError },

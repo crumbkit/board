@@ -216,6 +216,25 @@ fn get_prints_the_stored_bytes_and_json_adds_where_they_are() {
 }
 
 #[test]
+fn get_prints_a_files_bytes_and_json_refuses_it_with_why_it_is_not_a_record() {
+    let scenario = board();
+    scenario.write("notes.md", Item::File("# n\n"));
+    let plain = board_in(scenario.workdir(), &["get", "/notes.md"]);
+    assert_eq!((plain.code, text(&plain.stdout)), (0, "# n\n".to_owned()));
+    let document = board_in(scenario.workdir(), &["get", "/notes.md", "--json"]);
+    assert_eq!(document.code, 1);
+    assert_eq!(json(&document)["code"], "board::record::not_a_record");
+    scenario.write("bad.json", Item::File(r#"{"$type": "task"}"#));
+    let broken = board_in(scenario.workdir(), &["get", "/bad"]);
+    assert_eq!(broken.code, 0);
+    let broken = board_in(scenario.workdir(), &["get", "/bad", "--json"]);
+    assert_eq!(json(&broken)["code"], "board::record::bad_type");
+    let record = board_in(scenario.workdir(), &["get", "/projects/p", "--json"]);
+    assert_eq!(record.code, 0);
+    assert_eq!(json(&record)["$type"], "board/get-report/v1");
+}
+
+#[test]
 fn ls_lists_directories_and_entries() {
     let scenario = board();
     scenario.write("projects/sub/x.md", Item::File(""));

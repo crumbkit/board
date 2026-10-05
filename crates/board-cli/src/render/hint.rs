@@ -19,7 +19,7 @@ pub(crate) fn hint(code: Code) -> &'static str {
             "remove the repeated key; Board refuses JSON that names a key twice in one object"
         }
         Code::JsonTooLarge => {
-            "a record holds at most 16 MiB; split it into records that reference each other"
+            "Board reads at most 16 MiB of a file; split a record into records that reference each other"
         }
         Code::JsonNotUtf8 => "save the file as UTF-8",
         Code::JsonLossyNumber => {
@@ -35,7 +35,7 @@ pub(crate) fn hint(code: Code) -> &'static str {
             "change the record to satisfy its schema in `.board/types/`; a refused `board put` names the field that fails"
         }
         Code::RecordNotARecord => {
-            "`board get` reads only records; run `board ls <path>` to see what is there"
+            "only a record has a JSON report or can be put; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
         }
         Code::ConfigNotFound => {
             "run Board inside a git repository whose root holds `.board/board.json` with `{\"$type\": \"board/config/v1\"}`"

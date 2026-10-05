@@ -308,7 +308,7 @@ old and new commit and whether it wrote.
 | Command | Does |
 | --- | --- |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>` | resolve and print a record's stored bytes; `--json` adds its Location; anything but a record is `board::record::not_a_record` |
+| `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location, and refuses any other file with the code that says why it is not one; a directory is `board::record::not_a_record` |
 | `board ls <path>` | list a directory without following pointers |
 | `board refs <path>` | references to and from an object |
 | `board put <path>` | validate and write a record |

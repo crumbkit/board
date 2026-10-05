@@ -26,6 +26,9 @@ pub enum Item<'a> {
     File(&'a str),
     /// A file modified just now, as an editor leaves it.
     Fresh(&'a str),
+    /// A file whose modification time is an hour ahead, so it is newer than
+    /// any refresh that has begun, however slow.
+    Ahead(&'a str),
     /// A file holding any bytes, UTF-8 or not.
     Bytes(&'a [u8]),
     Symlink(&'a str),
@@ -91,16 +94,21 @@ impl Scenario {
     pub fn write(&self, path: &str, item: Item<'_>) -> &Self {
         let path = self.git.workdir().unwrap().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let backdate = |path: &Path| {
+        let modified = |path: &Path, time: SystemTime| {
             fs::File::options()
                 .write(true)
                 .open(path)
                 .unwrap()
-                .set_modified(SystemTime::now() - Duration::from_hours(1))
+                .set_modified(time)
                 .unwrap();
         };
+        let backdate = |path: &Path| modified(path, SystemTime::now() - Duration::from_hours(1));
         match item {
             Item::Fresh(text) => fs::write(path, text).unwrap(),
+            Item::Ahead(text) => {
+                fs::write(&path, text).unwrap();
+                modified(&path, SystemTime::now() + Duration::from_hours(1));
+            }
             Item::File(text) => {
                 fs::write(&path, text).unwrap();
                 backdate(&path);
@@ -171,7 +179,7 @@ impl Scenario {
         let mut editor = self.git.edit_tree(empty).unwrap();
         for (path, item) in items {
             let (kind, id) = match item {
-                Item::File(text) | Item::Fresh(text) => {
+                Item::File(text) | Item::Fresh(text) | Item::Ahead(text) => {
                     (EntryKind::Blob, self.git.write_blob(text).unwrap().detach())
                 }
                 Item::Bytes(bytes) => (

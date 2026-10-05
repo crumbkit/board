@@ -150,14 +150,11 @@ optionally, a rule a program can check, such as a word budget.
   `board-ref` strings, without `x-board-type`, may reference any file.
   `check` reports `ref::dangling` when a referenced file is renamed or
   deleted, and `board refs /AGENTS.md` lists the controls that reach it.
-- `board get` refuses a file that is not a record with
-  `record::not_a_record`, so a plugin has no supported way to read a file's
-  bytes.
 
 **Owner decisions.**
 
-1. `board get <path>` prints the stored bytes of any entry, through the one
-   resolver. `--json` still refuses a non-record with `record::not_a_record`.
+1. Built: `board get <path>` prints any file's stored bytes
+   (docs/architecture.md, Commands).
 2. Board teaches types instead of hiding files. Adopting a repository must be
    gentle: after the owner follows what `check` says, `check` exits 0. Board
    knows its own `board/plugin-manifest/v1`, checked by Rust types as it
@@ -206,7 +203,7 @@ also runs `board call controls.check`.
 
 **Pull requests, in order.**
 
-1. `board get` prints any entry's bytes.
+1. Built: `board get` prints any file's bytes.
 2. Board knows `board/plugin-manifest/v1`; `record::unknown_type` names the
    missing schema file.
 3. `board init` writes a minimal `.board/board.json`; the manifest's type

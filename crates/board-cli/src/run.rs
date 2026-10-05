@@ -92,13 +92,14 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
-    /// Print the record at a path, following pointers.
+    /// Print the file at a path, following pointers; with --json, only a record.
     #[command(after_help = "\
 Examples:
   board get /projects/p
-  board get /projects/p --json")]
+  board get /projects/p --json
+  board get /README.md")]
     Get {
-        /// The record's logical path: it starts with / and leaves out .json, such as /projects/p.
+        /// The file's logical path: it starts with /, and a JSON file's leaves out .json, such as /projects/p.
         path: LogicalPath,
     },
     /// List the directory at a path, without following pointers inside it.

@@ -316,14 +316,23 @@ pub(crate) fn get(format: Format, report: &GetReport) -> Output {
             stdout: report.bytes.clone(),
             ..Output::default()
         },
-        Format::Json => document(
-            &json!({
-                "$type": "board/get-report/v1",
-                "location": location(&report.location, &report.display.to_string()),
-                "record": report.record,
-            }),
-            0,
-        ),
+        // The report carries the parsed record, so a file that is not one
+        // has no report, and is refused with the code that says why.
+        Format::Json => match &report.record {
+            Ok(record) => document(
+                &json!({
+                    "$type": "board/get-report/v1",
+                    "location": location(&report.location, &report.display.to_string()),
+                    "record": record,
+                }),
+                0,
+            ),
+            Err(code) => error(
+                format,
+                *code,
+                &format_args!("{} is not a record", report.display),
+            ),
+        },
     }
 }
 

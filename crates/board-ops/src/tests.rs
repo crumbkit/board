@@ -361,7 +361,7 @@ fn get_returns_a_records_stored_bytes_and_where_it_is() {
     scenario.write("work/t.json", Item::File(stored));
     let report = open(&scenario).get(&path("/work/t")).unwrap();
     assert_eq!(report.bytes, stored.as_bytes());
-    assert_eq!(report.record["title"], "t");
+    assert_eq!(report.record.unwrap()["title"], "t");
     assert_eq!(report.location.path, "work/t.json");
     assert_eq!(report.display.as_str(), "/work/t");
 }
@@ -379,19 +379,57 @@ fn get_follows_a_link_and_shows_where_it_landed() {
 }
 
 #[test]
-fn get_refuses_anything_but_a_record() {
+fn get_returns_any_file_with_its_record_or_the_code_it_has_none() {
     let scenario = board();
+    let broken = r#"{"$type": "task"}"#;
     scenario
         .write("data.json", Item::File("[1]"))
         .write("notes.md", Item::File("# n"))
-        .write("bad.json", Item::File(r#"{"$type": "task"}"#));
+        .write("bad.json", Item::File(broken))
+        .write("conflict.json", Item::File("<<<<<<< ours\n{}\n"));
+    let file = |text: &str| open(&scenario).get(&path(text)).unwrap();
+    assert!(file("/projects/p").record.is_ok());
+    assert_eq!(file("/notes.md").bytes, b"# n");
+    assert_eq!(file("/notes.md").record, Err(Code::RecordNotARecord));
+    assert_eq!(file("/data").bytes, b"[1]");
+    assert_eq!(file("/data").record, Err(Code::RecordNotARecord));
+    assert_eq!(file("/bad").bytes, broken.as_bytes());
+    assert_eq!(file("/bad").record, Err(Code::RecordBadType));
+    assert_eq!(file("/conflict").record, Err(Code::JsonMergeConflict));
+}
+
+#[test]
+fn get_refuses_a_directory_and_a_missing_path() {
+    let scenario = board();
     assert!(open(&scenario).get(&path("/projects/p")).is_ok());
     let code = |text: &str| open(&scenario).get(&path(text)).unwrap_err().code();
     assert_eq!(code("/projects"), Code::RecordNotARecord);
-    assert_eq!(code("/data"), Code::RecordNotARecord);
-    assert_eq!(code("/notes.md"), Code::RecordNotARecord);
-    assert_eq!(code("/bad"), Code::RecordBadType);
     assert_eq!(code("/missing"), Code::PathNotFound);
+}
+
+#[test]
+fn get_reads_a_file_of_16_mib_and_refuses_a_larger_one() {
+    let scenario = board();
+    let limit = board_model::MAX_RECORD_BYTES;
+    scenario
+        .write("at.md", Item::File(&"a".repeat(limit)))
+        .write("over.md", Item::File(&"a".repeat(limit + 1)));
+    let board = open(&scenario);
+    assert_eq!(board.get(&path("/at.md")).unwrap().bytes.len(), limit);
+    let refused = board.get(&path("/over.md")).unwrap_err();
+    assert_eq!(refused.code(), Code::JsonTooLarge);
+}
+
+#[test]
+fn get_returns_a_file_reached_through_a_link() {
+    let scenario = board();
+    scenario.write("docs/a.md", Item::File("# a")).write(
+        "l.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/docs/a.md"}"#),
+    );
+    let report = open(&scenario).get(&path("/l")).unwrap();
+    assert_eq!(report.bytes, b"# a");
+    assert_eq!(report.display.as_str(), "/docs/a.md");
 }
 
 #[test]

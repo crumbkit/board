@@ -177,9 +177,9 @@ fn the_index_holds_each_validation_with_its_references_in_the_order_found() {
 }
 
 #[test]
-fn a_file_modified_in_the_second_the_last_refresh_began_is_hashed_again() {
+fn a_file_modified_after_the_last_refresh_began_is_hashed_again() {
     let scenario = tasks();
-    scenario.write("fresh.md", Item::Fresh("just saved"));
+    scenario.write("fresh.md", Item::Ahead("just saved"));
     let cache = tempfile::tempdir().unwrap();
     build(&scenario, cache.path());
     assert_eq!(
