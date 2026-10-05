@@ -292,14 +292,17 @@ importing records from other systems and plugin writes; this section does not
 repeat it.
 
 Board stores no large files. A record names its file's `s3://` address, and
-the bucket new files go to is a board setting (Settings, below), so everyone
-writing to a board uploads to the same place. Getting the bytes behind an
-`s3://`, `op://` or `widgets://` address is a *fetcher*: a plugin capability that
-someone calls on purpose, such as `board call s3.fetch`. `query`, `refs` and
-`check` never fetch, and reads never touch the network. The credentials a
-fetcher needs are granted in the owner's machine config, and a secret's value
-reaches a plugin only through its environment at start, never stored or
-printed (Adoption, below).
+the bucket new files go to is a setting the s3 plugin declares and the board
+sets as a requirement (Settings, below), so everyone writing to a board
+uploads to the same place unless the owner overrides it. An owner who does
+uploads elsewhere; the record still names its own address, and `check` reports
+it against the requirement. Getting the bytes behind an `s3://`, `op://` or
+`widgets://` address is a *fetcher*: a plugin capability that someone calls on
+purpose, such as `board call s3.fetch`. `query`, `refs` and `check` never
+fetch, and reads never touch the network. The credentials a fetcher needs are
+granted in the owner's machine config, and a secret's value reaches a plugin
+only through its environment at start, never stored or printed (Adoption,
+below).
 
 - **A board declares each repository once**, in a `board/repo/v1` record at
   `/.board/repos/<name>.json`: its remote, its root commit, an optional
@@ -350,11 +353,10 @@ printed (Adoption, below).
   repository key comes only after measurement shows a need.
 
 Decided with the owner on 2026-10-05:
-- Proposals against other repositories, and coherence commits, come in a
-  later milestone. A proposal (Adoption, below) is one concept: a pending
-  change stored with the base it was written against. One may target a path
-  in another repository, holding a patch and the base blob. It is settled by
-  `put --expect` against that base, or applied in a coherence commit: every
+- Proposals against other repositories, and coherence commits, come in a later
+  milestone. A proposal is as Adoption, below, defines it. One may target a
+  path in another repository, holding a patch and the base blob. It is settled
+  by `put --expect` against that base, or applied in a coherence commit: every
   chosen proposal applied at the pin, in path order, with `git merge-file`,
   derived and never stored. An agent works on top of the coherence commit and
   ships with `git rebase --onto <pin> <coherence> <branch>`. Board owns the
@@ -551,8 +553,9 @@ would need an OS sandbox.
 name, never value: environment variables (required or optional, each with a
 reason) and a longer time limit per capability. Grants come from two places:
 
-- Write scope (which paths and types a plugin may put) is about the board's
-  data, so it is granted in `board.json`. This needs `board/config/v2`.
+- Read and write scope (which paths and types a plugin may read or put) is
+  about the board's data, so it is a board setting, `access`, decided by the
+  same function as every other setting (Settings, below).
 - Environment variables concern the owner's machine and secrets, so they are
   granted in the owner's machine config, read once at startup. A shared board
   must never be able to hand someone's credentials to a plugin.
@@ -569,17 +572,19 @@ Views already plans.
 **Limits.** A limit such as "no adopted file over 1 MB" is a setting like any
 other (below). `put` applies the setting in force for whoever writes. `check`
 applies only what the board's own tree says, on every machine, so it fails CI
-through `board check` when the board sets the limit and never because of
-anyone's personal refinement. An owner who overrides the board's limit can
-still write the file; `check` keeps reporting it.
+through `board check` when the board makes the limit a requirement, and
+never because of a default or anyone's personal refinement. An owner who
+overrides the board's requirement can still write the file; `check` keeps
+reporting it.
 
 **Next steps.**
 
 1. Spike: a plain script imports the team store into a scratch board, read
    only on the source. It shows what `check`, `refs` and `query` answer over
    real widgets data and whether every kind is content-addressed.
-2. Design the principal, the access function, `board/config/v2`, the machine
-   config and `board/plugin-manifest/v2` with their codes, then build them.
+2. Build the principal and `board decide` with `put --or-propose`
+   (Settings, below), then the machine config and `board/plugin-manifest/v2`
+   with their codes.
    Design `board/delta/v1` alongside, using the spike's real deltas.
 3. Build the widgets plugin on the Python library that a second plugin starts.
 4. JIRA second, which proves the design is not widgets-shaped.
@@ -594,14 +599,17 @@ Open:
   closes) is wanted and is its own feature, a watch.
 - Which widgets kinds change after they are written (workspaces?).
 - Whether the original JSON sits under one field or beside `$type`.
-- How board-wide limits on files, not records, are declared: path patterns
-  in `board/config/v2`, or attributes in `.gitattributes`.
+- How board-wide limits on files, not records, are declared: settings with
+  a path glob (Settings, below), or attributes in `.gitattributes`. The
+  settings design answers this unless `.gitattributes` is preferred.
 
 ### Settings and the gentle slope (sketch; agreed with the owner 2026-10-05, not built)
 
 Board is where the complexity of settings lives, so that plugins stay simple.
-A plugin asks one question, "for this operation on this path, do I act or
-ask, and how is the owner told?", and does what the answer says.
+A plugin asks one question, "for this operation on this path, may I, do I act
+or propose, and how is the owner told?", and does what the answer says. Most
+plugins need not even ask: they write with `put --or-propose` and Board
+decides.
 
 **The gentle slope.** Settings, like every concept, reach the owner only
 when they are needed. The rules, from the owner's earlier designs:
@@ -611,9 +619,10 @@ when they are needed. The rules, from the owner's earlier designs:
 - Each introduction is one sentence and one act. The first time a setting
   matters, Board says what it is, where it came from (this board, the
   owner, a mandate) and what choosing would change.
-- The owner can wave an offer away. *Later* brings it back only when the same
-  need recurs; *No* never brings it back unasked, and the ability stays
-  findable.
+- The owner can wave an offer away. *Later* brings it back at the next
+  separate run of a command that needs it, never twice in one run; *No*
+  never brings it back unasked unless the setting changes, and the ability
+  stays findable.
 - Only the owner accepts. Agents and plugins suggest; a suggestion applies
   nothing until accepted, and one left unjudged expires.
 - The everyday surface does not grow. Power views are visited and left.
@@ -622,17 +631,26 @@ when they are needed. The rules, from the owner's earlier designs:
 **Layers.** Three sources, highest first:
 
 1. A *mandate* from an authority above the owner, such as an enterprise
-   policy. It cannot be refined. It cannot live in anything the owner
-   edits, so on a machine it comes from managed config the owner cannot
-   change; real enforcement is on the server (a required CI check, a
-   protected branch), because whoever controls a machine can bypass Board.
+   policy. It cannot be refined: an owner working within an organisation is
+   bound by it, and how strict it is stays the organisation's call. It
+   cannot live in anything the owner edits, so on a machine it comes from
+   managed config the owner cannot change; real enforcement is on the server
+   (a required CI check, a protected branch), because whoever controls a
+   machine can bypass Board. A preference that a mandate outranks is still
+   admitted, since the personal board travels to machines without the
+   mandate: `put` warns once, naming the authority, and every decision lists
+   the preference as outranked.
 2. The owner's *preferences*, as records in the owner's personal board, so
    they follow the owner between machines and keep their history. Machine
    config holds only secrets, environment grants and the name of the
    owner's personal board (Repositories across boards, above).
-3. The *board's settings*, in its tree. They are defaults: the owner has the
-   final say and can refine any of them. Changing one for everyone is a
-   proposal to the board.
+3. The *board's settings*, in its tree. The owner has the final say over
+   all of them. A *default* the owner refines freely. A *requirement* the
+   owner may also override, but only after a warning and an explicit
+   decision; the preference records the hash of the setting it overrides,
+   so a changed requirement asks again. `check` still reports against the
+   requirement, so the board sees the override in CI. Changing a setting
+   for everyone is a proposal to the board.
 
 The first time a board's setting matters, the owner can keep it, refine it
 for themselves, propose a change for everyone, or say Later or No. The
@@ -643,22 +661,129 @@ mark it and say nothing; tell the owner when they next look; tell them when
 a plugin reads the record (`query` and `refs` report an open proposal with a
 stable code, derived from the tree); or tell them at once.
 
+**Records** (agreed 2026-10-05 after four agents argued rival shapes).
+
+- The core and each plugin's manifest declare named settings, each with a
+  value schema and a default. A plugin's names start with its own name. A
+  released name never changes meaning; a new meaning is a new name.
+- One record per preference, so each has a path, a history and its own
+  `put --expect`. The owner's are `board/preference/v1` in the personal board; a
+  board's are at `/.board/settings/<name>.json` with the same shape, where
+  `<name>` is any name the board's authors choose for that scope, as a file
+  name; a mandate's are in the managed file. The layer comes from where a
+  record was read, never from a field in it. `.board/board.json` keeps Board's
+  own configuration (`commit_on_put`, enabled plugins) until an owner needs to
+  refine one of those; then it moves to a setting in a new config version.
+- A record is one scope and the values that apply inside it, each value a
+  constraint naming a declared setting:
+
+  ```json
+  {"$type": "board/preference/v1",
+   "where": {"board": "acme", "path": "/jira/**",
+             "sql": "status = 'Closed'"},
+   "set": {"authority": "act", "attention": "silent"},
+   "because": ["acme:/proposals/p1"]}
+  ```
+
+  `where` may name a board, a path glob with git's pattern rules, a type, an
+  operation, and an SQL condition run against the one record the decision is
+  about, under `query`'s guards. The owner rarely writes `sql`; Board drafts
+  it from a correction and shows it as a sentence. A limit's value is a plain
+  number.
+- `board` appears only in the owner's records. It is a repository name the
+  personal board declares in its own `/.board/repos/<name>.json`, as are the
+  names in references such as `acme:/proposals/p1`; an undeclared name is
+  `ref::dangling` like any other. Without `board`, a preference applies in
+  every board the owner works in.
+- Three optional fields: `refines` names another record in the same layer that
+  this one takes precedence over, and `required: true`, in a board's records
+  only, makes its values requirements; without it they are defaults.
+  `overrides` in an owner's record holds the blob hash of the board
+  requirement it overrides (Resolution, below).
+- The owner's answers to offers are separate `board/seen/v1` records holding
+  the hash of the setting record seen and the answer (keep, later, no), so
+  a decision's reasons cite only real preferences, and a changed setting is
+  introduced again.
+
+**Resolution.** For each setting:
+
+1. A matching mandate is final. An owner's preference it outranks is still
+   admitted, and the decision lists it with `board::settings::outranked`.
+2. Otherwise the highest layer with a matching record wins, in the order
+   owner, board, manifest default; a higher layer replaces a lower one
+   rather than combining with it.
+3. An owner's record that replaces a board requirement counts only if its
+   `overrides` holds that requirement's current blob hash. `put` refuses
+   such a record without it, with `board::settings::overrides_requirement`,
+   naming the requirement; `put --override` is the owner's explicit decision
+   and writes the hash. When the requirement changes, the hash no longer
+   matches, the requirement applies again, and Board asks again.
+4. Specificity and arrival time never pick a winner. Two matching records in
+   one layer that disagree are `board::settings::conflict` unless one names
+   the other in `refines`: Board uses the safer value (propose, tell at
+   once, the smaller limit), names both records, and asks the owner once
+   which refines which. A condition can make two records overlap only for
+   some records, so some conflicts are found when they first happen.
+
+Each value is reported with its kind, its layer, and the record and blob
+behind it. The kinds are `mandated` (a mandate), `required` (a board
+requirement), `chosen` (the owner), `default` (a board value without
+`required`) and `declared` (the manifest's default, step 2's last layer).
+
+`check` reads only the board's own settings and reports a value that breaks a
+board requirement, so a requirement fails CI and a default never does. A
+board that wants CI to enforce a limit marks it required.
+
+**The call and the gate.** `board decide` reads lines of `{"op", "path"}` and
+answers each with `access` and every setting the manifest declares for that
+operation, with its reasons. It takes a list so an import of 300 items starts
+one process. The plugin is known from `BOARD_PLUGIN`, never stated by the
+plugin. `decide` is advice. The same function runs inside every `put` from a
+plugin, which refuses what access, limits or authority forbid, so a plugin
+that never asks still cannot write what it may not. `put --or-propose` writes
+the record when authority is act and a proposal (Adoption, above) when it is
+propose. Attention is Board's job: Board tells the owner, the plugin never
+does. A plugin cannot show an offer either; Board answers with the current
+value and shows the offer when the command ends, carried back from `decide`
+through a per-run scratch directory named in the plugin's environment.
+
+**Reads.** A fetch from another system is an operation like any other:
+`jira.fetch` on `/jira/X/**` is decided before Board starts the plugin. A
+fetch writes no record, so when authority is propose Board asks the owner
+before it starts the plugin ("Fetch JIRA project X? Once, always for X, or
+no"). The answer is an ordinary preference. A scheduled fetch that
+would have to ask is skipped, and the owner is told as attention says. Board
+can stop the call; only the source's own token scopes can stop a plugin that
+reaches further once it holds the token. A plugin's reads of the board
+(`query`, and the records sent to it) are gated by `access` too, through
+views filtered to the paths it may read. That is designed in now and built
+when a second plugin exists.
+
 **Learning from corrections.** Both kinds of mistake are evidence: Board
 asked when the owner wanted it to act, or acted when it should have asked.
-An approval given unchanged and without thought says the question added
-nothing; a reversed or edited autonomous act says Board should have asked.
 Evidence never becomes a preference silently, and silence proves nothing.
-Board makes one suggestion naming the scope (this once, this board, all my
-boards), and the owner's answer becomes a preference that records the
-correction that prompted it.
+Three kinds, all seen inside Board's own commands, so nothing runs in the
+background:
+
+- An explicit correction (`board correct <record>`, or "should have just done
+  it" on an offer). One is enough.
+- A proposal accepted unchanged: Board counts these as it settles them, and
+  five in a row for one setting and scope, none rejected or edited, suggest
+  acting. The count is itself a setting.
+- An autonomous change the owner reverts or edits: Board sees the owner
+  write a record whose last commit was a plugin's unreviewed change. One is
+  enough, so tightening is easier than widening.
+
+Time to approve is not evidence; nothing is keyed on time. The suggestion is
+an offer naming the narrowest scope that covers the evidence, with wider ones
+(this board, all my boards) to choose from. Accepting writes a preference
+whose `because` lists the evidence. No is recorded and holds until evidence
+of the opposite kind arrives.
 
 The old Board needed a skill head, a declaration hash, an item id and a scope
-to set one value; refining a setting here should take one answer to one
-question.
+to set one value; refining a setting here takes one answer to one question.
 
 Open:
-- The preference record's shape and the question plugins ask, designed with
-  the access function so that one answer covers both.
 - Where a mandate's managed config lives and how it names its authority.
 
 ## Taking from crumbkit/board
