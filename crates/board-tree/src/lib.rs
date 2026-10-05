@@ -17,7 +17,7 @@ mod tests;
 
 pub use crate::git::{GitError, Repository};
 pub use crate::mounts::{Cache, MountPoint, Mounted, Pin, PinError, Reached, Scopes, in_scope};
-pub use crate::resolve::{MAX_HOPS, ResolveError, Resolver};
+pub use crate::resolve::{Ancestor, MAX_HOPS, ResolveError, Resolver};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Entry, Status};
 pub use crate::worktree::{Known, discover, is_repository_root, repository_root};

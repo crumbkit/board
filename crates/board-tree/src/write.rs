@@ -110,54 +110,18 @@ impl Repository {
         })
     }
 
-    /// The new file `path` names: beneath its deepest ancestor that
+    /// The new record file `path` names: beneath its deepest ancestor that
     /// resolves, with the segments past it as directories to create.
     fn new_file(&self, path: &LogicalPath) -> Result<(Location, String), WriteError> {
-        let segments: Vec<&str> = path.segments().collect();
-        for depth in (0..segments.len()).rev() {
-            let ancestor: LogicalPath = format!("/{}", segments[..depth].join("/"))
-                .parse()
-                .map_err(|_| WriteError::Refused {
-                    path: path.clone(),
-                    code: Code::PathMalformed,
-                })?;
-            match self.resolve(&Source::WorkingTree, &ancestor) {
-                Ok(location) => {
-                    let directory = match location.object {
-                        Object::Directory => location.path.clone(),
-                        // A record gains children in a directory beside it.
-                        Object::Blob(_) => match location.path.strip_suffix(".json") {
-                            Some(stem) => stem.to_owned(),
-                            None => {
-                                return Err(WriteError::Refused {
-                                    path: path.clone(),
-                                    code: Code::RecordNotARecord,
-                                });
-                            }
-                        },
-                    };
-                    let rest = &segments[depth..];
-                    let mut physical: Vec<String> = Vec::new();
-                    if !directory.is_empty() {
-                        physical.push(directory);
-                    }
-                    physical.extend(rest.iter().map(|segment| (*segment).to_owned()));
-                    let file = format!("{}.json", physical.join("/"));
-                    return Ok((location, file));
-                }
-                Err(ResolveError::NotFound { .. }) => {}
-                Err(error) => {
-                    return Err(WriteError::Refused {
-                        path: path.clone(),
-                        code: error.code(),
-                    });
-                }
-            }
-        }
-        Err(WriteError::Refused {
+        let refused = |code| WriteError::Refused {
             path: path.clone(),
-            code: Code::PathNotFound,
-        })
+            code,
+        };
+        let ancestor = self.ancestor(path).map_err(|error| refused(error.code()))?;
+        let file = ancestor
+            .path()
+            .ok_or_else(|| refused(Code::RecordNotARecord))?;
+        Ok((ancestor.location, format!("{file}.json")))
     }
 
     /// The code the entry for `file` would have in the deepest directory of

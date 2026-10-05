@@ -195,7 +195,7 @@ pub(crate) fn display(location: &Location, asked: &LogicalPath) -> LogicalPath {
     location.display_path().unwrap_or_else(|| asked.clone())
 }
 
-fn join(parent: &LogicalPath, segment: &str) -> Option<LogicalPath> {
+pub(crate) fn join(parent: &LogicalPath, segment: &str) -> Option<LogicalPath> {
     if parent.segments().next().is_none() {
         format!("/{segment}")
     } else {

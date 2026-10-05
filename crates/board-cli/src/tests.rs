@@ -687,6 +687,95 @@ fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
 }
 
 #[test]
+fn refs_missing_prints_where_a_new_file_would_be_and_without_it_refuses() {
+    let scenario = board();
+    scenario.write(
+        "links/l.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
+    );
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["refs", "/links/l/new.md", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::path::not_found");
+    let report = json(&board_in(
+        scenario.workdir(),
+        &["refs", "--missing", "/links/l/new.md", "--json"],
+    ));
+    assert_eq!(report["$type"], "board/refs-report/v1");
+    assert_eq!(report["location"]["display"], "/projects");
+    assert_eq!(
+        report["missing"],
+        serde_json::json!({"segments": ["new.md"], "path": "projects/new.md", "display": "/projects/new.md"})
+    );
+    let shown = board_in(
+        scenario.workdir(),
+        &["refs", "--missing", "/links/l/new.md"],
+    );
+    assert_eq!(shown.code, 0);
+    assert_eq!(
+        text(&shown.stderr),
+        "note: nothing is there yet; a file there would be /projects/new.md, at projects/new.md\n"
+    );
+    let present = json(&board_in(
+        scenario.workdir(),
+        &["refs", "--missing", "/projects/p", "--json"],
+    ));
+    assert_eq!(present["missing"], Value::Null);
+}
+
+#[test]
+fn refs_missing_names_the_mounted_board_a_new_file_would_be_in() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("docs/a.md", "text")]);
+    let scenario = board();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            library.path()
+        )),
+    );
+    let mounted = board_in(
+        scenario.workdir(),
+        &["refs", "--missing", "/vendor/lib/docs/new.md"],
+    );
+    assert_eq!(mounted.code, 0, "{}", text(&mounted.stderr));
+    let repository = std::fs::canonicalize(library.path()).unwrap();
+    assert_eq!(
+        text(&mounted.stderr),
+        format!(
+            "note: nothing is there yet; a file there would be /vendor/lib/docs/new.md, at docs/new.md in the board mounted from {} at commit {commit}\n",
+            repository.display()
+        )
+    );
+    let own = board_in(scenario.workdir(), &["refs", "--missing", "/docs/new.md"]);
+    assert_eq!(
+        text(&own.stderr),
+        "note: nothing is there yet; a file there would be /docs/new.md, at docs/new.md\n"
+    );
+}
+
+#[test]
+fn refs_missing_refuses_an_existing_record_named_by_its_file_with_a_hint_and_admits_a_new_one() {
+    let scenario = board();
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["refs", "--missing", "/projects/p.json", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::path::not_found");
+    assert_eq!(
+        refused["hint"],
+        "a logical path leaves out .json: try `board refs /projects/p`"
+    );
+    let admitted = json(&board_in(
+        scenario.workdir(),
+        &["refs", "--missing", "/projects/new.json", "--json"],
+    ));
+    assert_eq!(admitted["missing"]["path"], "projects/new.json");
+}
+
+#[test]
 fn put_writes_the_record_on_stdin_and_reports_where() {
     let scenario = board();
     scenario.write(

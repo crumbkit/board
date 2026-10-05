@@ -99,3 +99,6 @@ def test_the_real_board_resolves_a_path_and_a_missing_one_is_none(real: Board) -
     assert found is not None
     assert found["location"]["display"] == "/docs/a.md"
     assert real.refs("/docs/gone.md") is None
+    missing = real.refs("/docs/gone.md", missing=True)
+    assert missing is not None
+    assert missing["missing"]["path"] == "docs/gone.md"

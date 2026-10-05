@@ -271,3 +271,47 @@ fn the_repository_root_is_found_from_below_and_not_outside_a_repository() {
     let outside = tempfile::tempdir().unwrap();
     assert_eq!(crate::repository_root(outside.path()), None);
 }
+
+/// The segments past the deepest ancestor of `text` that resolves, and the
+/// physical path a file there would have.
+fn ancestor(scenario: &Scenario, text: &str) -> (Vec<String>, Option<String>) {
+    let ancestor = scenario.open().ancestor(&path(text)).unwrap();
+    (ancestor.rest.clone(), ancestor.path())
+}
+
+#[test]
+fn a_missing_path_lies_beneath_its_deepest_ancestor_and_nothing_lies_beneath_a_file() {
+    let scenario = Scenario::new();
+    scenario
+        .write("docs/a.md", Item::File("text"))
+        .write("tasks/a.json", Item::File("{}"));
+    let owned = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        ancestor(&scenario, "/new.md"),
+        (owned(&["new.md"]), Some("new.md".to_owned())),
+        "beneath the root"
+    );
+    assert_eq!(
+        ancestor(&scenario, "/docs/sub/new.md"),
+        (
+            owned(&["sub", "new.md"]),
+            Some("docs/sub/new.md".to_owned())
+        ),
+        "beneath a directory"
+    );
+    assert_eq!(
+        ancestor(&scenario, "/tasks/a/notes/x"),
+        (owned(&["notes", "x"]), Some("tasks/a/notes/x".to_owned())),
+        "beside a record"
+    );
+    assert_eq!(
+        ancestor(&scenario, "/docs/a.md/x"),
+        (owned(&["x"]), None),
+        "beneath a file that is not JSON"
+    );
+}

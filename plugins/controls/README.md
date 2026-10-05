@@ -39,8 +39,12 @@ to `.board/types/controls/control/v1.schema.json`.
   still applies to the paths it does reach; an invalid control applies to
   nothing. An agent can ask before it edits a
   file. Patterns match the file the path resolves to, through any link. A
-  path with nothing there yet is matched as asked, so ask about a new record
-  by its file name, such as `/tasks/new.json`.
+  path with nothing there yet is matched where a file there would be, as
+  `board refs --missing` reports it, so a control on a link's target applies
+  to a new file under the link. Ask about a new record by its file name, such
+  as `/tasks/new.json`. A path beneath a file, where nothing can be, matches
+  no pattern, and neither does a new file under a mount, since patterns match
+  only the board's own working tree.
 - `board call controls.check` takes `{}` and measures every budget control.
   It returns each control's usage and its files. It fails, so `board call`
   exits 1, with `controls::budget::exceeded` when a control is over its

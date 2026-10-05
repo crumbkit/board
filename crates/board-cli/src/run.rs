@@ -88,6 +88,18 @@ impl Page {
     }
 }
 
+/// `refs`'s arguments.
+#[derive(Debug, clap::Args)]
+struct Refs {
+    /// The record's logical path, such as /projects/p.
+    path: LogicalPath,
+    /// When nothing is at the path yet, report where a file there would be instead of refusing.
+    #[arg(long)]
+    missing: bool,
+    #[command(flatten)]
+    page: Page,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Make the git repository here a board by writing a minimal .board/board.json.
@@ -140,13 +152,9 @@ makes, then `to <path> <pointer>` for each record that reaches it.
 
 Examples:
   board refs /projects/p
-  board refs /projects/p --json")]
-    Refs {
-        /// The record's logical path, such as /projects/p.
-        path: LogicalPath,
-        #[command(flatten)]
-        page: Page,
-    },
+  board refs /projects/p --json
+  board refs --missing /projects/p/notes/new.md --json")]
+    Refs(Refs),
     /// Check the record on stdin and write it, in canonical form, at a path.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
@@ -323,10 +331,7 @@ pub(crate) fn run(
             Ok(report) => render::mount_update(format, &report),
             Err(error) => render::error(format, error.code(), &error, &error.fields()),
         },
-        Command::Refs { path, page } => match board.refs(&path, context.cache.as_deref()) {
-            Ok(report) => render::refs(format, &report, page.limit()),
-            Err(error) => failed_at(format, "refs", &path, error.code(), &error, &error.fields()),
-        },
+        Command::Refs(asked) => refs(format, &board, context, &asked),
         Command::Query { sql, limit } => {
             match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
                 Ok(report) => render::query(format, &report),
@@ -404,6 +409,20 @@ fn entered(start: &Path, directories: &[OsString], format: Format) -> Result<Pat
         return Err(output);
     }
     Ok(start)
+}
+
+/// `refs`, refused as `get` is when a path that names nothing ends `.json`.
+fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Output {
+    let (path, cache) = (&asked.path, context.cache.as_deref());
+    let answered = if asked.missing {
+        board.refs_or_missing(path, cache)
+    } else {
+        board.refs(path, cache)
+    };
+    match answered {
+        Ok(report) => render::refs(format, &report, asked.page.limit()),
+        Err(error) => failed_at(format, "refs", path, error.code(), &error, &error.fields()),
+    }
 }
 
 /// A failure reading `path`. When nothing is there and the path ends in

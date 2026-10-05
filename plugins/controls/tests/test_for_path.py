@@ -1,6 +1,8 @@
 """`for-path`, through the real `board`."""
 
 import json
+import subprocess
+from pathlib import Path
 
 from conftest import Board, control
 
@@ -67,6 +69,36 @@ def test_a_path_asked_through_a_link_is_matched_where_it_leads(board: Board) -> 
     board.write("controls/docs.json", control("R.", paths=["docs/*.md"]))
     assert applying(board, "/alias/a.md") == ["/controls/docs"]
     assert applying(board, "/docs/a.md") == ["/controls/docs"]
+
+
+def test_a_new_file_asked_through_a_link_is_matched_where_it_would_be_written(board: Board) -> None:
+    board.write("docs/a.md", "A.\n")
+    board.write("alias.json", '{"$type": "board/mount/v1", "path": "/docs"}')
+    board.write("controls/docs.json", control("R.", paths=["docs/*.md"]))
+    assert applying(board, "/alias/new.md") == ["/controls/docs"]
+    assert applying(board, "/alias/sub/new.md") == ["/controls/docs"]
+    assert applying(board, "/alias/new.txt") == []
+    assert applying(board, "/alias/a.md/new.md") == [], "nothing can be beneath a file"
+
+
+def test_a_new_file_under_a_mount_matches_no_pattern_and_one_beside_the_mount_does(
+    board: Board, tmp_path: Path
+) -> None:
+    library = tmp_path / "library"
+    (library / "docs").mkdir(parents=True)
+    (library / "docs" / "a.md").write_text("A.\n")
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+    subprocess.run(["git", "init", "-q"], cwd=library, check=True)
+    subprocess.run([*git, "add", "."], cwd=library, check=True)
+    subprocess.run([*git, "commit", "-qm", "library"], cwd=library, check=True)
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=library, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    mount = {"$type": "board/mount/v1", "repo": str(library), "follow": "main", "commit": commit}
+    board.write("vendor/lib.json", json.dumps(mount))
+    board.write("controls/vendor.json", control("R.", paths=["vendor/*", "docs/*"]))
+    assert applying(board, "/vendor/lib/docs/new.md") == [], "patterns match only the board's own tree"
+    assert applying(board, "/vendor/new.md") == ["/controls/vendor"]
 
 
 def test_a_control_the_plugin_cannot_read_is_refused_and_one_it_can_is_returned(board: Board) -> None:

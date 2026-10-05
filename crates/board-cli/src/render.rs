@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 use board_model::{Code, Fields, Location, LogicalPath, Object, Source};
 use board_ops::{
     CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Known, Listed,
-    LsReport, MAX_LIMIT, MountUpdateReport, PutError, PutReport, QueryError, QueryReport,
+    LsReport, MAX_LIMIT, Missing, MountUpdateReport, PutError, PutReport, QueryError, QueryReport,
     RefsReport, source_name,
 };
 use board_tree::Status;
@@ -257,7 +257,10 @@ pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) ->
                 stderr: shown
                     .note(
                         "references from and to the record",
-                        "the record makes no references, and none reach it",
+                        &report.missing.as_ref().map_or_else(
+                            || "the record makes no references, and none reach it".to_owned(),
+                            |missing| missing_note(&report.location, missing),
+                        ),
                     )
                     .into_bytes(),
                 ..Output::default()
@@ -296,6 +299,11 @@ pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) ->
                 &shown.mark(json!({
                     "$type": "board/refs-report/v1",
                     "location": location(&report.location, &report.display.to_string()),
+                    "missing": report.missing.as_ref().map(|missing| json!({
+                        "segments": missing.segments,
+                        "path": missing.path,
+                        "display": missing.display.to_string(),
+                    })),
                     "from": from,
                     "to": to,
                 })),
@@ -304,6 +312,22 @@ pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) ->
         }
     };
     noted(output, report.memory, None)
+}
+
+/// Where a file at a path that names nothing would be, naming the mounted
+/// board when it is in one.
+fn missing_note(location: &Location, missing: &Missing) -> String {
+    let mounted = match &location.board.source {
+        Source::WorkingTree => String::new(),
+        Source::Commit(commit) => format!(
+            " in the board mounted from {} at commit {commit}",
+            location.board.repository.display()
+        ),
+    };
+    format!(
+        "nothing is there yet; a file there would be {}, at {}{mounted}",
+        missing.display, missing.path
+    )
 }
 
 /// `query`'s rows: as text, one JSON array per line, the columns first.

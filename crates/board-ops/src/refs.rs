@@ -7,11 +7,11 @@ use std::path::Path;
 
 use board_index::{Fallback, Index};
 use board_model::{Code, Fields, Location, LogicalPath, Source};
-use board_tree::Status;
+use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
 use crate::check::{CheckError, Referenced};
-use crate::read::{ReadError, display};
+use crate::read::{ReadError, display, join};
 
 /// One reference the record makes.
 #[derive(Clone, Debug, PartialEq)]
@@ -34,7 +34,21 @@ pub struct Incoming {
     pub pointers: Vec<String>,
 }
 
-/// References from and to the object at one path.
+/// Where a path that names nothing yet would be, beneath the deepest
+/// ancestor that resolves: the physical path a file there would have, by
+/// put's resolution. Put may still refuse it, for instance through a mount.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Missing {
+    /// The segments past the ancestor.
+    pub segments: Vec<String>,
+    /// The physical path, in the ancestor's board.
+    pub path: String,
+    pub display: LogicalPath,
+}
+
+/// References from and to the object at one path. For a path that names
+/// nothing, from [`Board::refs_or_missing`], `location` and `display` are
+/// the deepest ancestor's, and there are no references.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RefsReport {
     pub location: Location,
@@ -42,6 +56,7 @@ pub struct RefsReport {
     pub from: Vec<Outgoing>,
     pub to: Vec<Incoming>,
     pub memory: Option<Fallback>,
+    pub missing: Option<Missing>,
 }
 
 impl Board {
@@ -53,9 +68,7 @@ impl Board {
         let location = self
             .repository()
             .resolve(&Source::WorkingTree, path)
-            .map_err(|source| RefsError::Read {
-                source: ReadError::Resolve { source },
-            })?;
+            .map_err(refused)?;
         let mut index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
         let (checked, references) = self.decide(&mut index, None)?;
         let same = |source: &Source, physical: &str| {
@@ -101,7 +114,65 @@ impl Board {
             from,
             to: to.into_values().collect(),
             memory: checked.memory,
+            missing: None,
         })
+    }
+
+    /// As [`Board::refs`], except that a path that names nothing reports
+    /// its deepest ancestor that resolves and, in `missing`, the physical
+    /// path a file there would have by put's resolution. A path ending
+    /// `.json` whose stem names something is still not found, since it
+    /// names that entry by its file.
+    pub fn refs_or_missing(
+        &self,
+        path: &LogicalPath,
+        cache: Option<&Path>,
+    ) -> Result<RefsReport, RefsError> {
+        let not_found = || refused(ResolveError::NotFound { path: path.clone() });
+        match self.refs(path, cache) {
+            Err(RefsError::Read {
+                source:
+                    ReadError::Resolve {
+                        source: ResolveError::NotFound { .. },
+                    },
+            }) => {}
+            answered => return answered,
+        }
+        let stem = path.as_str().strip_suffix(".json");
+        if let Some(Ok(stem)) = stem.map(str::parse::<LogicalPath>)
+            && self
+                .repository()
+                .resolve(&Source::WorkingTree, &stem)
+                .is_ok()
+        {
+            return Err(not_found());
+        }
+        let ancestor = self.repository().ancestor(path).map_err(refused)?;
+        let physical = ancestor.path().ok_or_else(not_found)?;
+        let display = display(&ancestor.location, path);
+        let named = ancestor
+            .rest
+            .iter()
+            .try_fold(display.clone(), |parent, segment| join(&parent, segment))
+            .ok_or_else(not_found)?;
+        Ok(RefsReport {
+            missing: Some(Missing {
+                display: named,
+                segments: ancestor.rest,
+                path: physical,
+            }),
+            location: ancestor.location,
+            display,
+            from: Vec::new(),
+            to: Vec::new(),
+            memory: None,
+        })
+    }
+}
+
+fn refused(source: ResolveError) -> RefsError {
+    RefsError::Read {
+        source: ReadError::Resolve { source },
     }
 }
 

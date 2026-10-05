@@ -21,6 +21,21 @@ fn refs(scenario: &Scenario, text: &str) -> Result<RefsReport, Code> {
         .map_err(|error| error.code())
 }
 
+/// Where `refs --missing` says `text` would be: the physical path, the
+/// display path and the segments past the deepest ancestor that resolves.
+fn missing(scenario: &Scenario, text: &str) -> Result<(String, String, Vec<String>), Code> {
+    let report = open(scenario)
+        .refs_or_missing(&path(text), None)
+        .map_err(|error| error.code())?;
+    let missing = report.missing.expect("nothing is at the path");
+    assert!(report.from.is_empty() && report.to.is_empty());
+    Ok((missing.path, missing.display.to_string(), missing.segments))
+}
+
+fn segments(names: &[&str]) -> Vec<String> {
+    names.iter().map(|name| (*name).to_owned()).collect()
+}
+
 /// The board, with a link to the project and three tasks that name it: by
 /// its path, through the link, and both.
 fn linked() -> Scenario {
@@ -163,6 +178,114 @@ fn refs_inside_a_mounted_board_finds_the_records_there_that_reach_it() {
         to,
         [("/vendor/lib/tasks/ok".to_owned(), "tasks/ok.json")],
         "only the mounted task reaches the mounted project"
+    );
+}
+
+#[test]
+fn a_missing_path_through_a_link_is_where_the_link_leads_and_without_the_flag_it_is_refused() {
+    let scenario = linked();
+    assert_eq!(
+        missing(&scenario, "/links/l/notes/new.md"),
+        Ok((
+            "projects/p/notes/new.md".to_owned(),
+            "/projects/p/notes/new.md".to_owned(),
+            segments(&["notes", "new.md"])
+        )),
+        "a record's children are in the directory beside it"
+    );
+    assert_eq!(
+        refs(&scenario, "/links/l/notes/new.md").unwrap_err(),
+        Code::PathNotFound
+    );
+}
+
+#[test]
+fn a_path_that_exists_reports_nothing_missing_with_the_flag_as_without_it() {
+    let scenario = linked();
+    let flagged = open(&scenario)
+        .refs_or_missing(&path("/links/l"), None)
+        .unwrap();
+    assert_eq!(flagged.missing, None);
+    assert_eq!(Ok(flagged), refs(&scenario, "/links/l"));
+}
+
+#[test]
+fn a_missing_path_under_a_file_is_not_found_and_one_under_a_directory_is_admitted() {
+    let scenario = linked();
+    scenario.write("notes.md", Item::File("text"));
+    assert_eq!(
+        missing(&scenario, "/notes.md/new.md"),
+        Err(Code::PathNotFound)
+    );
+    assert_eq!(
+        missing(&scenario, "/tasks/new.md"),
+        Ok((
+            "tasks/new.md".to_owned(),
+            "/tasks/new.md".to_owned(),
+            segments(&["new.md"])
+        ))
+    );
+}
+
+#[test]
+fn a_missing_path_under_a_dangling_link_is_refused_as_dangling_and_once_it_resolves_is_admitted() {
+    let scenario = linked();
+    scenario.write(
+        "links/gone.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/elsewhere"}"#),
+    );
+    assert_eq!(
+        missing(&scenario, "/links/gone/new.md"),
+        Err(Code::RefDangling)
+    );
+    scenario.write("elsewhere/kept.md", Item::File("text"));
+    assert_eq!(
+        missing(&scenario, "/links/gone/new.md"),
+        Ok((
+            "elsewhere/new.md".to_owned(),
+            "/elsewhere/new.md".to_owned(),
+            segments(&["new.md"])
+        ))
+    );
+}
+
+#[test]
+fn a_path_naming_an_existing_record_by_its_file_is_not_found_and_a_new_records_file_is_admitted() {
+    let scenario = linked();
+    assert_eq!(missing(&scenario, "/tasks/a.json"), Err(Code::PathNotFound));
+    assert_eq!(
+        missing(&scenario, "/tasks/new.json"),
+        Ok((
+            "tasks/new.json".to_owned(),
+            "/tasks/new.json".to_owned(),
+            segments(&["new.json"])
+        ))
+    );
+}
+
+#[test]
+fn a_missing_path_through_a_mount_is_where_it_would_be_in_the_mounted_commit() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("docs/a.md", "text")]);
+    let scenario = linked();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            library.path()
+        )),
+    );
+    let report = open(&scenario)
+        .refs_or_missing(&path("/vendor/lib/docs/new.md"), None)
+        .unwrap();
+    assert_eq!(
+        report.location.board.source,
+        board_model::Source::Commit(commit)
+    );
+    let missing = report.missing.unwrap();
+    assert_eq!(
+        (missing.path.as_str(), missing.display.to_string()),
+        ("docs/new.md", "/vendor/lib/docs/new.md".to_owned())
     );
 }
 

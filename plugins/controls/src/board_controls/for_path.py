@@ -14,22 +14,26 @@ def for_path(request: CallRequest) -> ForPathOutput:
 
     A pattern matches the path from the root of the file the path resolves
     to, through any link. A path with nothing there yet, such as a file about
-    to be written, is matched as it is asked, without its leading `/`.
+    to be written, is matched where Board would place a file there. A path
+    beneath a file, where nothing can be, matches no pattern.
     """
     asked = ForPathInput.model_validate(request.input)
     root = request.board.root
     reading = Board(root, "controls")
     controls = board.controls(reading)
-    report = reading.refs(asked.path)
+    report = reading.refs(asked.path, missing=True)
     if report is None:
+        # Only a path beneath a file names nothing, and nothing can be written there.
         reaching: set[str] = set()
-        physical: str | None = asked.path.removeprefix("/")
+        physical: str | None = None
     else:
         reaching = board.referencing(report)
         location = report["location"]
         # Patterns match only the board's own working tree, never a mount.
         own = location["source"] == "working-tree" and Path(location["repository"]).resolve() == Path(root).resolve()
-        physical = location["path"] if own else None
+        missing = report["missing"]
+        written = missing["path"] if missing is not None else location["path"]
+        physical = written if own else None
     matched: set[str] = set()
     if physical is not None:
         rows = reading.rows(

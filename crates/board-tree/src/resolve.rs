@@ -18,6 +18,34 @@ use crate::worktree::{Known, WorkingTree};
 /// The most pointers one resolution follows, as POSIX allows symlinks.
 pub const MAX_HOPS: usize = 40;
 
+/// Where a path that names nothing would be: its deepest ancestor that
+/// resolves, and the segments past it (docs/architecture.md, Writes).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ancestor {
+    /// Where the ancestor resolved, with every pointer followed.
+    pub location: Location,
+    /// The segments of the path past the ancestor; at least one.
+    pub rest: Vec<String>,
+}
+
+impl Ancestor {
+    /// The physical path the rest would have beneath the ancestor: in it,
+    /// when it is a directory, or in the directory beside it, when it is a
+    /// JSON file. `None` when it is any other file, which holds nothing.
+    pub fn path(&self) -> Option<String> {
+        let directory = match self.location.object {
+            Object::Directory => self.location.path.as_str(),
+            Object::Blob(_) => self.location.path.strip_suffix(".json")?,
+        };
+        let mut parts: Vec<&str> = Vec::new();
+        if !directory.is_empty() {
+            parts.push(directory);
+        }
+        parts.extend(self.rest.iter().map(String::as_str));
+        Some(parts.join("/"))
+    }
+}
+
 impl Repository {
     /// Resolves `path` in `source`, following every pointer on the way,
     /// including one at the end.
@@ -31,6 +59,34 @@ impl Repository {
             ),
             Source::WorkingTree => self.resolver(&mut |_, _| None)?.resolve(path),
         }
+    }
+
+    /// The deepest ancestor of `path` that resolves in the working tree,
+    /// for a `path` that names nothing there. Any code but
+    /// `path::not_found`, at an ancestor, is returned as it is.
+    pub fn ancestor(&self, path: &LogicalPath) -> Result<Ancestor, ResolveError> {
+        let segments: Vec<&str> = path.segments().collect();
+        for depth in (0..segments.len()).rev() {
+            // A prefix of a logical path's segments is always one.
+            let Ok(ancestor) = format!("/{}", segments[..depth].join("/")).parse::<LogicalPath>()
+            else {
+                break;
+            };
+            match self.resolve(&Source::WorkingTree, &ancestor) {
+                Ok(location) => {
+                    return Ok(Ancestor {
+                        location,
+                        rest: segments[depth..]
+                            .iter()
+                            .map(|segment| (*segment).to_owned())
+                            .collect(),
+                    });
+                }
+                Err(ResolveError::NotFound { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(ResolveError::NotFound { path: path.clone() })
     }
 
     /// Resolves `path` in the working tree as [`Repository::resolve`] does,

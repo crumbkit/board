@@ -66,10 +66,13 @@ class Board:
             )
         return rows
 
-    def refs(self, path: str) -> dict[str, Any] | None:
-        """`board refs --all` for `path`: where it resolves and what reaches it, or `None` when nothing is there."""
+    def refs(self, path: str, *, missing: bool = False) -> dict[str, Any] | None:
+        """`board refs --all` for `path`: where it resolves and what reaches it, or `None` when nothing is there.
+
+        With `missing`, a path with nothing there yet reports where a file there would be.
+        """
         try:
-            return self.document("refs", "--all", path)
+            return self.document("refs", "--all", *(["--missing"] if missing else []), path)
         except PluginError as error:
             if error.code == f"{self.plugin}::board::refused" and error.fields.get("code") == "board::path::not_found":
                 return None

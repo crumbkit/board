@@ -226,8 +226,7 @@ with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
 `body` is NULL when the record does not parse. Tables, views and columns are an
 interface agents write SQL against; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
-shortest display path, then the first lexically. Everything derived is keyed by
-content (blob or tree hash), never by commit or time, so branches share results.
+shortest display path, then the first lexically.
 
 Each command refreshes the index first, doing work in proportion to what
 changed: it hashes only working-tree files whose stat changed, as git does, and
@@ -250,6 +249,11 @@ other branches.
 `board refs <path>` reports each reference the record makes, resolved now with
 its status, and each record whose references reach its identity, whatever path
 they name.
+With `--missing`, a path that names nothing reports its deepest resolving
+ancestor and, under `missing`, the physical path a file there would have, by
+put's resolution; put may still refuse it, for instance through a mount, and
+names a new record's file with `.json`. Beneath a non-JSON file, or naming an
+existing entry by its `.json` file, the path stays `path::not_found`.
 
 ## Writes
 
@@ -398,12 +402,11 @@ the other reference board.
 | full index, cold | 1 s |
 
 `cargo xtask bench` is the timing job. It runs on a generated board in CI,
-reports every run and fails above three times a budget. The owner times the M1
-export locally with `--board`, since that data stays out of the repository.
-The work-count tests are the hard gate.
+reports every run and fails above three times a budget. The owner times the
+private export locally with `--board`. The work-count tests are the hard gate.
 
-Budgets are regression alarms, set from measurement. Targets are the speed an
-agent loop or a web view needs. None is met or enforced yet:
+Targets are the speed an agent loop or a web view needs. None is met or
+enforced yet:
 
 | Operation | Target |
 | --- | --- |
