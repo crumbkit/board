@@ -1,11 +1,15 @@
 //! Querying the index with SQL.
 
+use std::path::Path;
+
 use board_model::Code;
-use board_scenario::Item;
+use board_scenario::{Item, Scenario};
+use proptest::prelude::*;
 use serde_json::json;
 
-use crate::QueryReport;
+use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
+use crate::{Plugins, QueryReport};
 
 fn query(sql: &str, limit: usize) -> Result<QueryReport, Code> {
     let scenario = board();
@@ -64,5 +68,91 @@ fn sql_that_cannot_run_is_refused_and_one_read_is_admitted() {
             Code::QueryInvalid,
             "{refused}"
         );
+    }
+}
+
+/// A plugins directory holding `tasks`, which extracts `lr/task/v1` by
+/// naming every blob it was sent.
+fn tasks_plugin() -> Scenario {
+    let plugins = Scenario::new();
+    plugins
+        .write(
+            "tasks/plugin.json",
+            Item::File(
+                &json!({
+                    "$type": "board/plugin-manifest/v1",
+                    "name": "tasks",
+                    "version": "0.1.0",
+                    "description": "",
+                    "run": ["./run"],
+                    "extract": ["lr/task/v1"],
+                    "capabilities": []
+                })
+                .to_string(),
+            ),
+        )
+        .write(
+            "tasks/run",
+            Item::Executable(
+                r#"#!/bin/sh
+blobs=$(sed -n 's/^ *"blob": "\([0-9a-f]*\)",*$/"\1"/p' | paste -s -d, -)
+printf '{"$type": "board/extract-result/v1", "blobs": [%s]}' "$blobs"
+"#,
+            ),
+        );
+    plugins
+}
+
+/// What `sql` answers through the index under `cache`, less whether that
+/// index was in memory.
+fn answered(
+    generated: &Generated,
+    sql: &str,
+    cache: Option<&Path>,
+    plugins: &Plugins<'_>,
+) -> QueryReport {
+    QueryReport {
+        memory: None,
+        ..open(generated.scenario())
+            .query(sql, 10_000, cache, plugins)
+            .unwrap()
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    /// Every table answers the same warm and cold through the index, which
+    /// check's property test shows; this one covers what `query` adds:
+    /// extracting for a plugin and attaching its database.
+    #[test]
+    fn a_query_answers_from_a_warm_index_as_from_a_cold_one(
+        before in generated(),
+        after in generated(),
+        committed: bool,
+    ) {
+        let config = r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#;
+        let mut generated = Generated::new(config, &before, committed);
+        let installed = tasks_plugin();
+        let plugins = Plugins {
+            directory: Some(installed.workdir()),
+            environment: board_plugin::Environment {
+                path: Some("/usr/bin:/bin".into()),
+                ..board_plugin::Environment::default()
+            },
+            limits: board_plugin::Limits::default(),
+        };
+        let cache = tempfile::tempdir().unwrap();
+        answered(&generated, "SELECT 1", Some(cache.path()), &plugins);
+        generated.write(&after);
+        for sql in [
+            "SELECT * FROM entries ORDER BY source, path",
+            "SELECT * FROM extracted ORDER BY plugin, version, blob",
+            "SELECT * FROM p_tasks.sqlite_schema",
+        ] {
+            let warm = answered(&generated, sql, Some(cache.path()), &plugins);
+            prop_assert!(warm.plugins.is_empty(), "{:?}", warm.plugins);
+            prop_assert_eq!(warm, answered(&generated, sql, None, &plugins), "{}", sql);
+        }
     }
 }

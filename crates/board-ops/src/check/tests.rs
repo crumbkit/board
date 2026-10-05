@@ -1,8 +1,6 @@
 //! Checking through the index: what it says against HEAD, and that a warm
 //! index answers as a cold one and as its own `entries` view.
 
-use std::collections::BTreeMap;
-
 use board_index::Index;
 use board_model::{Change, Code, Kind, ObjectId, Source};
 use board_scenario::{Item, Scenario};
@@ -10,7 +8,8 @@ use board_tree::Status;
 use proptest::prelude::*;
 use serde_json::Value;
 
-use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
+use crate::tests::generated::{Generated, generated};
+use crate::tests::{board, open, task};
 use crate::{CheckReport, Checked};
 
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
@@ -102,130 +101,6 @@ fn viewed(index: &Index) -> Vec<Checked> {
         .collect()
 }
 
-/// The files a generated board can hold, and what each may contain.
-fn variants() -> Vec<(&'static str, Vec<String>)> {
-    let link = |target: &str| format!(r#"{{"$type": "board/mount/v1", "path": "{target}"}}"#);
-    vec![
-        (
-            ".board/types/lr/task/v1.schema.json",
-            vec![TASK_SCHEMA.to_owned(), r#"{"type": 7}"#.to_owned()],
-        ),
-        (
-            ".board/types/lr/project/v1.schema.json",
-            vec![PROJECT_SCHEMA.to_owned()],
-        ),
-        (
-            "projects/p.json",
-            vec![
-                r#"{"$type": "lr/project/v1"}"#.to_owned(),
-                r#"{"$type": "lr/task/v1", "title": "t"}"#.to_owned(),
-            ],
-        ),
-        (
-            "tasks/a.json",
-            vec![
-                task(r#", "project": "/projects/p""#),
-                task(r#", "see": "/nowhere""#),
-                r#"{"$type": "lr/task/v1"}"#.to_owned(),
-                "{".to_owned(),
-            ],
-        ),
-        (
-            "tasks/b.json",
-            vec![
-                task(r#", "see": "/tasks/a""#),
-                task(r#", "project": "/links/l""#),
-            ],
-        ),
-        (
-            "links/l.json",
-            vec![link("/projects/p"), link("/gone"), link("/links/l")],
-        ),
-        ("notes.md", vec!["a".to_owned(), "b".to_owned()]),
-        (
-            "vendor.json",
-            vec![
-                "MOUNT first".to_owned(),
-                "MOUNT second".to_owned(),
-                "MOUNT gone".to_owned(),
-            ],
-        ),
-    ]
-}
-
-/// A library board with two commits, for generated boards to mount.
-struct Library {
-    scenario: Scenario,
-    first: ObjectId,
-    second: ObjectId,
-}
-
-impl Library {
-    fn new() -> Self {
-        let scenario = Scenario::new();
-        let files = [
-            (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
-            (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
-            ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
-        ];
-        let first = scenario.commit(&files);
-        let ok = task(r#", "project": "/projects/p""#);
-        let mut more = files.to_vec();
-        more.push(("tasks/ok.json", &ok));
-        let second = scenario.commit(&more);
-        Self {
-            scenario,
-            first,
-            second,
-        }
-    }
-
-    /// `content` with a mount placeholder made real.
-    fn materialize(&self, content: &str) -> String {
-        let mount = |repo: &str, commit: ObjectId| {
-            format!(
-                r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
-            )
-        };
-        match content {
-            "MOUNT first" => mount(&self.scenario.path(), self.first),
-            "MOUNT second" => mount(&self.scenario.path(), self.second),
-            "MOUNT gone" => mount("/no/such/repository", self.first),
-            _ => content.to_owned(),
-        }
-    }
-}
-
-/// For each file in [`variants`], which content it holds, if any.
-fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
-    let choices: Vec<_> = variants()
-        .into_iter()
-        .map(|(_, contents)| prop::option::of(0..contents.len()))
-        .collect();
-    choices
-}
-
-/// Writes the generated board over whatever the working tree holds.
-fn write(
-    scenario: &Scenario,
-    library: &Library,
-    choice: &[Option<usize>],
-    present: &mut BTreeMap<String, bool>,
-) {
-    for ((path, contents), chosen) in variants().into_iter().zip(choice) {
-        let was = present.insert(path.to_owned(), chosen.is_some()) == Some(true);
-        match chosen {
-            Some(at) => {
-                scenario.write(path, Item::File(&library.materialize(&contents[*at])));
-            }
-            None if was => {
-                scenario.write(path, Item::Deleted);
-            }
-            None => {}
-        }
-    }
-}
-
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time.
 const EVERY_TABLE: [&str; 10] = [
@@ -309,34 +184,18 @@ proptest! {
         after in generated(),
         committed: bool,
     ) {
-        let scenario = Scenario::new();
-        scenario.write(".board/board.json", Item::File(r#"{"$type": "board/config/v1"}"#));
-        let library = Library::new();
-        let mut present = BTreeMap::new();
-        write(&scenario, &library, &before, &mut present);
-        if committed {
-            let files: Vec<(String, String)> = variants()
-                .into_iter()
-                .zip(&before)
-                .filter_map(|((path, contents), chosen)| {
-                    Some((path.to_owned(), library.materialize(&contents[(*chosen)?])))
-                })
-                .collect();
-            let files: Vec<(&str, &str)> =
-                files.iter().map(|(path, text)| (path.as_str(), text.as_str())).collect();
-            scenario.commit(&files);
-        }
+        let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, &before, committed);
         let cache = tempfile::tempdir().unwrap();
-        let root = open(&scenario).repository().path().to_path_buf();
+        let root = open(generated.scenario()).repository().path().to_path_buf();
         let mut warm = Index::open(Some(cache.path()), &root).unwrap();
-        check_in(&scenario, &mut warm);
+        check_in(generated.scenario(), &mut warm);
         extract_everything(&warm);
-        write(&scenario, &library, &after, &mut present);
+        generated.write(&after);
 
-        let warmed = check_in(&scenario, &mut warm);
+        let warmed = check_in(generated.scenario(), &mut warm);
         extract_everything(&warm);
         let mut cold = Index::open(None, &root).unwrap();
-        let fresh = check_in(&scenario, &mut cold);
+        let fresh = check_in(generated.scenario(), &mut cold);
         extract_everything(&cold);
         prop_assert_eq!(&warmed.entries, &fresh.entries);
         prop_assert_eq!(viewed(&warm), sorted(warmed.entries.clone()));

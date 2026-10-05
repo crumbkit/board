@@ -1,10 +1,14 @@
 //! References from and to an object.
 
+use std::path::Path;
+
 use board_model::{Code, LogicalPath};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
+use proptest::prelude::*;
 
 use crate::RefsReport;
+use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
 
 fn path(text: &str) -> LogicalPath {
@@ -153,4 +157,47 @@ fn refs_inside_a_mounted_board_finds_the_records_there_that_reach_it() {
         [("/vendor/lib/tasks/ok".to_owned(), "tasks/ok.json")],
         "only the mounted task reaches the mounted project"
     );
+}
+
+/// What `refs` answers for `text` through the index under `cache`, less
+/// whether that index was in memory.
+fn answered(generated: &Generated, text: &str, cache: Option<&Path>) -> Result<RefsReport, Code> {
+    open(generated.scenario())
+        .refs(&path(text), cache)
+        .map(|report| RefsReport {
+            memory: None,
+            ..report
+        })
+        .map_err(|error| error.code())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    #[test]
+    fn refs_answers_from_a_warm_index_as_from_a_cold_one(
+        before in generated(),
+        after in generated(),
+        committed: bool,
+    ) {
+        let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, &before, committed);
+        let cache = tempfile::tempdir().unwrap();
+        let _warming = answered(&generated, "/projects/p", Some(cache.path()));
+        generated.write(&after);
+        let logical: Vec<String> = open(generated.scenario())
+            .check(None, None)
+            .unwrap()
+            .entries
+            .into_iter()
+            .filter_map(|entry| entry.logical.map(|logical| logical.to_string()))
+            .collect();
+        for text in logical.iter().map(String::as_str).chain(["/nowhere"]) {
+            prop_assert_eq!(
+                answered(&generated, text, Some(cache.path())),
+                answered(&generated, text, None),
+                "{}",
+                text
+            );
+        }
+    }
 }
