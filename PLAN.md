@@ -474,10 +474,10 @@ relation into a reference to `/widgets/<kind>/<id>`, so `refs` and `query` work
 across widgets records. The schemas live in the importing board. Machine-local
 state with an expiry (observations) is not imported.
 
-**Writes go to the source.** A plugin capability such as `widgets.share` or `widgets.up`
-runs the source's own CLI; it never edits the source's store. The record says
-what to act on and installed plugin code acts, so data never becomes code
-(principle 6). After the source changes, the import runs again.
+**Writes go to the source.** A plugin capability such as `widgets.up` runs the
+source's own CLI; it never edits the source's store. The record says what to
+act on and installed plugin code acts, so data never becomes code (principle
+6). After the source changes, the import runs again.
 
 **Staying true to the source.**
 
