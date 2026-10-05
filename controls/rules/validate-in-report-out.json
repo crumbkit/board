@@ -1,0 +1,13 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/board-ops/src/*",
+    "crates/board-index/src/*",
+    "crates/board-validate/src/*"
+  ],
+  "purpose": "Writes keep the board valid, while reads stay able to show any repository, however broken.",
+  "requirement": "put refuses an invalid record. check and the index never refuse a file; they mark it degraded with a stable code."
+}

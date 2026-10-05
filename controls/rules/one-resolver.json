@@ -1,0 +1,11 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/*/src/*"
+  ],
+  "purpose": "One place resolving paths means links and mounts behave the same in every command.",
+  "requirement": "Only board-tree reads git objects or the working tree, and only it knows that links and mounts exist. Everything else takes resolved Locations."
+}

@@ -196,7 +196,7 @@ Left out until a real need: ControlTree groups, assessments, paged reports
 and control status from the old Board.
 
 **viitta adopts itself.** `.board/board.json` enables `controls`.
-`controls/` holds the eight rules from AGENTS.md as written requirements and
+`controls/` holds the nine rules from AGENTS.md as written requirements and
 the `lint.toml` budgets as budget controls. `bin/lint` stays the gate; CI
 also runs `board call controls.check`.
 
@@ -211,8 +211,10 @@ also runs `board call controls.check`.
    fixture boards through the real `board`. Next after it: `tasks` and
    `controls` repeat the protocol module, so it moves into a shared Python
    library.
-5. viitta adopts itself: `board.json`, the two fixture changes above, the
-   control records and the CI step.
+5. Built: viitta adopts itself: `board.json`, the two fixture changes above,
+   the control records in `controls/` and the CI step. `lint.toml`'s line and
+   `#[expect]` budgets stay in `bin/lint` only: a budget control sums words or
+   bytes over files, and neither counts lines per file.
 
 Done: in a fresh clone of viitta with `board` and `controls` installed,
 `board check` and `board call controls.check` exit 0, and lowering one

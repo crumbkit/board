@@ -1,0 +1,12 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/DOCS.md"
+  ],
+  "purpose": "The map is read first and must stay quick to read. lint.toml's docs_index budget enforces the same limit.",
+  "requirement": "DOCS.md, the documentation map, holds at most 400 words.",
+  "rule": {
+    "budget": "words",
+    "max": 400
+  }
+}

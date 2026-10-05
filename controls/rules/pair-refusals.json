@@ -1,0 +1,14 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/*/tests.rs",
+    "crates/*/tests/*",
+    "plugins/*/tests/*",
+    "xtask/src/tests.rs"
+  ],
+  "purpose": "A refusal test without its admitted twin can pass because everything is refused.",
+  "requirement": "A test that something is refused has an otherwise identical twin that is admitted, and asserts the exact code."
+}

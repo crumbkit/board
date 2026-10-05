@@ -1,5 +1,5 @@
 {
-  "$type": "lr/task/v1",
+  "$id": "lr/task/v1",
   "a": {
     "y": [],
     "z": {}

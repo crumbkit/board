@@ -1,0 +1,13 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md",
+    "/PLAN.md",
+    "/DOCS.md"
+  ],
+  "paths": [
+    "docs/*.md"
+  ],
+  "purpose": "A reader must be able to trust that docs/ describes the code as it is.",
+  "requirement": "docs/ describes the design and says what is built. PLAN.md holds what comes next; when a milestone lands, its settled design moves into docs/ and leaves PLAN.md."
+}

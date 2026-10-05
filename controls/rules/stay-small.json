@@ -1,0 +1,15 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/*/src/*",
+    "plugins/*/src/*",
+    "xtask/src/*",
+    "tools/*",
+    "bin/*"
+  ],
+  "purpose": "Every line is read, tested and maintained by agents and people; what is not needed now costs that work for nothing.",
+  "requirement": "Add code, a guard, a crate or a concept only for a need that exists now. A new core concept needs two plugins that use it. Every pull request states its net change in production lines."
+}

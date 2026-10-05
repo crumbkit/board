@@ -1,0 +1,12 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md",
+    "/STANDARDS.md"
+  ],
+  "paths": [
+    "crates/board-cli/src/*"
+  ],
+  "purpose": "Agents and people use the same commands, and both need bounded output and errors that say what to do next.",
+  "requirement": "Output is bounded by default and says what it left out. Help starts from one line per command and drills down to examples. Every error carries its code, says what was wrong with which value, and suggests the next thing to try."
+}

@@ -1,0 +1,12 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/*/src/*",
+    "docs/*.md"
+  ],
+  "purpose": "People and agents already know these semantics; new ones would have to be learned and documented.",
+  "requirement": "Use the semantics of git, POSIX symlinks, JSON Schema and SQL. There is no query language beyond SQL."
+}

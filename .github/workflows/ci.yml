@@ -65,6 +65,15 @@ jobs:
       - run: uv run --frozen ruff check .
       - run: uv run --frozen pyright
       - run: uv run --frozen pytest
+      - name: viitta passes board check and its own controls
+        if: matrix.plugin == 'controls'
+        run: |
+          mkdir -p "$RUNNER_TEMP/data/board/plugins"
+          ln -s "$PWD" "$RUNNER_TEMP/data/board/plugins/controls"
+          cd ../..
+          export PATH="$PWD/target/debug:$PATH" XDG_DATA_HOME="$RUNNER_TEMP/data"
+          board check > /dev/null
+          board call controls.check <<< '{}'
 
   supply-chain:
     runs-on: ubuntu-24.04

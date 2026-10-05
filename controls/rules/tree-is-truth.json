@@ -1,0 +1,13 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/board-index/*",
+    "crates/board-ops/*",
+    "plugins/*/src/*"
+  ],
+  "purpose": "A board must give the same answer on every branch and clone, so nothing outside the tree may decide one.",
+  "requirement": "No cache, index or database may be needed for a correct answer; every query answers the same from a cold rebuild. Derived data is keyed by blob or tree hash, never by commit or time."
+}

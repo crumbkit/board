@@ -1,0 +1,13 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md",
+    "/CLAUDE.md"
+  ],
+  "purpose": "Every word in them is paid for in every session. lint.toml's context budget enforces the same limit, with imports.",
+  "requirement": "The files every agent loads at the start of a session hold at most 1,000 words.",
+  "rule": {
+    "budget": "words",
+    "max": 1000
+  }
+}

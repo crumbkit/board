@@ -1,0 +1,7 @@
+{
+  "$type": "board/config/v1",
+  "commit_on_put": false,
+  "plugins": [
+    "controls"
+  ]
+}

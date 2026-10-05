@@ -1,0 +1,13 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/AGENTS.md"
+  ],
+  "paths": [
+    "crates/board-tree/src/*",
+    "crates/board-plugin/src/*",
+    "crates/board-ops/src/*"
+  ],
+  "purpose": "Cloning or mounting a board must never run anything from it.",
+  "requirement": "Mounting brings data and schemas, never code."
+}
