@@ -384,6 +384,30 @@ fn board_keeps_the_end_of_a_failed_plugins_stderr() {
 }
 
 #[test]
+fn board_keeps_the_last_64_kib_of_stderr_by_default() {
+    let limit = Limits::default().stderr;
+    assert_eq!(limit, 64 * 1024);
+    // An `x`, then `a`s: one byte over the limit loses the `x`, one under keeps it.
+    for total in [limit + 1, limit - 1] {
+        let script = format!(
+            "#!/bin/sh\ncat > /dev/null\nprintf x >&2\nhead -c {} /dev/zero | tr '\\0' a >&2\nexit 1\n",
+            total - 1
+        );
+        let written: Vec<u8> = std::iter::once(b'x')
+            .chain(std::iter::repeat_n(b'a', total - 1))
+            .collect();
+        let error = Fixture::tasks(&script)
+            .call("tasks.due", r#"{"n": 1}"#)
+            .unwrap_err();
+        assert_eq!(
+            error.stderr(),
+            Some(&written[total.saturating_sub(limit)..]),
+            "{total} bytes written"
+        );
+    }
+}
+
+#[test]
 fn a_plugin_past_its_time_limit_is_stopped() {
     let limits = Limits {
         time: Duration::from_millis(500),
