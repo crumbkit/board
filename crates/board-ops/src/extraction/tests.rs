@@ -56,7 +56,7 @@ impl Fixture {
                     "extract": ["lr/task/v1"],
                     "capabilities": [{
                         "name": "due", "description": "",
-                        "input_schema": true, "output_schema": true
+                        "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"}
                     }]
                 })
                 .to_string(),

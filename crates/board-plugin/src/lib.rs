@@ -13,7 +13,7 @@ pub use crate::call::{
 pub use crate::extract::{Extraction, Record, extract};
 pub use crate::installed::{DiscoveryError, Installed, MANIFEST_FILE, installed};
 pub use crate::manifest::{
-    Capability, CapabilityName, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,
+    Annotations, Capability, CapabilityName, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,
     MetaFilterError, NameError, PluginName, Side, Version, VersionError,
 };
 pub use crate::process::Limits;

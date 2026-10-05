@@ -59,8 +59,8 @@ impl Fixture {
                 json!({
                     "name": capability,
                     "description": "",
-                    "input_schema": serde_json::from_str::<Value>(INPUT_SCHEMA).unwrap(),
-                    "output_schema": serde_json::from_str::<Value>(OUTPUT_SCHEMA).unwrap(),
+                    "inputSchema": serde_json::from_str::<Value>(INPUT_SCHEMA).unwrap(),
+                    "outputSchema": serde_json::from_str::<Value>(OUTPUT_SCHEMA).unwrap(),
                 })
             })
             .collect();

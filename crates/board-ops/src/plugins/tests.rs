@@ -13,7 +13,7 @@ const NOTES: &str = r#"{
   "run": ["./run"],
   "metadata": {"area": "writing"},
   "capabilities": [
-    {"name": "search", "description": "", "input_schema": true, "output_schema": true}
+    {"name": "search", "description": "", "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"}}
   ]
 }"#;
 
@@ -25,9 +25,9 @@ const TASKS: &str = r#"{
   "run": ["./run"],
   "metadata": {"area": "planning"},
   "capabilities": [
-    {"name": "due", "description": "", "input_schema": true, "output_schema": true},
-    {"name": "search", "description": "", "input_schema": true, "output_schema": true,
-     "metadata": {"area": "writing"}}
+    {"name": "due", "description": "", "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"}},
+    {"name": "search", "description": "", "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"},
+     "_meta": {"area": "writing"}}
   ]
 }"#;
 

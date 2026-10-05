@@ -146,15 +146,37 @@ struct RawManifest {
     capabilities: Vec<RawCapability>,
 }
 
+/// An MCP Tool object (MCP 2025-11-25), with `description` and both schemas
+/// required, and `icons` and `execution` refused.
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RawCapability {
     name: CapabilityName,
+    #[serde(default)]
+    title: Option<String>,
     description: String,
     input_schema: Value,
     output_schema: Value,
     #[serde(default)]
-    metadata: Map<String, Value>,
+    annotations: Option<Annotations>,
+    #[serde(default, rename = "_meta")]
+    meta: Map<String, Value>,
+}
+
+/// MCP's `ToolAnnotations`: hints Board stores and acts on none of.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct Annotations {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destructive_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotent_hint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_world_hint: Option<bool>,
 }
 
 /// A plugin's manifest, its schemas compiled.
@@ -173,10 +195,12 @@ pub struct Manifest {
 #[derive(Debug)]
 pub struct Capability {
     pub name: CapabilityName,
+    pub title: Option<String>,
     pub description: String,
     pub input: Schema,
     pub output: Schema,
-    pub metadata: Map<String, Value>,
+    pub annotations: Option<Annotations>,
+    pub meta: Map<String, Value>,
 }
 
 impl Manifest {
@@ -204,7 +228,13 @@ impl Manifest {
                     name: capability.name,
                 });
             }
-            let compile = |document, side| {
+            let compile = |document: Value, side| {
+                if document.get("type").and_then(Value::as_str) != Some("object") {
+                    return Err(ManifestError::NotObject {
+                        capability: capability.name.clone(),
+                        side,
+                    });
+                }
                 Schema::compile(document).map_err(|source| ManifestError::Schema {
                     capability: capability.name.clone(),
                     side,
@@ -215,8 +245,10 @@ impl Manifest {
                 input: compile(capability.input_schema, Side::Input)?,
                 output: compile(capability.output_schema, Side::Output)?,
                 name: capability.name,
+                title: capability.title,
                 description: capability.description,
-                metadata: capability.metadata,
+                annotations: capability.annotations,
+                meta: capability.meta,
             });
         }
         Ok(Self {
@@ -238,7 +270,7 @@ impl Manifest {
             capability.is_none_or(|name| *name == offered.name)
                 && filters
                     .iter()
-                    .all(|filter| filter.matches(&offered.metadata, plugin))
+                    .all(|filter| filter.matches(&offered.meta, plugin))
         });
     }
 }
@@ -253,15 +285,15 @@ pub enum Side {
 impl fmt::Display for Side {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::Input => "input_schema",
-            Self::Output => "output_schema",
+            Self::Input => "inputSchema",
+            Self::Output => "outputSchema",
         })
     }
 }
 
 /// `<key>=<value>`: metadata holding `key` whose value is the string
-/// `value`. A capability's metadata answers for a key it holds; the plugin's
-/// answers for the rest.
+/// `value`. A capability's `_meta` answers for a key it holds; the plugin's
+/// `metadata` answers for the rest.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MetaFilter {
     key: String,
@@ -318,6 +350,11 @@ pub enum ManifestError {
     EmptyRun,
     #[error("plugin.json offers capability {name} twice")]
     DuplicateCapability { name: CapabilityName },
+    #[error("plugin.json capability {capability} has an {side} whose root is not an object type")]
+    NotObject {
+        capability: CapabilityName,
+        side: Side,
+    },
     #[error("plugin.json capability {capability} has an {side} that cannot be used: {source}")]
     Schema {
         capability: CapabilityName,
@@ -336,6 +373,7 @@ impl ManifestError {
             | Self::Directory { .. }
             | Self::EmptyRun
             | Self::DuplicateCapability { .. }
+            | Self::NotObject { .. }
             | Self::Schema { .. } => Code::PluginBadManifest,
         }
     }

@@ -8,8 +8,8 @@
     {
       "name": "overdue",
       "description": "Open tasks due before a date, by capability.",
-      "input_schema": {"type": "object", "required": ["before"]},
-      "output_schema": {"type": "object", "required": ["overdue"]}
+      "inputSchema": {"type": "object", "required": ["before"]},
+      "outputSchema": {"type": "object", "required": ["overdue"]}
     }
   ]
 }

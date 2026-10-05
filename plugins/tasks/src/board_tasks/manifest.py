@@ -21,9 +21,9 @@ def manifest() -> dict[str, JsonValue]:
             {
                 "name": "due",
                 "description": "Open tasks due before a date.",
-                "input_schema": DueInput.model_json_schema(),
-                "output_schema": DueOutput.model_json_schema(),
-                "metadata": {},
+                "inputSchema": DueInput.model_json_schema(),
+                "outputSchema": DueOutput.model_json_schema(),
+                "_meta": {},
             },
         ],
     }

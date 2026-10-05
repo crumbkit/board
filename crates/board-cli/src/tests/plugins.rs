@@ -12,8 +12,8 @@ const TASKS: &str = r#"{
   "capabilities": [{
     "name": "due",
     "description": "Open tasks due before a date.",
-    "input_schema": {"type": "object"},
-    "output_schema": {"type": "object"}
+    "inputSchema": {"type": "object"},
+    "outputSchema": {"type": "object"}
   }]
 }"#;
 
@@ -58,9 +58,35 @@ fn plugin_list_json_is_a_tagged_report_holding_the_manifest() {
     assert_eq!(tasks["run"], serde_json::json!(["./run"]));
     assert_eq!(tasks["capabilities"][0]["name"], "due");
     assert_eq!(
-        tasks["capabilities"][0]["input_schema"],
+        tasks["capabilities"][0]["inputSchema"],
         serde_json::json!({"type": "object"})
     );
+}
+
+#[test]
+fn plugin_list_json_prints_a_capabilitys_title_annotations_and_meta() {
+    let (board, data) = installed();
+    let full = TASKS.replace(
+        r#""description": "Open tasks due before a date.","#,
+        r#""title": "Due tasks",
+    "description": "Open tasks due before a date.",
+    "annotations": {"readOnlyHint": true},
+    "_meta": {"area": "dates"},"#,
+    );
+    data.write("plugins/tasks/plugin.json", Item::File(&full));
+    let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
+    let due = &report["plugins"][0]["capabilities"][0];
+    assert_eq!(due["title"], "Due tasks");
+    assert_eq!(
+        due["annotations"],
+        serde_json::json!({"readOnlyHint": true})
+    );
+    assert_eq!(due["_meta"], serde_json::json!({"area": "dates"}));
+
+    let refused = full.replace(r#""readOnlyHint""#, r#""readOnly""#);
+    data.write("plugins/tasks/plugin.json", Item::File(&refused));
+    let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
+    assert_eq!(report["plugins"][0]["code"], "board::plugin::bad_manifest");
 }
 
 #[test]

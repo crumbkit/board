@@ -8,8 +8,8 @@
     {
       "name": "sleep",
       "description": "Writes its pid to stderr, then over 16 MiB to stdout, then sleeps.",
-      "input_schema": {"type": "object"},
-      "output_schema": {"type": "object"}
+      "inputSchema": {"type": "object"},
+      "outputSchema": {"type": "object"}
     }
   ]
 }

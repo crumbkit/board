@@ -336,6 +336,8 @@ answer equals a cold run's. It is a small synchronous server; because a local
 server that writes is reachable through DNS rebinding, it checks the Host
 header and requires a token. The measured warm-check speedups (HANDOFF item 2)
 land after M7 gives real numbers.
+A `board mcp` adapter can serve each capability as the MCP tool
+`<plugin>.<capability>` with no translation, since capabilities are Tool objects.
 
 ## Taking from crumbkit/board
 

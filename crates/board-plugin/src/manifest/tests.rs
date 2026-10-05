@@ -14,9 +14,9 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "due",
             "description": "Open tasks due before a date.",
-            "input_schema": {"type": "object"},
-            "output_schema": {"type": "object"},
-            "metadata": {}
+            "inputSchema": {"type": "object"},
+            "outputSchema": {"type": "object"},
+            "_meta": {}
         }]
     })
 }
@@ -162,24 +162,24 @@ fn a_capability_offered_twice_is_refused() {
 
 #[test]
 fn a_schema_is_compiled_under_a_mounted_boards_rules() {
-    let draft7 = json!({"$schema": "http://json-schema.org/draft-07/schema#"});
+    let draft7 = json!({"$schema": "http://json-schema.org/draft-07/schema#", "type": "object"});
     assert!(matches!(
-        refused(&with("/capabilities/0/output_schema", draft7)),
+        refused(&with("/capabilities/0/outputSchema", draft7)),
         ManifestError::Schema {
             side: Side::Output,
             ..
         }
     ));
-    let remote = json!({"$ref": "https://example.com/schema.json"});
+    let remote = json!({"type": "object", "$ref": "https://example.com/schema.json"});
     assert!(matches!(
-        refused(&with("/capabilities/0/input_schema", remote)),
+        refused(&with("/capabilities/0/inputSchema", remote)),
         ManifestError::Schema {
             side: Side::Input,
             ..
         }
     ));
-    let local = json!({"$defs": {"a": {"type": "string"}}, "$ref": "#/$defs/a"});
-    assert!(parse(&with("/capabilities/0/input_schema", local)).is_ok());
+    let local = json!({"type": "object", "$defs": {"a": {"type": "object"}}, "$ref": "#/$defs/a"});
+    assert!(parse(&with("/capabilities/0/inputSchema", local)).is_ok());
 }
 
 fn offered(value: &Value, capability: Option<&str>, filters: &[&str]) -> Vec<String> {
@@ -196,11 +196,11 @@ fn offered(value: &Value, capability: Option<&str>, filters: &[&str]) -> Vec<Str
 
 fn two_capabilities() -> Value {
     let due = json!({
-        "name": "due", "description": "", "input_schema": true, "output_schema": true,
-        "metadata": {"area": "deadlines", "level": 2}
+        "name": "due", "description": "", "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"},
+        "_meta": {"area": "deadlines", "level": 2}
     });
     let open = json!({
-        "name": "open", "description": "", "input_schema": true, "output_schema": true
+        "name": "open", "description": "", "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"}
     });
     with("/capabilities", json!([due, open]))
 }
@@ -235,4 +235,76 @@ fn a_filter_is_a_non_empty_key_an_equals_sign_and_a_value() {
     assert!("area=".parse::<MetaFilter>().is_ok());
     assert!("area".parse::<MetaFilter>().is_err());
     assert!("=planning".parse::<MetaFilter>().is_err());
+}
+
+#[test]
+fn a_schema_whose_root_is_not_an_object_type_is_refused() {
+    for side in ["inputSchema", "outputSchema"] {
+        let pointer = format!("/capabilities/0/{side}");
+        for bad in [
+            json!(true),
+            json!({}),
+            json!({"type": "string"}),
+            json!({"type": ["object"]}),
+        ] {
+            assert!(
+                matches!(
+                    refused(&with(&pointer, bad.clone())),
+                    ManifestError::NotObject { .. }
+                ),
+                "{side} {bad}"
+            );
+        }
+        assert!(parse(&with(&pointer, json!({"type": "object"}))).is_ok());
+    }
+}
+
+#[test]
+fn a_capability_takes_mcps_title_annotations_and_meta() {
+    let mut value = manifest();
+    value["capabilities"][0]["title"] = json!("Due tasks");
+    value["capabilities"][0]["annotations"] = json!({
+        "title": "Due", "readOnlyHint": true, "destructiveHint": false,
+        "idempotentHint": true, "openWorldHint": false
+    });
+    value["capabilities"][0]["_meta"] = json!({"area": "deadlines"});
+    let capability = &parse(&value).unwrap().capabilities[0];
+    assert_eq!(capability.title.as_deref(), Some("Due tasks"));
+    assert_eq!(
+        capability.annotations.as_ref().unwrap().read_only_hint,
+        Some(true)
+    );
+    assert_eq!(capability.meta["area"], "deadlines");
+}
+
+#[test]
+fn an_unknown_annotation_key_is_refused() {
+    let mut value = manifest();
+    value["capabilities"][0]["annotations"] = json!({"readOnlyHint": true});
+    assert!(parse(&value).is_ok());
+    value["capabilities"][0]["annotations"]["cacheHint"] = json!(true);
+    assert!(matches!(refused(&value), ManifestError::Shape { .. }));
+}
+
+#[test]
+fn icons_execution_and_snake_case_schema_keys_are_refused() {
+    let admitted = manifest();
+    assert!(parse(&admitted).is_ok());
+    for (key, field) in [
+        ("icons", json!([{"src": "https://example.com/a.png"}])),
+        ("execution", json!({"taskSupport": "forbidden"})),
+        ("metadata", json!({})),
+    ] {
+        let mut value = admitted.clone();
+        value["capabilities"][0][key] = field;
+        assert!(
+            matches!(refused(&value), ManifestError::Shape { .. }),
+            "{key}"
+        );
+    }
+    let mut value = admitted;
+    let capability = value["capabilities"][0].as_object_mut().unwrap();
+    let schema = capability.remove("inputSchema").unwrap();
+    capability.insert("input_schema".to_owned(), schema);
+    assert!(matches!(refused(&value), ManifestError::Shape { .. }));
 }

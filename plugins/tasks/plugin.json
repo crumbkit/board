@@ -2,8 +2,9 @@
   "$type": "board/plugin-manifest/v1",
   "capabilities": [
     {
+      "_meta": {},
       "description": "Open tasks due before a date.",
-      "input_schema": {
+      "inputSchema": {
         "additionalProperties": false,
         "description": "Open tasks due before this date.",
         "properties": {
@@ -19,9 +20,8 @@
         "title": "DueInput",
         "type": "object"
       },
-      "metadata": {},
       "name": "due",
-      "output_schema": {
+      "outputSchema": {
         "$defs": {
           "DueTask": {
             "additionalProperties": false,

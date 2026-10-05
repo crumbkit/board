@@ -150,13 +150,21 @@ fn installed(manifest: &Manifest) -> Value {
     })
 }
 
+/// The capability as an MCP Tool object, without its name.
 fn capability(capability: &Capability) -> Value {
-    json!({
+    let mut value = json!({
         "description": capability.description,
-        "input_schema": capability.input.document(),
-        "output_schema": capability.output.document(),
-        "metadata": capability.metadata,
-    })
+        "inputSchema": capability.input.document(),
+        "outputSchema": capability.output.document(),
+        "_meta": capability.meta,
+    });
+    if let Some(title) = &capability.title {
+        value["title"] = json!(title);
+    }
+    if let Some(annotations) = &capability.annotations {
+        value["annotations"] = json!(annotations);
+    }
+    value
 }
 
 /// `call`: the output as JSON, or wrapped in `board/call-report/v1`.

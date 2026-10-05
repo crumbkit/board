@@ -29,8 +29,8 @@ fn manifest(name: &str, capability: &str) -> String {
         "capabilities": [{
             "name": capability,
             "description": "",
-            "input_schema": {"type": "object"},
-            "output_schema": {"type": "object"}
+            "inputSchema": {"type": "object"},
+            "outputSchema": {"type": "object"}
         }]
     })
     .to_string()

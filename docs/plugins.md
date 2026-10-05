@@ -34,17 +34,24 @@ code.
   "capabilities": [
     {
       "name": "due",
+      "title": "Due tasks",
       "description": "Open tasks due before a date.",
-      "input_schema": { "type": "object" },
-      "output_schema": { "type": "object" },
-      "metadata": {}
+      "inputSchema": { "type": "object" },
+      "outputSchema": { "type": "object" },
+      "annotations": { "readOnlyHint": true },
+      "_meta": {}
     }
   ]
 }
 ```
 
 Plugin and capability names are lowercase ASCII letters, digits and hyphens.
-`metadata` is any JSON object, which `board plugin find` can match. `extract`
+The plugin's `metadata` is any JSON object, which `board plugin find` can
+match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
+`inputSchema` and `outputSchema` are required, and `title`, `annotations` and
+`_meta` are optional. Each schema's root is `"type": "object"`. `annotations`
+holds only MCP's five hint keys, which Board stores and never acts on. `_meta`
+is any JSON object. `icons` and `execution` are refused. `extract`
 lists the record types the plugin reads (see Extraction). The manifest refuses
 unknown fields. Its `name` equals its directory's name. `version` is
 `MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted board's
@@ -58,8 +65,9 @@ whether the current board enables it. A broken install is listed with
 `board::plugin::not_installed`; either makes `list` exit 1.
 `board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at least
 one filter, lists the capabilities of working installs that match every filter.
-A `--meta` filter matches a string value in the capability's metadata, or in
-the plugin's when the capability's lacks the key. Finding is a filter, never a
+A `--meta` filter matches a string value in the capability's `_meta`, or in the
+plugin's `metadata` when `_meta` lacks the key. `--json` prints each capability
+as its Tool object. Finding is a filter, never a
 ranking.
 
 Only enabled plugins can be called: naming one that is installed but not
@@ -75,7 +83,7 @@ install offers nothing. A capability no installed plugin offers is
 `board call <plugin>.<capability>` (or `--capability <name>`) reads input JSON
 on stdin and:
 
-1. validates it against `input_schema` (`board::plugin::bad_input`);
+1. validates it against `inputSchema` (`board::plugin::bad_input`);
 2. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
    `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `XDG_CACHE_HOME` and
@@ -94,7 +102,7 @@ on stdin and:
 4. reads exactly one document from the plugin's stdout: `board/call-result/v1`
    holding `output`, or `board/error/v1` holding `code`, `message` and typed
    `fields`;
-5. validates `output` against `output_schema` and prints it: as JSON in text
+5. validates `output` against `outputSchema` and prints it: as JSON in text
    mode, and wrapped in `board/call-report/v1` `{plugin, capability, output}`
    with `--json`.
 
