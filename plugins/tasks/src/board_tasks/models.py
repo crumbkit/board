@@ -3,9 +3,8 @@
 import datetime
 from typing import Literal
 
+from board_plugin.protocol import Strict
 from pydantic import BaseModel, ConfigDict
-
-from board_tasks.protocol import Strict
 
 
 class TaskRecord(BaseModel):

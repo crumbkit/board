@@ -48,25 +48,25 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
-        plugin: [tasks, controls]
+        project: [python/board-plugin, plugins/tasks, plugins/controls]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: plugins/${{ matrix.plugin }}
+        working-directory: ${{ matrix.project }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: cargo build -p board-cli --locked
-      - run: uv sync --frozen
+      - run: uv sync --locked
       - run: uv run --frozen ruff format --check .
       - run: uv run --frozen ruff check .
       - run: uv run --frozen pyright
       - run: uv run --frozen pytest
       - name: viitta passes board check and its own controls
-        if: matrix.plugin == 'controls'
+        if: matrix.project == 'plugins/controls'
         run: |
           mkdir -p "$RUNNER_TEMP/data/board/plugins"
           ln -s "$PWD" "$RUNNER_TEMP/data/board/plugins/controls"

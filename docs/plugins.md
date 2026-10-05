@@ -195,8 +195,9 @@ its version changes or its database is deleted.
 
 Plugins are written in Python 3.12 or newer with uv, pydantic v2, ruff, pyright
 in strict mode and pytest (STANDARDS.md P1 to P6). Each plugin talks the
-protocol above directly and keeps that code in one module. There is no shared
-library yet.
+protocol through the shared library in `python/board-plugin/`, which also
+runs `board`: Board's error becomes `<plugin>::board::refused`, carrying
+Board's code.
 
 Each plugin lives in `plugins/<name>/` in this repository, with its lockfile and
 a committed `plugin.json` that a test compares with the one its pydantic models

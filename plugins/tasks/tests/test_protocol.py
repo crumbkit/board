@@ -1,6 +1,7 @@
 """The plugin's side of the protocol, run directly with crafted requests."""
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -8,14 +9,16 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from conftest import Board, task
+from conftest import Board, board_binary, task
 
 
 def plugin(request: dict[str, Any], cwd: Path) -> tuple[int, dict[str, Any]]:
-    """Run the plugin once on `request`: its exit code and its one document."""
+    """Run the plugin once on `request`, with the tested `board` first on PATH: its exit code and document."""
+    path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
     ran = subprocess.run(
         [sys.executable, "-m", "board_tasks"],
         cwd=cwd,
+        env={**os.environ, "PATH": path},
         input=json.dumps(request),
         capture_output=True,
         text=True,
@@ -60,10 +63,14 @@ def call_request(root: Path, capability: str = "due") -> dict[str, Any]:
     }
 
 
-def test_a_failed_board_query_is_tasks_query_failed(board: Board, tmp_path: Path) -> None:
+def test_a_board_that_cannot_run_or_refuses_is_reported_and_a_working_one_answers(board: Board, tmp_path: Path) -> None:
     code, document = plugin(call_request(tmp_path / "nowhere"), tmp_path)
     assert code == 1
-    assert document["code"] == "tasks::query::failed"
+    assert document["code"] == "tasks::board::failed"
+    (tmp_path / "plain").mkdir()
+    code, document = plugin(call_request(tmp_path / "plain"), tmp_path)
+    assert (code, document["code"]) == (1, "tasks::board::refused")
+    assert document["fields"] == {"code": "board::config::not_found"}
     board.write("tasks/a.json", task("A", due="2026-10-01"))
     called = board.json("call", "tasks.due", stdin='{"before": "2026-10-02"}')
     assert called["$type"] == "board/call-report/v1"

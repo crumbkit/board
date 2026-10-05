@@ -1,6 +1,6 @@
 """Board's plugin protocol: one request on stdin, one document on stdout.
 
-Every document carries `$type`; every error a code `tasks::<area>::<reason>`.
+Every document carries `$type`; every error a code `<plugin>::<area>::<reason>`.
 The exit code is 0 with a result and 1 with an error. Logs go to stderr.
 """
 
@@ -57,7 +57,7 @@ REQUEST: TypeAdapter[CallRequest | ExtractRequest] = TypeAdapter(
 
 
 class PluginError(Exception):
-    """A refusal Board reports with this plugin's code."""
+    """A refusal Board reports with the plugin's code."""
 
     def __init__(self, code: str, message: str, fields: dict[str, JsonValue] | None = None) -> None:
         """Hold the code, the message and its typed fields."""
@@ -71,16 +71,25 @@ Call = Callable[[CallRequest], JsonValue]
 Extract = Callable[[ExtractRequest], list[str]]
 
 
-def serve(call: Call, extract: Extract, stdin: bytes) -> tuple[int, str]:
-    """Answer one request: the exit code and the document to print."""
+def serve(plugin: str, call: Call, stdin: bytes, extract: Extract | None = None) -> tuple[int, str]:
+    """Answer one request for `plugin`: the exit code and the document to print.
+
+    A plugin that passes no `extract` lists no types to extract, so Board never
+    sends it `board/extract/v1`; such a request is refused like any malformed one.
+    """
     try:
         request = REQUEST.validate_json(stdin)
         if isinstance(request, CallRequest):
             document: dict[str, JsonValue] = {"$type": "board/call-result/v1", "output": call(request)}
+        elif extract is None:
+            failure = PluginError(
+                f"{plugin}::protocol::bad_request", f"{plugin} extracts nothing, so Board sends it no extraction"
+            )
+            return 1, _error(failure)
         else:
             document = {"$type": "board/extract-result/v1", "blobs": list(extract(request))}
     except ValidationError as error:
-        failure = PluginError("tasks::protocol::bad_request", f"the request is not one Board sends: {error}")
+        failure = PluginError(f"{plugin}::protocol::bad_request", f"the request is not one Board sends: {error}")
         return 1, _error(failure)
     except PluginError as failure:
         return 1, _error(failure)
@@ -93,8 +102,13 @@ def _error(failure: PluginError) -> str:
     )
 
 
-def main(call: Call, extract: Extract) -> int:
+def main(plugin: str, call: Call, extract: Extract | None = None) -> int:
     """Read the request from stdin, write the answer to stdout, return the exit code."""
-    code, document = serve(call, extract, sys.stdin.buffer.read())
+    code, document = serve(plugin, call, sys.stdin.buffer.read(), extract)
     sys.stdout.write(document)
     return code
+
+
+def dumped(document: dict[str, JsonValue]) -> str:
+    """A document as a plugin's committed files hold it: sorted keys, two-space indents."""
+    return json.dumps(document, indent=2, sort_keys=True) + "\n"

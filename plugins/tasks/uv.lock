@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 
 [[package]]
@@ -12,10 +12,29 @@ wheels = [
 ]
 
 [[package]]
+name = "board-plugin"
+version = "0.1.0"
+source = { editable = "../../python/board-plugin" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.11" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pyright", specifier = ">=1.1.400" },
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "ruff", specifier = ">=0.13" },
+]
+
+[[package]]
 name = "board-tasks"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "board-plugin" },
     { name = "pydantic" },
 ]
 
@@ -27,7 +46,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.11" }]
+requires-dist = [
+    { name = "board-plugin", editable = "../../python/board-plugin" },
+    { name = "pydantic", specifier = ">=2.11" },
+]
 
 [package.metadata.requires-dev]
 dev = [

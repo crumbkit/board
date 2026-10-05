@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+from board_plugin.board import Board, literal
+from board_plugin.protocol import CallRequest
+
 from board_controls import board
 from board_controls.models import CONTROL_TYPE, Applying, ForPathInput, ForPathOutput
-from board_controls.protocol import CallRequest
 
 
 def for_path(request: CallRequest) -> ForPathOutput:
@@ -16,8 +18,9 @@ def for_path(request: CallRequest) -> ForPathOutput:
     """
     asked = ForPathInput.model_validate(request.input)
     root = request.board.root
-    controls = board.controls(root)
-    report = board.refs(root, asked.path)
+    reading = Board(root, "controls")
+    controls = board.controls(reading)
+    report = reading.refs(asked.path)
     if report is None:
         reaching: set[str] = set()
         physical: str | None = asked.path.removeprefix("/")
@@ -29,11 +32,10 @@ def for_path(request: CallRequest) -> ForPathOutput:
         physical = location["path"] if own else None
     matched: set[str] = set()
     if physical is not None:
-        rows = board.query(
-            root,
+        rows = reading.rows(
             "SELECT DISTINCT r.logical FROM records r, json_each(r.body, '$.paths') p"  # noqa: S608 - values are quoted by literal()
-            f" WHERE r.type = {board.literal(CONTROL_TYPE)} AND r.source = 'worktree'"
-            f" AND {board.literal(physical)} GLOB p.value",
+            f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.source = 'worktree'"
+            f" AND {literal(physical)} GLOB p.value",
         )
         matched = {logical for (logical,) in rows}
     applying = (matched | reaching) & controls.keys()

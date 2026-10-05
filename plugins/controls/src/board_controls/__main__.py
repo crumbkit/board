@@ -2,11 +2,11 @@
 
 import sys
 
+from board_plugin.protocol import CallRequest, PluginError, main
 from pydantic import JsonValue
 
 from board_controls.check import check
 from board_controls.for_path import for_path
-from board_controls.protocol import CallRequest, PluginError, main
 
 
 def call(request: CallRequest) -> JsonValue:
@@ -21,4 +21,4 @@ def call(request: CallRequest) -> JsonValue:
     )
 
 
-sys.exit(main(call))
+sys.exit(main("controls", call))

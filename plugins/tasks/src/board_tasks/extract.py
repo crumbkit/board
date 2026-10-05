@@ -4,10 +4,10 @@ import sqlite3
 import sys
 from contextlib import closing
 
+from board_plugin.protocol import ExtractRequest
 from pydantic import ValidationError
 
 from board_tasks.models import TaskRecord
-from board_tasks.protocol import ExtractRequest
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks (

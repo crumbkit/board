@@ -1,7 +1,6 @@
 """The plugin's manifest and the schema it ships, generated from its models (STANDARDS.md P3)."""
 
-import json
-
+from board_plugin.protocol import dumped
 from pydantic import JsonValue
 
 from board_controls.models import (
@@ -48,11 +47,6 @@ def manifest() -> dict[str, JsonValue]:
 def schema() -> dict[str, JsonValue]:
     """The schema of `controls/control/v1`, as the plugin ships it."""
     return ControlRecord.model_json_schema(by_alias=True)
-
-
-def dumped(document: dict[str, JsonValue]) -> str:
-    """A document as the plugin's files hold it: sorted keys, two-space indents."""
-    return json.dumps(document, indent=2, sort_keys=True) + "\n"
 
 
 if __name__ == "__main__":

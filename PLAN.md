@@ -208,9 +208,8 @@ also runs `board call controls.check`.
 3. `board init` writes a minimal `.board/board.json`. Built: the manifest's
    `types` and `board plugin enable`.
 4. Built: the `controls` plugin in `plugins/controls/`, with pytest against
-   fixture boards through the real `board`. Next after it: `tasks` and
-   `controls` repeat the protocol module, so it moves into a shared Python
-   library.
+   fixture boards through the real `board`. Built: both plugins share the
+   Python library in `python/board-plugin/`.
 5. Built: viitta adopts itself: `board.json`, the two fixture changes above,
    the control records in `controls/` and the CI step. `lint.toml`'s line and
    `#[expect]` budgets stay in `bin/lint` only: a budget control sums words or
@@ -443,7 +442,7 @@ reports a beta; this is not yet verified).
 ### Views (sketch; designed for, not built)
 
 Beside M8. Land the design before a second plugin exists, because the second
-plugin starts the Python library and views belong in it.
+plugin started the Python library and views belong in it.
 
 - Every record type gets a detail view and a form derived from its schema,
   with no plugin work.
@@ -627,7 +626,7 @@ agree.
    (Settings, below), then the machine config and `board/plugin-manifest/v2`
    with their codes.
    Design `board/delta/v1` alongside, using the spike's real deltas.
-3. Build the widgets plugin on the Python library that a second plugin starts.
+3. Build the widgets plugin on the shared Python library.
 4. JIRA second, which proves the design is not widgets-shaped.
 
 Open:

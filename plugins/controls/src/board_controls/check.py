@@ -2,9 +2,11 @@
 
 from typing import TYPE_CHECKING
 
+from board_plugin.board import Board, literal
+from board_plugin.protocol import CallRequest, PluginError
+
 from board_controls import board
 from board_controls.models import CONTROL_TYPE, Checked, CheckInput, CheckOutput, ControlRecord
-from board_controls.protocol import CallRequest, PluginError
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -26,8 +28,8 @@ def check(request: CallRequest) -> CheckOutput:
     A file reached by a reference and a pattern, or through a link, counts once.
     """
     CheckInput.model_validate(request.input)
-    root = request.board.root
-    broken = board.degraded(root)
+    reading = Board(request.board.root, "controls")
+    broken = board.degraded(reading)
     if broken:
         names = ", ".join(f"{logical} ({code})" for logical, code in broken)
         raise PluginError(
@@ -35,24 +37,23 @@ def check(request: CallRequest) -> CheckOutput:
             f"controls Board cannot use: {names}; run `board check` for why",
             {"controls": [{"control": logical, "code": code} for logical, code in broken]},
         )
-    budgets = {logical: record for logical, record in board.controls(root).items() if record.rule is not None}
+    budgets = {logical: record for logical, record in board.controls(reading).items() if record.rule is not None}
     # A pointer's file holds where it leads, never what a budget counts.
-    matched = board.query(
-        root,
+    matched = reading.rows(
         "SELECT DISTINCT r.logical, e.logical, e.status, e.code"  # noqa: S608 - the one value is quoted by literal()
         " FROM records r, json_each(r.body, '$.paths') p, entries e"
-        f" WHERE r.type = {board.literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
+        f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
         " AND e.source = 'worktree' AND e.kind != 'pointer' AND e.path GLOB p.value",
     )
     files: dict[str, set[str]] = {
-        logical: {board.display(root, path) for path in record.applies_to} for logical, record in budgets.items()
+        logical: {board.display(reading, path) for path in record.applies_to} for logical, record in budgets.items()
     }
     for control, path, status, code in matched:
         if control in files:
             if status != "ok":
                 raise _unreadable(control, path, code)
             files[control].add(path)
-    checked = [_checked(root, logical, budgets[logical], sorted(files[logical])) for logical in sorted(budgets)]
+    checked = [_checked(reading, logical, budgets[logical], sorted(files[logical])) for logical in sorted(budgets)]
     failing = [item for item in checked if item.used > item.max]
     if failing:
         names = ", ".join(f"{item.control} ({item.used} of {item.max} {item.budget})" for item in failing)
@@ -65,13 +66,13 @@ def check(request: CallRequest) -> CheckOutput:
     return CheckOutput(controls=checked)
 
 
-def _checked(root: str, logical: str, record: ControlRecord, files: list[str]) -> Checked:
+def _checked(reading: Board, logical: str, record: ControlRecord, files: list[str]) -> Checked:
     rule = record.rule
     assert rule is not None  # noqa: S101 - check passes only budget controls
     used = 0
     for path in files:
         try:
-            used += measure(rule.budget, board.read(root, path))
+            used += measure(rule.budget, reading.get(path))
         except PluginError as error:
             if error.code != "controls::board::refused":
                 raise

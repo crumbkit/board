@@ -6,9 +6,8 @@ generated from these models.
 
 from typing import Annotated, Literal
 
+from board_plugin.protocol import Strict
 from pydantic import Field
-
-from board_controls.protocol import Strict
 
 CONTROL_TYPE = "controls/control/v1"
 

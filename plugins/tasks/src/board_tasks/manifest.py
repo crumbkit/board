@@ -1,7 +1,6 @@
 """The plugin's manifest, generated from its models (STANDARDS.md P3)."""
 
-import json
-
+from board_plugin.protocol import dumped
 from pydantic import JsonValue
 
 from board_tasks.models import DueInput, DueOutput
@@ -31,7 +30,7 @@ def manifest() -> dict[str, JsonValue]:
 
 def text() -> str:
     """The manifest as `plugin.json` holds it: sorted keys, two-space indents."""
-    return json.dumps(manifest(), indent=2, sort_keys=True) + "\n"
+    return dumped(manifest())
 
 
 if __name__ == "__main__":

@@ -2,9 +2,10 @@
 
 import json
 
+from board_plugin.protocol import dumped
 from conftest import PLUGIN, Board, control
 
-from board_controls.manifest import dumped, manifest, schema
+from board_controls.manifest import manifest, schema
 
 
 def test_the_committed_manifest_and_schema_are_the_ones_the_models_generate() -> None:

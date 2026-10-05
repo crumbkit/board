@@ -70,6 +70,10 @@ not in mounted boards. The plugin extracts nothing and keeps no database.
 
 ## Developing
 
+The plugin talks to Board through the shared library in
+`python/board-plugin/`, which `pyproject.toml` installs from this checkout, so
+install the plugin by linking its directory in this repository.
+
 The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 `uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
 the workspace's `target/debug/board`, so build it first with
