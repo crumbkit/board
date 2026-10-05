@@ -52,21 +52,20 @@ impl Board {
                 name: name.clone(),
                 record_type: record_type.clone(),
             };
-            let shipped = shipped_schema(&found.directory, record_type)
-                .and_then(|bytes| parse_json(&bytes).ok())
-                .filter(|value| Schema::compile(value.clone()).is_ok())
+            let (shipped, held) = self
+                .held(&found.directory, record_type)?
                 .ok_or_else(unusable)?;
-            let physical = record_type.schema_path();
-            match self.repository().read_working_file(&physical)? {
-                None => {
+            match held {
+                Held::Absent => {
+                    let physical = record_type.schema_path();
                     let stem = physical.strip_suffix(".json").unwrap_or(&physical);
                     let path: LogicalPath = format!("/{stem}").parse().map_err(|_| unusable())?;
                     prepared.push(self.schema(path, &shipped)?);
                 }
-                Some(bytes) if parse_json(&bytes).ok().as_ref() == Some(&shipped) => {}
-                Some(_) => {
+                Held::Same => {}
+                Held::Other => {
                     return Err(EnableError::SchemaDiffers {
-                        path: physical,
+                        path: record_type.schema_path(),
                         shipped: found.directory.join(shipped_schema_path(record_type)),
                     });
                 }
@@ -105,6 +104,31 @@ impl Board {
         })
     }
 
+    /// The schema the plugin installed in `directory` ships for
+    /// `record_type`, and how the working tree holds it; `None` when the
+    /// plugin ships no schema that parses and compiles.
+    pub(crate) fn held(
+        &self,
+        directory: &Path,
+        record_type: &RecordType,
+    ) -> Result<Option<(Value, Held)>, WriteError> {
+        let Some(shipped) = shipped_schema(directory, record_type)
+            .and_then(|bytes| parse_json(&bytes).ok())
+            .filter(|value| Schema::compile(value.clone()).is_ok())
+        else {
+            return Ok(None);
+        };
+        let held = match self
+            .repository()
+            .read_working_file(&record_type.schema_path())?
+        {
+            None => Held::Absent,
+            Some(bytes) if parse_json(&bytes).ok().as_ref() == Some(&shipped) => Held::Same,
+            Some(_) => Held::Other,
+        };
+        Ok(Some((shipped, held)))
+    }
+
     /// A shipped schema, to be written where nothing is.
     fn schema(&self, path: LogicalPath, schema: &Value) -> Result<Prepared, EnableError> {
         let target = self.repository().target(&path, false)?;
@@ -115,6 +139,13 @@ impl Board {
             target,
         })
     }
+}
+
+/// How the board holds a schema a plugin ships.
+pub(crate) enum Held {
+    Absent,
+    Same,
+    Other,
 }
 
 /// An enable that wrote nothing.

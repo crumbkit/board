@@ -27,7 +27,9 @@ pub use crate::extraction::{CallFailed, Plugins};
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};
 pub use crate::mount::{MountError, MountUpdateReport};
-pub use crate::plugins::{Found, Plugin, PluginFindReport, PluginListReport, PluginState};
+pub use crate::plugins::{
+    Found, Plugin, PluginFindReport, PluginListReport, PluginState, SchemaProblem,
+};
 pub use crate::put::{Expect, MAX_BATCH_LINES, PutError, PutReport, Refusal, Refused, Written};
 pub use crate::query::{DEFAULT_LIMIT, Known, MAX_LIMIT, PluginFailed, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};

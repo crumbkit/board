@@ -151,10 +151,8 @@ control sums words or bytes over files. Each item has its test: pytest
 against fixture boards through the real `board`, and the CI step on viitta
 itself.
 
-Not built: `plugin list` reports an enabled plugin whose schema is missing
-from the tree or differs from the one the plugin ships. Left out until a real
-need: ControlTree groups, assessments, paged reports and control status from
-the old Board.
+Left out until a real need: ControlTree groups, assessments, paged reports
+and control status from the old Board.
 
 ### M8 Sharing (sketch; after M7)
 

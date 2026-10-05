@@ -152,3 +152,147 @@ fn find_matches_metadata_on_the_capability_then_the_plugin() {
     assert_eq!(find(None, &["area=planning"]), ["tasks.due true"]);
     assert_eq!(find(Some("due"), &["area=writing"]), Vec::<String>::new());
 }
+
+/// A board enabling `enabled`, and a plugins directory holding notes, which
+/// ships the schema of `notes/note/v1`.
+fn shipping(enabled: &str) -> (Scenario, Scenario, PathBuf) {
+    let (board, data, plugins) = installed(enabled);
+    data.write("plugins/tasks", Item::Deleted)
+        .write("plugins/broken", Item::Deleted)
+        .write(
+            "plugins/notes/plugin.json",
+            Item::File(&NOTES.replace(r#""run""#, r#""types": ["notes/note/v1"], "run""#)),
+        )
+        .write(
+            "plugins/notes/types/notes/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+    (board, data, plugins)
+}
+
+fn schemas(report: &PluginListReport) -> Vec<(String, String, Code)> {
+    report.plugins[0]
+        .schemas
+        .iter()
+        .map(|problem| {
+            (
+                problem.record_type.to_string(),
+                problem.path.clone(),
+                problem.code,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn an_enabled_plugin_whose_schema_is_missing_is_degraded_and_one_holding_it_is_not() {
+    let (board, _data, plugins) = shipping(r#"["notes"]"#);
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(
+        listed(&report),
+        [("notes", true, Some(Code::PluginSchemaMissing))]
+    );
+    assert_eq!(
+        schemas(&report),
+        [(
+            "notes/note/v1".to_owned(),
+            ".board/types/notes/note/v1.schema.json".to_owned(),
+            Code::PluginSchemaMissing
+        )]
+    );
+    assert!(report.degraded());
+
+    board.write(
+        ".board/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type":"object"}"#),
+    );
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(listed(&report), [("notes", true, None)]);
+    assert!(!report.degraded());
+}
+
+#[test]
+fn an_enabled_plugin_whose_schema_differs_is_degraded_and_one_holding_the_same_is_not() {
+    let (board, _data, plugins) = shipping(r#"["notes"]"#);
+    board.write(
+        ".board/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "array"}"#),
+    );
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(
+        listed(&report),
+        [("notes", true, Some(Code::PluginSchemaDiffers))]
+    );
+    assert_eq!(
+        schemas(&report),
+        [(
+            "notes/note/v1".to_owned(),
+            ".board/types/notes/note/v1.schema.json".to_owned(),
+            Code::PluginSchemaDiffers
+        )]
+    );
+    board.write(
+        ".board/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(listed(&report), [("notes", true, None)]);
+}
+
+#[test]
+fn a_plugin_the_board_does_not_enable_needs_no_schema() {
+    let (board, _data, plugins) = shipping("[]");
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(listed(&report), [("notes", false, None)]);
+    assert!(report.plugins[0].schemas.is_empty());
+}
+
+#[test]
+fn an_enabled_plugin_shipping_no_usable_schema_names_the_shipped_file_and_a_usable_one_is_clean() {
+    let (board, data, plugins) = shipping(r#"["notes"]"#);
+    board.write(
+        ".board/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    data.write(
+        "plugins/notes/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": 3}"#),
+    );
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(
+        schemas(&report),
+        [(
+            "notes/note/v1".to_owned(),
+            plugins
+                .join("notes/types/notes/note/v1.schema.json")
+                .display()
+                .to_string(),
+            Code::PluginBadManifest
+        )]
+    );
+    data.write(
+        "plugins/notes/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(listed(&report), [("notes", true, None)]);
+}
+
+#[test]
+fn a_schema_the_board_cannot_read_is_unreadable_and_a_readable_one_is_clean() {
+    let (board, _data, plugins) = shipping(r#"["notes"]"#);
+    board.write(".board/types/notes/note/v1.schema.json/x", Item::File("{}"));
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(
+        listed(&report),
+        [("notes", true, Some(Code::RepoUnreadable))]
+    );
+    board
+        .write(".board/types/notes/note/v1.schema.json", Item::Deleted)
+        .write(
+            ".board/types/notes/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+    let report = open(&board).plugin_list(Some(&plugins)).unwrap();
+    assert_eq!(listed(&report), [("notes", true, None)]);
+}

@@ -14,8 +14,7 @@ A plugin is a directory on this machine, at
 directory may be a symlink, so a plugin can be installed from a checkout. A
 board enables plugins by name in `.board/board.json`; a name that is not a
 plugin name, or one listed twice, makes it `board::config::invalid`. Board never
-loads a plugin from a board's tree, so cloning or mounting a board never runs
-code.
+runs a plugin from a board's tree.
 
 `board plugin enable <name>` writes each schema an installed plugin ships to
 `.board/types/`, then names the plugin in `.board/board.json`, as one put that
@@ -69,10 +68,12 @@ rules. A manifest that breaks any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
 
-`board plugin list` prints every installed plugin and its capabilities, and
-whether the current board enables it. A broken install is listed with
-`board::plugin::bad_manifest`, and an enabled name that is not installed with
-`board::plugin::not_installed`; either makes `list` exit 1.
+`board plugin list` prints every installed plugin, its capabilities, and
+whether the board enables it. It exits 1 on a broken install
+(`board::plugin::bad_manifest`), an enabled name not installed
+(`not_installed`), or an enabled plugin's schema that it ships unusable
+(`bad_manifest`), the board lacks (`schema_missing`) or holds differently
+(`schema_differs`), naming the file.
 `board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at least
 one filter, lists the capabilities of working installs that match every filter.
 A `--meta` filter matches a string value in the capability's `_meta`, or in the
@@ -188,7 +189,7 @@ its version changes or its database is deleted.
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
-`schema_differs`, `ambiguous`,
+`schema_missing`, `schema_differs`, `ambiguous`,
 `bad_input`, `bad_output`, `failed`, `timeout`, `too_large`, `too_deep`.
 
 ## Writing a plugin in Python

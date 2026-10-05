@@ -10,8 +10,9 @@ use serde_json::{Value, json};
 use super::{Format, Shown, document, failed};
 use crate::report::Output;
 
-/// `plugin list`: as text, a line per plugin with its status, version and
-/// whether the board enables it, then a line per capability. Exit 1 when a
+/// `plugin list`: as text, a line per plugin with its status, version,
+/// whether the board enables it and any schema it lacks or holds differently,
+/// then a line per capability. Exit 1 when a
 /// plugin is broken or missing.
 pub(crate) fn plugin_list(
     format: Format,
@@ -50,9 +51,10 @@ pub(crate) fn plugin_list(
                 };
                 let _ = writeln!(
                     text,
-                    "{status} {}{version} {}",
+                    "{status} {}{version} {}{}",
                     plugin.name,
-                    enabled(plugin.enabled)
+                    enabled(plugin.enabled),
+                    schemas(plugin)
                 );
                 for capability in *capabilities {
                     let _ = writeln!(text, "  {} {}", capability.name, capability.description);
@@ -80,6 +82,16 @@ pub(crate) fn plugin_list(
                     };
                     value["name"] = json!(plugin.name);
                     value["enabled"] = json!(plugin.enabled);
+                    if !plugin.schemas.is_empty() {
+                        value["schemas"] = plugin
+                            .schemas
+                            .iter()
+                            .map(|problem| {
+                                json!({"type": problem.record_type.to_string(),
+                                    "path": problem.path, "code": problem.code.as_str()})
+                            })
+                            .collect();
+                    }
                     match plugin.code() {
                         None => value["status"] = json!("ok"),
                         Some(code) => {
@@ -99,6 +111,20 @@ pub(crate) fn plugin_list(
                 code,
             )
         }
+    }
+}
+
+/// Each schema problem as its code and file, after `: `; empty when none.
+fn schemas(plugin: &Plugin) -> String {
+    let problems: Vec<String> = plugin
+        .schemas
+        .iter()
+        .map(|problem| format!("{} {}", problem.code, problem.path))
+        .collect();
+    if problems.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", problems.join("; "))
     }
 }
 

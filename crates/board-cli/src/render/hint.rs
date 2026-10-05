@@ -219,6 +219,9 @@ fn generic(code: Code) -> &'static str {
             "fix the plugin manifest the message names, or reinstall the plugin"
         }
         Code::PluginNotEnabled => "run `board plugin enable <name>`",
+        Code::PluginSchemaMissing => {
+            "run `board plugin enable <name>`, which writes the schemas the plugin ships"
+        }
         Code::PluginSchemaDiffers => {
             "a released type's schema never changes; compare the two files the message names and keep the right one, or ask the plugin's author"
         }

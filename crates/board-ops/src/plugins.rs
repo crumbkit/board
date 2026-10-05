@@ -2,12 +2,14 @@
 
 use std::path::Path;
 
-use board_model::Code;
+use board_model::{Code, RecordType};
 use board_plugin::{
     CapabilityName, DiscoveryError, Manifest, ManifestError, MetaFilter, PluginName, installed,
+    shipped_schema_path,
 };
 
 use crate::Board;
+use crate::enable::Held;
 
 /// Every installed plugin, and every enabled one that is not installed, in
 /// name order.
@@ -30,6 +32,19 @@ pub struct Plugin {
     /// Whether the board's configuration names it.
     pub enabled: bool,
     pub state: PluginState,
+    /// Each schema an enabled plugin ships that the board lacks, holds
+    /// differently or cannot read, in the manifest's order.
+    pub schemas: Vec<SchemaProblem>,
+}
+
+/// A schema the board should hold for an enabled plugin.
+#[derive(Debug)]
+pub struct SchemaProblem {
+    pub record_type: RecordType,
+    /// Where the board keeps it, from the root; for a schema the plugin
+    /// ships unusable, the shipped file.
+    pub path: String,
+    pub code: Code,
 }
 
 #[derive(Debug)]
@@ -42,7 +57,7 @@ pub enum PluginState {
 impl Plugin {
     pub fn code(&self) -> Option<Code> {
         match &self.state {
-            PluginState::Installed(_) => None,
+            PluginState::Installed(_) => self.schemas.first().map(|problem| problem.code),
             PluginState::BadManifest(error) => Some(error.code()),
             PluginState::NotInstalled => Some(Code::PluginNotInstalled),
         }
@@ -73,13 +88,25 @@ impl Board {
         };
         let mut listed: Vec<Plugin> = installed
             .into_iter()
-            .map(|installed| Plugin {
-                enabled: enabled.iter().any(|name| name.as_str() == installed.name),
-                name: installed.name,
-                state: match installed.manifest {
-                    Ok(manifest) => PluginState::Installed(manifest),
-                    Err(error) => PluginState::BadManifest(error),
-                },
+            .map(|installed| {
+                let enabled = enabled.iter().any(|name| name.as_str() == installed.name);
+                let schemas = match (&installed.manifest, enabled) {
+                    (Ok(manifest), true) => manifest
+                        .types
+                        .iter()
+                        .filter_map(|record_type| self.problem(&installed.directory, record_type))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                Plugin {
+                    enabled,
+                    name: installed.name,
+                    state: match installed.manifest {
+                        Ok(manifest) => PluginState::Installed(manifest),
+                        Err(error) => PluginState::BadManifest(error),
+                    },
+                    schemas,
+                }
             })
             .collect();
         let missing: Vec<&PluginName> = enabled
@@ -90,9 +117,36 @@ impl Board {
             name: name.to_string(),
             enabled: true,
             state: PluginState::NotInstalled,
+            schemas: Vec::new(),
         }));
         listed.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(PluginListReport { plugins: listed })
+    }
+
+    /// What is wrong with the schema the plugin in `directory` ships for
+    /// `record_type`, as `plugin enable` would find it.
+    fn problem(&self, directory: &Path, record_type: &RecordType) -> Option<SchemaProblem> {
+        let code = match self.held(directory, record_type) {
+            Ok(Some((_, Held::Same))) => return None,
+            Ok(Some((_, Held::Absent))) => Code::PluginSchemaMissing,
+            Ok(Some((_, Held::Other))) => Code::PluginSchemaDiffers,
+            Ok(None) => {
+                return Some(SchemaProblem {
+                    record_type: record_type.clone(),
+                    path: directory
+                        .join(shipped_schema_path(record_type))
+                        .display()
+                        .to_string(),
+                    code: Code::PluginBadManifest,
+                });
+            }
+            Err(error) => error.code(),
+        };
+        Some(SchemaProblem {
+            record_type: record_type.clone(),
+            path: record_type.schema_path(),
+            code,
+        })
     }
 
     /// The installed plugins offering `capability`, when given, whose

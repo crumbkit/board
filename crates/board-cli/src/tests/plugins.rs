@@ -517,6 +517,55 @@ fn plugin_enable_over_another_schema_is_refused_with_a_hint_and_over_none_is_adm
     );
 }
 
+/// A board naming notes in its configuration without its schema.
+fn lacking_a_schema() -> (Scenario, Scenario) {
+    let (board, data) = shipping();
+    board.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["notes"]}"#),
+    );
+    (board, data)
+}
+
+/// `plugin list` on a board lacking an enabled plugin's schema.
+pub(super) fn list_lacking_a_schema() -> Output {
+    let (board, data) = lacking_a_schema();
+    plugin(&board, &data, &["--json", "plugin", "list"])
+}
+
+#[test]
+fn plugin_list_names_a_schema_an_enabled_plugin_lacks_and_is_clean_once_enabled() {
+    let (board, data) = lacking_a_schema();
+    let output = plugin(&board, &data, &["plugin", "list"]);
+    assert_eq!(output.code, 1);
+    assert_eq!(
+        text(&output.stdout),
+        "degraded board::plugin::schema_missing notes 1.0.0 enabled: \
+         board::plugin::schema_missing .board/types/notes/note/v1.schema.json\n"
+    );
+    let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
+    assert_eq!(
+        report["plugins"][0]["code"],
+        "board::plugin::schema_missing"
+    );
+    assert_eq!(
+        report["plugins"][0]["schemas"],
+        serde_json::json!([{
+            "type": "notes/note/v1",
+            "path": ".board/types/notes/note/v1.schema.json",
+            "code": "board::plugin::schema_missing",
+        }])
+    );
+
+    assert_eq!(
+        plugin(&board, &data, &["plugin", "enable", "notes"]).code,
+        0
+    );
+    let output = plugin(&board, &data, &["--json", "plugin", "list"]);
+    assert_eq!(output.code, 0);
+    assert_eq!(json(&output)["plugins"][0].get("schemas"), None);
+}
+
 #[test]
 fn plugin_enable_json_names_each_write_as_put_does() {
     let (board, data) = shipping();
