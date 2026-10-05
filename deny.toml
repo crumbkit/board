@@ -2,9 +2,9 @@
 all-features = true
 
 [advisories]
-# An exception names the advisory id and why it does not apply, and goes in
-# .cargo/audit.toml too.
+# An exception names the advisory id and why it does not apply.
 ignore = []
+yanked = "deny"
 
 [bans]
 multiple-versions = "warn"

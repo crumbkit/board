@@ -26,13 +26,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - run: rustup toolchain install nightly --profile minimal
       # Pinned so its flags cannot drift; -T is the total run time.
       - run: cargo +nightly install cargo-bolero --version 0.13.5 --locked
       - run: cargo +nightly bolero test --package board-model -T 10min ${{ matrix.target }}
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: crashes-${{ strategy.job-index }}
           path: crates/board-model/src/**/__fuzz__/*/crashes/

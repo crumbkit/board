@@ -25,10 +25,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          tool: cargo-nextest
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-nextest@0.9.146
       - run: bin/lint
       - run: bin/test
 
@@ -44,8 +46,10 @@ jobs:
       run:
         working-directory: plugins/tasks
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
       - run: cargo build -p board-cli --locked
       - run: uv sync --frozen
       - run: uv run --frozen ruff format --check .
@@ -57,9 +61,44 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          tool: cargo-deny,cargo-audit
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-deny@0.20.2,cargo-shear@1.14.0
       - run: cargo deny check
-      - run: cargo audit --deny warnings
+      - run: cargo shear
+
+  # Static analysis of these workflows.
+  zizmor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: zizmor@1.30.1
+      - run: zizmor --offline .github/workflows
+
+  # Mutation testing of the lines a pull request changes. It only reports;
+  # a surviving mutant does not fail the pull request.
+  mutants:
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
+      - run: git diff "origin/${BASE_REF}...HEAD" > pr.diff
+        env:
+          BASE_REF: ${{ github.base_ref }}
+      - run: cargo mutants --in-diff pr.diff --test-tool nextest

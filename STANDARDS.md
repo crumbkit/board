@@ -49,7 +49,7 @@ what enforces it. A rule without a gate is still a rule.
     - Declare `[workspace.lints]`, and set `[lints] workspace = true` in every member.
     - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`.
     - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests.
-    - CI runs both scripts on macOS and Linux, plus `cargo deny check` and `cargo audit --deny warnings`. An advisory exception names its id in both `deny.toml` and `.cargo/audit.toml`.
+    - CI runs both scripts on macOS and Linux, plus `cargo deny check`, `cargo shear` and `zizmor` on the workflows. Every action is pinned by commit SHA and every installed tool by exact version. A non-blocking `cargo mutants --in-diff` job reports on each pull request.
 
 ## Documentation
 
