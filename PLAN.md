@@ -148,7 +148,7 @@ step. The owner's decisions so far:
   only if it still holds the pinned commit, then moves the pin with an
   ordinary `put`. A kill between the two leaves only a stale pin, which
   `mount update` repairs. A pin behind its branch refuses the write with
-  `put::stale`.
+  `board::put::stale`.
 - **Push after write.** A write pushes its commits; one that cannot leaves
   them for the next `sync` and says so. Mounted repositories push innermost
   first, so no pushed pin names a commit others cannot fetch.
@@ -199,16 +199,24 @@ Open:
 
 This refines M8 for references between repositories. Adoption, below, covers
 importing records from other systems and plugin writes; this section does not
-repeat it. Plugins resolve addresses such as `s3://`, `op://` and `widgets://` into
-bytes or secrets, so Board stores no large files itself. File bytes go to an
-S3 bucket. Which bucket is a setting (Settings, below); the credentials that
-reach it are a secret granted in the owner's machine config.
+repeat it.
 
-- **A board declares each repository once**, in `/.board/repos/<name>.json`:
-  its remote, its root commit, an optional `track: "<ref>"` and the commit
-  it is pinned to. Names match `[a-z0-9-]{1,63}` and are local to the board that declares
-  them. A repository need not be a board; a plain repository mounts and
-  resolves today.
+Board stores no large files. A record names its file's `s3://` address, and
+the bucket new files go to is a board setting (Settings, below), so everyone
+writing to a board uploads to the same place. Getting the bytes behind an
+`s3://`, `op://` or `widgets://` address is a *fetcher*: a plugin capability that
+someone calls on purpose, such as `board call s3.fetch`. `query`, `refs` and
+`check` never fetch, and reads never touch the network. The credentials a
+fetcher needs are granted in the owner's machine config, and a secret's value
+reaches a plugin only through its environment at start, never stored or
+printed (Adoption, below).
+
+- **A board declares each repository once**, in a `board/repo/v1` record at
+  `/.board/repos/<name>.json`: its remote, its root commit, an optional
+  `track: "<ref>"` and the commit it is pinned to. Names match
+  `[a-z0-9-]{1,63}` and are local to the board that declares them. A
+  repository need not be a board; a plain repository mounts and resolves
+  today.
 - **A link places a repository in the tree**: `{"path": "acme:/"}` at
   `/work/acme` makes the repository readable there. Several links may reach
   one repository.
@@ -221,8 +229,8 @@ reach it are a secret granted in the owner's machine config.
   this key.
 - **Tracking and pinned** (owner agreed the name on 2026-10-05). A repository
   with `track` has its pin moved by `board sync` to that ref's commit. One
-  field replaces `follow` and a float flag. A pinned repository stays at its commit, and everything read
-  through it reads as recorded.
+  field replaces `follow` and a float flag. A pinned repository stays at its
+  commit, and everything read through it reads as recorded.
 - **One copy per repository.** Every repository the root declares is read at
   the root's pin, wherever it appears. A repository that only a mounted board
   declares is read at that board's pin, and `check` warns when two pins
@@ -234,15 +242,17 @@ reach it are a secret granted in the owner's machine config.
   scheduler may run it, and no daemon is planned.
 - **Writes.** A write through a tracking repository commits there and moves the
   root's pin. A write through a pinned repository is refused with
-  `put::through_mount`. Writes refuse `--at`.
+  `board::put::through_mount`. Writes refuse `--at`.
 - **`board copy`** copies records into another location, rewrites references
   that resolve through mounts, and refuses one that would resolve to
   something else in the destination with `board::copy::unresolved`.
   `--allow-dangling` and a capped `--with-targets` are its only options. It
   never adds a mount, and it reports with `board/copy-report/v1`.
-- **Sharing moves a record** into the shared repository and leaves a link at
-  its old path, so local references keep working. `--snapshot` copies
-  instead, and records the copy in a plugin-owned `share/share/v1` record.
+- **`board publish` moves a record** into another repository, such as a
+  shared one, and leaves a link at its old path, so local references keep
+  working. `--snapshot` copies instead, and records the copy in a
+  plugin-owned `publish/snapshot/v1` record. The name keeps it apart from
+  `widgets share`, which is widgets's own command.
 - **Time travel**: `--at <rev>` reads the root at a revision, and
   `--at name=<rev>` reads one repository at a revision. Both read local
   clones only.
@@ -250,28 +260,36 @@ reach it are a secret granted in the owner's machine config.
   repository key comes only after measurement shows a need.
 
 Open, each with the recommended answer:
-- Overlays and coherence commits: give them a later milestone. An overlay
-  record targets a path in another repository and stores the patch and the
-  base blob it was written against. The coherence commit applies every
-  overlay at the pin, in path order, with `git merge-file`, and is derived,
-  never stored. An agent works on top of it and ships with
-  `git rebase --onto <pin> <coherence> <branch>`. Board owns the concept;
-  domain plugins, such as a widgets plugin preparing a workspace, decide which
-  overlays to apply.
-- Sharing a record whose references the shared repository cannot resolve:
-  give share the same options as `board copy`, plus `--with-repos`.
+- Proposals against other repositories, and coherence commits: give them a
+  later milestone. A proposal (Adoption, below) is one concept: a pending
+  change stored with the base it was written against. One may target a path
+  in another repository, holding a patch and the base blob. It is settled by
+  `put --expect` against that base, or applied in a coherence commit: every
+  chosen proposal applied at the pin, in path order, with `git merge-file`,
+  derived and never stored. An agent works on top of the coherence commit and
+  ships with `git rebase --onto <pin> <coherence> <branch>`. Board owns the
+  concept; domain plugins, such as a widgets plugin preparing a workspace, choose
+  which proposals to apply.
+- Publishing a record whose references the destination cannot resolve:
+  give `board publish` the same options as `board copy`, plus `--with-repos`.
   `--with-targets` moves the records it refers to as well, up to the cap,
   leaving a link at each old path, so references inside the shared set keep
   resolving. `--with-repos` writes the declarations of the repositories it
-  refers to into the shared repository. A declaration holds only a remote
-  URL, a root commit and a pin, but it tells every reader of the shared
-  repository that the repository exists. Without either option, share
-  refuses with `board::copy::unresolved`. With `--allow-dangling`, the
-  reference is written unchanged and starts resolving once the shared
-  repository declares the same name.
-- M10 in #55 (content-addressed records): drop it. Adoption imports widgets
-  records with their `widgets://<kind>/<sha256>` ids, plugin resolvers fetch the
-  bytes, and nothing yet needs Board to check content hashes.
+  refers to into the destination. A declaration holds only a remote URL, a
+  root commit and a pin, but it tells every reader of the destination that
+  the repository exists. Without either option, `board publish` refuses
+  with `board::copy::unresolved`. With `--allow-dangling`, the reference is
+  written unchanged and starts resolving once the destination declares the
+  same name.
+- M10 in #55 (content-addressed records): drop it. Adoption turns each widgets
+  relation into a path reference to `/widgets/<kind>/<id>` and keeps the `widgets://`
+  address only as provenance; content hashing stays as Adoption has it.
+- How a root board reaches the owner's personal board, which holds the
+  preferences Settings reads, when M8 fetches only remotes the root names.
+  Recommended: the machine config names the one personal board, and M8
+  fetches it as well as the root's remotes. A shared board can never name
+  it, so the network rule's purpose holds. Settings' sentence that machine
+  config holds only secrets and environment grants would gain this one entry.
 - Whether `docs/architecture.md` keeps saying a board at a commit fully
   determines its mounts. Under tracking it does for reads at the pin; revise
   the sentence when this lands.
@@ -338,6 +356,220 @@ header and requires a token. The measured warm-check speedups (HANDOFF item 2)
 land after M7 gives real numbers.
 A `board mcp` adapter can serve each capability as the MCP tool
 `<plugin>.<capability>` with no translation, since capabilities are Tool objects.
+
+### Adoption (sketch; agreed with the owner 2026-10-05, not built)
+
+Board should be the one place to address things from other systems: every widgets
+record, every JIRA ticket, and how to run a command against each. The other
+system keeps its own records unchanged; Board adopts them. widgets comes first, and
+JIRA is the second user that principle 8 requires.
+
+**Two ways in.**
+
+- *Mount* a git repository to see its files as they are, with no copy: the
+  board declares it (Repositories across boards, above) and a link places
+  it in the tree. A link pointer can name one file inside it. Mounting
+  already exists; the files are untyped unless they carry `$type`.
+- *Import* to make another system's data into typed Board records. A plugin
+  reads the source, types each item from the source's own type field and
+  writes it with `put`. Use it for anything not in git (JIRA) and anything
+  that needs a type or references (widgets). The source's JSON is kept unchanged
+  inside the record; the plugin adds `$type` and the references.
+
+**widgets.** widgets's team store (example-org/changelog) holds `<kind>/<id>.json` with
+`kind`, a content-hash `id` and `relations` such as `widgets://result/<id>`. The widgets
+plugin imports each as `widgets/<kind>/v1` at `/widgets/<kind>/<id>` and turns each
+relation into a reference to `/widgets/<kind>/<id>`, so `refs` and `query` work
+across widgets records. The schemas live in the importing board. Machine-local
+state with an expiry (observations) is not imported.
+
+**Writes go to the source.** A plugin capability such as `widgets.share` or `widgets.up`
+runs the source's own CLI; it never edits the source's store. The record says
+what to act on and installed plugin code acts, so data never becomes code
+(principle 6). After the source changes, the import runs again.
+
+**Staying true to the source.**
+
+- The source is the truth for its data; Board's copy is an import, and
+  Board's answers are always true of Board's tree (principle 1).
+- Only the plugins the board grants may write an imported path: the
+  importer, and the reconciler below.
+- Each record keeps where it came from: the source address and the source's
+  revision (for widgets, the id itself).
+- widgets ids are content hashes, so a copy is never wrong, only missing newer
+  records. For a source whose items change (JIRA), the import replaces a
+  record with `put --expect`, so two writers cannot overwrite each other.
+- An unchanged source imports to identical bytes, so re-importing changes
+  nothing and commits nothing.
+- Imports run when asked (`board call widgets.import`) or on a schedule. Reads
+  never import and never touch the network.
+- After M8, the widgets plugin can import into a team board that the owner's
+  board declares with `track` (a write through a pinned repository is
+  refused), so Board provides the sharing and widgets's own team store can
+  retire.
+
+**Reconciling the delta.** An import does not decide what to do when the
+source and Board's copy differ. It splits into three steps:
+
+1. The importer reads the source and produces the records it would write. It
+   decides nothing.
+2. The delta is computed against the tree: for each item, added at source,
+   changed at source, removed at source, or changed on both sides (Board's
+   copy no longer matches the revision it was imported from). The delta is a
+   typed document, `board/delta/v1`, so any reconciler can read any
+   importer's delta. The importer states the scope it covered (all of widgets's
+   team store, or these 40 tickets); only an item inside that scope can be
+   removed at source. Otherwise a ticket leaving a JIRA filter, or a fetch
+   that failed halfway, would look like a deletion.
+3. A reconciler, which is an ordinary plugin capability, receives the delta
+   and writes the outcome through the same gate as any plugin.
+
+Reconcilers are plugins so that people can add new ways to settle a delta.
+Likely first ones: *mirror* (the source wins; the default for content-addressed
+sources such as widgets), *keep* (mark records removed at source rather than
+delete them), *propose* (write each disagreement as a proposal record for the
+owner to settle), and *agent* (hand the delta and a prompt to an agent, which
+writes the outcome or proposals). The importer's manifest names a default;
+the board's settings name the reconciler per path or type, and the owner can
+refine that (see Settings below). An agent reconciler's credentials are
+granted in machine config like any other need.
+
+A proposal is a record holding a pending change and the base it was written
+against, so it is queried and settled like any other.
+Accepting one is `put --expect` against the version the proposal was made
+from, so a stale proposal is refused. Whether a reconciler applies or
+proposes, and when the owner hears of it, are settings (below). A change
+applied without review says so in the record.
+
+The outcome is commits, so the result is in the tree and every reader sees
+the same answer; reads never reconcile. The import and the delta are
+deterministic. An agent reconciler is not, so the `Board-Plugin:` trailer on
+its commits records which reconciler made each decision. Computing the delta
+starts in the shared Python plugin library; it moves into the core only if a
+plugin in another language needs it (principle 8).
+
+**Plugins use Board through one gate.** A plugin may run `board put`, as it
+already runs `board query` and `board call`. Board starts it with
+`BOARD_PLUGIN=<name>@<version>`; the CLI reads it once into a principal (the
+owner or a plugin), every operation takes the principal, and one function
+decides access, refusing with a stable code such as `board::access::denied`.
+Each commit from a plugin's put carries a `Board-Plugin:` trailer, so git
+history is the audit log. These checks catch mistakes and make access
+visible. They do not stop a hostile plugin, which runs as the owner; that
+would need an OS sandbox.
+
+**What a plugin needs, and who grants it.** The manifest declares needs by
+name, never value: environment variables (required or optional, each with a
+reason) and a longer time limit per capability. Grants come from two places:
+
+- Write scope (which paths and types a plugin may put) is about the board's
+  data, so it is granted in `board.json`. This needs `board/config/v2`.
+- Environment variables concern the owner's machine and secrets, so they are
+  granted in the owner's machine config, read once at startup. A shared board
+  must never be able to hand someone's credentials to a plugin.
+- A longer time limit is a setting like any other (see Settings below).
+
+Values come from the owner's environment when the plugin starts and are never
+stored or printed (STANDARDS.md 16). An ungranted need refuses before the
+plugin starts and names the config line to add; a granted required variable
+that is unset refuses and names it. A program that needs an interactive login
+cannot run in a plugin; the plugin returns a typed error naming the command
+to run. The manifest's needs fold into the `board/plugin-manifest/v2` that
+Views already plans.
+
+**Limits.** A limit such as "no adopted file over 1 MB" is a setting like any
+other (below). `put` applies the setting in force for whoever writes. `check`
+applies only what the board's own tree says, on every machine, so it fails CI
+through `board check` when the board sets the limit and never because of
+anyone's personal refinement. An owner who overrides the board's limit can
+still write the file; `check` keeps reporting it.
+
+**Next steps.**
+
+1. Spike: a plain script imports the team store into a scratch board, read
+   only on the source. It shows what `check`, `refs` and `query` answer over
+   real widgets data and whether every kind is content-addressed.
+2. Design the principal, the access function, `board/config/v2`, the machine
+   config and `board/plugin-manifest/v2` with their codes, then build them.
+   Design `board/delta/v1` alongside, using the spike's real deltas.
+3. Build the widgets plugin on the Python library that a second plugin starts.
+4. JIRA second, which proves the design is not widgets-shaped.
+
+Open:
+- Whether a reconciler gets the whole delta at once or one item at a time.
+  The lean is the whole delta, written item by item with `put --expect`, so
+  it can see patterns (a mass removal, a moved ticket) and a run that stops
+  halfway leaves a correct partial result.
+- What a reconciler may write outside the imported path. It gets the same
+  grants as any plugin; reacting to a change (close my task when its ticket
+  closes) is wanted and is its own feature, a watch.
+- Which widgets kinds change after they are written (workspaces?).
+- Whether the original JSON sits under one field or beside `$type`.
+- How board-wide limits on files, not records, are declared: path patterns
+  in `board/config/v2`, or attributes in `.gitattributes`.
+
+### Settings and the gentle slope (sketch; agreed with the owner 2026-10-05, not built)
+
+Board is where the complexity of settings lives, so that plugins stay simple.
+A plugin asks one question, "for this operation on this path, do I act or
+ask, and how is the owner told?", and does what the answer says.
+
+**The gentle slope.** Settings, like every concept, reach the owner only
+when they are needed. The rules, from the owner's earlier designs:
+
+- A concept appears only after its absence was felt. If that never happens,
+  the owner never meets it. There is no tour, tutorial or settings page.
+- Each introduction is one sentence and one act. The first time a setting
+  matters, Board says what it is, where it came from (this board, the
+  owner, a mandate) and what choosing would change.
+- The owner can wave an offer away. *Later* brings it back only when the same
+  need recurs; *No* never brings it back unasked, and the ability stays
+  findable.
+- Only the owner accepts. Agents and plugins suggest; a suggestion applies
+  nothing until accepted, and one left unjudged expires.
+- The everyday surface does not grow. Power views are visited and left.
+- The order concepts are introduced in is the order they are built.
+
+**Layers.** Three sources, highest first:
+
+1. A *mandate* from an authority above the owner, such as an enterprise
+   policy. It cannot be refined. It cannot live in anything the owner
+   edits, so on a machine it comes from managed config the owner cannot
+   change; real enforcement is on the server (a required CI check, a
+   protected branch), because whoever controls a machine can bypass Board.
+2. The owner's *preferences*, as records in the owner's personal board, so
+   they follow the owner between machines and keep their history. Machine
+   config holds only secrets and environment grants.
+3. The *board's settings*, in its tree. They are defaults: the owner has the
+   final say and can refine any of them. Changing one for everyone is a
+   proposal to the board.
+
+The first time a board's setting matters, the owner can keep it, refine it
+for themselves, propose a change for everyone, or say Later or No. The
+choice is recorded in the personal board, so it is not asked twice.
+
+**Two settings per decision.** *Authority*: act, or propose. *Attention*:
+mark it and say nothing; tell the owner when they next look; tell them when
+a plugin reads the record (`query` and `refs` report an open proposal with a
+stable code, derived from the tree); or tell them at once.
+
+**Learning from corrections.** Both kinds of mistake are evidence: Board
+asked when the owner wanted it to act, or acted when it should have asked.
+An approval given unchanged and without thought says the question added
+nothing; a reversed or edited autonomous act says Board should have asked.
+Evidence never becomes a preference silently, and silence proves nothing.
+Board makes one suggestion naming the scope (this once, this board, all my
+boards), and the owner's answer becomes a preference that records the
+correction that prompted it.
+
+The old Board needed a skill head, a declaration hash, an item id and a scope
+to set one value; refining a setting here should take one answer to one
+question.
+
+Open:
+- The preference record's shape and the question plugins ask, designed with
+  the access function so that one answer covers both.
+- Where a mandate's managed config lives and how it names its authority.
 
 ## Taking from crumbkit/board
 
