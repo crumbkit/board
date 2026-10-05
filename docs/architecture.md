@@ -102,6 +102,8 @@ escaped as RFC 8785 (JCS) escapes them: only `"`, `\` and control characters.
 JCS sorts keys by UTF-16 unit instead of code point. Numbers print as
 `serde_json` prints them: an integer as an integer, and any other number as the
 shortest decimal that reads back to the same double, so `1e2` becomes `100.0`.
+When a double lies exactly halfway between two equally short decimals, either
+is read and `serde_json`'s choice is written.
 Board reads any valid JSON; only `put` rewrites a file into canonical form. One
 key per line lets git's line merge combine most concurrent edits.
 

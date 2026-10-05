@@ -61,8 +61,10 @@ pub fn canonical_json(value: &Value) -> Vec<u8> {
 /// as written. A number is held exactly when its value survives being read:
 /// an integer must fit `i64` or `u64`, and any other number must have the
 /// same decimal value as the shortest decimal that reads back to the same
-/// `f64`. So `0.1` and `1.50` are held, and `2.5e-324` and
-/// `9007199254740993.0` are not.
+/// `f64`. When the `f64` lies exactly halfway between two equally short
+/// decimals, either is held. So `0.1`, `1.50`, `1111111111111111.2` and
+/// `1111111111111111.3` (the `f64` is `.25`) are held, and `2.5e-324` and
+/// `9007199254740993.0` (the `f64` is `9007199254740992`) are not.
 fn lossy_number(text: &str) -> Option<&str> {
     let bytes = text.as_bytes();
     let mut at = 0;
@@ -103,7 +105,34 @@ fn exact(lexeme: &str) -> bool {
     let Ok(value) = lexeme.parse::<f64>() else {
         return false;
     };
-    value.is_finite() && decimal(lexeme) == decimal(&format!("{value:e}"))
+    let (Some(written), Some(shortest)) = (decimal(lexeme), decimal(&format!("{value:e}"))) else {
+        return false;
+    };
+    value.is_finite()
+        && (written == shortest
+            || written.1.len() == shortest.1.len() && halfway(value, &written, &shortest))
+}
+
+/// Whether `value` is exactly halfway between the decimals `a` and `b`.
+/// Rust prints a double's exact value when given a precision, and no double
+/// has more than 767 significant digits.
+fn halfway(value: f64, a: &(bool, String, i64), b: &(bool, String, i64)) -> bool {
+    let low = a.2.min(b.2);
+    let scaled = |(_, digits, exponent): &(bool, String, i64)| {
+        let shift = u32::try_from(exponent.checked_sub(low)?).ok()?;
+        digits
+            .parse::<u128>()
+            .ok()?
+            .checked_mul(10u128.checked_pow(shift)?)
+    };
+    let Some(twice) = scaled(a).zip(scaled(b)).and_then(|(a, b)| a.checked_add(b)) else {
+        return false;
+    };
+    let sign = if a.0 { "-" } else { "" };
+    let middle = twice.checked_mul(5).zip(low.checked_sub(1));
+    middle.is_some_and(|(digits, exponent)| {
+        decimal(&format!("{sign}{digits}e{exponent}")) == decimal(&format!("{value:.800e}"))
+    })
 }
 
 /// The value of a decimal as its sign, its significant digits and the power

@@ -200,3 +200,38 @@ fn bolero_canonical_output_reads_back_as_the_same_value_and_bytes() {
         }
     });
 }
+
+#[test]
+fn either_of_two_equally_short_decimals_is_held_and_a_longer_one_is_refused() {
+    // Found by fuzzing: each admitted input reads to a double that lies
+    // exactly halfway between two shortest decimals, such as .25 between .2
+    // and .3. Rust's formatter picks one and serde_json prints the other, so
+    // the parse refused what canonical output wrote. One more digit makes a
+    // decimal longer than the shortest, and that is still refused. So is an
+    // equally short decimal that is not a tie: 9007199254740993.0 reads to
+    // exactly 9007199254740992, which is 1 from it and 0 from ...992.
+    for (refused, admitted) in [
+        (
+            &b"[777777777778788.31\t]"[..],
+            &b"[777777777778788.3\t]"[..],
+        ),
+        (
+            b"[\n\n[6060,626260000000002.31e-0]\n\n\n\n]\n\n\n",
+            b"[\n\n[6060,626260000000002.3e-0]\n\n\n\n]\n\n\n",
+        ),
+        (b"-1133512531312535.31", b"-1133512531312535.30"),
+        (b"1111111111111111.31", b"1111111111111111.3"),
+        (b"9007199254740993.0", b"9007199254740992.0"),
+    ] {
+        assert_eq!(code(refused), Code::JsonLossyNumber);
+        let value = parse_json(admitted).unwrap();
+        assert_eq!(
+            parse_json(&serde_json::to_vec(&value).unwrap()).unwrap(),
+            value
+        );
+        let canonical = canonical_json(&value);
+        let again = parse_json(&canonical).unwrap();
+        assert_eq!(again, value);
+        assert_eq!(canonical_json(&again), canonical);
+    }
+}
