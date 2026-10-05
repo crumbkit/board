@@ -26,6 +26,8 @@ class Board:
     root: Path
     data: Path
     cache: Path
+    # A directory searched before Board's own on the PATH the plugin sees, such as one holding a wrapper.
+    first: Path | None = None
 
     def write(self, path: str, text: str) -> None:
         """Write a fixture file at `path`, relative to the board's root."""
@@ -37,7 +39,10 @@ class Board:
         """Run `board` in the board's root, with only the variables a user's shell would pass it."""
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
-        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        directories = [board_binary().parent, Path(uv).parent, Path("/usr/bin"), Path("/bin")]
+        if self.first is not None:
+            directories.insert(0, self.first)
+        path = os.pathsep.join(str(directory) for directory in directories)
         environment = {
             "PATH": path,
             "HOME": os.environ.get("HOME", str(self.root)),

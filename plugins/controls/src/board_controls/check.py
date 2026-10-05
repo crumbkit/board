@@ -1,6 +1,7 @@
 """`check`: every budget control, measured against the files it applies to."""
 
-from typing import TYPE_CHECKING
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import TYPE_CHECKING, Literal
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
@@ -12,11 +13,25 @@ if TYPE_CHECKING:
     from pydantic import JsonValue
 
 
-def measure(budget: str, data: bytes) -> int:
-    """The words or bytes in `data`. Words are separated by any whitespace."""
-    if budget == "bytes":
-        return len(data)
-    return len(data.decode(errors="replace").split())
+type Usage = dict[Literal["words", "bytes"], int]
+
+
+def measure(data: bytes) -> Usage:
+    """The words and bytes in `data`. Words are separated by any whitespace."""
+    return {"words": len(data.decode(errors="replace").split()), "bytes": len(data)}
+
+
+# Each read is a `board get` process. Past about eight at once, starting
+# processes contends and reads get no faster.
+READERS = 8
+
+
+def _read(reading: Board, path: str) -> Usage | PluginError:
+    """What the file at `path` uses, or why it could not be read."""
+    try:
+        return measure(reading.get(path))
+    except PluginError as error:
+        return error
 
 
 def check(request: CallRequest) -> CheckOutput:
@@ -26,6 +41,8 @@ def check(request: CallRequest) -> CheckOutput:
     `controls::control::degraded`; a control over its budget is
     `controls::budget::exceeded`. Each error names every control it applies to.
     A file reached by a reference and a pattern, or through a link, counts once.
+    Each file is read once, however many controls reach it, and several are
+    read at a time. The time still grows with the number of files.
     """
     CheckInput.model_validate(request.input)
     reading = Board(request.board.root, "controls")
@@ -46,14 +63,22 @@ def check(request: CallRequest) -> CheckOutput:
         " AND e.source = 'worktree' AND e.kind != 'pointer' AND e.path GLOB p.value",
     )
     files: dict[str, set[str]] = {
-        logical: {board.display(reading, path) for path in record.applies_to} for logical, record in budgets.items()
+        logical: board.referenced(reading, logical) if record.applies_to else set()
+        for logical, record in budgets.items()
     }
     for control, path, status, code in matched:
         if control in files:
             if status != "ok":
                 raise _unreadable(control, path, code)
             files[control].add(path)
-    checked = [_checked(reading, logical, budgets[logical], sorted(files[logical])) for logical in sorted(budgets)]
+    distinct = sorted({path for paths in files.values() for path in paths})
+    pool = ThreadPoolExecutor(max_workers=READERS)
+    try:
+        reads = {path: pool.submit(_read, reading, path) for path in distinct}
+        checked = [_checked(logical, budgets[logical], sorted(files[logical]), reads) for logical in sorted(budgets)]
+    finally:
+        # The first error, in control then file order, stops the reads still queued.
+        pool.shutdown(cancel_futures=True)
     failing = [item for item in checked if item.used > item.max]
     if failing:
         names = ", ".join(f"{item.control} ({item.used} of {item.max} {item.budget})" for item in failing)
@@ -66,17 +91,19 @@ def check(request: CallRequest) -> CheckOutput:
     return CheckOutput(controls=checked)
 
 
-def _checked(reading: Board, logical: str, record: ControlRecord, files: list[str]) -> Checked:
+def _checked(
+    logical: str, record: ControlRecord, files: list[str], reads: dict[str, Future[Usage | PluginError]]
+) -> Checked:
     rule = record.rule
     assert rule is not None  # noqa: S101 - check passes only budget controls
     used = 0
     for path in files:
-        try:
-            used += measure(rule.budget, reading.get(path))
-        except PluginError as error:
-            if error.code != "controls::board::refused":
-                raise
-            raise _unreadable(logical, path, error.fields.get("code")) from None
+        measured = reads[path].result()
+        if isinstance(measured, PluginError):
+            if measured.code != "controls::board::refused":
+                raise measured
+            raise _unreadable(logical, path, measured.fields.get("code"))
+        used += measured[rule.budget]
     return Checked(
         control=logical,
         requirement=record.requirement,

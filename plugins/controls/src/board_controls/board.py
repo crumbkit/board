@@ -42,13 +42,21 @@ def degraded(board: Board) -> list[list[str]]:
     )
 
 
-def display(board: Board, path: str) -> str:
-    """The display path of the entry at `path`, with every link replaced by its target."""
-    report = board.refs(path)
+def referenced(board: Board, control: str) -> set[str]:
+    """The display path of each entry the control's `applies_to` reaches, with every link replaced by its target.
+
+    One `board refs` of the control resolves every reference it makes.
+    """
+    report = board.refs(control)
     if report is None:
-        raise PluginError("controls::board::failed", f"nothing is at {path}")
-    shown: str = report["location"]["display"]
-    return shown
+        raise PluginError("controls::board::failed", f"nothing is at {control}")
+    reached: set[str] = set()
+    for outgoing in report["from"]:
+        if outgoing["pointer"].startswith("/applies_to/"):
+            if outgoing["location"] is None:
+                raise PluginError("controls::board::failed", f"{control} reaches nothing at {outgoing['target']}")
+            reached.add(outgoing["location"]["display"])
+    return reached
 
 
 def referencing(report: dict[str, Any]) -> set[str]:
