@@ -133,6 +133,99 @@ The owner uses the new Board for daily work and archives the old one.
 
 Done: the owner says so.
 
+### Controls (next; agreed with the owner 2026-10-05, not built)
+
+The owner wants to adopt a code repository as a board and attach controls to
+its files, with the controls stored in that repository. viitta is the first.
+A control is a requirement that applies to files, with its purpose and,
+optionally, a rule a program can check, such as a word budget.
+
+**What works today.** A trial on a scratch clone of viitta found:
+
+- `board check` indexes all 176 files. Six are degraded with
+  `record::unknown_type`: the three `plugin.json` files, the export golden
+  record (`legacy/work/v1`) and the canonical-form fixture
+  `nesting.in.json`/`.out.json` (`lr/task/v1`).
+- A control can already be a plain record. A schema field of
+  `board-ref` strings, without `x-board-type`, may reference any file.
+  `check` reports `ref::dangling` when a referenced file is renamed or
+  deleted, and `board refs /AGENTS.md` lists the controls that reach it.
+- `board get` refuses a file that is not a record with
+  `record::not_a_record`, so a plugin has no supported way to read a file's
+  bytes.
+
+**Owner decisions.**
+
+1. `board get <path>` prints the stored bytes of any entry, through the one
+   resolver. `--json` still refuses a non-record with `record::not_a_record`.
+2. Board teaches types instead of hiding files. Adopting a repository must be
+   gentle: after the owner follows what `check` says, `check` exits 0. Board
+   knows its own `board/plugin-manifest/v1`, checked by Rust types as it
+   checks `board/config/v1`. `record::unknown_type` names the schema file that
+   would teach the type. A test fixture carries only a type Board or one of
+   its tools supports:
+   - The canonical-form fixture `nesting.in.json`/`.out.json` does not need a
+     record type: canonical form applies to any JSON. Its `$type` key becomes
+     `$id`, which still tests that `$` sorts before letters, so the fixture
+     becomes a `json` entry.
+   - The export golden record is `legacy/work/v1` because that is the type
+     the M1 export writes. viitta commits the schema the export writes for
+     it, `{"type": "object"}`, at
+     `.board/types/legacy/work/v1.schema.json`, and deletes it with the
+     export tool after M7.
+3. A plugin ships the schemas for its types. The manifest maps each type to a
+   schema file in the plugin's directory. `board plugin enable <name>` adds the
+   plugin to `board.json` and copies its schemas into `.board/types/`, so the
+   tree stays the truth and a clone without the plugin still validates. A
+   different schema already at that path refuses the enable, because a
+   released type never changes. `plugin list` reports an enabled plugin whose
+   schema is missing from the tree or differs from it. The manifest changes in
+   place, as #71 did, since Board has no data to migrate.
+
+**The `controls` plugin.** `controls/control/v1` has `requirement`, `purpose`,
+`applies_to` (references to files), `paths` (SQLite `GLOB` patterns over
+entry paths, for sets such as `docs/*.md`) and an optional `rule`: none, for
+a written requirement, or a budget of `words` (whitespace-separated) or
+`bytes` with a `max`, summed over every matched file. Extraction writes one
+row per control. Two capabilities:
+
+- `for-path` returns the controls that apply to a path, by reference or
+  pattern, so an agent can ask before it edits a file.
+- `check` evaluates each budget, reading files through `board query` and
+  `board get`. A violation is the error `controls::budget::exceeded`, naming
+  each failing control with its usage and maximum, so `board call` exits 1
+  in CI. `board check` runs no plugin code and does not report controls.
+
+Left out until a real need: ControlTree groups, assessments, paged reports
+and control status from the old Board.
+
+**viitta adopts itself.** `.board/board.json` enables `controls`.
+`controls/` holds the eight rules from AGENTS.md as written requirements and
+the `lint.toml` budgets as budget controls. `bin/lint` stays the gate; CI
+also runs `board call controls.check`.
+
+**Pull requests, in order.**
+
+1. `board get` prints any entry's bytes.
+2. Board knows `board/plugin-manifest/v1`; `record::unknown_type` names the
+   missing schema file.
+3. `board init` writes a minimal `.board/board.json`; the manifest's type
+   map; `board plugin enable`.
+4. The `controls` plugin in `plugins/controls/`, with pytest against fixture
+   boards through the real `board`.
+5. viitta adopts itself: `board.json`, the two fixture changes above, the
+   control records and the CI step.
+
+Done: in a fresh clone of viitta with `board` and `controls` installed,
+`board check` and `board call controls.check` exit 0, and lowering one
+budget below its usage makes the call exit 1 with
+`controls::budget::exceeded`.
+
+Limits and controls (owner's decision): a limit that refuses a write, such as
+Adoption's file-size limit below, is a setting that `put` and `check` apply. A
+requirement on files that is checked on demand, such as a word budget, is a
+control.
+
 ### M8 Sharing (sketch; after M7)
 
 A shared project is its own repository, mounted into each person's board. This
