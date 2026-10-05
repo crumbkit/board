@@ -44,6 +44,82 @@ fn a_query_reads_the_entries_check_decided() {
 }
 
 #[test]
+fn records_lists_each_record_with_its_status_and_degraded_ones_with_their_code() {
+    let scenario = board();
+    scenario
+        .write("tasks/a.json", Item::File(&task("")))
+        .write("tasks/b.json", Item::File(r#"{"$type": "lr/task/v1"}"#))
+        .write("bad.json", Item::File(r#"{"$type": "Not A Type"}"#))
+        .write("notes.json", Item::File("{}"));
+    let report = open(&scenario)
+        .query(
+            "SELECT path, type, status, code, body IS NOT NULL AS parsed FROM records
+             WHERE path <> '.board/board.json' ORDER BY path",
+            500,
+            None,
+            &Plugins::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        report.rows,
+        [
+            vec![
+                json!("bad.json"),
+                json!(null),
+                json!("degraded"),
+                json!("board::record::bad_type"),
+                json!(0)
+            ],
+            vec![
+                json!("projects/p.json"),
+                json!("lr/project/v1"),
+                json!("ok"),
+                json!(null),
+                json!(1)
+            ],
+            vec![
+                json!("tasks/a.json"),
+                json!("lr/task/v1"),
+                json!("ok"),
+                json!(null),
+                json!(1)
+            ],
+            vec![
+                json!("tasks/b.json"),
+                json!("lr/task/v1"),
+                json!("degraded"),
+                json!("board::record::invalid"),
+                json!(1)
+            ],
+        ],
+        "notes.json has no $type, so it is not a record"
+    );
+}
+
+#[test]
+fn a_record_body_is_its_canonical_form() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"title":"t",   "$type":"lr/task/v1","see":"/projects/p"}"#),
+    );
+    let report = open(&scenario)
+        .query(
+            "SELECT body FROM records WHERE path = 'tasks/a.json'",
+            500,
+            None,
+            &Plugins::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        report.rows,
+        [vec![json!(
+            "{\n  \"$type\": \"lr/task/v1\",\n  \"see\": \"/projects/p\",\n  \"title\": \"t\"\n}\n"
+        )]]
+    );
+}
+
+#[test]
 fn a_query_returns_at_most_its_limit_and_says_when_rows_were_left_out() {
     let all = query("SELECT path FROM entries", 500).unwrap();
     let limited = query("SELECT path FROM entries", 2).unwrap();
@@ -147,6 +223,7 @@ proptest! {
         generated.write(&after);
         for sql in [
             "SELECT * FROM entries ORDER BY source, path",
+            "SELECT * FROM records ORDER BY source, path",
             "SELECT * FROM extracted ORDER BY plugin, version, blob",
             "SELECT * FROM p_tasks.sqlite_schema",
         ] {

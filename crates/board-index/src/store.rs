@@ -5,7 +5,9 @@ use std::collections::HashMap;
 
 use std::path::Path;
 
-use board_model::{Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat};
+use board_model::{
+    Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat, canonical_json,
+};
 use board_tree::{MountPoint, TreeRow, TreeRows};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
@@ -132,6 +134,17 @@ impl Writer<'_> {
                 fact.kind.as_str(),
                 fact.record_type.as_ref().map(RecordType::as_str),
                 fact.code.map(Code::as_str),
+            ])?;
+        Ok(())
+    }
+
+    /// Stores the canonical form of the record `blob` parses to.
+    pub fn put_body(&self, blob: ObjectId, value: &serde_json::Value) -> Result<(), IndexError> {
+        self.transaction
+            .prepare_cached("INSERT OR IGNORE INTO main.bodies (blob, body) VALUES (?1, ?2)")?
+            .execute(params![
+                blob.to_string(),
+                String::from_utf8_lossy(&canonical_json(value)),
             ])?;
         Ok(())
     }

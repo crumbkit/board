@@ -207,6 +207,7 @@ speed. SQLite is bundled, so every platform runs the same one.
 | `trees` | every entry in a tree: name, mode, object, logical segment and path code | tree |
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
+| `bodies` | the canonical form of each record that parses | blob |
 | `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
@@ -216,11 +217,13 @@ speed. SQLite is bundled, so every platform runs the same one.
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 `type`, `status`, `code`, `change`, `role` and `schema` (the schema blob a
-record was checked against). Tables, views and columns are an interface agents
-write SQL against; changing one changes the index format. A commit mounted in
-several places appears once, with `logical` through the shortest display path,
-then the first lexically. Everything derived is keyed by content (blob or tree
-hash), never by commit or time, so branches share results.
+record was checked against). The `records` view is its rows of kind `record`,
+with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
+`body` is NULL when the record does not parse. Tables, views and columns are an
+interface agents write SQL against; changing one changes the index format. A
+commit mounted in several places appears once, with `logical` through the
+shortest display path, then the first lexically. Everything derived is keyed by
+content (blob or tree hash), never by commit or time, so branches share results.
 
 Each command refreshes the index first, doing work in proportion to what
 changed: it hashes only working-tree files whose stat changed, as git does, and

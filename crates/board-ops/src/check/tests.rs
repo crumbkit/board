@@ -103,8 +103,10 @@ fn viewed(index: &Index) -> Vec<Checked> {
 
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time.
-const EVERY_TABLE: [&str; 10] = [
+const EVERY_TABLE: [&str; 12] = [
     "SELECT * FROM entries ORDER BY source, path",
+    "SELECT * FROM records ORDER BY source, path",
+    "SELECT * FROM bodies ORDER BY blob",
     "SELECT * FROM blobs ORDER BY blob, role",
     "SELECT * FROM validations ORDER BY record, schema",
     "SELECT * FROM refs ORDER BY record, schema, ordinal",

@@ -2,7 +2,7 @@
 //! to them is a new index format.
 
 /// The index format. An index of any other format is deleted and rebuilt.
-pub const INDEX_VERSION: &str = "6";
+pub const INDEX_VERSION: &str = "7";
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -52,6 +52,10 @@ CREATE TABLE blobs (
     type TEXT,
     code TEXT,
     PRIMARY KEY (blob, role)
+) WITHOUT ROWID;
+CREATE TABLE bodies (
+    blob TEXT PRIMARY KEY,
+    body TEXT NOT NULL
 ) WITHOUT ROWID;
 CREATE TABLE validations (
     record TEXT NOT NULL,
@@ -117,6 +121,13 @@ LEFT JOIN main.blobs AS b ON b.blob = r.blob AND b.role = r.role;
 CREATE TEMP VIEW IF NOT EXISTS blobs AS
 SELECT * FROM main.blobs
 WHERE (blob, role) IN (SELECT blob, role FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS bodies AS
+SELECT * FROM main.bodies WHERE blob IN (SELECT blob FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS records AS
+SELECT e.source, e.path, e.logical, e.blob, e.type, e.status, e.code, b.body
+FROM temp.entries AS e
+LEFT JOIN main.bodies AS b ON b.blob = e.blob
+WHERE e.kind = 'record';
 CREATE TEMP VIEW IF NOT EXISTS validations AS
 SELECT * FROM main.validations
 WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);

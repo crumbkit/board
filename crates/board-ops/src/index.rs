@@ -160,6 +160,9 @@ pub(crate) fn facts(
             let classified = role.classify(bytes.as_deref());
             let fact = blob_fact(&classified);
             writer.put_blob(blob, role, &fact)?;
+            if let Content::Record { value, .. } = &classified.content {
+                writer.put_body(blob, value)?;
+            }
             work.parsed += 1;
             if let Some(value) = value(classified) {
                 values.insert((blob, role), value);
