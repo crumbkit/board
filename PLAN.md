@@ -281,9 +281,29 @@ step. The owner's decisions so far:
   otherwise it is a conflict. Repositories across boards, below, replaces
   this: the root's pin always wins.
 
-Open:
-- Whether jujutsu, with its first-class conflicts, sits behind the same seam
-  later. Decide after M7 shows how sharing is actually used.
+- **Board detects a colocated jj repository automatically** (owner's
+  decision, 2026-10-05). No setting chooses between git and jujutsu (jj).
+
+  The jj design below was agreed with the owner on 2026-10-05 and is not
+  built. Board's reads already work on colocated jj repositories, because jj
+  writes ordinary git objects. A full version-control trait built on jj-lib
+  would take 15 to 25 days and is not worth it: jj-lib breaks its API monthly
+  and would pull in a second copy of gix. After M7, Board detects a colocated
+  `.jj` directory and lets jj's snapshot record a put instead of committing
+  onto HEAD (3 to 5 days). It refuses a conflicted jj commit, one whose
+  header has `jj:trees`, with its own code. If jj users need a commit per
+  put, Board will later run the `jj` CLI through the same child-process owner
+  that M8 creates for `git`. Settled decision 4, under which `put` commits
+  onto HEAD as `git commit <paths>` does (docs/architecture.md), is the one
+  existing decision that conflicts with jj.
+
+  M8 does the following now, so jj stays cheap to add:
+  - Board's clones stay bare git repositories, whatever the user runs
+    locally.
+  - The single child-process owner lives in `board-tree`, and the
+    child-process rule in `clippy.toml` gains it as a second owner.
+  - Board never assumes HEAD is a branch.
+  - `--at <rev>` takes git revision syntax only.
 
 ### Repositories across boards (sketch; agreed with the owner 2026-10-05, not built)
 
@@ -376,9 +396,9 @@ Decided with the owner on 2026-10-05:
 - M10 in #55 (content-addressed records) is dropped. Adoption turns each widgets
   relation into a path reference to `/widgets/<kind>/<id>` and keeps the `widgets://`
   address only as provenance; content hashing stays as Adoption has it.
-- The owner's personal board holds the preferences Settings reads, but M8
-  fetches only remotes the root names. So the machine config names the one
-  personal board, and M8 fetches it as well as the root's remotes. A shared
+- The owner's machine config names the owner's one personal board, which
+  holds the preferences Settings reads. That is how any root board reaches
+  it: M8 fetches the personal board as well as the root's remotes. A shared
   board can never name it, so the network rule's purpose holds. Settings,
   below, lists this entry.
 - Whether `docs/architecture.md` keeps saying a board at a commit fully
@@ -408,6 +428,10 @@ concurrency tests then run once for each format.
 Git cannot push or fetch between a SHA-1 and a SHA-256 repository. A board
 whose mounts use different formats therefore keeps both kinds of pin, and each
 clone that M8 keeps uses its remote's format.
+
+A standing rule keeps this milestone cheap (owner's decision, 2026-10-05):
+new code never assumes SHA-1. It asks the repository for its object format,
+as `write.rs` and `worktree.rs` already do when they hash.
 
 Open: how mature gix's SHA-256 support is for reading, writing commits and
 updating the index; how far GitHub supports SHA-256 repositories (the owner
@@ -464,8 +488,9 @@ JIRA is the second user that principle 8 requires.
 - *Import* to make another system's data into typed Board records. A plugin
   reads the source, types each item from the source's own type field and
   writes it with `put`. Use it for anything not in git (JIRA) and anything
-  that needs a type or references (widgets). The source's JSON is kept unchanged
-  inside the record; the plugin adds `$type` and the references.
+  that needs a type or references (widgets). The record keeps the source's
+  original JSON unchanged under one field, `source`, beside `$type` and
+  Board's references, so the source's keys never collide with Board's.
 
 **widgets.** widgets's team store (example-org/changelog) holds `<kind>/<id>.json` with
 `kind`, a content-hash `id` and `relations` such as `widgets://result/<id>`. The widgets
@@ -512,8 +537,15 @@ source and Board's copy differ. It splits into three steps:
    team store, or these 40 tickets); only an item inside that scope can be
    removed at source. Otherwise a ticket leaving a JIRA filter, or a fetch
    that failed halfway, would look like a deletion.
-3. A reconciler, which is an ordinary plugin capability, receives the delta
-   and writes the outcome through the same gate as any plugin.
+3. A reconciler, which is an ordinary plugin capability, receives the whole
+   delta at once, so it can see patterns such as a mass removal or a moved
+   ticket. It writes the outcome back item by item with `put --expect`,
+   through the same gate as any plugin, so a run that stops halfway leaves
+   correct records.
+
+A reconciler gets the same grants as any plugin, and no more. Reacting to a
+change elsewhere, such as closing a task when its ticket closes, is a
+separate later feature called a watch.
 
 Reconcilers are plugins so that people can add new ways to settle a delta.
 Likely first ones: *mirror* (the source wins; the default for content-addressed
@@ -577,6 +609,12 @@ never because of a default or anyone's personal refinement. An owner who
 overrides the board's requirement can still write the file; `check` keeps
 reporting it.
 
+A limit on files, not records, is declared the same way: a Board setting
+with a path glob, which records the control and why it exists.
+`.gitattributes` rules and lints enforce limits too. They complement the
+setting and neither replaces the other. Board may later check that they
+agree.
+
 **Next steps.**
 
 1. Spike: a plain script imports the team store into a scratch board, read
@@ -590,18 +628,8 @@ reporting it.
 4. JIRA second, which proves the design is not widgets-shaped.
 
 Open:
-- Whether a reconciler gets the whole delta at once or one item at a time.
-  The lean is the whole delta, written item by item with `put --expect`, so
-  it can see patterns (a mass removal, a moved ticket) and a run that stops
-  halfway leaves a correct partial result.
-- What a reconciler may write outside the imported path. It gets the same
-  grants as any plugin; reacting to a change (close my task when its ticket
-  closes) is wanted and is its own feature, a watch.
-- Which widgets kinds change after they are written (workspaces?).
-- Whether the original JSON sits under one field or beside `$type`.
-- How board-wide limits on files, not records, are declared: settings with
-  a path glob (Settings, below), or attributes in `.gitattributes`. The
-  settings design answers this unless `.gitattributes` is preferred.
+- Which widgets kinds change after they are written (workspaces?). The spike in
+  next step 1 answers this.
 
 ### Settings and the gentle slope (sketch; agreed with the owner 2026-10-05, not built)
 
@@ -785,6 +813,8 @@ to set one value; refining a setting here takes one answer to one question.
 
 Open:
 - Where a mandate's managed config lives and how it names its authority.
+  This is deferred until an organisation needs a mandate. `board decide` is
+  built first without the mandate layer.
 
 ## Taking from crumbkit/board
 
