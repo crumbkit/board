@@ -1,16 +1,24 @@
 # STANDARDS.md 21.
 name: ci
 
+# Pull requests and main run on Linux only. release.yml calls this workflow
+# with macOS added before a release.
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      os:
+        description: JSON list of runners for the gates and plugin jobs.
+        type: string
+        default: '["ubuntu-24.04"]'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -21,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -39,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:

@@ -1,0 +1,20 @@
+# The full gates before a release: ci.yml on macOS and Linux, then the
+# timing job. Pull requests and main run ci.yml on Linux only.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: $/.github/workflows/ci.yml
+    with:
+      os: '["ubuntu-24.04", "macos-15"]'
+
+  timing:
+    uses: $/.github/workflows/timing.yml

@@ -6,6 +6,7 @@ name: timing
 
 on:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: "17 5 * * 1"
   pull_request:

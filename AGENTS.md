@@ -9,7 +9,7 @@ programs. DOCS.md is the map; PLAN.md says what is being built now.
 ## Gates
 
 Run `bin/lint` and `bin/test` before every push. CI runs the same scripts on
-macOS and Linux. STANDARDS.md lists what they enforce and the rules they
+Linux, and on macOS before a release. STANDARDS.md lists what they enforce and the rules they
 cannot.
 
 ## Rules tooling cannot enforce

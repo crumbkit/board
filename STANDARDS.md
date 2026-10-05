@@ -49,7 +49,7 @@ what enforces it. A rule without a gate is still a rule.
     - Declare `[workspace.lints]`, and set `[lints] workspace = true` in every member.
     - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`.
     - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests.
-    - CI runs both scripts on macOS and Linux, plus `cargo deny check`, `cargo shear` and `zizmor` on the workflows. Every action is pinned by commit SHA and every installed tool by exact version. A non-blocking `cargo mutants --in-diff` job reports on each pull request.
+    - CI runs both scripts on Linux for each pull request and push to `main`; `release.yml` reruns them on macOS and Linux, with the timing job, before a release. CI also runs `cargo deny check`, `cargo shear` and `zizmor` on the workflows. Every action is pinned by commit SHA and every installed tool by exact version. A non-blocking `cargo mutants --in-diff` job reports on each pull request.
 
 ## Documentation
 
@@ -93,7 +93,7 @@ what enforces it. A rule without a gate is still a rule.
 ## Python: plugins
 
 - **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
-- **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`. CI runs them on macOS and Linux.
+- **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`. CI runs them on Linux, and on macOS before a release.
 - **P3. Typed edges.** Inputs and outputs are pydantic v2 models with `extra="forbid"`. The manifest's schemas are generated from those models, never written by hand.
 - **P4. Board's contract.** Rules 3, 4 and 17 apply to the protocol: every document carries `$type`, every error a stable code `<plugin>::<area>::<reason>`, the exit code is 0 or 1, and logs go to stderr only.
 - **P5. Pure extraction.** Extraction is a function of one record's bytes. Anything spanning records is a query.
