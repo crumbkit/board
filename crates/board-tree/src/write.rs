@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use board_model::{
     BINARY_NAME, Code, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Source,
 };
+use gix::lock::acquire::Fail;
 
 use crate::address;
 use crate::git::{GitError, Repository, model_id};
@@ -40,14 +41,7 @@ pub struct Target {
 /// Dropping it removes the lock file.
 #[derive(Debug)]
 pub struct Lock {
-    path: PathBuf,
-}
-
-impl Drop for Lock {
-    fn drop(&mut self) {
-        // A lock that cannot be removed is reported by the next put.
-        let _ = fs::remove_file(&self.path);
-    }
+    _held: gix::lock::Marker,
 }
 
 impl Repository {
@@ -239,21 +233,18 @@ impl Repository {
         self.git().git_dir()
     }
 
-    /// Takes `board.lock` in the git directory, created exclusively as git
-    /// creates its lock files, trying again until `wait` has passed.
+    /// Takes `board.lock` in the git directory with gix's lock files, trying
+    /// again every `LOCK_POLL` until `wait` has passed.
     pub fn lock(&self, wait: Duration) -> Result<Lock, WriteError> {
-        let path = self.git_dir().join("board.lock");
+        let resource = self.git_dir().join("board");
         let started = Instant::now();
         loop {
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(_) => return Ok(Lock { path }),
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    if started.elapsed() >= wait {
-                        return Err(WriteError::Locked { lock: path });
-                    }
+            match gix::lock::Marker::acquire_to_hold_resource(&resource, Fail::Immediately, None) {
+                Ok(held) => return Ok(Lock { _held: held }),
+                Err(error) if error.is_retryable() && started.elapsed() < wait => {
                     std::thread::sleep(LOCK_POLL);
                 }
-                Err(source) => return Err(WriteError::Io { path, source }),
+                Err(error) => return Err(lock_refused(error, resource.with_extension("lock"))),
             }
         }
     }
@@ -327,21 +318,12 @@ pub struct Staged {
     commit: ObjectId,
     parent: Option<ObjectId>,
     index: gix::index::File,
-    index_lock: PathBuf,
-    finished: bool,
+    index_lock: gix::lock::File,
 }
 
 impl Staged {
     pub fn commit(&self) -> ObjectId {
         self.commit
-    }
-}
-
-impl Drop for Staged {
-    fn drop(&mut self) {
-        if !self.finished {
-            let _ = fs::remove_file(&self.index_lock);
-        }
     }
 }
 
@@ -357,46 +339,33 @@ impl Repository {
         writes: &[(&str, &[u8])],
         message: &str,
     ) -> Result<Staged, WriteError> {
+        use gix::state::InProgress as Op;
         let git = self.git();
         if !matches!(git.committer(), Some(Ok(_))) || !matches!(git.author(), Some(Ok(_))) {
             return Err(WriteError::NoIdentity);
         }
         // As `git commit <paths>`, which refuses a partial commit while an
         // operation that would give the commit more parents is under way.
-        for (marker, operation) in [
-            ("MERGE_HEAD", "merge"),
-            ("CHERRY_PICK_HEAD", "cherry-pick"),
-            ("REVERT_HEAD", "revert"),
-            ("rebase-merge", "rebase"),
-            ("rebase-apply", "rebase or am"),
-        ] {
-            if self.git_dir().join(marker).exists() {
-                return Err(WriteError::InProgress { operation });
-            }
+        let operation = match git.state() {
+            None | Some(Op::Bisect) => None,
+            Some(Op::Merge) => Some("merge"),
+            Some(Op::CherryPick | Op::CherryPickSequence) => Some("cherry-pick"),
+            Some(Op::Revert | Op::RevertSequence) => Some("revert"),
+            Some(Op::Rebase | Op::RebaseInteractive) => Some("rebase"),
+            Some(Op::ApplyMailbox | Op::ApplyMailboxRebase) => Some("rebase or am"),
+        };
+        if let Some(operation) = operation {
+            return Err(WriteError::InProgress { operation });
         }
-        let index_lock = self.git_dir().join("index.lock");
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&index_lock)
-        {
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                return Err(WriteError::Locked { lock: index_lock });
-            }
-            Err(source) => {
-                return Err(WriteError::Io {
-                    path: index_lock,
-                    source,
-                });
-            }
-        }
+        let index = git.index_path();
+        let index_lock =
+            gix::lock::File::acquire_to_update_resource(&index, Fail::Immediately, None)
+                .map_err(|error| lock_refused(error, index.with_extension("lock")))?;
         let mut staged = Staged {
             commit: ObjectId::Sha1([0; 20]),
             parent: self.head()?,
             index: self.load_index()?,
             index_lock,
-            finished: false,
         };
         let failed =
             |source: Box<dyn std::error::Error + Send + Sync>| WriteError::Commit { source };
@@ -482,24 +451,20 @@ impl Repository {
                 source: error.into(),
             });
         }
-        let index_path = self.git_dir().join("index");
-        let written = OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(&staged.index_lock)
-            .and_then(|mut file| {
-                staged
-                    .index
-                    .write_to(&mut file, gix::index::write::Options::default())
+        let index = &staged.index;
+        staged
+            .index_lock
+            .with_mut(|file| {
+                index
+                    .write_to(&mut *file, gix::index::write::Options::default())
                     .map_err(io::Error::other)?;
                 file.sync_all()
             })
-            .and_then(|()| fs::rename(&staged.index_lock, &index_path));
-        written.map_err(|source| WriteError::IndexNotUpdated {
-            commit: staged.commit,
-            source,
-        })?;
-        staged.finished = true;
+            .and_then(|()| staged.index_lock.commit().map_err(|error| error.error))
+            .map_err(|source| WriteError::IndexNotUpdated {
+                commit: staged.commit,
+                source,
+            })?;
         Ok(staged.commit)
     }
 
@@ -554,6 +519,19 @@ fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<
         file.set_permissions(metadata.permissions())?;
     }
     file.sync_all()
+}
+
+/// The refusal for a lock gix could not take: `Locked` when another holds
+/// `lock`, and an I/O failure otherwise.
+fn lock_refused(error: gix::Exn, lock: PathBuf) -> WriteError {
+    if error.is_retryable() {
+        WriteError::Locked { lock }
+    } else {
+        WriteError::Io {
+            path: lock,
+            source: io::Error::other(error.into_error()),
+        }
+    }
 }
 
 /// The record file a resolved Location writes to: the file itself, or the
