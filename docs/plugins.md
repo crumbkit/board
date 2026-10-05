@@ -195,16 +195,16 @@ its version changes or its database is deleted.
 
 Plugins are written in Python 3.12 or newer with uv, pydantic v2, ruff, pyright
 in strict mode and pytest (STANDARDS.md P1 to P6). Each plugin talks the
-protocol above directly and keeps that code in one module. A shared
-`board-plugin` library is extracted once two plugins exist; until then there is
-none.
+protocol above directly and keeps that code in one module. There is no shared
+library yet.
 
 Each plugin lives in `plugins/<name>/` in this repository, with its lockfile and
 a committed `plugin.json` that a test compares with the one its pydantic models
 generate. Its pytest suite drives the real `board` binary against fixture
 boards. CI runs each plugin's gates in its own job.
 
-The one plugin so far is `tasks`: it extracts each `lr/task/v1` record's title,
-status and due date into a `tasks` table keyed by blob, and its `due`
-capability finds open tasks due before a date by running `board query`, which
-joins that table with `entries`.
+There are two plugins. `controls` checks requirements on a board's files, as
+plugins/controls/README.md describes. `tasks` extracts each `lr/task/v1`
+record's title, status and due date into a `tasks` table keyed by blob, and
+its `due` capability finds open tasks due before a date by running `board
+query`, which joins that table with `entries`.

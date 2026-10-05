@@ -1,0 +1,81 @@
+"""Fixture boards that run the real `board` binary with this plugin installed and enabled."""
+
+import json
+import os
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+PLUGIN = Path(__file__).resolve().parents[1]
+REPOSITORY = PLUGIN.parents[1]
+
+
+def board_binary() -> Path:
+    """The `board` under test: `$BOARD_BIN`, or the workspace's debug build."""
+    return Path(os.environ.get("BOARD_BIN", REPOSITORY / "target" / "debug" / "board")).resolve()
+
+
+@dataclass(frozen=True)
+class Board:
+    """A git repository holding a board, with this plugin installed for it alone."""
+
+    root: Path
+    data: Path
+    cache: Path
+
+    def write(self, path: str, text: str) -> None:
+        """Write a fixture file at `path`, relative to the board's root."""
+        target = self.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+
+    def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+        """Run `board` in the board's root, with only the variables a user's shell would pass it."""
+        uv = shutil.which("uv")
+        assert uv is not None, "uv is on PATH"
+        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        environment = {
+            "PATH": path,
+            "HOME": os.environ.get("HOME", str(self.root)),
+            "XDG_DATA_HOME": str(self.data),
+            "XDG_CACHE_HOME": str(self.cache),
+        }
+        return subprocess.run(
+            [str(board_binary()), *arguments],
+            cwd=self.root,
+            env=environment,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
+        """Run `board --json call controls.<capability>` and read its one document."""
+        ran = self.run("--json", "call", f"controls.{capability}", stdin=json.dumps(given))
+        document: dict[str, Any] = json.loads(ran.stdout)
+        return document
+
+
+@pytest.fixture
+def board(tmp_path: Path) -> Board:
+    """A board that does not commit, with controls installed and enabled through `board plugin enable`."""
+    fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
+    fixture.root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
+    fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
+    plugins = fixture.data / "board" / "plugins"
+    plugins.mkdir(parents=True)
+    (plugins / "controls").symlink_to(PLUGIN)
+    enabled = fixture.run("plugin", "enable", "controls")
+    assert enabled.returncode == 0, enabled.stderr
+    return fixture
+
+
+def control(requirement: str, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
+    """A `controls/control/v1` record."""
+    return json.dumps({"$type": "controls/control/v1", "requirement": requirement, "purpose": "A test.", **fields})

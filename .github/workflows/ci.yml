@@ -48,11 +48,12 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
+        plugin: [tasks, controls]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: plugins/tasks
+        working-directory: plugins/${{ matrix.plugin }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

@@ -179,15 +179,18 @@ optionally, a rule a program can check, such as a word budget.
 `applies_to` (references to files), `paths` (SQLite `GLOB` patterns over
 entry paths, for sets such as `docs/*.md`) and an optional `rule`: none, for
 a written requirement, or a budget of `words` (whitespace-separated) or
-`bytes` with a `max`, summed over every matched file. Extraction writes one
-row per control. Two capabilities:
+`bytes` with a `max`, summed over every matched file. Built
+(plugins/controls/README.md): the plugin extracts nothing, because `board
+query` already holds every control's body. Two capabilities:
 
 - `for-path` returns the controls that apply to a path, by reference or
   pattern, so an agent can ask before it edits a file.
 - `check` evaluates each budget, reading files through `board query` and
   `board get`. A violation is the error `controls::budget::exceeded`, naming
   each failing control with its usage and maximum, so `board call` exits 1
-  in CI. `board check` runs no plugin code and does not report controls.
+  in CI. A control Board marks degraded fails it with
+  `controls::control::degraded`. `board check` runs no plugin code and does
+  not report controls.
 
 Left out until a real need: ControlTree groups, assessments, paged reports
 and control status from the old Board.
@@ -204,8 +207,10 @@ also runs `board call controls.check`.
    missing schema file.
 3. `board init` writes a minimal `.board/board.json`. Built: the manifest's
    `types` and `board plugin enable`.
-4. The `controls` plugin in `plugins/controls/`, with pytest against fixture
-   boards through the real `board`.
+4. Built: the `controls` plugin in `plugins/controls/`, with pytest against
+   fixture boards through the real `board`. Next after it: `tasks` and
+   `controls` repeat the protocol module, so it moves into a shared Python
+   library.
 5. viitta adopts itself: `board.json`, the two fixture changes above, the
    control records and the CI step.
 

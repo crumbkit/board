@@ -1,0 +1,210 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The controls that apply to a path.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The controls that apply to this logical path.",
+        "properties": {
+          "path": {
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "ForPathInput",
+        "type": "object"
+      },
+      "name": "for-path",
+      "outputSchema": {
+        "$defs": {
+          "Applying": {
+            "additionalProperties": false,
+            "description": "A control that applies to the path asked about.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "purpose": {
+                "title": "Purpose",
+                "type": "string"
+              },
+              "requirement": {
+                "title": "Requirement",
+                "type": "string"
+              },
+              "rule": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Budget"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "control",
+              "requirement",
+              "purpose",
+              "rule"
+            ],
+            "title": "Applying",
+            "type": "object"
+          },
+          "Budget": {
+            "additionalProperties": false,
+            "description": "A limit on the words or bytes of every file the control applies to, summed.\n\nWords are separated by any whitespace.",
+            "properties": {
+              "budget": {
+                "enum": [
+                  "words",
+                  "bytes"
+                ],
+                "title": "Budget",
+                "type": "string"
+              },
+              "max": {
+                "minimum": 0,
+                "title": "Max",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "budget",
+              "max"
+            ],
+            "title": "Budget",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The controls that apply to the path, by the control's path.",
+        "properties": {
+          "controls": {
+            "items": {
+              "$ref": "#/$defs/Applying"
+            },
+            "title": "Controls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "controls"
+        ],
+        "title": "ForPathOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "Check every budget control. Fails naming each control over its budget or degraded.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Check every budget control in the board.",
+        "properties": {},
+        "title": "CheckInput",
+        "type": "object"
+      },
+      "name": "check",
+      "outputSchema": {
+        "$defs": {
+          "Checked": {
+            "additionalProperties": false,
+            "description": "A budget control and what its files use.",
+            "properties": {
+              "budget": {
+                "enum": [
+                  "words",
+                  "bytes"
+                ],
+                "title": "Budget",
+                "type": "string"
+              },
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "files": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Files",
+                "type": "array"
+              },
+              "max": {
+                "title": "Max",
+                "type": "integer"
+              },
+              "requirement": {
+                "title": "Requirement",
+                "type": "string"
+              },
+              "used": {
+                "title": "Used",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "control",
+              "requirement",
+              "budget",
+              "max",
+              "used",
+              "files"
+            ],
+            "title": "Checked",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Every budget control, by the control's path; each is within its budget.",
+        "properties": {
+          "controls": {
+            "items": {
+              "$ref": "#/$defs/Checked"
+            },
+            "title": "Controls",
+            "type": "array"
+          }
+        },
+        "required": [
+          "controls"
+        ],
+        "title": "CheckOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Requirements on a board's files, stored as records in the board.",
+  "metadata": {
+    "area": "governance"
+  },
+  "name": "controls",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_controls"
+  ],
+  "types": [
+    "controls/control/v1"
+  ],
+  "version": "0.1.0"
+}

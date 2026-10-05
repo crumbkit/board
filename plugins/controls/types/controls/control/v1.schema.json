@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "description": "A limit on the words or bytes of every file the control applies to, summed.\n\nWords are separated by any whitespace.",
+      "properties": {
+        "budget": {
+          "enum": [
+            "words",
+            "bytes"
+          ],
+          "title": "Budget",
+          "type": "string"
+        },
+        "max": {
+          "minimum": 0,
+          "title": "Max",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "budget",
+        "max"
+      ],
+      "title": "Budget",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "properties": {
+    "$type": {
+      "const": "controls/control/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "applies_to": {
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "title": "Applies To",
+      "type": "array"
+    },
+    "paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Paths",
+      "type": "array"
+    },
+    "purpose": {
+      "title": "Purpose",
+      "type": "string"
+    },
+    "requirement": {
+      "title": "Requirement",
+      "type": "string"
+    },
+    "rule": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Budget"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "$type",
+    "requirement",
+    "purpose"
+  ],
+  "title": "ControlRecord",
+  "type": "object"
+}
