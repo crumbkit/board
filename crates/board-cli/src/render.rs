@@ -7,8 +7,8 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Checked, Fallback, GetReport, Listed, LsReport, MAX_LIMIT, MountUpdateReport,
-    PutError, PutReport, QueryReport, RefsReport, source_name,
+    CheckReport, Checked, Fallback, GetReport, InitReport, Listed, LsReport, MAX_LIMIT,
+    MountUpdateReport, PutError, PutReport, QueryReport, RefsReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -308,6 +308,34 @@ fn noted(output: Output, memory: Option<Fallback>, rows: Option<usize>) -> Outpu
     let mut stderr = stderr.into_bytes();
     stderr.extend_from_slice(&output.stderr);
     Output { stderr, ..output }
+}
+
+/// `init`: as text, what was written and what to run next.
+pub(crate) fn init(format: Format, report: &InitReport) -> Output {
+    let root = report.root.display();
+    match format {
+        Format::Text => {
+            let text = if report.created {
+                format!(
+                    "created .board/board.json in {root}\nnext: run `board check`; it lists every file and says how to fix any it cannot read. Then commit .board/board.json\n"
+                )
+            } else {
+                format!("{root} is already a board\n")
+            };
+            Output {
+                stdout: text.into_bytes(),
+                ..Output::default()
+            }
+        }
+        Format::Json => document(
+            &json!({
+                "$type": "board/init-report/v1",
+                "root": report.root.to_string_lossy(),
+                "created": report.created,
+            }),
+            0,
+        ),
+    }
 }
 
 pub(crate) fn get(format: Format, report: &GetReport) -> Output {

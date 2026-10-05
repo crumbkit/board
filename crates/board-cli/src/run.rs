@@ -24,6 +24,7 @@ use crate::report::Output;
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
+  board init                   make this git repository a board
   board check                  check every entry; exit 1 if any is degraded
   board ls /                   list the board's root
   board get /projects/p        print the record in projects/p.json
@@ -78,6 +79,14 @@ impl Page {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Make the git repository here a board by writing a minimal .board/board.json.
+    #[command(after_help = "\
+An existing .board/board.json is left as it is. Nothing is committed.
+
+Examples:
+  board init
+  board init --json")]
+    Init,
     /// Check every entry, or those at or beneath a path; fail if any is degraded.
     #[command(after_help = "\
 Degraded entries come first, so a limited listing never hides one.
@@ -249,11 +258,18 @@ pub(crate) fn run(
         Err(error) => return refused(&error, &arguments),
     };
     let format = if cli.json { Format::Json } else { Format::Text };
+    if let Command::Init = cli.command {
+        return match board_ops::init(&context.start) {
+            Ok(report) => render::init(format, &report),
+            Err(error) => render::error(format, error.code(), &error),
+        };
+    }
     let board = match Board::open(&context.start, context.home.clone()) {
         Ok(board) => board,
         Err(error) => return render::error(format, error.code(), &error),
     };
     match cli.command {
+        Command::Init => unreachable!("init runs before a board is opened"),
         Command::Check { path, page } => match board.check(path.as_ref(), context.cache.as_deref())
         {
             Ok(report) => render::check(format, &report, page.limit()),

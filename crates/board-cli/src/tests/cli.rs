@@ -174,7 +174,7 @@ fn every_command_a_hint_names_parses() {
 #[test]
 fn every_listing_command_takes_limit_and_all() {
     let listing = ["check", "ls", "refs", "plugin list", "plugin find"];
-    let other = ["get", "put", "mount update", "call", "query"];
+    let other = ["init", "get", "put", "mount update", "call", "query"];
     for (name, command) in leaves() {
         let takes = |flag: &str| {
             command

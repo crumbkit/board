@@ -38,7 +38,7 @@ pub(crate) fn hint(code: Code) -> &'static str {
             "only a record has a JSON report or can be put; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
         }
         Code::ConfigNotFound => {
-            "run Board inside a git repository whose root holds `.board/board.json` with `{\"$type\": \"board/config/v1\"}`"
+            "in a git repository, `board init` makes it a board; outside one, run `git init` first"
         }
         Code::ConfigInvalid => {
             "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false) and `plugins` (distinct plugin names), nothing else"

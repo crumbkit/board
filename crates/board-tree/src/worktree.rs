@@ -269,6 +269,16 @@ pub fn is_repository_root(directory: &Path) -> bool {
     directory.join(".git").exists()
 }
 
+/// The root of the git working tree holding `start`, or `start` itself,
+/// searching upward as git does.
+pub fn repository_root(start: &Path) -> Option<PathBuf> {
+    let start = start.canonicalize().ok()?;
+    start
+        .ancestors()
+        .find(|directory| is_repository_root(directory))
+        .map(Path::to_path_buf)
+}
+
 /// The directory holding `.board/board.json` nearest above `start`, or
 /// `start` itself, searching upward as git does.
 pub fn discover(start: &Path) -> Option<PathBuf> {

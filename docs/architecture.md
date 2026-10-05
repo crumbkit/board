@@ -2,7 +2,7 @@
 
 This is the v0 design. Built so far: logical paths, resolution and walking,
 links and mounts, records, schemas and references, the index, canonical form,
-plugins with extraction, and the commands `check`, `get`, `ls`, `query`,
+plugins with extraction, and the commands `init`, `check`, `get`, `ls`, `query`,
 `refs`, `put`, `mount update`, `plugin list`, `plugin find` and `call`. PLAN.md
 says what comes next.
 
@@ -307,6 +307,7 @@ old and new commit and whether it wrote.
 
 | Command | Does |
 | --- | --- |
+| `board init` | write a minimal `.board/board.json` at the root of the git repository here, unless one exists; commit nothing |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
 | `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location, and refuses any other file with the code that says why it is not one; a directory is `board::record::not_a_record` |
 | `board ls <path>` | list a directory without following pointers |

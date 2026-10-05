@@ -78,7 +78,7 @@ impl Board {
 }
 
 /// The configuration in the working tree's `.board/board.json`.
-fn read_config(repository: &Repository) -> Option<Config> {
+pub(crate) fn read_config(repository: &Repository) -> Option<Config> {
     let path: LogicalPath = "/.board/board".parse().ok()?;
     let location = repository.resolve(&Source::WorkingTree, &path).ok()?;
     let Object::Blob(blob) = location.object else {

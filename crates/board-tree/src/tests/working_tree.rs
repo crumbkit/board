@@ -260,3 +260,14 @@ fn resolution_takes_a_known_blob_as_given_and_hashes_the_rest() {
     assert_eq!(resolve("/work/known"), Object::Blob(stand_in));
     assert_eq!(resolve("/work/other"), Object::Blob(scenario.blob("[]")));
 }
+
+#[test]
+fn the_repository_root_is_found_from_below_and_not_outside_a_repository() {
+    let scenario = Scenario::new();
+    scenario.write("docs/a.md", Item::File(""));
+    let root = scenario.workdir().canonicalize().unwrap();
+    let below = scenario.workdir().join("docs");
+    assert_eq!(crate::repository_root(&below), Some(root));
+    let outside = tempfile::tempdir().unwrap();
+    assert_eq!(crate::repository_root(outside.path()), None);
+}

@@ -235,6 +235,30 @@ fn get_prints_a_files_bytes_and_json_refuses_it_with_why_it_is_not_a_record() {
 }
 
 #[test]
+fn init_makes_a_repository_a_board_and_says_what_to_run_next() {
+    let scenario = Scenario::new();
+    let refused = board_in(scenario.workdir(), &["check"]);
+    assert_eq!(refused.code, 1);
+    let created = board_in(scenario.workdir(), &["init"]);
+    assert_eq!(created.code, 0);
+    assert!(text(&created.stdout).starts_with("created .board/board.json in "));
+    assert!(text(&created.stdout).contains("next: run `board check`"));
+    assert_eq!(board_in(scenario.workdir(), &["check"]).code, 0);
+    let again = json(&board_in(scenario.workdir(), &["init", "--json"]));
+    assert_eq!(again["$type"], "board/init-report/v1");
+    assert_eq!(again["created"], false);
+}
+
+#[test]
+fn init_outside_a_repository_says_to_run_git_init_and_inside_one_succeeds() {
+    let outside = tempfile::tempdir().unwrap();
+    let refused = board_in(outside.path(), &["init"]);
+    assert_eq!(refused.code, 1);
+    assert!(text(&refused.stderr).contains("run `git init` first"));
+    assert_eq!(board_in(Scenario::new().workdir(), &["init"]).code, 0);
+}
+
+#[test]
 fn ls_lists_directories_and_entries() {
     let scenario = board();
     scenario.write("projects/sub/x.md", Item::File(""));
