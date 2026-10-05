@@ -268,6 +268,63 @@ fn a_plugin_or_capability_that_is_not_installed_is_refused() {
 }
 
 #[test]
+fn a_refusal_names_the_missing_plugin_or_capability_and_what_is_offered() {
+    let fixture = Fixture::tasks(RECORDING);
+    fixture.install("notes", &["due", "list"], RECORDING);
+    for (target, message) in [
+        (
+            "notes.due",
+            "plugin notes is installed but this board does not enable it",
+        ),
+        ("other.due", "plugin other is not installed"),
+        (
+            "tasks.dew",
+            "plugin tasks has no capability dew; it offers due",
+        ),
+        (
+            "notes.late",
+            "plugin notes has no capability late; it offers due, list",
+        ),
+        (
+            "--capability dew",
+            "no installed plugin offers capability dew; the nearest is due",
+        ),
+        (
+            "--capability overdue",
+            "no installed plugin offers capability overdue",
+        ),
+    ] {
+        let error = fixture.call(target, r#"{"n": 1}"#).unwrap_err();
+        assert_eq!(error.to_string(), message, "{target}");
+    }
+    let error = fixture.call("tasks.dew", r#"{"n": 1}"#).unwrap_err();
+    assert_eq!(error.code(), Some(Code::PluginNotInstalled));
+    assert_eq!(
+        Value::Object(error.fields()),
+        json!({"plugin": "tasks", "capability": "dew", "offered": ["due"]})
+    );
+    assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
+}
+
+#[test]
+fn input_the_schema_refuses_is_reported_at_its_pointer() {
+    let fixture = Fixture::tasks(RECORDING);
+    let error = fixture.call("tasks.due", r#"{"n": "one"}"#).unwrap_err();
+    assert_eq!(error.code(), Some(Code::PluginBadInput));
+    assert_eq!(
+        error.to_string(),
+        r#"the input fails the capability's input schema at "/n": "one" is not of type "integer""#
+    );
+    assert_eq!(error.fields()["pointer"], "/n");
+    let error = fixture.call("tasks.due", "{}").unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        r#"the input fails the capability's input schema at its root: "n" is a required property"#
+    );
+    assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
+}
+
+#[test]
 fn a_named_plugin_with_a_bad_manifest_is_refused_and_skipped_by_capability() {
     let fixture = Fixture::new(&["tasks", "broken"]);
     fixture.install("tasks", &["due"], RECORDING);

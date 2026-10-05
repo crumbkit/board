@@ -32,24 +32,30 @@ pub enum Target {
 
 /// `<plugin>.<capability>`.
 impl FromStr for Target {
-    type Err = NameError;
+    type Err = TargetError;
 
-    fn from_str(text: &str) -> Result<Self, NameError> {
-        let (plugin, capability) = text.split_once('.').unwrap_or((text, ""));
-        Ok(Self::Named {
-            plugin: plugin.parse()?,
-            capability: capability.parse()?,
-        })
+    fn from_str(text: &str) -> Result<Self, TargetError> {
+        match text.split_once('.') {
+            Some((plugin, capability)) if !plugin.is_empty() && !capability.is_empty() => {
+                Ok(Self::Named {
+                    plugin: plugin.parse()?,
+                    capability: capability.parse()?,
+                })
+            }
+            _ => Err(TargetError::Form {
+                text: text.to_owned(),
+            }),
+        }
     }
 }
 
-impl fmt::Display for Target {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Named { plugin, capability } => write!(formatter, "{plugin}.{capability}"),
-            Self::Capability(capability) => write!(formatter, "capability {capability}"),
-        }
-    }
+/// Text that is not `<plugin>.<capability>`.
+#[derive(Debug, thiserror::Error)]
+pub enum TargetError {
+    #[error("{text:?} is not <plugin>.<capability>, such as tasks.due")]
+    Form { text: String },
+    #[error(transparent)]
+    Name(#[from] NameError),
 }
 
 /// The variables a plugin inherits, as Board's own environment holds them.
@@ -109,20 +115,27 @@ pub fn choose(
             .iter()
             .position(|capability| capability.name == *name)
     };
-    let not_offered = || CallError::NotOffered {
-        target: target.clone(),
-    };
     match target {
         Target::Named { plugin, capability } => {
             let found = installed
                 .into_iter()
                 .find(|installed| installed.name == plugin.as_str())
-                .ok_or_else(not_offered)?;
+                .ok_or_else(|| CallError::NotInstalled {
+                    plugin: plugin.clone(),
+                })?;
             let manifest = found.manifest.map_err(|source| CallError::BadManifest {
                 plugin: plugin.clone(),
                 source,
             })?;
-            let index = offered(&manifest, capability).ok_or_else(not_offered)?;
+            let index = offered(&manifest, capability).ok_or_else(|| CallError::NoCapability {
+                plugin: plugin.clone(),
+                capability: capability.clone(),
+                offered: manifest
+                    .capabilities
+                    .iter()
+                    .map(|offered| offered.name.clone())
+                    .collect(),
+            })?;
             if !enabled.contains(plugin) {
                 return Err(CallError::NotEnabled {
                     plugin: plugin.clone(),
@@ -135,14 +148,18 @@ pub fn choose(
             })
         }
         Target::Capability(capability) => {
-            let (on, off): (Vec<_>, Vec<_>) = installed
+            let manifests: Vec<_> = installed
                 .into_iter()
-                .filter_map(|installed| {
-                    let manifest = installed.manifest.ok()?;
+                .filter_map(|installed| Some((installed.manifest.ok()?, installed.directory)))
+                .collect();
+            let nearest = nearest(capability, &manifests);
+            let (on, off): (Vec<_>, Vec<_>) = manifests
+                .into_iter()
+                .filter_map(|(manifest, directory)| {
                     let index = offered(&manifest, capability)?;
                     Some(Chosen {
                         manifest,
-                        directory: installed.directory,
+                        directory,
                         capability: index,
                     })
                 })
@@ -161,10 +178,34 @@ pub fn choose(
                 (None, _, Some(installed)) => Err(CallError::NotEnabled {
                     plugin: installed.manifest.name,
                 }),
-                (None, _, None) => Err(not_offered()),
+                (None, _, None) => Err(CallError::NotOffered {
+                    capability: capability.clone(),
+                    nearest,
+                }),
             }
         }
     }
+}
+
+/// The capability of a working install whose name is nearest `capability`,
+/// within two edits and fewer edits than `capability` has letters.
+fn nearest(
+    capability: &CapabilityName,
+    manifests: &[(Manifest, PathBuf)],
+) -> Option<CapabilityName> {
+    let wanted = capability.as_str();
+    manifests
+        .iter()
+        .flat_map(|(manifest, _)| &manifest.capabilities)
+        .map(|offered| {
+            (
+                strsim::levenshtein(wanted, offered.name.as_str()),
+                &offered.name,
+            )
+        })
+        .filter(|(distance, _)| *distance <= 2 && *distance < wanted.len())
+        .min()
+        .map(|(_, name)| name.clone())
 }
 
 /// What a capability returned.
@@ -334,8 +375,25 @@ pub enum CallError {
     BadDepth { text: OsString },
     #[error("this call is nested {depth} deep, and calls nest at most {MAX_DEPTH} deep")]
     TooDeep { depth: u32 },
-    #[error("no installed plugin offers {target}")]
-    NotOffered { target: Target },
+    #[error("plugin {plugin} is not installed")]
+    NotInstalled { plugin: PluginName },
+    #[error(
+        "plugin {plugin} has no capability {capability}; it offers {}",
+        list(offered)
+    )]
+    NoCapability {
+        plugin: PluginName,
+        capability: CapabilityName,
+        offered: Vec<CapabilityName>,
+    },
+    #[error(
+        "no installed plugin offers capability {capability}{}",
+        nearest.as_ref().map_or_else(String::new, |nearest| format!("; the nearest is {nearest}"))
+    )]
+    NotOffered {
+        capability: CapabilityName,
+        nearest: Option<CapabilityName>,
+    },
     #[error("plugin {plugin} has a bad manifest: {source}")]
     BadManifest {
         plugin: PluginName,
@@ -345,7 +403,7 @@ pub enum CallError {
     NotEnabled { plugin: PluginName },
     #[error(
         "capability {capability} is offered by more than one enabled plugin: {}",
-        names(plugins)
+        list(plugins)
     )]
     Ambiguous {
         capability: CapabilityName,
@@ -353,7 +411,10 @@ pub enum CallError {
     },
     #[error("the input is not one strict JSON document: {source}")]
     InputJson { source: JsonError },
-    #[error("the input fails the capability's input schema: {source}")]
+    #[error(
+        "the input fails the capability's input schema {}",
+        input_failure(source)
+    )]
     Input { source: RecordError },
     #[error("plugin {plugin} cannot be run: {source}")]
     Start {
@@ -384,12 +445,31 @@ pub enum CallError {
     },
 }
 
-fn names(plugins: &[PluginName]) -> String {
-    plugins
+fn list<T: fmt::Display>(names: &[T]) -> String {
+    if names.is_empty() {
+        return "none".to_owned();
+    }
+    names
         .iter()
-        .map(PluginName::as_str)
+        .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn input_failure(error: &RecordError) -> String {
+    let (RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer }) =
+        error;
+    let at = if pointer.is_empty() {
+        "its root".to_owned()
+    } else {
+        format!("{pointer:?}")
+    };
+    match error {
+        RecordError::Invalid { source, .. } => format!("at {at}: {source}"),
+        RecordError::MalformedReference { .. } => {
+            format!("at {at}: the reference is not a logical path")
+        }
+    }
 }
 
 fn exit_text(exit: Option<i32>) -> String {
@@ -403,7 +483,9 @@ impl CallError {
         Some(match self {
             Self::Discovery { source } => source.code(),
             Self::BadDepth { .. } | Self::TooDeep { .. } => Code::PluginTooDeep,
-            Self::NotOffered { .. } => Code::PluginNotInstalled,
+            Self::NotInstalled { .. } | Self::NoCapability { .. } | Self::NotOffered { .. } => {
+                Code::PluginNotInstalled
+            }
             Self::BadManifest { .. } => Code::PluginBadManifest,
             Self::NotEnabled { .. } => Code::PluginNotEnabled,
             Self::Ambiguous { .. } => Code::PluginAmbiguous,
@@ -439,7 +521,32 @@ impl CallError {
             Self::Ambiguous { plugins, .. } => {
                 fields.insert("plugins".to_owned(), json!(plugins));
             }
+            Self::NoCapability {
+                plugin,
+                capability,
+                offered,
+            } => {
+                fields.insert("plugin".to_owned(), json!(plugin));
+                fields.insert("capability".to_owned(), json!(capability));
+                fields.insert("offered".to_owned(), json!(offered));
+            }
+            Self::NotOffered {
+                capability,
+                nearest,
+            } => {
+                fields.insert("capability".to_owned(), json!(capability));
+                if let Some(nearest) = nearest {
+                    fields.insert("nearest".to_owned(), json!(nearest));
+                }
+            }
+            Self::Input {
+                source:
+                    RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer },
+            } => {
+                fields.insert("pointer".to_owned(), json!(pointer));
+            }
             Self::BadManifest { plugin, .. }
+            | Self::NotInstalled { plugin }
             | Self::Database { plugin, .. }
             | Self::NotEnabled { plugin }
             | Self::Start { plugin, .. }
@@ -452,9 +559,7 @@ impl CallError {
             Self::Discovery { .. }
             | Self::BadDepth { .. }
             | Self::TooDeep { .. }
-            | Self::NotOffered { .. }
-            | Self::InputJson { .. }
-            | Self::Input { .. } => {}
+            | Self::InputJson { .. } => {}
         }
         if let (Some(stderr), false) = (self.stderr(), matches!(self, Self::Plugin { .. })) {
             fields.insert("stderr".to_owned(), json!(String::from_utf8_lossy(stderr)));

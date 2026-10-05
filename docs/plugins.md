@@ -76,8 +76,9 @@ enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls
 the one enabled plugin that offers a capability, so a plugin can use another by
 ability without knowing its name. When more than one offers it, the call is
 `board::plugin::ambiguous`, naming each; the caller then names one. A broken
-install offers nothing. A capability no installed plugin offers is
-`board::plugin::not_installed`.
+install offers nothing. A plugin that is not installed, or a capability no
+installed plugin offers, is `board::plugin::not_installed`; the message lists
+what the named plugin offers, or the nearest offered name.
 
 ## Calling a capability
 
