@@ -6,6 +6,7 @@ use board_model::{Code, Fields, LogicalPath, ObjectId, canonical_json, parse_jso
 use board_scenario::{Item, Scenario};
 use board_tree::{LOCK_WAIT, Status};
 
+use crate::Detail;
 use crate::put::{Expect, PutReport};
 use crate::tests::{MANIFEST, open, task};
 
@@ -619,6 +620,90 @@ fn a_link_whose_target_is_missing_is_refused_and_one_whose_target_exists_is_foll
         "put does not create a link's target"
     );
     assert!(put(&scenario, "/links/here", Expect::Any, project).is_ok());
+}
+
+#[test]
+fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean() {
+    let scenario = board();
+    let degraded = |at: &str, record: &str| {
+        put(&scenario, at, Expect::Any, record).unwrap().writes[0]
+            .degraded
+            .clone()
+    };
+    let dangling = degraded(
+        "/tasks/b",
+        &task(r#", "project": "/nowhere", "see": "/gone""#),
+    );
+    let wrong = degraded("/tasks/c", &task(r#", "project": "/tasks/b""#));
+    let link = degraded(
+        "/links/l",
+        r#"{"$type": "board/mount/v1", "path": "/gone"}"#,
+    );
+    assert_eq!(
+        degraded("/tasks/a", &task(r#", "project": "/projects/p""#)),
+        None
+    );
+    let detail = |pointer: Option<&str>, reason: &str, failures| Detail {
+        pointer: pointer.map(str::to_owned),
+        reason: reason.to_owned(),
+        failures,
+    };
+    assert_eq!(
+        dangling,
+        Some((
+            Code::RefDangling,
+            detail(Some("/project"), "nothing is at /nowhere", 2)
+        ))
+    );
+    assert_eq!(
+        wrong,
+        Some((
+            Code::RefWrongType,
+            detail(
+                Some("/project"),
+                "/tasks/b is not a record of type lr/project/v1",
+                1
+            )
+        ))
+    );
+    assert_eq!(
+        link,
+        Some((
+            Code::RefDangling,
+            detail(
+                None,
+                "the link at /links/l points to /gone, which is missing",
+                1
+            )
+        ))
+    );
+    let checked = open(&scenario).check(None, None).unwrap();
+    for (physical, put) in [
+        ("tasks/b.json", dangling),
+        ("tasks/c.json", wrong),
+        ("links/l.json", link),
+    ] {
+        let entry = checked
+            .entries
+            .iter()
+            .find(|entry| entry.path == physical)
+            .unwrap();
+        let (code, detail) = put.unwrap();
+        assert_eq!(entry.status, Status::Degraded(code));
+        assert_eq!(entry.detail, Some(detail), "{physical}");
+    }
+}
+
+#[test]
+fn a_batch_reference_to_a_later_line_is_not_degraded() {
+    let scenario = board();
+    let input = format!(
+        "{}\n{}\n",
+        r#"{"path": "/tasks/a", "record": {"$type": "lr/task/v1", "title": "t", "see": "/tasks/b"}}"#,
+        r#"{"path": "/tasks/b", "record": {"$type": "lr/task/v1", "title": "t"}}"#,
+    );
+    let report = open(&scenario).put_batch(&mut input.as_bytes()).unwrap();
+    assert_eq!(report.writes[0].degraded, None);
 }
 
 #[test]

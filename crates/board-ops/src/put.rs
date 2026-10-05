@@ -1,19 +1,21 @@
 //! `board put`: checking a record and writing it in canonical form
 //! (docs/architecture.md, Writes).
 
+use std::convert::Infallible;
 use std::io::{BufRead, Read};
 
 use board_model::{
     BINARY_NAME, CONFIG_TYPE, Code, Content, Fields, JsonError, Location, LogicalPath,
-    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json,
+    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, Source, canonical_json,
     parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::{LOCK_WAIT, WriteError};
-use board_validate::{RecordError, Schema};
+use board_validate::{RecordError, Reference, Schema};
 use serde_json::Value;
 
 use crate::board::{Board, Config};
+use crate::check::{Detail, Tally, judge, read_type, unresolved};
 
 /// What a put expects to find where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +37,9 @@ pub struct Written {
     /// The blob the file held before, or `None` for a new file.
     pub previous: Option<ObjectId>,
     pub blob: ObjectId,
+    /// What `check` finds wrong with the written record: a pointer or
+    /// reference that does not resolve, or reaches the wrong type.
+    pub degraded: Option<(Code, Detail)>,
 }
 
 /// What a put wrote, and the commit it made.
@@ -51,6 +56,16 @@ pub(crate) struct Prepared {
     pub(crate) expect: Expect,
     pub(crate) canonical: Vec<u8>,
     pub(crate) target: board_tree::Target,
+    pub(crate) admitted: Admitted,
+}
+
+/// A record `check_record` admits: its value, and what `check` follows from
+/// it once written, its target when it is a pointer or else its references.
+#[derive(Debug)]
+pub(crate) struct Admitted {
+    pub(crate) value: Value,
+    pub(crate) pointer: bool,
+    pub(crate) references: Vec<Reference>,
 }
 
 /// One line of a batch that refused it, counted from 1.
@@ -225,18 +240,19 @@ impl Board {
         expect: Expect,
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
-        let (value, is_pointer) = self
+        let admitted = self
             .check_record(bytes)
             .map_err(|refused| PutError::Record {
                 path: path.clone(),
                 refused,
             })?;
-        let target = self.repository().target(path, is_pointer)?;
+        let target = self.repository().target(path, admitted.pointer)?;
         Ok(Prepared {
             path: path.clone(),
             expect,
-            canonical: canonical_json(&value),
+            canonical: canonical_json(&admitted.value),
             target,
+            admitted,
         })
     }
 
@@ -283,6 +299,7 @@ impl Board {
                 location,
                 previous,
                 blob,
+                degraded: None,
             });
         }
         if !stale.is_empty() {
@@ -319,13 +336,21 @@ impl Board {
             },
         };
         drop(lock);
+        for (written, item) in writes.iter_mut().zip(prepared) {
+            written.degraded = self.degraded(item, &written.display);
+        }
         Ok(PutReport { writes, commit })
     }
 
     /// Checks `bytes` as `check` checks a record, with its codes, and
-    /// returns the parsed record and whether it is a pointer. Input that is
-    /// not one JSON object with a `$type` is `put::invalid`.
-    pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<(Value, bool), Refused> {
+    /// returns what it admits. Input that is not one JSON object with a
+    /// `$type` is `put::invalid`.
+    pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<Admitted, Refused> {
+        let admitted = |value, pointer| Admitted {
+            value,
+            pointer,
+            references: Vec::new(),
+        };
         if bytes.iter().all(u8::is_ascii_whitespace) {
             return Err(Refused::Empty);
         }
@@ -341,7 +366,7 @@ impl Board {
             return Err(Refused::Code(code));
         }
         let record_type = match classified.content {
-            Content::Pointer { .. } => return Ok((value, true)),
+            Content::Pointer { .. } => return Ok(admitted(value, true)),
             Content::Record { record_type, .. } => record_type,
             Content::Json { .. }
             | Content::Schema { .. }
@@ -352,12 +377,12 @@ impl Board {
         };
         if record_type.as_str() == CONFIG_TYPE {
             return Config::from_value(&value)
-                .map(|_| (value, false))
+                .map(|_| admitted(value, false))
                 .ok_or(Refused::Code(Code::ConfigInvalid));
         }
         if record_type.as_str() == MANIFEST_TYPE {
             return Manifest::from_value(value.clone())
-                .map(|_| (value, false))
+                .map(|_| admitted(value, false))
                 .map_err(Refused::from);
         }
         let schema_path = record_type.schema_path();
@@ -377,7 +402,33 @@ impl Board {
             _ => return Err(Refused::Code(Code::SchemaInvalid)),
         };
         schema.validate(&value)?;
-        Ok((value, false))
+        let references = schema.references(&value);
+        Ok(Admitted {
+            references,
+            ..admitted(value, false)
+        })
+    }
+
+    /// What `check` finds wrong with `item`, just written at `display`.
+    fn degraded(&self, item: &Prepared, display: &LogicalPath) -> Option<(Code, Detail)> {
+        let resolve = |path: &LogicalPath| self.repository().resolve(&Source::WorkingTree, path);
+        if item.admitted.pointer {
+            return resolve(display).err().map(|error| unresolved(&error));
+        }
+        let mut tally = Tally::default();
+        for reference in &item.admitted.references {
+            let Ok((_, failure)) = judge::<Infallible>(
+                &reference.path,
+                reference.accepts.as_deref(),
+                resolve(&reference.path),
+                |location| match location.object {
+                    Object::Blob(blob) => Ok(read_type(location, blob)),
+                    Object::Directory => Ok(None),
+                },
+            );
+            tally.add(&reference.pointer, failure.as_ref());
+        }
+        tally.first()
     }
 }
 

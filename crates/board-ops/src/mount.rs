@@ -37,7 +37,7 @@ impl Board {
         if new == old {
             return Ok(report);
         }
-        self.check_record(&canonical).map_err(|refused| {
+        let admitted = self.check_record(&canonical).map_err(|refused| {
             MountError::Put(PutError::Record {
                 path: path.clone(),
                 refused,
@@ -48,6 +48,7 @@ impl Board {
             expect: Expect::Blob(blob),
             canonical,
             target,
+            admitted,
         };
         self.write_all(&[prepared], &format!("{BINARY_NAME} mount update {path}"))
             .map_err(|failure| {

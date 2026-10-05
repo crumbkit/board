@@ -7,9 +7,9 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Fields, Location, LogicalPath, Object, Source};
 use board_ops::{
-    CheckReport, Checked, EnableReport, Fallback, GetReport, InitReport, Known, Listed, LsReport,
-    MAX_LIMIT, MountUpdateReport, PutError, PutReport, QueryError, QueryReport, RefsReport,
-    source_name,
+    CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Known, Listed,
+    LsReport, MAX_LIMIT, MountUpdateReport, PutError, PutReport, QueryError, QueryReport,
+    RefsReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -48,11 +48,8 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
             let mut text = String::new();
             for entry in entries {
                 let path = named(&entry.path, entry.logical.as_ref(), entry.status);
-                let _ = write!(text, "{} {path}", status_text(entry.status));
-                if let Some(schema) = &entry.schema {
-                    let _ = write!(text, ": add its schema at {schema}");
-                }
-                text.push('\n');
+                let why = entry.detail.as_ref().map(detail_text).unwrap_or_default();
+                let _ = writeln!(text, "{} {path}{why}", status_text(entry.status));
             }
             Output {
                 stdout: text.into_bytes(),
@@ -76,8 +73,11 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
                         "kind": entry.kind.as_str(),
                     });
                     status_fields(&mut value, entry.status);
-                    if let (Some(schema), Some(object)) = (&entry.schema, value.as_object_mut()) {
-                        object.insert("schema".to_owned(), json!(schema));
+                    if let (Some(detail), Some(object)) = (&entry.detail, value.as_object_mut()) {
+                        object.extend(detail_fields(detail));
+                        if let Some(schema) = &entry.schema {
+                            object.insert("schema".to_owned(), json!(schema));
+                        }
                     }
                     value
                 })
@@ -97,9 +97,21 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
 }
 
 /// `put`: as text, one line per write naming its display path and new
-/// blob, and the commit when one was made.
+/// blob, and the commit when one was made. A write left degraded gets a
+/// note on stderr in either format.
 pub(crate) fn put(format: Format, report: &PutReport) -> Output {
-    match format {
+    let mut notes = String::new();
+    for written in &report.writes {
+        if let Some((code, detail)) = &written.degraded {
+            let why = detail_text(detail);
+            let display = &written.display;
+            let _ = writeln!(
+                notes,
+                "note: {display} is written but degraded: {code}{why}"
+            );
+        }
+    }
+    let output = match format {
         Format::Text => {
             let mut text = String::new();
             for written in &report.writes {
@@ -118,6 +130,10 @@ pub(crate) fn put(format: Format, report: &PutReport) -> Output {
             report["$type"] = json!("board/put-report/v1");
             document(&report, 0)
         }
+    };
+    Output {
+        stderr: notes.into_bytes(),
+        ..output
     }
 }
 
@@ -128,11 +144,17 @@ fn put_json(report: &PutReport) -> Value {
         .writes
         .iter()
         .map(|written| {
+            let degraded = written.degraded.as_ref().map(|(code, detail)| {
+                let mut fields = detail_fields(detail);
+                fields.insert("code".to_owned(), json!(code.as_str()));
+                fields
+            });
             json!({
                 "location": location(&written.location, &written.display.to_string()),
                 "display": written.display.to_string(),
                 "previous": written.previous.map(|blob| blob.to_string()),
                 "blob": written.blob.to_string(),
+                "degraded": degraded,
             })
         })
         .collect();
@@ -165,6 +187,29 @@ pub(crate) fn plugin_enable(format: Format, report: &EnableReport) -> Output {
             document(&json, 0)
         }
     }
+}
+
+/// Where and why an entry fails, to follow its path or code: ` at
+/// <pointer>: <reason>`, without `at` when the pointer is unknown or the
+/// record's root, and with a count of the other failures.
+fn detail_text(detail: &Detail) -> String {
+    let mut text = match detail.pointer.as_deref() {
+        None | Some("") => format!(": {}", detail.reason),
+        Some(pointer) => format!(" at {pointer}: {}", detail.reason),
+    };
+    if detail.failures > 1 {
+        let _ = write!(text, " (and {} more)", detail.failures - 1);
+    }
+    text
+}
+
+/// `pointer`, `reason` and `failures`, for a JSON report.
+fn detail_fields(detail: &Detail) -> Map<String, Value> {
+    let mut fields = Map::new();
+    fields.insert("pointer".to_owned(), json!(detail.pointer));
+    fields.insert("reason".to_owned(), json!(detail.reason));
+    fields.insert("failures".to_owned(), json!(detail.failures));
+    fields
 }
 
 /// `refs`: as text, a `from` line per reference the object makes, with its

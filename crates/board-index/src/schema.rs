@@ -2,7 +2,7 @@
 //! to them is a new index format.
 
 /// The index format. An index of any other format is deleted and rebuilt.
-pub const INDEX_VERSION: &str = "8";
+pub const INDEX_VERSION: &str = "9";
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -62,6 +62,8 @@ CREATE TABLE validations (
     schema TEXT NOT NULL,
     code TEXT,
     pointer TEXT,
+    reason TEXT,
+    failures INTEGER,
     PRIMARY KEY (record, schema)
 ) WITHOUT ROWID;
 CREATE TABLE refs (

@@ -97,6 +97,30 @@ fn a_record_that_fails_its_schema_names_where() {
 }
 
 #[test]
+fn a_failure_says_why_in_at_most_200_characters_and_counts_every_failure() {
+    let schema = task_schema();
+    let valid = json!({"title": "t"});
+    assert!(schema.validate(&valid).is_ok());
+    assert_eq!(schema.failures(&valid), 0);
+    let wrong = json!({"title": 5});
+    assert_eq!(
+        schema.validate(&wrong).unwrap_err().reason(),
+        r#"5 is not of type "string""#
+    );
+    assert_eq!(schema.failures(&wrong), 1);
+    let long = json!({"title": ["x".repeat(300)]});
+    let reason = schema.validate(&long).unwrap_err().reason();
+    assert_eq!(reason.chars().count(), 200);
+    assert!(reason.ends_with('…'), "{reason}");
+    assert_eq!(schema.failures(&json!({"parent": 1})), 2);
+    let malformed = json!({"title": "t", "parent": "projects/p"});
+    assert_eq!(
+        schema.validate(&malformed).unwrap_err().reason(),
+        "it is not a logical path"
+    );
+}
+
+#[test]
 fn the_first_failure_in_sorted_order_is_reported() {
     let schema = Schema::compile(json!({
         "properties": {"a": {"type": "string"}, "b": {"type": "string"}, "c": {"type": "string"}}

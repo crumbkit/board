@@ -2,9 +2,8 @@
 
 This is the v0 design. Built so far: logical paths, resolution and walking,
 links and mounts, records, schemas and references, the index, canonical form,
-plugins with extraction, and the commands `init`, `check`, `get`, `ls`, `query`,
-`refs`, `put`, `mount update`, `plugin list`, `plugin find` and `call`. PLAN.md
-says what comes next.
+plugins with extraction, and the commands under Commands. PLAN.md says what
+comes next.
 
 Board is a fast, validated view of a git tree. Git does history, branching,
 merging and transport. Board indexes what is in a tree, validates the records
@@ -64,8 +63,7 @@ Parsing is strict, and the first failure is the entry's code: over 16 MiB
 64-bit integer cannot hold exactly (`lossy_number`). These rules follow RFC
 7493 (I-JSON), except that an integer may use the full 64-bit range. A
 malformed `$type` is `record::bad_type`; a type with no schema file is
-`record::unknown_type`, and `check` names that file in the record's own board
-(`schema` in JSON). A file under `.board/types/board/` is `schema::invalid`,
+`record::unknown_type`. A file under `.board/types/board/` is `schema::invalid`,
 because Board's own types are checked by Rust types. A schema that does not
 compile is `schema::invalid`, and so is each record of its type.
 `record::invalid` names the first failing instance pointer in sorted order.
@@ -214,7 +212,7 @@ speed. SQLite is bundled, so every platform runs the same one.
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
 | `bodies` | the canonical form of each record that parses | blob |
-| `validations` | schema result: code, failing JSON pointer | record blob, schema blob |
+| `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
@@ -293,8 +291,8 @@ expect refuse the whole batch, listing each failing line with its code (in
 commit.
 
 The report is `board/put-report/v1`: `writes`, each with its Location, display
-path, `previous` blob (null for a new file) and `blob`; and `commit` (null when
-none was made).
+path, `previous` blob (null for a new file), `blob` and `degraded` (as `check`
+reports it, or null); and `commit` (null when none was made).
 
 `board mount update <path>` names a mount pointer, which it does not follow;
 anything else there is `board::mount::invalid`. It reads the pointer's `follow`
@@ -321,20 +319,22 @@ old and new commit and whether it wrote.
 
 Each command returns one typed report. `--json` prints it as a document tagged
 `board/<command>-report/v1`, or `board/error/v1` on failure. Exit codes: 0 done,
-1 failed (including degraded entries for `check`), 2 the command line was
-refused, with `board::usage::invalid`.
+1 failed, 2 a refused command line (`board::usage::invalid`).
 
 `check`, `ls`, `refs`, `plugin list` and `plugin find` show 100 entries unless
-`--limit` or `--all` says otherwise; an entry is a printed line, so `refs`
-counts each pointer and `plugin list` each capability. `check` puts degraded
+`--limit` or `--all` says otherwise; an entry is a printed line: a `refs`
+pointer, a `plugin list` capability. `check` puts degraded
 entries first. Text names an entry by its logical path, or by its file when it
 has none or is shadowed; JSON gives both. A
-cut listing ends with a stderr note giving the count shown and the total; JSON
+cut listing ends with a stderr note of the count shown and the total; JSON
 carries `total` and `truncated`. An error prints `error: <code>: <message>`,
 then `hint: <next step>`, naming the values it knows; `board/error/v1`
-carries the same `hint`, and those values in `fields`: `path`, `blob`,
-`pointer`, `type`, `schema`, `plugin`, `capability`. STANDARDS.md 23 to 26 hold
-the rules.
+adds `hint`, and those values in `fields`: `path`, `blob`,
+`pointer`, `type`, `schema`, `plugin`, `capability`. `check` and `put`
+name a degraded entry's first failing pointer, why, and how many more
+(`pointer`, `reason`, `failures`); an unknown type's reason names the schema
+file its board lacks (`schema`).
+STANDARDS.md 23 to 26 hold the rules.
 
 ## Crates
 

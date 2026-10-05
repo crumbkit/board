@@ -91,6 +91,7 @@ fn viewed(index: &Index) -> Vec<Checked> {
                     .find(|kind| Some(kind.as_str()) == row[2].as_str())
                     .unwrap(),
                 status: code.map_or(Status::Ok, Status::Degraded),
+                detail: None,
                 change: if row[4].as_str() == Some("committed") {
                     Change::Committed
                 } else {
@@ -173,9 +174,13 @@ fn a_query_sees_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
     );
 }
 
-/// Entries in the order the view's key gives them: by source, then path.
+/// Entries in the order the view's key gives them, by source and then path,
+/// without the detail the view does not show.
 fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
     entries.sort_by_key(|entry| (board_index::source_name(&entry.source), entry.path.clone()));
+    for entry in &mut entries {
+        entry.detail = None;
+    }
     entries
 }
 

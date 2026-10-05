@@ -164,3 +164,38 @@ fn a_mounted_commit_is_listed_once_and_not_again_when_warm() {
     );
     assert_eq!(warm.entries, cold.entries);
 }
+
+#[test]
+fn a_path_too_long_under_its_mount_point_is_malformed_and_its_shorter_twin_is_ok() {
+    // Nineteen segments of 204 bytes and a last one of `last` bytes: 4091
+    // bytes as a logical path in the library when `last` is 195, which fits,
+    // and 4102 under /vendor/lib, which does not. One of 180 fits both.
+    let path = |last: usize| {
+        let mut segments = vec!["a".repeat(204); 19];
+        segments.push("b".repeat(last));
+        format!("{}.json", segments.join("/"))
+    };
+    let (long, short) = (path(195), path(180));
+    let library = Scenario::new();
+    let commit = library.commit(&[
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        (&long, r#"{"$type": "lr/project/v1"}"#),
+        (&short, r#"{"$type": "lr/project/v1"}"#),
+    ]);
+    let scenario = board();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&mount(&library.path(), commit)),
+    );
+    let report = check(&scenario, None);
+    let status = |path: &str| -> Status {
+        report
+            .entries
+            .iter()
+            .find(|entry: &&Checked| entry.path == path)
+            .unwrap()
+            .status
+    };
+    assert_eq!(status(&long), Status::Degraded(Code::PathMalformed));
+    assert_eq!(status(&short), Status::Ok);
+}

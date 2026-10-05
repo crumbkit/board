@@ -85,6 +85,11 @@ impl Schema {
         }
     }
 
+    /// How many failures `record` has, of which `validate` reports one.
+    pub fn failures(&self, record: &Value) -> usize {
+        self.validator.iter_errors(record).count()
+    }
+
     /// The references `record` makes, in document order. Call it on a record
     /// that validates.
     pub fn references(&self, record: &Value) -> Vec<Reference> {
@@ -147,7 +152,24 @@ pub enum RecordError {
     MalformedReference { pointer: String },
 }
 
+/// The most characters [`RecordError::reason`] gives.
+const MAX_REASON: usize = 200;
+
 impl RecordError {
+    /// Why the record fails, without where, cut to 200 characters.
+    pub fn reason(&self) -> String {
+        let reason = match self {
+            Self::Invalid { source, .. } => source.to_string(),
+            Self::MalformedReference { .. } => "it is not a logical path".to_owned(),
+        };
+        if reason.chars().count() <= MAX_REASON {
+            return reason;
+        }
+        let mut cut: String = reason.chars().take(MAX_REASON - 1).collect();
+        cut.push('…');
+        cut
+    }
+
     pub fn code(&self) -> Code {
         match self {
             Self::Invalid { .. } => Code::RecordInvalid,

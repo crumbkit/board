@@ -6,7 +6,7 @@ use std::path::Path;
 
 use board_model::{BINARY_NAME, Code, Fields, ObjectId};
 use board_scenario::{Item, Scenario};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::config::Context;
 use crate::render;
@@ -204,6 +204,60 @@ fn check_json_is_a_check_report() {
     assert_eq!(bad["code"], "board::json::parse");
     assert_eq!(bad["kind"], "json");
     assert_eq!(bad["logical"], "/bad");
+}
+
+#[test]
+fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() {
+    let scenario = board();
+    scenario
+        .write(
+            "tasks/t5.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": 5}"#),
+        )
+        .write(
+            "tasks/t6.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": 5, "project": 1}"#),
+        )
+        .write("tasks/t7.json", Item::File(r#"{"$type": "lr/task/v1"}"#))
+        .write(
+            "tasks/t8.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": "t", "project": "/nowhere"}"#),
+        )
+        .write(
+            "tasks/t9.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": "t", "project": "/projects/p"}"#),
+        );
+    let output = board_in(scenario.workdir(), &["check"]);
+    let lines = text(&output.stdout);
+    for line in [
+        r#"degraded board::record::invalid /tasks/t5 at /title: 5 is not of type "string""#,
+        r#"degraded board::record::invalid /tasks/t6 at /project: 1 is not of type "string" (and 1 more)"#,
+        r#"degraded board::record::invalid /tasks/t7: "title" is a required property"#,
+        "degraded board::ref::dangling /tasks/t8 at /project: nothing is at /nowhere",
+        "ok /tasks/t9",
+    ] {
+        assert!(
+            lines.lines().any(|printed| printed == line),
+            "{line}\n{lines}"
+        );
+    }
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let entry = |path: &str| {
+        report["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["path"] == path)
+            .unwrap()
+            .clone()
+    };
+    let t6 = entry("tasks/t6.json");
+    assert_eq!(t6["pointer"], "/project");
+    assert_eq!(t6["reason"], r#"1 is not of type "string""#);
+    assert_eq!(t6["failures"], 2);
+    let t9 = entry("tasks/t9.json");
+    assert_eq!(t9.get("pointer"), None);
+    assert_eq!(t9.get("reason"), None);
 }
 
 #[test]
@@ -654,6 +708,41 @@ fn put_writes_the_record_on_stdin_and_reports_where() {
     assert_eq!(again["writes"][0]["previous"], blob.to_string());
     assert_eq!(again["writes"][0]["display"], "/tasks/a");
     assert_eq!(again["commit"], Value::Null);
+}
+
+#[test]
+fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let run = |arguments: &[&str], project: &str| {
+        let record = format!(r#"{{"$type": "lr/task/v1", "title": "t", "project": "{project}"}}"#);
+        board_with(scenario.workdir(), None, arguments, record.as_bytes())
+    };
+    let clean = run(&["put", "/tasks/a"], "/projects/p");
+    assert_eq!(clean.code, 0);
+    assert_eq!(text(&clean.stderr), "");
+    let degraded = run(&["put", "/tasks/b"], "/nowhere");
+    assert_eq!(degraded.code, 0, "the record is written");
+    assert_eq!(
+        text(&degraded.stderr),
+        "note: /tasks/b is written but degraded: board::ref::dangling at /project: \
+         nothing is at /nowhere\n"
+    );
+    let report = json(&run(&["put", "/tasks/b", "--json"], "/nowhere"));
+    assert_eq!(
+        report["writes"][0]["degraded"],
+        json!({
+            "code": "board::ref::dangling",
+            "pointer": "/project",
+            "reason": "nothing is at /nowhere",
+            "failures": 1,
+        })
+    );
+    let report = json(&run(&["put", "/tasks/a", "--json"], "/projects/p"));
+    assert_eq!(report["writes"][0]["degraded"], Value::Null);
 }
 
 #[test]

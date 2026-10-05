@@ -285,6 +285,90 @@ fn a_reference_to_something_other_than_a_record_is_the_wrong_type() {
     );
 }
 
+/// What `check` says of the entry at `path`: its pointer, reason and
+/// failure count.
+fn detail(scenario: &Scenario, path: &str) -> Option<(Option<String>, String, u64)> {
+    let entry = check(scenario)
+        .entries
+        .into_iter()
+        .find(|entry| entry.path == path)
+        .unwrap_or_else(|| panic!("{path} is not an entry"));
+    entry
+        .detail
+        .map(|detail| (detail.pointer, detail.reason, detail.failures))
+}
+
+#[test]
+fn a_degraded_entry_says_where_and_why_and_how_many_failures_it_has() {
+    let scenario = board();
+    scenario
+        .write(
+            "ok.json",
+            Item::File(&task(r#", "project": "/projects/p""#)),
+        )
+        .write(
+            "invalid.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": 5, "see": 1}"#),
+        )
+        .write("missing.json", Item::File(r#"{"$type": "lr/task/v1"}"#))
+        .write(
+            "malformed.json",
+            Item::File(&task(r#", "project": "projects/p""#)),
+        )
+        .write(
+            "dangling.json",
+            Item::File(&task(r#", "project": "/nowhere", "see": "/gone""#)),
+        )
+        .write("wrong.json", Item::File(&task(r#", "project": "/ok""#)))
+        .write(
+            "link.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/gone"}"#),
+        )
+        .write("unknown.json", Item::File(r#"{"$type": "lr/note/v1"}"#))
+        .write("broken.json", Item::File("{"));
+    let at = |pointer: &str, reason: &str, failures| {
+        Some((Some(pointer.to_owned()), reason.to_owned(), failures))
+    };
+    assert_eq!(detail(&scenario, "ok.json"), None);
+    assert_eq!(
+        detail(&scenario, "invalid.json"),
+        at("/see", r#"1 is not of type "string""#, 2)
+    );
+    assert_eq!(
+        detail(&scenario, "missing.json"),
+        at("", r#""title" is a required property"#, 1)
+    );
+    assert_eq!(
+        detail(&scenario, "malformed.json"),
+        at("/project", "it is not a logical path", 1)
+    );
+    assert_eq!(
+        detail(&scenario, "dangling.json"),
+        at("/project", "nothing is at /nowhere", 2)
+    );
+    assert_eq!(
+        detail(&scenario, "wrong.json"),
+        at("/project", "/ok is not a record of type lr/project/v1", 1)
+    );
+    assert_eq!(
+        detail(&scenario, "link.json"),
+        Some((
+            None,
+            "the link at /link points to /gone, which is missing".to_owned(),
+            1
+        ))
+    );
+    assert_eq!(
+        detail(&scenario, "unknown.json"),
+        Some((
+            None,
+            "add its schema at .board/types/lr/note/v1.schema.json".to_owned(),
+            1
+        ))
+    );
+    assert_eq!(detail(&scenario, "broken.json"), None);
+}
+
 #[test]
 fn a_pointer_whose_target_is_missing_is_dangling_in_the_walk() {
     let scenario = board();

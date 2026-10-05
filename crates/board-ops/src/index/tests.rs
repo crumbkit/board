@@ -166,6 +166,8 @@ fn the_index_holds_each_validation_with_its_references_in_the_order_found() {
         Some(ValidationFact::Invalid {
             code: Code::RecordInvalid,
             pointer: String::new(),
+            reason: "\"title\" is a required property".to_owned(),
+            failures: 1,
         })
     );
     assert_eq!(

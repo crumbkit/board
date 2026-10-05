@@ -29,9 +29,80 @@ pub struct Checked {
     pub logical: Option<LogicalPath>,
     pub kind: Kind,
     pub status: Status,
+    /// Where a degraded entry fails and why, when Board knows.
+    pub detail: Option<Detail>,
     pub change: Change,
     /// The schema file a record of an unknown type needs, from its source's root.
     pub schema: Option<String>,
+}
+
+/// Where an entry fails, as a JSON pointer when it is a field, why, and how
+/// many failures of that kind the entry has, of which this is the first.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Detail {
+    pub pointer: Option<String>,
+    pub reason: String,
+    pub failures: u64,
+}
+
+/// An entry's code, with its detail when Board knows one.
+pub(crate) type Failure = (Code, Option<Detail>);
+
+/// The first failing reference of a record, and how many fail.
+#[derive(Default)]
+pub(crate) struct Tally {
+    first: Option<(Code, Detail)>,
+    failures: u64,
+}
+
+impl Tally {
+    pub(crate) fn add(&mut self, pointer: &str, failure: Option<&(Code, String)>) {
+        let Some((code, reason)) = failure else {
+            return;
+        };
+        self.failures += 1;
+        self.first.get_or_insert_with(|| {
+            let detail = Detail {
+                pointer: Some(pointer.to_owned()),
+                reason: reason.clone(),
+                failures: 0,
+            };
+            (*code, detail)
+        });
+    }
+
+    pub(crate) fn first(self) -> Option<(Code, Detail)> {
+        let failures = self.failures;
+        self.first
+            .map(|(code, detail)| (code, Detail { failures, ..detail }))
+    }
+}
+
+/// Where a reference led, and its code and reason when it fails.
+pub(crate) type Judged = (Option<Location>, Option<(Code, String)>);
+
+/// Why a reference to `target` fails, if it does: it leads nowhere, or,
+/// when it `accepts` only some record types, to anything else. `type_of`
+/// gives the record type at a location.
+pub(crate) fn judge<E>(
+    target: &LogicalPath,
+    accepts: Option<&[RecordType]>,
+    resolved: Result<Location, ResolveError>,
+    type_of: impl FnOnce(&Location) -> Result<Option<RecordType>, E>,
+) -> Result<Judged, E> {
+    let location = match resolved {
+        Err(error) => return Ok((None, Some((Code::RefDangling, error.to_string())))),
+        Ok(location) => location,
+    };
+    let failure = match accepts {
+        Some(accepts) if !type_of(&location)?.is_some_and(|found| accepts.contains(&found)) => {
+            let types: Vec<&str> = accepts.iter().map(RecordType::as_str).collect();
+            let reason = format!("{target} is not a record of type {}", types.join(" or "));
+            Some((Code::RefWrongType, reason))
+        }
+        _ => None,
+    };
+    Ok((Some(location), failure))
 }
 
 /// Every entry `check` looked at: the root's sorted by path, then each
@@ -225,13 +296,18 @@ impl Decided {
             (Some(_), Some(fact)) => fact.fact.kind,
             (Some(_), None) => Kind::Json,
         };
-        let code = match entry.status {
-            Status::Degraded(code) => Some(code),
+        let wanted = fact.and_then(schema_path);
+        let schema = wanted
+            .as_ref()
+            .and_then(|path| schema_of(decide.facts, path));
+        let failure = match entry.status {
+            Status::Degraded(code) => Some((code, None)),
             // Only a path too long under its mount point fails here.
-            Status::Ok if logical.is_none() => Some(Code::PathMalformed),
+            Status::Ok if logical.is_none() => Some((Code::PathMalformed, None)),
             Status::Ok => {
                 let mut reached = Vec::new();
-                let code = decide.code(entry, &mut reached, role, fact)?;
+                let failure =
+                    decide.code(entry, &mut reached, role, fact, (wanted.as_deref(), schema))?;
                 self.references
                     .extend(reached.into_iter().map(|reached| Referenced {
                         source: source.clone(),
@@ -239,13 +315,10 @@ impl Decided {
                         logical: logical.clone(),
                         reached,
                     }));
-                code
+                failure
             }
         };
-        let wanted = fact.and_then(schema_path);
-        let schema = wanted
-            .as_ref()
-            .and_then(|path| schema_of(decide.facts, path));
+        let (code, detail) = failure.map_or((None, None), |(code, detail)| (Some(code), detail));
         self.resolved.push(Resolved {
             source: source.clone(),
             path: entry.path.clone(),
@@ -264,12 +337,17 @@ impl Decided {
             logical,
             kind,
             status: code.map_or(Status::Ok, Status::Degraded),
+            detail,
             change,
             schema: wanted.filter(|_| code == Some(Code::RecordUnknownType)),
         });
         Ok(())
     }
 }
+
+/// The schema file a record's type names, from its source's root, and the
+/// blob of the usable schema there.
+type Wanted<'a> = (Option<&'a str>, Option<ObjectId>);
 
 /// Resolves a path in the source being checked.
 type Resolve<'a> = Box<dyn FnMut(&LogicalPath) -> Result<Location, ResolveError> + 'a>;
@@ -283,30 +361,34 @@ struct Decide<'a> {
 }
 
 impl Decide<'_> {
-    /// The code of an entry whose path is fine.
+    /// The failure of an entry whose path is fine.
     fn code(
         &self,
         entry: &Entry,
         reached: &mut Vec<Reached>,
         role: Option<Role>,
         fact: Option<&Indexed>,
-    ) -> Result<Option<Code>, IndexError> {
+        schema: Wanted<'_>,
+    ) -> Result<Option<Failure>, IndexError> {
         if role.is_none() {
             return Ok(None);
         }
         let Some(fact) = fact else {
-            return Ok(Some(Code::RepoUnreadable));
+            return Ok(Some((Code::RepoUnreadable, None)));
         };
         if let Some(code) = fact.fact.code {
-            return Ok(Some(code));
+            return Ok(Some((code, None)));
         }
         match fact.fact.kind {
             Kind::Pointer => Ok(entry
                 .logical
                 .as_ref()
                 .and_then(|logical| self.resolve(logical).err())
-                .map(|error| error.code())),
-            Kind::Record => self.record(fact, reached),
+                .map(|error| {
+                    let (code, detail) = unresolved(&error);
+                    (code, Some(detail))
+                })),
+            Kind::Record => self.record(fact, schema, reached),
             Kind::Schema | Kind::Json | Kind::File => Ok(None),
         }
     }
@@ -315,48 +397,70 @@ impl Decide<'_> {
     fn record(
         &self,
         record: &Indexed,
+        (wanted, schema): Wanted<'_>,
         reached: &mut Vec<Reached>,
-    ) -> Result<Option<Code>, IndexError> {
-        let Some(schema_path) = schema_path(record) else {
+    ) -> Result<Option<Failure>, IndexError> {
+        let Some(wanted) = wanted else {
             return Ok(None);
         };
-        let Some(schema) = schema_of(self.facts, &schema_path) else {
-            return Ok(Some(match self.facts.get(&schema_path) {
-                Some(found) if found.role == Role::Schema => Code::SchemaInvalid,
-                _ => Code::RecordUnknownType,
-            }));
+        let Some(schema) = schema else {
+            // Anything at a schema path is a schema, so it is there but degraded.
+            let (code, pointer, reason) = match self.facts.get(wanted) {
+                Some(_) => (
+                    Code::SchemaInvalid,
+                    Some("/$type".to_owned()),
+                    format!("the schema at {wanted} is degraded"),
+                ),
+                None => (
+                    Code::RecordUnknownType,
+                    None,
+                    format!("add its schema at {wanted}"),
+                ),
+            };
+            let detail = Detail {
+                pointer,
+                reason,
+                failures: 1,
+            };
+            return Ok(Some((code, Some(detail))));
         };
         let references = match self.writer.validation(record.blob, schema)? {
-            None => return Ok(Some(Code::RepoUnreadable)),
-            Some(ValidationFact::Invalid { code, .. }) => return Ok(Some(code)),
+            None => return Ok(Some((Code::RepoUnreadable, None))),
+            Some(ValidationFact::Invalid {
+                code,
+                pointer,
+                reason,
+                failures,
+            }) => {
+                let pointer = Some(pointer);
+                let detail = Detail {
+                    pointer,
+                    reason,
+                    failures,
+                };
+                return Ok(Some((code, Some(detail))));
+            }
             Some(ValidationFact::Valid(references)) => references,
         };
         // Every reference is followed, not just those before the first
         // failure, so `refs` can report each one.
-        let mut first = None;
+        let mut tally = Tally::default();
         for reference in references {
-            let (location, code) = match self.resolve(&reference.target) {
-                Err(_) => (None, Some(Code::RefDangling)),
-                Ok(location) => {
-                    let code = match &reference.accepts {
-                        None => None,
-                        Some(accepts) => match self.record_type(&location)? {
-                            Some(found) if accepts.contains(&found) => None,
-                            _ => Some(Code::RefWrongType),
-                        },
-                    };
-                    (Some(location), code)
-                }
-            };
-            first = first.or(code);
+            let (location, failure) = judge(
+                &reference.target,
+                reference.accepts.as_deref(),
+                self.resolve(&reference.target),
+                |location| self.record_type(location),
+            )?;
+            tally.add(&reference.pointer, failure.as_ref());
             reached.push(Reached {
                 pointer: reference.pointer,
                 target: reference.target,
                 location,
-                code,
+                code: failure.map(|(code, _)| code),
             });
         }
-        Ok(first)
+        Ok(tally.first().map(|(code, detail)| (code, Some(detail))))
     }
 
     fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
@@ -384,8 +488,18 @@ impl Decide<'_> {
     }
 }
 
+/// A pointer that does not resolve, for the reason `error` gives.
+pub(crate) fn unresolved(error: &ResolveError) -> (Code, Detail) {
+    let detail = Detail {
+        pointer: None,
+        reason: error.to_string(),
+        failures: 1,
+    };
+    (error.code(), detail)
+}
+
 /// The `$type` of the record at `location`, read in its own board.
-fn read_type(location: &Location, blob: ObjectId) -> Option<RecordType> {
+pub(crate) fn read_type(location: &Location, blob: ObjectId) -> Option<RecordType> {
     let repository = Repository::open(&location.board.repository).ok()?;
     let bytes = repository
         .read(&location.board.source, &location.path, blob)

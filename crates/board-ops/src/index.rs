@@ -328,6 +328,8 @@ fn validate(schema: &Schema, record: &Value) -> ValidationFact {
         ),
         Err(error) => ValidationFact::Invalid {
             code: error.code(),
+            reason: error.reason(),
+            failures: schema.failures(record) as u64,
             pointer: match error {
                 board_validate::RecordError::Invalid { pointer, .. }
                 | board_validate::RecordError::MalformedReference { pointer } => pointer,

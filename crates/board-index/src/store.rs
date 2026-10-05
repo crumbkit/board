@@ -28,8 +28,14 @@ pub struct BlobFact {
 pub enum ValidationFact {
     /// It validates and makes these references.
     Valid(Vec<RefFact>),
-    /// It fails with `code` at the JSON pointer `pointer`.
-    Invalid { code: Code, pointer: String },
+    /// It fails with `code` at the JSON pointer `pointer`, for `reason`,
+    /// the first of `failures`.
+    Invalid {
+        code: Code,
+        pointer: String,
+        reason: String,
+        failures: u64,
+    },
 }
 
 /// One reference a record makes.
@@ -156,21 +162,27 @@ impl Writer<'_> {
         record: ObjectId,
         schema: ObjectId,
     ) -> Result<Option<ValidationFact>, IndexError> {
+        type Row = (Option<String>, Option<String>, Option<String>, Option<i64>);
         let keys = params![record.to_string(), schema.to_string()];
-        let row: Option<(Option<String>, Option<String>)> = self
+        let row: Option<Row> = self
             .transaction
             .prepare_cached(
-                "SELECT code, pointer FROM main.validations WHERE record = ?1 AND schema = ?2",
+                "SELECT code, pointer, reason, failures FROM main.validations
+                 WHERE record = ?1 AND schema = ?2",
             )?
-            .query_row(keys, |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_row(keys, |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
             .optional()?;
-        let Some((code, pointer)) = row else {
+        let Some((code, pointer, reason, failures)) = row else {
             return Ok(None);
         };
         if let Some(code) = code {
             return Ok(Code::parse(&code).map(|code| ValidationFact::Invalid {
                 code,
                 pointer: pointer.unwrap_or_default(),
+                reason: reason.unwrap_or_default(),
+                failures: failures.unwrap_or_default().cast_unsigned(),
             }));
         }
         let mut statement = self.transaction.prepare_cached(
@@ -204,16 +216,27 @@ impl Writer<'_> {
         fact: &ValidationFact,
     ) -> Result<(), IndexError> {
         let (record, schema) = (record.to_string(), schema.to_string());
-        let (code, pointer) = match fact {
-            ValidationFact::Valid(_) => (None, None),
-            ValidationFact::Invalid { code, pointer } => (Some(code.as_str()), Some(pointer)),
+        let (code, pointer, reason, failures) = match fact {
+            ValidationFact::Valid(_) => (None, None, None, None),
+            ValidationFact::Invalid {
+                code,
+                pointer,
+                reason,
+                failures,
+            } => (
+                Some(code.as_str()),
+                Some(pointer),
+                Some(reason),
+                Some(failures.cast_signed()),
+            ),
         };
         self.transaction
             .prepare_cached(
-                "INSERT OR REPLACE INTO main.validations (record, schema, code, pointer)
-             VALUES (?1, ?2, ?3, ?4)",
+                "INSERT OR REPLACE INTO main.validations
+                 (record, schema, code, pointer, reason, failures)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?
-            .execute(params![record, schema, code, pointer])?;
+            .execute(params![record, schema, code, pointer, reason, failures])?;
         let ValidationFact::Valid(references) = fact else {
             return Ok(());
         };

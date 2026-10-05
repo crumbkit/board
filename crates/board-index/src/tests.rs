@@ -153,6 +153,13 @@ fn with_no_cache_the_index_is_in_memory() {
 
 #[test]
 fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
+    type Row = (
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<i64>,
+    );
     let cache = tempfile::tempdir().unwrap();
     let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = index.write().unwrap();
@@ -171,6 +178,8 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
     let invalid = ValidationFact::Invalid {
         code: Code::RecordInvalid,
         pointer: "/due".to_owned(),
+        reason: "5 is not of type \"string\"".to_owned(),
+        failures: 2,
     };
     assert_eq!(writer.validation(blob(1), blob(2)).unwrap(), None);
     writer.put_validation(blob(1), blob(2), &valid).unwrap();
@@ -180,21 +189,31 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
     assert_eq!(writer.validation(blob(1), blob(4)).unwrap(), None);
     writer.commit().unwrap();
     let file = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
-    let rows: Vec<(String, Option<String>, Option<String>)> = file
-        .prepare("SELECT record, code, pointer FROM validations ORDER BY record")
+    let rows: Vec<Row> = file
+        .prepare("SELECT record, code, pointer, reason, failures FROM validations ORDER BY record")
         .unwrap()
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
     assert_eq!(
         rows,
         [
-            (blob(1).to_string(), None, None),
+            (blob(1).to_string(), None, None, None, None),
             (
                 blob(3).to_string(),
                 Some("board::record::invalid".to_owned()),
-                Some("/due".to_owned())
+                Some("/due".to_owned()),
+                Some("5 is not of type \"string\"".to_owned()),
+                Some(2)
             ),
         ]
     );

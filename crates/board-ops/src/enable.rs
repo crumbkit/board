@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use crate::Board;
 use crate::board::config_file;
-use crate::put::{Expect, Failure, Prepared, PutError, PutReport};
+use crate::put::{Admitted, Expect, Failure, Prepared, PutError, PutReport};
 
 /// What `plugin enable` wrote: each schema the board lacked, then
 /// `.board/board.json` when it did not name the plugin.
@@ -137,6 +137,11 @@ impl Board {
             expect: Expect::Absent,
             canonical: canonical_json(schema),
             target,
+            admitted: Admitted {
+                value: schema.clone(),
+                pointer: false,
+                references: Vec::new(),
+            },
         })
     }
 }

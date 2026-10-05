@@ -43,6 +43,7 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
                 task(r#", "project": "/projects/p""#),
                 task(r#", "see": "/nowhere""#),
                 r#"{"$type": "lr/task/v1"}"#.to_owned(),
+                r#"{"$type": "lr/task/v1", "title": 5, "see": 1}"#.to_owned(),
                 "{".to_owned(),
             ],
         ),
