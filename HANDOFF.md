@@ -73,7 +73,7 @@ and what it does not.
 
 ## State on 2026-10-05
 
-Main is at 3e01665. Landed since the design review (#58 to #70): mount walking
+At the stop, main was at 3e01665. Landed since the design review (#58 to #70): mount walking
 moved into `board-tree` (rule 3); `put` refuses `.git` in any spelling; plugins
 get SIGTERM, a 1 s grace, then SIGKILL; schema expansion is bounded across every
 in-place applicator; reference search matches patterns as the validator does;
@@ -86,64 +86,33 @@ Owner decisions this round: remote mounts change `board/mount/v1` in place
 (#59); the docs budget is 5,000 words (PLAN decision 6); #57, the chain memo,
 is closed (its branch and numbers are the baseline if long chains appear).
 
-Open pull requests and the agreed plan for each:
-
-- **#78** adds the Adoption sketch to PLAN.md: plugins import widgets, then JIRA,
-  records as typed Board records. It merges.
-- **#73** (branch `vision-handoff`) carries #60's docs altitude pass with main
-  merged in, and this file. It merges, and #60 closes as superseded.
-- **#55** (the M9 and M10 sketch) is superseded by a forthcoming PR from branch
-  `plan-cross-repo-design`, a "Repositories across boards" PLAN.md proposal
-  that keeps M9 and drops M10. #55 closes when that PR opens.
-- **#72** is reduced to its test, which pins the default 64 KiB plugin stderr
-  tail, and then merges. Its HANDOFF.md section is dropped.
-- **#71** (PR A, plugin capabilities as MCP Tool objects) is being finished.
-- **#74** and **#75** close. They hold only builder handoffs, and the queue
-  below already lists their work: the tooling pass and gix-lock.
+Landed after the stop: #71 (plugin capabilities as MCP Tool objects), #80
+(the cross-repository plan reconciled with Adoption and Settings, which also
+carries #78), #81 (docs notes on the canonical form, mergiraf and stale
+extraction rows), #82 (the tooling pass: cargo-deny replaces cargo-audit,
+actions pinned by SHA, zizmor, cargo-shear, a non-blocking cargo-mutants job),
+#83 (gix lock files and `Repository::state()` in `write.rs`) and #84 (the
+`records` view with canonical bodies). #55, #60, #74 and #75 are closed. The
+tooling pass left out typos, which would need an exception list.
 
 ## Open threads
 
 1. **M1, the old-corpus export.** The owner runs it against the installed old
    `board`, into its own repository.
-2. **Queued work, owner-approved, in order** (spec in the design reviewer's
-   messages; each a small PR):
-   - Tooling: drop cargo-audit for `cargo deny` advisories with
-     `yanked = "deny"`; pin install-action versions; zizmor with actions pinned
-     by SHA; cargo-mutants `--in-diff`, non-blocking. Also remove the
-     STANDARDS.md and deny.toml text that pairs exceptions with
-     `.cargo/audit.toml`, which does not exist; add cargo-shear and typos only
-     if they pass cleanly.
-   - PR A: plugin capabilities become MCP Tool objects (`name`, `title`,
-     `description`, `inputSchema`, `outputSchema`, `annotations`, `_meta`;
-     object roots required; `icons` and `execution` refused). Wire protocol
-     unchanged. This is #71, being finished.
-   - PR B: `main.bodies(blob, body)` holding `canonical_json` of each parsed
-     record, and a temp view `records` (source, path, logical, blob, type,
-     status, code, body), degraded records included. INDEX_VERSION bump. Not
-     started; it waits for #71.
-   - gix-lock and `Repository::state()` in write.rs, expected net negative:
-     replace the `board.lock` wait loop, the `index.lock` handling and the
-     in-progress check, and call `sync_all` before committing a lock. The
-     existing put, lock and kill tests pass unchanged.
-   - Docs notes: mergiraf as the JSON merge driver; the canonical form named
-     (JCS escaping, code-point key order, serde_json numbers; RFC 7493 as the
-     parse base); extraction keyed by plugin version, so a symlinked plugin
-     serves stale rows until its version changes.
-3. **widgets.** The Adoption sketch (#78) and the forthcoming "Repositories
-   across boards" proposal replace #55. The views vocabulary needs read access
-   to example-org/widgets, which this session does not have.
+2. **Owner choices on #80.** Whether the share command stays `board publish` or
+   returns to `board share`, and whether "Repositories across boards" changes
+   from proposed to agreed.
+3. **widgets.** The views vocabulary needs read access to example-org/widgets,
+   which this session does not have.
 
 ## Next actions
 
-1. Carry out the plan for each open PR above: merge #78 and #73, close #60,
-   #74 and #75, finish #71 and the reduced #72, and close #55 once the
-   `plan-cross-repo-design` PR opens.
-2. M7 is the owner's: run the M1 export, time it with
+1. M7 is the owner's: run the M1 export, time it with
    `cargo xtask bench --board <export>`, choose a real task type (the export
    writes `legacy/*` records, and `tasks` reads `lr/task/v1`), enable `tasks`
    and use Board daily. Route findings to builders as small fixes.
-3. Performance baselines: warm check is about 20 µs per entry; three measured
+2. Performance baselines: warm check is about 20 µs per entry; three measured
    speedups exist (#33); the chain numbers are in #57 and viitta-stress-test
    9d557d1. Targets (100 ms) are goals; budgets are alarms.
-4. Sharing is sketched as M8 in PLAN.md, with network safety and research
+3. Sharing is sketched as M8 in PLAN.md, with network safety and research
    notes; turn it into a design-gap list for a builder after M7.
