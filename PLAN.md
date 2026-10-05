@@ -157,7 +157,8 @@ step. The owner's decisions so far:
   to resolve in git. Board never merges file contents.
 - **Batches** write to one repository each.
 - **Nesting** is the same step applied recursively, bottom up: each level
-  commits, then the level above moves its pin.
+  commits, then the level above moves its pin. Repositories across boards,
+  below, proposes instead that only the root's pins move.
 
 - **Transport runs the `git` executable** (owner's decision), so credentials,
   SSH and hosts work as they already do; gix keeps reading objects. The
@@ -165,7 +166,8 @@ step. The owner's decisions so far:
 
 - **Remote mounts change `board/mount/v1` in place** (owner's decision):
   Board is still being built and has no data to migrate, so `repo` gains its
-  remote meaning in v1 with no new version.
+  remote meaning in v1 with no new version. Repositories across boards,
+  below, proposes declaring the remote once per repository instead.
 - **Network safety.** A mount that names a remote lets its author choose
   what the owner's machine fetches, with the owner's credentials. So Board
   fetches only remotes the root board names in one of its own mount pointers.
@@ -186,11 +188,121 @@ step. The owner's decisions so far:
   pushes use `--atomic --porcelain`. Board replays its own commits with gix's
   tree editor, not `git replay`, which merges contents. When two pins diverge,
   the one that descends from the other wins, as git does for submodules;
-  otherwise it is a conflict.
+  otherwise it is a conflict. Repositories across boards, below, proposes
+  that the root's pin always wins.
 
 Open:
 - Whether jujutsu, with its first-class conflicts, sits behind the same seam
   later. Decide after M7 shows how sharing is actually used.
+
+### Repositories across boards (sketch; proposed 2026-10-05, not yet agreed)
+
+This refines M8 for references between repositories. Adoption, below, covers
+importing records from other systems and plugin writes; this section does not
+repeat it. Plugins resolve addresses such as `s3://`, `op://` and `widgets://` into
+bytes or secrets, so Board stores no large files itself. File bytes go to an
+S3 bucket. Which bucket is a setting (Settings, below); the credentials that
+reach it are a secret granted in the owner's machine config.
+
+- **A board declares each repository once**, in `/.board/repos/<name>.json`:
+  its remote, its root commit, an optional `track: "<ref>"` and the commit
+  it is pinned to. Names match `[a-z0-9-]{1,63}` and are local to the board that declares
+  them. A repository need not be a board; a plain repository mounts and
+  resolves today.
+- **A link places a repository in the tree**: `{"path": "acme:/"}` at
+  `/work/acme` makes the repository readable there. Several links may reach
+  one repository.
+- **References inside a repository stay paths.** A reference into another
+  repository is written `name:/path`. A path reference that leaves its own
+  repository through a mount is refused with `board::ref::crosses_repo`.
+- **Board identifies a repository** by its normalised remote URL, checked
+  against its root commit. That key is internal; records never contain it.
+  `board://` addresses for other applications are later work and will carry
+  this key.
+- **Tracking and pinned** (owner agreed the name on 2026-10-05). A repository
+  with `track` has its pin moved by `board sync` to that ref's commit. One
+  field replaces `follow` and a float flag. A pinned repository stays at its commit, and everything read
+  through it reads as recorded.
+- **One copy per repository.** Every repository the root declares is read at
+  the root's pin, wherever it appears. A repository that only a mounted board
+  declares is read at that board's pin, and `check` warns when two pins
+  differ. This replaces the descendant rule in M8.
+- **`board sync`** moves only the root's pins, all in one commit, or writes
+  nothing. It takes a per-clone `sync.lock` (`board::sync::locked`), writes
+  pins with `--expect`, runs `git` with `GIT_TERMINAL_PROMPT=0`, and reports
+  references that the new pins leave dangling. It runs once per call; a
+  scheduler may run it, and no daemon is planned.
+- **Writes.** A write through a tracking repository commits there and moves the
+  root's pin. A write through a pinned repository is refused with
+  `put::through_mount`. Writes refuse `--at`.
+- **`board copy`** copies records into another location, rewrites references
+  that resolve through mounts, and refuses one that would resolve to
+  something else in the destination with `board::copy::unresolved`.
+  `--allow-dangling` and a capped `--with-targets` are its only options. It
+  never adds a mount, and it reports with `board/copy-report/v1`.
+- **Sharing moves a record** into the shared repository and leaves a link at
+  its old path, so local references keep working. `--snapshot` copies
+  instead, and records the copy in a plugin-owned `share/share/v1` record.
+- **Time travel**: `--at <rev>` reads the root at a revision, and
+  `--at name=<rev>` reads one repository at a revision. Both read local
+  clones only.
+- **Indexes.** Each board keeps its own index through M8. A cache shared by
+  repository key comes only after measurement shows a need.
+
+Open, each with the recommended answer:
+- Overlays and coherence commits: give them a later milestone. An overlay
+  record targets a path in another repository and stores the patch and the
+  base blob it was written against. The coherence commit applies every
+  overlay at the pin, in path order, with `git merge-file`, and is derived,
+  never stored. An agent works on top of it and ships with
+  `git rebase --onto <pin> <coherence> <branch>`. Board owns the concept;
+  domain plugins, such as a widgets plugin preparing a workspace, decide which
+  overlays to apply.
+- Sharing a record whose references the shared repository cannot resolve:
+  give share the same options as `board copy`, plus `--with-repos`.
+  `--with-targets` moves the records it refers to as well, up to the cap,
+  leaving a link at each old path, so references inside the shared set keep
+  resolving. `--with-repos` writes the declarations of the repositories it
+  refers to into the shared repository. A declaration holds only a remote
+  URL, a root commit and a pin, but it tells every reader of the shared
+  repository that the repository exists. Without either option, share
+  refuses with `board::copy::unresolved`. With `--allow-dangling`, the
+  reference is written unchanged and starts resolving once the shared
+  repository declares the same name.
+- M10 in #55 (content-addressed records): drop it. Adoption imports widgets
+  records with their `widgets://<kind>/<sha256>` ids, plugin resolvers fetch the
+  bytes, and nothing yet needs Board to check content hashes.
+- Whether `docs/architecture.md` keeps saying a board at a commit fully
+  determines its mounts. Under tracking it does for reads at the pin; revise
+  the sentence when this lands.
+
+### M9 SHA-256 repositories (sketch; after M7)
+
+This milestone lets a board, or any repository it mounts, use git's SHA-256
+object format. The model already holds both formats: `ObjectId` has `Sha1` and
+`Sha256` (`board-model/src/location.rs`), and a mount pin may name a 64-hex
+commit. Hashing a blob already asks the repository for its format. The rest of
+the git layer assumes SHA-1:
+
+- gix is built with only its `sha1` feature (`Cargo.toml`).
+- `model_id` in `board-tree/src/git.rs` reads any id that is not 32 bytes as
+  SHA-1.
+- `board-tree/src/write.rs` fills a new file's entry and a staged commit with
+  SHA-1 zero ids before the real ids are known.
+- `board-scenario` creates only SHA-1 repositories and reads every id back as
+  SHA-1, and the working-tree hash test computes a SHA-1 id.
+
+The work enables gix's SHA-256 support, reads each repository's object format
+when it is opened, and removes the SHA-1 placeholders. The scenario and
+concurrency tests then run once for each format.
+
+Git cannot push or fetch between a SHA-1 and a SHA-256 repository. A board
+whose mounts use different formats therefore keeps both kinds of pin, and each
+clone that M8 keeps uses its remote's format.
+
+Open: how mature gix's SHA-256 support is for reading, writing commits and
+updating the index; how far GitHub supports SHA-256 repositories (the owner
+reports a beta; this is not yet verified).
 
 ### Views (sketch; designed for, not built)
 

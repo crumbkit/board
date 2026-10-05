@@ -219,7 +219,7 @@ A run whose index is in memory says so in one line on stderr.
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
-| `state` | index format, root commit and when the last refresh began | key |
+| `state` | index format and when the last refresh began | key |
 
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
