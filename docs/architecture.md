@@ -61,12 +61,13 @@ new version.
 Parsing is strict, and the first failure is the entry's code: over 16 MiB
 (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not JSON
 (`parse`), a duplicate key at any depth, then a number that a double or a
-64-bit integer cannot hold exactly (`lossy_number`). A malformed `$type` is
-`record::bad_type`; a type with no schema file is `record::unknown_type`. A
-file under `.board/types/board/` is `schema::invalid`, because Board's own
-types are checked by Rust types. A schema that does not compile is
-`schema::invalid`, and so is each record of its type. `record::invalid` names
-the first failing instance pointer in sorted order.
+64-bit integer cannot hold exactly (`lossy_number`). These rules follow RFC
+7493 (I-JSON), except that an integer may use the full 64-bit range. A
+malformed `$type` is `record::bad_type`; a type with no schema file is
+`record::unknown_type`. A file under `.board/types/board/` is `schema::invalid`,
+because Board's own types are checked by Rust types. A schema that does not
+compile is `schema::invalid`, and so is each record of its type.
+`record::invalid` names the first failing instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
 their schema.
@@ -96,11 +97,19 @@ JSON pointer into the schema.
 
 Every file Board writes is canonical: keys sorted by code point, two-space
 indentation, one key or array element per line, empty `{}` and `[]` on one
-line, `\n` endings, one trailing newline and no byte-order mark. An integer
-prints as an integer; any other number as the shortest decimal that reads back
-to the same double, so `1e2` becomes `100.0`. Board reads any valid JSON; only
-`put` rewrites a file into canonical form. One key per line lets git's line
-merge combine most concurrent edits.
+line, `\n` endings, one trailing newline and no byte-order mark. Strings are
+escaped as RFC 8785 (JCS) escapes them: only `"`, `\` and control characters.
+JCS sorts keys by UTF-16 unit instead of code point. Numbers print as
+`serde_json` prints them: an integer as an integer, and any other number as the
+shortest decimal that reads back to the same double, so `1e2` becomes `100.0`.
+Board reads any valid JSON; only `put` rewrites a file into canonical form. One
+key per line lets git's line merge combine most concurrent edits.
+
+Mergiraf is the recommended merge driver for the rest. Board ships no
+configuration for it. A user adds `*.json merge=mergiraf` to `.gitattributes`
+and sets git's `merge.mergiraf.driver` to
+`mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L`. A merged file
+may not be canonical until the next `put`.
 
 ## Logical paths
 

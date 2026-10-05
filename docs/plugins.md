@@ -175,6 +175,9 @@ request. The plugin owns everything inside it and names its tables as it likes.
 `board query` attaches it read-only as `p_<name>`, with hyphens turned into
 underscores, from before the first extraction. A new version starts with an
 empty file and extracts again. Deleting any plugin database is always safe.
+Board sends each plugin version a blob only once. So a plugin installed through
+a symlink keeps its old rows after its code changes, until its version changes
+or its database is deleted.
 
 ## Codes
 
