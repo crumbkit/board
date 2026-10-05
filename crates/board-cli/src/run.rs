@@ -31,6 +31,8 @@ Start here:
   board query 'SELECT logical, status FROM entries LIMIT 5'
 
 A path is logical: it starts with / and leaves out .json.
+A record is a JSON object whose `$type`, such as lr/task/v1, names its schema,
+here .board/types/lr/task/v1.schema.json.
 Run `board <command> --help` for a command's arguments and examples.";
 
 const QUERY_EXAMPLES: &str = "\
@@ -49,6 +51,7 @@ Examples:
 #[derive(Debug, Parser)]
 #[command(
     name = BINARY_NAME,
+    version,
     about = format!("{DISPLAY_NAME}: a fast, validated view of a git tree."),
     after_help = ROOT_EXAMPLES,
 )]
@@ -138,6 +141,10 @@ Examples:
     },
     /// Check the record on stdin and write it, in canonical form, at a path.
     #[command(after_help = "\
+The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
+schema its `$type` names. Each put is committed unless .board/board.json sets
+`commit_on_put` to false.
+
 Examples:
   board put /tasks/a < task.json
   board put /tasks/a --expect none < task.json
@@ -317,7 +324,7 @@ pub(crate) fn run(
         Command::Query { sql, limit } => {
             match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
                 Ok(report) => render::query(format, &report),
-                Err(error) => render::error(format, error.code(), &error),
+                Err(error) => render::query_error(format, &error),
             }
         }
         Command::Plugin(PluginCommand::List { page }) => {
@@ -390,7 +397,9 @@ fn refused(error: &clap::Error, arguments: &[OsString]) -> Output {
     } else {
         format!("{BINARY_NAME} {command}")
     };
-    let help = if command.is_empty() {
+    let help = if let Some(corrected) = corrected(error, arguments) {
+        format!("a logical path starts with / and leaves out .json: try `{corrected}`")
+    } else if command.is_empty() {
         hint(Code::UsageInvalid).to_owned()
     } else {
         format!("run `{named} --help` for its usage and examples")
@@ -506,6 +515,39 @@ fn tips(error: &clap::Error) -> Vec<String> {
     })
     .chain(context(error, ContextKind::Suggested).filter(|tip| !tip.is_empty()))
     .collect()
+}
+
+/// The command line with the value clap refused written as a logical path,
+/// such as `/tasks/a` for `tasks/a.json`, when clap admits it that way.
+fn corrected(error: &clap::Error, arguments: &[OsString]) -> Option<String> {
+    let Some(ContextValue::String(value)) = error.get(ContextKind::InvalidValue) else {
+        return None;
+    };
+    let stem = value.strip_suffix(".json").unwrap_or(value);
+    let path = format!("/{}", stem.trim_start_matches('/'));
+    let at = arguments
+        .iter()
+        .skip(1)
+        .position(|given| given == value.as_str())?
+        + 1;
+    let mut fixed = arguments.to_vec();
+    fixed[at] = path.into();
+    Cli::try_parse_from(&fixed).ok()?;
+    let words: Vec<String> = fixed[1..]
+        .iter()
+        .map(|word| {
+            let word = word.to_string_lossy();
+            if word
+                .chars()
+                .all(|c| c.is_alphanumeric() || "/._-=".contains(c))
+            {
+                word.into_owned()
+            } else {
+                format!("'{}'", word.replace('\'', r"'\''"))
+            }
+        })
+        .collect();
+    Some(format!("{BINARY_NAME} {}", words.join(" ")))
 }
 
 /// The subcommands named at the start of `arguments`, such as `plugin find`,

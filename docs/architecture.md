@@ -326,7 +326,8 @@ refused, with `board::usage::invalid`.
 `check`, `ls`, `refs`, `plugin list` and `plugin find` show 100 entries unless
 `--limit` or `--all` says otherwise; an entry is a printed line, so `refs`
 counts each pointer and `plugin list` each capability. `check` puts degraded
-entries first. A
+entries first. Text names an entry by its logical path, or by its file when it
+has none or is shadowed; JSON gives both. A
 cut listing ends with a stderr note giving the count shown and the total; JSON
 carries `total` and `truncated`. An error prints `error: <code>: <message>`,
 then `hint: <next step>`; `board/error/v1` carries the same `hint`. A refused
@@ -346,7 +347,7 @@ rules.
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | `board-ops` |
 
 `board-cli` only parses arguments, reads configuration and prints, so a later
-adapter such as `board serve` needs no logic of its own. Rust code names the
+adapter, such as a server, needs no logic of its own. Rust code names the
 app only through `DISPLAY_NAME` (`Board`) and `BINARY_NAME` (`board`) in
 `board-model`; neither governs codes, the `board` type namespace, crate names
 or paths. A plugin runs the installed executable by its name, so a rename also

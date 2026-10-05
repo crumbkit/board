@@ -98,7 +98,7 @@ pub(crate) fn hint(code: Code) -> &'static str {
             "delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` and run the command again; the index is rebuilt from the tree"
         }
         Code::QueryInvalid => {
-            "run one read-only SELECT statement; `board query --help` lists the tables"
+            "fix the statement as the message describes; Board runs one read-only SQL statement, and `board query --help` lists the tables"
         }
         Code::QueryTimeout => {
             "narrow the query with a WHERE clause or a join on a key; a query may run for 1 second"

@@ -173,7 +173,7 @@ fn check_prints_one_line_per_entry_and_fails_when_any_is_degraded() {
     scenario.write("bad.json", Item::File("{"));
     let degraded = board_in(scenario.workdir(), &["check"]);
     assert_eq!(degraded.code, 1);
-    assert!(text(&degraded.stdout).contains("degraded board::json::parse bad.json\n"));
+    assert!(text(&degraded.stdout).contains("degraded board::json::parse /bad\n"));
 }
 
 #[test]
@@ -530,7 +530,7 @@ fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
     );
     let output = board_in(scenario.workdir(), &["check"]);
     assert!(text(&output.stdout).contains("ok /vendor/lib/notes/a.md\n"));
-    assert!(text(&output.stdout).contains("ok vendor/lib.json\n"));
+    assert!(text(&output.stdout).contains("ok /vendor/lib\n"));
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
     let entry = report["entries"]
         .as_array()
@@ -605,7 +605,7 @@ fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
     let from = board_in(scenario.workdir(), &["refs", "/tasks/a"]);
     assert_eq!(text(&from.stdout), "from /project /projects/p ok\n");
     let to = board_in(scenario.workdir(), &["refs", "/projects/p"]);
-    assert_eq!(text(&to.stdout), "to tasks/a.json /project\n");
+    assert_eq!(text(&to.stdout), "to /tasks/a /project\n");
     let report = json(&board_in(
         scenario.workdir(),
         &["refs", "/projects/p", "--json"],

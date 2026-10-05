@@ -11,6 +11,37 @@ use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
 use crate::{Plugins, QueryReport};
 
+/// The names a refusal of `sql` lists, or `None` when `sql` is read.
+fn known(sql: &str) -> Option<crate::Known> {
+    let scenario = board();
+    match open(&scenario).query(sql, 10, None, &Plugins::default()) {
+        Err(crate::QueryError::Unknown { known, .. }) => Some(known),
+        Err(error) => panic!("{error}"),
+        Ok(_) => None,
+    }
+}
+
+#[test]
+fn a_missing_table_is_refused_with_the_tables_there_are_and_a_real_one_is_read() {
+    let Some(crate::Known::Tables(tables)) = known("SELECT * FROM entires") else {
+        panic!("no tables");
+    };
+    assert!(tables.iter().any(|table| table == "entries"), "{tables:?}");
+    assert!(tables.iter().any(|table| table == "records"), "{tables:?}");
+    assert_eq!(known("SELECT * FROM entries"), None);
+}
+
+#[test]
+fn a_missing_column_is_refused_with_the_columns_of_the_tables_named_and_a_real_one_is_read() {
+    let Some(crate::Known::Columns(columns)) = known("SELECT logcal FROM Entries") else {
+        panic!("no columns");
+    };
+    assert_eq!(columns.len(), 1, "{columns:?}");
+    assert_eq!(columns[0].0, "entries");
+    assert!(columns[0].1.iter().any(|column| column == "logical"));
+    assert_eq!(known("SELECT logical FROM entries"), None);
+}
+
 fn query(sql: &str, limit: usize) -> Result<QueryReport, Code> {
     let scenario = board();
     scenario

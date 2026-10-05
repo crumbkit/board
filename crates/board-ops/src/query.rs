@@ -138,7 +138,9 @@ impl Board {
             }
             databases.push(database);
         }
-        let rows = index.query(sql, limit)?;
+        let rows = index
+            .query(sql, limit)
+            .map_err(|error| unknown(&index, sql, error))?;
         report.columns = rows.columns;
         report.rows = rows.rows;
         report.truncated = rows.truncated;
@@ -159,14 +161,76 @@ pub enum QueryError {
         #[from]
         source: IndexError,
     },
+    /// The statement names a table or column the index does not have.
+    #[error("{source}")]
+    Unknown { source: IndexError, known: Known },
 }
 
 impl QueryError {
     pub fn code(&self) -> Code {
         match self {
             Self::Check { source } => source.code(),
-            Self::Index { source } => source.code(),
+            Self::Index { source } | Self::Unknown { source, .. } => source.code(),
         }
+    }
+}
+
+/// The names a statement could have used instead of one that is missing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Known {
+    /// Every table and view, and each attached plugin database.
+    Tables(Vec<String>),
+    /// Each table or view the statement names, with its columns; empty when
+    /// it names none.
+    Columns(Vec<(String, Vec<String>)>),
+}
+
+/// The names a statement can use: the views a run makes, the tables of the
+/// cache, and each attached plugin database.
+const TABLES: &str = "\
+    SELECT name FROM sqlite_temp_schema WHERE type IN ('table', 'view') \
+    UNION SELECT name FROM sqlite_schema WHERE type IN ('table', 'view') \
+    UNION SELECT name FROM pragma_database_list WHERE name NOT IN ('main', 'temp') \
+    ORDER BY name";
+
+/// `error`, with the names there are when `SQLite` says the statement names a
+/// table or column that is not there.
+fn unknown(index: &Index, sql: &str, error: IndexError) -> QueryError {
+    let message = error.to_string();
+    let names = |sql: &str| -> Vec<String> {
+        index.query(sql, MAX_LIMIT).map_or_else(
+            |_| Vec::new(),
+            |rows| {
+                rows.rows
+                    .into_iter()
+                    .filter_map(|row| row.first()?.as_str().map(str::to_owned))
+                    .collect()
+            },
+        )
+    };
+    let known = if message.contains("no such table: ") {
+        Known::Tables(names(TABLES))
+    } else if message.contains("no such column: ") {
+        let words: Vec<String> = sql
+            .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+            .map(str::to_lowercase)
+            .collect();
+        Known::Columns(
+            names(TABLES)
+                .into_iter()
+                .filter(|table| words.contains(table))
+                .map(|table| {
+                    let columns = names(&format!("SELECT name FROM pragma_table_info('{table}')"));
+                    (table, columns)
+                })
+                .collect(),
+        )
+    } else {
+        return error.into();
+    };
+    QueryError::Unknown {
+        source: error,
+        known,
     }
 }
 

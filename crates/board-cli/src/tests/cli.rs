@@ -293,7 +293,7 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         (
             &["get", "projects/p"],
             "invalid value 'projects/p' for '<PATH>': ",
-            "run `board get --help` for its usage and examples",
+            "a logical path starts with / and leaves out .json: try `board --json get /projects/p`",
             &["get", "/projects/p"],
         ),
         (
@@ -323,10 +323,14 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         let said = error["message"].as_str().unwrap();
         assert!(said.starts_with(message), "{refused:?}: {said}");
         assert_eq!(error["hint"], hint, "{refused:?}");
+        // The corrected command line repeats the arguments, so it drops --json.
         let text_form = text(&board_in(scenario.workdir(), refused).stderr);
         assert_eq!(
             text_form,
-            format!("error: board::usage::invalid: {said}\nhint: {hint}\n")
+            format!(
+                "error: board::usage::invalid: {said}\nhint: {}\n",
+                hint.replace("board --json ", "board ")
+            )
         );
         assert_eq!(
             board_in(scenario.workdir(), admitted).code,
@@ -404,7 +408,7 @@ fn check_lists_degraded_entries_first_so_a_limit_never_hides_one() {
     assert_eq!(output.code, 1);
     assert_eq!(
         text(&output.stdout),
-        "degraded board::json::parse zz/bad.json\n"
+        "degraded board::json::parse /zz/bad\n"
     );
     let stderr = text(&output.stderr);
     let note = stderr.lines().last().unwrap();
@@ -445,7 +449,7 @@ fn an_empty_listing_says_so_and_a_full_one_does_not() {
         Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
     );
     let full = refs();
-    assert_eq!(text(&full.stdout), "to tasks/a.json /project\n");
+    assert_eq!(text(&full.stdout), "to /tasks/a /project\n");
     assert_eq!(text(&full.stderr), "");
 }
 
@@ -468,7 +472,7 @@ fn refs_counts_a_line_per_pointer_so_a_limit_cuts_within_a_record() {
     let cache = tempfile::tempdir().unwrap();
     let refs = |arguments: &[&str]| board_cached(scenario.workdir(), Some(cache.path()), arguments);
     let cut = refs(&["refs", "/projects/p", "--limit", "1"]);
-    assert_eq!(text(&cut.stdout), "to pairs/x.json /a\n");
+    assert_eq!(text(&cut.stdout), "to /pairs/x /a\n");
     assert_eq!(
         text(&cut.stderr),
         "note: showing 1 of 2 references from and to the record; \
@@ -481,10 +485,7 @@ fn refs_counts_a_line_per_pointer_so_a_limit_cuts_within_a_record() {
         (2.into(), true.into())
     );
     let whole = refs(&["refs", "/projects/p", "--limit", "2"]);
-    assert_eq!(
-        text(&whole.stdout),
-        "to pairs/x.json /a\nto pairs/x.json /b\n"
-    );
+    assert_eq!(text(&whole.stdout), "to /pairs/x /a\nto /pairs/x /b\n");
     assert_eq!(text(&whole.stderr), "");
 }
 
@@ -523,9 +524,9 @@ fn refs_spends_its_limit_on_references_made_then_on_each_reaching_pointer_in_tur
     };
     let lines = [
         "from /a /projects/p ok\n",
-        "to x.json /a\n",
-        "to y.json /a\n",
-        "to y.json /b\n",
+        "to /x /a\n",
+        "to /y /a\n",
+        "to /y /b\n",
     ];
     for limit in 1..=4 {
         let output = refs(&limit.to_string());
@@ -670,4 +671,250 @@ fn a_record_its_schema_refuses_names_the_field_and_why_and_a_valid_one_is_writte
         text(&refused.stderr)
     );
     assert_eq!(put(r#"{"$type": "lr/task/v1", "title": "a"}"#).code, 0);
+}
+
+#[test]
+fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its_file() {
+    let scenario = board();
+    scenario
+        .write("zz/bad.json", Item::File("{"))
+        .write(".json", Item::File("{}"))
+        .write("x.json", Item::File(r#"{"$type": "lr/project/v1"}"#))
+        .write("x", Item::File(""));
+    let output = board_in(scenario.workdir(), &["check"]);
+    let stdout = text(&output.stdout);
+    for line in [
+        "degraded board::json::parse /zz/bad",
+        "degraded board::path::malformed .json",
+        "degraded board::path::shadowed x",
+        "degraded board::path::shadowed x.json",
+        "ok /projects/p",
+        "ok /.board/board",
+    ] {
+        assert!(
+            stdout.lines().any(|shown| shown == line),
+            "{line}: {stdout}"
+        );
+    }
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let bad = report["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["logical"] == "/zz/bad")
+        .unwrap();
+    assert_eq!(bad["path"], "zz/bad.json");
+}
+
+#[test]
+fn a_path_refused_by_its_form_hints_the_logical_path_and_that_command_runs() {
+    let scenario = board();
+    for given in ["projects/p.json", "projects/p"] {
+        let refused = board_in(scenario.workdir(), &["get", given]);
+        assert_eq!(refused.code, 2);
+        let stderr = text(&refused.stderr);
+        assert!(
+            stderr.starts_with("error: board::usage::invalid: "),
+            "{stderr}"
+        );
+        assert!(
+            stderr.ends_with(
+                "hint: a logical path starts with / and leaves out .json: \
+                 try `board get /projects/p`\n"
+            ),
+            "{stderr}"
+        );
+    }
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["refs", "projects/p.json", "--limit", "5", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::usage::invalid");
+    assert!(
+        refused["hint"]
+            .as_str()
+            .unwrap()
+            .ends_with("try `board refs /projects/p --limit 5 --json`"),
+        "{refused}"
+    );
+    assert_eq!(
+        board_in(scenario.workdir(), &["get", "/projects/p"]).code,
+        0
+    );
+}
+
+#[test]
+fn a_refused_value_that_is_not_a_path_keeps_the_help_hint_and_a_valid_one_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["ls", "--limit", "0"]);
+    assert_eq!(refused.code, 2);
+    assert!(
+        text(&refused.stderr).ends_with("hint: run `board ls --help` for its usage and examples\n"),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(
+        board_in(scenario.workdir(), &["ls", "--limit", "1"]).code,
+        0
+    );
+}
+
+#[test]
+fn a_query_naming_a_missing_table_hints_the_tables_there_are_and_a_real_one_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["query", "SELECT * FROM entires"]);
+    assert_eq!(refused.code, 1);
+    let stderr = text(&refused.stderr);
+    assert!(
+        stderr.starts_with(
+            "error: board::query::invalid: the query cannot run: no such table: entires\n\
+             hint: the tables and views are "
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(" entries, ") && stderr.contains(" records, "),
+        "{stderr}"
+    );
+    let admitted = board_in(scenario.workdir(), &["query", "SELECT * FROM entries"]);
+    assert_eq!(admitted.code, 0);
+}
+
+#[test]
+fn a_query_naming_a_missing_column_hints_the_columns_of_its_tables_and_a_real_one_runs() {
+    let scenario = board();
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["query", "SELECT logcal FROM entries", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::query::invalid");
+    let hint = refused["hint"].as_str().unwrap();
+    assert!(
+        hint.starts_with("the columns are entries: source, path, logical, "),
+        "{hint}"
+    );
+    let unnamed = json(&board_in(
+        scenario.workdir(),
+        &["query", "SELECT logcal", "--json"],
+    ));
+    assert_eq!(
+        unnamed["hint"],
+        "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns"
+    );
+    let admitted = board_in(
+        scenario.workdir(),
+        &["query", "SELECT logical FROM entries"],
+    );
+    assert_eq!(admitted.code, 0);
+}
+
+#[test]
+fn a_query_with_a_syntax_error_has_a_hint_that_says_to_fix_it_and_a_valid_one_runs() {
+    let scenario = board();
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["query", "SELEC 1", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::query::invalid");
+    let hint = render::hint(Code::QueryInvalid);
+    assert_eq!(refused["hint"], hint);
+    assert!(hint.starts_with("fix the statement"), "{hint}");
+    assert_eq!(board_in(scenario.workdir(), &["query", "SELECT 1"]).code, 0);
+}
+
+#[test]
+fn version_prints_the_binary_name_and_version() {
+    let output = board_in(Path::new("."), &["--version"]);
+    assert_eq!(output.code, 0);
+    assert_eq!(
+        text(&output.stdout),
+        format!("{BINARY_NAME} {}\n", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
+fn help_says_what_a_record_is_and_that_put_validates_and_commits() {
+    let root = text(&board_in(Path::new("."), &["--help"]).stdout);
+    assert!(root.contains("`$type`"), "{root}");
+    assert!(root.contains(".board/types/"), "{root}");
+    let put = text(&board_in(Path::new("."), &["put", "--help"]).stdout);
+    assert!(
+        put.contains(".board/types/<namespace>/<kind>/v<n>.schema.json"),
+        "{put}"
+    );
+    assert!(put.contains("commit_on_put"), "{put}");
+}
+
+/// Each `board` command line in a code span of the documents that describe
+/// what exists. PLAN.md describes commands not yet built, so it is left out.
+fn documented() -> Vec<(String, String)> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files: Vec<_> = ["AGENTS.md", "README.md", "DOCS.md"]
+        .into_iter()
+        .map(|name| root.join(name))
+        .collect();
+    for entry in std::fs::read_dir(root.join("docs")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|extension| extension == "md") {
+            files.push(path);
+        }
+    }
+    let mut found = Vec::new();
+    for file in files {
+        let markdown = std::fs::read_to_string(&file).unwrap();
+        for (index, span) in markdown.split('`').enumerate() {
+            if index % 2 == 1 && span.starts_with("board ") {
+                found.push((file.display().to_string(), span.to_owned()));
+            }
+        }
+    }
+    found
+}
+
+/// A documented command line with each placeholder filled and each
+/// optional `[...]` part left out.
+fn filled(line: &str) -> String {
+    let mut kept = String::new();
+    let mut depth = 0;
+    for character in line.chars() {
+        match character {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            '…' => {}
+            _ if depth == 0 => kept.push(character),
+            _ => {}
+        }
+    }
+    kept.replace("<plugin>.<capability>", "tasks.due")
+        .replace("<key>=<value>", "k=v")
+        .replace("<path>", "/a")
+        .replace("<name>", "due")
+        .replace("<sql>", "x")
+}
+
+#[test]
+fn every_command_line_the_docs_show_parses() {
+    let shown = documented();
+    assert!(shown.len() >= 10, "{shown:?}");
+    for (file, line) in shown {
+        // A doc may name a command without its arguments.
+        let parsed = parses(&filled(&line));
+        assert!(
+            matches!(parsed, Ok(()) | Err(ErrorKind::MissingRequiredArgument)),
+            "{file}: {line}: {parsed:?}"
+        );
+    }
+}
+
+#[test]
+fn a_documented_command_that_does_not_exist_does_not_parse_and_one_that_does_parses() {
+    assert_eq!(
+        parses(&filled("board serve")),
+        Err(ErrorKind::InvalidSubcommand)
+    );
+    assert_eq!(parses(&filled("board check [path]")), Ok(()));
+    assert_eq!(
+        filled("board plugin find [--capability <name>] [--meta <key>=<value>]…"),
+        "board plugin find  "
+    );
 }

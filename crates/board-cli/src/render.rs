@@ -7,8 +7,8 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Checked, Fallback, GetReport, InitReport, Listed, LsReport, MAX_LIMIT,
-    MountUpdateReport, PutError, PutReport, QueryReport, RefsReport, source_name,
+    CheckReport, Checked, Fallback, GetReport, InitReport, Known, Listed, LsReport, MAX_LIMIT,
+    MountUpdateReport, PutError, PutReport, QueryError, QueryReport, RefsReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -46,11 +46,7 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
         Format::Text => {
             let mut text = String::new();
             for entry in entries {
-                // A mounted entry's path means nothing in the root board.
-                let path = match (&entry.source, &entry.logical) {
-                    (Source::Commit(_), Some(logical)) => logical.to_string(),
-                    _ => entry.path.clone(),
-                };
+                let path = named(&entry.path, entry.logical.as_ref(), entry.status);
                 let _ = writeln!(text, "{} {path}", status_text(entry.status));
             }
             Output {
@@ -156,11 +152,6 @@ pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) ->
             (take > 0).then(|| (incoming, &incoming.pointers[..take]))
         })
         .collect();
-    let named = |source: &Source, path: &str, logical: Option<&LogicalPath>| match (source, logical)
-    {
-        (Source::Commit(_), Some(logical)) => logical.to_string(),
-        _ => path.to_owned(),
-    };
     let output = match format {
         Format::Text => {
             let mut text = String::new();
@@ -174,7 +165,7 @@ pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) ->
                 );
             }
             for (incoming, pointers) in &to {
-                let name = named(&incoming.source, &incoming.path, incoming.logical.as_ref());
+                let name = named(&incoming.path, incoming.logical.as_ref(), Status::Ok);
                 for pointer in *pointers {
                     let _ = writeln!(text, "to {name} {pointer}");
                 }
@@ -284,6 +275,35 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
         }
     }
     temporary(output, &report.fallbacks)
+}
+
+/// A query that could not run. When it names a missing table or column, the
+/// hint lists the names there are.
+pub(crate) fn query_error(format: Format, error: &QueryError) -> Output {
+    let QueryError::Unknown { known, .. } = error else {
+        return self::error(format, error.code(), error);
+    };
+    let hint = match known {
+        Known::Tables(tables) => format!(
+            "the tables and views are {}; `board query --help` describes them",
+            tables.join(", ")
+        ),
+        Known::Columns(tables) if tables.is_empty() => "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns".to_owned(),
+        Known::Columns(tables) => {
+            let tables: Vec<String> = tables
+                .iter()
+                .map(|(table, columns)| format!("{table}: {}", columns.join(", ")))
+                .collect();
+            format!("the columns are {}", tables.join("; "))
+        }
+    };
+    failed(
+        format,
+        error.code().as_str(),
+        &error.to_string(),
+        Some(&hint),
+        Map::new(),
+    )
 }
 
 /// `output` with a line on stderr before its own notes for each thing a
@@ -587,6 +607,15 @@ fn source(source: &Source) -> Value {
     match source {
         Source::WorkingTree => json!("working-tree"),
         Source::Commit(commit) => json!({ "commit": commit.to_string() }),
+    }
+}
+
+/// How a text listing names an entry: by the logical path every command
+/// takes, or by its file when it has none or shares it with another file.
+fn named(path: &str, logical: Option<&LogicalPath>, status: Status) -> String {
+    match logical {
+        Some(logical) if status != Status::Degraded(Code::PathShadowed) => logical.to_string(),
+        _ => path.to_owned(),
     }
 }
 
