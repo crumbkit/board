@@ -301,6 +301,22 @@ fn call_json_wraps_the_output_in_a_call_report() {
             "output": {"count": 2}
         })
     );
+    // Run with -C from elsewhere, a plugin that echoes its request sees the
+    // board's root.
+    let echo =
+        "#!/bin/sh\nprintf '{\"$type\": \"board/call-result/v1\", \"output\": '\ncat\nprintf '}'\n";
+    install(&data, "tasks", echo);
+    let outside = Scenario::new();
+    let root = board.workdir().canonicalize().unwrap();
+    let arguments = ["-C", root.to_str().unwrap(), "--json", "call", "tasks.due"];
+    let plugins = data.workdir().join("plugins");
+    let echoed = board_full(outside.workdir(), None, Some(&plugins), &arguments, b"{}");
+    assert_eq!(
+        json(&echoed)["output"]["board"]["root"],
+        root.to_str().unwrap(),
+        "{}",
+        text(&echoed.stderr)
+    );
 }
 
 #[test]

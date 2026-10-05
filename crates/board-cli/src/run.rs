@@ -2,6 +2,7 @@
 
 use std::ffi::OsString;
 use std::io::Read;
+use std::path::{Path, PathBuf};
 
 use board_model::{
     BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId,
@@ -31,6 +32,7 @@ Start here:
   board ls /                   list the board's root
   board get /projects/p        print the record in projects/p.json
   board query 'SELECT logical, status FROM entries LIMIT 5'
+  board -C ~/notes check       check the board at ~/notes from anywhere
 
 A path is logical: it starts with / and leaves out .json.
 A record is a JSON object whose `$type`, such as lr/task/v1, names its schema,
@@ -58,6 +60,10 @@ Examples:
     after_help = ROOT_EXAMPLES,
 )]
 pub(crate) struct Cli {
+    /// Run as if Board were started in this directory, as `git -C` does; a
+    /// relative one is taken from the one before it.
+    #[arg(short = 'C', value_name = "DIR", value_parser = clap::builder::OsStringValueParser::new())]
+    directories: Vec<OsString>,
     /// Print one JSON document instead of text.
     #[arg(long, global = true)]
     json: bool,
@@ -276,13 +282,17 @@ pub(crate) fn run(
         Err(error) => return refused(&error, &arguments),
     };
     let format = if cli.json { Format::Json } else { Format::Text };
+    let start = match entered(&context.start, &cli.directories, format) {
+        Ok(start) => start,
+        Err(refused) => return refused,
+    };
     if let Command::Init = cli.command {
-        return match board_ops::init(&context.start) {
+        return match board_ops::init(&start) {
             Ok(report) => render::init(format, &report),
             Err(error) => render::error(format, error.code(), &error, &Fields::default()),
         };
     }
-    let board = match Board::open(&context.start, context.home.clone()) {
+    let board = match Board::open(&start, context.home.clone()) {
         Ok(board) => board,
         Err(error) => return render::error(format, error.code(), &error, &Fields::default()),
     };
@@ -307,23 +317,7 @@ pub(crate) fn run(
             path: Some(path),
             expect,
             ..
-        } => {
-            let record = match bounded(stdin) {
-                Ok(record) => record,
-                Err(error) => {
-                    return render::error(
-                        format,
-                        Code::RepoUnreadable,
-                        &format!("stdin cannot be read: {error}"),
-                        &Fields::default(),
-                    );
-                }
-            };
-            match board.put(&path, expect.unwrap_or(Expect::Any), &record) {
-                Ok(report) => render::put(format, &report),
-                Err(error) => render::put_error(format, &error),
-            }
-        }
+        } => put(&board, format, &path, expect, stdin),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(format, &report),
@@ -370,6 +364,46 @@ pub(crate) fn run(
             }
         }
     }
+}
+
+/// `start` after entering each of `directories` in turn, as `git -C` does,
+/// or the refusal of the first that is not a directory.
+fn entered(start: &Path, directories: &[OsString], format: Format) -> Result<PathBuf, Output> {
+    let mut start = start.to_path_buf();
+    for directory in directories {
+        let joined = start.join(directory);
+        let fault = match std::fs::canonicalize(&joined) {
+            Ok(path) if path.is_dir() => {
+                start = path;
+                continue;
+            }
+            Ok(_) => "is not a directory".to_owned(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                "does not exist".to_owned()
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => {
+                "is not a directory".to_owned()
+            }
+            Err(error) => format!("cannot be read: {error}"),
+        };
+        let mut output = render::failed(
+            format,
+            Code::UsageInvalid.as_str(),
+            &format!(
+                "cannot change to '{}': {} {fault}",
+                Path::new(directory).display(),
+                joined.display()
+            ),
+            Some(
+                "give -C a directory that exists, such as the board's root or a directory \
+                 inside it; a relative -C is taken from the one before it",
+            ),
+            serde_json::Map::new(),
+        );
+        output.code = 2;
+        return Err(output);
+    }
+    Ok(start)
 }
 
 /// A failure reading `path`. When nothing is there and the path ends in
@@ -574,11 +608,14 @@ fn corrected(error: &clap::Error, arguments: &[OsString]) -> Option<String> {
 fn command_path(arguments: &[OsString]) -> String {
     let mut command = Cli::command();
     let mut path = Vec::new();
-    for argument in arguments
-        .iter()
-        .skip(1)
-        .filter_map(|argument| argument.to_str())
-    {
+    let mut words = arguments.iter().skip(1);
+    while let Some(argument) = words.next() {
+        if argument == "-C" {
+            words.next();
+        }
+        let Some(argument) = argument.to_str() else {
+            continue;
+        };
         if argument.starts_with('-') {
             continue;
         }
@@ -591,6 +628,31 @@ fn command_path(arguments: &[OsString]) -> String {
         }
     }
     path.join(" ")
+}
+
+/// `put` of one record, read from stdin.
+fn put(
+    board: &Board,
+    format: Format,
+    path: &LogicalPath,
+    expect: Option<Expect>,
+    stdin: &mut dyn Read,
+) -> Output {
+    let record = match bounded(stdin) {
+        Ok(record) => record,
+        Err(error) => {
+            return render::error(
+                format,
+                Code::RepoUnreadable,
+                &format!("stdin cannot be read: {error}"),
+                &Fields::default(),
+            );
+        }
+    };
+    match board.put(path, expect.unwrap_or(Expect::Any), &record) {
+        Ok(report) => render::put(format, &report),
+        Err(error) => render::put_error(format, &error),
+    }
 }
 
 /// `call`: the target, or the capability alone, with the input on stdin.

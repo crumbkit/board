@@ -861,5 +861,6 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
 }
 
 mod cli;
+mod directory;
 mod hints;
 mod plugins;

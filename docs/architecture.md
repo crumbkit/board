@@ -321,16 +321,16 @@ Each command returns one typed report. `--json` prints it as a document tagged
 `board/<command>-report/v1`, or `board/error/v1` on failure. Exit codes: 0 done,
 1 failed, 2 a refused command line (`board::usage::invalid`).
 
+`-C <dir>` before the command runs it as if Board started in `<dir>`. Several
+combine as in git: a relative one is taken from the one before. A `<dir>` naming
+no directory is `board::usage::invalid`.
+
 `check`, `ls`, `refs`, `plugin list` and `plugin find` show 100 entries unless
 `--limit` or `--all` says otherwise; an entry is a printed line: a `refs`
-pointer, a `plugin list` capability. `check` puts degraded
-entries first. Text names an entry by its logical path, or by its file when it
-has none or is shadowed; JSON gives both. A
-cut listing ends with a stderr note of the count shown and the total; JSON
-carries `total` and `truncated`. An error prints `error: <code>: <message>`,
-then `hint: <next step>`, naming the values it knows; `board/error/v1`
-adds `hint`, and those values in `fields`: `path`, `blob`,
-`pointer`, `type`, `schema`, `plugin`, `capability`. `check` and `put`
+pointer, a `plugin list` capability. Text names an entry by its logical path,
+or its file when it has none or is shadowed; JSON gives both. An error names
+the values it knows, and `board/error/v1` gives them in `fields`: `path`,
+`blob`, `pointer`, `type`, `schema`, `plugin`, `capability`. `check` and `put`
 name a degraded entry's first failing pointer, why, and how many more
 (`pointer`, `reason`, `failures`); an unknown type's reason names the schema
 file its board lacks (`schema`).
