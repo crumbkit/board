@@ -59,6 +59,33 @@ fn a_link_whose_target_is_missing_is_dangling() {
 }
 
 #[test]
+fn a_dangling_link_is_named_by_its_display_path_with_the_target_it_points_to() {
+    let scenario = Scenario::new();
+    let to_y = link("/work/y");
+    let to_links = link("/links");
+    let commit = scenario.commit(&[
+        ("links/x.json", &to_y),
+        ("l.json", &to_links),
+        ("work/z.json", "{}"),
+    ]);
+    let message = |text: &str| {
+        scenario
+            .open()
+            .resolve(&commit.source(), &path(text))
+            .unwrap_err()
+            .to_string()
+    };
+    assert_eq!(
+        message("/links/x"),
+        "the link at /links/x points to /work/y, which is missing"
+    );
+    assert_eq!(
+        message("/l/x/more"),
+        "the link at /links/x points to /work/y, which is missing"
+    );
+}
+
+#[test]
 fn a_miss_after_a_good_link_is_not_found_not_dangling() {
     let scenario = Scenario::new();
     let to_work = link("/work");

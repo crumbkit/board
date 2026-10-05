@@ -146,6 +146,39 @@ fn a_record_check_refuses_with_checks_own_codes_and_admits_its_twin() {
 }
 
 #[test]
+fn a_refusal_names_what_is_wrong_with_the_record_and_its_twin_is_admitted() {
+    let scenario = board();
+    for (refused, code, message) in [
+        (
+            r#"{"$type": "lr/tsk/v1", "title": "t"}"#,
+            Code::RecordUnknownType,
+            "no schema for lr/tsk/v1 at .board/types/lr/tsk/v1.schema.json",
+        ),
+        (r#"{"title": "t"}"#, Code::PutInvalid, "it has no $type"),
+        ("[1]", Code::PutInvalid, "it is not a json object"),
+        (" \n", Code::JsonParse, "it is empty"),
+    ] {
+        let error = open(&scenario)
+            .put(&path("/tasks/a"), Expect::Any, refused.as_bytes())
+            .unwrap_err();
+        assert_eq!(error.code(), code, "{refused}");
+        assert_eq!(
+            error.to_string(),
+            format!("the record for /tasks/a is refused: {message}")
+        );
+    }
+    assert!(
+        put(
+            &scenario,
+            "/tasks/a",
+            Expect::Any,
+            r#"{"$type": "lr/task/v1", "title": "t"}"#
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn boards_own_types_are_checked_as_their_rust_types() {
     let scenario = board();
     assert_eq!(

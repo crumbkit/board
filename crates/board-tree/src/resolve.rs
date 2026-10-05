@@ -95,9 +95,10 @@ impl Repository {
         let mut object = Object::Directory;
         while let Some(segment) = remaining.pop_front() {
             let missing = |from_link: usize, trail: &Trail| match &trail.link {
-                Some(link) if from_link > 0 => ResolveError::Dangling {
+                Some((link, target)) if from_link > 0 => ResolveError::Dangling {
                     path: path.clone(),
                     link: link.clone(),
+                    target: target.clone(),
                 },
                 _ => ResolveError::NotFound { path: path.clone() },
             };
@@ -152,7 +153,7 @@ impl Repository {
                                 return Err(ResolveError::Cycle { path: path.clone() });
                             }
                             from_link = target.segments().count();
-                            trail.link = Some(physical.join("/"));
+                            trail.followed_link(target);
                             remaining = next;
                             directory = Some(tree.root());
                             physical.clear();
@@ -317,10 +318,26 @@ struct Trail {
     pointers: Vec<Location>,
     /// Each board and path resolution restarted at.
     visited: HashSet<(Board, VecDeque<String>)>,
-    /// The physical path of the last link followed.
-    link: Option<String>,
+    /// The display path of the last link followed, and its target.
+    link: Option<(LogicalPath, LogicalPath)>,
     /// Whether a pointer at the end is followed.
     follow_last: bool,
+}
+
+impl Trail {
+    /// Records the last pointer followed as a link to `target`, named by
+    /// its display path.
+    fn followed_link(&mut self, target: LogicalPath) {
+        let at = self.pointers.split_last().and_then(|(link, before)| {
+            Location {
+                pointers: before.to_vec(),
+                ..link.clone()
+            }
+            .display_path()
+        });
+        let at = at.unwrap_or_else(|| self.path.clone());
+        self.link = Some((at, target));
+    }
 }
 
 /// The entry `segment` names in `entries`, the listing of `directory`, or
@@ -396,8 +413,12 @@ pub enum ResolveError {
     Submodule { path: LogicalPath },
     #[error("{path} reaches a file that cannot be read")]
     Unreadable { path: LogicalPath },
-    #[error("{path} follows a link to {link:?}, whose target is missing")]
-    Dangling { path: LogicalPath, link: String },
+    #[error("the link at {link} points to {target}, which is missing")]
+    Dangling {
+        path: LogicalPath,
+        link: LogicalPath,
+        target: LogicalPath,
+    },
     #[error("{path} reaches the invalid pointer {pointer:?}: {source}")]
     InvalidPointer {
         path: LogicalPath,

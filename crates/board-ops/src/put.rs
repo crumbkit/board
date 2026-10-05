@@ -5,7 +5,7 @@ use std::io::{BufRead, Read};
 
 use board_model::{
     BINARY_NAME, CONFIG_TYPE, Code, Content, JsonError, Location, LogicalPath, MANIFEST_TYPE,
-    MAX_RECORD_BYTES, Object, ObjectId, Role, canonical_json, parse_json,
+    MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json, parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::{LOCK_WAIT, WriteError};
@@ -325,9 +325,15 @@ impl Board {
     /// returns the parsed record and whether it is a pointer. Input that is
     /// not one JSON object with a `$type` is `put::invalid`.
     pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<(Value, bool), Refused> {
+        if bytes.iter().all(u8::is_ascii_whitespace) {
+            return Err(Refused::Empty);
+        }
         let value = parse_json(bytes)?;
-        if value.get("$type").is_none() {
-            return Err(Refused::Code(Code::PutInvalid));
+        let Some(object) = value.as_object() else {
+            return Err(Refused::NotAnObject);
+        };
+        if !object.contains_key("$type") {
+            return Err(Refused::NoType);
         }
         let classified = Role::Json.classify(Some(bytes));
         if let Some(code) = classified.code {
@@ -358,7 +364,10 @@ impl Board {
             .repository()
             .read_working_file(&schema_path)
             .map_err(|_| Refused::Code(Code::RepoUnreadable))?
-            .ok_or(Refused::Code(Code::RecordUnknownType))?;
+            .ok_or_else(|| Refused::UnknownType {
+                record_type: record_type.clone(),
+                schema: schema_path.clone(),
+            })?;
         let schema = match Role::of(&schema_path).map(|role| role.classify(Some(&schema_bytes))) {
             Some(board_model::Classified {
                 content: Content::Schema { value },
@@ -381,6 +390,17 @@ pub enum Refused {
     Schema(#[from] RecordError),
     #[error(transparent)]
     Manifest(#[from] ManifestError),
+    #[error("it is empty")]
+    Empty,
+    #[error("it is not a json object")]
+    NotAnObject,
+    #[error("it has no $type")]
+    NoType,
+    #[error("no schema for {record_type} at {schema}")]
+    UnknownType {
+        record_type: RecordType,
+        schema: String,
+    },
     #[error("{0}")]
     Code(Code),
 }
@@ -391,6 +411,9 @@ impl Refused {
             Self::Json(error) => error.code(),
             Self::Schema(error) => error.code(),
             Self::Manifest(error) => error.code(),
+            Self::Empty => Code::JsonParse,
+            Self::NotAnObject | Self::NoType => Code::PutInvalid,
+            Self::UnknownType { .. } => Code::RecordUnknownType,
             Self::Code(code) => *code,
         }
     }

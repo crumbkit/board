@@ -340,6 +340,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
     let missing: LogicalPath = "/nowhere".parse().unwrap();
     let error = open(&scenario).check(Some(&missing), None).unwrap_err();
     assert_eq!(error.code(), Code::PathNotFound);
+    assert_eq!(error.to_string(), "nothing is at /nowhere");
 }
 
 #[test]
@@ -496,9 +497,24 @@ fn ls_follows_a_link_to_the_directory_it_lists_and_names_it_by_display_path() {
 #[test]
 fn ls_of_a_file_lists_that_file() {
     let scenario = board();
-    let report = open(&scenario).ls(&path("/projects/p")).unwrap();
-    assert_eq!(report.listed.len(), 1);
-    assert!(matches!(&report.listed[0], crate::Listed::Entry { name, .. } if name == "p.json"));
+    scenario.write("notes/readme.md", Item::File("# r")).write(
+        "l.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
+    );
+    for (asked, name, shown) in [
+        ("/projects/p", "p.json", "/projects/p"),
+        ("/l/p", "p.json", "/projects/p"),
+        ("/notes/readme.md", "readme.md", "/notes/readme.md"),
+    ] {
+        let report = open(&scenario).ls(&path(asked)).unwrap();
+        assert_eq!(report.listed.len(), 1, "{asked}");
+        assert!(
+            matches!(&report.listed[0], crate::Listed::Entry { name: listed, logical: Some(logical), .. }
+                if listed == name && logical.as_str() == shown),
+            "{asked}: {:?}",
+            report.listed
+        );
+    }
 }
 
 #[test]

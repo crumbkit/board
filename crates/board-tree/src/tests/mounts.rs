@@ -190,6 +190,24 @@ fn a_link_dangles_when_its_mount_moves_to_a_commit_without_the_target() {
 }
 
 #[test]
+fn a_dangling_link_inside_a_mount_is_named_through_its_mount_point() {
+    let inner = Scenario::new();
+    let to_y = link("/y");
+    let pinned = inner.commit(&[("links/x.json", &to_y), ("z.json", "{}")]);
+    let outer = Scenario::new();
+    let to_inner = mount(&inner.path(), pinned);
+    let commit = outer.commit(&[("m.json", &to_inner)]);
+    let error = outer
+        .open()
+        .resolve(&commit.source(), &path("/m/links/x"))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the link at /m/links/x points to /y, which is missing"
+    );
+}
+
+#[test]
 fn an_uncommitted_root_reads_committed_mounted_content() {
     let inner = Scenario::new();
     let pinned = inner.commit(&[("x.json", "committed")]);

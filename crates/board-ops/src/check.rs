@@ -402,7 +402,7 @@ fn read_type(location: &Location, blob: ObjectId) -> Option<RecordType> {
 /// A check that could not run.
 #[derive(Debug, thiserror::Error)]
 pub enum CheckError {
-    #[error("cannot check {source}")]
+    #[error(transparent)]
     Scope { source: ResolveError },
     #[error(transparent)]
     Refresh {

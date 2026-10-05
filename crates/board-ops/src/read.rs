@@ -131,10 +131,13 @@ impl Board {
                 let kind = classify_entry(&repository, &location.board.source, &entry);
                 Listed::Entry {
                     name: name.to_owned(),
-                    logical: entry
-                        .logical
-                        .as_ref()
-                        .and_then(|logical| logical.segments().last().and_then(child)),
+                    logical: match location.object {
+                        Object::Blob(_) => Some(display.clone()),
+                        Object::Directory => entry
+                            .logical
+                            .as_ref()
+                            .and_then(|logical| logical.segments().last().and_then(child)),
+                    },
                     kind: kind.kind(),
                     status: match (entry.status, kind.code) {
                         (Status::Ok, Some(code)) => Status::Degraded(code),
