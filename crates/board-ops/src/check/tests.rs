@@ -66,7 +66,7 @@ fn before_the_first_commit_every_entry_is_uncommitted() {
 fn viewed(index: &Index) -> Vec<Checked> {
     let rows = index
         .query(
-            "SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path",
+            "SELECT path, logical, kind, code, change, status, source, type FROM entries ORDER BY source, path",
             10_000,
         )
         .unwrap();
@@ -96,6 +96,12 @@ fn viewed(index: &Index) -> Vec<Checked> {
                 } else {
                     Change::Uncommitted
                 },
+                schema: text(&row[7])
+                    .filter(|record_type| {
+                        // Board's own types never have a schema file.
+                        code == Some(Code::RecordUnknownType) && !record_type.starts_with("board/")
+                    })
+                    .map(|record_type| format!(".board/types/{record_type}.schema.json")),
             }
         })
         .collect()

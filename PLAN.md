@@ -203,8 +203,8 @@ also runs `board call controls.check`.
 **Pull requests, in order.**
 
 1. Built: `board get` prints any file's bytes.
-2. Board knows `board/plugin-manifest/v1`; `record::unknown_type` names the
-   missing schema file.
+2. Built: Board knows `board/plugin-manifest/v1`, and `check` names the
+   schema file a record of an unknown type needs.
 3. `board init` writes a minimal `.board/board.json`. Built: the manifest's
    `types` and `board plugin enable`.
 4. Built: the `controls` plugin in `plugins/controls/`, with pytest against

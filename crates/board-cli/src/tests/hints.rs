@@ -137,6 +137,40 @@ fn a_record_of_an_unknown_type_names_its_schema_path_and_a_known_type_is_written
 }
 
 #[test]
+fn check_names_the_schema_an_unknown_type_needs_and_a_known_type_checks_clean() {
+    let scenario = uncommitted();
+    scenario.write("notes/a.json", Item::File(r#"{"$type": "lr/note/v1"}"#));
+    let refused = board_in(scenario.workdir(), &["check"]);
+    assert_eq!(refused.code, 1);
+    assert!(
+        String::from_utf8_lossy(&refused.stdout).contains(
+            "degraded board::record::unknown_type /notes/a: add its schema at \
+             .board/types/lr/note/v1.schema.json\n"
+        ),
+        "{refused:?}"
+    );
+    let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let entry = report["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["logical"] == "/notes/a")
+        .unwrap()
+        .clone();
+    assert_eq!(entry["schema"], ".board/types/lr/note/v1.schema.json");
+    scenario.write("notes/a.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    let admitted = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    assert_eq!(admitted["degraded"], false);
+    assert!(
+        admitted["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry.get("schema").is_none())
+    );
+}
+
+#[test]
 fn a_record_its_schema_refuses_names_the_pointer_and_a_valid_one_is_written() {
     let scenario = uncommitted();
     let invalid = r#"{"$type": "lr/task/v1", "title": 5}"#;

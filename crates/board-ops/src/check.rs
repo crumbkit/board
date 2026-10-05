@@ -30,6 +30,8 @@ pub struct Checked {
     pub kind: Kind,
     pub status: Status,
     pub change: Change,
+    /// The schema file a record of an unknown type needs, from its source's root.
+    pub schema: Option<String>,
 }
 
 /// Every entry `check` looked at: the root's sorted by path, then each
@@ -240,9 +242,10 @@ impl Decided {
                 code
             }
         };
-        let schema = fact
-            .and_then(schema_path)
-            .and_then(|path| schema_of(decide.facts, &path));
+        let wanted = fact.and_then(schema_path);
+        let schema = wanted
+            .as_ref()
+            .and_then(|path| schema_of(decide.facts, path));
         self.resolved.push(Resolved {
             source: source.clone(),
             path: entry.path.clone(),
@@ -262,6 +265,7 @@ impl Decided {
             kind,
             status: code.map_or(Status::Ok, Status::Degraded),
             change,
+            schema: wanted.filter(|_| code == Some(Code::RecordUnknownType)),
         });
         Ok(())
     }

@@ -48,7 +48,11 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
             let mut text = String::new();
             for entry in entries {
                 let path = named(&entry.path, entry.logical.as_ref(), entry.status);
-                let _ = writeln!(text, "{} {path}", status_text(entry.status));
+                let _ = write!(text, "{} {path}", status_text(entry.status));
+                if let Some(schema) = &entry.schema {
+                    let _ = write!(text, ": add its schema at {schema}");
+                }
+                text.push('\n');
             }
             Output {
                 stdout: text.into_bytes(),
@@ -72,6 +76,9 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
                         "kind": entry.kind.as_str(),
                     });
                     status_fields(&mut value, entry.status);
+                    if let (Some(schema), Some(object)) = (&entry.schema, value.as_object_mut()) {
+                        object.insert("schema".to_owned(), json!(schema));
+                    }
                     value
                 })
                 .collect();
