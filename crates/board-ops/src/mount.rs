@@ -1,7 +1,7 @@
 //! `board mount update`: advancing a mount to the commit its `follow` ref
 //! names (docs/architecture.md, Writes).
 
-use board_model::{BINARY_NAME, Code, LogicalPath, ObjectId};
+use board_model::{BINARY_NAME, Code, Fields, LogicalPath, ObjectId};
 use board_tree::{Pin, PinError};
 
 use crate::board::Board;
@@ -76,6 +76,13 @@ impl MountError {
         match self {
             Self::Pin(error) => error.code(),
             Self::Put(error) => error.code(),
+        }
+    }
+
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Pin(error) => error.fields(),
+            Self::Put(error) => error.fields(),
         }
     }
 }

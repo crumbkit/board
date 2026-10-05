@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::Path;
 
-use board_model::{BINARY_NAME, Code, ObjectId};
+use board_model::{BINARY_NAME, Code, Fields, ObjectId};
 use board_scenario::{Item, Scenario};
 use serde_json::Value;
 
@@ -98,6 +98,16 @@ fn json(output: &Output) -> Value {
 
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
+}
+
+/// The hint line of a text error.
+fn hint_of(output: &Output) -> String {
+    let stderr = text(&output.stderr);
+    stderr
+        .lines()
+        .find_map(|line| line.strip_prefix("hint: "))
+        .unwrap_or_default()
+        .to_owned()
 }
 
 fn code_named(name: &str) -> Code {
@@ -285,14 +295,20 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     assert_eq!(
         text(&plain.stderr),
         "error: board::path::not_found: nothing is at /missing\n\
-         hint: run `board ls <path>` on the parent directory to see what is there; paths leave out `.json`\n"
+         hint: run `board ls /` to see what is there; paths leave out `.json`\n"
     );
     let document = board_in(scenario.workdir(), &["get", "/missing", "--json"]);
     assert_eq!(document.code, 1);
     let error = json(&document);
     assert_eq!(error["$type"], "board/error/v1");
     assert_eq!(error["code"], "board::path::not_found");
-    assert_eq!(error["hint"], render::hint(Code::PathNotFound));
+    assert_eq!(
+        error["hint"],
+        render::hint(
+            Code::PathNotFound,
+            &Fields::at(&"/missing".parse().unwrap())
+        )
+    );
 }
 
 fn pointer_to(path: &str) -> String {
@@ -755,4 +771,5 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
 }
 
 mod cli;
+mod hints;
 mod plugins;

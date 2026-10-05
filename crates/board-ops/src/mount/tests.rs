@@ -1,6 +1,6 @@
 //! Advancing a mount to the commit its `follow` ref names.
 
-use board_model::{Code, LogicalPath, ObjectId, canonical_json, parse_json};
+use board_model::{Code, Fields, LogicalPath, ObjectId, canonical_json, parse_json};
 use board_scenario::{Item, Scenario};
 
 use crate::mount::MountUpdateReport;
@@ -142,6 +142,13 @@ fn a_path_that_is_not_a_mount_is_refused_and_a_mount_is_admitted() {
             update(&scenario, refused).unwrap_err(),
             Code::MountInvalid,
             "{refused}"
+        );
+        assert_eq!(
+            open(&scenario)
+                .mount_update(&path(refused))
+                .unwrap_err()
+                .fields(),
+            Fields::at(&path(refused))
         );
     }
     assert_eq!(

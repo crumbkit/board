@@ -159,6 +159,30 @@ fn a_mount_of_a_commit_the_repository_lacks_is_commit_missing() {
 }
 
 #[test]
+fn a_mount_whose_commit_is_missing_is_named_by_the_mount_and_not_the_path_asked() {
+    let inner = Scenario::new();
+    inner.commit(&[("x.json", "1")]);
+    let outer = Scenario::new();
+    let absent = mount(&inner.path(), ObjectId::Sha1([9; 20]));
+    let commit = outer.commit(&[("vendor/m.json", &absent), ("l.json", &link("/vendor/m"))]);
+    for asked in ["/vendor/m/x", "/l/x"] {
+        let error = outer
+            .open()
+            .resolve(&commit.source(), &path(asked))
+            .unwrap_err();
+        assert_eq!(error.code(), Code::MountCommitMissing);
+        assert_eq!(error.fields().path, Some(path("/vendor/m")), "{asked}");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "/vendor/m mounts commit {}, which its repository does not hold",
+                ObjectId::Sha1([9; 20])
+            )
+        );
+    }
+}
+
+#[test]
 fn a_remote_mount_is_refused() {
     let outer = Scenario::new();
     let remote = mount("https://example.com/board.git", ObjectId::Sha1([9; 20]));
@@ -287,4 +311,18 @@ fn a_display_path_keeps_mount_points_and_replaces_links() {
         let again = resolve(&outer, commit, display).unwrap();
         assert_eq!(identity(&again), identity(&location), "{asked}");
     }
+}
+
+#[test]
+fn pinning_a_link_is_refused_naming_the_link_and_pinning_a_mount_is_admitted() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let outer = Scenario::new();
+    outer
+        .write("m.json", Item::File(&mount(&inner.path(), pinned)))
+        .write("l.json", Item::File(&link("/m")));
+    let error = outer.open().pin(&path("/l")).unwrap_err();
+    assert_eq!(error.code(), Code::MountInvalid);
+    assert_eq!(error.fields(), board_model::Fields::at(&path("/l")));
+    assert_eq!(outer.open().pin(&path("/m")).unwrap().new, pinned);
 }

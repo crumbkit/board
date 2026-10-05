@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use board_model::{
-    Classified, Code, Content, Kind, Location, LogicalPath, Object, Source, classify,
+    Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Source, classify,
 };
 use board_tree::{GitError, Repository, ResolveError, Status};
 use serde_json::Value;
@@ -225,6 +225,14 @@ impl ReadError {
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::Unread { code, .. } => *code,
             Self::Git { source } => source.code(),
+        }
+    }
+
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Resolve { source } => source.fields(),
+            Self::NotARecord { path } | Self::Unread { path, .. } => Fields::at(path),
+            Self::Git { .. } => Fields::default(),
         }
     }
 }

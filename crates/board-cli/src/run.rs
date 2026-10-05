@@ -3,7 +3,9 @@
 use std::ffi::OsString;
 use std::io::Read;
 
-use board_model::{BINARY_NAME, Code, DISPLAY_NAME, LogicalPath, MAX_RECORD_BYTES, ObjectId};
+use board_model::{
+    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId,
+};
 use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
 
@@ -277,23 +279,23 @@ pub(crate) fn run(
     if let Command::Init = cli.command {
         return match board_ops::init(&context.start) {
             Ok(report) => render::init(format, &report),
-            Err(error) => render::error(format, error.code(), &error),
+            Err(error) => render::error(format, error.code(), &error, &Fields::default()),
         };
     }
     let board = match Board::open(&context.start, context.home.clone()) {
         Ok(board) => board,
-        Err(error) => return render::error(format, error.code(), &error),
+        Err(error) => return render::error(format, error.code(), &error, &Fields::default()),
     };
     match cli.command {
         Command::Init => unreachable!("init runs before a board is opened"),
         Command::Check { path, page } => match board.check(path.as_ref(), context.cache.as_deref())
         {
             Ok(report) => render::check(format, &report, page.limit()),
-            Err(error) => render::error(format, error.code(), &error),
+            Err(error) => render::error(format, error.code(), &error, &error.fields()),
         },
         Command::Get { path } => match board.get(&path) {
             Ok(report) => render::get(format, &report),
-            Err(error) => failed_at(format, "get", &path, error.code(), &error),
+            Err(error) => failed_at(format, "get", &path, error.code(), &error, &error.fields()),
         },
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
@@ -313,6 +315,7 @@ pub(crate) fn run(
                         format,
                         Code::RepoUnreadable,
                         &format!("stdin cannot be read: {error}"),
+                        &Fields::default(),
                     );
                 }
             };
@@ -324,11 +327,11 @@ pub(crate) fn run(
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(format, &report),
-            Err(error) => render::error(format, error.code(), &error),
+            Err(error) => render::error(format, error.code(), &error, &error.fields()),
         },
         Command::Refs { path, page } => match board.refs(&path, context.cache.as_deref()) {
             Ok(report) => render::refs(format, &report, page.limit()),
-            Err(error) => failed_at(format, "refs", &path, error.code(), &error),
+            Err(error) => failed_at(format, "refs", &path, error.code(), &error, &error.fields()),
         },
         Command::Query { sql, limit } => {
             match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
@@ -339,13 +342,13 @@ pub(crate) fn run(
         Command::Plugin(PluginCommand::Enable { name }) => {
             match board.plugin_enable(context.plugins.as_deref(), &name) {
                 Ok(report) => render::plugin_enable(format, &report),
-                Err(error) => render::error(format, error.code(), &error),
+                Err(error) => render::error(format, error.code(), &error, &Fields::default()),
             }
         }
         Command::Plugin(PluginCommand::List { page }) => {
             match board.plugin_list(context.plugins.as_deref()) {
                 Ok(report) => render::plugin_list(format, &report, page.limit()),
-                Err(error) => render::error(format, error.code(), &error),
+                Err(error) => render::error(format, error.code(), &error, &Fields::default()),
             }
         }
         Command::Plugin(PluginCommand::Find {
@@ -354,7 +357,7 @@ pub(crate) fn run(
             page,
         }) => match board.plugin_find(context.plugins.as_deref(), capability.as_ref(), &filters) {
             Ok(report) => render::plugin_find(format, &report, page.limit()),
-            Err(error) => render::error(format, error.code(), &error),
+            Err(error) => render::error(format, error.code(), &error, &Fields::default()),
         },
         Command::Call { target, capability } => {
             call(&board, context, format, target, capability, stdin)
@@ -363,7 +366,7 @@ pub(crate) fn run(
             let path = path.unwrap_or_else(LogicalPath::root);
             match board.ls(&path) {
                 Ok(report) => render::ls(format, &report, page.limit()),
-                Err(error) => failed_at(format, "ls", &path, error.code(), &error),
+                Err(error) => failed_at(format, "ls", &path, error.code(), &error, &error.fields()),
             }
         }
     }
@@ -378,6 +381,7 @@ fn failed_at(
     path: &LogicalPath,
     code: Code,
     error: &dyn std::fmt::Display,
+    fields: &Fields,
 ) -> Output {
     match path.as_str().strip_suffix(".json") {
         Some(stem) if code == Code::PathNotFound => render::failed(
@@ -387,9 +391,9 @@ fn failed_at(
             Some(&format!(
                 "a logical path leaves out .json: try `{BINARY_NAME} {command} {stem}`"
             )),
-            serde_json::Map::new(),
+            render::json_fields(fields),
         ),
-        _ => render::error(format, code, error),
+        _ => render::error(format, code, error, fields),
     }
 }
 
@@ -415,7 +419,7 @@ fn refused(error: &clap::Error, arguments: &[OsString]) -> Output {
     let help = if let Some(corrected) = corrected(error, arguments) {
         format!("a logical path starts with / and leaves out .json: try `{corrected}`")
     } else if command.is_empty() {
-        hint(Code::UsageInvalid).to_owned()
+        hint(Code::UsageInvalid, &Fields::default())
     } else {
         format!("run `{named} --help` for its usage and examples")
     };
@@ -610,6 +614,7 @@ fn call(
                 format,
                 Code::PluginBadInput,
                 &format!("stdin cannot be read: {error}"),
+                &Fields::default(),
             );
         }
     };

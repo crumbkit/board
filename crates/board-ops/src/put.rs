@@ -4,8 +4,9 @@
 use std::io::{BufRead, Read};
 
 use board_model::{
-    BINARY_NAME, CONFIG_TYPE, Code, Content, JsonError, Location, LogicalPath, MANIFEST_TYPE,
-    MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json, parse_json,
+    BINARY_NAME, CONFIG_TYPE, Code, Content, Fields, JsonError, Location, LogicalPath,
+    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json,
+    parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::{LOCK_WAIT, WriteError};
@@ -417,6 +418,27 @@ impl Refused {
             Self::Code(code) => *code,
         }
     }
+
+    /// The type and schema of an unknown type, or the pointer a schema refused.
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Schema(error) => error.fields(),
+            Self::UnknownType {
+                record_type,
+                schema,
+            } => Fields {
+                record_type: Some(record_type.clone()),
+                schema: Some(schema.clone()),
+                ..Fields::default()
+            },
+            Self::Json(_)
+            | Self::Manifest(_)
+            | Self::Empty
+            | Self::NotAnObject
+            | Self::NoType
+            | Self::Code(_) => Fields::default(),
+        }
+    }
 }
 
 /// Why `write_all` wrote nothing: stale expects, by their index among the
@@ -467,6 +489,27 @@ impl PutError {
             Self::TooManyLines => Code::PutInvalid,
             Self::Input { .. } => Code::RepoUnreadable,
             Self::Write(error) => error.code(),
+        }
+    }
+
+    /// The path and what is wrong at it; for a stale put, the blob the path
+    /// holds, or none when it holds nothing.
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Record { path, refused } => Fields {
+                path: Some(path.clone()),
+                ..refused.fields()
+            },
+            Self::Stale { path, found } => Fields {
+                blob: *found,
+                ..Fields::at(path)
+            },
+            Self::Write(error) => error.fields(),
+            Self::HeadMoved { .. }
+            | Self::Batch { .. }
+            | Self::Line { .. }
+            | Self::TooManyLines
+            | Self::Input { .. } => Fields::default(),
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use board_model::canonical_json;
+use board_model::{Fields, canonical_json};
 use board_ops::{CallFailed, Called, Plugin, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{Capability, Manifest, PluginName};
 use serde_json::{Value, json};
@@ -260,13 +260,26 @@ pub(crate) fn temporary(mut output: Output, fallbacks: &[PluginName]) -> Output 
 /// A refused call, with its typed fields; as text, the end of the plugin's
 /// stderr follows the error. A plugin's own code has no hint from Board.
 pub(crate) fn call_error(format: Format, error: &CallFailed) -> Output {
-    let hint = error.code().map(super::hint);
+    let fields = error.fields();
+    let named = |name: &str| fields.get(name).and_then(Value::as_str).map(str::to_owned);
+    // An ambiguous capability's hint shows a call naming the first plugin.
+    let first = fields
+        .get("plugins")
+        .and_then(|plugins| plugins.get(0))
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let known = Fields {
+        plugin: named("plugin").or(first),
+        capability: named("capability"),
+        ..Fields::default()
+    };
+    let hint = error.code().map(|code| super::hint(code, &known));
     let mut output = failed(
         format,
         error.code_text(),
         &error.to_string(),
-        hint,
-        error.fields(),
+        hint.as_deref(),
+        fields,
     );
     if let (Format::Text, Some(tail)) = (format, error.stderr().filter(|tail| !tail.is_empty())) {
         output.stderr.extend_from_slice(tail);

@@ -194,7 +194,7 @@ fn a_capability_offered_by_two_enabled_plugins_is_refused_naming_both() {
         (
             Some(Code::PluginAmbiguous),
             "capability due is offered by more than one enabled plugin: notes, tasks".to_owned(),
-            json!({"plugins": ["notes", "tasks"]}),
+            json!({"capability": "due", "plugins": ["notes", "tasks"]}),
         )
     );
     assert!(
@@ -311,7 +311,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
             Some(Code::PluginBadInput),
             r#"the input fails the capability's input schema at its root: [] is not of type "object""#
                 .to_owned(),
-            json!({"pointer": ""}),
+            json!({"capability": "due", "pointer": ""}),
         )
     );
     assert_eq!(
@@ -320,7 +320,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
             Some(Code::PluginBadInput),
             r#"the input fails the capability's input schema at "/before": 5 is not of type "string""#
                 .to_owned(),
-            json!({"pointer": "/before"}),
+            json!({"capability": "due", "pointer": "/before"}),
         )
     );
     assert_eq!(
@@ -329,7 +329,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
             Some(Code::PluginBadInput),
             r#"the input fails the capability's input schema at "/task": the reference is not a logical path"#
                 .to_owned(),
-            json!({"pointer": "/task"}),
+            json!({"capability": "due", "pointer": "/task"}),
         )
     );
     let (code, message, fields) = input_refusal(&schema, "{");
@@ -338,7 +338,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         message.starts_with("the input is not one strict JSON document: "),
         "{message}"
     );
-    assert_eq!(fields, json!({}));
+    assert_eq!(fields, json!({"capability": "due"}));
     let admitted = input_refusal(&schema, r#"{"before": "2026-10-05", "task": "/a/b"}"#);
     assert_eq!(admitted.0, Some(Code::PluginFailed), "{}", admitted.1);
 }

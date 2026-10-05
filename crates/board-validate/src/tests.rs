@@ -87,6 +87,13 @@ fn a_record_that_fails_its_schema_names_where() {
     let error = schema.validate(&json!({"title": 1})).unwrap_err();
     assert_eq!(error.code(), Code::RecordInvalid);
     assert!(matches!(error, RecordError::Invalid { ref pointer, .. } if pointer == "/title"));
+    assert_eq!(
+        error.fields(),
+        Fields {
+            pointer: Some("/title".to_owned()),
+            ..Fields::default()
+        }
+    );
 }
 
 #[test]
@@ -117,6 +124,13 @@ fn a_reference_that_is_not_a_logical_path_is_malformed() {
     assert_eq!(error.code(), Code::RefMalformed);
     assert!(
         matches!(error, RecordError::MalformedReference { ref pointer } if pointer == "/parent")
+    );
+    assert_eq!(
+        error.fields(),
+        Fields {
+            pointer: Some("/parent".to_owned()),
+            ..Fields::default()
+        }
     );
 }
 

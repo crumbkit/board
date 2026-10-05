@@ -1,6 +1,6 @@
 //! Opening boards and checking them, against real repositories.
 
-use board_model::{Code, Kind, LogicalPath};
+use board_model::{Code, Fields, Kind, LogicalPath};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
@@ -342,6 +342,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
     let error = open(&scenario).check(Some(&missing), None).unwrap_err();
     assert_eq!(error.code(), Code::PathNotFound);
     assert_eq!(error.to_string(), "nothing is at /nowhere");
+    assert_eq!(error.fields(), Fields::at(&missing));
 }
 
 #[test]
@@ -407,6 +408,9 @@ fn get_refuses_a_directory_and_a_missing_path() {
     let code = |text: &str| open(&scenario).get(&path(text)).unwrap_err().code();
     assert_eq!(code("/projects"), Code::RecordNotARecord);
     assert_eq!(code("/missing"), Code::PathNotFound);
+    let fields = |text: &str| open(&scenario).get(&path(text)).unwrap_err().fields();
+    assert_eq!(fields("/projects"), Fields::at(&path("/projects")));
+    assert_eq!(fields("/missing"), Fields::at(&path("/missing")));
 }
 
 #[test]

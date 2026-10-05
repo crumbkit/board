@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
 use board_model::{
-    Board, Code, Location, LogicalPath, Mount, Object, ObjectId, Pointer, PointerError, Source,
+    Board, Code, Fields, Location, LogicalPath, Mount, Object, ObjectId, Pointer, PointerError,
+    Source,
 };
 
 use crate::address::{self, Named};
@@ -242,14 +243,14 @@ impl Repository {
         trail: &mut Trail,
         pointers: &mut Pointers,
     ) -> Result<Location, ResolveError> {
-        let path = trail.path.clone();
+        let at = trail.last_pointer();
         let (mounted, _) = self.open_mount(mount).map_err(|missing| match missing {
             MountMissing::Repo => ResolveError::RepoMissing {
-                path: path.clone(),
+                path: at.clone(),
                 repo: mount.repo.clone(),
             },
             MountMissing::Commit => ResolveError::CommitMissing {
-                path: path.clone(),
+                path: at.clone(),
                 commit: mount.commit,
             },
         })?;
@@ -257,7 +258,7 @@ impl Repository {
             mounted
                 .commit_tree(mount.commit)
                 .map_err(|_| ResolveError::CommitMissing {
-                    path: path.clone(),
+                    path: at,
                     commit: mount.commit,
                 })?;
         let board = Board {
@@ -268,7 +269,9 @@ impl Repository {
         // hold its own id. A cycle needs a link, and the hop limit bounds
         // the rest; this key catches a link cycle met through a mount.
         if !trail.visited.insert((board, remaining.clone())) {
-            return Err(ResolveError::Cycle { path });
+            return Err(ResolveError::Cycle {
+                path: trail.path.clone(),
+            });
         }
         mounted.follow(&mut tree, remaining, from_link, trail, pointers)
     }
@@ -328,15 +331,20 @@ impl Trail {
     /// Records the last pointer followed as a link to `target`, named by
     /// its display path.
     fn followed_link(&mut self, target: LogicalPath) {
-        let at = self.pointers.split_last().and_then(|(link, before)| {
+        self.link = Some((self.last_pointer(), target));
+    }
+
+    /// The display path of the last pointer followed, or the path being
+    /// resolved if it has none.
+    fn last_pointer(&self) -> LogicalPath {
+        let at = self.pointers.split_last().and_then(|(pointer, before)| {
             Location {
                 pointers: before.to_vec(),
-                ..link.clone()
+                ..pointer.clone()
             }
             .display_path()
         });
-        let at = at.unwrap_or_else(|| self.path.clone());
-        self.link = Some((at, target));
+        at.unwrap_or_else(|| self.path.clone())
     }
 }
 
@@ -452,6 +460,23 @@ impl ResolveError {
             Self::Cycle { .. } => Code::ResolveCycle,
             Self::TooManyHops { .. } => Code::ResolveTooManyHops,
             Self::Git(error) => error.code(),
+        }
+    }
+
+    /// The path at fault: the link for a dangling link, else the path.
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Dangling { link, .. } => Fields::at(link),
+            Self::NotFound { path }
+            | Self::Shadowed { path, .. }
+            | Self::Submodule { path }
+            | Self::Unreadable { path }
+            | Self::InvalidPointer { path, .. }
+            | Self::RepoMissing { path, .. }
+            | Self::CommitMissing { path, .. }
+            | Self::Cycle { path }
+            | Self::TooManyHops { path } => Fields::at(path),
+            Self::Git(_) => Fields::default(),
         }
     }
 }

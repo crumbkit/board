@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use board_model::{Code, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
+use board_model::{Code, Fields, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
 
 use crate::git::{GitError, Repository};
 use crate::trees::{TreeRow, TreeRows, walk_stored};
@@ -197,6 +197,13 @@ impl PinError {
             Self::NotAMount { .. } => Code::MountInvalid,
             Self::Mount { code, .. } => *code,
             Self::Write(error) => error.code(),
+        }
+    }
+
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::NotAMount { path } | Self::Mount { path, .. } => Fields::at(path),
+            Self::Write(error) => error.fields(),
         }
     }
 }

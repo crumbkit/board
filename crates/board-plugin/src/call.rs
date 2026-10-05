@@ -235,11 +235,17 @@ pub fn invoke(
 ) -> Result<CallReport, CallError> {
     let depth = context.environment.depth()?;
     let capability = chosen.capability();
-    let input = parse_json(input).map_err(|source| CallError::InputJson { source })?;
+    let input = parse_json(input).map_err(|source| CallError::InputJson {
+        capability: capability.name.clone(),
+        source,
+    })?;
     capability
         .input
         .validate(&input)
-        .map_err(|source| CallError::Input { source })?;
+        .map_err(|source| CallError::Input {
+            capability: capability.name.clone(),
+            source,
+        })?;
     let request = protocol::request(&capability.name, &input, context.root, context.database);
     let plugin = &chosen.manifest.name;
     let result: RawCallResult = exchange(
@@ -410,12 +416,18 @@ pub enum CallError {
         plugins: Vec<PluginName>,
     },
     #[error("the input is not one strict JSON document: {source}")]
-    InputJson { source: JsonError },
+    InputJson {
+        capability: CapabilityName,
+        source: JsonError,
+    },
     #[error(
         "the input fails the capability's input schema {}",
         input_failure(source)
     )]
-    Input { source: RecordError },
+    Input {
+        capability: CapabilityName,
+        source: RecordError,
+    },
     #[error("plugin {plugin} cannot be run: {source}")]
     Start {
         plugin: PluginName,
@@ -518,7 +530,11 @@ impl CallError {
                 fields.clone_from(&failure.fields);
                 fields.insert("plugin".to_owned(), json!(plugin));
             }
-            Self::Ambiguous { plugins, .. } => {
+            Self::Ambiguous {
+                capability,
+                plugins,
+            } => {
+                fields.insert("capability".to_owned(), json!(capability));
                 fields.insert("plugins".to_owned(), json!(plugins));
             }
             Self::NoCapability {
@@ -540,10 +556,15 @@ impl CallError {
                 }
             }
             Self::Input {
+                capability,
                 source:
                     RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer },
             } => {
+                fields.insert("capability".to_owned(), json!(capability));
                 fields.insert("pointer".to_owned(), json!(pointer));
+            }
+            Self::InputJson { capability, .. } => {
+                fields.insert("capability".to_owned(), json!(capability));
             }
             Self::BadManifest { plugin, .. }
             | Self::NotInstalled { plugin }
@@ -556,10 +577,7 @@ impl CallError {
             | Self::Failed { plugin, .. } => {
                 fields.insert("plugin".to_owned(), json!(plugin));
             }
-            Self::Discovery { .. }
-            | Self::BadDepth { .. }
-            | Self::TooDeep { .. }
-            | Self::InputJson { .. } => {}
+            Self::Discovery { .. } | Self::BadDepth { .. } | Self::TooDeep { .. } => {}
         }
         if let (Some(stderr), false) = (self.stderr(), matches!(self, Self::Plugin { .. })) {
             fields.insert("stderr".to_owned(), json!(String::from_utf8_lossy(stderr)));

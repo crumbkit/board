@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use board_model::{Code, LogicalPath};
+use board_model::{Code, Fields, LogicalPath};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 use proptest::prelude::*;
@@ -120,6 +120,13 @@ fn refs_of_a_path_that_names_nothing_is_refused_and_one_that_names_a_record_is_a
     assert_eq!(
         refs(&scenario, "/tasks/zz").unwrap_err(),
         Code::PathNotFound
+    );
+    assert_eq!(
+        open(&scenario)
+            .refs(&path("/tasks/zz"), None)
+            .unwrap_err()
+            .fields(),
+        Fields::at(&path("/tasks/zz"))
     );
 }
 

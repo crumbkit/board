@@ -144,29 +144,57 @@ fn an_example_that_names_a_missing_command_does_not_parse_and_a_real_one_does() 
     );
 }
 
+/// Every hint, generic and with every value it can name filled in, names
+/// only commands that parse; a generic hint parses once its placeholders
+/// are filled, and a filled one parses as it is.
 #[test]
 fn every_command_a_hint_names_parses() {
-    let filled = |command: &str| {
+    let placeholders = |command: &str| {
         command
             .replace("<plugin>.<capability>", "tasks.due")
             .replace("<command>", "get")
             .replace("<path>", "/a")
             .replace("<name>", "due")
     };
-    for code in Code::ALL {
-        let hint = render::hint(code);
-        assert!(!hint.is_empty() && !hint.ends_with('.'), "{code}: {hint}");
-        for (index, quoted) in hint.split('`').enumerate() {
-            if index % 2 == 1 && quoted.starts_with("board ") {
-                // A hint may name a command without its arguments.
-                let parsed = parses(&filled(quoted));
-                assert!(
-                    matches!(parsed, Ok(()) | Err(ErrorKind::MissingRequiredArgument)),
-                    "{code}: {quoted}: {parsed:?}"
-                );
+    let known = Fields {
+        path: Some("/tasks/a".parse().unwrap()),
+        blob: Some(ObjectId::Sha1([1; 20])),
+        pointer: Some("/title".to_owned()),
+        record_type: Some("lr/task/v1".parse().unwrap()),
+        schema: Some(".board/types/lr/task/v1.schema.json".to_owned()),
+        plugin: Some("tasks".to_owned()),
+        capability: Some("due".to_owned()),
+    };
+    let no_blob = Fields {
+        blob: None,
+        ..known.clone()
+    };
+    let mut filled = 0;
+    for fields in [Fields::default(), known, no_blob] {
+        for code in Code::ALL {
+            let generic = render::hint(code, &Fields::default());
+            let hint = render::hint(code, &fields);
+            assert!(!hint.is_empty() && !hint.ends_with('.'), "{code}: {hint}");
+            filled += usize::from(hint != generic);
+            for (index, quoted) in hint.split('`').enumerate() {
+                if index % 2 == 1 && quoted.starts_with("board ") {
+                    let command = if hint == generic {
+                        placeholders(quoted)
+                    } else {
+                        assert!(!quoted.contains('<'), "{code}: {quoted}");
+                        quoted.to_owned()
+                    };
+                    // A hint may name a command without its arguments.
+                    let parsed = parses(&command);
+                    assert!(
+                        matches!(parsed, Ok(()) | Err(ErrorKind::MissingRequiredArgument)),
+                        "{code}: {command}: {parsed:?}"
+                    );
+                }
             }
         }
     }
+    assert!(filled >= 20, "only {filled} hints were filled in");
 }
 
 /// The commands that list entries take `--limit` and `--all`; every other
@@ -824,7 +852,7 @@ fn a_query_with_a_syntax_error_has_a_hint_that_says_to_fix_it_and_a_valid_one_ru
         &["query", "SELEC 1", "--json"],
     ));
     assert_eq!(refused["code"], "board::query::invalid");
-    let hint = render::hint(Code::QueryInvalid);
+    let hint = render::hint(Code::QueryInvalid, &Fields::default());
     assert_eq!(refused["hint"], hint);
     assert!(hint.starts_with("fix the statement"), "{hint}");
     assert_eq!(board_in(scenario.workdir(), &["query", "SELECT 1"]).code, 0);

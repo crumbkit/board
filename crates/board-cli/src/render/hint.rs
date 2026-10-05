@@ -1,15 +1,103 @@
-//! What to try next after each code (STANDARDS.md 25). The match has no
-//! wildcard, so a new code does not compile until it has a hint.
+//! What to try next after each code (STANDARDS.md 25). The generic match
+//! has no wildcard, so a new code does not compile until it has a hint.
 
-use board_model::Code;
+use board_model::{Code, Fields, LogicalPath};
 
-/// The hint for `code`. A command it names in backticks, with `<path>`,
-/// `<name>`, `<command>` or `<plugin>.<capability>` filled in, must parse.
+/// The hint for an error with `code` that names `fields`: with the values
+/// it names filled in where they are known, else the generic hint.
+pub(crate) fn hint(code: Code, fields: &Fields) -> String {
+    filled(code, fields).unwrap_or_else(|| generic(code).to_owned())
+}
+
+/// The hint for `code` with the values in `fields`, when it names one and
+/// `fields` holds it. A command it names in backticks must parse as it is.
+fn filled(code: Code, fields: &Fields) -> Option<String> {
+    let path = fields.path.as_ref();
+    let pointer = fields
+        .pointer
+        .as_ref()
+        .filter(|pointer| !pointer.is_empty());
+    let capability = fields.capability.as_ref();
+    Some(match code {
+        Code::JsonMergeConflict => format!(
+            "resolve the git merge conflict in the file, then run `board check {}`",
+            path?
+        ),
+        Code::RecordUnknownType => format!(
+            "add the type's schema at `{}`, or fix `$type`",
+            fields.schema.as_ref()?
+        ),
+        Code::RecordInvalid => format!(
+            "change the value at `{}` so the record satisfies its schema in `.board/types/`",
+            pointer?
+        ),
+        Code::RecordNotARecord if fields.blob.is_some() => format!(
+            "only a record has a JSON report or can be put; `board get {}` without `--json` prints the file's bytes",
+            path?
+        ),
+        Code::RecordNotARecord => format!(
+            "only a record has a JSON report or can be put; `board ls {}` shows what is there",
+            path?
+        ),
+        Code::RefMalformed => format!(
+            "change the reference at `{}` to a logical path that starts with `/`, such as `/projects/p`",
+            pointer?
+        ),
+        Code::PathNotFound => format!(
+            "run `board ls {}` to see what is there; paths leave out `.json`",
+            parent(path?)
+        ),
+        Code::RefDangling => format!(
+            "create the file the link at {} names, or change the link's `path`; `board ls {}` shows the link",
+            path?,
+            parent(path?)
+        ),
+        Code::MountCommitMissing => format!(
+            "fetch the commit into the mounted repository, or run `board mount update {}`",
+            path?
+        ),
+        Code::PutStale => match (path?, fields.blob) {
+            (path, Some(blob)) => format!(
+                "read the record again with `board get {path}`, reapply your change, and put it with `board put {path} --expect {blob}`"
+            ),
+            (path, None) => format!(
+                "nothing is at {path}; put it as a new file with `board put {path} --expect none`"
+            ),
+        },
+        Code::PluginNotEnabled => format!(
+            "add `{}` to `plugins` in `.board/board.json`",
+            fields.plugin.as_ref()?
+        ),
+        Code::PluginAmbiguous => format!(
+            "name the plugin as well, as in `board call {}.{}`; `board plugin find --capability {}` lists the plugins that offer it",
+            fields.plugin.as_ref()?,
+            capability?,
+            capability?
+        ),
+        Code::PluginBadInput => format!(
+            "send JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {} --json` shows it",
+            capability?
+        ),
+        _ => return None,
+    })
+}
+
+/// The directory that holds `path`: `/` for a path at the root.
+fn parent(path: &LogicalPath) -> &str {
+    match path.as_str().rsplit_once('/') {
+        Some(("", _)) | None => "/",
+        Some((parent, _)) => parent,
+    }
+}
+
+/// The hint for `code` alone. A command it names in backticks, with
+/// `<path>`, `<name>`, `<command>` or `<plugin>.<capability>` filled in,
+/// must parse.
 #[expect(
     clippy::too_many_lines,
     reason = "one arm per code reads better than a table split across functions"
 )]
-pub(crate) fn hint(code: Code) -> &'static str {
+fn generic(code: Code) -> &'static str {
     match code {
         Code::JsonParse => "fix the JSON syntax at the line and column the message gives",
         Code::JsonMergeConflict => {

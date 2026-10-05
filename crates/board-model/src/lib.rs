@@ -2,6 +2,7 @@
 
 mod app;
 mod code;
+mod fields;
 mod json;
 mod location;
 mod path;
@@ -11,6 +12,7 @@ mod stat;
 
 pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::code::Code;
+pub use crate::fields::Fields;
 pub use crate::json::{JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::path::{LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, Malformation, PathError};

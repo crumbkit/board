@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use board_index::{Fallback, Index};
-use board_model::{Code, Location, LogicalPath, Source};
+use board_model::{Code, Fields, Location, LogicalPath, Source};
 use board_tree::Status;
 
 use crate::board::Board;
@@ -122,6 +122,13 @@ impl RefsError {
         match self {
             Self::Read { source } => source.code(),
             Self::Check { source } => source.code(),
+        }
+    }
+
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Read { source } => source.fields(),
+            Self::Check { source } => source.fields(),
         }
     }
 }

@@ -2,7 +2,7 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use board_model::{Code, LogicalPath, ObjectId, canonical_json, parse_json};
+use board_model::{Code, Fields, LogicalPath, ObjectId, canonical_json, parse_json};
 use board_scenario::{Item, Scenario};
 use board_tree::{LOCK_WAIT, Status};
 
@@ -178,6 +178,86 @@ fn a_refusal_names_what_is_wrong_with_the_record_and_its_twin_is_admitted() {
     );
 }
 
+/// The fields of the refusal of `record` at `at`.
+fn refused_fields(scenario: &Scenario, at: &str, expect: Expect, record: &str) -> Fields {
+    open(scenario)
+        .put(&path(at), expect, record.as_bytes())
+        .unwrap_err()
+        .fields()
+}
+
+#[test]
+fn a_refused_record_names_its_path_and_what_is_wrong_and_its_twin_is_admitted() {
+    let scenario = board();
+    let at = Fields::at(&path("/tasks/a"));
+    assert_eq!(
+        refused_fields(
+            &scenario,
+            "/tasks/a",
+            Expect::Any,
+            r#"{"$type": "lr/tsk/v1"}"#
+        ),
+        Fields {
+            record_type: Some("lr/tsk/v1".parse().unwrap()),
+            schema: Some(".board/types/lr/tsk/v1.schema.json".to_owned()),
+            ..at.clone()
+        }
+    );
+    assert_eq!(
+        refused_fields(
+            &scenario,
+            "/tasks/a",
+            Expect::Any,
+            r#"{"$type": "lr/task/v1"}"#
+        ),
+        Fields {
+            pointer: Some(String::new()),
+            ..at.clone()
+        }
+    );
+    assert_eq!(
+        refused_fields(&scenario, "/tasks/a", Expect::Any, &task(r#", "see": "x""#)),
+        Fields {
+            pointer: Some("/see".to_owned()),
+            ..at.clone()
+        }
+    );
+    assert_eq!(
+        refused_fields(&scenario, "/tasks/a", Expect::Any, "[1]"),
+        at
+    );
+    assert!(put(&scenario, "/tasks/a", Expect::Any, &task("")).is_ok());
+}
+
+#[test]
+fn a_stale_put_names_the_blob_its_path_holds_and_an_expect_that_matches_is_admitted() {
+    let scenario = board();
+    let first = put(&scenario, "/tasks/a", Expect::Absent, &task(""))
+        .unwrap()
+        .writes[0]
+        .blob;
+    assert_eq!(
+        refused_fields(&scenario, "/tasks/a", Expect::Absent, &task("")),
+        Fields {
+            blob: Some(first),
+            ..Fields::at(&path("/tasks/a"))
+        }
+    );
+    assert_eq!(
+        refused_fields(&scenario, "/tasks/b", Expect::Blob(first), &task("")),
+        Fields::at(&path("/tasks/b"))
+    );
+    assert!(
+        put(
+            &scenario,
+            "/tasks/a",
+            Expect::Blob(first),
+            &task(r#", "see": "/x""#)
+        )
+        .is_ok()
+    );
+}
+
 #[test]
 fn boards_own_types_are_checked_as_their_rust_types() {
     let scenario = board();
@@ -242,6 +322,10 @@ fn a_write_through_a_mount_is_refused_and_one_beside_it_is_admitted() {
     assert_eq!(
         put(&scenario, "/vendor/new/y", Expect::Any, &task("")).unwrap_err(),
         Code::PutThroughMount
+    );
+    assert_eq!(
+        refused_fields(&scenario, "/vendor/x", Expect::Any, &task("")),
+        Fields::at(&path("/vendor/x"))
     );
     assert!(put(&scenario, "/vendors/x", Expect::Any, &task("")).is_ok());
 }

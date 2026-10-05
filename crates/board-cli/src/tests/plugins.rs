@@ -533,3 +533,63 @@ fn plugin_enable_json_names_each_write_as_put_does() {
     assert!(report["writes"][1]["previous"].is_string());
     assert!(report["commit"].is_string());
 }
+
+#[test]
+fn a_plugin_the_board_does_not_enable_is_named_in_the_hint_and_an_enabled_one_runs() {
+    let (board, data) = installed();
+    install(&data, "tasks", &answering(RESULT, 0));
+    install(&data, "notes", &answering(RESULT, 0));
+    let refused = call(&board, &data, &["call", "notes.due"], "{}");
+    assert_eq!(
+        hint_of(&refused),
+        "add `notes` to `plugins` in `.board/board.json`"
+    );
+    assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
+}
+
+#[test]
+fn a_capability_two_plugins_offer_hints_a_call_naming_one_and_that_call_runs() {
+    let (board, data) = installed();
+    board.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes"]}"#),
+    );
+    install(&data, "tasks", &answering(RESULT, 0));
+    install(&data, "notes", &answering(RESULT, 0));
+    let refused = call(&board, &data, &["call", "--capability", "due"], "{}");
+    assert_eq!(
+        hint_of(&refused),
+        "name the plugin as well, as in `board call notes.due`; \
+         `board plugin find --capability due` lists the plugins that offer it"
+    );
+    let report = json(&call(
+        &board,
+        &data,
+        &["--json", "call", "--capability", "due"],
+        "{}",
+    ));
+    assert_eq!(
+        report["fields"],
+        serde_json::json!({"capability": "due", "plugins": ["notes", "tasks"]})
+    );
+    assert_eq!(call(&board, &data, &["call", "notes.due"], "{}").code, 0);
+}
+
+#[test]
+fn input_the_capability_refuses_hints_how_to_see_its_schema_and_valid_input_runs() {
+    let (board, data) = installed();
+    install(&data, "tasks", &answering(RESULT, 0));
+    let refused = call(&board, &data, &["call", "tasks.due"], "[]");
+    assert_eq!(
+        hint_of(&refused),
+        "send JSON on stdin that matches the capability's `inputSchema`; \
+         `board plugin find --capability due --json` shows it"
+    );
+    let shown = plugin(
+        &board,
+        &data,
+        &["plugin", "find", "--capability", "due", "--json"],
+    );
+    assert_eq!(shown.code, 0);
+    assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
+}

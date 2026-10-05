@@ -5,7 +5,7 @@
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-use board_model::{Code, Location, LogicalPath, Source};
+use board_model::{Code, Fields, Location, LogicalPath, Object, Source};
 use board_ops::{
     CheckReport, Checked, EnableReport, Fallback, GetReport, InitReport, Known, Listed, LsReport,
     MAX_LIMIT, MountUpdateReport, PutError, PutReport, QueryError, QueryReport, RefsReport,
@@ -311,7 +311,7 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
 /// hint lists the names there are.
 pub(crate) fn query_error(format: Format, error: &QueryError) -> Output {
     let QueryError::Unknown { known, .. } = error else {
-        return self::error(format, error.code(), error);
+        return self::error(format, error.code(), error, &Fields::default());
     };
     let hint = match known {
         Known::Tables(tables) => format!(
@@ -396,21 +396,32 @@ pub(crate) fn get(format: Format, report: &GetReport) -> Output {
         },
         // The report carries the parsed record, so a file that is not one
         // has no report, and is refused with the code that says why.
-        Format::Json => match &report.record {
-            Ok(record) => document(
-                &json!({
-                    "$type": "board/get-report/v1",
-                    "location": location(&report.location, &report.display.to_string()),
-                    "record": record,
-                }),
-                0,
-            ),
-            Err(code) => error(
-                format,
-                *code,
-                &format_args!("{} is not a record", report.display),
-            ),
-        },
+        Format::Json => {
+            let blob = match report.location.object {
+                Object::Blob(blob) => Some(blob),
+                Object::Directory => None,
+            };
+            match &report.record {
+                Ok(record) => document(
+                    &json!({
+                        "$type": "board/get-report/v1",
+                        "location": location(&report.location, &report.display.to_string()),
+                        "blob": blob.map(|blob| blob.to_string()),
+                        "record": record,
+                    }),
+                    0,
+                ),
+                Err(code) => error(
+                    format,
+                    *code,
+                    &format_args!("{} is not a record", report.display),
+                    &Fields {
+                        blob,
+                        ..Fields::at(&report.display)
+                    },
+                ),
+            }
+        }
     }
 }
 
@@ -511,7 +522,7 @@ pub(crate) fn mount_update(format: Format, report: &MountUpdateReport) -> Output
 /// each after the error, and in JSON as `fields.refusals`.
 pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
     let PutError::Batch { code, refusals } = error else {
-        return self::error(format, error.code(), error);
+        return self::error(format, error.code(), error, &error.fields());
     };
     let message = "the batch is refused";
     if format == Format::Json {
@@ -548,15 +559,33 @@ pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
 const BATCH_HINT: &str =
     "fix each line listed, then send the whole batch again; nothing was written";
 
-/// A failure with the hint for its code.
-pub(crate) fn error(format: Format, code: Code, message: &dyn Display) -> Output {
+/// A failure with the hint for its code, filled in from `fields`, which
+/// JSON carries as `fields`.
+pub(crate) fn error(format: Format, code: Code, message: &dyn Display, fields: &Fields) -> Output {
     failed(
         format,
         code.as_str(),
         &message.to_string(),
-        Some(hint(code)),
-        Map::new(),
+        Some(&hint(code, fields)),
+        json_fields(fields),
     )
+}
+
+/// The values in `fields` that are known, by their `board/error/v1` names.
+pub(crate) fn json_fields(fields: &Fields) -> Map<String, Value> {
+    let known = [
+        ("path", fields.path.as_ref().map(ToString::to_string)),
+        ("blob", fields.blob.as_ref().map(ToString::to_string)),
+        ("pointer", fields.pointer.clone()),
+        ("type", fields.record_type.as_ref().map(ToString::to_string)),
+        ("schema", fields.schema.clone()),
+        ("plugin", fields.plugin.clone()),
+        ("capability", fields.capability.clone()),
+    ];
+    known
+        .into_iter()
+        .filter_map(|(name, value)| Some((name.to_owned(), Value::String(value?))))
+        .collect()
 }
 
 /// A failure with a hint that knows more than its code: as text,

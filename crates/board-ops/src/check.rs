@@ -10,8 +10,8 @@ use std::path::Path;
 
 use board_index::{Fallback, Index, IndexError, Resolved, Storage, ValidationFact, Writer};
 use board_model::{
-    Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
-    RecordType, Role, Source, Stat, classify,
+    Change, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, ObjectId,
+    POINTER_TYPE, RecordType, Role, Source, Stat, classify,
 };
 use board_tree::{Entry, Repository, ResolveError, Status, in_scope};
 
@@ -422,6 +422,13 @@ impl CheckError {
             Self::Scope { source } => source.code(),
             Self::Refresh { source } => source.code(),
             Self::Index { source } => source.code(),
+        }
+    }
+
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Scope { source } => source.fields(),
+            Self::Refresh { .. } | Self::Index { .. } => Fields::default(),
         }
     }
 }

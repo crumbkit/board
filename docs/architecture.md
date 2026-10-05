@@ -307,9 +307,9 @@ old and new commit and whether it wrote.
 
 | Command | Does |
 | --- | --- |
-| `board init` | write a minimal `.board/board.json` at the root of the git repository here, unless one exists; commit nothing |
+| `board init` | write a minimal `.board/board.json` at this git repository's root unless one exists; commit nothing |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location, and refuses any other file with the code that says why it is not one; a directory is `board::record::not_a_record` |
+| `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location and blob, and refuses other files with the code saying why; a directory is `board::record::not_a_record` |
 | `board ls <path>` | list a directory without following pointers |
 | `board refs <path>` | references to and from an object |
 | `board put <path>` | validate and write a record |
@@ -331,9 +331,10 @@ entries first. Text names an entry by its logical path, or by its file when it
 has none or is shadowed; JSON gives both. A
 cut listing ends with a stderr note giving the count shown and the total; JSON
 carries `total` and `truncated`. An error prints `error: <code>: <message>`,
-then `hint: <next step>`; `board/error/v1` carries the same `hint`. A refused
-record names the failing JSON pointer and why. STANDARDS.md 23 to 26 hold the
-rules.
+then `hint: <next step>`, naming the values it knows; `board/error/v1`
+carries the same `hint`, and those values in `fields`: `path`, `blob`,
+`pointer`, `type`, `schema`, `plugin`, `capability`. STANDARDS.md 23 to 26 hold
+the rules.
 
 ## Crates
 

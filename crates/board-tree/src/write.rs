@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use board_model::{
-    BINARY_NAME, Code, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Source,
+    BINARY_NAME, Code, Fields, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Source,
 };
 use gix::lock::acquire::Fail;
 
@@ -630,6 +630,13 @@ impl WriteError {
             Self::Git(error) => error.code(),
         }
     }
+
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Refused { path, .. } => Fields::at(path),
+            _ => Fields::default(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -662,5 +669,20 @@ mod tests {
             "nobody may read it as nothing written"
         );
         assert_eq!(read.code(), Code::RepoUnreadable);
+    }
+
+    #[test]
+    fn a_refused_write_names_its_path_and_a_failed_one_names_nothing() {
+        let path: LogicalPath = "/vendor/x".parse().unwrap();
+        let refused = WriteError::Refused {
+            path: path.clone(),
+            code: Code::PutThroughMount,
+        };
+        assert_eq!(refused.fields(), Fields::at(&path));
+        let failed = WriteError::Io {
+            path: PathBuf::from("/board/vendor/x.json"),
+            source: failure(),
+        };
+        assert_eq!(failed.fields(), Fields::default());
     }
 }

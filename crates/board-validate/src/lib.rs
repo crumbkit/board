@@ -5,7 +5,7 @@
 
 mod references;
 
-use board_model::{Code, DISPLAY_NAME, LogicalPath, RecordType};
+use board_model::{Code, DISPLAY_NAME, Fields, LogicalPath, RecordType};
 use jsonschema::{
     Draft, PatternOptions, Retrieve, Uri, ValidationError, Validator, error::ValidationErrorKind,
 };
@@ -152,6 +152,15 @@ impl RecordError {
         match self {
             Self::Invalid { .. } => Code::RecordInvalid,
             Self::MalformedReference { .. } => Code::RefMalformed,
+        }
+    }
+
+    /// The JSON pointer that failed.
+    pub fn fields(&self) -> Fields {
+        let (Self::Invalid { pointer, .. } | Self::MalformedReference { pointer }) = self;
+        Fields {
+            pointer: Some(pointer.clone()),
+            ..Fields::default()
         }
     }
 }
