@@ -124,106 +124,37 @@ extraction with `query` attaching each plugin's database, and the `tasks`
 plugin in `plugins/tasks/` with its Python gates in CI (#42 to #46). Each done
 item has its test: `tasks` against fixture boards through the real `board`,
 `query` joining `p_tasks.tasks` with `entries`, the `digest` fixture calling
-`due` by capability, and every `board::plugin::` code. No Python library yet:
-there is one plugin.
+`due` by capability, and every `board::plugin::` code.
 
 ### M7 Switch
 
 The owner uses the new Board for daily work and archives the old one.
+After the switch, the export tool and viitta's
+`.board/types/legacy/work/v1.schema.json`, which its golden record needs, are
+deleted together.
 
 Done: the owner says so.
 
-### Controls (next; agreed with the owner 2026-10-05, not built)
+### Controls: done
 
-The owner wants to adopt a code repository as a board and attach controls to
-its files, with the controls stored in that repository. viitta is the first.
-A control is a requirement that applies to files, with its purpose and,
-optionally, a rule a program can check, such as a word budget.
+viitta is a board that keeps its rules as controls (#96, #98, #99, #101,
+#103, #104, #106 and #107). `board get`
+prints any file's bytes, `board init` writes a minimal `.board/board.json`,
+and `check` names the schema file a record of an unknown type needs. A
+plugin ships its types' schemas and `board plugin enable` writes them
+(docs/plugins.md). The `controls` plugin (plugins/controls/README.md) offers
+`for-path` and `check`, and both plugins share the Python library in
+`python/board-plugin/`. viitta's `controls/` holds the AGENTS.md rules and
+the `lint.toml` word budgets, and CI runs `board call controls.check`. The
+line and `#[expect]` budgets stay in `bin/lint` only, because a budget
+control sums words or bytes over files. Each item has its test: pytest
+against fixture boards through the real `board`, and the CI step on viitta
+itself.
 
-**What works today.** A trial on a scratch clone of viitta found:
-
-- `board check` indexes all 176 files. Three are degraded with
-  `record::unknown_type`: the export golden record (`legacy/work/v1`) and the
-  canonical-form fixture `nesting.in.json`/`.out.json` (`lr/task/v1`). The
-  three `plugin.json` files check clean.
-- A control can already be a plain record. A schema field of
-  `board-ref` strings, without `x-board-type`, may reference any file.
-  `check` reports `ref::dangling` when a referenced file is renamed or
-  deleted, and `board refs /AGENTS.md` lists the controls that reach it.
-
-**Owner decisions.**
-
-1. Built: `board get <path>` prints any file's stored bytes
-   (docs/architecture.md, Commands).
-2. Board teaches types instead of hiding files. Adopting a repository must be
-   gentle: after the owner follows what `check` says, `check` exits 0. Board
-   knows its own `board/plugin-manifest/v1`, checked by Rust types as it
-   checks `board/config/v1`. `record::unknown_type` names the schema file that
-   would teach the type. A test fixture carries only a type Board or one of
-   its tools supports:
-   - The canonical-form fixture `nesting.in.json`/`.out.json` does not need a
-     record type: canonical form applies to any JSON. Its `$type` key becomes
-     `$id`, which still tests that `$` sorts before letters, so the fixture
-     becomes a `json` entry.
-   - The export golden record is `legacy/work/v1` because that is the type
-     the M1 export writes. viitta commits the schema the export writes for
-     it, `{"type": "object"}`, at
-     `.board/types/legacy/work/v1.schema.json`, and deletes it with the
-     export tool after M7.
-3. Built: a plugin ships the schemas for its types, and `board plugin enable`
-   writes them into `.board/types/` (docs/plugins.md). Not built yet:
-   `plugin list` reports an enabled plugin whose schema is missing from the
-   tree or differs from it.
-
-**The `controls` plugin.** `controls/control/v1` has `requirement`, `purpose`,
-`applies_to` (references to files), `paths` (SQLite `GLOB` patterns over
-entry paths, for sets such as `docs/*.md`) and an optional `rule`: none, for
-a written requirement, or a budget of `words` (whitespace-separated) or
-`bytes` with a `max`, summed over every matched file. Built
-(plugins/controls/README.md): the plugin extracts nothing, because `board
-query` already holds every control's body. Two capabilities:
-
-- `for-path` returns the controls that apply to a path, by reference or
-  pattern, so an agent can ask before it edits a file.
-- `check` evaluates each budget, reading files through `board query` and
-  `board get`. A violation is the error `controls::budget::exceeded`, naming
-  each failing control with its usage and maximum, so `board call` exits 1
-  in CI. A control Board marks degraded fails it with
-  `controls::control::degraded`. `board check` runs no plugin code and does
-  not report controls.
-
-Left out until a real need: ControlTree groups, assessments, paged reports
-and control status from the old Board.
-
-**viitta adopts itself.** `.board/board.json` enables `controls`.
-`controls/` holds the nine rules from AGENTS.md as written requirements and
-the `lint.toml` budgets as budget controls. `bin/lint` stays the gate; CI
-also runs `board call controls.check`.
-
-**Pull requests, in order.**
-
-1. Built: `board get` prints any file's bytes.
-2. Built: Board knows `board/plugin-manifest/v1`, and `check` names the
-   schema file a record of an unknown type needs.
-3. `board init` writes a minimal `.board/board.json`. Built: the manifest's
-   `types` and `board plugin enable`.
-4. Built: the `controls` plugin in `plugins/controls/`, with pytest against
-   fixture boards through the real `board`. Built: both plugins share the
-   Python library in `python/board-plugin/`.
-5. Built: viitta adopts itself: `board.json`, the two fixture changes above,
-   the control records in `controls/` and the CI step. `lint.toml`'s line and
-   `#[expect]` budgets stay in `bin/lint` only: a budget control sums words or
-   bytes over files, and neither counts lines per file.
-
-Done: in a fresh clone of viitta with `board` and `controls` installed,
-`board check` and `board call controls.check` exit 0, and lowering one
-budget below its usage makes the call exit 1 with
-`controls::budget::exceeded`.
-
-Limits and controls (owner's decision): a limit that refuses a write, such as
-Adoption's file-size limit below, is a setting that `put` and `check` apply. A
-requirement on files that is checked on demand, such as a word budget, is a
-control.
+Not built: `plugin list` reports an enabled plugin whose schema is missing
+from the tree or differs from the one the plugin ships. Left out until a real
+need: ControlTree groups, assessments, paged reports and control status from
+the old Board.
 
 ### M8 Sharing (sketch; after M7)
 
@@ -854,6 +785,12 @@ The owner settled these on 2026-10-03.
    of untrusted bytes.
 8. A web UI and sharing are designed for, not built in v0. Their sketches are
    M8, Views and Serving above.
+9. A limit that refuses a write, such as Adoption's file-size limit, is a
+   setting that `put` and `check` apply. A requirement on files that is
+   checked on demand, such as a word budget, is a control (2026-10-05).
+10. Adopting a repository is gentle: after the owner follows what `check`
+    says, `check` exits 0. A test fixture carries only a type Board or one of
+    its tools supports (2026-10-05).
 
 ## Risks
 
