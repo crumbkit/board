@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use board_model::{CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, Source, classify};
+use board_model::{
+    CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, ObjectId, Source, classify,
+};
 use board_plugin::PluginName;
 use board_tree::{GitError, Repository};
 use serde::Deserialize;
@@ -79,6 +81,12 @@ impl Board {
 
 /// The configuration in the working tree's `.board/board.json`.
 pub(crate) fn read_config(repository: &Repository) -> Option<Config> {
+    config_file(repository).map(|(_, _, config)| config)
+}
+
+/// The working tree's `.board/board.json`: its blob, its value and the
+/// configuration it holds, when it holds a valid one.
+pub(crate) fn config_file(repository: &Repository) -> Option<(ObjectId, Value, Config)> {
     let path: LogicalPath = "/.board/board".parse().ok()?;
     let location = repository.resolve(&Source::WorkingTree, &path).ok()?;
     let Object::Blob(blob) = location.object else {
@@ -91,7 +99,9 @@ pub(crate) fn read_config(repository: &Repository) -> Option<Config> {
         Classified {
             content: Content::Record { record_type, value },
             code: None,
-        } if record_type.as_str() == CONFIG_TYPE => Config::from_value(&value),
+        } if record_type.as_str() == CONFIG_TYPE => {
+            Config::from_value(&value).map(|config| (blob, value, config))
+        }
         _ => None,
     }
 }

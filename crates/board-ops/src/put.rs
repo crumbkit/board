@@ -218,7 +218,7 @@ impl Board {
     }
 
     /// Checks one record and finds where it lands, before any lock.
-    fn prepare(
+    pub(crate) fn prepare(
         &self,
         path: &LogicalPath,
         expect: Expect,

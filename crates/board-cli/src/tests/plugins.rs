@@ -1,4 +1,4 @@
-//! `board plugin list` and `find`.
+//! `board plugin list`, `find` and `enable`.
 
 use super::*;
 
@@ -439,4 +439,97 @@ fn query_attaches_each_enabled_plugins_database_with_hyphens_as_underscores() {
     let disabled = "SELECT count(*) FROM p_tasks.sqlite_schema";
     let output = call(&board, &data, &["--json", "query", disabled], "");
     assert_eq!(json(&output)["code"], "board::query::invalid");
+}
+
+/// A plugins directory holding notes, which ships the schema of
+/// `notes/note/v1`, and a board that does not enable it.
+/// A board that commits on put, as whom it says, and a plugins directory
+/// holding notes, which ships `notes/note/v1`.
+fn shipping() -> (Scenario, Scenario) {
+    let board = Scenario::new();
+    board
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1"}"#),
+        )
+        .write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        );
+    let data = Scenario::new();
+    data.write(
+        "plugins/notes/plugin.json",
+        Item::File(
+            r#"{"$type": "board/plugin-manifest/v1", "name": "notes", "version": "1.0.0",
+            "description": "Notes.", "run": ["./run"], "types": ["notes/note/v1"]}"#,
+        ),
+    )
+    .write(
+        "plugins/notes/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    (board, data)
+}
+
+/// `plugin enable` refused because the board holds another schema.
+pub(super) fn enable_over_another_schema() -> Output {
+    let (board, data) = shipping();
+    board.write(
+        ".board/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "array"}"#),
+    );
+    plugin(&board, &data, &["--json", "plugin", "enable", "notes"])
+}
+
+#[test]
+fn plugin_enable_writes_the_schema_and_the_config_and_says_what_it_did() {
+    let (board, data) = shipping();
+    let output = plugin(&board, &data, &["plugin", "enable", "notes"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let lines: Vec<String> = text(&output.stdout).lines().map(str::to_owned).collect();
+    assert!(lines[0].starts_with("wrote /.board/types/notes/note/v1.schema "));
+    assert!(lines[1].starts_with("wrote /.board/board "));
+    assert!(lines[2].starts_with("committed "));
+    assert_eq!(lines[3], "enabled notes");
+    let again = plugin(&board, &data, &["plugin", "enable", "notes"]);
+    assert_eq!(text(&again.stdout), "notes is already enabled\n");
+    let report = json(&plugin(
+        &board,
+        &data,
+        &["--json", "plugin", "enable", "notes"],
+    ));
+    assert_eq!(report["$type"], "board/plugin-enable-report/v1");
+    assert_eq!(report["writes"], serde_json::json!([]));
+    assert_eq!(report["commit"], serde_json::Value::Null);
+    let listed = text(&plugin(&board, &data, &["plugin", "list"]).stdout);
+    assert_eq!(listed, "ok notes 1.0.0 enabled\n");
+}
+
+#[test]
+fn plugin_enable_over_another_schema_is_refused_with_a_hint_and_over_none_is_admitted() {
+    let refused = enable_over_another_schema();
+    assert_eq!(refused.code, 1);
+    assert_eq!(json(&refused)["code"], "board::plugin::schema_differs");
+    let (board, data) = shipping();
+    assert_eq!(
+        plugin(&board, &data, &["plugin", "enable", "notes"]).code,
+        0
+    );
+}
+
+#[test]
+fn plugin_enable_json_names_each_write_as_put_does() {
+    let (board, data) = shipping();
+    let report = json(&plugin(
+        &board,
+        &data,
+        &["--json", "plugin", "enable", "notes"],
+    ));
+    assert_eq!(report["plugin"], "notes");
+    let schema = &report["writes"][0];
+    assert_eq!(schema["display"], "/.board/types/notes/note/v1.schema");
+    assert_eq!(schema["previous"], serde_json::Value::Null);
+    assert!(schema["blob"].is_string());
+    assert!(report["writes"][1]["previous"].is_string());
+    assert!(report["commit"].is_string());
 }

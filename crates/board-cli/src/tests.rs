@@ -479,6 +479,7 @@ fn the_fixture_board_produces_every_code() {
     for output in plugins::refused_calls() {
         take(output);
     }
+    take(plugins::enable_over_another_schema());
 
     // The index fails only when SQLite does, even in memory, and a write
     // only when the disk or its permissions refuse it, which no board can

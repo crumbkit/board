@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
-use board_model::{Code, MAX_RECORD_BYTES};
+use board_model::{Code, MAX_RECORD_BYTES, RecordType};
 
 use crate::manifest::{Manifest, ManifestError};
 
@@ -39,7 +39,7 @@ pub fn installed(plugins: &Path) -> Result<Vec<Installed>, DiscoveryError> {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let manifest = read_manifest(&directory.join(MANIFEST_FILE))
+        let manifest = read_bounded(&directory.join(MANIFEST_FILE))
             .ok_or(ManifestError::Missing)
             .and_then(|bytes| Manifest::parse(&name, &bytes));
         found.push(Installed {
@@ -52,9 +52,21 @@ pub fn installed(plugins: &Path) -> Result<Vec<Installed>, DiscoveryError> {
     Ok(found)
 }
 
-/// The manifest's bytes, one past the record bound so the parse sees one too
+/// Where an installed plugin keeps the schema of a type it ships, from its
+/// directory: the layout of a board's `.board/types/`.
+pub fn shipped_schema_path(record_type: &RecordType) -> String {
+    format!("types/{}.schema.json", record_type.as_str())
+}
+
+/// The bytes of the schema the plugin in `directory` ships for
+/// `record_type`, or `None` when it cannot be read.
+pub fn shipped_schema(directory: &Path, record_type: &RecordType) -> Option<Vec<u8>> {
+    read_bounded(&directory.join(shipped_schema_path(record_type)))
+}
+
+/// A file's bytes, one past the record bound so the parse sees one too
 /// large.
-fn read_manifest(path: &Path) -> Option<Vec<u8>> {
+fn read_bounded(path: &Path) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)
         .ok()?

@@ -97,6 +97,7 @@ fn a_board_json_board_cannot_read_is_invalid() {
     for bad in [
         r#"{"$type": "board/config/v1", "colour": "red"}"#,
         r#"{"$type": "board/config/v2"}"#,
+        r#"{"$type": "lr/task/v1"}"#,
         r#"{"$type": "board/config/v1", "plugins": [1]}"#,
         r#"{"$type": "board/config/v1", "plugins": ["Tasks"]}"#,
         r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes", "tasks"]}"#,

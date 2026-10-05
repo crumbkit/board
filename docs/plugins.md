@@ -4,8 +4,7 @@ This is the v0 design. PLAN.md says which parts are built.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
 or a changelog. It is a separate program that Board starts, talking JSON over
-stdin and stdout, with its own disposable SQLite database. Board stays small
-because the constructs live here.
+stdin and stdout, with its own disposable SQLite database.
 
 ## Installing and enabling
 
@@ -17,6 +16,12 @@ board enables plugins by name in `.board/board.json`; a name that is not a
 plugin name, or one listed twice, makes it `board::config::invalid`. Board never
 loads a plugin from a board's tree, so cloning or mounting a board never runs
 code.
+
+`board plugin enable <name>` writes each schema an installed plugin ships to
+`.board/types/`, then names the plugin in `.board/board.json`, as one put that
+`commit_on_put` commits. A schema already there must be equal, or the enable is
+`board::plugin::schema_differs` and writes nothing. Enabling again writes
+nothing.
 
 ## The manifest
 
@@ -31,6 +36,7 @@ code.
   "run": ["uv", "run", "--frozen", "python", "-m", "board_tasks"],
   "metadata": { "area": "planning" },
   "extract": ["lr/task/v1"],
+  "types": ["tasks/note/v1"],
   "capabilities": [
     {
       "name": "due",
@@ -50,9 +56,12 @@ The plugin's `metadata` is any JSON object, which `board plugin find` can
 match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
 `inputSchema` and `outputSchema` are required, and `title`, `annotations` and
 `_meta` are optional. Each schema's root is `"type": "object"`. `annotations`
-holds only MCP's five hint keys, which Board stores and never acts on. `_meta`
+holds only MCP's five hint keys, which Board ignores. `_meta`
 is any JSON object. `icons` and `execution` are refused. `extract`
-lists the record types the plugin reads (see Extraction). The manifest refuses
+lists the record types the plugin reads (see Extraction). `types` lists the
+types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`
+in its directory. Each type's namespace is the plugin's name, never
+`board`. The manifest refuses
 unknown fields. An installed plugin's `name` equals its directory's name;
 `check` and `put` check only the content. `version` is
 `MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted board's
@@ -68,17 +77,16 @@ whether the current board enables it. A broken install is listed with
 one filter, lists the capabilities of working installs that match every filter.
 A `--meta` filter matches a string value in the capability's `_meta`, or in the
 plugin's `metadata` when `_meta` lacks the key. `--json` prints each capability
-as its Tool object. Finding is a filter, never a
-ranking.
+as its Tool object.
 
 Only enabled plugins can be called: naming one that is installed but not
 enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls
 the one enabled plugin that offers a capability, so a plugin can use another by
-ability without knowing its name. When more than one offers it, the call is
-`board::plugin::ambiguous`, naming each; the caller then names one. A broken
-install offers nothing. A plugin that is not installed, or a capability no
-installed plugin offers, is `board::plugin::not_installed`; the message lists
-what the named plugin offers, or the nearest offered name.
+ability. When more than one offers it, the call is
+`board::plugin::ambiguous`, naming each. A broken install offers nothing. A
+plugin that is not installed, or a capability no installed plugin offers, is
+`board::plugin::not_installed`; the message lists what the named plugin
+offers, or the nearest offered name.
 
 ## Calling a capability
 
@@ -120,13 +128,11 @@ stdout; past either, Board stops the plugin with `board::plugin::timeout` or
 Past a limit, Board sends SIGTERM to the process it started, waits a second,
 then kills it, and stops reading, so a grandchild still holding a pipe cannot
 keep it waiting. Board signals only that process, so a `run` command must
-`exec` its final program or forward SIGTERM. `uv run` forwards it. A shell
-wrapper must use `exec`: `sh` without it leaves its child running.
+`exec` its final program or forward SIGTERM, as `uv run` does.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory
-at `board.root`. It never opens Board's index, so the same checks, limits and
-logs apply. Board increments `BOARD_CALL_DEPTH` on each nested call (unset is
+at `board.root`. It never opens Board's index. Board increments `BOARD_CALL_DEPTH` on each nested call (unset is
 0) and refuses a call arriving at 8, or at a value that is not a whole number,
 with `board::plugin::too_deep`.
 
@@ -156,8 +162,8 @@ is `board::plugin::bad_output`; a blob it does not name is sent again next time.
 
 Board remembers in its index's `extracted` table which blobs each plugin
 version has handled, sends only new ones, and forgets them when the plugin's
-database file is missing. A plugin may therefore receive a blob again, and
-replaces its rows for that blob.
+database file is missing. A plugin replaces its rows for a blob it receives
+again.
 
 Extraction runs in the refresh before `query`, for every enabled plugin, and
 before `call`, for the plugin called. It never runs before `check`, so `check`
@@ -166,24 +172,23 @@ under `plugins` in its report, with its code; `call` refuses with that code.
 
 Extraction must be a pure function of one record's bytes. Anything that spans
 records, like "tasks blocked by an open task", is a query that joins the
-plugin's tables with Board's `entries` view when it runs. That keeps a plugin's
-database correct on every branch and every commit.
+plugin's tables with Board's `entries` view when it runs.
 
 ## Databases
 
 Board gives each plugin version one SQLite file,
 `plugins/<name>@<version>.sqlite` beside the index, and passes its path in every
-request. The plugin owns everything inside it and names its tables as it likes.
+request. The plugin owns everything inside it.
 `board query` attaches it read-only as `p_<name>`, with hyphens turned into
 underscores, from before the first extraction. A new version starts with an
-empty file and extracts again. Deleting any plugin database is always safe.
-Board sends each plugin version a blob only once. So a plugin installed through
-a symlink keeps its old rows after its code changes, until its version changes
-or its database is deleted.
+empty file and extracts again. Deleting any plugin database is always safe. A
+plugin installed through a symlink keeps its rows after its code changes, until
+its version changes or its database is deleted.
 
 ## Codes
 
-`board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`, `ambiguous`,
+`board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
+`schema_differs`, `ambiguous`,
 `bad_input`, `bad_output`, `failed`, `timeout`, `too_large`, `too_deep`.
 
 ## Writing a plugin in Python

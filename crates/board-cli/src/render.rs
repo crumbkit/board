@@ -7,8 +7,9 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Checked, Fallback, GetReport, InitReport, Known, Listed, LsReport, MAX_LIMIT,
-    MountUpdateReport, PutError, PutReport, QueryError, QueryReport, RefsReport, source_name,
+    CheckReport, Checked, EnableReport, Fallback, GetReport, InitReport, Known, Listed, LsReport,
+    MAX_LIMIT, MountUpdateReport, PutError, PutReport, QueryError, QueryReport, RefsReport,
+    source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -106,26 +107,55 @@ pub(crate) fn put(format: Format, report: &PutReport) -> Output {
             }
         }
         Format::Json => {
-            let writes: Vec<Value> = report
-                .writes
-                .iter()
-                .map(|written| {
-                    json!({
-                        "location": location(&written.location, &written.display.to_string()),
-                        "display": written.display.to_string(),
-                        "previous": written.previous.map(|blob| blob.to_string()),
-                        "blob": written.blob.to_string(),
-                    })
-                })
-                .collect();
-            document(
-                &json!({
-                    "$type": "board/put-report/v1",
-                    "writes": writes,
-                    "commit": report.commit.map(|commit| commit.to_string()),
-                }),
-                0,
-            )
+            let mut report = put_json(report);
+            report["$type"] = json!("board/put-report/v1");
+            document(&report, 0)
+        }
+    }
+}
+
+/// What a put wrote and its commit, as `put --json` and `plugin enable
+/// --json` say it.
+fn put_json(report: &PutReport) -> Value {
+    let writes: Vec<Value> = report
+        .writes
+        .iter()
+        .map(|written| {
+            json!({
+                "location": location(&written.location, &written.display.to_string()),
+                "display": written.display.to_string(),
+                "previous": written.previous.map(|blob| blob.to_string()),
+                "blob": written.blob.to_string(),
+            })
+        })
+        .collect();
+    json!({
+        "writes": writes,
+        "commit": report.commit.map(|commit| commit.to_string()),
+    })
+}
+
+/// `plugin enable`: what it wrote, as `put` says it, or that nothing was
+/// needed.
+pub(crate) fn plugin_enable(format: Format, report: &EnableReport) -> Output {
+    let name = report.name.as_str();
+    match format {
+        Format::Text if report.put.writes.is_empty() => Output {
+            stdout: format!("{name} is already enabled\n").into_bytes(),
+            ..Output::default()
+        },
+        Format::Text => {
+            let mut output = put(format, &report.put);
+            output
+                .stdout
+                .extend_from_slice(format!("enabled {name}\n").as_bytes());
+            output
+        }
+        Format::Json => {
+            let mut json = put_json(&report.put);
+            json["$type"] = json!("board/plugin-enable-report/v1");
+            json["plugin"] = json!(name);
+            document(&json, 0)
         }
     }
 }

@@ -316,6 +316,7 @@ old and new commit and whether it wrote.
 | `board mount update <path>` | advance a mount to its `follow` |
 | `board query <sql>` | read-only SQL over the index |
 | `board plugin list` / `find` | installed plugins and their capabilities |
+| `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
 | `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
 
 Each command returns one typed report. `--json` prints it as a document tagged

@@ -142,6 +142,8 @@ struct RawManifest {
     #[serde(default)]
     extract: Vec<RecordType>,
     #[serde(default)]
+    types: Vec<RecordType>,
+    #[serde(default)]
     capabilities: Vec<RawCapability>,
 }
 
@@ -188,6 +190,8 @@ pub struct Manifest {
     pub run: Vec<String>,
     pub metadata: Map<String, Value>,
     pub extract: Vec<RecordType>,
+    /// The types whose schemas the plugin ships, each in its own namespace.
+    pub types: Vec<RecordType>,
     pub capabilities: Vec<Capability>,
 }
 
@@ -226,6 +230,24 @@ impl Manifest {
         if raw.run.is_empty() {
             return Err(ManifestError::EmptyRun);
         }
+        let own = format!("{}/", raw.name);
+        for (at, record_type) in raw.types.iter().enumerate() {
+            if record_type.is_board() {
+                return Err(ManifestError::BoardType {
+                    record_type: record_type.clone(),
+                });
+            }
+            if !record_type.as_str().starts_with(&own) {
+                return Err(ManifestError::ForeignType {
+                    record_type: record_type.clone(),
+                });
+            }
+            if raw.types[..at].contains(record_type) {
+                return Err(ManifestError::DuplicateType {
+                    record_type: record_type.clone(),
+                });
+            }
+        }
         let mut capabilities: Vec<Capability> = Vec::with_capacity(raw.capabilities.len());
         for capability in raw.capabilities {
             if capabilities.iter().any(|seen| seen.name == capability.name) {
@@ -263,6 +285,7 @@ impl Manifest {
             run: raw.run,
             metadata: raw.metadata,
             extract: raw.extract,
+            types: raw.types,
             capabilities,
         })
     }
@@ -353,6 +376,12 @@ pub enum ManifestError {
     Directory { name: PluginName, directory: String },
     #[error("the manifest has an empty run")]
     EmptyRun,
+    #[error("the manifest ships type {record_type}, which is outside the plugin's namespace")]
+    ForeignType { record_type: RecordType },
+    #[error("the manifest ships type {record_type}, but the `board` namespace is Board's own")]
+    BoardType { record_type: RecordType },
+    #[error("the manifest ships type {record_type} twice")]
+    DuplicateType { record_type: RecordType },
     #[error("the manifest offers capability {name} twice")]
     DuplicateCapability { name: CapabilityName },
     #[error("the manifest capability {capability} has an {side} whose root is not an object type")]
@@ -377,6 +406,9 @@ impl ManifestError {
             | Self::Type { .. }
             | Self::Directory { .. }
             | Self::EmptyRun
+            | Self::ForeignType { .. }
+            | Self::BoardType { .. }
+            | Self::DuplicateType { .. }
             | Self::DuplicateCapability { .. }
             | Self::NotObject { .. }
             | Self::Schema { .. } => Code::PluginBadManifest,

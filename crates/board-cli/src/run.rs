@@ -5,7 +5,7 @@ use std::io::Read;
 
 use board_model::{BINARY_NAME, Code, DISPLAY_NAME, LogicalPath, MAX_RECORD_BYTES, ObjectId};
 use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
-use board_plugin::{CapabilityName, Limits, MetaFilter, Target};
+use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
 
 /// What a plugin run gets from this command line's context.
 fn plugins(context: &Context) -> Plugins<'_> {
@@ -232,6 +232,15 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
+    /// Enable an installed plugin: write the schemas it ships, then name it in .board/board.json.
+    #[command(after_help = "\
+Examples:
+  board plugin enable tasks
+  board plugin enable tasks --json")]
+    Enable {
+        /// The installed plugin's name, as `board plugin list` shows it.
+        name: PluginName,
+    },
 }
 
 /// `none`, or a blob id in hex.
@@ -325,6 +334,12 @@ pub(crate) fn run(
             match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
                 Ok(report) => render::query(format, &report),
                 Err(error) => render::query_error(format, &error),
+            }
+        }
+        Command::Plugin(PluginCommand::Enable { name }) => {
+            match board.plugin_enable(context.plugins.as_deref(), &name) {
+                Ok(report) => render::plugin_enable(format, &report),
+                Err(error) => render::error(format, error.code(), &error),
             }
         }
         Command::Plugin(PluginCommand::List { page }) => {

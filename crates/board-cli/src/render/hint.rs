@@ -104,7 +104,7 @@ pub(crate) fn hint(code: Code) -> &'static str {
             "narrow the query with a WHERE clause or a join on a key; a query may run for 1 second"
         }
         Code::PutStale => {
-            "read the record again with `board get <path>`, reapply your change, and put it with `--expect` set to the blob this error names"
+            "after `plugin enable`, run it again; after a put, read the record again with `board get <path>`, reapply your change, and put it with `--expect` set to the blob this error names"
         }
         Code::PutLocked => {
             "wait for the other write to finish, or finish the merge, rebase, revert or cherry-pick in progress, then try again"
@@ -130,7 +130,10 @@ pub(crate) fn hint(code: Code) -> &'static str {
         Code::PluginBadManifest => {
             "fix the plugin manifest the message names, or reinstall the plugin"
         }
-        Code::PluginNotEnabled => "add the plugin's name to `plugins` in `.board/board.json`",
+        Code::PluginNotEnabled => "run `board plugin enable <name>`",
+        Code::PluginSchemaDiffers => {
+            "a released type's schema never changes; compare the two files the message names and keep the right one, or ask the plugin's author"
+        }
         Code::PluginAmbiguous => {
             "name the plugin as well, as in `board call <plugin>.<capability>`; `board plugin find --capability <name>` lists the plugins that offer it"
         }

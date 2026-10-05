@@ -12,7 +12,9 @@ pub use crate::call::{
     invoke,
 };
 pub use crate::extract::{Extraction, Record, extract};
-pub use crate::installed::{DiscoveryError, Installed, MANIFEST_FILE, installed};
+pub use crate::installed::{
+    DiscoveryError, Installed, MANIFEST_FILE, installed, shipped_schema, shipped_schema_path,
+};
 pub use crate::manifest::{
     Annotations, Capability, CapabilityName, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,
     MetaFilterError, NameError, PluginName, Side, Version, VersionError,

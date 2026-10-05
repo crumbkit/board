@@ -83,3 +83,24 @@ fn a_plugins_directory_that_cannot_be_listed_is_refused_as_not_installed() {
         .write("plugins/tasks/plugin.json", Item::File(TASKS));
     assert_eq!(names(&installed(&plugins(&scenario)).unwrap()), ["tasks"]);
 }
+
+#[test]
+fn a_shipped_schema_is_read_from_the_plugins_types_and_a_missing_one_is_none() {
+    let scenario = Scenario::new();
+    scenario.write(
+        "plugins/notes/types/notes/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    let directory = plugins(&scenario).join("notes");
+    let note: RecordType = "notes/note/v1".parse().unwrap();
+    assert_eq!(
+        shipped_schema_path(&note),
+        "types/notes/note/v1.schema.json"
+    );
+    assert_eq!(
+        shipped_schema(&directory, &note).as_deref(),
+        Some(&br#"{"type": "object"}"#[..])
+    );
+    let other: RecordType = "notes/note/v2".parse().unwrap();
+    assert_eq!(shipped_schema(&directory, &other), None);
+}

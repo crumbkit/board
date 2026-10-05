@@ -313,3 +313,41 @@ fn icons_execution_and_snake_case_schema_keys_are_refused() {
     capability.insert("input_schema".to_owned(), schema);
     assert!(matches!(refused(&value), ManifestError::Shape { .. }));
 }
+
+#[test]
+fn a_shipped_type_outside_the_plugins_namespace_is_refused() {
+    let foreign = shipping("tasks", &["lr/task/v1"]);
+    assert!(matches!(
+        refused(&foreign),
+        ManifestError::ForeignType { .. }
+    ));
+    let own = shipping("tasks", &["tasks/task/v1"]);
+    assert_eq!(parse(&own).unwrap().types[0].as_str(), "tasks/task/v1");
+}
+
+#[test]
+fn a_plugin_named_board_ships_no_board_type() {
+    let error = Manifest::from_value(shipping("board", &["board/x/v1"])).unwrap_err();
+    assert!(matches!(error, ManifestError::BoardType { .. }));
+    assert_eq!(error.code(), Code::PluginBadManifest);
+    assert!(Manifest::from_value(shipping("boards", &["boards/x/v1"])).is_ok());
+}
+
+#[test]
+fn a_type_shipped_twice_is_refused() {
+    let twice = shipping("tasks", &["tasks/task/v1", "tasks/task/v1"]);
+    assert!(matches!(
+        refused(&twice),
+        ManifestError::DuplicateType { .. }
+    ));
+    assert_eq!(refused(&twice).code(), Code::PluginBadManifest);
+    let two = shipping("tasks", &["tasks/task/v1", "tasks/task/v2"]);
+    assert_eq!(parse(&two).unwrap().types.len(), 2);
+}
+
+/// The manifest renamed `name`, shipping `types`.
+fn shipping(name: &str, types: &[&str]) -> Value {
+    let mut manifest = with("/name", json!(name));
+    manifest["types"] = json!(types);
+    manifest
+}

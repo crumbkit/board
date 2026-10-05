@@ -170,14 +170,10 @@ optionally, a rule a program can check, such as a word budget.
      it, `{"type": "object"}`, at
      `.board/types/legacy/work/v1.schema.json`, and deletes it with the
      export tool after M7.
-3. A plugin ships the schemas for its types. The manifest maps each type to a
-   schema file in the plugin's directory. `board plugin enable <name>` adds the
-   plugin to `board.json` and copies its schemas into `.board/types/`, so the
-   tree stays the truth and a clone without the plugin still validates. A
-   different schema already at that path refuses the enable, because a
-   released type never changes. `plugin list` reports an enabled plugin whose
-   schema is missing from the tree or differs from it. The manifest changes in
-   place, as #71 did, since Board has no data to migrate.
+3. Built: a plugin ships the schemas for its types, and `board plugin enable`
+   writes them into `.board/types/` (docs/plugins.md). Not built yet:
+   `plugin list` reports an enabled plugin whose schema is missing from the
+   tree or differs from it.
 
 **The `controls` plugin.** `controls/control/v1` has `requirement`, `purpose`,
 `applies_to` (references to files), `paths` (SQLite `GLOB` patterns over
@@ -206,8 +202,8 @@ also runs `board call controls.check`.
 1. Built: `board get` prints any file's bytes.
 2. Board knows `board/plugin-manifest/v1`; `record::unknown_type` names the
    missing schema file.
-3. `board init` writes a minimal `.board/board.json`; the manifest's type
-   map; `board plugin enable`.
+3. `board init` writes a minimal `.board/board.json`. Built: the manifest's
+   `types` and `board plugin enable`.
 4. The `controls` plugin in `plugins/controls/`, with pytest against fixture
    boards through the real `board`.
 5. viitta adopts itself: `board.json`, the two fixture changes above, the
