@@ -747,6 +747,26 @@ Open:
   This is deferred until an organisation needs a mandate. `board decide` is
   built first without the mandate layer.
 
+### Docs as a tree (sketch; asked for by the owner 2026-10-05, not built)
+
+The docs grow as a tree. DOCS.md is the root index. Each file holds the most
+important facts about its subject and points to the files that hold the
+detail. When a file outgrows its budget, it splits: it keeps an index and the
+details a reader needs first, and the rest moves into leaf files beneath it.
+That adds a level. Each docs change also gets a review that asks whether each
+sentence is needed, is said once, and sits at the right level.
+
+Today the tree has two levels: DOCS.md, and docs/architecture.md (about 3,600
+words) beside docs/plugins.md. docs/architecture.md is the first file to split.
+
+Open:
+- Whether budgets apply per file, per level, or both, and whether the total
+  budget stays.
+- Whether the review is a fresh-agent pass on every PR that touches docs, a
+  control, or both.
+- How a split is checked: each leaf linked from its parent once, and no fact
+  repeated across levels.
+
 ## Taking from crumbkit/board
 
 Take ideas and tests, not files. Each piece is rewritten under the new
