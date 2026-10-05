@@ -158,7 +158,7 @@ step. The owner's decisions so far:
 - **Batches** write to one repository each.
 - **Nesting** is the same step applied recursively, bottom up: each level
   commits, then the level above moves its pin. Repositories across boards,
-  below, proposes instead that only the root's pins move.
+  below, replaces this: only the root's pins move.
 
 - **Transport runs the `git` executable** (owner's decision), so credentials,
   SSH and hosts work as they already do; gix keeps reading objects. The
@@ -167,7 +167,7 @@ step. The owner's decisions so far:
 - **Remote mounts change `board/mount/v1` in place** (owner's decision):
   Board is still being built and has no data to migrate, so `repo` gains its
   remote meaning in v1 with no new version. Repositories across boards,
-  below, proposes declaring the remote once per repository instead.
+  below, replaces this: each repository's remote is declared once.
 - **Network safety.** A mount that names a remote lets its author choose
   what the owner's machine fetches, with the owner's credentials. So Board
   fetches only remotes the root board names in one of its own mount pointers.
@@ -188,14 +188,14 @@ step. The owner's decisions so far:
   pushes use `--atomic --porcelain`. Board replays its own commits with gix's
   tree editor, not `git replay`, which merges contents. When two pins diverge,
   the one that descends from the other wins, as git does for submodules;
-  otherwise it is a conflict. Repositories across boards, below, proposes
-  that the root's pin always wins.
+  otherwise it is a conflict. Repositories across boards, below, replaces
+  this: the root's pin always wins.
 
 Open:
 - Whether jujutsu, with its first-class conflicts, sits behind the same seam
   later. Decide after M7 shows how sharing is actually used.
 
-### Repositories across boards (sketch; proposed 2026-10-05, not yet agreed)
+### Repositories across boards (sketch; agreed with the owner 2026-10-05, not built)
 
 This refines M8 for references between repositories. Adoption, below, covers
 importing records from other systems and plugin writes; this section does not
@@ -248,19 +248,19 @@ printed (Adoption, below).
   something else in the destination with `board::copy::unresolved`.
   `--allow-dangling` and a capped `--with-targets` are its only options. It
   never adds a mount, and it reports with `board/copy-report/v1`.
-- **`board publish` moves a record** into another repository, such as a
+- **`board share` moves a record** into another repository, such as a
   shared one, and leaves a link at its old path, so local references keep
   working. `--snapshot` copies instead, and records the copy in a
-  plugin-owned `publish/snapshot/v1` record. The name keeps it apart from
-  `widgets share`, which is widgets's own command.
+  plugin-owned `share/snapshot/v1` record. It is the sharing that replaces
+  widgets's team store (Adoption, below).
 - **Time travel**: `--at <rev>` reads the root at a revision, and
   `--at name=<rev>` reads one repository at a revision. Both read local
   clones only.
 - **Indexes.** Each board keeps its own index through M8. A cache shared by
   repository key comes only after measurement shows a need.
 
-Open, each with the recommended answer:
-- Proposals against other repositories, and coherence commits: give them a
+Decided with the owner on 2026-10-05:
+- Proposals against other repositories, and coherence commits, come in a
   later milestone. A proposal (Adoption, below) is one concept: a pending
   change stored with the base it was written against. One may target a path
   in another repository, holding a patch and the base blob. It is settled by
@@ -270,26 +270,25 @@ Open, each with the recommended answer:
   ships with `git rebase --onto <pin> <coherence> <branch>`. Board owns the
   concept; domain plugins, such as a widgets plugin preparing a workspace, choose
   which proposals to apply.
-- Publishing a record whose references the destination cannot resolve:
-  give `board publish` the same options as `board copy`, plus `--with-repos`.
+- Sharing a record whose references the destination cannot resolve:
+  `board share` takes the same options as `board copy`, plus `--with-repos`.
   `--with-targets` moves the records it refers to as well, up to the cap,
   leaving a link at each old path, so references inside the shared set keep
   resolving. `--with-repos` writes the declarations of the repositories it
   refers to into the destination. A declaration holds only a remote URL, a
   root commit and a pin, but it tells every reader of the destination that
-  the repository exists. Without either option, `board publish` refuses
+  the repository exists. Without either option, `board share` refuses
   with `board::copy::unresolved`. With `--allow-dangling`, the reference is
   written unchanged and starts resolving once the destination declares the
   same name.
-- M10 in #55 (content-addressed records): drop it. Adoption turns each widgets
+- M10 in #55 (content-addressed records) is dropped. Adoption turns each widgets
   relation into a path reference to `/widgets/<kind>/<id>` and keeps the `widgets://`
   address only as provenance; content hashing stays as Adoption has it.
-- How a root board reaches the owner's personal board, which holds the
-  preferences Settings reads, when M8 fetches only remotes the root names.
-  Recommended: the machine config names the one personal board, and M8
-  fetches it as well as the root's remotes. A shared board can never name
-  it, so the network rule's purpose holds. Settings' sentence that machine
-  config holds only secrets and environment grants would gain this one entry.
+- The owner's personal board holds the preferences Settings reads, but M8
+  fetches only remotes the root names. So the machine config names the one
+  personal board, and M8 fetches it as well as the root's remotes. A shared
+  board can never name it, so the network rule's purpose holds. Settings,
+  below, lists this entry.
 - Whether `docs/architecture.md` keeps saying a board at a commit fully
   determines its mounts. Under tracking it does for reads at the pin; revise
   the sentence when this lands.
@@ -539,7 +538,8 @@ when they are needed. The rules, from the owner's earlier designs:
    protected branch), because whoever controls a machine can bypass Board.
 2. The owner's *preferences*, as records in the owner's personal board, so
    they follow the owner between machines and keep their history. Machine
-   config holds only secrets and environment grants.
+   config holds only secrets, environment grants and the name of the
+   owner's personal board (Repositories across boards, above).
 3. The *board's settings*, in its tree. They are defaults: the owner has the
    final say and can refine any of them. Changing one for everyone is a
    proposal to the board.

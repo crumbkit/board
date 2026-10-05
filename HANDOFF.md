@@ -99,10 +99,7 @@ tooling pass left out typos, which would need an exception list.
 
 1. **M1, the old-corpus export.** The owner runs it against the installed old
    `board`, into its own repository.
-2. **Owner choices on #80.** Whether the share command stays `board publish` or
-   returns to `board share`, and whether "Repositories across boards" changes
-   from proposed to agreed.
-3. **widgets.** The views vocabulary needs read access to example-org/widgets,
+2. **widgets.** The views vocabulary needs read access to example-org/widgets,
    which this session does not have.
 
 ## Next actions
