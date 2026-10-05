@@ -9,6 +9,7 @@ use board_scenario::{Item, Scenario};
 use serde_json::Value;
 
 use crate::config::Context;
+use crate::render;
 use crate::report::Output;
 use crate::run::run;
 
@@ -240,13 +241,15 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     assert!(plain.stdout.is_empty());
     assert_eq!(
         text(&plain.stderr),
-        "error: board::path::not_found: nothing is at /missing\n"
+        "error: board::path::not_found: nothing is at /missing\n\
+         hint: run `board ls <path>` on the parent directory to see what is there; paths leave out `.json`\n"
     );
     let document = board_in(scenario.workdir(), &["get", "/missing", "--json"]);
     assert_eq!(document.code, 1);
     let error = json(&document);
     assert_eq!(error["$type"], "board/error/v1");
     assert_eq!(error["code"], "board::path::not_found");
+    assert_eq!(error["hint"], render::hint(Code::PathNotFound));
 }
 
 fn pointer_to(path: &str) -> String {
@@ -374,6 +377,7 @@ fn the_fixture_board_produces_every_code() {
     };
     let dir = scenario.workdir();
     take(board_in(dir, &["check", "--json"]));
+    take(board_in(dir, &["chek", "--json"]));
     take(board_in(dir, &["get", "/projects", "--json"]));
     take(board_in(dir, &["get", "/nowhere", "--json"]));
     take(board_in(dir, &["get", "/mount/m/gone", "--json"]));
@@ -634,7 +638,9 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
     assert_eq!(
         text(&refused.stderr),
         "error: board::put::invalid: the batch is refused\n\
-         line 2: board::record::invalid: the record for /tasks/b is refused: board::record::invalid\n"
+         line 2: board::record::invalid: the record for /tasks/b is refused: \
+         record fails its schema at its root: \"title\" is a required property\n\
+         hint: fix each line listed, then send the whole batch again; nothing was written\n"
     );
     let document = json(&board_with(
         scenario.workdir(),
@@ -704,4 +710,5 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
     assert_eq!(again["wrote"], false);
 }
 
+mod cli;
 mod plugins;

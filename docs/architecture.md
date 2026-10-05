@@ -234,7 +234,7 @@ use the index; `get` and `ls` resolve directly.
 
 `board query '<sql>'` runs one read-only statement against the index. Each
 enabled plugin's database is attached read-only as `p_<name>`. Rows return as
-JSON, at most 500 unless `--limit` (at most 10,000) says otherwise, with
+JSON, at most 100 unless `--limit` (at most 10,000) says otherwise, with
 `truncated` set when rows were left out. The report is `columns` and `rows`,
 each row an array in column order; `plugins` lists any plugin whose extraction
 failed. SQL that does not parse, would write, or holds more than one statement
@@ -316,7 +316,17 @@ old and new commit and whether it wrote.
 Each command returns one typed report. `--json` prints it as a document tagged
 `board/<command>-report/v1`, or `board/error/v1` on failure. Exit codes: 0 done,
 1 failed (including degraded entries for `check`), 2 the command line was
-refused.
+refused, with `board::usage::invalid`.
+
+`check`, `ls`, `refs`, `plugin list` and `plugin find` show 100 entries unless
+`--limit` or `--all` says otherwise; an entry is a printed line, so `refs`
+counts each pointer and `plugin list` each capability. `check` puts degraded
+entries first. A
+cut listing ends with a stderr note giving the count shown and the total; JSON
+carries `total` and `truncated`. An error prints `error: <code>: <message>`,
+then `hint: <next step>`; `board/error/v1` carries the same `hint`. A refused
+record names the failing JSON pointer and why. STANDARDS.md 23 to 26 hold the
+rules.
 
 ## Crates
 
@@ -358,6 +368,7 @@ after release. The v0 set:
 | `query` | `timeout`: the statement ran longer than 1 s |
 | `put` | `stale`, `locked`, `through_mount`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
+| `usage` | `invalid`: the command line was refused, exit 2 |
 
 ## Testing
 

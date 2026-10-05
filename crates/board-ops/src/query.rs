@@ -12,9 +12,10 @@ use crate::board::Board;
 use crate::check::CheckError;
 use crate::extraction::{Plugins, database};
 
-/// The most rows `query` returns unless asked for fewer.
-pub const DEFAULT_LIMIT: usize = 500;
-/// The most rows `query` returns at all.
+/// The most rows `query` returns, and the most entries a listing shows,
+/// unless asked otherwise (STANDARDS.md 23).
+pub const DEFAULT_LIMIT: usize = 100;
+/// The most rows `query` returns at all, and the largest `--limit`.
 pub const MAX_LIMIT: usize = 10_000;
 
 /// What one statement returned.

@@ -4,11 +4,11 @@
 use std::io::{BufRead, Read};
 
 use board_model::{
-    BINARY_NAME, CONFIG_TYPE, Code, Content, Location, LogicalPath, MAX_RECORD_BYTES, Object,
-    ObjectId, Role, canonical_json, parse_json,
+    BINARY_NAME, CONFIG_TYPE, Code, Content, JsonError, Location, LogicalPath, MAX_RECORD_BYTES,
+    Object, ObjectId, Role, canonical_json, parse_json,
 };
 use board_tree::{LOCK_WAIT, WriteError};
-use board_validate::Schema;
+use board_validate::{RecordError, Schema};
 use serde_json::Value;
 
 use crate::board::{Board, Config};
@@ -223,10 +223,12 @@ impl Board {
         expect: Expect,
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
-        let (value, is_pointer) = self.check_record(bytes).map_err(|code| PutError::Record {
-            path: path.clone(),
-            code,
-        })?;
+        let (value, is_pointer) = self
+            .check_record(bytes)
+            .map_err(|refused| PutError::Record {
+                path: path.clone(),
+                refused,
+            })?;
         let target = self.repository().target(path, is_pointer)?;
         Ok(Prepared {
             path: path.clone(),
@@ -321,14 +323,14 @@ impl Board {
     /// Checks `bytes` as `check` checks a record, with its codes, and
     /// returns the parsed record and whether it is a pointer. Input that is
     /// not one JSON object with a `$type` is `put::invalid`.
-    pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<(Value, bool), Code> {
-        let value = parse_json(bytes).map_err(|error| error.code())?;
+    pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<(Value, bool), Refused> {
+        let value = parse_json(bytes)?;
         if value.get("$type").is_none() {
-            return Err(Code::PutInvalid);
+            return Err(Refused::Code(Code::PutInvalid));
         }
         let classified = Role::Json.classify(Some(bytes));
         if let Some(code) = classified.code {
-            return Err(code);
+            return Err(Refused::Code(code));
         }
         let record_type = match classified.content {
             Content::Pointer { .. } => return Ok((value, true)),
@@ -337,29 +339,51 @@ impl Board {
             | Content::Schema { .. }
             | Content::File
             | Content::Unparsed(_) => {
-                return Err(Code::PutInvalid);
+                return Err(Refused::Code(Code::PutInvalid));
             }
         };
         if record_type.as_str() == CONFIG_TYPE {
             return Config::from_value(&value)
                 .map(|_| (value, false))
-                .ok_or(Code::ConfigInvalid);
+                .ok_or(Refused::Code(Code::ConfigInvalid));
         }
         let schema_path = record_type.schema_path();
         let schema_bytes = self
             .repository()
             .read_working_file(&schema_path)
-            .map_err(|_| Code::RepoUnreadable)?
-            .ok_or(Code::RecordUnknownType)?;
+            .map_err(|_| Refused::Code(Code::RepoUnreadable))?
+            .ok_or(Refused::Code(Code::RecordUnknownType))?;
         let schema = match Role::of(&schema_path).map(|role| role.classify(Some(&schema_bytes))) {
             Some(board_model::Classified {
                 content: Content::Schema { value },
                 code: None,
-            }) => Schema::compile(value).map_err(|_| Code::SchemaInvalid)?,
-            _ => return Err(Code::SchemaInvalid),
+            }) => Schema::compile(value).map_err(|_| Refused::Code(Code::SchemaInvalid))?,
+            _ => return Err(Refused::Code(Code::SchemaInvalid)),
         };
-        schema.validate(&value).map_err(|error| error.code())?;
+        schema.validate(&value)?;
         Ok((value, false))
+    }
+}
+
+/// Why a record is refused, with what failed when Board knows more than the
+/// code says.
+#[derive(Debug, thiserror::Error)]
+pub enum Refused {
+    #[error(transparent)]
+    Json(#[from] JsonError),
+    #[error(transparent)]
+    Schema(#[from] RecordError),
+    #[error("{0}")]
+    Code(Code),
+}
+
+impl Refused {
+    pub fn code(&self) -> Code {
+        match self {
+            Self::Json(error) => error.code(),
+            Self::Schema(error) => error.code(),
+            Self::Code(code) => *code,
+        }
     }
 }
 
@@ -374,8 +398,11 @@ pub(crate) enum Failure {
 /// A put that wrote nothing, or for `head_moved`, wrote but did not commit.
 #[derive(Debug, thiserror::Error)]
 pub enum PutError {
-    #[error("the record for {path} is refused: {code}")]
-    Record { path: LogicalPath, code: Code },
+    #[error("the record for {path} is refused{}", match refused {
+        Refused::Code(_) => String::new(),
+        _ => format!(": {refused}"),
+    })]
+    Record { path: LogicalPath, refused: Refused },
     #[error("{path} is not what --expect says: it holds {}", found.map_or_else(|| "nothing".to_owned(), |blob| blob.to_string()))]
     Stale {
         path: LogicalPath,
@@ -403,7 +430,8 @@ impl PutError {
         match self {
             Self::Stale { .. } => Code::PutStale,
             Self::HeadMoved { .. } => Code::PutHeadMoved,
-            Self::Record { code, .. } | Self::Batch { code, .. } | Self::Line { code, .. } => *code,
+            Self::Record { refused, .. } => refused.code(),
+            Self::Batch { code, .. } | Self::Line { code, .. } => *code,
             Self::TooManyLines => Code::PutInvalid,
             Self::Input { .. } => Code::RepoUnreadable,
             Self::Write(error) => error.code(),

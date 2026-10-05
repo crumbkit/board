@@ -55,11 +55,12 @@ pub enum Code {
     PluginTimeout,
     PluginTooLarge,
     PluginTooDeep,
+    UsageInvalid,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 49] = [
+    pub const ALL: [Code; 50] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -109,6 +110,7 @@ impl Code {
         Self::PluginTimeout,
         Self::PluginTooLarge,
         Self::PluginTooDeep,
+        Self::UsageInvalid,
     ];
 
     /// The code spelled `text`.
@@ -167,6 +169,7 @@ impl Code {
             Self::PluginTimeout => "board::plugin::timeout",
             Self::PluginTooLarge => "board::plugin::too_large",
             Self::PluginTooDeep => "board::plugin::too_deep",
+            Self::UsageInvalid => "board::usage::invalid",
         }
     }
 }
@@ -234,7 +237,8 @@ mod tests {
             | Code::PluginFailed
             | Code::PluginTimeout
             | Code::PluginTooLarge
-            | Code::PluginTooDeep => {}
+            | Code::PluginTooDeep
+            | Code::UsageInvalid => {}
         }
     }
 

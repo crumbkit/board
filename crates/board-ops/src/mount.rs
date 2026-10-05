@@ -37,10 +37,10 @@ impl Board {
         if new == old {
             return Ok(report);
         }
-        self.check_record(&canonical).map_err(|code| {
+        self.check_record(&canonical).map_err(|refused| {
             MountError::Put(PutError::Record {
                 path: path.clone(),
-                code,
+                refused,
             })
         })?;
         let prepared = Prepared {

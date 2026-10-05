@@ -33,6 +33,11 @@ cannot.
 8. **Docs say what exists.** docs/ describes the design and says what is built.
    PLAN.md holds what comes next; when a milestone lands, its settled design
    moves into docs/ and leaves PLAN.md.
+9. **The CLI serves agents and people equally.** Output is bounded by default
+   and says what it left out. Help lets a reader start from one line per
+   command and drill down to examples. Every error carries its code, says what
+   was wrong with which value, and suggests the next thing to try.
+   STANDARDS.md 23 to 26 make this concrete.
 
 ## Writing
 

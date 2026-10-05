@@ -1,6 +1,6 @@
 # Standards
 
-Rules 1 to 22 cover the Rust workspace; P1 to P6 cover Python. Each rule says
+Rules 1 to 26 cover the Rust workspace; P1 to P6 cover Python. Each rule says
 what enforces it. A rule without a gate is still a rule.
 
 ## Types
@@ -62,6 +62,43 @@ what enforces it. A rule without a gate is still a rule.
     | O, `docs.max_words` | `docs/*.md`, summed | 8,000 | What one person reads in one sitting, about 35 minutes. Past that, knowledge belongs in code, tests or schemas, or the design has grown too big. The old `docs/` held about 103,000 words. |
 
     Raise a number only in a change that says why. Every run prints usage against each budget, so headroom shows before it runs out. The glob counts only the top level of `docs/`; `docs/**/*.md` counts subdirectories too. Root files other than `DOCS.md` are outside the budgets, and `PLAN.md` shrinks as milestones land.
+
+## Command line
+
+AGENTS.md 9 sets the goal: the CLI serves agents and people equally. These rules
+make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
+
+23. **Output is bounded and says what it left out.** A command that lists entries
+    (`check`, `ls`, `refs`, `plugin list`, `plugin find`) shows at most 100 by
+    default. `--limit <n>` (1 to 10,000) or `--all` changes that. `query` takes
+    `--limit` with the same default and range, but no `--all`, because it cannot
+    count the rows it did not fetch. When entries are left out, text output ends
+    with a note on stderr that gives the count shown, the total and the flag that
+    shows more. JSON carries `total` and `truncated`. `check` lists degraded
+    entries first, so a cut never hides a problem behind healthy entries. An empty
+    listing says so on stderr instead of printing nothing. Gate: a test walks the
+    clap command tree and requires every listing command to take these flags.
+24. **Help is a tree that ends in examples.** `board --help` gives one line per
+    command and the commands a newcomer runs first. `board <command> --help`
+    describes every argument and option, and ends with at least one example.
+    Gate: a test walks the clap command tree and requires help text on every
+    command, argument and option, and examples on every command that runs.
+    Every example in help must parse as a real command line.
+25. **Every error says what failed, for which value, and what to try next.** A
+    refused command line is an error like any other: it has the code
+    `board::usage::invalid`, exit code 2, and a `board/error/v1` document when
+    `--json` is on the command line. clap suggests the nearest command or flag
+    for a misspelling. Text errors are `error: <code>: <message>`, then a
+    `hint:` line. JSON errors carry `hint` beside `code` and `message`. A record
+    refused by its schema names the JSON pointer that failed and why. Gate: the
+    hint for each code is chosen by an exhaustive `match` on `Code`, so a new
+    code does not compile until it has a hint, and a test requires every command
+    a hint names to parse. A plugin's own codes carry the plugin's message and
+    no hint from Board.
+26. **Output does not depend on the terminal.** Board prints the same bytes to a
+    terminal as to a pipe. It does not use colour, wrap lines or detect a
+    terminal. The report goes to stdout. Notes, hints and text errors go to
+    stderr.
 
 ## Baseline lints
 

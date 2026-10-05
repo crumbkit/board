@@ -3,22 +3,44 @@
 use std::fmt::Write as _;
 
 use board_model::canonical_json;
-use board_ops::{CallFailed, Called, PluginFindReport, PluginListReport, PluginState};
+use board_ops::{CallFailed, Called, Plugin, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{Capability, Manifest, PluginName};
 use serde_json::{Value, json};
 
-use super::{Format, document};
+use super::{Format, Shown, document, failed};
 use crate::report::Output;
 
 /// `plugin list`: as text, a line per plugin with its status, version and
 /// whether the board enables it, then a line per capability. Exit 1 when a
 /// plugin is broken or missing.
-pub(crate) fn plugin_list(format: Format, report: &PluginListReport) -> Output {
+pub(crate) fn plugin_list(
+    format: Format,
+    report: &PluginListReport,
+    limit: Option<usize>,
+) -> Output {
     let code = u8::from(report.degraded());
+    // A line per plugin and per capability, so a cut can fall within one
+    // plugin's capabilities.
+    let lines = report
+        .plugins
+        .iter()
+        .map(|plugin| 1 + offered(plugin).len());
+    let shown = Shown::of(lines.sum(), limit);
+    let mut budget = shown.shown;
+    let plugins: Vec<(&Plugin, &[Capability])> = report
+        .plugins
+        .iter()
+        .map_while(|plugin| {
+            let capabilities = offered(plugin);
+            let take = capabilities.len().min(budget.checked_sub(1)?);
+            budget -= 1 + take;
+            Some((plugin, &capabilities[..take]))
+        })
+        .collect();
     match format {
         Format::Text => {
             let mut text = String::new();
-            for plugin in &report.plugins {
+            for (plugin, capabilities) in &plugins {
                 let status = plugin
                     .code()
                     .map_or_else(|| "ok".to_owned(), |code| format!("degraded {code}"));
@@ -32,25 +54,27 @@ pub(crate) fn plugin_list(format: Format, report: &PluginListReport) -> Output {
                     plugin.name,
                     enabled(plugin.enabled)
                 );
-                if let PluginState::Installed(manifest) = &plugin.state {
-                    for capability in &manifest.capabilities {
-                        let _ = writeln!(text, "  {} {}", capability.name, capability.description);
-                    }
+                for capability in *capabilities {
+                    let _ = writeln!(text, "  {} {}", capability.name, capability.description);
                 }
             }
             Output {
                 stdout: text.into_bytes(),
+                stderr: shown
+                    .note(
+                        "plugins and capabilities",
+                        "no plugins are installed or enabled",
+                    )
+                    .into_bytes(),
                 code,
-                ..Output::default()
             }
         }
         Format::Json => {
-            let plugins: Vec<Value> = report
-                .plugins
+            let plugins: Vec<Value> = plugins
                 .iter()
-                .map(|plugin| {
+                .map(|(plugin, capabilities)| {
                     let mut value = match &plugin.state {
-                        PluginState::Installed(manifest) => installed(manifest),
+                        PluginState::Installed(manifest) => installed(manifest, capabilities),
                         PluginState::BadManifest(error) => json!({"message": error.to_string()}),
                         PluginState::NotInstalled => json!({}),
                     };
@@ -67,26 +91,44 @@ pub(crate) fn plugin_list(format: Format, report: &PluginListReport) -> Output {
                 })
                 .collect();
             document(
-                &json!({
+                &shown.mark(json!({
                     "$type": "board/plugin-list-report/v1",
                     "degraded": report.degraded(),
                     "plugins": plugins,
-                }),
+                })),
                 code,
             )
         }
     }
 }
 
+/// The capabilities a plugin offers: none unless it is installed.
+fn offered(plugin: &Plugin) -> &[Capability] {
+    match &plugin.state {
+        PluginState::Installed(manifest) => &manifest.capabilities,
+        PluginState::BadManifest(_) | PluginState::NotInstalled => &[],
+    }
+}
+
 /// `plugin find`: a line or an object per matching capability.
-pub(crate) fn plugin_find(format: Format, report: &PluginFindReport) -> Output {
-    let rows = report.plugins.iter().flat_map(|found| {
-        found
-            .manifest
-            .capabilities
-            .iter()
-            .map(move |capability| (&found.manifest, found.enabled, capability))
-    });
+pub(crate) fn plugin_find(
+    format: Format,
+    report: &PluginFindReport,
+    limit: Option<usize>,
+) -> Output {
+    let mut rows: Vec<_> = report
+        .plugins
+        .iter()
+        .flat_map(|found| {
+            found
+                .manifest
+                .capabilities
+                .iter()
+                .map(move |capability| (&found.manifest, found.enabled, capability))
+        })
+        .collect();
+    let shown = Shown::of(rows.len(), limit);
+    rows.truncate(shown.shown);
     match format {
         Format::Text => {
             let mut text = String::new();
@@ -102,11 +144,18 @@ pub(crate) fn plugin_find(format: Format, report: &PluginFindReport) -> Output {
             }
             Output {
                 stdout: text.into_bytes(),
+                stderr: shown
+                    .note(
+                        "capabilities",
+                        "no installed capability matches every filter",
+                    )
+                    .into_bytes(),
                 ..Output::default()
             }
         }
         Format::Json => {
             let capabilities: Vec<Value> = rows
+                .into_iter()
                 .map(|(manifest, on, capability)| {
                     let mut value = self::capability(capability);
                     value["capability"] = json!(capability.name);
@@ -117,10 +166,10 @@ pub(crate) fn plugin_find(format: Format, report: &PluginFindReport) -> Output {
                 })
                 .collect();
             document(
-                &json!({
+                &shown.mark(json!({
                     "$type": "board/plugin-find-report/v1",
                     "capabilities": capabilities,
-                }),
+                })),
                 0,
             )
         }
@@ -131,15 +180,15 @@ fn enabled(enabled: bool) -> &'static str {
     if enabled { "enabled" } else { "disabled" }
 }
 
-fn installed(manifest: &Manifest) -> Value {
+/// The manifest, with only `capabilities` of its own.
+fn installed(manifest: &Manifest, capabilities: &[Capability]) -> Value {
     json!({
         "version": manifest.version,
         "description": manifest.description,
         "run": manifest.run,
         "metadata": manifest.metadata,
         "extract": manifest.extract,
-        "capabilities": manifest
-            .capabilities
+        "capabilities": capabilities
             .iter()
             .map(|offered| {
                 let mut value = capability(offered);
@@ -209,31 +258,21 @@ pub(crate) fn temporary(mut output: Output, fallbacks: &[PluginName]) -> Output 
 }
 
 /// A refused call, with its typed fields; as text, the end of the plugin's
-/// stderr follows the error line.
+/// stderr follows the error. A plugin's own code has no hint from Board.
 pub(crate) fn call_error(format: Format, error: &CallFailed) -> Output {
-    match format {
-        Format::Text => {
-            let mut stderr = format!("error: {}: {error}\n", error.code_text()).into_bytes();
-            if let Some(tail) = error.stderr().filter(|tail| !tail.is_empty()) {
-                stderr.extend_from_slice(tail);
-                if !tail.ends_with(b"\n") {
-                    stderr.push(b'\n');
-                }
-            }
-            Output {
-                stderr,
-                code: 1,
-                ..Output::default()
-            }
+    let hint = error.code().map(super::hint);
+    let mut output = failed(
+        format,
+        error.code_text(),
+        &error.to_string(),
+        hint,
+        error.fields(),
+    );
+    if let (Format::Text, Some(tail)) = (format, error.stderr().filter(|tail| !tail.is_empty())) {
+        output.stderr.extend_from_slice(tail);
+        if !tail.ends_with(b"\n") {
+            output.stderr.push(b'\n');
         }
-        Format::Json => document(
-            &json!({
-                "$type": "board/error/v1",
-                "code": error.code_text(),
-                "message": error.to_string(),
-                "fields": error.fields(),
-            }),
-            1,
-        ),
     }
+    output
 }

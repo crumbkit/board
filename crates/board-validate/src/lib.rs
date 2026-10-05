@@ -137,7 +137,7 @@ impl SchemaError {
 /// A record its schema refuses.
 #[derive(Debug, thiserror::Error)]
 pub enum RecordError {
-    #[error("record fails its schema at {pointer:?}: {source}")]
+    #[error("record fails its schema at {}: {source}", if pointer.is_empty() { "its root".to_owned() } else { format!("{pointer:?}") })]
     Invalid {
         pointer: String,
         #[source]

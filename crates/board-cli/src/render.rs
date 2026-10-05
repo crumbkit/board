@@ -7,16 +7,20 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{
-    CheckReport, Fallback, GetReport, Listed, LsReport, MountUpdateReport, PutError, PutReport,
-    QueryReport, RefsReport, source_name,
+    CheckReport, Checked, Fallback, GetReport, Listed, LsReport, MAX_LIMIT, MountUpdateReport,
+    PutError, PutReport, QueryReport, RefsReport, source_name,
 };
 use board_tree::Status;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::report::Output;
 
+mod hint;
+mod page;
 mod plugins;
 
+pub(crate) use hint::hint;
+use page::Shown;
 pub(crate) use plugins::{call, call_error, plugin_find, plugin_list, temporary};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,29 +29,44 @@ pub(crate) enum Format {
     Json,
 }
 
-pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
+/// `check`: a line or an object per entry, degraded entries first, so a
+/// limited listing never hides one behind healthy entries.
+pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) -> Output {
     let code = u8::from(report.degraded());
+    let mut entries: Vec<&Checked> = report.entries.iter().collect();
+    entries.sort_by_key(|entry| entry.status == Status::Ok);
+    let shown = Shown::of(entries.len(), limit);
+    entries.truncate(shown.shown);
+    let degraded = report
+        .entries
+        .iter()
+        .filter(|entry| entry.status != Status::Ok)
+        .count();
     let output = match format {
         Format::Text => {
             let mut text = String::new();
-            for entry in &report.entries {
+            for entry in entries {
                 // A mounted entry's path means nothing in the root board.
-                let shown = match (&entry.source, &entry.logical) {
+                let path = match (&entry.source, &entry.logical) {
                     (Source::Commit(_), Some(logical)) => logical.to_string(),
                     _ => entry.path.clone(),
                 };
-                let _ = writeln!(text, "{} {shown}", status_text(entry.status));
+                let _ = writeln!(text, "{} {path}", status_text(entry.status));
             }
             Output {
                 stdout: text.into_bytes(),
+                stderr: shown
+                    .note(
+                        &format!("entries, {degraded} of them degraded"),
+                        "no entries are at or beneath the path",
+                    )
+                    .into_bytes(),
                 code,
-                ..Output::default()
             }
         }
         Format::Json => {
-            let entries: Vec<Value> = report
-                .entries
-                .iter()
+            let entries: Vec<Value> = entries
+                .into_iter()
                 .map(|entry| {
                     let mut value = json!({
                         "source": source_name(&entry.source),
@@ -60,16 +79,17 @@ pub(crate) fn check(format: Format, report: &CheckReport) -> Output {
                 })
                 .collect();
             document(
-                &json!({
+                &shown.mark(json!({
                     "$type": "board/check-report/v1",
                     "degraded": report.degraded(),
+                    "degraded_total": degraded,
                     "entries": entries,
-                }),
+                })),
                 code,
             )
         }
     };
-    noted(output, report.memory, false)
+    noted(output, report.memory, None)
 }
 
 /// `put`: as text, one line per write naming its display path and new
@@ -116,7 +136,26 @@ pub(crate) fn put(format: Format, report: &PutReport) -> Output {
 
 /// `refs`: as text, a `from` line per reference the object makes, with its
 /// status, and a `to` line per record whose references reach it.
-pub(crate) fn refs(format: Format, report: &RefsReport) -> Output {
+pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) -> Output {
+    // One listing, a line per reference: those made, then each pointer that
+    // reaches the record, so a cut can fall within one incoming record.
+    let reaching: usize = report
+        .to
+        .iter()
+        .map(|incoming| incoming.pointers.len())
+        .sum();
+    let shown = Shown::of(report.from.len() + reaching, limit);
+    let from = &report.from[..shown.shown.min(report.from.len())];
+    let mut budget = shown.shown - from.len();
+    let to: Vec<(&board_ops::Incoming, &[String])> = report
+        .to
+        .iter()
+        .map_while(|incoming| {
+            let take = incoming.pointers.len().min(budget);
+            budget -= take;
+            (take > 0).then(|| (incoming, &incoming.pointers[..take]))
+        })
+        .collect();
     let named = |source: &Source, path: &str, logical: Option<&LogicalPath>| match (source, logical)
     {
         (Source::Commit(_), Some(logical)) => logical.to_string(),
@@ -125,7 +164,7 @@ pub(crate) fn refs(format: Format, report: &RefsReport) -> Output {
     let output = match format {
         Format::Text => {
             let mut text = String::new();
-            for reference in &report.from {
+            for reference in from {
                 let _ = writeln!(
                     text,
                     "from {} {} {}",
@@ -134,20 +173,25 @@ pub(crate) fn refs(format: Format, report: &RefsReport) -> Output {
                     status_text(reference.status)
                 );
             }
-            for incoming in &report.to {
+            for (incoming, pointers) in &to {
                 let name = named(&incoming.source, &incoming.path, incoming.logical.as_ref());
-                for pointer in &incoming.pointers {
+                for pointer in *pointers {
                     let _ = writeln!(text, "to {name} {pointer}");
                 }
             }
             Output {
                 stdout: text.into_bytes(),
+                stderr: shown
+                    .note(
+                        "references from and to the record",
+                        "the record makes no references, and none reach it",
+                    )
+                    .into_bytes(),
                 ..Output::default()
             }
         }
         Format::Json => {
-            let from: Vec<Value> = report
-                .from
+            let from: Vec<Value> = from
                 .iter()
                 .map(|reference| {
                     let mut value = json!({
@@ -164,30 +208,29 @@ pub(crate) fn refs(format: Format, report: &RefsReport) -> Output {
                     value
                 })
                 .collect();
-            let to: Vec<Value> = report
-                .to
+            let to: Vec<Value> = to
                 .iter()
-                .map(|incoming| {
+                .map(|(incoming, pointers)| {
                     json!({
                         "source": source_name(&incoming.source),
                         "path": incoming.path,
                         "logical": incoming.logical.as_ref().map(ToString::to_string),
-                        "pointers": incoming.pointers,
+                        "pointers": pointers,
                     })
                 })
                 .collect();
             document(
-                &json!({
+                &shown.mark(json!({
                     "$type": "board/refs-report/v1",
                     "location": location(&report.location, &report.display.to_string()),
                     "from": from,
                     "to": to,
-                }),
+                })),
                 0,
             )
         }
     };
-    noted(output, report.memory, false)
+    noted(output, report.memory, None)
 }
 
 /// `query`'s rows: as text, one JSON array per line, the columns first.
@@ -227,11 +270,8 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
             )
         }
     };
-    let mut output = noted(
-        output,
-        report.memory,
-        report.truncated && format == Format::Text,
-    );
+    let rows = (report.truncated && format == Format::Text).then_some(report.rows.len());
+    let mut output = noted(output, report.memory, rows);
     if format == Format::Text {
         for failed in &report.plugins {
             output.stderr.extend_from_slice(
@@ -246,9 +286,10 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
     temporary(output, &report.fallbacks)
 }
 
-/// `output` with a line on stderr for each thing a reader should know:
-/// that the index was in memory, or that rows were left out.
-fn noted(output: Output, memory: Option<Fallback>, truncated: bool) -> Output {
+/// `output` with a line on stderr before its own notes for each thing a
+/// reader should know: that the index was in memory, or that rows were
+/// left out of `shown`.
+fn noted(output: Output, memory: Option<Fallback>, rows: Option<usize>) -> Output {
     let mut stderr = String::new();
     if let Some(fallback) = memory {
         let why = match fallback {
@@ -258,13 +299,15 @@ fn noted(output: Output, memory: Option<Fallback>, truncated: bool) -> Output {
         };
         let _ = writeln!(stderr, "note: the index is in memory for this run: {why}");
     }
-    if truncated {
-        let _ = writeln!(stderr, "note: more rows matched; raise --limit to see them");
+    if let Some(shown) = rows {
+        let _ = writeln!(
+            stderr,
+            "note: showing the first {shown} rows, and more matched; --limit <n> (at most {MAX_LIMIT}) shows more"
+        );
     }
-    Output {
-        stderr: stderr.into_bytes(),
-        ..output
-    }
+    let mut stderr = stderr.into_bytes();
+    stderr.extend_from_slice(&output.stderr);
+    Output { stderr, ..output }
 }
 
 pub(crate) fn get(format: Format, report: &GetReport) -> Output {
@@ -284,11 +327,13 @@ pub(crate) fn get(format: Format, report: &GetReport) -> Output {
     }
 }
 
-pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
+pub(crate) fn ls(format: Format, report: &LsReport, limit: Option<usize>) -> Output {
+    let shown = Shown::of(report.listed.len(), limit);
+    let listed = &report.listed[..shown.shown];
     match format {
         Format::Text => {
             let mut text = String::new();
-            for listed in &report.listed {
+            for listed in listed {
                 let _ = match listed {
                     Listed::Directory { logical, .. } => writeln!(text, "directory {logical}/"),
                     Listed::Entry {
@@ -306,12 +351,12 @@ pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
             }
             Output {
                 stdout: text.into_bytes(),
+                stderr: shown.note("entries", "the directory is empty").into_bytes(),
                 ..Output::default()
             }
         }
         Format::Json => {
-            let entries: Vec<Value> = report
-                .listed
+            let entries: Vec<Value> = listed
                 .iter()
                 .map(|listed| match listed {
                     Listed::Directory { name, logical } => json!({
@@ -336,19 +381,17 @@ pub(crate) fn ls(format: Format, report: &LsReport) -> Output {
                 })
                 .collect();
             document(
-                &json!({
+                &shown.mark(json!({
                     "$type": "board/ls-report/v1",
                     "location": location(&report.location, &report.display.to_string()),
                     "entries": entries,
-                }),
+                })),
                 0,
             )
         }
     }
 }
 
-/// A failure: `error: <code>: <message>` on stderr, or a `board/error/v1`
-/// document on stdout. Either way the exit code is 1.
 /// `mount update`: as text, what the mount moved from and to, or that it
 /// was already there.
 pub(crate) fn mount_update(format: Format, report: &MountUpdateReport) -> Output {
@@ -383,15 +426,68 @@ pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
     let PutError::Batch { code, refusals } = error else {
         return self::error(format, error.code(), error);
     };
+    let message = "the batch is refused";
+    if format == Format::Json {
+        let refusals: Vec<Value> = refusals
+            .iter()
+            .map(|refusal| {
+                json!({
+                    "line": refusal.line,
+                    "code": refusal.code.as_str(),
+                    "message": refusal.message,
+                })
+            })
+            .collect();
+        let fields = Map::from_iter([("refusals".to_owned(), Value::Array(refusals))]);
+        return failed(format, code.as_str(), message, Some(BATCH_HINT), fields);
+    }
+    let mut text = format!("error: {code}: {message}\n");
+    for refusal in refusals {
+        let _ = writeln!(
+            text,
+            "line {}: {}: {}",
+            refusal.line, refusal.code, refusal.message
+        );
+    }
+    let _ = writeln!(text, "hint: {BATCH_HINT}");
+    Output {
+        stderr: text.into_bytes(),
+        code: 1,
+        ..Output::default()
+    }
+}
+
+/// What to do about a refused batch, whatever refused its lines.
+const BATCH_HINT: &str =
+    "fix each line listed, then send the whole batch again; nothing was written";
+
+/// A failure with the hint for its code.
+pub(crate) fn error(format: Format, code: Code, message: &dyn Display) -> Output {
+    failed(
+        format,
+        code.as_str(),
+        &message.to_string(),
+        Some(hint(code)),
+        Map::new(),
+    )
+}
+
+/// A failure with a hint that knows more than its code: as text,
+/// `error: <code>: <message>` and then `hint: <hint>` on stderr; as JSON, a
+/// `board/error/v1` document on stdout, with `fields` when there are any.
+/// Either way the exit code is 1.
+pub(crate) fn failed(
+    format: Format,
+    code: &str,
+    message: &str,
+    hint: Option<&str>,
+    fields: Map<String, Value>,
+) -> Output {
     match format {
         Format::Text => {
-            let mut text = format!("error: {code}: the batch is refused\n");
-            for refusal in refusals {
-                let _ = writeln!(
-                    text,
-                    "line {}: {}: {}",
-                    refusal.line, refusal.code, refusal.message
-                );
+            let mut text = format!("error: {code}: {message}\n");
+            if let Some(hint) = hint {
+                let _ = writeln!(text, "hint: {hint}");
             }
             Output {
                 stderr: text.into_bytes(),
@@ -400,44 +496,19 @@ pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
             }
         }
         Format::Json => {
-            let refusals: Vec<Value> = refusals
-                .iter()
-                .map(|refusal| {
-                    json!({
-                        "line": refusal.line,
-                        "code": refusal.code.as_str(),
-                        "message": refusal.message,
-                    })
-                })
-                .collect();
-            document(
-                &json!({
-                    "$type": "board/error/v1",
-                    "code": code.as_str(),
-                    "message": "the batch is refused",
-                    "fields": {"refusals": refusals},
-                }),
-                1,
-            )
-        }
-    }
-}
-
-pub(crate) fn error(format: Format, code: Code, message: &dyn Display) -> Output {
-    match format {
-        Format::Text => Output {
-            stderr: format!("error: {code}: {message}\n").into_bytes(),
-            code: 1,
-            ..Output::default()
-        },
-        Format::Json => document(
-            &json!({
+            let mut value = json!({
                 "$type": "board/error/v1",
-                "code": code.as_str(),
-                "message": message.to_string(),
-            }),
-            1,
-        ),
+                "code": code,
+                "message": message,
+            });
+            if let Some(hint) = hint {
+                value["hint"] = json!(hint);
+            }
+            if !fields.is_empty() {
+                value["fields"] = Value::Object(fields);
+            }
+            document(&value, 1)
+        }
     }
 }
 

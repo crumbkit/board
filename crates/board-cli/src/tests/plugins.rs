@@ -46,6 +46,78 @@ fn plugin_list_prints_each_plugin_with_its_capabilities() {
 }
 
 #[test]
+fn plugin_list_counts_a_line_per_plugin_and_capability_so_a_limit_cuts_within_a_plugin() {
+    let (board, data) = installed();
+    let cut = plugin(&board, &data, &["plugin", "list", "--limit", "1"]);
+    assert_eq!(text(&cut.stdout), "ok tasks 0.1.0 enabled\n");
+    assert_eq!(
+        text(&cut.stderr),
+        "note: showing 1 of 2 plugins and capabilities; \
+         --limit <n> (at most 10000) or --all shows more\n"
+    );
+    let report = json(&plugin(
+        &board,
+        &data,
+        &["--json", "plugin", "list", "--limit", "1"],
+    ));
+    assert_eq!(report["plugins"][0]["capabilities"], serde_json::json!([]));
+    assert_eq!(
+        (report["total"].clone(), report["truncated"].clone()),
+        (2.into(), true.into())
+    );
+    let whole = plugin(&board, &data, &["plugin", "list", "--limit", "2"]);
+    assert_eq!(text(&whole.stdout).lines().count(), 2);
+    assert_eq!(text(&whole.stderr), "");
+}
+
+/// A manifest for `name` offering capabilities `one` and `two`.
+fn two_capabilities(name: &str) -> String {
+    let capability = |capability: &str| {
+        format!(
+            r#"{{"name": "{capability}", "description": "{capability}.",
+            "inputSchema": {{"type": "object"}}, "outputSchema": {{"type": "object"}}}}"#
+        )
+    };
+    format!(
+        r#"{{"$type": "board/plugin-manifest/v1", "name": "{name}", "version": "0.1.0",
+        "description": "{name}.", "run": ["./run"],
+        "capabilities": [{}, {}]}}"#,
+        capability("one"),
+        capability("two")
+    )
+}
+
+#[test]
+fn plugin_list_spends_its_limit_on_each_plugin_and_its_capabilities_in_turn() {
+    let (board, data) = installed();
+    data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&two_capabilities("tasks")),
+    )
+    .write(
+        "plugins/zeta/plugin.json",
+        Item::File(&two_capabilities("zeta")),
+    );
+    let lines = [
+        "ok tasks 0.1.0 enabled\n",
+        "  one one.\n",
+        "  two two.\n",
+        "ok zeta 0.1.0 disabled\n",
+        "  one one.\n",
+        "  two two.\n",
+    ];
+    for limit in 1..=6 {
+        let output = plugin(
+            &board,
+            &data,
+            &["plugin", "list", "--limit", &limit.to_string()],
+        );
+        assert_eq!(text(&output.stdout), lines[..limit].concat(), "{limit}");
+        assert_eq!(text(&output.stderr).is_empty(), limit == 6, "{limit}");
+    }
+}
+
+#[test]
 fn plugin_list_json_is_a_tagged_report_holding_the_manifest() {
     let (board, data) = installed();
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
@@ -132,6 +204,10 @@ fn plugin_find_prints_one_line_per_matching_capability() {
     );
     let output = plugin(&board, &data, &["plugin", "find", "--meta", "area=writing"]);
     assert_eq!((output.code, text(&output.stdout)), (0, String::new()));
+    assert_eq!(
+        text(&output.stderr),
+        "note: no installed capability matches every filter\n"
+    );
 }
 
 #[test]
