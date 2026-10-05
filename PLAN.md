@@ -778,7 +778,8 @@ The owner settled these on 2026-10-03.
 5. Plugins are installed in `~/.local/share/board/plugins/<name>/`.
 6. The budget values in `lint.toml` stand; `context.max_words` counts the
    default-loaded files together. The docs budget was lowered from 8,000 to
-   5,000 words after the altitude pass (#60), owner's decision of 2026-10-04.
+   5,000 words after the altitude pass (#60), owner's decision of 2026-10-04,
+   and raised to 5,500 on 2026-10-05 to describe the features built since.
 7. proptest states invariants over generated structures; bolero fuzzes parsers
    of untrusted bytes.
 8. A web UI and sharing are designed for, not built in v0. Their sketches are

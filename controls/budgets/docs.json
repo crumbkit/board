@@ -4,9 +4,9 @@
     "docs/*.md"
   ],
   "purpose": "The design must stay small enough to read whole. lint.toml's docs budget enforces the same limit.",
-  "requirement": "docs/ holds at most 5,000 words. Raise the budget only in a change that says why.",
+  "requirement": "docs/ holds at most 5,500 words. Raise the budget only in a change that says why.",
   "rule": {
     "budget": "words",
-    "max": 5000
+    "max": 5500
   }
 }
