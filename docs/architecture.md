@@ -262,19 +262,21 @@ existing entry by its `.json` file, the path stays `path::not_found`.
 
 `board put <path>` reads one JSON record from stdin, then:
 
-1. checks it with the codes `check` uses: size and strict parse, `$type`,
+1. takes `board.lock` in the worktree's git directory, waiting up to 5 seconds
+   and then refusing with `board::put::locked`. The steps below run under the
+   lock, so a record is checked against the board it is written to, and other
+   writers wait while it is checked;
+2. checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
    `board/mount/v1` and `board/config/v1` are checked as their own types;
-2. resolves the path, following pointers, so a write through a link lands at
+3. resolves the path, following pointers, so a write through a link lands at
    its target; put does not create a missing target, and refuses with its
    resolution code. A path through a mount is `board::put::through_mount`. A
    segment git keeps, `.git` under any spelling HFS+ or NTFS opens as it, is
    `board::path::malformed`, in `mount update` too. Missing directories are
    created. A write that would leave its own path degraded is refused with that
    path's code, such as `path::shadowed`;
-3. takes `board.lock` in the worktree's git directory, waiting up to 5 seconds
-   and then refusing with `board::put::locked`;
 4. with `--expect <blob>`, or `--expect none` for a new file, refuses with
    `board::put::stale` unless the target's current blob matches. Without
    `--expect`, a put overwrites;
@@ -291,22 +293,24 @@ existing entry by its `.json` file, the path stays `path::not_found`.
    says whether the commit was made.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
-record}`. Every line is checked and every expect compared under the lock before
-any write; two lines resolving to one file, one invalid line or one stale
-expect refuse the whole batch, listing each failing line with its code (in
-`board/error/v1` as `fields.refusals`). Writes go in input order, then one
-commit.
+record}`, then takes the lock; when no line parses, it is refused without the
+lock. Every line is checked against one snapshot of the working tree, which
+lists each directory once, and every expect is compared before any write; two
+lines resolving to one file, one invalid line or one stale expect refuse the
+whole batch, listing each failing line with its code (in `board/error/v1` as
+`fields.refusals`). Writes go in input order, then one commit.
 
 The report is `board/put-report/v1`: `writes`, each with its Location, display
 path, `previous` blob (null for a new file), `blob` and `degraded` (as `check`
 reports it, or null); and `commit` (null when none was made).
 
-`board mount update <path>` names a mount pointer, which it does not follow;
-anything else there is `board::mount::invalid`. It reads the pointer's `follow`
-ref in the mounted repository (missing: `board::mount::follow_missing`) and, if
-the commit changed, rewrites `commit` through `put` with `--expect` set to the
-pointer's blob. The report, `board/mount-update-report/v1`, gives the path, the
-old and new commit and whether it wrote.
+`board mount update <path>` takes the lock, then reads the mount pointer at
+`path`, which it does not follow. Anything other than a mount pointer there is
+`board::mount::invalid`. It reads the pointer's `follow` ref in the mounted
+repository (missing: `board::mount::follow_missing`) and, if the commit
+changed, rewrites `commit` through `put` with `--expect` set to the pointer's
+blob. The report, `board/mount-update-report/v1`, gives the path, the old and
+new commit and whether it wrote.
 
 ## Commands
 

@@ -55,7 +55,7 @@ impl Repository {
     pub fn walk_under(&self, source: &Source, path: &str) -> Result<Vec<Entry>, GitError> {
         match source {
             Source::Commit(commit) => walk_from(&mut self.commit_tree(*commit)?, path),
-            Source::WorkingTree => walk_from(&mut self.working_tree(&mut |_, _| None)?, path),
+            Source::WorkingTree => walk_from(&mut self.working_tree(None)?, path),
         }
     }
 
@@ -66,7 +66,7 @@ impl Repository {
         &self,
         known: &mut dyn FnMut(&str, &Stat) -> Option<ObjectId>,
     ) -> Result<Vec<Entry>, GitError> {
-        walk_in(&mut self.working_tree(known)?)
+        walk_in(&mut self.working_tree(Some(known))?)
     }
 }
 

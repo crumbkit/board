@@ -10,7 +10,7 @@ use board_model::{
     Source,
 };
 
-use crate::address::{self, Named};
+use crate::address::Named;
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree};
 use crate::worktree::{Known, WorkingTree};
@@ -57,48 +57,14 @@ impl Repository {
                 true,
                 &mut Pointers::new(),
             ),
-            Source::WorkingTree => self.resolver(&mut |_, _| None)?.resolve(path),
+            Source::WorkingTree => self.snapshot()?.resolve(path),
         }
     }
 
     /// The deepest ancestor of `path` that resolves in the working tree,
-    /// for a `path` that names nothing there. Any code but
-    /// `path::not_found`, at an ancestor, is returned as it is.
+    /// as [`Resolver::ancestor`] finds it.
     pub fn ancestor(&self, path: &LogicalPath) -> Result<Ancestor, ResolveError> {
-        let segments: Vec<&str> = path.segments().collect();
-        for depth in (0..segments.len()).rev() {
-            // A prefix of a logical path's segments is always one.
-            let Ok(ancestor) = format!("/{}", segments[..depth].join("/")).parse::<LogicalPath>()
-            else {
-                break;
-            };
-            match self.resolve(&Source::WorkingTree, &ancestor) {
-                Ok(location) => {
-                    return Ok(Ancestor {
-                        location,
-                        rest: segments[depth..]
-                            .iter()
-                            .map(|segment| (*segment).to_owned())
-                            .collect(),
-                    });
-                }
-                Err(ResolveError::NotFound { .. }) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Err(ResolveError::NotFound { path: path.clone() })
-    }
-
-    /// Resolves `path` in the working tree as [`Repository::resolve`] does,
-    /// except that a pointer at the end is not followed, as `lstat` does
-    /// not follow a symlink.
-    pub fn resolve_pointer(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        self.resolve_in(
-            &mut self.working_tree(&mut |_, _| None)?,
-            path,
-            false,
-            &mut Pointers::new(),
-        )
+        self.snapshot()?.ancestor(path)
     }
 
     /// A resolver for many paths in one snapshot of the working tree, which
@@ -106,7 +72,18 @@ impl Repository {
     pub fn resolver<'k>(&self, known: Known<'k>) -> Result<Resolver<'_, 'k>, GitError> {
         Ok(Resolver {
             repository: self,
-            tree: self.working_tree(known)?,
+            tree: self.working_tree(Some(known))?,
+            pointers: Pointers::new(),
+        })
+    }
+
+    /// A resolver for many paths in one snapshot of the working tree, which
+    /// hashes each file it lists. A batch of writes checks every record
+    /// against one snapshot, so it lists each directory once.
+    pub fn snapshot(&self) -> Result<Resolver<'_, 'static>, GitError> {
+        Ok(Resolver {
+            repository: self,
+            tree: self.working_tree(None)?,
             pointers: Pointers::new(),
         })
     }
@@ -356,6 +333,51 @@ impl Resolver<'_, '_> {
         self.repository
             .resolve_in(&mut self.tree, path, true, &mut self.pointers)
     }
+
+    /// Resolves `path` as [`Resolver::resolve`] does, except that a pointer
+    /// at the end is not followed, as `lstat` does not follow a symlink.
+    pub fn resolve_pointer(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        self.repository
+            .resolve_in(&mut self.tree, path, false, &mut self.pointers)
+    }
+
+    /// The code the entry for the `/`-separated `file` would have once
+    /// written, or `None` when it would not be degraded.
+    pub(crate) fn degraded(
+        &mut self,
+        file: &str,
+        is_pointer: bool,
+    ) -> Result<Option<Code>, GitError> {
+        self.tree.degraded(file, is_pointer)
+    }
+
+    /// The deepest ancestor of `path` that resolves, for a `path` that names
+    /// nothing. Any code but `path::not_found`, at an ancestor, is returned
+    /// as it is.
+    pub fn ancestor(&mut self, path: &LogicalPath) -> Result<Ancestor, ResolveError> {
+        let segments: Vec<&str> = path.segments().collect();
+        for depth in (0..segments.len()).rev() {
+            // A prefix of a logical path's segments is always one.
+            let Ok(ancestor) = format!("/{}", segments[..depth].join("/")).parse::<LogicalPath>()
+            else {
+                break;
+            };
+            match self.resolve(&ancestor) {
+                Ok(location) => {
+                    return Ok(Ancestor {
+                        location,
+                        rest: segments[depth..]
+                            .iter()
+                            .map(|segment| (*segment).to_owned())
+                            .collect(),
+                    });
+                }
+                Err(ResolveError::NotFound { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(ResolveError::NotFound { path: path.clone() })
+    }
 }
 
 /// What each `.json` blob read during one run holds as a pointer, by blob id:
@@ -421,7 +443,7 @@ fn pick<'e, T: Tree>(
         path: path.clone(),
         segment,
     };
-    match address::named(entries, &segment) {
+    match tree.named(directory, entries, &segment) {
         Named::Nothing => Ok(None),
         Named::One(entry) => Ok(Some(entry)),
         Named::RecordWithChildren { record, children } => {

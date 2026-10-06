@@ -74,8 +74,7 @@ fn walked(scenario: &Scenario, source: &Source) -> (usize, usize) {
     let repository = scenario.open();
     match source {
         Source::WorkingTree => {
-            let mut unknown = |_: &str, _: &board_model::Stat| None;
-            let mut tree = repository.working_tree(&mut unknown).unwrap();
+            let mut tree = repository.working_tree(None).unwrap();
             let mut counting = Counting {
                 tree: &mut tree,
                 listed: 0,

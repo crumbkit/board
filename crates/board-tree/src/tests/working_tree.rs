@@ -315,3 +315,59 @@ fn a_missing_path_lies_beneath_its_deepest_ancestor_and_nothing_lies_beneath_a_f
         "beneath a file that is not JSON"
     );
 }
+
+/// Where a write to `text` lands, or the code that refuses it.
+fn target(scenario: &Scenario, text: &str, is_pointer: bool) -> Result<String, Code> {
+    let repository = scenario.open();
+    let mut snapshot = repository.snapshot().unwrap();
+    snapshot
+        .target(&path(text), is_pointer)
+        .map(|target| target.path)
+        .map_err(|error| error.code())
+}
+
+#[test]
+fn a_write_that_would_degrade_its_own_path_is_refused_and_its_twin_is_admitted() {
+    let scenario = Scenario::new();
+    scenario
+        .write("tasks/x.json", Item::File("{}"))
+        .write("tasks/d.json", Item::File("{}"))
+        .write("tasks/d/child.json", Item::File("{}"));
+    let pointer = target(&scenario, "/tasks/d", true);
+    assert_eq!(
+        pointer,
+        Err(Code::PathShadowed),
+        "a pointer beside a directory"
+    );
+    assert_eq!(
+        target(&scenario, "/tasks/d", false),
+        Ok("tasks/d.json".into())
+    );
+    let case = target(&scenario, "/tasks/X", false);
+    assert_eq!(case, Err(Code::PathCaseCollision), "beside tasks/x.json");
+    assert_eq!(
+        target(&scenario, "/tasks/y", false),
+        Ok("tasks/y.json".into())
+    );
+    assert_eq!(
+        target(&scenario, "/tasks/x/child", false),
+        Ok("tasks/x/child.json".into()),
+        "a directory beside a record that is not a pointer"
+    );
+}
+
+#[test]
+fn a_snapshot_lists_each_directory_once_and_each_target_without_one_lists_again() {
+    let scenario = Scenario::new();
+    scenario
+        .write("tasks/a.json", Item::File("{}"))
+        .write("tasks/b.json", Item::File("{}"));
+    let repository = scenario.open();
+    let mut snapshot = repository.snapshot().unwrap();
+    for text in ["/tasks/a", "/tasks/b", "/tasks/new"] {
+        snapshot.target(&path(text), false).unwrap();
+    }
+    assert_eq!(repository.directories_listed(), 2, "the root and tasks");
+    repository.target(&path("/tasks/a"), false).unwrap();
+    assert_eq!(repository.directories_listed(), 4);
+}

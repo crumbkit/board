@@ -2,10 +2,10 @@
 //! names (docs/architecture.md, Writes).
 
 use board_model::{BINARY_NAME, Code, Fields, LogicalPath, ObjectId};
-use board_tree::{Pin, PinError};
+use board_tree::{LOCK_WAIT, Pin, PinError};
 
 use crate::board::Board;
-use crate::put::{Expect, Failure, Prepared, PutError};
+use crate::put::{Expect, Failure, Prepared, PutError, Schemas};
 
 /// What `mount update` found and whether it wrote.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,8 +19,13 @@ pub struct MountUpdateReport {
 impl Board {
     /// Rewrites the mount pointer at `path`, which is not followed, to the
     /// commit its `follow` ref names now, through put with the pointer's
-    /// blob as the expect. A mount already there is left as it is.
+    /// blob as the expect. The pointer is read under the lock the write
+    /// holds. A mount already there is left as it is.
     pub fn mount_update(&self, path: &LogicalPath) -> Result<MountUpdateReport, MountError> {
+        let lock = self
+            .repository()
+            .lock(LOCK_WAIT)
+            .map_err(|error| MountError::Put(error.into()))?;
         let Pin {
             target,
             blob,
@@ -37,12 +42,14 @@ impl Board {
         if new == old {
             return Ok(report);
         }
-        let admitted = self.check_record(&canonical).map_err(|refused| {
-            MountError::Put(PutError::Record {
-                path: path.clone(),
-                refused,
-            })
-        })?;
+        let admitted = self
+            .check_record(&mut Schemas::default(), &canonical)
+            .map_err(|refused| {
+                MountError::Put(PutError::Record {
+                    path: path.clone(),
+                    refused,
+                })
+            })?;
         let prepared = Prepared {
             path: path.clone(),
             expect: Expect::Blob(blob),
@@ -50,7 +57,8 @@ impl Board {
             target,
             admitted,
         };
-        self.write_all(&[prepared], &format!("{BINARY_NAME} mount update {path}"))
+        let message = format!("{BINARY_NAME} mount update {path}");
+        self.write_all(lock, &[prepared], &message)
             .map_err(|failure| {
                 MountError::Put(match failure {
                     Failure::Stale(mut stale) => stale.remove(0).1,

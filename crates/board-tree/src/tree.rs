@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
-use crate::address;
+use crate::address::{self, Named};
 use crate::git::GitError;
 
 /// One source's directory tree: a commit's, or the working tree.
@@ -30,6 +30,16 @@ pub(crate) trait Tree {
         directory: &Self::Directory,
         entry: &RawEntry<Self::Directory>,
     ) -> Result<Option<Vec<u8>>, GitError>;
+
+    /// What `segment` names among `entries`, the listing of `directory`.
+    fn named<'e>(
+        &mut self,
+        _directory: &Self::Directory,
+        entries: &'e [RawEntry<Self::Directory>],
+        segment: &str,
+    ) -> Named<'e, Self::Directory> {
+        address::named(entries, segment)
+    }
 
     /// Each entry's logical path and own code in `directory`, whose logical
     /// path is `parent`, in the order of `entries`.

@@ -1,16 +1,18 @@
 //! `board put`: checking a record and writing it in canonical form
 //! (docs/architecture.md, Writes).
 
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::convert::Infallible;
 use std::io::{BufRead, Read};
 
 use board_model::{
     BINARY_NAME, CONFIG_TYPE, Code, Content, Fields, JsonError, Location, LogicalPath,
-    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, Source, canonical_json,
+    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json,
     parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
-use board_tree::{LOCK_WAIT, WriteError};
+use board_tree::{LOCK_WAIT, Lock, ResolveError, Resolver, WriteError};
 use board_validate::{RecordError, Reference, Schema};
 use serde_json::Value;
 
@@ -68,6 +70,15 @@ pub(crate) struct Admitted {
     pub(crate) references: Vec<Reference>,
 }
 
+/// The refusal of line `line` for `error`.
+fn refusal(line: usize, error: &PutError) -> Refusal {
+    Refusal {
+        line,
+        code: error.code(),
+        message: error.to_string(),
+    }
+}
+
 /// One line of a batch that refused it, counted from 1.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refusal {
@@ -89,9 +100,28 @@ struct RawLine {
     record: Value,
 }
 
+/// Each record type's schema, read and compiled once while the lock is held,
+/// so a batch compiles a schema once per type and not once per line.
+#[derive(Debug, Default)]
+pub(crate) struct Schemas {
+    held: HashMap<RecordType, Schema>,
+    /// How many schemas were compiled. Work-count tests assert it.
+    pub(crate) compiled: usize,
+}
+
+/// A batch line read with its number, or why it is refused.
+pub(crate) type ReadLine = Result<(usize, Line), Refusal>;
+
+/// One batch line, read but not yet checked.
+pub(crate) struct Line {
+    path: LogicalPath,
+    expect: Expect,
+    bytes: Vec<u8>,
+}
+
 impl Board {
-    /// Checks `bytes` as a record, then writes it in canonical form to the
-    /// file `path` names, under the lock and only if the file is what
+    /// Takes the lock, checks `bytes` as a record, and writes it in
+    /// canonical form to the file `path` names, only if the file is what
     /// `expect` says.
     pub fn put(
         &self,
@@ -99,22 +129,63 @@ impl Board {
         expect: Expect,
         bytes: &[u8],
     ) -> Result<PutReport, PutError> {
-        let prepared = self.prepare(path, expect, bytes)?;
+        let lock = self.repository().lock(LOCK_WAIT)?;
+        let mut view = self.repository().snapshot().map_err(WriteError::from)?;
+        let prepared = self.prepare(
+            &lock,
+            &mut view,
+            &mut Schemas::default(),
+            path,
+            expect,
+            bytes,
+        )?;
         let message = format!("{BINARY_NAME} put {path}");
-        self.write_all(&[prepared], &message)
+        self.write_all(lock, &[prepared], &message)
             .map_err(|failure| match failure {
                 Failure::Stale(mut stale) => stale.remove(0).1,
                 Failure::Error(error) => error,
             })
     }
 
-    /// Reads JSON Lines of `{path, expect, record}` from `input`, checks
-    /// every line and compares every expect under the lock, and writes them
-    /// in order only if none refuses, with one commit.
+    /// Reads JSON Lines of `{path, expect, record}` from `input`, then takes
+    /// the lock, checks every line and compares every expect, and writes
+    /// them in order only if none refuses, with one commit.
     pub fn put_batch(&self, input: &mut dyn BufRead) -> Result<PutReport, PutError> {
-        let mut prepared: Vec<Prepared> = Vec::new();
-        let mut numbers: Vec<usize> = Vec::new();
-        let mut refusals: Vec<Refusal> = Vec::new();
+        let lines = Self::read_lines(input)?;
+        if lines.is_empty() {
+            return Ok(PutReport {
+                writes: Vec::new(),
+                commit: None,
+            });
+        }
+        if lines.iter().all(Result::is_err) {
+            return Err(PutError::Batch {
+                code: Code::PutInvalid,
+                refusals: lines.into_iter().filter_map(Result::err).collect(),
+            });
+        }
+        let lock = self.repository().lock(LOCK_WAIT)?;
+        let mut view = self.repository().snapshot().map_err(WriteError::from)?;
+        let (prepared, numbers) =
+            self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
+        let message = format!("{BINARY_NAME} put --batch ({} records)", prepared.len());
+        self.write_all(lock, &prepared, &message)
+            .map_err(|failure| match failure {
+                Failure::Stale(stale) => PutError::Batch {
+                    code: Code::PutStale,
+                    refusals: stale
+                        .into_iter()
+                        .map(|(at, error)| refusal(numbers[at], &error))
+                        .collect(),
+                },
+                Failure::Error(error) => error,
+            })
+    }
+
+    /// Reads every line of a batch, each with its number or why it is
+    /// refused.
+    pub(crate) fn read_lines(input: &mut dyn BufRead) -> Result<Vec<ReadLine>, PutError> {
+        let mut lines = Vec::new();
         let mut line = Vec::new();
         for number in 1.. {
             line.clear();
@@ -132,82 +203,91 @@ impl Board {
             if text.len() > MAX_RECORD_BYTES {
                 // The rest of the line has not been read, so no later line
                 // can be found.
-                refusals.push(Refusal {
+                lines.push(Err(Refusal {
                     line: number,
                     code: Code::JsonTooLarge,
                     message: format!("the line is over {MAX_RECORD_BYTES} bytes"),
-                });
+                }));
                 break;
             }
             if text.iter().all(u8::is_ascii_whitespace) {
                 continue;
             }
-            match self.prepare_line(text) {
-                Ok(item) => {
-                    // Folded as the walk folds names, so two lines that a
-                    // case-insensitive file system would make one file clash.
-                    let folded = item.target.path.to_ascii_lowercase();
-                    if let Some(first) = prepared
-                        .iter()
-                        .position(|other| other.target.path.to_ascii_lowercase() == folded)
-                    {
-                        let earlier = &prepared[first].target.path;
-                        let (code, message) = if *earlier == item.target.path {
-                            (Code::PutInvalid, "as")
-                        } else {
-                            (Code::PathCaseCollision, "differing only in case from")
-                        };
-                        refusals.push(Refusal {
-                            line: number,
-                            code,
-                            message: format!(
-                                "it writes {} {message} line {} writes {earlier}",
-                                item.target.path, numbers[first]
-                            ),
-                        });
-                    }
-                    prepared.push(item);
-                    numbers.push(number);
-                }
-                Err(error) => refusals.push(Refusal {
-                    line: number,
-                    code: error.code(),
-                    message: error.to_string(),
-                }),
-            }
-        }
-        if !refusals.is_empty() {
-            return Err(PutError::Batch {
-                code: Code::PutInvalid,
-                refusals,
+            lines.push(match Self::parse_line(text) {
+                Ok(parsed) => Ok((number, parsed)),
+                Err(error) => Err(refusal(number, &error)),
             });
         }
-        if prepared.is_empty() {
-            return Ok(PutReport {
-                writes: Vec::new(),
-                commit: None,
-            });
-        }
-        let message = format!("{BINARY_NAME} put --batch ({} records)", prepared.len());
-        self.write_all(&prepared, &message)
-            .map_err(|failure| match failure {
-                Failure::Stale(stale) => PutError::Batch {
-                    code: Code::PutStale,
-                    refusals: stale
-                        .into_iter()
-                        .map(|(at, error)| Refusal {
-                            line: numbers[at],
-                            code: error.code(),
-                            message: error.to_string(),
-                        })
-                        .collect(),
-                },
-                Failure::Error(error) => error,
-            })
+        Ok(lines)
     }
 
-    /// Reads one batch line and prepares its record.
-    fn prepare_line(&self, line: &[u8]) -> Result<Prepared, PutError> {
+    /// Checks every line of a batch under `lock` against the one snapshot
+    /// `view`, and returns each prepared record with its line number, or
+    /// every refusal.
+    pub(crate) fn check_lines(
+        &self,
+        lock: &Lock,
+        view: &mut Resolver<'_, '_>,
+        lines: Vec<ReadLine>,
+        schemas: &mut Schemas,
+    ) -> Result<(Vec<Prepared>, Vec<usize>), PutError> {
+        let mut prepared: Vec<Prepared> = Vec::new();
+        let mut numbers: Vec<usize> = Vec::new();
+        let mut refusals: Vec<Refusal> = Vec::new();
+        // Each target folded as the walk folds names, so two lines that a
+        // case-insensitive file system would make one file clash.
+        let mut folded: HashMap<String, usize> = HashMap::new();
+        for parsed in lines {
+            let checked = parsed.and_then(|(number, line)| {
+                match self.prepare(lock, view, schemas, &line.path, line.expect, &line.bytes) {
+                    Ok(item) => Ok((number, item)),
+                    Err(error) => Err(refusal(number, &error)),
+                }
+            });
+            let (number, item) = match checked {
+                Ok(checked) => checked,
+                Err(refused) => {
+                    refusals.push(refused);
+                    continue;
+                }
+            };
+            match folded.entry(item.target.path.to_ascii_lowercase()) {
+                Entry::Occupied(first) => {
+                    let first = *first.get();
+                    let earlier = &prepared[first].target.path;
+                    let (code, message) = if *earlier == item.target.path {
+                        (Code::PutInvalid, "as")
+                    } else {
+                        (Code::PathCaseCollision, "differing only in case from")
+                    };
+                    refusals.push(Refusal {
+                        line: number,
+                        code,
+                        message: format!(
+                            "it writes {} {message} line {} writes {earlier}",
+                            item.target.path, numbers[first]
+                        ),
+                    });
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(prepared.len());
+                }
+            }
+            prepared.push(item);
+            numbers.push(number);
+        }
+        if refusals.is_empty() {
+            Ok((prepared, numbers))
+        } else {
+            Err(PutError::Batch {
+                code: Code::PutInvalid,
+                refusals,
+            })
+        }
+    }
+
+    /// Reads one batch line.
+    fn parse_line(line: &[u8]) -> Result<Line, PutError> {
         let invalid = |reason: String| PutError::Line {
             code: Code::PutInvalid,
             reason: format!("the line is not {{path, expect, record}}: {reason}"),
@@ -230,23 +310,31 @@ impl Board {
                 .ok_or_else(|| invalid(format!("expect {hex:?} is not `none` or a blob id")))?,
         };
         let bytes = serde_json::to_vec(&raw.record).map_err(|error| invalid(error.to_string()))?;
-        self.prepare(&path, expect, &bytes)
+        Ok(Line {
+            path,
+            expect,
+            bytes,
+        })
     }
 
-    /// Checks one record and finds where it lands, before any lock.
+    /// Checks one record and finds where it lands in `view`, under the lock
+    /// that the write will hold, so that what is checked is what is written.
     pub(crate) fn prepare(
         &self,
+        _lock: &Lock,
+        view: &mut Resolver<'_, '_>,
+        schemas: &mut Schemas,
         path: &LogicalPath,
         expect: Expect,
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
         let admitted = self
-            .check_record(bytes)
+            .check_record(schemas, bytes)
             .map_err(|refused| PutError::Record {
                 path: path.clone(),
                 refused,
             })?;
-        let target = self.repository().target(path, admitted.pointer)?;
+        let target = view.target(path, admitted.pointer)?;
         Ok(Prepared {
             path: path.clone(),
             expect,
@@ -256,18 +344,17 @@ impl Board {
         })
     }
 
-    /// Takes the lock, compares every expect, and writes every prepared
-    /// record in order, with one commit when `commit_on_put` is set. Writes
-    /// nothing unless every expect holds.
+    /// Compares every expect under `lock`, the lock the records were
+    /// prepared under, and writes every prepared record in order, with one
+    /// commit when `commit_on_put` is set. Writes nothing unless every
+    /// expect holds.
     pub(crate) fn write_all(
         &self,
+        lock: Lock,
         prepared: &[Prepared],
         message: &str,
     ) -> Result<PutReport, Failure> {
         let repository = self.repository();
-        let lock = repository
-            .lock(LOCK_WAIT)
-            .map_err(|error| Failure::Error(error.into()))?;
         let mut writes = Vec::with_capacity(prepared.len());
         let mut stale = Vec::new();
         for (at, item) in prepared.iter().enumerate() {
@@ -336,8 +423,12 @@ impl Board {
             },
         };
         drop(lock);
+        let mut view = repository.snapshot().map_err(ResolveError::Git);
         for (written, item) in writes.iter_mut().zip(prepared) {
-            written.degraded = self.degraded(item, &written.display);
+            written.degraded = match &mut view {
+                Ok(view) => Self::degraded(&mut |path| view.resolve(path), item, &written.display),
+                Err(error) => Self::unresolvable(item, error),
+            };
         }
         Ok(PutReport { writes, commit })
     }
@@ -345,7 +436,11 @@ impl Board {
     /// Checks `bytes` as `check` checks a record, with its codes, and
     /// returns what it admits. Input that is not one JSON object with a
     /// `$type` is `put::invalid`.
-    pub(crate) fn check_record(&self, bytes: &[u8]) -> Result<Admitted, Refused> {
+    pub(crate) fn check_record(
+        &self,
+        schemas: &mut Schemas,
+        bytes: &[u8],
+    ) -> Result<Admitted, Refused> {
         let admitted = |value, pointer| Admitted {
             value,
             pointer,
@@ -385,21 +480,13 @@ impl Board {
                 .map(|_| admitted(value, false))
                 .map_err(Refused::from);
         }
-        let schema_path = record_type.schema_path();
-        let schema_bytes = self
-            .repository()
-            .read_working_file(&schema_path)
-            .map_err(|_| Refused::Code(Code::RepoUnreadable))?
-            .ok_or_else(|| Refused::UnknownType {
-                record_type: record_type.clone(),
-                schema: schema_path.clone(),
-            })?;
-        let schema = match Role::of(&schema_path).map(|role| role.classify(Some(&schema_bytes))) {
-            Some(board_model::Classified {
-                content: Content::Schema { value },
-                code: None,
-            }) => Schema::compile(value).map_err(|_| Refused::Code(Code::SchemaInvalid))?,
-            _ => return Err(Refused::Code(Code::SchemaInvalid)),
+        let schema = match schemas.held.entry(record_type) {
+            Entry::Occupied(held) => held.into_mut(),
+            Entry::Vacant(entry) => {
+                let schema = self.compile_schema(entry.key())?;
+                schemas.compiled += 1;
+                entry.insert(schema)
+            }
         };
         schema.validate(&value)?;
         let references = schema.references(&value);
@@ -409,9 +496,33 @@ impl Board {
         })
     }
 
-    /// What `check` finds wrong with `item`, just written at `display`.
-    fn degraded(&self, item: &Prepared, display: &LogicalPath) -> Option<(Code, Detail)> {
-        let resolve = |path: &LogicalPath| self.repository().resolve(&Source::WorkingTree, path);
+    /// Reads and compiles the schema of `record_type` from the working tree.
+    fn compile_schema(&self, record_type: &RecordType) -> Result<Schema, Refused> {
+        let schema_path = record_type.schema_path();
+        let schema_bytes = self
+            .repository()
+            .read_working_file(&schema_path)
+            .map_err(|_| Refused::Code(Code::RepoUnreadable))?
+            .ok_or_else(|| Refused::UnknownType {
+                record_type: record_type.clone(),
+                schema: schema_path.clone(),
+            })?;
+        match Role::of(&schema_path).map(|role| role.classify(Some(&schema_bytes))) {
+            Some(board_model::Classified {
+                content: Content::Schema { value },
+                code: None,
+            }) => Schema::compile(value).map_err(|_| Refused::Code(Code::SchemaInvalid)),
+            _ => Err(Refused::Code(Code::SchemaInvalid)),
+        }
+    }
+
+    /// What `check` finds wrong with `item`, just written at `display`,
+    /// with `resolve` reading the working tree as written.
+    fn degraded(
+        resolve: &mut impl FnMut(&LogicalPath) -> Result<Location, ResolveError>,
+        item: &Prepared,
+        display: &LogicalPath,
+    ) -> Option<(Code, Detail)> {
         if item.admitted.pointer {
             return resolve(display).err().map(|error| unresolved(&error));
         }
@@ -427,6 +538,20 @@ impl Board {
                 },
             );
             tally.add(&reference.pointer, failure.as_ref());
+        }
+        tally.first()
+    }
+
+    /// What `check` finds wrong with `item` when nothing can be resolved
+    /// because of `error`: its pointer, or each of its references, fails.
+    pub(crate) fn unresolvable(item: &Prepared, error: &ResolveError) -> Option<(Code, Detail)> {
+        if item.admitted.pointer {
+            return Some(unresolved(error));
+        }
+        let dangling = (Code::RefDangling, error.to_string());
+        let mut tally = Tally::default();
+        for reference in &item.admitted.references {
+            tally.add(&reference.pointer, Some(&dangling));
         }
         tally.first()
     }

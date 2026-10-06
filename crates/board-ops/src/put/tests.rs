@@ -4,13 +4,15 @@ use std::os::unix::fs::PermissionsExt;
 
 use board_model::{Code, Fields, LogicalPath, ObjectId, canonical_json, parse_json};
 use board_scenario::{Item, Scenario};
-use board_tree::{LOCK_WAIT, Status};
+use board_tree::{GitError, LOCK_WAIT, ResolveError, Status};
 
+use crate::Board;
 use crate::Detail;
-use crate::put::{Expect, PutReport};
+use crate::put::{Expect, PutReport, Schemas};
 use crate::tests::{MANIFEST, open, task};
 
 mod batch;
+mod waiting;
 
 /// The test board, set not to commit: committing is tested on its own,
 /// with an identity in the repository's own configuration.
@@ -716,4 +718,46 @@ fn put_refuses_a_broken_plugin_manifest_and_writes_a_valid_one() {
     assert_eq!(refused.code(), Code::PluginBadManifest);
     assert!(refused.to_string().contains("empty run"), "{refused}");
     assert!(put(&scenario, "/plugins/p/plugin", Expect::Any, MANIFEST).is_ok());
+}
+
+#[test]
+fn a_write_left_with_no_view_reports_the_error_at_its_pointer_or_each_reference() {
+    let scenario = board();
+    let board = open(&scenario);
+    let lock = board.repository().lock(LOCK_WAIT).unwrap();
+    let mut view = board.repository().snapshot().unwrap();
+    let mut schemas = Schemas::default();
+    let mut prepare = |at: &str, record: &str| {
+        let bytes = record.as_bytes();
+        board
+            .prepare(
+                &lock,
+                &mut view,
+                &mut schemas,
+                &path(at),
+                Expect::Any,
+                bytes,
+            )
+            .unwrap()
+    };
+    let link = prepare(
+        "/links/l",
+        r#"{"$type": "board/mount/v1", "path": "/projects/p"}"#,
+    );
+    let referring = prepare("/tasks/a", &task(r#", "see": "/tasks/b", "project": "/x""#));
+    let plain = prepare("/tasks/c", &task(""));
+    let error = ResolveError::Git(GitError::NoWorkingTree {
+        repository: scenario.workdir().to_path_buf(),
+    });
+    let reason = error.to_string();
+    let (code, detail) = Board::unresolvable(&link, &error).unwrap();
+    assert_eq!(
+        (code, detail.pointer, detail.failures),
+        (error.code(), None, 1)
+    );
+    assert_eq!(detail.reason, reason);
+    let (code, detail) = Board::unresolvable(&referring, &error).unwrap();
+    assert_eq!((code, detail.failures), (Code::RefDangling, 2));
+    assert_eq!(detail.reason, reason);
+    assert_eq!(Board::unresolvable(&plain, &error), None);
 }

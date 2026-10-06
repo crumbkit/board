@@ -2,9 +2,11 @@
 //! anything is written, and the writes share one commit.
 
 use board_model::Code;
+use board_scenario::Item;
+use board_tree::LOCK_WAIT;
 
 use super::{board, canonical, committing, file};
-use crate::put::{MAX_BATCH_LINES, PutError, PutReport, Refusal};
+use crate::put::{MAX_BATCH_LINES, PutError, PutReport, Refusal, Schemas};
 use crate::tests::{open, task};
 
 fn line(path: &str, expect: Option<&str>, record: &str) -> String {
@@ -220,4 +222,82 @@ fn a_batch_line_into_git_refuses_the_batch_and_its_twin_writes_all() {
     assert!(file(&scenario, ".git/hooks/x.json").is_none());
     let twin = line("/git/hooks/x", None, &task(""));
     assert_eq!(batch(&scenario, &(valid + &twin)).unwrap().writes.len(), 2);
+}
+
+#[test]
+fn a_batch_compiles_each_types_schema_once_however_many_lines_use_it() {
+    let scenario = board();
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    let input = line("/tasks/a", None, &task(""))
+        + &line("/tasks/b", None, &task(""))
+        + &line("/tasks/c", None, &task(""))
+        + &line("/projects/q", None, project)
+        + &line("/projects/r", None, project);
+    let board = open(&scenario);
+    let lines = crate::Board::read_lines(&mut input.as_bytes()).unwrap();
+    let lock = board.repository().lock(LOCK_WAIT).unwrap();
+    let mut view = board.repository().snapshot().unwrap();
+    let mut schemas = Schemas::default();
+    let (prepared, _) = board
+        .check_lines(&lock, &mut view, lines, &mut schemas)
+        .unwrap();
+    assert_eq!(prepared.len(), 5);
+    assert_eq!(schemas.compiled, 2);
+}
+
+/// How many directories a batch of `count` lines reads from disk while it
+/// checks them, in a board whose `tasks` directory already holds 40 records.
+/// Even lines overwrite a record and odd lines make a new one.
+fn listed_checking(count: usize) -> usize {
+    let scenario = board();
+    for at in 0..40 {
+        scenario.write(&format!("tasks/t{at}.json"), Item::File(&task("")));
+    }
+    let input: String = (0..count)
+        .map(|at| {
+            let name = if at % 2 == 0 { "t" } else { "new" };
+            line(&format!("/tasks/{name}{at}"), None, &task(""))
+        })
+        .collect();
+    let board = open(&scenario);
+    let lines = crate::Board::read_lines(&mut input.as_bytes()).unwrap();
+    let lock = board.repository().lock(LOCK_WAIT).unwrap();
+    let before = board.repository().directories_listed();
+    let mut view = board.repository().snapshot().unwrap();
+    let (prepared, _) = board
+        .check_lines(&lock, &mut view, lines, &mut Schemas::default())
+        .unwrap();
+    assert_eq!(prepared.len(), count);
+    board.repository().directories_listed() - before
+}
+
+#[test]
+fn a_batch_lists_each_directory_once_however_many_lines_it_holds() {
+    assert_eq!(listed_checking(2), 2, "the root and tasks, once each");
+    assert_eq!(listed_checking(40), 2);
+}
+
+#[test]
+fn a_batch_with_no_line_that_parses_is_refused_with_its_line_codes_while_the_lock_is_held() {
+    let scenario = board();
+    let board = open(&scenario);
+    let _held = board.repository().lock(LOCK_WAIT).unwrap();
+    let unparsed = "{\n".to_owned() + r#"{"path": "/tasks/a"}"# + "\n";
+    assert_eq!(
+        refused(board.put_batch(&mut unparsed.as_bytes())),
+        (
+            Code::PutInvalid,
+            vec![(1, Code::JsonParse), (2, Code::PutInvalid)]
+        )
+    );
+}
+
+#[test]
+fn a_batch_with_a_line_that_parses_is_refused_as_locked_while_the_lock_is_held() {
+    let scenario = board();
+    let board = open(&scenario);
+    let _held = board.repository().lock(LOCK_WAIT).unwrap();
+    let input = "{\n".to_owned() + &line("/tasks/a", None, &task(""));
+    let refused = board.put_batch(&mut input.as_bytes()).unwrap_err();
+    assert_eq!(refused.code(), Code::PutLocked);
 }

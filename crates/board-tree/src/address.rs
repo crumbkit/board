@@ -55,7 +55,7 @@ pub(crate) fn named<'a, D>(entries: &'a [RawEntry<D>], segment: &str) -> Named<'
 }
 
 /// What the entries matching one segment name.
-fn classify<'a, D>(mut matches: impl Iterator<Item = &'a RawEntry<D>>) -> Named<'a, D> {
+pub(crate) fn classify<'a, D>(mut matches: impl Iterator<Item = &'a RawEntry<D>>) -> Named<'a, D> {
     match (matches.next(), matches.next(), matches.next()) {
         (None, _, _) => Named::Nothing,
         (Some(one), None, _) => Named::One(one),

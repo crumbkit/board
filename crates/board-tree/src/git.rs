@@ -3,6 +3,7 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use board_model::{Code, MAX_RECORD_BYTES, ObjectId, Source};
 use gix::object::tree::EntryKind;
@@ -15,6 +16,8 @@ pub struct Repository {
     path: PathBuf,
     git: gix::Repository,
     home: Option<PathBuf>,
+    /// How many directories its working-tree views read from disk.
+    listed: AtomicUsize,
 }
 
 /// A commit's tree, read from the object database.
@@ -41,6 +44,7 @@ impl Repository {
             path,
             git,
             home: None,
+            listed: AtomicUsize::new(0),
         })
     }
 
@@ -64,6 +68,17 @@ impl Repository {
 
     pub(crate) fn git(&self) -> &gix::Repository {
         &self.git
+    }
+
+    /// How many directories this repository's working-tree views have read
+    /// from disk. Work-count tests assert it.
+    pub fn directories_listed(&self) -> usize {
+        self.listed.load(Ordering::Relaxed)
+    }
+
+    /// Counts one directory read from disk.
+    pub(crate) fn listed_one(&self) {
+        self.listed.fetch_add(1, Ordering::Relaxed);
     }
 
     /// The commit `HEAD` names, or `None` before the first commit.

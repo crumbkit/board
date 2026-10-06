@@ -16,10 +16,9 @@ use board_model::{
 };
 use gix::lock::acquire::Fail;
 
-use crate::address;
 use crate::git::{GitError, Repository, model_id};
-use crate::resolve::ResolveError;
-use crate::tree::{Kind, RawEntry, Tree};
+use crate::resolve::{ResolveError, Resolver};
+use crate::tree::Tree;
 
 /// How long a put waits for another put's lock.
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
@@ -45,6 +44,20 @@ pub struct Lock {
 }
 
 impl Repository {
+    /// The record file `path` names for writing, as [`Resolver::target`]
+    /// finds it in a snapshot of its own.
+    pub fn target(&self, path: &LogicalPath, is_pointer: bool) -> Result<Target, WriteError> {
+        self.snapshot()?.target(path, is_pointer)
+    }
+
+    /// The pointer file `path` names, as [`Resolver::pointer_target`] finds
+    /// it in a snapshot of its own.
+    pub fn pointer_target(&self, path: &LogicalPath) -> Result<Target, WriteError> {
+        self.snapshot()?.pointer_target(path)
+    }
+}
+
+impl Resolver<'_, '_> {
     /// The record file `path` names for writing. Pointers are followed,
     /// including a link at the last segment; a path that reaches a mount is
     /// refused. A path that names nothing yet names a new file beneath the
@@ -52,12 +65,12 @@ impl Repository {
     /// to be written is a pointer, which would shadow a directory beside it;
     /// a write that would leave its own path degraded is refused with that
     /// path's code.
-    pub fn target(&self, path: &LogicalPath, is_pointer: bool) -> Result<Target, WriteError> {
+    pub fn target(&mut self, path: &LogicalPath, is_pointer: bool) -> Result<Target, WriteError> {
         let refused = |code| WriteError::Refused {
             path: path.clone(),
             code,
         };
-        let (location, physical) = match self.resolve(&Source::WorkingTree, path) {
+        let (location, physical) = match self.resolve(path) {
             Ok(location) => {
                 let physical = record_file(&location).ok_or(refused(Code::RecordNotARecord))?;
                 (location, physical)
@@ -83,7 +96,7 @@ impl Repository {
     /// The pointer file `path` names, which is not followed, for rewriting
     /// in place. A path that reaches a mount on the way is refused, as is
     /// one that names no file or a pointer left degraded.
-    pub fn pointer_target(&self, path: &LogicalPath) -> Result<Target, WriteError> {
+    pub fn pointer_target(&mut self, path: &LogicalPath) -> Result<Target, WriteError> {
         let refused = |code| WriteError::Refused {
             path: path.clone(),
             code,
@@ -112,7 +125,7 @@ impl Repository {
 
     /// The new record file `path` names: beneath its deepest ancestor that
     /// resolves, with the segments past it as directories to create.
-    fn new_file(&self, path: &LogicalPath) -> Result<(Location, String), WriteError> {
+    fn new_file(&mut self, path: &LogicalPath) -> Result<(Location, String), WriteError> {
         let refused = |code| WriteError::Refused {
             path: path.clone(),
             code,
@@ -123,54 +136,9 @@ impl Repository {
             .ok_or_else(|| refused(Code::RecordNotARecord))?;
         Ok((ancestor.location, format!("{file}.json")))
     }
+}
 
-    /// The code the entry for `file` would have in the deepest directory of
-    /// its path that exists, once written: the new file itself, or the first
-    /// directory to be created on the way to it.
-    fn degraded(&self, file: &str, is_pointer: bool) -> Result<Option<Code>, WriteError> {
-        let mut known = |_: &str, _: &board_model::Stat| None;
-        let mut tree = self.working_tree(&mut known)?;
-        let mut directory = PathBuf::new();
-        let mut parts = file.split('/').peekable();
-        while let Some(part) = parts.next() {
-            let last = parts.peek().is_none();
-            let listed = tree.list(&directory)?;
-            let exists = listed.iter().any(|entry| entry.name == part.as_bytes());
-            if exists && !last {
-                directory.push(part);
-                continue;
-            }
-            let mut entries: Vec<RawEntry<PathBuf>> = listed
-                .iter()
-                .filter(|entry| entry.name != part.as_bytes())
-                .cloned()
-                .collect();
-            entries.push(RawEntry {
-                name: part.as_bytes().to_vec(),
-                kind: if last {
-                    Kind::File(ObjectId::Sha1([0; 20]))
-                } else {
-                    Kind::Directory(directory.join(part))
-                },
-                stat: None,
-                size: None,
-            });
-            let ours = entries.len() - 1;
-            let addressed = address::directory(&LogicalPath::root(), &entries, |record| {
-                if record.name == part.as_bytes() {
-                    Some(is_pointer)
-                } else {
-                    let read = tree.read(&directory, record).ok()?;
-                    Some(
-                        read.is_some_and(|bytes| !matches!(board_model::pointer(&bytes), Ok(None))),
-                    )
-                }
-            });
-            return Ok(addressed.get(ours).and_then(|(_, code)| *code));
-        }
-        Ok(None)
-    }
-
+impl Repository {
     /// The bytes of the working-tree file at the `/`-separated `path`, at
     /// most one byte past [`MAX_RECORD_BYTES`] so a parse sees it is too
     /// large, or `None` when there is none.

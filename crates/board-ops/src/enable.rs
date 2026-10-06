@@ -5,12 +5,12 @@ use std::path::{Path, PathBuf};
 
 use board_model::{Code, LogicalPath, RecordType, canonical_json, parse_json};
 use board_plugin::{DiscoveryError, ManifestError, PluginName, installed, shipped_schema_path};
-use board_tree::WriteError;
+use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
 use serde_json::Value;
 
 use crate::Board;
 use crate::board::config_file;
-use crate::put::{Admitted, Expect, Failure, Prepared, PutError, PutReport};
+use crate::put::{Admitted, Expect, Failure, Prepared, PutError, PutReport, Schemas};
 
 /// What `plugin enable` wrote: each schema the board lacked, then
 /// `.board/board.json` when it did not name the plugin.
@@ -25,8 +25,7 @@ impl Board {
     /// it ships to `.board/types/`, then adds it to `plugins` in
     /// `.board/board.json`, as one put. A schema the board already holds is
     /// left as it is; a different one refuses the enable, which then writes
-    /// nothing. As with `put`, a kept schema is compared before the lock is
-    /// taken, so a change to it while the enable runs goes unnoticed.
+    /// nothing. The board is read under the lock the write holds.
     pub fn plugin_enable(
         &self,
         plugins: Option<&Path>,
@@ -45,6 +44,8 @@ impl Board {
                 source,
             });
         }
+        let lock = self.repository().lock(LOCK_WAIT)?;
+        let mut view = self.repository().snapshot().map_err(WriteError::from)?;
         let mut prepared = Vec::new();
         for (record_type, shipped) in &found.schemas {
             match self.held(record_type, shipped)? {
@@ -58,7 +59,7 @@ impl Board {
                                 name: name.clone(),
                                 record_type: record_type.clone(),
                             })?;
-                    prepared.push(self.schema(path, shipped)?);
+                    prepared.push(Self::schema(&lock, &mut view, path, shipped)?);
                 }
                 Held::Same => {}
                 Held::Other => {
@@ -79,7 +80,14 @@ impl Board {
             enabled.push(name.clone());
             fields.insert("plugins".to_owned(), serde_json::json!(enabled));
             let path = "/.board/board".parse().map_err(|_| changed())?;
-            prepared.push(self.prepare(&path, Expect::Blob(blob), &canonical_json(&config))?);
+            prepared.push(self.prepare(
+                &lock,
+                &mut view,
+                &mut Schemas::default(),
+                &path,
+                Expect::Blob(blob),
+                &canonical_json(&config),
+            )?);
         }
         if prepared.is_empty() {
             return Ok(EnableReport {
@@ -91,7 +99,7 @@ impl Board {
             });
         }
         let put = self
-            .write_all(&prepared, &format!("Enable the {name} plugin"))
+            .write_all(lock, &prepared, &format!("Enable the {name} plugin"))
             .map_err(|failure| match failure {
                 Failure::Error(error) => EnableError::Put(error),
                 Failure::Stale(_) => EnableError::Changed { name: name.clone() },
@@ -122,8 +130,13 @@ impl Board {
     }
 
     /// A shipped schema, to be written where nothing is.
-    fn schema(&self, path: LogicalPath, schema: &Value) -> Result<Prepared, EnableError> {
-        let target = self.repository().target(&path, false)?;
+    fn schema(
+        _lock: &Lock,
+        view: &mut Resolver<'_, '_>,
+        path: LogicalPath,
+        schema: &Value,
+    ) -> Result<Prepared, EnableError> {
+        let target = view.target(&path, false)?;
         Ok(Prepared {
             path,
             expect: Expect::Absent,

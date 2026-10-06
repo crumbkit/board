@@ -1,6 +1,7 @@
 //! The one module that reads the working tree: every file git sees, which is
 //! tracked files and untracked files that are not ignored.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, FileType, Metadata};
@@ -10,11 +11,12 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::time::UNIX_EPOCH;
 
-use board_model::{MAX_RECORD_BYTES, ObjectId, Source, Stat};
+use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
 
+use crate::address::{self, Named};
 use crate::git::{GitError, Repository, model_id};
 use crate::tree::{Kind, RawEntry, Tree};
 
@@ -28,14 +30,69 @@ pub(crate) struct WorkingTree<'r, 'k> {
     repository: &'r Repository,
     index: gix::worktree::Index,
     excludes: gix::AttributeStack<'r>,
-    known: Known<'k>,
-    listed: HashMap<PathBuf, Rc<[RawEntry<PathBuf>]>>,
+    /// Gives the blobs of files already known; without it, every file
+    /// listed is hashed.
+    known: Option<Known<'k>>,
+    listed: HashMap<PathBuf, Listing>,
+}
+
+/// One directory's entries, with the lookup made from them the first time a
+/// name is looked up there.
+struct Listing {
+    entries: Rc<[RawEntry<PathBuf>]>,
+    lookup: OnceCell<Lookup>,
+}
+
+/// Where each segment, and each name folded to lower case, is found in one
+/// directory's entries, so finding a name does not scan a large directory.
+#[derive(Default)]
+struct Lookup {
+    segments: HashMap<String, Vec<usize>>,
+    folded: HashMap<Vec<u8>, Vec<usize>>,
+}
+
+impl Listing {
+    /// The lookup for these entries, made on first use.
+    fn lookup(&self) -> &Lookup {
+        self.lookup.get_or_init(|| {
+            let mut lookup = Lookup::default();
+            for (at, entry) in self.entries.iter().enumerate() {
+                if let Some(segment) = address::segment(entry) {
+                    let found = lookup.segments.entry(segment.to_owned()).or_default();
+                    found.push(at);
+                }
+                let folded = entry.name.to_ascii_lowercase();
+                lookup.folded.entry(folded).or_default().push(at);
+            }
+            lookup
+        })
+    }
+
+    /// The entries whose segment is `segment` or whose name is `name` but
+    /// for ASCII case, in listing order.
+    fn alike(&self, name: &[u8], segment: Option<&str>) -> Vec<RawEntry<PathBuf>> {
+        let lookup = self.lookup();
+        let by_segment = segment.and_then(|segment| lookup.segments.get(segment));
+        let by_name = lookup.folded.get(&name.to_ascii_lowercase());
+        let mut found: Vec<usize> = by_segment
+            .into_iter()
+            .chain(by_name)
+            .flatten()
+            .copied()
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+            .into_iter()
+            .filter_map(|at| self.entries.get(at).cloned())
+            .collect()
+    }
 }
 
 impl Repository {
     pub(crate) fn working_tree<'k>(
         &self,
-        known: Known<'k>,
+        known: Option<Known<'k>>,
     ) -> Result<WorkingTree<'_, 'k>, GitError> {
         let unreadable = |source: Box<dyn Error + Send + Sync>| GitError::Unreadable {
             repository: self.path().to_path_buf(),
@@ -108,7 +165,7 @@ impl WorkingTree<'_, '_> {
             let Ok(stat) = fs::symlink_metadata(&absolute).map(|metadata| stat(&metadata)) else {
                 return Some((Kind::Unreadable, None));
             };
-            let blob = (self.known)(&path, &stat).or_else(|| {
+            let blob = self.known(&path, &stat).or_else(|| {
                 let target = gix::path::into_bstr(fs::read_link(&absolute).ok()?);
                 self.hash(&mut target.as_bytes(), target.len() as u64)
             });
@@ -120,7 +177,7 @@ impl WorkingTree<'_, '_> {
         let Ok(seen) = fs::metadata(&absolute).map(|metadata| stat(&metadata)) else {
             return Some((Kind::Unreadable, None));
         };
-        if let Some(blob) = (self.known)(&path, &seen) {
+        if let Some(blob) = self.known(&path, &seen) {
             return Some((Kind::File(blob), Some(seen)));
         }
         // The file hashed is the one opened, so its own metadata is kept.
@@ -131,6 +188,108 @@ impl WorkingTree<'_, '_> {
         };
         let blob = self.hash(&mut BufReader::new(file), stat.size);
         Some((blob.map_or(Kind::Unreadable, Kind::File), Some(stat)))
+    }
+
+    /// The listing of `directory`, read from disk the first time.
+    fn listing(&mut self, directory: &Path) -> Result<&Listing, GitError> {
+        if !self.listed.contains_key(directory) {
+            let listing = Listing {
+                entries: self.read_directory(directory)?,
+                lookup: OnceCell::new(),
+            };
+            self.listed.insert(directory.to_path_buf(), listing);
+        }
+        Ok(&self.listed[directory])
+    }
+
+    /// Reads the entries of `directory` from disk.
+    fn read_directory(&mut self, directory: &Path) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
+        self.repository.listed_one();
+        let absolute = self.repository.path().join(directory);
+        let unreadable = |source| GitError::File {
+            path: absolute.clone(),
+            source,
+        };
+        let mut entries = Vec::new();
+        for item in fs::read_dir(&absolute).map_err(unreadable)? {
+            let item = item.map_err(unreadable)?;
+            let name = item.file_name();
+            if directory.as_os_str().is_empty() && name == ".git" {
+                continue;
+            }
+            let kind = match item.file_type() {
+                Ok(file_type) => self.kind(&directory.join(&name), file_type),
+                Err(_) => Some((Kind::Unreadable, None)),
+            };
+            if let Some((kind, stat)) = kind {
+                entries.push(RawEntry {
+                    name: gix::path::into_bstr(Path::new(&name)).to_vec(),
+                    kind,
+                    stat,
+                    size: stat.map(|stat| stat.size),
+                });
+            }
+        }
+        Ok(entries.into())
+    }
+
+    /// The code the entry for the `/`-separated `file` would have in the
+    /// deepest directory of its path that exists, once written: the new file
+    /// itself, or the first directory to be created on the way to it.
+    /// `is_pointer` says whether the file will hold a pointer.
+    pub(crate) fn degraded(
+        &mut self,
+        file: &str,
+        is_pointer: bool,
+    ) -> Result<Option<Code>, GitError> {
+        let mut directory = PathBuf::new();
+        let mut parts = file.split('/').peekable();
+        while let Some(part) = parts.next() {
+            let last = parts.peek().is_none();
+            let ours = RawEntry {
+                name: part.as_bytes().to_vec(),
+                kind: if last {
+                    Kind::File(ObjectId::Sha1([0; 20]))
+                } else {
+                    Kind::Directory(directory.join(part))
+                },
+                stat: None,
+                size: None,
+            };
+            // Only the entries with its segment, or its name but for case,
+            // bear on its code, so a write into a large directory addresses
+            // a few entries and not all of them.
+            let alike = self
+                .listing(&directory)?
+                .alike(part.as_bytes(), address::segment(&ours));
+            if !last && alike.iter().any(|entry| entry.name == part.as_bytes()) {
+                directory.push(part);
+                continue;
+            }
+            let mut entries: Vec<RawEntry<PathBuf>> = alike
+                .into_iter()
+                .filter(|entry| entry.name != part.as_bytes())
+                .collect();
+            entries.push(ours);
+            let ours = entries.len() - 1;
+            let addressed = address::directory(&LogicalPath::root(), &entries, |record| {
+                if record.name == part.as_bytes() {
+                    Some(is_pointer)
+                } else {
+                    let read = self.read(&directory, record).ok()?;
+                    Some(
+                        read.is_some_and(|bytes| !matches!(board_model::pointer(&bytes), Ok(None))),
+                    )
+                }
+            });
+            return Ok(addressed.get(ours).and_then(|(_, code)| *code));
+        }
+        Ok(None)
+    }
+
+    /// The blob of the file at `path` with `stat`, if already known.
+    fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
+        self.known.as_mut().and_then(|known| known(path, stat))
     }
 
     /// The id git gives a blob of `length` bytes read from `stream`, in
@@ -164,37 +323,29 @@ impl Tree for WorkingTree<'_, '_> {
     }
 
     fn list(&mut self, directory: &PathBuf) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
-        if let Some(entries) = self.listed.get(directory) {
-            return Ok(Rc::clone(entries));
-        }
-        let absolute = self.repository.path().join(directory);
-        let unreadable = |source| GitError::File {
-            path: absolute.clone(),
-            source,
-        };
-        let mut entries = Vec::new();
-        for item in fs::read_dir(&absolute).map_err(unreadable)? {
-            let item = item.map_err(unreadable)?;
-            let name = item.file_name();
-            if directory.as_os_str().is_empty() && name == ".git" {
-                continue;
+        Ok(Rc::clone(&self.listing(directory)?.entries))
+    }
+
+    /// Uses the lookup only when `entries` is the listing of `directory` it
+    /// was made from, and otherwise scans `entries`.
+    fn named<'e>(
+        &mut self,
+        directory: &PathBuf,
+        entries: &'e [RawEntry<PathBuf>],
+        segment: &str,
+    ) -> Named<'e, PathBuf> {
+        match self.listed.get(directory) {
+            Some(listing) if std::ptr::eq(Rc::as_ptr(&listing.entries), entries) => {
+                let found = listing.lookup().segments.get(segment);
+                address::classify(
+                    found
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|at| entries.get(*at)),
+                )
             }
-            let kind = match item.file_type() {
-                Ok(file_type) => self.kind(&directory.join(&name), file_type),
-                Err(_) => Some((Kind::Unreadable, None)),
-            };
-            if let Some((kind, stat)) = kind {
-                entries.push(RawEntry {
-                    name: gix::path::into_bstr(Path::new(&name)).to_vec(),
-                    kind,
-                    stat,
-                    size: stat.map(|stat| stat.size),
-                });
-            }
+            _ => address::named(entries, segment),
         }
-        let entries: Rc<[RawEntry<PathBuf>]> = entries.into();
-        self.listed.insert(directory.clone(), Rc::clone(&entries));
-        Ok(entries)
     }
 
     fn read(
@@ -298,12 +449,29 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         gix::init(directory.path()).unwrap();
         let repository = Repository::open(directory.path()).unwrap();
-        let mut unknown = |_: &str, _: &Stat| None;
-        let tree = repository.working_tree(&mut unknown).unwrap();
+        let tree = repository.working_tree(None).unwrap();
         let expected =
             gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, b"abc").unwrap();
         assert_eq!(tree.hash(&mut &b"abc"[..], 3), Some(model_id(&expected)));
         assert_eq!(tree.hash(&mut &b"abcd"[..], 3), None);
         assert_eq!(tree.hash(&mut &b"ab"[..], 3), None);
+    }
+
+    #[test]
+    fn a_name_is_found_in_the_entries_given_even_when_they_are_not_the_listing() {
+        let scenario = board_scenario::Scenario::new();
+        let empty = board_scenario::Item::File("{}");
+        scenario.write("a.json", empty).write("b.json", empty);
+        let repository = Repository::open(scenario.workdir()).unwrap();
+        let mut tree = repository.working_tree(None).unwrap();
+        let root = PathBuf::new();
+        let listed = tree.list(&root).unwrap();
+        let reversed: Vec<RawEntry<PathBuf>> = listed.iter().rev().cloned().collect();
+        for entries in [&listed[..], &reversed[..]] {
+            let Named::One(found) = tree.named(&root, entries, "a") else {
+                panic!("a.json is the one entry named a");
+            };
+            assert_eq!(found.name, b"a.json");
+        }
     }
 }
