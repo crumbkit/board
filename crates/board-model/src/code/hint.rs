@@ -1,12 +1,15 @@
 //! What to try next after each code (STANDARDS.md 25). The generic match
 //! has no wildcard, so a new code does not compile until it has a hint.
 
-use board_model::{Code, Fields, LogicalPath};
+use crate::{Code, Fields, LogicalPath};
 
-/// The hint for an error with `code` that names `fields`: with the values
-/// it names filled in where they are known, else the generic hint.
-pub(crate) fn hint(code: Code, fields: &Fields) -> String {
-    filled(code, fields).unwrap_or_else(|| generic(code).to_owned())
+impl Code {
+    /// What to try next after an error with this code that names `fields`:
+    /// with the values it names filled in where they are known, else the
+    /// generic hint.
+    pub fn hint(self, fields: &Fields) -> String {
+        filled(self, fields).unwrap_or_else(|| generic(self).to_owned())
+    }
 }
 
 /// The hint for `code` with the values in `fields`, when it names one and

@@ -5,7 +5,7 @@
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Object, Source};
+use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode, Source};
 use board_ops::{
     CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Known, Listed,
     LsReport, MAX_LIMIT, Missing, MountUpdateReport, PutError, PutReport, QueryError, QueryReport,
@@ -16,11 +16,9 @@ use serde_json::{Map, Value, json};
 
 use crate::report::Output;
 
-mod hint;
 mod page;
 mod plugins;
 
-pub(crate) use hint::hint;
 use page::Shown;
 pub(crate) use plugins::{call, call_error, plugin_find, plugin_list, temporary};
 
@@ -403,12 +401,9 @@ pub(crate) fn query_error(format: Format, error: &QueryError) -> Output {
             format!("the columns are {}", tables.join("; "))
         }
     };
-    failed(
+    refused(
         format,
-        error.code().as_str(),
-        &error.to_string(),
-        Some(&hint),
-        Map::new(),
+        &Refusal::new(error.code(), error, &Fields::default()).with_hint(hint),
     )
 }
 
@@ -613,7 +608,13 @@ pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
             })
             .collect();
         let fields = Map::from_iter([("refusals".to_owned(), Value::Array(refusals))]);
-        return failed(format, code.as_str(), message, Some(BATCH_HINT), fields);
+        return refused(
+            format,
+            &Refusal {
+                fields,
+                ..Refusal::new(*code, message, &Fields::default()).with_hint(BATCH_HINT)
+            },
+        );
     }
     let mut text = format!("error: {code}: {message}\n");
     for refusal in refusals {
@@ -638,68 +639,51 @@ const BATCH_HINT: &str =
 /// A failure with the hint for its code, filled in from `fields`, which
 /// JSON carries as `fields`.
 pub(crate) fn error(format: Format, code: Code, message: &dyn Display, fields: &Fields) -> Output {
-    failed(
-        format,
-        code.as_str(),
-        &message.to_string(),
-        Some(&hint(code, fields)),
-        json_fields(fields),
-    )
+    refused(format, &Refusal::new(code, message, fields))
 }
 
-/// The values in `fields` that are known, by their `board/error/v1` names.
-pub(crate) fn json_fields(fields: &Fields) -> Map<String, Value> {
-    let known = [
-        ("path", fields.path.as_ref().map(ToString::to_string)),
-        ("blob", fields.blob.as_ref().map(ToString::to_string)),
-        ("pointer", fields.pointer.clone()),
-        ("type", fields.record_type.as_ref().map(ToString::to_string)),
-        ("schema", fields.schema.clone()),
-        ("plugin", fields.plugin.clone()),
-        ("capability", fields.capability.clone()),
-    ];
-    known
-        .into_iter()
-        .filter_map(|(name, value)| Some((name.to_owned(), Value::String(value?))))
-        .collect()
-}
-
-/// A failure with a hint that knows more than its code: as text,
-/// `error: <code>: <message>` and then `hint: <hint>` on stderr; as JSON, a
-/// `board/error/v1` document on stdout, with `fields` when there are any.
-/// Either way the exit code is 1.
-pub(crate) fn failed(
-    format: Format,
-    code: &str,
-    message: &str,
-    hint: Option<&str>,
-    fields: Map<String, Value>,
-) -> Output {
+/// A refusal: as text, `error: <code>: <message>`, then `hint: <hint>` and
+/// the end of a plugin's stderr, on stderr; as JSON, a `board/error/v1`
+/// document on stdout, with `fields` when there are any. The exit code is 2
+/// for a refused command line, else 1.
+pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
+    let code = if refusal.code == RefusalCode::Board(Code::UsageInvalid) {
+        2
+    } else {
+        1
+    };
     match format {
         Format::Text => {
-            let mut text = format!("error: {code}: {message}\n");
-            if let Some(hint) = hint {
+            let mut text = format!("error: {}: {}\n", refusal.code.as_str(), refusal.message);
+            if let Some(hint) = &refusal.hint {
                 let _ = writeln!(text, "hint: {hint}");
             }
+            let mut stderr = text.into_bytes();
+            if !refusal.stderr.is_empty() {
+                stderr.extend_from_slice(&refusal.stderr);
+                if !refusal.stderr.ends_with(b"\n") {
+                    stderr.push(b'\n');
+                }
+            }
             Output {
-                stderr: text.into_bytes(),
-                code: 1,
+                stderr,
+                code,
                 ..Output::default()
             }
         }
         Format::Json => {
             let mut value = json!({
                 "$type": "board/error/v1",
-                "code": code,
-                "message": message,
+                "code": refusal.code.as_str(),
+                "message": refusal.message,
             });
-            if let Some(hint) = hint {
+            if let Some(hint) = &refusal.hint {
                 value["hint"] = json!(hint);
             }
-            if !fields.is_empty() {
-                value["fields"] = Value::Object(fields);
+            if !refusal.fields.is_empty() {
+                value["fields"] = Value::Object(refusal.fields.clone());
             }
-            document(&value, 1)
+            document(&value, code)
         }
     }
 }

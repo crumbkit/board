@@ -9,7 +9,6 @@ use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use crate::config::Context;
-use crate::render;
 use crate::report::Output;
 use crate::run::run;
 
@@ -358,10 +357,7 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     assert_eq!(error["code"], "board::path::not_found");
     assert_eq!(
         error["hint"],
-        render::hint(
-            Code::PathNotFound,
-            &Fields::at(&"/missing".parse().unwrap())
-        )
+        Code::PathNotFound.hint(&Fields::at(&"/missing".parse().unwrap()))
     );
 }
 
@@ -888,6 +884,10 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
         format!("{good}\n{bad}\n").as_bytes(),
     ));
     assert_eq!(document["$type"], "board/error/v1");
+    assert_eq!(
+        document["hint"],
+        "fix each line listed, then send the whole batch again; nothing was written"
+    );
     assert_eq!(document["fields"]["refusals"][0]["line"], 2);
     assert_eq!(
         document["fields"]["refusals"][0]["code"],
@@ -953,3 +953,4 @@ mod cli;
 mod directory;
 mod hints;
 mod plugins;
+mod refused;

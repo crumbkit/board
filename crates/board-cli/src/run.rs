@@ -5,7 +5,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId,
+    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId, Refusal,
 };
 use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
@@ -22,7 +22,7 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
 
 use crate::config::Context;
-use crate::render::{self, Format, hint};
+use crate::render::{self, Format};
 use crate::report::Output;
 
 const ROOT_EXAMPLES: &str = "\
@@ -287,7 +287,7 @@ pub(crate) fn run(
     let arguments: Vec<OsString> = arguments.into_iter().collect();
     let cli = match Cli::try_parse_from(&arguments) {
         Ok(cli) => cli,
-        Err(error) => return refused(&error, &arguments),
+        Err(error) => return clap_refused(&error, &arguments),
     };
     let format = if cli.json { Format::Json } else { Format::Text };
     let start = match entered(&context.start, &cli.directories, format) {
@@ -391,22 +391,17 @@ fn entered(start: &Path, directories: &[OsString], format: Format) -> Result<Pat
             }
             Err(error) => format!("cannot be read: {error}"),
         };
-        let mut output = render::failed(
-            format,
-            Code::UsageInvalid.as_str(),
-            &format!(
-                "cannot change to '{}': {} {fault}",
-                Path::new(directory).display(),
-                joined.display()
-            ),
-            Some(
-                "give -C a directory that exists, such as the board's root or a directory \
-                 inside it; a relative -C is taken from the one before it",
-            ),
-            serde_json::Map::new(),
+        let message = format!(
+            "cannot change to '{}': {} {fault}",
+            Path::new(directory).display(),
+            joined.display()
         );
-        output.code = 2;
-        return Err(output);
+        let hint = "give -C a directory that exists, such as the board's root or a directory \
+                    inside it; a relative -C is taken from the one before it";
+        return Err(render::refused(
+            format,
+            &Refusal::new(Code::UsageInvalid, message, &Fields::default()).with_hint(hint),
+        ));
     }
     Ok(start)
 }
@@ -437,14 +432,11 @@ fn failed_at(
     fields: &Fields,
 ) -> Output {
     match path.as_str().strip_suffix(".json") {
-        Some(stem) if code == Code::PathNotFound => render::failed(
+        Some(stem) if code == Code::PathNotFound => render::refused(
             format,
-            code.as_str(),
-            &error.to_string(),
-            Some(&format!(
+            &Refusal::new(code, error, fields).with_hint(format!(
                 "a logical path leaves out .json: try `{BINARY_NAME} {command} {stem}`"
             )),
-            render::json_fields(fields),
         ),
         _ => render::error(format, code, error, fields),
     }
@@ -453,7 +445,7 @@ fn failed_at(
 /// A command line clap refused, as an error with code `usage::invalid` and
 /// exit code 2; help, asked for, is printed to stdout with exit code 0. The
 /// message and hint come from clap's error context, never its rendered text.
-fn refused(error: &clap::Error, arguments: &[OsString]) -> Output {
+fn clap_refused(error: &clap::Error, arguments: &[OsString]) -> Output {
     if matches!(
         error.kind(),
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
@@ -472,7 +464,7 @@ fn refused(error: &clap::Error, arguments: &[OsString]) -> Output {
     let help = if let Some(corrected) = corrected(error, arguments) {
         format!("a logical path starts with / and leaves out .json: try `{corrected}`")
     } else if command.is_empty() {
-        hint(Code::UsageInvalid, &Fields::default())
+        Code::UsageInvalid.hint(&Fields::default())
     } else {
         format!("run `{named} --help` for its usage and examples")
     };
@@ -489,12 +481,14 @@ fn refused(error: &clap::Error, arguments: &[OsString]) -> Output {
     } else {
         Format::Text
     };
-    let mut output = render::failed(
+    let mut output = render::refused(
         format,
-        Code::UsageInvalid.as_str(),
-        &message(error, &named),
-        Some(&hint),
-        serde_json::Map::new(),
+        &Refusal::new(
+            Code::UsageInvalid,
+            message(error, &named),
+            &Fields::default(),
+        )
+        .with_hint(hint.clone()),
     );
     // A group named without its command prints its help before the hint.
     if format == Format::Text && error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
@@ -507,7 +501,6 @@ fn refused(error: &clap::Error, arguments: &[OsString]) -> Output {
         )
         .into_bytes();
     }
-    output.code = 2;
     output
 }
 

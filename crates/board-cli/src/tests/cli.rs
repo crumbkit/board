@@ -172,8 +172,8 @@ fn every_command_a_hint_names_parses() {
     let mut filled = 0;
     for fields in [Fields::default(), known, no_blob] {
         for code in Code::ALL {
-            let generic = render::hint(code, &Fields::default());
-            let hint = render::hint(code, &fields);
+            let generic = code.hint(&Fields::default());
+            let hint = code.hint(&fields);
             assert!(!hint.is_empty() && !hint.ends_with('.'), "{code}: {hint}");
             filled += usize::from(hint != generic);
             for (index, quoted) in hint.split('`').enumerate() {
@@ -852,7 +852,7 @@ fn a_query_with_a_syntax_error_has_a_hint_that_says_to_fix_it_and_a_valid_one_ru
         &["query", "SELEC 1", "--json"],
     ));
     assert_eq!(refused["code"], "board::query::invalid");
-    let hint = render::hint(Code::QueryInvalid, &Fields::default());
+    let hint = Code::QueryInvalid.hint(&Fields::default());
     assert_eq!(refused["hint"], hint);
     assert!(hint.starts_with("fix the statement"), "{hint}");
     assert_eq!(board_in(scenario.workdir(), &["query", "SELECT 1"]).code, 0);

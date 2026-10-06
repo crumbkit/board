@@ -1,5 +1,7 @@
 //! The values an error names, beside its code and message.
 
+use serde_json::{Map, Value};
+
 use crate::{LogicalPath, ObjectId, RecordType};
 
 /// What an error knows about the values at fault, for `board/error/v1`
@@ -28,10 +30,29 @@ impl Fields {
             ..Self::default()
         }
     }
+
+    /// The values that are known, by their `board/error/v1` names.
+    pub fn json(&self) -> Map<String, Value> {
+        let known = [
+            ("path", self.path.as_ref().map(ToString::to_string)),
+            ("blob", self.blob.as_ref().map(ToString::to_string)),
+            ("pointer", self.pointer.clone()),
+            ("type", self.record_type.as_ref().map(ToString::to_string)),
+            ("schema", self.schema.clone()),
+            ("plugin", self.plugin.clone()),
+            ("capability", self.capability.clone()),
+        ];
+        known
+            .into_iter()
+            .filter_map(|(name, value)| Some((name.to_owned(), Value::String(value?))))
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -40,5 +61,19 @@ mod tests {
         let at = Fields::at(&path);
         assert_eq!(at.path, Some(path));
         assert_eq!(Fields { path: None, ..at }, Fields::default());
+    }
+
+    #[test]
+    fn fields_name_only_the_values_that_are_known() {
+        assert_eq!(Fields::default().json(), Map::new());
+        let fields = Fields {
+            pointer: Some("/title".to_owned()),
+            plugin: Some("tasks".to_owned()),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Value::Object(fields.json()),
+            json!({ "pointer": "/title", "plugin": "tasks" })
+        );
     }
 }

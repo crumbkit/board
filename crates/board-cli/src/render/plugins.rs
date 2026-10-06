@@ -2,12 +2,12 @@
 
 use std::fmt::Write as _;
 
-use board_model::{Fields, canonical_json};
+use board_model::{Fields, Refusal, canonical_json};
 use board_ops::{CallFailed, Called, Plugin, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{Capability, Manifest, PluginName};
 use serde_json::{Value, json};
 
-use super::{Format, Shown, document, failed};
+use super::{Format, Shown, document, refused};
 use crate::report::Output;
 
 /// `plugin list`: as text, a line per plugin with its status, version,
@@ -303,19 +303,13 @@ pub(crate) fn call_error(format: Format, error: &CallFailed) -> Output {
         capability: named("capability"),
         ..Fields::default()
     };
-    let hint = error.code().map(|code| super::hint(code, &known));
-    let mut output = failed(
-        format,
-        error.code_text(),
-        &error.to_string(),
-        hint.as_deref(),
-        fields,
-    );
-    if let (Format::Text, Some(tail)) = (format, error.stderr().filter(|tail| !tail.is_empty())) {
-        output.stderr.extend_from_slice(tail);
-        if !tail.ends_with(b"\n") {
-            output.stderr.push(b'\n');
-        }
-    }
-    output
+    let refusal = match error.code() {
+        Some(code) => Refusal {
+            fields,
+            ..Refusal::new(code, error, &known)
+        },
+        None => Refusal::plugin(error.code_text().to_owned(), error.to_string(), fields),
+    };
+    let stderr = error.stderr().unwrap_or_default().to_vec();
+    refused(format, &Refusal { stderr, ..refusal })
 }

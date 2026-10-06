@@ -8,6 +8,7 @@ mod location;
 mod path;
 mod pointer;
 mod record;
+mod refusal;
 mod stat;
 
 pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
@@ -23,4 +24,5 @@ pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RecordType, RecordTypeError, Role,
     classify, needs_bytes,
 };
+pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::stat::{Change, Stat};
