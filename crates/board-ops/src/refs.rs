@@ -10,7 +10,7 @@ use board_model::{Code, Fields, Location, LogicalPath, Source};
 use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
-use crate::check::{CheckError, Referenced};
+use crate::check::{CheckError, Referenced, View};
 use crate::read::{ReadError, display, join};
 
 /// One reference the record makes.
@@ -70,7 +70,7 @@ impl Board {
             .resolve(&Source::WorkingTree, path)
             .map_err(refused)?;
         let mut index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
-        let (checked, references) = self.decide(&mut index, None)?;
+        let (checked, references) = self.decide(&mut index, None, View::Skip)?;
         let same = |source: &Source, physical: &str| {
             *source == location.board.source && physical == location.path
         };

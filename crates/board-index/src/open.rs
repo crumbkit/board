@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use board_model::Code;
-use rusqlite::{Connection, ErrorCode, TransactionBehavior};
+use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
 
 use crate::schema::{INDEX_VERSION, TABLES};
@@ -148,36 +148,47 @@ impl From<rusqlite::Error> for Prepared {
     }
 }
 
-/// Takes the write lock, then creates the tables in an empty database or
-/// confirms the format of a filled one.
+/// Confirms the format of a filled database, or takes the write lock and
+/// creates the tables in an empty one. Confirming only reads, so it does not
+/// wait for another process's write.
 fn prepare(connection: &mut Connection) -> Result<(), Prepared> {
     connection.busy_timeout(BUSY_WAIT)?;
     // Room for every statement the writer runs, so each is compiled once.
     connection.set_prepared_statement_cache_capacity(32);
     connection.pragma_update(None, "journal_mode", "WAL")?;
+    if confirm(&connection.transaction()?)? {
+        return Ok(());
+    }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let tables: i64 =
-        transaction.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get(0))?;
-    if tables == 0 {
+    if !confirm(&transaction)? {
         transaction.execute_batch(TABLES)?;
         transaction.execute(
             "INSERT INTO state (key, value) VALUES ('index_version', ?1)",
             [INDEX_VERSION],
         )?;
-    } else {
-        let version: Option<String> = transaction
-            .query_row(
-                "SELECT value FROM state WHERE key = 'index_version'",
-                [],
-                |row| row.get(0),
-            )
-            .ok();
-        if version.as_deref() != Some(INDEX_VERSION) {
-            return Err(Prepared::Foreign);
-        }
     }
     transaction.commit()?;
     Ok(())
+}
+
+/// Whether the database holds tables, which must be of this format.
+fn confirm(transaction: &Transaction<'_>) -> Result<bool, Prepared> {
+    let tables: i64 =
+        transaction.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get(0))?;
+    if tables == 0 {
+        return Ok(false);
+    }
+    let version: Option<String> = transaction
+        .query_row(
+            "SELECT value FROM state WHERE key = 'index_version'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+    if version.as_deref() != Some(INDEX_VERSION) {
+        return Err(Prepared::Foreign);
+    }
+    Ok(true)
 }
 
 fn failure(error: &rusqlite::Error) -> Failure {
@@ -192,10 +203,10 @@ fn failure(error: &rusqlite::Error) -> Failure {
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
     #[error("the index failed: {source}")]
-    Sql {
-        #[from]
-        source: rusqlite::Error,
-    },
+    Sql { source: rusqlite::Error },
+    /// Another process held the write lock, or wrote first.
+    #[error("the index is busy: {source}")]
+    Busy { source: rusqlite::Error },
     #[error("a new index in memory reports another format")]
     Foreign,
     #[error("the query cannot run: {source}")]
@@ -210,9 +221,18 @@ pub enum IndexError {
 impl IndexError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Sql { .. } | Self::Foreign => Code::IndexFailed,
+            Self::Sql { .. } | Self::Busy { .. } | Self::Foreign => Code::IndexFailed,
             Self::Query { .. } => Code::QueryInvalid,
             Self::Timeout => Code::QueryTimeout,
+        }
+    }
+}
+
+impl From<rusqlite::Error> for IndexError {
+    fn from(source: rusqlite::Error) -> Self {
+        match failure(&source) {
+            Failure::Busy => Self::Busy { source },
+            Failure::Unusable => Self::Sql { source },
         }
     }
 }

@@ -2,6 +2,7 @@
 //! index). Only files whose metadata changed are hashed, and every fact is
 //! keyed by content, so a blob already indexed is not read again and a
 //! record is validated again only against a schema blob it has not met.
+//! A refresh that finds nothing changed writes nothing.
 
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,6 +27,8 @@ pub struct Refreshed {
     pub hashed: usize,
     pub parsed: usize,
     pub validated: usize,
+    /// Whether it took the index's write lock.
+    pub wrote: bool,
 }
 
 /// Parsed values from this refresh, so validation need not read them again.
@@ -55,16 +58,14 @@ impl Board {
     /// Brings `index` up to date with the working tree, adding every fact it
     /// does not yet hold.
     pub fn refresh_index(&self, index: &mut Index) -> Result<Refreshed, RefreshError> {
-        let writer = index.write()?;
-        let refresh = self.refresh(&writer)?;
-        writer.commit()?;
-        Ok(refresh.work)
+        let (work, wrote) = transact(index, |writer| Ok(self.refresh(writer)?.work))?;
+        Ok(Refreshed { wrote, ..work })
     }
 
     pub(crate) fn refresh(&self, writer: &Writer<'_>) -> Result<Refresh, RefreshError> {
         let started_ns = now_ns();
         let mut work = Refreshed::default();
-        let entries = self.walk(writer, &mut work.hashed)?;
+        let (entries, changed) = self.walk(writer, &mut work.hashed)?;
         let facts = facts(
             writer,
             self.repository(),
@@ -73,7 +74,10 @@ impl Board {
             &mut work,
         )?;
         let head = self.head(writer, &mut work.trees)?;
-        writer.set_refreshed_ns(started_ns)?;
+        // Keeping the older start time trusts no file the stored one did not.
+        if changed {
+            writer.set_refreshed_ns(started_ns)?;
+        }
         Ok(Refresh {
             entries,
             facts,
@@ -101,8 +105,13 @@ impl Board {
     }
 
     /// Walks the working tree, hashing only files whose metadata the index
-    /// does not hold, and records what it saw.
-    fn walk(&self, writer: &Writer<'_>, hashed: &mut usize) -> Result<Vec<Entry>, RefreshError> {
+    /// does not hold, and records what it saw. Returns the entries and
+    /// whether it hashed or recorded anything.
+    fn walk(
+        &self,
+        writer: &Writer<'_>,
+        hashed: &mut usize,
+    ) -> Result<(Vec<Entry>, bool), RefreshError> {
         let clean_before_ns = writer.refreshed_ns()?.map(whole_second);
         let stored = writer.worktree()?;
         let entries = self.repository().walk_working_tree(&mut |path, stat| {
@@ -115,6 +124,7 @@ impl Board {
             }
             known
         })?;
+        let mut changed = *hashed > 0;
         for entry in &entries {
             let row = WorktreeRow {
                 logical: entry.logical.clone(),
@@ -127,15 +137,54 @@ impl Board {
             };
             if stored.get(&entry.path) != Some(&row) {
                 writer.put_worktree(&entry.path, &row)?;
+                changed = true;
             }
         }
         let walked: std::collections::HashSet<&str> =
             entries.iter().map(|entry| entry.path.as_str()).collect();
         for path in stored.keys().filter(|path| !walked.contains(path.as_str())) {
             writer.delete_worktree(path)?;
+            changed = true;
         }
-        Ok(entries)
+        Ok((entries, changed))
     }
+}
+
+/// Runs `run` in a transaction that takes the write lock only when it
+/// writes, so that runs finding nothing changed do not wait on each other,
+/// and returns what it returned and whether it wrote. If another process
+/// holds the lock or wrote first, it runs again in a transaction that waits
+/// for the lock.
+pub(crate) fn transact<T>(
+    index: &mut Index,
+    mut run: impl FnMut(&Writer<'_>) -> Result<T, RefreshError>,
+) -> Result<(T, bool), RefreshError> {
+    let first = once(index.deferred(), &mut run);
+    if !busy(&first) {
+        return first;
+    }
+    once(index.write(), &mut run)
+}
+
+fn once<T>(
+    writer: Result<Writer<'_>, IndexError>,
+    run: &mut impl FnMut(&Writer<'_>) -> Result<T, RefreshError>,
+) -> Result<(T, bool), RefreshError> {
+    let writer = writer?;
+    let value = run(&writer)?;
+    let wrote = writer.wrote()?;
+    writer.commit()?;
+    Ok((value, wrote))
+}
+
+/// Whether `result` failed because another process held the index.
+fn busy<T>(result: &Result<T, RefreshError>) -> bool {
+    matches!(
+        result,
+        Err(RefreshError::Index {
+            source: IndexError::Busy { .. }
+        })
+    )
 }
 
 /// What the index holds about each entry of `source` in `repository`,

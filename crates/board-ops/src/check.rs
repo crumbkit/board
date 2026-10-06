@@ -16,7 +16,7 @@ use board_model::{
 use board_tree::{Entry, Repository, ResolveError, Status, in_scope};
 
 use crate::board::Board;
-use crate::index::{Indexed, RefreshError, Refreshed, schema_of, schema_path};
+use crate::index::{Indexed, RefreshError, Refreshed, schema_of, schema_path, transact};
 
 /// One entry as `check` reports it.
 #[derive(Clone, Debug, PartialEq)]
@@ -134,7 +134,7 @@ impl Board {
         cache: Option<&Path>,
     ) -> Result<CheckReport, CheckError> {
         let mut index = Index::open(cache, self.repository().path())?;
-        self.check_in(&mut index, scope)
+        Ok(self.decide(&mut index, scope, View::Skip)?.0)
     }
 
     /// Checks every entry of the working tree, or only those at or beneath
@@ -147,25 +147,42 @@ impl Board {
         index: &mut Index,
         scope: Option<&LogicalPath>,
     ) -> Result<CheckReport, CheckError> {
-        Ok(self.decide(index, scope)?.0)
+        Ok(self.decide(index, scope, View::Build)?.0)
     }
 
     /// Checks as [`Board::check_in`] does, and also returns every reference
-    /// each checked record makes and where it led.
+    /// each checked record makes and where it led. The `entries` view is
+    /// built only when `view` asks for it.
     pub(crate) fn decide(
         &self,
         index: &mut Index,
         scope: Option<&LogicalPath>,
+        view: View,
     ) -> Result<(CheckReport, Vec<Referenced>), CheckError> {
         if let Some(scope) = scope {
             self.repository()
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let writer = index.write()?;
-        let refresh = self.refresh(&writer)?;
+        let ((mut report, references), wrote) =
+            transact(index, |writer| self.decide_in(writer, scope, view))?;
+        report.work.wrote = wrote;
+        report.memory = match index.storage() {
+            Storage::Memory(fallback) => Some(*fallback),
+            Storage::File(_) => None,
+        };
+        Ok((report, references))
+    }
+
+    fn decide_in(
+        &self,
+        writer: &Writer<'_>,
+        scope: Option<&LogicalPath>,
+        view: View,
+    ) -> Result<(CheckReport, Vec<Referenced>), RefreshError> {
+        let refresh = self.refresh(writer)?;
         let mut work = refresh.work;
-        let mounts = self.mounts(&writer, &refresh, &mut work)?;
+        let mounts = self.mounts(writer, &refresh, &mut work)?;
         let scopes = mounts.scopes(scope);
         let stats: HashMap<&str, (Stat, ObjectId)> = refresh
             .entries
@@ -184,13 +201,10 @@ impl Board {
             }
             blob
         };
-        let mut resolver = self
-            .repository()
-            .resolver(&mut known)
-            .map_err(RefreshError::from)?;
+        let mut resolver = self.repository().resolver(&mut known)?;
         let mut decided = Decided::default();
         let root = Decide {
-            writer: &writer,
+            writer,
             facts: &refresh.facts,
             resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
         };
@@ -215,7 +229,7 @@ impl Board {
         for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
-                writer: &writer,
+                writer,
                 facts: &mounted.facts,
                 resolve: RefCell::new(Box::new(|path: &LogicalPath| {
                     mounted.repository.resolve(&source, path)
@@ -232,16 +246,13 @@ impl Board {
                 decided.push(&decide, &source, entry, logical, Change::Committed)?;
             }
         }
-        crate::mounts::record(&mounts, &writer, self.repository())?;
-        writer.resolve(&decided.resolved)?;
-        writer.commit()?;
-        let memory = match index.storage() {
-            Storage::Memory(fallback) => Some(*fallback),
-            Storage::File(_) => None,
-        };
+        crate::mounts::record(&mounts, writer, self.repository())?;
+        if view == View::Build {
+            writer.resolve(&decided.resolved)?;
+        }
         let report = CheckReport {
             entries: decided.checked,
-            memory,
+            memory: None,
             work: Refreshed {
                 hashed: hashed.get(),
                 ..work
@@ -249,6 +260,14 @@ impl Board {
         };
         Ok((report, decided.references))
     }
+}
+
+/// Whether a check leaves what it decided in the index's `entries` view,
+/// which only a caller that goes on to read the index needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum View {
+    Build,
+    Skip,
 }
 
 /// What a check decided: the report's entries and the rows of `resolved`,

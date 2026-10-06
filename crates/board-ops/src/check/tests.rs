@@ -9,8 +9,8 @@ use proptest::prelude::*;
 use serde_json::Value;
 
 use crate::tests::generated::{Generated, generated};
-use crate::tests::{board, open, task};
-use crate::{CheckReport, Checked};
+use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
+use crate::{CheckReport, Checked, Refreshed};
 
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
     open(scenario)
@@ -174,6 +174,62 @@ fn a_query_sees_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
     );
 }
 
+/// A board whose every file is committed and in the working tree as
+/// committed, with one task referring to the project.
+fn committed_board() -> Scenario {
+    let scenario = Scenario::new();
+    let task = task(r#", "project": "/projects/p""#);
+    let files = [
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+        ("tasks/a.json", task.as_str()),
+    ];
+    scenario.commit(&files);
+    for (path, text) in files {
+        scenario.write(path, Item::File(text));
+    }
+    scenario
+}
+
+#[test]
+fn a_check_with_nothing_changed_does_no_work_and_reads_while_another_process_writes() {
+    let scenario = committed_board();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    let cold = board.check(None, Some(cache.path())).unwrap();
+    assert!(cold.work.wrote, "{:?}", cold.work);
+    let mut other = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let writing = other.write().unwrap();
+    let warm = board.check(None, Some(cache.path())).unwrap();
+    assert_eq!(warm.memory, None, "it used the file without waiting");
+    assert_eq!(warm.work, Refreshed::default());
+    assert_eq!(warm.entries, cold.entries);
+    drop(writing);
+}
+
+#[test]
+fn a_check_after_a_change_writes_what_changed() {
+    let scenario = committed_board();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    board.check(None, Some(cache.path())).unwrap();
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    let warm = board.check(None, Some(cache.path())).unwrap();
+    assert_eq!(warm.memory, None);
+    assert_eq!(
+        warm.work,
+        Refreshed {
+            hashed: 1,
+            parsed: 1,
+            validated: 1,
+            wrote: true,
+            ..Refreshed::default()
+        }
+    );
+}
+
 /// Entries in the order the view's key gives them, by source and then path,
 /// without the detail the view does not show.
 fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
@@ -207,10 +263,13 @@ proptest! {
 
         let warmed = check_in(generated.scenario(), &mut warm);
         extract_everything(&warm);
+        let again = check_in(generated.scenario(), &mut warm);
+        prop_assert_eq!(again.work, Refreshed::default(), "nothing changed");
         let mut cold = Index::open(None, &root).unwrap();
         let fresh = check_in(generated.scenario(), &mut cold);
         extract_everything(&cold);
         prop_assert_eq!(&warmed.entries, &fresh.entries);
+        prop_assert_eq!(&again.entries, &fresh.entries);
         prop_assert_eq!(viewed(&warm), sorted(warmed.entries.clone()));
         prop_assert_eq!(viewed(&cold), sorted(fresh.entries));
         for sql in EVERY_TABLE {

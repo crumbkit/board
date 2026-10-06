@@ -1,10 +1,13 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::time::Instant;
 
-use board_model::{Code, Kind, ObjectId, Role};
+use board_model::{Code, Kind, ObjectId, Role, Source};
+use board_tree::MountPoint;
 use rusqlite::Connection;
 
 use super::*;
+use crate::store::{MountRow, SourceRow};
 
 const ROOT: &str = "/boards/one";
 
@@ -30,7 +33,7 @@ fn filled(cache: &Path) -> Index {
 }
 
 fn has_fact(index: &mut Index) -> bool {
-    let writer = index.write().unwrap();
+    let writer = index.deferred().unwrap();
     writer.blob(blob(1), Role::Json).unwrap().is_some()
 }
 
@@ -123,7 +126,9 @@ fn an_index_another_process_holds_past_the_wait_is_replaced_by_one_in_memory() {
     let cache = tempfile::tempdir().unwrap();
     drop(filled(cache.path()));
     let holder = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
-    holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    holder
+        .execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE")
+        .unwrap();
     let started = Instant::now();
     let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert!(
@@ -132,6 +137,20 @@ fn an_index_another_process_holds_past_the_wait_is_replaced_by_one_in_memory() {
     );
     assert_eq!(index.storage(), &Storage::Memory(Fallback::Busy));
     assert!(!has_fact(&mut index), "the index in memory starts empty");
+}
+
+#[test]
+fn an_index_another_process_is_writing_is_used_without_waiting_for_it() {
+    let cache = tempfile::tempdir().unwrap();
+    drop(filled(cache.path()));
+    let holder = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
+    holder.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    assert!(
+        matches!(index.storage(), Storage::File(_)),
+        "a reader shares the file with one writer"
+    );
+    assert!(has_fact(&mut index));
 }
 
 #[test]
@@ -149,6 +168,67 @@ fn an_index_another_process_has_released_is_used() {
 fn with_no_cache_the_index_is_in_memory() {
     let index = Index::open(None, Path::new(ROOT)).unwrap();
     assert_eq!(index.storage(), &Storage::Memory(Fallback::NoCache));
+}
+
+/// One source and one mount, the mount resolved to `target` or failed.
+fn mounting(target: Result<ObjectId, Code>) -> (Source, Vec<MountPoint>) {
+    let source = Source::Commit(blob(2));
+    let mount = MountPoint {
+        source: source.clone(),
+        path: "vendor/other".into(),
+        target,
+    };
+    (source, vec![mount])
+}
+
+/// Stores the sources and mounts `first`, then sets `then` in a deferred
+/// transaction. Returns whether it wrote, and what the index then holds.
+fn remount(
+    first: Result<ObjectId, Code>,
+    then: Result<ObjectId, Code>,
+) -> (bool, (BTreeSet<SourceRow>, BTreeSet<MountRow>)) {
+    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    let repository = Path::new(ROOT);
+    let (source, mounts) = mounting(first);
+    let writer = index.write().unwrap();
+    writer
+        .set_mounts(&[(source, Some(blob(3)), repository)], &mounts)
+        .unwrap();
+    writer.commit().unwrap();
+    let (source, mounts) = mounting(then);
+    let writer = index.deferred().unwrap();
+    writer
+        .set_mounts(&[(source, Some(blob(3)), repository)], &mounts)
+        .unwrap();
+    (writer.wrote().unwrap(), writer.mounted().unwrap())
+}
+
+#[test]
+fn setting_the_sources_and_mounts_the_index_holds_writes_nothing() {
+    let (wrote, (sources, mounts)) = remount(Ok(blob(4)), Ok(blob(4)));
+    assert!(!wrote);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(
+        mounts
+            .into_iter()
+            .map(|row| (row.2, row.3))
+            .collect::<Vec<_>>(),
+        [(Some(blob(4).to_string()), None)]
+    );
+}
+
+#[test]
+fn setting_other_sources_or_mounts_writes_them() {
+    let (wrote, (sources, mounts)) = remount(Ok(blob(4)), Err(Code::MountInvalid));
+    assert!(wrote);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(
+        mounts
+            .into_iter()
+            .map(|row| (row.2, row.3))
+            .collect::<Vec<_>>(),
+        [(None, Some(Code::MountInvalid.as_str().to_owned()))]
+    );
 }
 
 #[test]

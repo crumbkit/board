@@ -1,15 +1,14 @@
 //! Writing facts. Each is keyed by content alone, so a fact once written is
 //! true wherever its key appears and is never updated.
 
-use std::collections::HashMap;
-
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use board_model::{
     Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat, canonical_json,
 };
 use board_tree::{MountPoint, TreeRow, TreeRows};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, TransactionState, params};
 
 use crate::open::{Index, IndexError};
 use crate::schema::RESOLVED;
@@ -87,17 +86,33 @@ pub struct Resolved {
     pub change: Change,
 }
 
-/// One write to the index, holding its write lock until it commits.
+/// One transaction on the index that may write. It reads one snapshot, and
+/// holds the write lock from its first write until it commits.
 #[derive(Debug)]
 pub struct Writer<'a> {
     transaction: Transaction<'a>,
 }
 
+/// A row of `sources`, and of `mounts`, as stored.
+pub(crate) type SourceRow = (String, Option<String>, String);
+pub(crate) type MountRow = (String, String, Option<String>, Option<String>);
+
 impl Index {
+    /// A transaction that takes the write lock now, waiting for it.
     pub fn write(&mut self) -> Result<Writer<'_>, IndexError> {
-        let transaction = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        self.begin(TransactionBehavior::Immediate)
+    }
+
+    /// A transaction that takes the write lock at its first write, as
+    /// `BEGIN DEFERRED` does. That write fails at once with
+    /// [`IndexError::Busy`] if another process holds the lock or has written
+    /// since this transaction began reading.
+    pub fn deferred(&mut self) -> Result<Writer<'_>, IndexError> {
+        self.begin(TransactionBehavior::Deferred)
+    }
+
+    fn begin(&mut self, behavior: TransactionBehavior) -> Result<Writer<'_>, IndexError> {
+        let transaction = self.connection.transaction_with_behavior(behavior)?;
         Ok(Writer { transaction })
     }
 }
@@ -408,36 +423,74 @@ impl Writer<'_> {
         Ok(rows.filter(|rows| !rows.is_empty()))
     }
 
-    /// Replaces the sources and mounts the last refresh found.
+    /// Replaces the sources and mounts the last refresh found, unless the
+    /// index already holds exactly these.
     pub fn set_mounts(
         &self,
         sources: &[(Source, Option<ObjectId>, &Path)],
         mounts: &[MountPoint],
     ) -> Result<(), IndexError> {
+        let sources: BTreeSet<SourceRow> = sources
+            .iter()
+            .map(|(source, tree, repository)| {
+                let tree = tree.map(|tree| tree.to_string());
+                (
+                    source_name(source),
+                    tree,
+                    repository.to_string_lossy().into(),
+                )
+            })
+            .collect();
+        let mounts: BTreeSet<MountRow> = mounts
+            .iter()
+            .map(|mount| {
+                let target = mount.target.ok().map(|target| target.to_string());
+                let code = mount.target.err().map(|code| code.as_str().to_owned());
+                (source_name(&mount.source), mount.path.clone(), target, code)
+            })
+            .collect();
+        if self.mounted()? == (sources.clone(), mounts.clone()) {
+            return Ok(());
+        }
         self.transaction
             .execute_batch("DELETE FROM main.sources; DELETE FROM main.mounts;")?;
         for (source, tree, repository) in sources {
             self.transaction
                 .prepare_cached(
-                    "INSERT OR REPLACE INTO main.sources (source, tree, repository) VALUES (?1, ?2, ?3)",
+                    "INSERT INTO main.sources (source, tree, repository) VALUES (?1, ?2, ?3)",
                 )?
-                .execute(params![
-                    source_name(source),
-                    tree.map(|tree| tree.to_string()),
-                    repository.to_string_lossy(),
-                ])?;
+                .execute(params![source, tree, repository])?;
         }
-        for mount in mounts {
+        for (source, path, target, code) in mounts {
             self.transaction
-                .prepare_cached("INSERT OR REPLACE INTO main.mounts (source, path, target, code) VALUES (?1, ?2, ?3, ?4)")?
-                .execute(params![
-                    source_name(&mount.source),
-                    mount.path,
-                    mount.target.ok().map(|target| target.to_string()),
-                    mount.target.err().map(Code::as_str),
-                ])?;
+                .prepare_cached(
+                    "INSERT INTO main.mounts (source, path, target, code) VALUES (?1, ?2, ?3, ?4)",
+                )?
+                .execute(params![source, path, target, code])?;
         }
         Ok(())
+    }
+
+    /// The sources and mounts the index holds.
+    pub(crate) fn mounted(&self) -> Result<(BTreeSet<SourceRow>, BTreeSet<MountRow>), IndexError> {
+        let sources = self
+            .transaction
+            .prepare_cached("SELECT source, tree, repository FROM main.sources")?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<_, _>>()?;
+        let mounts = self
+            .transaction
+            .prepare_cached("SELECT source, path, target, code FROM main.mounts")?
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok((sources, mounts))
+    }
+
+    /// Whether this transaction has written, and so holds the write lock.
+    pub fn wrote(&self) -> Result<bool, IndexError> {
+        Ok(self.transaction.transaction_state(Some("main"))? == TransactionState::Write)
     }
 
     /// Every file, symlink and submodule beneath the tree `root`, by

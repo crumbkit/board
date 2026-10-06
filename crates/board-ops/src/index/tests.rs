@@ -4,7 +4,7 @@ use board_index::{BlobFact, Index, RefFact, ValidationFact};
 use board_model::{Code, Kind, Role};
 use board_scenario::{Item, Scenario};
 
-use crate::index::Refreshed;
+use crate::index::{Refreshed, transact};
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 
 /// Refreshes the index of `scenario` in `cache`.
@@ -45,6 +45,7 @@ fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_once() {
             hashed: 8,
             parsed: 6,
             validated: 3,
+            wrote: true,
             ..Refreshed::default()
         }
     );
@@ -70,6 +71,7 @@ fn one_changed_record_hashes_one_file_parses_one_blob_and_validates_one_record()
             hashed: 1,
             parsed: 1,
             validated: 1,
+            wrote: true,
             ..Refreshed::default()
         }
     );
@@ -90,6 +92,7 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
             hashed: 1,
             parsed: 1,
             validated: 2,
+            wrote: true,
             ..Refreshed::default()
         }
     );
@@ -188,6 +191,7 @@ fn a_file_modified_after_the_last_refresh_began_is_hashed_again() {
         build(&scenario, cache.path()),
         Refreshed {
             hashed: 1,
+            wrote: true,
             ..Refreshed::default()
         },
         "its metadata matches, but it could have changed unseen"
@@ -214,6 +218,7 @@ fn a_deleted_file_leaves_the_index_and_a_new_one_is_hashed() {
         build(&scenario, cache.path()),
         Refreshed {
             hashed: 1,
+            wrote: true,
             ..Refreshed::default()
         }
     );
@@ -275,4 +280,94 @@ fn head_s_trees_are_listed_once_and_after_a_commit_only_the_changed_ones() {
         2,
         "the new root and a"
     );
+}
+
+/// A board with three committed files, all in the working tree as
+/// committed.
+fn committed() -> Scenario {
+    let scenario = Scenario::new();
+    let files = [
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        ("a/x.md", "1"),
+        ("b/y.md", "1"),
+    ];
+    scenario.commit(&files);
+    for (path, text) in files {
+        scenario.write(path, Item::File(text));
+    }
+    scenario
+}
+
+#[test]
+fn a_refresh_with_nothing_changed_on_a_committed_board_writes_nothing() {
+    let scenario = committed();
+    let cache = tempfile::tempdir().unwrap();
+    assert!(build(&scenario, cache.path()).wrote);
+    assert_eq!(build(&scenario, cache.path()), Refreshed::default());
+}
+
+#[test]
+fn a_changed_file_or_a_new_commit_writes_and_the_refresh_after_does_not() {
+    let scenario = committed();
+    let cache = tempfile::tempdir().unwrap();
+    build(&scenario, cache.path());
+    scenario.write("a/x.md", Item::File("2"));
+    let edited = build(&scenario, cache.path());
+    assert_eq!((edited.hashed, edited.wrote), (1, true));
+    scenario.commit(&[
+        (".board/board.json", r#"{"$type": "board/config/v1"}"#),
+        ("a/x.md", "2"),
+        ("b/y.md", "1"),
+    ]);
+    assert_eq!(
+        build(&scenario, cache.path()),
+        Refreshed {
+            trees: 2,
+            wrote: true,
+            ..Refreshed::default()
+        },
+        "the working tree is as it was, but HEAD is not"
+    );
+    assert_eq!(build(&scenario, cache.path()), Refreshed::default());
+}
+
+/// Runs a transaction on a filled index whose closure reads, lets another
+/// connection commit a write when `interfere` and this is its first run,
+/// then writes. Returns how many times the closure ran, and whether the
+/// transaction that committed wrote.
+fn retried(interfere: bool) -> (usize, bool) {
+    let cache = tempfile::tempdir().unwrap();
+    let root = std::path::Path::new("/boards/retry");
+    let blob = |byte| board_model::ObjectId::Sha1([byte; 20]);
+    let fact = BlobFact {
+        kind: Kind::Json,
+        record_type: None,
+        code: None,
+    };
+    let mut index = Index::open(Some(cache.path()), root).unwrap();
+    let mut runs = 0;
+    let ((), wrote) = transact(&mut index, |writer| {
+        runs += 1;
+        writer.blob(blob(1), Role::Json)?;
+        if interfere && runs == 1 {
+            let mut other = Index::open(Some(cache.path()), root).unwrap();
+            let other = other.write().unwrap();
+            other.put_blob(blob(2), Role::Json, &fact).unwrap();
+            other.commit().unwrap();
+        }
+        writer.put_blob(blob(3), Role::Json, &fact)?;
+        Ok(())
+    })
+    .unwrap();
+    (runs, wrote)
+}
+
+#[test]
+fn a_transaction_another_process_wrote_under_runs_again_and_writes() {
+    assert_eq!(retried(true), (2, true));
+}
+
+#[test]
+fn a_transaction_no_other_process_wrote_under_runs_once_and_writes() {
+    assert_eq!(retried(false), (1, true));
 }
