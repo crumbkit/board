@@ -12,7 +12,7 @@ use serde_json::{Map, Value, json};
 
 use crate::installed::{DiscoveryError, Installed};
 use crate::manifest::{Capability, CapabilityName, Manifest, ManifestError, NameError, PluginName};
-use crate::process::{self, Limits, Stopped};
+use crate::process::{self, Limits, Scope, Stopped};
 use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallResult, Reply};
 
 /// The deepest nesting of calls: a call that arrives at this depth is refused.
@@ -295,6 +295,14 @@ pub(crate) fn exchange<T: DeserializeOwned>(
         PathBuf::from(program)
     };
     let plugin = manifest.name.clone();
+    // A nested Board leaves its plugin in the outermost plugin's group. A
+    // new group there would escape the outermost Board's signals after they
+    // stopped the nested Board that enforces this plugin's limits.
+    let scope = if depth == 0 {
+        Scope::Group
+    } else {
+        Scope::Process
+    };
     let finished = process::run(
         &program,
         arguments,
@@ -302,6 +310,7 @@ pub(crate) fn exchange<T: DeserializeOwned>(
         &environment(context.environment, depth + 1),
         request,
         context.limits,
+        scope,
     )
     .map_err(|stopped| match stopped {
         Stopped::Io(source) => CallError::Start {

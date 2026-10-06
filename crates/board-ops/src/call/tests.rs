@@ -535,48 +535,132 @@ fn a_plugin_past_its_time_limit_is_asked_to_stop_what_it_started() {
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
     assert_eq!(error.code(), Some(Code::PluginTimeout));
-    let pid = std::fs::read_to_string(fixture.plugin("tasks").join("grandchild.pid")).unwrap();
-    assert!(ends(pid.trim()));
+    assert!(ends(&written_pid(&fixture, "grandchild.pid")));
 }
 
 #[test]
-fn a_plugin_that_ignores_sigterm_is_killed_after_the_grace_period() {
+fn a_plugin_that_traps_sigterm_has_the_grace_period_to_finish_and_one_that_ignores_it_is_killed() {
     let limits = Limits {
-        time: Duration::from_millis(500),
+        time: Duration::from_secs(2),
         ..Limits::default()
     };
-    let script = "#!/bin/sh\ncat > /dev/null\ntrap '' TERM\nexec sleep 30\n";
-    let started = Instant::now();
-    let error = Fixture::tasks(script)
-        .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
-        .unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginTimeout));
-    assert!(started.elapsed() < Duration::from_secs(10));
-}
-
-#[test]
-fn a_wrapper_that_execs_its_program_is_stopped_and_one_that_does_not_leaves_it() {
-    let limits = Limits {
-        time: Duration::from_millis(500),
-        ..Limits::default()
-    };
-    for (exec, stopped) in [("exec ", true), ("", false)] {
+    let finish = "echo stopped > stopped.txt; exit 1";
+    for (action, finished) in [(finish, true), ("", false)] {
         let script = format!(
-            "#!/bin/sh\ncat > /dev/null\n{exec}sh -c 'echo $$ > child.pid; exec sleep 30'\n"
+            "#!/bin/sh\ncat > /dev/null\necho $$ > plugin.pid\ntrap '{action}' TERM\nsleep 30 &\nwait\n"
         );
         let fixture = Fixture::tasks(&script);
         let error = fixture
             .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
             .unwrap_err();
         assert_eq!(error.code(), Some(Code::PluginTimeout));
-        let pid = std::fs::read_to_string(fixture.plugin("tasks").join("child.pid")).unwrap();
-        if stopped {
-            assert!(ends(pid.trim()), "the child of a wrapper that execs it");
-        } else {
-            assert!(running(pid.trim()), "the child of a wrapper without exec");
-            tool(&["kill", "-KILL", pid.trim()]);
+        assert!(ends(&written_pid(&fixture, "plugin.pid")));
+        let stopped = fixture.plugin("tasks").join("stopped.txt");
+        assert_eq!(stopped.exists(), finished, "with the trap {action:?}");
+    }
+}
+
+#[test]
+fn a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it() {
+    let limits = Limits {
+        time: Duration::from_secs(2),
+        ..Limits::default()
+    };
+    for exec in ["exec ", ""] {
+        // A program that outlives the limit, then one that answers within it.
+        for (seconds, timeout) in [(60, true), (0, false)] {
+            let script = format!(
+                "#!/bin/sh\ncat > /dev/null\n{exec}sh -c 'echo $$ > child.pid; sleep {seconds}; printf %s \"$0\"' '{RESULT}'\n"
+            );
+            let fixture = Fixture::tasks(&script);
+            let called = fixture.call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits);
+            let wrapper = format!("a wrapper with {exec:?} of a program sleeping {seconds} s");
+            if timeout {
+                assert_eq!(
+                    called.unwrap_err().code(),
+                    Some(Code::PluginTimeout),
+                    "{wrapper}"
+                );
+                assert!(ends(&written_pid(&fixture, "child.pid")), "{wrapper}");
+            } else {
+                assert_eq!(called.unwrap().output, json!({"count": 2}), "{wrapper}");
+            }
         }
     }
+}
+
+#[test]
+fn a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started() {
+    let limits = Limits {
+        time: Duration::from_secs(2),
+        ..Limits::default()
+    };
+    // A plugin that waits for its grandchild past the limit, then one that
+    // answers without waiting. Board signals the group only past a limit, so
+    // the second grandchild is left running.
+    for (wait, timeout) in [("wait\n", true), ("", false)] {
+        let script = format!(
+            "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; exec sleep 60' > /dev/null 2>&1 &\n{wait}printf '%s' '{RESULT}'\n"
+        );
+        let fixture = Fixture::tasks(&script);
+        let called = fixture.call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits);
+        let pid = written_pid(&fixture, "grandchild.pid");
+        if timeout {
+            assert_eq!(called.unwrap_err().code(), Some(Code::PluginTimeout));
+            assert!(
+                ends(&pid),
+                "the grandchild of a plugin stopped past its limit"
+            );
+        } else {
+            assert_eq!(called.unwrap().output, json!({"count": 2}));
+            assert!(
+                running(&pid),
+                "the grandchild of a plugin that answered in time"
+            );
+            tool(&["kill", "-KILL", &pid]);
+        }
+    }
+}
+
+#[test]
+fn a_plugin_leads_its_own_process_group_unless_the_call_is_nested() {
+    let script = format!(
+        "#!/bin/sh\ncat > /dev/null\necho $$ > plugin.pid\nps -o pgid= -p $$ > group.txt\nprintf '%s' '{RESULT}'\n"
+    );
+    let ours = tool(&["ps", "-o", "pgid=", "-p", &std::process::id().to_string()]);
+    for (depth, own) in [(None, true), (Some("1"), false)] {
+        let fixture = Fixture::tasks(&script);
+        let environment = Environment {
+            depth: depth.map(OsString::from),
+            ..environment()
+        };
+        fixture
+            .call_with("tasks.due", r#"{"n": 1}"#, &environment, Limits::default())
+            .unwrap();
+        let read = |name| std::fs::read_to_string(fixture.plugin("tasks").join(name)).unwrap();
+        let group = read("group.txt");
+        let expected = if own {
+            read("plugin.pid")
+        } else {
+            ours.clone()
+        };
+        assert_eq!(group.trim(), expected.trim(), "at depth {depth:?}");
+    }
+}
+
+/// The pid a fixture script wrote to `name` in the plugin's directory, once
+/// the whole line is there.
+fn written_pid(fixture: &Fixture, name: &str) -> String {
+    let path = fixture.plugin("tasks").join(name);
+    for _ in 0..500 {
+        if let Ok(text) = std::fs::read_to_string(&path)
+            && text.ends_with('\n')
+        {
+            return text.trim().to_owned();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the plugin never wrote a pid to {}", path.display());
 }
 
 /// Whether the process `pid` has ended within a bounded number of checks.

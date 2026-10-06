@@ -1,18 +1,33 @@
-//! The one owner of child processes (STANDARDS.md 7): a plugin run with a
-//! deadline and bounded output (docs/plugins.md, Calling a capability).
+//! The one owner of child processes and of signal handling (STANDARDS.md 7):
+//! a plugin run with a deadline and bounded output (docs/plugins.md, Calling
+//! a capability).
 
 use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
+#[cfg(unix)]
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+use rustix::process::{Pid, Signal};
 
 /// How long Board sleeps between checks on a child whose pipes are closed.
 const POLL: Duration = Duration::from_millis(10);
 /// How long a plugin has to exit after SIGTERM before Board kills it.
 const GRACE: Duration = Duration::from_secs(1);
+
+/// The process groups of the running plugins that lead their own group.
+/// Board forwards SIGINT, SIGTERM and SIGHUP to each of them.
+#[cfg(unix)]
+static GROUPS: Mutex<Vec<Pid>> = Mutex::new(Vec::new());
+
+/// Whether the thread that forwards signals started.
+#[cfg(unix)]
+static FORWARDER: OnceLock<Result<(), io::ErrorKind>> = OnceLock::new();
 
 /// What one run of a plugin may take.
 #[derive(Clone, Copy, Debug)]
@@ -38,6 +53,18 @@ impl Default for Limits {
             batch_bytes: 16 * 1024 * 1024,
         }
     }
+}
+
+/// Which processes Board signals when a plugin passes a limit.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Scope {
+    /// The plugin leads a new process group, and Board signals the group, so
+    /// every process the plugin started stops with it.
+    Group,
+    /// The plugin stays in Board's process group, and Board signals only the
+    /// plugin. A nested Board uses this, so its plugin stays in the group
+    /// that the outermost Board signals.
+    Process,
 }
 
 /// A child that exited with its pipes closed.
@@ -66,8 +93,9 @@ enum Event {
 
 /// Runs `program` with `arguments` in `directory` with only `environment`,
 /// writes `input` to its stdin, and reads its stdout and stderr until it
-/// exits with both closed. Past the deadline or the stdout bound, Board kills
-/// the child and stops waiting, even while a grandchild holds a pipe.
+/// exits with both closed. Past the deadline or the stdout bound, Board stops
+/// the processes `scope` names and stops waiting, even while a grandchild
+/// holds a pipe. Off Unix, Board ignores `scope` and kills only the child.
 #[expect(
     clippy::disallowed_methods,
     reason = "board-plugin owns child processes"
@@ -79,18 +107,19 @@ pub(crate) fn run(
     environment: &[(&str, OsString)],
     input: Vec<u8>,
     limits: Limits,
+    scope: Scope,
 ) -> Result<Finished, Stopped> {
     let deadline = Instant::now() + limits.time;
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(arguments)
         .current_dir(directory)
         .env_clear()
         .envs(environment.iter().map(|(key, value)| (key, value)))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(Stopped::Io)?;
+        .stderr(Stdio::piped());
+    let mut child = spawn(&mut command, scope).map_err(Stopped::Io)?;
     if let Some(mut stdin) = child.stdin.take() {
         // A child that exits without reading closes the pipe; that is its
         // answer, not Board's failure.
@@ -108,11 +137,10 @@ pub(crate) fn run(
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let mut open = 2;
-    let mut code = None;
     loop {
         let now = Instant::now();
         if now >= deadline {
-            kill(&mut child);
+            kill(&mut child, scope);
             return Err(Stopped::Timeout(stderr));
         }
         let wait = (deadline - now).min(POLL);
@@ -120,7 +148,7 @@ pub(crate) fn run(
             Ok(Event::Out(bytes)) => {
                 stdout.extend_from_slice(&bytes);
                 if stdout.len() > limits.stdout {
-                    kill(&mut child);
+                    kill(&mut child, scope);
                     return Err(Stopped::TooLarge(stderr));
                 }
             }
@@ -133,24 +161,110 @@ pub(crate) fn run(
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => thread::sleep(wait),
         }
-        if code.is_none() {
-            match child.try_wait() {
-                Ok(Some(status)) => code = Some(status.code()),
+        // Board reaps the child only after both pipes close, so until then
+        // its pid, and the group it leads, name no other process.
+        if open == 0 {
+            match reap(&mut child) {
+                Ok(Some(status)) => {
+                    return Ok(Finished {
+                        code: status.code(),
+                        stdout,
+                        stderr,
+                    });
+                }
                 Ok(None) => {}
                 Err(error) => {
-                    kill(&mut child);
+                    kill(&mut child, scope);
                     return Err(Stopped::Io(error));
                 }
             }
         }
-        if let (0, Some(code)) = (open, code) {
-            return Ok(Finished {
-                code,
-                stdout,
-                stderr,
-            });
-        }
     }
+}
+
+/// Starts `command`. With `Scope::Group`, the child leads a new process
+/// group, and Board forwards the signals that stop it to that group.
+#[cfg(unix)]
+fn spawn(command: &mut Command, scope: Scope) -> io::Result<Child> {
+    if let Scope::Process = scope {
+        return command.spawn();
+    }
+    std::os::unix::process::CommandExt::process_group(command, 0);
+    (*FORWARDER.get_or_init(forward)).map_err(io::Error::from)?;
+    // Board holds the lock from the spawn until the group is listed, so a
+    // signal that arrives in between still reaches the group.
+    let mut groups = groups();
+    let child = command.spawn()?;
+    groups.push(Pid::from_child(&child));
+    Ok(child)
+}
+
+#[cfg(not(unix))]
+fn spawn(command: &mut Command, _: Scope) -> io::Result<Child> {
+    command.spawn()
+}
+
+/// Starts the thread that forwards SIGINT, SIGTERM and SIGHUP to every
+/// listed group and then stops Board as the signal would have. The thread
+/// stays for the life of the process, because signal-hook does not restore
+/// the default action when a handler is removed: SIGINT would be ignored.
+/// The handler replaces an inherited ignored SIGINT or SIGHUP, as under
+/// `nohup`; no safe API reads the inherited disposition to respect it.
+#[cfg(unix)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-plugin's process module owns signal handling"
+)]
+fn forward() -> Result<(), io::ErrorKind> {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+    let mut signals = signal_hook::iterator::Signals::new([SIGINT, SIGTERM, SIGHUP])
+        .map_err(|error| error.kind())?;
+    thread::spawn(move || {
+        for raw in signals.forever() {
+            // The lock stays held until Board stops, so no plugin starts
+            // after the signal.
+            let groups = groups();
+            if let Some(signal) = Signal::from_named_raw(raw) {
+                for group in groups.iter() {
+                    let _ = rustix::process::kill_process_group(*group, signal);
+                }
+            }
+            // For SIGINT, SIGTERM and SIGHUP this call does not return: it
+            // restores the default action and raises the signal, and falls
+            // back to abort(). So the lock held here is never released to a
+            // plugin that starts later.
+            let _ = signal_hook::low_level::emulate_default_handler(raw);
+        }
+    });
+    Ok(())
+}
+
+#[cfg(unix)]
+fn groups() -> MutexGuard<'static, Vec<Pid>> {
+    // Each change to the list is a single push or retain, so a panic while
+    // the lock was held cannot leave it half changed.
+    GROUPS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Stops forwarding signals to the group `child` leads. The caller has not
+/// reaped `child` yet, so the forwarder never signals a reused id.
+#[cfg(unix)]
+fn unlist(groups: &mut Vec<Pid>, child: &Child) {
+    let pid = Pid::from_child(child);
+    groups.retain(|group| *group != pid);
+}
+
+/// Reaps `child` if it has exited. On Unix, Board unlists its group under
+/// the same lock, so the forwarder never sees a reaped child listed.
+fn reap(child: &mut Child) -> io::Result<Option<ExitStatus>> {
+    #[cfg(unix)]
+    let mut groups = groups();
+    let status = child.try_wait()?;
+    #[cfg(unix)]
+    if status.is_some() {
+        unlist(&mut groups, child);
+    }
+    Ok(status)
 }
 
 /// Sends what `pipe` yields, wrapped by `event`, until it closes.
@@ -171,22 +285,34 @@ fn read(mut pipe: impl Read + Send + 'static, sender: Sender<Event>, event: fn(V
     });
 }
 
-/// Sends the child SIGTERM, gives it `GRACE` to exit, then kills and reaps
-/// it. A plugin that starts other processes stops them on SIGTERM, as
-/// `uv run` does; a grandchild is not Board's to wait for. Off Unix, the
-/// child is killed at once.
-fn kill(child: &mut Child) {
-    // Only a child not yet reaped still owns its pid.
+/// Sends SIGTERM to the processes `scope` names, gives the child `GRACE` to
+/// exit, then sends them SIGKILL, stops forwarding signals to the group, and
+/// reaps the child. The caller has not reaped the child, so its pid still
+/// names it and its group. Off Unix, the child is killed at once.
+fn kill(child: &mut Child, scope: Scope) {
     #[cfg(unix)]
-    if let Ok(None) = child.try_wait() {
-        let term = rustix::process::Signal::TERM;
-        if rustix::process::kill_process(rustix::process::Pid::from_child(child), term).is_ok() {
+    {
+        use rustix::process::{WaitId, WaitIdOptions, waitid};
+        let pid = Pid::from_child(child);
+        let signal = |signal| match scope {
+            Scope::Group => rustix::process::kill_process_group(pid, signal),
+            Scope::Process => rustix::process::kill_process(pid, signal),
+        };
+        // NOWAIT leaves an exited child unreaped, so its pid still names its
+        // own group when SIGKILL is sent.
+        let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+        let running = || matches!(waitid(WaitId::Pid(pid), options), Ok(None));
+        if signal(Signal::TERM).is_ok() {
             let deadline = Instant::now() + GRACE;
-            while Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+            while Instant::now() < deadline && running() {
                 thread::sleep(POLL);
             }
         }
+        let _ = signal(Signal::KILL);
+        unlist(&mut groups(), child);
     }
+    #[cfg(not(unix))]
+    let _ = scope;
     let _ = child.kill();
     let _ = child.wait();
 }

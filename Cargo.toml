@@ -40,6 +40,9 @@ rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"
 # process: ask a plugin to stop with SIGTERM without unsafe code.
 rustix = { version = "1.1.5", default-features = false, features = ["process", "std"] }
 serde = { version = "1.0.228", features = ["derive"] }
+# iterator: forward Ctrl-C to a plugin's process group from a thread, with no
+# async runtime and no unsafe code.
+signal-hook = { version = "0.4.4", default-features = false, features = ["iterator"] }
 # float_roundtrip parses floats exactly rounded, so a number Board reads back
 # from its own output keeps its value; the default parse is approximate.
 serde_json = { version = "1.0.151", features = ["float_roundtrip"] }
