@@ -14,6 +14,7 @@ pub(crate) struct Config {
     pub(crate) context: ContextBudget,
     pub(crate) docs_index: FileBudget,
     pub(crate) docs: GlobBudget,
+    pub(crate) plan: FileBudget,
     pub(crate) source: SourceBudget,
     pub(crate) expect: ExpectBudget,
 }

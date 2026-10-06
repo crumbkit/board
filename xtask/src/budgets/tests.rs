@@ -112,16 +112,51 @@ fn context_refuses_a_missing_entry_file() {
     assert_eq!(error.code(), "xtask::files::unreadable");
 }
 
+fn file_budget(file: &str, max_words: usize) -> FileBudget {
+    FileBudget {
+        file: file.to_owned(),
+        max_words,
+    }
+}
+
 #[test]
 fn the_docs_index_at_its_budget_passes_and_one_word_over_fails() {
     let fixture = Fixture::new();
     fixture.write("DOCS.md", &words(4));
-    let budget = |max_words| FileBudget {
-        file: "DOCS.md".to_owned(),
-        max_words,
+    let check = |max| {
+        file(
+            &fixture.root(),
+            CheckKind::DocsIndex,
+            &file_budget("DOCS.md", max),
+        )
     };
-    assert!(docs_index(&fixture.root(), &budget(4)).unwrap().passed());
-    assert!(!docs_index(&fixture.root(), &budget(3)).unwrap().passed());
+    assert!(check(4).unwrap().passed());
+    assert!(!check(3).unwrap().passed());
+}
+
+#[test]
+fn the_plan_at_its_budget_passes_and_one_word_over_fails() {
+    let fixture = Fixture::new();
+    fixture.write("PLAN.md", &words(4));
+    let check = |max| {
+        file(
+            &fixture.root(),
+            CheckKind::Plan,
+            &file_budget("PLAN.md", max),
+        )
+    };
+    let within = check(4).unwrap();
+    assert_eq!(within.kind, CheckKind::Plan);
+    assert_eq!(within.parts, [Part::new("PLAN.md".to_owned(), 4)]);
+    assert!(within.passed());
+    assert!(!check(3).unwrap().passed());
+}
+
+#[test]
+fn a_missing_plan_is_refused() {
+    let fixture = Fixture::new();
+    let error = file(&fixture.root(), CheckKind::Plan, &file_budget("PLAN.md", 4)).unwrap_err();
+    assert_eq!(error.code(), "xtask::files::unreadable");
 }
 
 #[test]

@@ -53,15 +53,16 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Documentation
 
-22. **Three word budgets, each set on its own in `lint.toml`.** `cargo xtask lint` counts whitespace-separated words, code blocks included; for English prose a word is roughly 1.3 to 1.5 tokens.
+22. **Four word budgets, each set on its own in `lint.toml`.** `cargo xtask lint` counts whitespace-separated words, code blocks included; for English prose a word is roughly 1.3 to 1.5 tokens.
 
     | Budget | Covers | Start | Why |
     | --- | --- | --- | --- |
     | N, `context.max_words` | `AGENTS.md`, `CLAUDE.md` and every file they import with `@path`, each counted once | 1,000 | Every agent session pays it, so it holds orientation and the rules tooling cannot enforce: about 1,400 tokens, four minutes to read. The old `AGENTS.md` alone was 5,879 words. |
     | M, `docs_index.max_words` | `DOCS.md` | 400 | A map, one line per document. If it does not fit, `docs/` has too many files. |
     | O, `docs.max_words` | `docs/*.md`, summed | 8,000 | What one person reads in one sitting, about 35 minutes. Past that, knowledge belongs in code, tests or schemas, or the design has grown too big. The old `docs/` held about 103,000 words. |
+    | P, `plan.max_words` | `PLAN.md` | 1,075 | The plan holds only what comes next. It had grown to 7,377 words, more than the docs budget, mostly sketches of unbuilt features; it was cut to what is next and a one-line list of deferred sketches. |
 
-    Raise a number only in a change that says why. Every run prints usage against each budget, so headroom shows before it runs out. The glob counts only the top level of `docs/`; `docs/**/*.md` counts subdirectories too. Root files other than `DOCS.md` are outside the budgets, and `PLAN.md` shrinks as milestones land.
+    Raise a number only in a change that says why. Every run prints usage against each budget, so headroom shows before it runs out. The glob counts only the top level of `docs/`; `docs/**/*.md` counts subdirectories too. Root files that no budget names are outside the budgets. `PLAN.md` shrinks as milestones land, and an unbuilt sketch gets one line there and a pointer to the commit that holds its full text.
 
 ## Command line
 

@@ -1,5 +1,5 @@
-//! The three documentation budgets: what an agent loads at session start, the
-//! documentation map, and the documentation itself.
+//! The word budgets: what an agent loads at session start, the documentation
+//! map, the documentation itself, and the plan.
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -40,10 +40,11 @@ pub(crate) fn context(root: &Root, budget: &ContextBudget) -> Result<Check, File
     ))
 }
 
-pub(crate) fn docs_index(root: &Root, budget: &FileBudget) -> Result<Check, FilesError> {
+/// One file's words, reported as `kind`.
+pub(crate) fn file(root: &Root, kind: CheckKind, budget: &FileBudget) -> Result<Check, FilesError> {
     let words = words::count(&root.read(&budget.file)?);
     Ok(Check::total(
-        CheckKind::DocsIndex,
+        kind,
         Limit::AtMost(budget.max_words),
         vec![Part::new(budget.file.clone(), words)],
     ))

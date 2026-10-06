@@ -1,0 +1,12 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/PLAN.md"
+  ],
+  "purpose": "The plan must hold only what comes next, so unbuilt sketches do not accumulate in it. lint.toml's plan budget enforces the same limit.",
+  "requirement": "PLAN.md holds at most 1,075 words. An unbuilt sketch gets one line and the commit that holds its full text.",
+  "rule": {
+    "budget": "words",
+    "max": 1075
+  }
+}

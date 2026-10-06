@@ -166,7 +166,10 @@ A pointer is a record of type `board/mount/v1` holding exactly one target:
 The first is a link to a path in the same board. The second is a mount of
 another repository at an exact commit. `follow` names what `board mount update`
 advances `commit` to; `commit` is what Board reads. v0 mounts local
-repositories only; a URL is `board::mount::remote_unsupported`.
+repositories only; a URL is `board::mount::remote_unsupported`. A mount's
+`repo` is a local path, read from `~/` or relative to the board, so on a
+machine with no clone at that path the mount degrades to
+`board::mount::repo_missing` until M8 (PLAN.md) adds remotes.
 
 A pointer at `dir/name.json` makes `/dir/name` its point: resolution continues
 through it. The semantics are POSIX symlinks':

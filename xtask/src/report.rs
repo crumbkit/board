@@ -72,6 +72,7 @@ pub(crate) enum CheckKind {
     Context,
     DocsIndex,
     Docs,
+    Plan,
     SourceLines,
     Expect,
 }
@@ -82,6 +83,7 @@ impl CheckKind {
             Self::Context => "context",
             Self::DocsIndex => "docs-index",
             Self::Docs => "docs",
+            Self::Plan => "plan",
             Self::SourceLines => "source",
             Self::Expect => "expect",
         }
@@ -89,7 +91,7 @@ impl CheckKind {
 
     fn unit(self) -> &'static str {
         match self {
-            Self::Context | Self::DocsIndex | Self::Docs => "words",
+            Self::Context | Self::DocsIndex | Self::Docs | Self::Plan => "words",
             Self::SourceLines => "lines",
             Self::Expect => "attributes",
         }
@@ -98,7 +100,9 @@ impl CheckKind {
     /// The code a failure of this check carries.
     pub(crate) fn code(self) -> &'static str {
         match self {
-            Self::Context | Self::DocsIndex | Self::Docs => "xtask::budget::over_limit",
+            Self::Context | Self::DocsIndex | Self::Docs | Self::Plan => {
+                "xtask::budget::over_limit"
+            }
             Self::SourceLines => "xtask::source::too_long",
             Self::Expect => "xtask::expect::count_changed",
         }

@@ -1,6 +1,7 @@
 # Plugins
 
-This is the v0 design. PLAN.md says which parts are built.
+This is the v0 design. docs/architecture.md says what is built, and PLAN.md
+says what comes next.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
 or a changelog. It is a separate program that Board starts, talking JSON over

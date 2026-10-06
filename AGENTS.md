@@ -39,9 +39,16 @@ cannot.
    was wrong with which value, and suggests the next thing to try.
    STANDARDS.md 23 to 26 make this concrete.
 
+## Owner preferences
+
+The owner decides scope, budgets, repositories and merges. The owner wants lean, reluctant growth. Push back on scope, including the
+owner's own. The owner writes Ruby, Rust and sometimes Elixir, and prefers
+error codes named after the domain. When you report a test, explain what it
+proves and what it does not.
+
 ## Writing
 
 Use short sentences and plain words. Say each thing once. `lint.toml` sets word
-budgets for this file with everything it imports, for DOCS.md and for docs/;
-`bin/lint` fails when one is exceeded. Raise a budget only in a change that says
-why.
+budgets for this file with everything it imports, for DOCS.md, for docs/ and
+for PLAN.md; `bin/lint` fails when one is exceeded. Raise a budget only in a
+change that says why.

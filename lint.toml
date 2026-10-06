@@ -16,13 +16,20 @@ max_words = 1000
 file = "DOCS.md"
 max_words = 400
 
-# O: the documentation itself, summed across every matching file. Set to
-# 5,000 by the owner after the altitude pass (PLAN, settled decision 6), and
+# O: the documentation itself, summed across every matching file. Lowered from
+# 8,000 to 5,000 by the owner after the altitude pass (#60, 2026-10-04), and
 # raised to 5,500 on 2026-10-05 to describe the plugin, controls and CLI
 # features built since.
 [docs]
 glob = "docs/*.md"
 max_words = 5500
+
+# P: the plan. Added on 2026-10-06, when PLAN.md had grown to 7,377 words of
+# mostly unbuilt sketches, more than the whole docs budget. Set at its trimmed
+# length (932 words) plus about 15%.
+[plan]
+file = "PLAN.md"
+max_words = 1075
 
 # Every Rust source file outside tests.rs files and tests/ directories.
 [source]

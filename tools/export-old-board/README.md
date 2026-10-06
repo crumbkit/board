@@ -1,6 +1,6 @@
 # export-old-board
 
-A throwaway script for PLAN.md milestone M1. It reads every object the old
+A throwaway script for the first step of PLAN.md's M7. It reads every object the old
 `board objects list` returns, plus the drops that list hides (old
 `crates/board-cli/src/boardcli/handlers.rs:4877`), and writes each one as a
 canonical record in a new board. Delete this directory once the export repository exists.

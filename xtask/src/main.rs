@@ -1,4 +1,4 @@
-//! Repository lints that clippy cannot express: the documentation budgets, the
+//! Repository lints that clippy cannot express: the word budgets, the
 //! source file length cap and the `#[expect]` ratchet. `bin/lint` runs it as
 //! `cargo xtask lint`; `lint.toml` holds every number it enforces.
 
@@ -18,7 +18,7 @@ use std::process::ExitCode;
 
 use crate::config::{Config, ConfigError};
 use crate::files::{FilesError, Root};
-use crate::report::{Output, Report};
+use crate::report::{CheckKind, Output, Report};
 
 /// The workspace root: this crate's manifest directory sits one level below it.
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
@@ -82,8 +82,9 @@ fn lint(root: &Path) -> Result<Report, LintError> {
     Ok(Report {
         checks: vec![
             budgets::context(&root, &config.context)?,
-            budgets::docs_index(&root, &config.docs_index)?,
+            budgets::file(&root, CheckKind::DocsIndex, &config.docs_index)?,
             budgets::docs(&root, &config.docs)?,
+            budgets::file(&root, CheckKind::Plan, &config.plan)?,
             lines,
             expects,
         ],

@@ -4,7 +4,7 @@
 # ///
 """Export every current object head of the old `board` into a new board.
 
-Throwaway: delete this directory once the export repository exists (PLAN.md M1).
+Throwaway: delete this directory once the export repository exists (PLAN.md, M7 step 1).
 """
 
 import argparse
