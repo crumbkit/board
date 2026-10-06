@@ -7,6 +7,7 @@ use board_tree::Status;
 use crate::{Board, CheckReport};
 
 pub(crate) mod generated;
+pub(crate) mod verdicts;
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
 

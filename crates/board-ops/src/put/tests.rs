@@ -12,6 +12,7 @@ use crate::put::{Expect, PutReport, Schemas};
 use crate::tests::{MANIFEST, open, task};
 
 mod batch;
+mod parity;
 mod waiting;
 
 /// The test board, set not to commit: committing is tested on its own,
@@ -107,25 +108,15 @@ fn expect_must_match_the_file_or_the_put_is_stale() {
     );
 }
 
+/// The codes put shares with check are pinned by the property in `parity`;
+/// these are put's own checks, made before it reads the record as check does.
 #[test]
-fn a_record_check_refuses_with_checks_own_codes_and_admits_its_twin() {
+fn input_that_is_not_one_object_with_a_type_is_refused_and_its_twin_is_admitted() {
     let scenario = board();
     for (refused, code) in [
-        (r#"{"$type": "lr/task/v1"}"#, Code::RecordInvalid),
-        (r#"{"$type": "lr/nothing/v1"}"#, Code::RecordUnknownType),
-        (r#"{"$type": "Not a type"}"#, Code::RecordBadType),
-        (r#"{"$type": "board/other/v1"}"#, Code::RecordUnknownType),
-        (
-            r#"{"$type": "lr/task/v1", "title": "t", "see": "not a path"}"#,
-            Code::RefMalformed,
-        ),
         (r#"{"title": "t"}"#, Code::PutInvalid),
         ("[1]", Code::PutInvalid),
         ("", Code::JsonParse),
-        (
-            r#"{"$type": "lr/task/v1", "title": 18446744073709551616}"#,
-            Code::JsonLossyNumber,
-        ),
     ] {
         assert_eq!(
             put(&scenario, "/tasks/a", Expect::Any, refused).unwrap_err(),
