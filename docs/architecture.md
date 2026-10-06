@@ -205,8 +205,11 @@ mount it. Only `board-tree` reads pointers.
 
 The index is SQLite under `$XDG_CACHE_HOME/board/<root-hash>/` (by default
 `~/.cache/board/<root-hash>/`), where `<root-hash>` is the SHA-256 of the board
-root's canonical path. It is disposable: deleting it changes no answer, only
-speed. SQLite is bundled, so every platform runs the same one.
+root's canonical path. The file is `index-<format>.sqlite`, so builds of
+different index formats keep separate files. A file whose contents report
+another format than its name, or that is corrupt, is deleted and rebuilt. The
+index is disposable: deleting it changes no answer, only speed. SQLite is
+bundled, so every platform runs the same one.
 
 | Table | Holds | Keyed by |
 | --- | --- | --- |
@@ -239,8 +242,10 @@ recorded a file began. A refresh reads in a transaction that takes the write
 lock at its first write. When the refresh hashed nothing and finds every entry,
 source, tree and mount as stored, it writes nothing, so it neither waits for
 nor blocks another process. If another process holds the lock or wrote first,
-the refresh runs again, waiting up to 5 seconds for the lock. `check`, `refs`
-and `query` use the index; `get` and `ls` resolve directly.
+the refresh runs again, waiting up to 5 seconds for the lock. If the wait runs
+out, it runs in an index in memory, as opening does when another process holds
+the file. `check`, `refs` and `query` use the index; `get` and `ls` resolve
+directly.
 
 `board query '<sql>'` runs one read-only statement against the index. Each
 enabled plugin's database is attached read-only as `p_<name>`. Rows return as

@@ -16,10 +16,14 @@ use crate::schema::{INDEX_VERSION, TABLES};
 const BUSY_WAIT: Duration = Duration::from_secs(5);
 
 /// The index file for the board at the canonical path `root`, under the
-/// cache directory `cache`.
+/// cache directory `cache`. Its name carries the format, so builds of
+/// different formats keep separate files and never delete each other's.
 pub fn location(cache: &Path, root: &Path) -> PathBuf {
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
-    cache.join("board").join(hex(&digest)).join("index.sqlite")
+    cache
+        .join("board")
+        .join(hex(&digest))
+        .join(format!("index-{INDEX_VERSION}.sqlite"))
 }
 
 /// `bytes` in lowercase hex.
@@ -86,6 +90,13 @@ impl Index {
 
     pub fn storage(&self) -> &Storage {
         &self.storage
+    }
+
+    /// Replaces this index with an empty one in memory, as opening does
+    /// when another process holds the file past the wait.
+    pub fn fall_back(&mut self) -> Result<(), IndexError> {
+        *self = Self::memory(Fallback::Busy)?;
+        Ok(())
     }
 
     fn file(file: &Path, reset: bool) -> Result<Self, Failure> {

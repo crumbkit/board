@@ -1,7 +1,7 @@
 //! Checking through the index: what it says against HEAD, and that a warm
 //! index answers as a cold one and as its own `entries` view.
 
-use board_index::Index;
+use board_index::{Fallback, Index};
 use board_model::{Change, Code, Kind, ObjectId, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
@@ -228,6 +228,39 @@ fn a_check_after_a_change_writes_what_changed() {
             ..Refreshed::default()
         }
     );
+}
+
+/// Checks `scenario` after a change, with or without another process
+/// holding the index's write lock throughout.
+fn check_changed_while(held: bool) -> CheckReport {
+    let scenario = committed_board();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    board.check(None, Some(cache.path())).unwrap();
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    let mut other = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let writing = held.then(|| other.write().unwrap());
+    let report = board.check(None, Some(cache.path())).unwrap();
+    drop(writing);
+    assert_eq!(
+        report.entries,
+        board.check(None, None).unwrap().entries,
+        "as from a cold index"
+    );
+    report
+}
+
+#[test]
+fn a_check_that_must_write_while_another_process_holds_the_lock_works_in_memory() {
+    let report = check_changed_while(true);
+    assert_eq!(report.memory, Some(Fallback::Busy));
+}
+
+#[test]
+fn a_check_that_must_write_after_another_process_let_go_writes_the_file() {
+    let report = check_changed_while(false);
+    assert_eq!(report.memory, None);
+    assert!(report.work.wrote);
 }
 
 /// Entries in the order the view's key gives them, by source and then path,

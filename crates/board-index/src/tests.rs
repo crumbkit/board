@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use board_model::{Code, Kind, ObjectId, Role, Source};
@@ -52,7 +52,11 @@ fn each_board_has_its_own_index_file_under_the_cache() {
     let two = location(cache, Path::new("/boards/two"));
     assert_ne!(one, two);
     assert!(one.starts_with("/cache/board"));
-    assert_eq!(one.file_name().unwrap(), "index.sqlite");
+    assert_eq!(
+        one.file_name().unwrap().to_str().unwrap(),
+        format!("index-{INDEX_VERSION}.sqlite"),
+        "the name carries the format"
+    );
     assert_eq!(
         one.parent().unwrap().file_name().unwrap().len(),
         64,
@@ -75,6 +79,17 @@ fn an_index_reopens_with_the_facts_it_was_given() {
 }
 
 #[test]
+fn an_index_that_falls_back_is_empty_and_in_memory_and_leaves_the_file() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = filled(cache.path());
+    index.fall_back().unwrap();
+    assert_eq!(index.storage(), &Storage::Memory(Fallback::Busy));
+    assert!(!has_fact(&mut index));
+    let file = location(cache.path(), Path::new(ROOT));
+    assert_eq!(holds(&file), (1, INDEX_VERSION.to_owned()));
+}
+
+#[test]
 fn a_corrupt_index_is_deleted_and_rebuilt() {
     let cache = tempfile::tempdir().unwrap();
     drop(filled(cache.path()));
@@ -89,7 +104,7 @@ fn a_corrupt_index_is_deleted_and_rebuilt() {
 }
 
 #[test]
-fn an_index_of_another_format_is_deleted_and_rebuilt() {
+fn an_index_whose_format_differs_from_its_name_is_deleted_and_rebuilt() {
     let cache = tempfile::tempdir().unwrap();
     drop(filled(cache.path()));
     let file = location(cache.path(), Path::new(ROOT));
@@ -105,20 +120,68 @@ fn an_index_of_another_format_is_deleted_and_rebuilt() {
     assert!(!has_fact(&mut index));
 }
 
-#[test]
-fn an_index_of_this_format_is_kept() {
-    let cache = tempfile::tempdir().unwrap();
-    drop(filled(cache.path()));
-    let file = location(cache.path(), Path::new(ROOT));
-    Connection::open(&file)
-        .unwrap()
+/// Leaves the filled index's fact only in a file called `name` beside it,
+/// of format `version`, and returns a connection holding that file open,
+/// as the build that uses it would.
+fn beside(cache: &Path, name: &str, version: &str) -> (PathBuf, Connection) {
+    drop(filled(cache));
+    let file = location(cache, Path::new(ROOT));
+    let other = file.with_file_name(name);
+    if other != file {
+        let connection = Connection::open(&file).unwrap();
+        connection
+            .execute("VACUUM INTO ?1", [other.to_str().unwrap()])
+            .unwrap();
+        connection.execute("DELETE FROM blobs", []).unwrap();
+    }
+    let holder = Connection::open(&other).unwrap();
+    holder
         .execute(
             "UPDATE state SET value = ?1 WHERE key = 'index_version'",
-            [INDEX_VERSION],
+            [version],
         )
         .unwrap();
+    (other, holder)
+}
+
+/// The facts and format of the file at `path`, read afresh.
+fn holds(path: &Path) -> (i64, String) {
+    Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT (SELECT count(*) FROM blobs),
+                    (SELECT value FROM state WHERE key = 'index_version')",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap()
+}
+
+#[test]
+fn an_index_another_format_uses_is_left_to_the_build_that_has_it_open() {
+    let cache = tempfile::tempdir().unwrap();
+    // Builds before the name carried the format used `index.sqlite`, and
+    // format 8 is one of theirs.
+    let (other, _holder) = beside(cache.path(), "index.sqlite", "8");
     let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
-    assert!(has_fact(&mut index));
+    assert_eq!(
+        index.storage(),
+        &Storage::File(location(cache.path(), Path::new(ROOT)))
+    );
+    assert!(!has_fact(&mut index), "it opened its own file");
+    assert_eq!(holds(&other), (1, "8".to_owned()), "the other is intact");
+}
+
+#[test]
+fn an_index_of_this_format_is_reused_while_another_build_has_it_open() {
+    let cache = tempfile::tempdir().unwrap();
+    let file = location(cache.path(), Path::new(ROOT));
+    let name = file.file_name().unwrap().to_str().unwrap();
+    let (other, _holder) = beside(cache.path(), name, INDEX_VERSION);
+    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    assert_eq!(index.storage(), &Storage::File(file));
+    assert!(has_fact(&mut index), "it opened the same file");
+    assert_eq!(holds(&other), (1, INDEX_VERSION.to_owned()));
 }
 
 #[test]

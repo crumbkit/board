@@ -154,7 +154,8 @@ impl Board {
 /// writes, so that runs finding nothing changed do not wait on each other,
 /// and returns what it returned and whether it wrote. If another process
 /// holds the lock or wrote first, it runs again in a transaction that waits
-/// for the lock.
+/// for the lock. If the wait runs out, it runs once more in an index in
+/// memory, as opening does.
 pub(crate) fn transact<T>(
     index: &mut Index,
     mut run: impl FnMut(&Writer<'_>) -> Result<T, RefreshError>,
@@ -163,6 +164,11 @@ pub(crate) fn transact<T>(
     if !busy(&first) {
         return first;
     }
+    let second = once(index.write(), &mut run);
+    if !busy(&second) {
+        return second;
+    }
+    index.fall_back()?;
     once(index.write(), &mut run)
 }
 
