@@ -80,8 +80,31 @@ max_lines = 3
 count = 0
 "#;
 
+/// The controls that record `CONFIG`'s word budgets, by path.
+pub(crate) const CONTROLS: [(&str, &str); 4] = [
+    (
+        "controls/budgets/context.json",
+        r#"{"applies_to": ["/AGENTS.md", "/CLAUDE.md"], "requirement": "At most 10 words."}"#,
+    ),
+    (
+        "controls/budgets/docs_index.json",
+        r#"{"applies_to": ["/DOCS.md"], "requirement": "At most 5 words."}"#,
+    ),
+    (
+        "controls/budgets/docs.json",
+        r#"{"paths": ["docs/*.md"], "requirement": "At most 20 words."}"#,
+    ),
+    (
+        "controls/budgets/plan.json",
+        r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words."}"#,
+    ),
+];
+
 fn within_every_budget() -> Fixture {
     let fixture = Fixture::new();
+    for (path, text) in CONTROLS {
+        fixture.write(path, text);
+    }
     fixture
         .write("lint.toml", CONFIG)
         .write("CLAUDE.md", "@AGENTS.md")
@@ -125,6 +148,32 @@ fn the_lint_fails_a_repository_whose_plan_is_over_budget_and_names_the_plan_chec
     assert_eq!(failed(&report), [CheckKind::Plan]);
     let text = crate::report::render(&report);
     assert!(text.contains("plan.max_words"), "{text}");
+}
+
+#[test]
+fn the_lint_fails_a_repository_whose_control_disagrees_with_lint_toml_and_passes_its_twin() {
+    let fixture = within_every_budget();
+    fixture.write(
+        "controls/budgets/plan.json",
+        r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 7 words."}"#,
+    );
+    let report = crate::lint(fixture.path()).unwrap();
+    assert!(!report.passed());
+    assert_eq!(failed(&report), []);
+    let text = crate::report::render(&report);
+    assert!(
+        text.contains(
+            "FAIL  controls   xtask::control::differs: controls/budgets/plan.json: requirement = "
+        ),
+        "{text}"
+    );
+
+    let twin = within_every_budget();
+    twin.write(
+        "controls/budgets/plan.json",
+        r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words."}"#,
+    );
+    assert!(crate::lint(twin.path()).unwrap().passed());
 }
 
 #[test]

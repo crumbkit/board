@@ -1,10 +1,12 @@
 //! Repository lints that clippy cannot express: the word budgets, the
-//! source file length cap and the `#[expect]` ratchet. `bin/lint` runs it as
+//! source file length cap, the `#[expect]` ratchet, and the budget controls'
+//! agreement with lint.toml. `bin/lint` runs it as
 //! `cargo xtask lint`; `lint.toml` holds every number it enforces.
 
 mod bench;
 mod budgets;
 mod config;
+mod controls;
 mod files;
 mod report;
 mod source;
@@ -88,6 +90,7 @@ fn lint(root: &Path) -> Result<Report, LintError> {
             lines,
             expects,
         ],
+        controls: controls::check(&root, &config)?,
     })
 }
 
@@ -111,6 +114,12 @@ enum LintError {
     Files(#[from] FilesError),
     #[error(transparent)]
     Config(#[from] ConfigError),
+    #[error("{path} is not a control with a requirement; see controls/control/v1")]
+    Control {
+        path: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 impl LintError {
@@ -118,6 +127,7 @@ impl LintError {
         match self {
             Self::Files(error) => error.code(),
             Self::Config(error) => error.code(),
+            Self::Control { .. } => "xtask::control::invalid",
         }
     }
 }

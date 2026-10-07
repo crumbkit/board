@@ -2514,6 +2514,7 @@ dependencies = [
  "board-tree",
  "glob",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "toml",

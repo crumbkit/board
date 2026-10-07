@@ -65,7 +65,8 @@ jobs:
       - run: uv run --frozen ruff check .
       - run: uv run --frozen pyright
       - run: uv run --frozen pytest
-      - name: viitta passes board check and its own controls
+      # The budget controls only record lint.toml; bin/lint checks they agree.
+      - name: viitta passes board check with the controls plugin installed
         if: matrix.project == 'plugins/controls'
         run: |
           mkdir -p "$RUNNER_TEMP/data/board/plugins"
@@ -73,7 +74,6 @@ jobs:
           cd ../..
           export PATH="$PWD/target/debug:$PATH" XDG_DATA_HOME="$RUNNER_TEMP/data"
           board check > /dev/null
-          board call controls.check <<< '{}'
 
   supply-chain:
     runs-on: ubuntu-24.04

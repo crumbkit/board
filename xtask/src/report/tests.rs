@@ -13,6 +13,7 @@ fn check(kind: CheckKind, limit: Limit, amounts: &[usize]) -> Check {
 fn a_passing_line_shows_usage_and_the_largest_parts_first() {
     let report = Report {
         checks: vec![check(CheckKind::Docs, Limit::AtMost(10), &[2, 5])],
+        controls: Vec::new(),
     };
     let text = render(&report);
     assert!(text.starts_with("pass  docs"), "{text}");
@@ -24,6 +25,7 @@ fn a_passing_line_shows_usage_and_the_largest_parts_first() {
 fn a_failing_line_names_its_code_and_what_to_change() {
     let report = Report {
         checks: vec![check(CheckKind::DocsIndex, Limit::AtMost(1), &[2])],
+        controls: Vec::new(),
     };
     let text = render(&report);
     assert!(text.starts_with("FAIL"), "{text}");
@@ -35,9 +37,11 @@ fn a_failing_line_names_its_code_and_what_to_change() {
 fn an_expect_count_above_or_below_says_which_way_to_move_it() {
     let above = render(&Report {
         checks: vec![check(CheckKind::Expect, Limit::Exactly(1), &[2])],
+        controls: Vec::new(),
     });
     let below = render(&Report {
         checks: vec![check(CheckKind::Expect, Limit::Exactly(1), &[])],
+        controls: Vec::new(),
     });
     assert!(above.contains("set expect.count = 2"), "{above}");
     assert!(below.contains("lower expect.count to 0"), "{below}");
@@ -47,6 +51,7 @@ fn an_expect_count_above_or_below_says_which_way_to_move_it() {
 fn a_long_list_of_parts_is_summarised() {
     let report = Report {
         checks: vec![check(CheckKind::Docs, Limit::AtMost(100), &[1; 7])],
+        controls: Vec::new(),
     };
     assert!(render(&report).contains("and 2 more"));
 }

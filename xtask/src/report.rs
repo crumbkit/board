@@ -4,6 +4,7 @@ use std::error::Error;
 use std::fmt::Write as _;
 
 use crate::bench::Timed;
+use crate::controls::Divergence;
 
 /// How many parts a report line names before summarising the rest.
 const SHOWN_PARTS: usize = 5;
@@ -14,11 +15,12 @@ const USAGE: &str =
 #[derive(Debug)]
 pub(crate) struct Report {
     pub(crate) checks: Vec<Check>,
+    pub(crate) controls: Vec<Divergence>,
 }
 
 impl Report {
     pub(crate) fn passed(&self) -> bool {
-        self.checks.iter().all(Check::passed)
+        self.checks.iter().all(Check::passed) && self.controls.is_empty()
     }
 }
 
@@ -189,6 +191,12 @@ pub(crate) fn render(report: &Report) -> String {
         if !check.passed() {
             let _ = writeln!(text, "      {}: {}", check.kind.code(), advice(check));
         }
+    }
+    if report.controls.is_empty() {
+        text.push_str("pass  controls   controls/budgets/ agrees with lint.toml\n");
+    }
+    for divergence in &report.controls {
+        let _ = writeln!(text, "FAIL  controls   {}: {divergence}", Divergence::CODE);
     }
     text
 }

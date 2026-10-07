@@ -61,6 +61,19 @@ pub(crate) struct ExpectBudget {
 }
 
 impl Config {
+    /// Each section with a `max_words`: its name, the files or glob it
+    /// names, and the limit.
+    pub(crate) fn word_budgets(&self) -> [(&'static str, Vec<&str>, usize); 4] {
+        let context = self.context.entry.iter().map(String::as_str).collect();
+        let index = &self.docs_index;
+        [
+            ("context", context, self.context.max_words),
+            ("docs_index", vec![&index.file], index.max_words),
+            ("docs", vec![&self.docs.glob], self.docs.max_words),
+            ("plan", vec![&self.plan.file], self.plan.max_words),
+        ]
+    }
+
     pub(crate) fn load(root: &Root) -> Result<Self, ConfigError> {
         Self::parse(&root.read(FILE)?)
     }
