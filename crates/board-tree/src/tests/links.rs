@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::MAX_HOPS;
-use crate::resolve::Pointers;
+use crate::address::Pointers;
 use crate::tree::{RawEntry, Tree};
 
 fn link(target: &str) -> String {
@@ -214,6 +214,47 @@ fn a_pointer_beside_a_directory_is_shadowed() {
 }
 
 #[test]
+fn an_invalid_pointer_beside_a_directory_is_shadowed_as_the_walk_reports_it() {
+    let scenario = Scenario::new();
+    let invalid = r#"{"$type": "board/mount/v1", "path": "/a", "repo": "r"}"#;
+    let record = scenario.commit(&[("x.json", "{}"), ("x/c.json", "{}")]);
+    assert_eq!(resolve(&scenario, record, "/x").unwrap().path, "x.json");
+    assert_eq!(resolve(&scenario, record, "/x/c").unwrap().path, "x/c.json");
+    let pointer = scenario.commit(&[("x.json", invalid), ("x/c.json", "{}")]);
+    for refused in ["/x", "/x/c"] {
+        assert_eq!(
+            resolve(&scenario, pointer, refused).unwrap_err(),
+            Code::PathShadowed,
+            "{refused}"
+        );
+    }
+    assert_eq!(
+        walk(&scenario, pointer),
+        [
+            degraded("x.json", Some("/x"), Code::PathShadowed),
+            degraded("x/c.json", Some("/x/c"), Code::PathShadowed),
+        ]
+    );
+    let alone = scenario.commit(&[("x.json", invalid)]);
+    assert_eq!(
+        resolve(&scenario, alone, "/x").unwrap_err(),
+        Code::MountInvalid
+    );
+}
+
+#[test]
+fn a_record_of_pointer_type_too_large_to_read_does_not_shadow_its_directory() {
+    let scenario = Scenario::new();
+    let large = format!(
+        r#"{{"$type": "board/mount/v1", "path": "/a", "pad": "{}"}}"#,
+        "a".repeat(board_model::MAX_RECORD_BYTES)
+    );
+    let commit = scenario.commit(&[("x.json", &large), ("x/c.json", "{}")]);
+    assert_eq!(resolve(&scenario, commit, "/x/c").unwrap().path, "x/c.json");
+    assert!(walk(&scenario, commit).contains(&ok("x/c.json", "/x/c")));
+}
+
+#[test]
 fn a_link_in_the_working_tree_is_followed() {
     let scenario = Scenario::new();
     let to_y = link("/work/y");
@@ -271,7 +312,7 @@ fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
             reads: 0,
         };
         let location = repository
-            .resolve_in(&mut tree, &path(start), true, &mut Pointers::new())
+            .resolve_in(&mut tree, &path(start), true, &mut Pointers::default())
             .unwrap();
         assert_eq!(location.pointers.len(), hops);
         assert_eq!(tree.reads, hops + 1, "{hops} hops");
@@ -288,7 +329,7 @@ fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
             inner: repository.commit_tree(commit).unwrap(),
             reads: 0,
         };
-        let mut pointers = Pointers::new();
+        let mut pointers = Pointers::default();
         for start in 0..hops {
             let location = repository
                 .resolve_in(&mut tree, &path(&format!("/l{start}")), true, &mut pointers)
@@ -310,7 +351,7 @@ fn many_references_to_one_record_read_it_once_in_one_run() {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
-    let mut pointers = Pointers::new();
+    let mut pointers = Pointers::default();
     for _ in 0..1_000 {
         repository
             .resolve_in(&mut tree, &path("/projects/hub"), true, &mut pointers)
@@ -335,7 +376,7 @@ fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
-    let mut pointers = Pointers::new();
+    let mut pointers = Pointers::default();
     let mut refused = || {
         repository
             .resolve_in(&mut tree, &path("/bad"), true, &mut pointers)
@@ -367,7 +408,7 @@ fn resolving_a_directory_path_reads_no_blob() {
         reads: 0,
     };
     repository
-        .resolve_in(&mut tree, &path("/a"), true, &mut Pointers::new())
+        .resolve_in(&mut tree, &path("/a"), true, &mut Pointers::default())
         .unwrap();
     assert_eq!(tree.reads, 0);
 }
@@ -534,4 +575,13 @@ fn a_record_beside_its_directory_that_cannot_be_read_degrades_both() {
         resolve(&scenario, missing, "/x/z").unwrap_err(),
         Code::RepoUnreadable
     );
+}
+
+#[test]
+fn a_file_that_is_not_json_is_never_followed_as_a_pointer() {
+    let scenario = Scenario::new();
+    let to_a = link("/a");
+    let commit = scenario.commit(&[("a.json", "{}"), ("l.md", &to_a), ("l.json", &to_a)]);
+    assert_eq!(resolve(&scenario, commit, "/l").unwrap().path, "a.json");
+    assert_eq!(resolve(&scenario, commit, "/l.md").unwrap().path, "l.md");
 }

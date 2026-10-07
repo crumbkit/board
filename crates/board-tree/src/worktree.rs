@@ -16,7 +16,7 @@ use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
 
-use crate::address::{self, Named};
+use crate::address::{self, Named, Pointers};
 use crate::git::{GitError, Repository, model_id};
 use crate::tree::{Kind, RawEntry, Tree};
 
@@ -272,14 +272,12 @@ impl WorkingTree<'_, '_> {
                 .collect();
             entries.push(ours);
             let ours = entries.len() - 1;
+            let mut pointers = Pointers::default();
             let addressed = address::directory(&LogicalPath::root(), &entries, |record| {
                 if record.name == part.as_bytes() {
-                    Some(is_pointer)
+                    Ok(is_pointer)
                 } else {
-                    let read = self.read(&directory, record).ok()?;
-                    Some(
-                        read.is_some_and(|bytes| !matches!(board_model::pointer(&bytes), Ok(None))),
-                    )
+                    pointers.shadows(record, || self.read(&directory, record))
                 }
             });
             return Ok(addressed.get(ours).and_then(|(_, code)| *code));
@@ -333,18 +331,26 @@ impl Tree for WorkingTree<'_, '_> {
         directory: &PathBuf,
         entries: &'e [RawEntry<PathBuf>],
         segment: &str,
-    ) -> Named<'e, PathBuf> {
-        match self.listed.get(directory) {
-            Some(listing) if std::ptr::eq(Rc::as_ptr(&listing.entries), entries) => {
-                let found = listing.lookup().segments.get(segment);
-                address::classify(
-                    found
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|at| entries.get(*at)),
-                )
+        pointers: &mut Pointers,
+    ) -> Result<Named<'e, PathBuf>, GitError> {
+        let found = match self.listed.get(directory) {
+            Some(listing) if std::ptr::eq(Rc::as_ptr(&listing.entries), entries) => Some(
+                listing
+                    .lookup()
+                    .segments
+                    .get(segment)
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
+            _ => None,
+        };
+        let shadows =
+            |record: &RawEntry<PathBuf>| pointers.shadows(record, || self.read(directory, record));
+        match found {
+            Some(found) => {
+                address::classify(found.iter().filter_map(|at| entries.get(*at)), shadows)
             }
-            _ => address::named(entries, segment),
+            None => address::named(entries, segment, shadows),
         }
     }
 
@@ -468,7 +474,10 @@ mod tests {
         let listed = tree.list(&root).unwrap();
         let reversed: Vec<RawEntry<PathBuf>> = listed.iter().rev().cloned().collect();
         for entries in [&listed[..], &reversed[..]] {
-            let Named::One(found) = tree.named(&root, entries, "a") else {
+            let Named::One(found) = tree
+                .named(&root, entries, "a", &mut Pointers::default())
+                .unwrap()
+            else {
                 panic!("a.json is the one entry named a");
             };
             assert_eq!(found.name, b"a.json");

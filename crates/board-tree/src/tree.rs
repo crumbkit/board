@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
-use crate::address::{self, Named};
+use crate::address::{self, Named, Pointers};
 use crate::git::GitError;
 
 /// One source's directory tree: a commit's, or the working tree.
@@ -31,14 +31,19 @@ pub(crate) trait Tree {
         entry: &RawEntry<Self::Directory>,
     ) -> Result<Option<Vec<u8>>, GitError>;
 
-    /// What `segment` names among `entries`, the listing of `directory`.
+    /// What `segment` names among `entries`, the listing of `directory`. A
+    /// record beside its directory is read through `pointers` to tell
+    /// whether it shadows the directory.
     fn named<'e>(
         &mut self,
-        _directory: &Self::Directory,
+        directory: &Self::Directory,
         entries: &'e [RawEntry<Self::Directory>],
         segment: &str,
-    ) -> Named<'e, Self::Directory> {
-        address::named(entries, segment)
+        pointers: &mut Pointers,
+    ) -> Result<Named<'e, Self::Directory>, GitError> {
+        address::named(entries, segment, |record| {
+            pointers.shadows(record, || self.read(directory, record))
+        })
     }
 
     /// Each entry's logical path and own code in `directory`, whose logical
@@ -49,14 +54,9 @@ pub(crate) trait Tree {
         parent: &LogicalPath,
         entries: &[RawEntry<Self::Directory>],
     ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
+        let mut pointers = Pointers::default();
         address::directory(parent, entries, |record| {
-            // A record beside its directory is read only to learn whether it
-            // is a pointer, which shadows the directory.
-            match self.read(directory, record) {
-                Ok(Some(bytes)) => Some(!matches!(board_model::pointer(&bytes), Ok(None))),
-                Ok(None) => Some(false),
-                Err(_) => None,
-            }
+            pointers.shadows(record, || self.read(directory, record))
         })
     }
 }

@@ -189,6 +189,40 @@ fn a_file_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
 }
 
 #[test]
+fn a_path_beside_a_record_that_cannot_be_read_is_unreadable_as_the_walk_reports_it() {
+    let readable = Scenario::new();
+    readable
+        .write("x.json", Item::File("{}"))
+        .write("x/c.json", Item::File("{}"));
+    assert_eq!(
+        resolve(&readable, WorkingTree, "/x/c").unwrap().path,
+        "x/c.json"
+    );
+
+    let locked = Scenario::new();
+    locked
+        .write("x.json", Item::Unreadable("{}"))
+        .write("x/c.json", Item::File("{}"));
+    // A superuser reads a mode-000 file anyway, so the fixture cannot stage
+    // the failure; CI runs as an ordinary user.
+    let path = locked.open().path().join("x.json");
+    if std::fs::File::open(path).is_ok() {
+        return;
+    }
+    assert_eq!(
+        resolve(&locked, WorkingTree, "/x/c").unwrap_err(),
+        Code::RepoUnreadable
+    );
+    assert_eq!(
+        walk(&locked, WorkingTree),
+        [
+            degraded("x.json", Some("/x"), Code::RepoUnreadable),
+            degraded("x/c.json", Some("/x/c"), Code::RepoUnreadable),
+        ]
+    );
+}
+
+#[test]
 fn a_large_file_hashes_to_the_blob_git_would_store() {
     let text = "0123456789abcdef".repeat(70_000) + "tail";
     let scenario = Scenario::new();
@@ -316,6 +350,19 @@ fn a_missing_path_lies_beneath_its_deepest_ancestor_and_nothing_lies_beneath_a_f
     );
 }
 
+#[test]
+fn a_write_beside_a_directory_is_refused_as_shadowed_only_when_it_writes_a_pointer() {
+    let scenario = Scenario::new();
+    scenario.write("x/c.json", Item::File("{}"));
+    let repository = scenario.open();
+    let target = repository.target(&path("/x"), false).unwrap();
+    assert_eq!(target.path, "x.json");
+    match repository.target(&path("/x"), true) {
+        Err(crate::WriteError::Refused { code, .. }) => assert_eq!(code, Code::PathShadowed),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
 /// Where a write to `text` lands, or the code that refuses it.
 fn target(scenario: &Scenario, text: &str, is_pointer: bool) -> Result<String, Code> {
     let repository = scenario.open();
@@ -324,6 +371,21 @@ fn target(scenario: &Scenario, text: &str, is_pointer: bool) -> Result<String, C
         .target(&path(text), is_pointer)
         .map(|target| target.path)
         .map_err(|error| error.code())
+}
+
+#[test]
+fn a_write_into_a_directory_beside_an_invalid_pointer_is_refused_as_shadowed() {
+    let scenario = Scenario::new();
+    scenario
+        .write("x.json", Item::File("{}"))
+        .write("x/c.json", Item::File("{}"));
+    assert_eq!(target(&scenario, "/x/d", false), Ok("x/d.json".into()));
+    scenario.write(
+        "x.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/a", "repo": "r"}"#),
+    );
+    assert_eq!(target(&scenario, "/x/d", false), Err(Code::PathShadowed));
+    assert_eq!(target(&scenario, "/x/c", false), Err(Code::PathShadowed));
 }
 
 #[test]

@@ -1,8 +1,7 @@
 //! Resolving a logical path to a Location (docs/architecture.md, Pointers:
 //! links and mounts). Pointers are followed with POSIX symlink semantics.
 
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 
 use board_model::{
@@ -10,7 +9,7 @@ use board_model::{
     Source,
 };
 
-use crate::address::Named;
+use crate::address::{Named, Pointers};
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree};
 use crate::worktree::{Known, WorkingTree};
@@ -55,7 +54,7 @@ impl Repository {
                 &mut self.commit_tree(*commit)?,
                 path,
                 true,
-                &mut Pointers::new(),
+                &mut Pointers::default(),
             ),
             Source::WorkingTree => self.snapshot()?.resolve(path),
         }
@@ -73,7 +72,7 @@ impl Repository {
         Ok(Resolver {
             repository: self,
             tree: self.working_tree(Some(known))?,
-            pointers: Pointers::new(),
+            pointers: Pointers::default(),
         })
     }
 
@@ -84,7 +83,7 @@ impl Repository {
         Ok(Resolver {
             repository: self,
             tree: self.working_tree(None)?,
-            pointers: Pointers::new(),
+            pointers: Pointers::default(),
         })
     }
 
@@ -380,12 +379,6 @@ impl Resolver<'_, '_> {
     }
 }
 
-/// What each `.json` blob read during one run holds as a pointer, by blob id:
-/// a pointer, nothing, or why it is not a valid one. A blob id names its
-/// bytes, so an entry is true in every source, and it lives only as long as
-/// the resolution or [`Resolver`] that made it.
-pub(crate) type Pointers = HashMap<ObjectId, Result<Option<Pointer>, Rc<PointerError>>>;
-
 /// What a mount names that cannot be read.
 enum MountMissing {
     Repo,
@@ -428,8 +421,8 @@ impl Trail {
 
 /// The entry `segment` names in `entries`, the listing of `directory`, or
 /// `None` when it names nothing. A record beside its directory of children
-/// is the record when `last`, else the directory; a pointer there, or any
-/// other double match, is shadowed.
+/// is the record when `last`, else the directory, unless it shadows the
+/// directory.
 fn pick<'e, T: Tree>(
     tree: &mut T,
     directory: &T::Directory,
@@ -439,25 +432,20 @@ fn pick<'e, T: Tree>(
     path: &LogicalPath,
     pointers: &mut Pointers,
 ) -> Result<Option<&'e RawEntry<T::Directory>>, ResolveError> {
-    let shadowed = |segment| ResolveError::Shadowed {
-        path: path.clone(),
-        segment,
-    };
-    match tree.named(directory, entries, &segment) {
+    match tree.named(directory, entries, &segment, pointers)? {
         Named::Nothing => Ok(None),
         Named::One(entry) => Ok(Some(entry)),
         Named::RecordWithChildren { record, children } => {
-            if pointer(tree, directory, record, path, pointers)?.is_some() {
-                return Err(shadowed(segment));
-            }
             Ok(Some(if last { record } else { children }))
         }
-        Named::Shadowed => Err(shadowed(segment)),
+        Named::Shadowed => Err(ResolveError::Shadowed {
+            path: path.clone(),
+            segment,
+        }),
     }
 }
 
-/// The pointer `entry` holds, if it is a `.json` file whose record is one,
-/// parsed at most once per blob in `pointers`.
+/// The pointer `entry` holds, if it is a `.json` file whose record is one.
 fn pointer<T: Tree>(
     tree: &mut T,
     directory: &T::Directory,
@@ -465,22 +453,10 @@ fn pointer<T: Tree>(
     path: &LogicalPath,
     pointers: &mut Pointers,
 ) -> Result<Option<Pointer>, ResolveError> {
-    let Kind::File(blob) = entry.kind else {
-        return Ok(None);
-    };
-    if !entry.name.ends_with(b".json") {
+    if !matches!(entry.kind, Kind::File(_)) || !entry.name.ends_with(b".json") {
         return Ok(None);
     }
-    let parsed = match pointers.entry(blob) {
-        Entry::Occupied(known) => known.get().clone(),
-        Entry::Vacant(unknown) => {
-            let parsed = match tree.read(directory, entry)? {
-                Some(bytes) => board_model::pointer(&bytes).map_err(Rc::new),
-                None => Ok(None),
-            };
-            unknown.insert(parsed).clone()
-        }
-    };
+    let parsed = pointers.parse(entry, || tree.read(directory, entry))?;
     parsed.map_err(|source| ResolveError::InvalidPointer {
         path: path.clone(),
         pointer: String::from_utf8_lossy(&entry.name).into_owned(),

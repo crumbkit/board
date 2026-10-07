@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use board_model::{Code, LogicalPath, ObjectId, Source};
 
-use crate::address;
+use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree};
 use crate::walk::{Entry, walk_in};
@@ -167,6 +167,7 @@ impl Repository {
     ) -> Result<Vec<TreeRows>, GitError> {
         let mut pending = vec![root];
         let mut trees: Vec<TreeRows> = Vec::new();
+        let mut pointers = Pointers::default();
         while let Some(id) = pending.pop() {
             if known(id) || trees.iter().any(|tree| tree.id == id) {
                 continue;
@@ -178,14 +179,10 @@ impl Repository {
             };
             let raw: Vec<_> = entries.iter().map(|(raw, _, _)| raw.clone()).collect();
             let addressed = address::directory(&LogicalPath::root(), &raw, |record| {
-                let Kind::File(blob) = record.kind else {
-                    return Some(false);
-                };
-                match self.read_blob(blob) {
-                    Ok(Some(bytes)) => Some(!matches!(board_model::pointer(&bytes), Ok(None))),
-                    Ok(None) => Some(false),
-                    Err(_) => None,
-                }
+                pointers.shadows(record, || match record.kind {
+                    Kind::File(blob) => self.read_blob(blob),
+                    _ => Ok(None),
+                })
             });
             let rows = entries
                 .into_iter()

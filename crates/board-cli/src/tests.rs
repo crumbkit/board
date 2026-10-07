@@ -298,6 +298,28 @@ fn get_prints_a_files_bytes_and_json_refuses_it_with_why_it_is_not_a_record() {
 }
 
 #[test]
+fn get_refuses_a_path_beside_an_invalid_pointer_with_the_code_check_gives_it() {
+    let scenario = board();
+    scenario
+        .write("x.json", Item::File("{}"))
+        .write("x/c.json", Item::File("{}"));
+    let get = board_in(scenario.workdir(), &["get", "/x/c"]);
+    assert_eq!((get.code, text(&get.stdout)), (0, "{}".to_owned()));
+    assert!(text(&board_in(scenario.workdir(), &["check"]).stdout).contains("ok /x/c\n"));
+    scenario.write(
+        "x.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/a", "repo": "r"}"#),
+    );
+    let get = board_in(scenario.workdir(), &["get", "/x/c", "--json"]);
+    assert_eq!(codes(&get), [Code::PathShadowed]);
+    let check = text(&board_in(scenario.workdir(), &["check"]).stdout);
+    assert!(
+        check.contains("degraded board::path::shadowed x/c.json\n"),
+        "{check}"
+    );
+}
+
+#[test]
 fn init_makes_a_repository_a_board_and_says_what_to_run_next() {
     let scenario = Scenario::new();
     let refused = board_in(scenario.workdir(), &["check"]);
