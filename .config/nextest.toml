@@ -3,3 +3,10 @@
 [profile.default]
 retries = 0
 fail-fast = false
+
+# The kill test waits on a FIFO. If a change to put left nothing to open the
+# FIFO's other end, the test would wait forever, so nextest stops it and fails
+# it after two minutes. It normally takes a few seconds.
+[[profile.default.overrides]]
+filter = 'binary_id(board-cli::kill)'
+slow-timeout = { period = "60s", terminate-after = 2 }

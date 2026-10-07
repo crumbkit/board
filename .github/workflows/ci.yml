@@ -102,12 +102,21 @@ jobs:
       - run: zizmor --offline .github/workflows
 
   # Mutation testing of the lines a pull request changes. It only reports;
-  # a surviving mutant does not fail the pull request.
+  # a surviving mutant does not fail the pull request. Each mutant runs the
+  # whole workspace's tests, because board-cli's tests catch mutants in the
+  # crates it calls. That is about four times slower than one crate's tests,
+  # so the mutants are split across four jobs to stay within the timeout.
+  # board-scenario is test support with no tests of its own, and cargo-mutants
+  # runs its baseline on the mutated crates only, so it is not mutated.
   mutants:
     if: github.event_name == 'pull_request'
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -119,4 +128,6 @@ jobs:
       - run: git diff "origin/${BASE_REF}...HEAD" > pr.diff
         env:
           BASE_REF: ${{ github.base_ref }}
-      - run: cargo mutants --in-diff pr.diff --test-tool nextest
+      - run: cargo mutants --in-diff pr.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --shard "${SHARD}/4"
+        env:
+          SHARD: ${{ matrix.shard }}

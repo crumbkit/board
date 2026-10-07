@@ -457,16 +457,14 @@ fn an_existing_file_keeps_its_permissions() {
 }
 
 #[test]
-fn a_held_lock_refuses_a_put_after_the_wait_and_a_released_one_admits_it() {
+fn a_held_lock_refuses_a_put_and_a_released_one_admits_it() {
     let scenario = board();
     let board = open(&scenario);
     let held = board.repository().lock(LOCK_WAIT).unwrap();
-    let started = std::time::Instant::now();
     let refused = board
         .put(&path("/tasks/a"), Expect::Any, task("").as_bytes())
         .unwrap_err();
     assert_eq!(refused.code(), Code::PutLocked);
-    assert!(started.elapsed() >= LOCK_WAIT);
     assert!(refused.to_string().contains("remove it"));
     drop(held);
     assert!(

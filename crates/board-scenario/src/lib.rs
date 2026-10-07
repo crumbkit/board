@@ -49,6 +49,9 @@ pub enum Item<'a> {
     /// A file anyone may run (mode 755), such as a fixture plugin; working
     /// tree only.
     Executable(&'a str),
+    /// A FIFO, whose opener waits until another process opens its other
+    /// end; working tree only.
+    Fifo,
 }
 
 /// One repository in its own temporary directory.
@@ -89,7 +92,7 @@ impl Scenario {
     /// directory holding a `.git` file.
     #[expect(
         clippy::disallowed_methods,
-        reason = "the scenario builder is the one writer of test files"
+        reason = "the scenario builder is the one writer of test files, and runs mkfifo, which std cannot do safely"
     )]
     pub fn write(&self, path: &str, item: Item<'_>) -> &Self {
         let path = self.git.workdir().unwrap().join(path);
@@ -143,6 +146,10 @@ impl Scenario {
                 fs::write(&path, text).unwrap();
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
             }
+            Item::Fifo => {
+                let made = std::process::Command::new("mkfifo").arg(&path).status();
+                assert!(made.unwrap().success(), "mkfifo {}", path.display());
+            }
             Item::MissingTree | Item::MissingBlob => {
                 panic!("a working tree cannot hold a missing object")
             }
@@ -193,6 +200,7 @@ impl Scenario {
                 Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
                 Item::Executable(_) => panic!("fixture plugins live outside commits"),
+                Item::Fifo => panic!("git cannot hold a FIFO"),
                 Item::Deleted | Item::Appended(_) => {
                     panic!("a commit is built from whole files")
                 }

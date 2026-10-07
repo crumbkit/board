@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use board_model::Code;
 use board_plugin::{CallReport, Environment, Limits, Target};
@@ -494,13 +494,15 @@ fn a_plugin_past_its_time_limit_is_stopped() {
         time: Duration::from_millis(500),
         ..Limits::default()
     };
-    let slow = "#!/bin/sh\ncat > /dev/null\nsleep 10\n";
-    let started = Instant::now();
-    let error = Fixture::tasks(slow)
+    // It writes finished.txt only if it is left to run to its end.
+    let slow = "#!/bin/sh\ncat > /dev/null\necho $$ > plugin.pid\nsleep 10\ntouch finished.txt\n";
+    let fixture = Fixture::tasks(slow);
+    let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
     assert_eq!(error.code(), Some(Code::PluginTimeout));
-    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(ends(&written_pid(&fixture, "plugin.pid")));
+    assert!(!fixture.plugin("tasks").join("finished.txt").exists());
     assert!(
         Fixture::tasks(&answering(RESULT, 0))
             .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
@@ -514,13 +516,18 @@ fn a_grandchild_holding_the_pipes_cannot_keep_board_waiting_past_the_limit() {
         time: Duration::from_millis(500),
         ..Limits::default()
     };
-    let script = format!("#!/bin/sh\ncat > /dev/null\nsleep 30 &\nprintf '%s' '{RESULT}'\n");
-    let started = Instant::now();
-    let error = Fixture::tasks(&script)
+    // The grandchild holds the pipes, and writes finished.txt only if it is
+    // left to run to its end.
+    let script = format!(
+        "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > grandchild.pid; sleep 30; touch finished.txt' &\nprintf '%s' '{RESULT}'\n"
+    );
+    let fixture = Fixture::tasks(&script);
+    let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
     assert_eq!(error.code(), Some(Code::PluginTimeout));
-    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(ends(&written_pid(&fixture, "grandchild.pid")));
+    assert!(!fixture.plugin("tasks").join("finished.txt").exists());
 }
 
 #[test]
