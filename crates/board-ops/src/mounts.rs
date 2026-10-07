@@ -1,5 +1,5 @@
-//! The boards reachable through mounts (docs/architecture.md, Pointers:
-//! links and mounts; The index). board-tree walks them; this indexes each
+//! The boards reachable through mounts (docs/architecture/paths.md, Pointers:
+//! links and mounts; docs/architecture/index.md). board-tree walks them; this indexes each
 //! mounted commit once however many places mount it.
 
 use std::collections::HashMap;

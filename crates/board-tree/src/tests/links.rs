@@ -1,5 +1,5 @@
 //! Links: pointers to a path in the same board, followed with POSIX symlink
-//! semantics (docs/architecture.md, Pointers: links and mounts).
+//! semantics (docs/architecture/paths.md, Pointers: links and mounts).
 
 use super::*;
 use crate::MAX_HOPS;

@@ -74,10 +74,10 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   propose and how to tell the owner, and settings come in three layers:
   mandate, the owner's preferences in a personal board, and the board's own.
   The owner agreed the record shapes on 2026-10-05.
-- **Docs as a tree.** When a docs file outgrows its budget, it splits into an
-  index and leaf files beneath it, and each docs change gets a review of
-  whether each sentence is needed, said once and at the right level. The owner
-  asked for it on 2026-10-05; docs/architecture.md is the first file to split.
+- **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
+  and docs/architecture.md has split into docs/architecture/. Still open are
+  how the review of each docs change runs and a tool check that each leaf is
+  linked once.
 
 ## Settled decisions
 

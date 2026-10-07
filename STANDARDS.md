@@ -53,16 +53,18 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Documentation
 
-22. **Four word budgets, each set on its own in `lint.toml`.** `cargo xtask lint` counts whitespace-separated words, code blocks included; for English prose a word is roughly 1.3 to 1.5 tokens.
+22. **Four word budgets, each set on its own in `lint.toml`; the docs budget applies to each directory.** `cargo xtask lint` counts whitespace-separated words, code blocks included; for English prose a word is roughly 1.3 to 1.5 tokens.
 
     | Budget | Covers | Start | Why |
     | --- | --- | --- | --- |
     | N, `context.max_words` | `AGENTS.md`, `CLAUDE.md` and every file they import with `@path`, each counted once | 1,000 | Every agent session pays it, so it holds orientation and the rules tooling cannot enforce: about 1,400 tokens, four minutes to read. The old `AGENTS.md` alone was 5,879 words. |
     | M, `docs_index.max_words` | `DOCS.md` | 400 | A map, one line per document. If it does not fit, `docs/` has too many files. |
-    | O, `docs.max_words` | `docs/*.md`, summed | 8,000 | What one person reads in one sitting, about 35 minutes. Past that, knowledge belongs in code, tests or schemas, or the design has grown too big. The old `docs/` held about 103,000 words. |
+    | O, `docs.max_words` | each directory node under `docs/`: the `.md` files directly inside it, summed | 5,500 | What one person reads in one sitting, about 25 minutes. Past that, knowledge belongs in code, tests or schemas, or the node needs a level below it. The owner set 5,000 after the altitude pass and 5,500 to describe the features built since. The old `docs/` held about 103,000 words. |
     | P, `plan.max_words` | `PLAN.md` | 1,075 | The plan holds only what comes next. It had grown to 7,377 words, more than the docs budget, mostly sketches of unbuilt features; it was cut to what is next and a one-line list of deferred sketches. |
 
-    Raise a number only in a change that says why. Every run prints usage against each budget, so headroom shows before it runs out. The glob counts only the top level of `docs/`; `docs/**/*.md` counts subdirectories too. Root files that no budget names are outside the budgets. `PLAN.md` shrinks as milestones land, and an unbuilt sketch gets one line there and a pointer to the commit that holds its full text. Each budget is also recorded as a control, `controls/budgets/<section>.json`. The control does not enforce anything. `cargo xtask lint` fails when a budget has no control, when a control has no budget, when a control's `applies_to` and `paths` name other files than the section, when the only number in its `requirement` is not the section's `max_words`, or when it carries a `rule`.
+    `docs/` and every directory below it is a node, and O applies to each node on its own. A subdirectory's words count toward its own node and never toward its parent. When a node is full, detail moves one level deeper: a file such as `docs/architecture.md` links once to a leaf file in `docs/architecture/`, which holds the detail, and keeps a short summary that says what the leaf covers. No rule or value is stated at both levels. `DOCS.md` lists only the files directly in `docs/`.
+
+    Raise a number only in a change that says why. Every run prints usage against each budget and each docs node, so headroom shows before it runs out. A node over its limit fails with `xtask::budget::over_limit`, which names the node, its words and its limit. Root files that no budget names are outside the budgets. `PLAN.md` shrinks as milestones land, and an unbuilt sketch gets one line there and a pointer to the commit that holds its full text. Each budget is also recorded as a control, `controls/budgets/<section>.json`. The control does not enforce anything. `cargo xtask lint` fails when a budget has no control, when a control has no budget, when a control's `applies_to` and `paths` name other files than the section, when the only number in its `requirement` is not the section's `max_words`, or when it carries a `rule`. The docs section names `docs/*.md`, a SQLite GLOB in which `*` also matches `/`, so its one control covers every node.
 
 ## Command line
 

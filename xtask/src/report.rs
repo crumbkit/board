@@ -28,6 +28,8 @@ impl Report {
 #[derive(Debug)]
 pub(crate) struct Check {
     pub(crate) kind: CheckKind,
+    /// The directory a per-directory budget measured, such as `docs/architecture`.
+    node: Option<String>,
     pub(crate) limit: Limit,
     pub(crate) used: usize,
     pub(crate) parts: Vec<Part>,
@@ -55,10 +57,22 @@ impl Check {
         });
         Self {
             kind,
+            node: None,
             limit,
             used,
             parts,
         }
+    }
+
+    /// This check measured only the files directly inside the directory `node`.
+    pub(crate) fn in_node(mut self, node: String) -> Self {
+        self.node = Some(node);
+        self
+    }
+
+    /// The directory measured, or else the budget's name.
+    pub(crate) fn name(&self) -> &str {
+        self.node.as_deref().unwrap_or(self.kind.name())
     }
 
     pub(crate) fn passed(&self) -> bool {
@@ -174,6 +188,12 @@ pub(crate) fn render_bench(timed: &[Timed]) -> String {
 
 pub(crate) fn render(report: &Report) -> String {
     let mut text = String::new();
+    let width = report
+        .checks
+        .iter()
+        .map(|check| check.name().len())
+        .max()
+        .unwrap_or(0);
     for check in &report.checks {
         let status = if check.passed() { "pass" } else { "FAIL" };
         let limit = match check.limit {
@@ -182,8 +202,8 @@ pub(crate) fn render(report: &Report) -> String {
         };
         let _ = writeln!(
             text,
-            "{status}  {name:<10} {used:>6} {limit:<7} {unit:<10}  {parts}",
-            name = check.kind.name(),
+            "{status}  {name:<width$} {used:>6} {limit:<7} {unit:<10}  {parts}",
+            name = check.name(),
             used = check.used,
             unit = check.kind.unit(),
             parts = summarise(&check.parts),
@@ -221,6 +241,13 @@ fn advice(check: &Check) -> String {
         ),
         (CheckKind::Expect, _) => format!("lower expect.count to {} in lint.toml", check.used),
         (CheckKind::SourceLines, _) => "split the files above".to_owned(),
+        (CheckKind::Docs, Limit::AtMost(max)) => format!(
+            "{node} holds {used} words in its own .md files, over its limit of {max}; \
+             move detail into a subdirectory of {node}, or raise docs.max_words in lint.toml \
+             in a change that says why",
+            node = check.name(),
+            used = check.used,
+        ),
         _ => format!(
             "trim the files above, or raise {}.max_words in lint.toml in a change that says why",
             check.kind.name().replace('-', "_")

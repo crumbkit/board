@@ -1,4 +1,4 @@
-//! Where the index lives and how it opens (docs/architecture.md, Index).
+//! Where the index lives and how it opens (docs/architecture/index.md).
 //! Every way of opening ends in the same preparation, on a file or in memory.
 
 use std::cell::Cell;

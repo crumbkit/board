@@ -1,5 +1,5 @@
 //! Trees as the index keeps them: each tree once, by id, with its entries
-//! addressed (docs/architecture.md, The index). Addressing a tree's entries
+//! addressed (docs/architecture/index.md). Addressing a tree's entries
 //! depends only on their names and the records beside directories, so it is
 //! a fact about the tree's content.
 

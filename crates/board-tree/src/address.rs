@@ -1,6 +1,6 @@
 //! How tree entries are addressed by logical path segments
-//! (docs/architecture.md, Logical paths). Pure decisions over one directory,
-//! given what a record beside a directory holds.
+//! (docs/architecture/paths.md, Logical paths). Pure decisions over one
+//! directory, given what a record beside a directory holds.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

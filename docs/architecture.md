@@ -115,166 +115,21 @@ and sets git's `merge.mergiraf.driver` to
 `mergiraf merge --git %O %A %B -s %S -x %X -y %Y -p %P -l %L`. A merged file
 may not be canonical until the next `put`.
 
-## Logical paths
+## Paths, links and mounts
 
-A logical path is `/` alone, the board's root, or `/` followed by segments
-separated by `/`. A segment is non-empty UTF-8 of at most 255 bytes, without
-`/`, NUL or control characters, and is not `.` or `..`. A path is at most 4,096
-bytes. A record's file name adds `.json`, so its segment is at most 250 bytes.
-Paths are absolute and are read against the root of the board that holds them.
-The working tree must also fit the OS's `PATH_MAX` (1,024 bytes on macOS, 4,096
-on Linux) with its checkout prefix; Board keeps its own limit because paths
-read through mounts never touch the file system.
-
-In a directory, a segment `x` names one of:
-
-- a record or pointer stored as `x.json`;
-- a directory `x/`;
-- a non-JSON file whose whole name is `x`, such as `notes.md`.
-
-A `.json` file is addressed only without its extension, so every entry has one
-address. A record `x.json` and a directory `x/` may sit side by side, so a
-record can have children: `/x` names the record, `/x/y` continues into the
-directory, and `ls /x` lists the directory. Any other match of one segment to
-more than one entry, including a readable record of pointer type beside a
-directory whether or not it is a valid pointer, degrades each with
-`board::path::shadowed`, and resolution refuses with the same code. Two names in
-one directory that differ only by ASCII case are degraded with
-`board::path::case_collision`, because a macOS working tree cannot hold both;
-resolution still matches names exactly. A name that is not a valid segment is
-`board::path::malformed` and cannot be reached. A path that names nothing,
-including one that continues through a file, is `board::path::not_found`. A
-repository that cannot be opened, or a missing or corrupt object, is
-`board::repo::unreadable`.
-
-## Pointers: links and mounts
-
-A pointer is a record of type `board/mount/v1` holding exactly one target:
-
-```json
-{ "$type": "board/mount/v1", "path": "/work/company-name/projects/x" }
-```
-
-```json
-{
-  "$type": "board/mount/v1",
-  "repo": "~/src/company-board",
-  "follow": "main",
-  "commit": "3f9a…"
-}
-```
-
-The first is a link to a path in the same board. The second is a mount of
-another repository at an exact commit. `follow` names what `board mount update`
-advances `commit` to; `commit` is what Board reads. v0 mounts local
-repositories only; a URL is `board::mount::remote_unsupported`. A mount's
-`repo` is a local path, read from `~/` or relative to the board, so on a
-machine with no clone at that path the mount degrades to
-`board::mount::repo_missing` until M8 (PLAN.md) adds remotes.
-
-A pointer at `dir/name.json` makes `/dir/name` its point: resolution continues
-through it. The semantics are POSIX symlinks':
-
-- Reaching a link restarts at the link's `path` in the board that holds it,
-  then continues with the remaining segments. Reaching a mount continues at the
-  root of the mounted tree at `commit`.
-- A resolution follows at most 40 pointers (`board::resolve::too_many_hops`).
-  Returning to a board and path already visited is `board::resolve::cycle`.
-- An absolute path in a mounted board means that board's path.
-- A pointer whose target is missing is degraded with `board::ref::dangling`;
-  nothing else breaks.
-- The root board is read from its working tree, uncommitted edits included and
-  marked. A
-  mounted board is read from committed objects at `commit`, so a board at a
-  given commit fully determines everything under its mounts.
-- Mounting brings data and schemas, never code. A mounted board's plugin list
-  is ignored.
-
-Resolution returns a `Location`: the board (repository and source, either the
-working tree or a commit), the physical path, the object (a blob hash, or a
-directory), and every pointer followed. A Location's identity is its board,
-source and physical path; two logical paths that reach one identity are one
-object, reported once. The display path replaces every link with its target and
-keeps mount points.
-
-Resolving follows pointers. Walking (`ls`, the index) does not: a walk reports
-a pointer as an entry, as `find` does without `-L`. The index includes every
-board reachable through mounts, each commit indexed once however many places
-mount it. Only `board-tree` reads pointers.
+A logical path names an entry from the root of the board that holds it. A
+pointer is a record that links to a path in the same board or mounts another
+repository at an exact commit. [architecture/paths.md](architecture/paths.md)
+holds the segment rules, addressing, shadowing and case collisions, how
+resolution follows links and mounts, and which paths a write refuses.
 
 ## The index
 
-The index is SQLite under `$XDG_CACHE_HOME/board/<root-hash>/` (by default
-`~/.cache/board/<root-hash>/`), where `<root-hash>` is the SHA-256 of the board
-root's canonical path. The file is `index-<format>.sqlite`, so builds of
-different index formats keep separate files. A file whose contents report
-another format than its name, or that is corrupt, is deleted and rebuilt. A
-build that creates an index file records the board root beside it in `root`. It
-deletes the index files there more than one format older, and the cache
-directory of each other board whose recorded root it can see is gone. The index
-is disposable: deleting it changes no answer, only speed.
-
-| Table | Holds | Keyed by |
-| --- | --- | --- |
-| `sources` | the root working tree and each mounted commit: its root tree and the repository it was first read from | source: `worktree` or a commit id |
-| `trees` | every entry in a tree: name, mode, object, logical segment and path code | tree |
-| `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
-| `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code; a schema's code says whether it compiles | blob, role |
-| `bodies` | the canonical form of each record that parses | blob |
-| `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
-| `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
-| `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
-| `mounts` | each mount point and the commit it reaches, or its code | source, path |
-| `state` | index format, and when the last refresh that hashed or recorded a file began | key |
-
-The `entries` view joins these across the root and its mounts, one row per
-entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
-`type`, `status`, `code`, `change`, `role` and `schema` (the schema blob a
-record was checked against). The `records` view is its rows of kind `record`,
-with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
-`body` is NULL when the record does not parse. Tables, views and columns are an
-interface agents write SQL against; changing one changes the index format. A
-commit mounted in several places appears once, with `logical` through the
-shortest display path, then the first lexically.
-
-Each command refreshes the index first, doing work in proportion to what
-changed: it hashes only working-tree files whose stat changed, as git does, and
-parses and validates only blobs it has not seen. A file is hashed again if its
-mtime falls in or after the second in which the last refresh that hashed or
-recorded a file began. A refresh that finds nothing changed writes nothing, so
-it neither waits for nor blocks another process. If another process holds the
-lock or wrote first, the refresh runs again, waiting up to 5 seconds for the
-lock. If the wait runs out, it runs in an index in memory. `check`, `refs` and
-`query` use the index; `get` and `ls` resolve directly.
-
-Once the index has doubled in pages since its last prune or first refresh, a
-refresh that writes also prunes: it deletes the fact rows that neither the
-working tree, `HEAD`'s tree nor a mounted commit reaches, and gives the freed
-pages back. A query that another process prunes under runs again, at most
-three times. Under a concurrent prune, one `board call` can skip a record
-whose file changed after its refresh; the next call sends it.
-
-`board query '<sql>'` runs one read-only statement against the index. Each
-enabled plugin's database is attached read-only as `p_<name>`. Rows return as
-JSON, at most 100 unless `--limit` (at most 10,000) says otherwise, with
-`truncated` set when rows were left out. The report is `columns` and `rows`,
-each row an array in column order; `plugins` lists any plugin whose extraction
-failed. SQL that does not parse, would write, or holds more than one statement
-is `board::query::invalid`; ATTACH, DETACH and PRAGMA statements count as
-writes, while table-valued pragma functions such as `pragma_table_info` are
-admitted. A query still running after 1 s is `board::query::timeout`. A query
-sees each fact table filtered to what the current tree reaches, so it answers
-the same warm as cold; `main.<table>` is the whole cache, which keeps facts for
-other branches.
-
-`board refs <path>` reports each reference the record makes, resolved now with
-its status, and each record whose references reach its identity, whatever path
-they name.
-With `--missing`, a path that names nothing reports its deepest resolving
-ancestor and, under `missing`, the physical path a file there would have, by
-put's resolution; put may still refuse it, for instance through a mount, and
-names a new record's file with `.json`. Beneath a non-JSON file, or naming an
-existing entry by its `.json` file, the path stays `path::not_found`.
+The index is a SQLite cache of what the tree holds. It is disposable:
+deleting it changes no answer, only speed.
+[architecture/index.md](architecture/index.md) holds where it lives, its
+tables and views, how a refresh decides what to redo, and `board query` and
+`board refs`.
 
 ## Writes
 
@@ -288,13 +143,7 @@ existing entry by its `.json` file, the path stays `path::not_found`.
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
    `board/mount/v1` and `board/config/v1` are checked as their own types;
-3. resolves the path, following pointers, so a write through a link lands at
-   its target; put does not create a missing target, and refuses with its
-   resolution code. A path through a mount is `board::put::through_mount`. A
-   segment git keeps, `.git` under any spelling HFS+ or NTFS opens as it, is
-   `board::path::malformed`, in `mount update` too. Missing directories are
-   created. A write that would leave its own path degraded is refused with that
-   path's code, such as `path::shadowed`;
+3. resolves and checks the path, as architecture/paths.md says under Writes;
 4. with `--expect <blob>`, or `--expect none` for a new file, refuses with
    `board::put::stale` unless the target's current blob matches. Without
    `--expect`, a put overwrites;
@@ -357,12 +206,7 @@ no directory is `board::usage::invalid`.
 `check`, `ls`, `refs`, `plugin list` and `plugin find` show 100 entries unless
 `--limit` or `--all` says otherwise; an entry is a printed line: a `refs`
 pointer, a `plugin list` capability. Text names an entry by its logical path,
-or its file when it has none or is shadowed; JSON gives both. An error names
-the values it knows, and `board/error/v1` gives them in `fields`: `path`,
-`blob`, `pointer`, `type`, `schema`, `plugin`, `capability`. `check` and `put`
-name a degraded entry's first failing pointer, why, and how many more
-(`pointer`, `reason`, `failures`); an unknown type's reason names the schema
-file its board lacks (`schema`).
+or its file when it has none or is shadowed; JSON gives both.
 STANDARDS.md 23 to 26 hold the rules.
 
 ## Crates
@@ -372,10 +216,10 @@ STANDARDS.md 23 to 26 hold the rules.
 | `board-model` | pure types and decisions: logical paths, Locations, record types, codes and their hints, refusals, canonical JSON, the duplicate-key parse | serde, serde_json, thiserror |
 | `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
-| `board-index` | the index and the cache directory | the three above, rusqlite |
-| `board-plugin` | manifests, discovery, child processes, signals | board-model, board-validate, board-index, rustix and signal-hook (Unix) |
-| `board-ops` | every operation as a typed function returning its report | all of the above but `board-cli` |
-| `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | `board-ops` |
+| `board-index` | the index and the cache directory | board-model, board-tree, rusqlite |
+| `board-plugin` | manifests, discovery, child processes, signals | board-model, board-validate, rustix and signal-hook (Unix) |
+| `board-ops` | every operation as a typed function returning its report | all of the above |
+| `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-tree |
 
 `board-cli` only parses arguments, reads configuration and prints, so a later
 adapter, such as a server, needs no logic of its own. Rust code names the
@@ -387,25 +231,8 @@ changes plugins such as `tasks`.
 ## Codes
 
 Codes are `board::<area>::<reason>`, spelled once in code and never changed
-after release. The v0 set:
-
-| Area | Reasons |
-| --- | --- |
-| `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8`, `lossy_number` |
-| `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
-| `config` | `not_found`, `invalid` |
-| `schema` | `invalid` |
-| `ref` | `malformed`, `dangling`, `wrong_type` |
-| `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
-| `repo` | `unreadable`, `submodule` |
-| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing` |
-| `resolve` | `cycle`, `too_many_hops` |
-| `index` | `failed`: the disposable index could not be used, even in memory |
-| `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
-| `query` | `timeout`: the statement ran longer than 1 s |
-| `put` | `stale`, `locked`, `through_mount`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
-| `plugin` | see docs/plugins.md |
-| `usage` | `invalid`: the command line was refused, exit 2 |
+after release. [architecture/errors.md](architecture/errors.md) lists the v0
+set and the values an error names in text and in `board/error/v1`.
 
 ## Testing
 

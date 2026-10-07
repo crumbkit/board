@@ -1,5 +1,5 @@
 //! `board query`: one read-only SQL statement over the index
-//! (docs/architecture.md, The index).
+//! (docs/architecture/index.md).
 
 use std::path::Path;
 

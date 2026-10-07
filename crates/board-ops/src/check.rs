@@ -1,8 +1,8 @@
 //! `board check`: every entry of the working tree, parsed and validated, with
 //! its references and pointers followed (docs/architecture.md, Records;
-//! Pointers: links and mounts; The index). What depends only on content
-//! comes from the index; whether a reference or pointer resolves depends on
-//! the whole tree, so each check decides it again.
+//! docs/architecture/paths.md; docs/architecture/index.md). What depends only
+//! on content comes from the index; whether a reference or pointer resolves
+//! depends on the whole tree, so each check decides it again.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;

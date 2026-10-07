@@ -1,4 +1,4 @@
-//! Resolving a logical path to a Location (docs/architecture.md, Pointers:
+//! Resolving a logical path to a Location (docs/architecture/paths.md, Pointers:
 //! links and mounts). Pointers are followed with POSIX symlink semantics.
 
 use std::collections::{HashSet, VecDeque};
@@ -18,7 +18,7 @@ use crate::worktree::{Known, WorkingTree};
 pub const MAX_HOPS: usize = 40;
 
 /// Where a path that names nothing would be: its deepest ancestor that
-/// resolves, and the segments past it (docs/architecture.md, Writes).
+/// resolves, and the segments past it (docs/architecture/paths.md, Writes).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ancestor {
     /// Where the ancestor resolved, with every pointer followed.

@@ -81,15 +81,18 @@ fn lint(root: &Path) -> Result<Report, LintError> {
     let root = Root::open(root)?;
     let config = Config::load(&root)?;
     let [lines, expects] = source::checks(&root, &config.source, &config.expect)?;
+    let mut checks = vec![
+        budgets::context(&root, &config.context)?,
+        budgets::file(&root, CheckKind::DocsIndex, &config.docs_index)?,
+    ];
+    checks.extend(budgets::docs(&root, &config.docs)?);
+    checks.extend([
+        budgets::file(&root, CheckKind::Plan, &config.plan)?,
+        lines,
+        expects,
+    ]);
     Ok(Report {
-        checks: vec![
-            budgets::context(&root, &config.context)?,
-            budgets::file(&root, CheckKind::DocsIndex, &config.docs_index)?,
-            budgets::docs(&root, &config.docs)?,
-            budgets::file(&root, CheckKind::Plan, &config.plan)?,
-            lines,
-            expects,
-        ],
+        checks,
         controls: controls::check(&root, &config)?,
     })
 }

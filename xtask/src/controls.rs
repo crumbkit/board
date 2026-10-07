@@ -37,7 +37,7 @@ impl Divergence {
 pub(crate) fn check(root: &Root, config: &Config) -> Result<Vec<Divergence>, LintError> {
     let budgets = config.word_budgets();
     let mut divergences = Vec::new();
-    for path in root.glob(&format!("{DIRECTORY}/*.json"))? {
+    for path in root.files_with_extension(DIRECTORY, "json")? {
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
         if !budgets.iter().any(|(section, ..)| *section == name) {
             divergences.push(Divergence(
@@ -73,7 +73,7 @@ pub(crate) fn check(root: &Root, config: &Config) -> Result<Vec<Divergence>, Lin
             .map(|reference| reference.strip_prefix('/').unwrap_or(reference))
             .chain(record.paths.iter().map(String::as_str))
             .collect();
-        let expected: BTreeSet<&str> = covers.into_iter().collect();
+        let expected: BTreeSet<&str> = covers.iter().map(String::as_str).collect();
         if found != expected {
             divergences.push(differs(
                 "applies_to and paths",

@@ -1,7 +1,7 @@
-//! Refreshing the index from the working tree (docs/architecture.md, The
-//! index). Only files whose metadata changed are hashed, and every fact is
-//! keyed by content, so a blob already indexed is not read again and a
-//! record is validated again only against a schema blob it has not met.
+//! Refreshing the index from the working tree (docs/architecture/index.md).
+//! Only files whose metadata changed are hashed, and every fact is keyed by
+//! content, so a blob already indexed is not read again and a record is
+//! validated again only against a schema blob it has not met.
 //! A refresh that finds nothing changed writes nothing.
 
 use std::collections::HashMap;

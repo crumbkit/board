@@ -1,6 +1,6 @@
 //! The one module that writes the working tree and the git directory
-//! (docs/architecture.md, Writes): where a put lands, the lock, and the
-//! write that a kill cannot leave half done.
+//! (docs/architecture.md, Writes; docs/architecture/paths.md, Writes): where
+//! a put lands, the lock, and the write that a kill cannot leave half done.
 #![expect(
     clippy::disallowed_methods,
     reason = "board-tree's write module owns every write to the working tree and the git directory"

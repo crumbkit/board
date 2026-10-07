@@ -1,4 +1,5 @@
 use super::*;
+use crate::report::{Report, render};
 use crate::tests::{Fixture, words};
 
 fn budget(max_words: usize) -> ContextBudget {
@@ -159,34 +160,114 @@ fn a_missing_plan_is_refused() {
     assert_eq!(error.code(), "xtask::files::unreadable");
 }
 
-#[test]
-fn docs_sums_only_the_files_the_glob_matches() {
-    let fixture = Fixture::new();
-    fixture
-        .write("docs/a.md", &words(2))
-        .write("docs/b.md", &words(3))
-        .write("docs/notes.txt", &words(100))
-        .write("docs/deeper/c.md", &words(100));
-    let budget = GlobBudget {
-        glob: "docs/*.md".to_owned(),
-        max_words: 5,
-    };
-    let check = docs(&fixture.root(), &budget).unwrap();
-    assert_eq!(check.used, 5);
-    assert!(check.passed());
+fn docs_budget(max_words: usize) -> DirectoryBudget {
+    DirectoryBudget {
+        directory: "docs".to_owned(),
+        max_words,
+    }
+}
+
+/// Each node's name and the words its own files hold, in report order.
+fn nodes(checks: &[Check]) -> Vec<(&str, usize)> {
+    checks
+        .iter()
+        .map(|check| (check.name(), check.used))
+        .collect()
 }
 
 #[test]
-fn docs_with_a_recursive_glob_counts_subdirectories() {
+fn a_docs_node_at_its_budget_passes() {
+    let fixture = Fixture::new();
+    fixture
+        .write("docs/a.md", &words(3))
+        .write("docs/b.md", &words(2));
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    assert_eq!(nodes(&checks), [("docs", 5)]);
+    assert!(checks[0].passed());
+}
+
+#[test]
+fn a_docs_node_one_word_over_its_budget_fails_naming_the_node_and_where_detail_goes() {
+    let fixture = Fixture::new();
+    fixture
+        .write("docs/a.md", &words(4))
+        .write("docs/b.md", &words(2));
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    assert_eq!(nodes(&checks), [("docs", 6)]);
+    assert!(!checks[0].passed());
+    let text = render(&Report {
+        checks,
+        controls: Vec::new(),
+    });
+    let advice = text.lines().nth(1).unwrap();
+    assert_eq!(
+        advice,
+        "      xtask::budget::over_limit: docs holds 6 words in its own .md files, over \
+         its limit of 5; move detail into a subdirectory of docs, or raise \
+         docs.max_words in lint.toml in a change that says why"
+    );
+}
+
+#[test]
+fn a_subdirectory_is_its_own_node_and_its_words_do_not_count_toward_its_parent() {
+    let fixture = Fixture::new();
+    fixture
+        .write("docs/a.md", &words(5))
+        .write("docs/deeper/b.md", &words(1));
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    assert_eq!(nodes(&checks), [("docs", 5), ("docs/deeper", 1)]);
+    assert!(checks.iter().all(Check::passed));
+}
+
+#[test]
+fn the_same_words_in_a_file_beside_the_parent_files_count_toward_the_parent() {
+    let fixture = Fixture::new();
+    fixture
+        .write("docs/a.md", &words(5))
+        .write("docs/b.md", &words(1));
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    assert_eq!(nodes(&checks), [("docs", 6)]);
+    assert!(!checks[0].passed());
+}
+
+#[test]
+fn a_nested_node_over_its_budget_is_the_one_that_fails() {
+    let fixture = Fixture::new();
+    fixture
+        .write("docs/a.md", &words(1))
+        .write("docs/deeper/b.md", &words(1))
+        .write("docs/deeper/still/c.md", &words(6));
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    let failed: Vec<&str> = checks
+        .iter()
+        .filter(|check| !check.passed())
+        .map(Check::name)
+        .collect();
+    assert_eq!(failed, ["docs/deeper/still"]);
+}
+
+#[test]
+fn docs_counts_only_markdown_files() {
     let fixture = Fixture::new();
     fixture
         .write("docs/a.md", &words(2))
-        .write("docs/deeper/c.md", &words(3));
-    let budget = GlobBudget {
-        glob: "docs/**/*.md".to_owned(),
-        max_words: 4,
-    };
-    let check = docs(&fixture.root(), &budget).unwrap();
-    assert_eq!(check.used, 5);
-    assert!(!check.passed());
+        .write("docs/notes.txt", &words(100));
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    assert_eq!(nodes(&checks), [("docs", 2)]);
+}
+
+#[test]
+fn an_empty_docs_directory_is_one_node_with_no_words() {
+    let fixture = Fixture::new();
+    fixture.write("docs/.keep", "");
+    let checks = docs(&fixture.root(), &docs_budget(5)).unwrap();
+    assert_eq!(nodes(&checks), [("docs", 0)]);
+    assert!(checks[0].passed());
+}
+
+#[test]
+fn docs_refuses_a_missing_directory() {
+    let fixture = Fixture::new();
+    let error = docs(&fixture.root(), &docs_budget(5)).unwrap_err();
+    assert_eq!(error.code(), "xtask::files::unreadable");
 }

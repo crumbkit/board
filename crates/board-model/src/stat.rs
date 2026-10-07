@@ -1,5 +1,5 @@
 //! What the file system says about a working-tree file, and whether it is
-//! what `HEAD` holds (docs/architecture.md, The index).
+//! what `HEAD` holds (docs/architecture/index.md).
 
 /// A file's metadata, as git compares it to decide whether a file must be
 /// hashed again. Times are nanoseconds since the Unix epoch.

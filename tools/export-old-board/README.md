@@ -42,7 +42,7 @@ The script exits 1 if it does not. Unmappable reasons:
 | --- | --- |
 | `subject_malformed` | no `:` in the subject |
 | `type_invalid` | the type is empty or not `[a-z0-9-]` |
-| `path_malformed` | `/<type>/<name>` is not a logical path (docs/architecture.md) |
+| `path_malformed` | `/<type>/<name>` is not a logical path (docs/architecture/paths.md) |
 | `case_collision` | the record file, or a directory on its path, differs from another name only by ASCII case |
 | `type_key_present` | the old object already has a top-level `$type`, which the export would overwrite |
 | `show_failed` | `objects show` failed; `detail` holds its error |

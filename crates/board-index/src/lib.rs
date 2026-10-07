@@ -1,4 +1,4 @@
-//! The disposable `SQLite` index (docs/architecture.md, Index). Only this crate
+//! The disposable `SQLite` index (docs/architecture/index.md). Only this crate
 //! depends on rusqlite. It stores the facts it is given and decides nothing:
 //! deleting it changes no answer, only speed.
 

@@ -33,23 +33,57 @@ impl Root {
         (target.starts_with(&self.0) && target.is_file()).then_some(target)
     }
 
-    /// Every file matching a glob pattern written relative to the root.
-    pub(crate) fn glob(&self, pattern: &str) -> Result<Vec<PathBuf>, FilesError> {
-        let absolute = self.0.join(pattern);
-        let text = absolute.to_str().ok_or_else(|| FilesError::NotUtf8 {
-            path: absolute.clone(),
-        })?;
-        let matches = glob::glob(text).map_err(|source| FilesError::Pattern {
-            pattern: pattern.to_owned(),
+    /// The directory named relative to the root and every directory below
+    /// it, each with the `.md` files directly inside it, in sorted order.
+    /// Symlinks are not followed, so a linked file or directory is not counted.
+    pub(crate) fn markdown_nodes(&self, relative: &str) -> Result<Vec<Node>, FilesError> {
+        let mut pending = vec![self.0.join(relative)];
+        let mut nodes = Vec::new();
+        while let Some(directory) = pending.pop() {
+            let unreadable = |source| FilesError::Unreadable {
+                path: directory.clone(),
+                source,
+            };
+            let mut files = Vec::new();
+            for entry in std::fs::read_dir(&directory).map_err(unreadable)? {
+                let entry = entry.map_err(unreadable)?;
+                let kind = entry.file_type().map_err(unreadable)?;
+                let path = entry.path();
+                if kind.is_dir() {
+                    pending.push(path);
+                } else if kind.is_file()
+                    && path.extension().is_some_and(|extension| extension == "md")
+                {
+                    files.push(path);
+                }
+            }
+            files.sort();
+            nodes.push(Node { directory, files });
+        }
+        nodes.sort_by(|left, right| left.directory.cmp(&right.directory));
+        Ok(nodes)
+    }
+
+    /// The files directly inside the directory named relative to the root
+    /// whose extension is `extension`, in sorted order. A missing directory
+    /// holds none.
+    pub(crate) fn files_with_extension(
+        &self,
+        relative: &str,
+        extension: &str,
+    ) -> Result<Vec<PathBuf>, FilesError> {
+        let directory = self.0.join(relative);
+        if !directory.is_dir() {
+            return Ok(Vec::new());
+        }
+        let unreadable = |source| FilesError::Unreadable {
+            path: directory.clone(),
             source,
-        })?;
+        };
         let mut files = Vec::new();
-        for entry in matches {
-            let path = entry.map_err(|error| FilesError::Unreadable {
-                path: error.path().to_path_buf(),
-                source: error.into(),
-            })?;
-            if path.is_file() {
+        for entry in std::fs::read_dir(&directory).map_err(unreadable)? {
+            let path = entry.map_err(unreadable)?.path();
+            if path.is_file() && path.extension().is_some_and(|found| found == extension) {
                 files.push(path);
             }
         }
@@ -97,6 +131,13 @@ impl Root {
     }
 }
 
+/// A directory and the Markdown files directly inside it.
+#[derive(Debug)]
+pub(crate) struct Node {
+    pub(crate) directory: PathBuf,
+    pub(crate) files: Vec<PathBuf>,
+}
+
 pub(crate) fn read(path: &Path) -> Result<String, FilesError> {
     std::fs::read_to_string(path).map_err(|source| FilesError::Unreadable {
         path: path.to_path_buf(),
@@ -120,22 +161,12 @@ pub(crate) enum FilesError {
         #[source]
         source: io::Error,
     },
-    #[error("{} is not valid UTF-8, so no glob can be written for it", .path.display())]
-    NotUtf8 { path: PathBuf },
-    #[error("{pattern} is not a valid glob pattern")]
-    Pattern {
-        pattern: String,
-        #[source]
-        source: glob::PatternError,
-    },
 }
 
 impl FilesError {
     pub(crate) fn code(&self) -> &'static str {
         match self {
             Self::Unreadable { .. } => "xtask::files::unreadable",
-            Self::NotUtf8 { .. } => "xtask::files::not_utf8",
-            Self::Pattern { .. } => "xtask::files::bad_glob",
         }
     }
 }

@@ -16,12 +16,15 @@ max_words = 1000
 file = "DOCS.md"
 max_words = 400
 
-# O: the documentation itself, summed across every matching file. Lowered from
-# 8,000 to 5,000 by the owner after the altitude pass (#60, 2026-10-04), and
-# raised to 5,500 on 2026-10-05 to describe the plugin, controls and CLI
-# features built since.
+# O: the documentation itself. Every directory under `directory`, itself
+# included, is a node. The .md files directly inside a node hold at most
+# max_words together; a subdirectory's words count only toward its own node.
+# Lowered from 8,000 to 5,000 by the owner after the altitude pass (#60,
+# 2026-10-04), raised to 5,500 on 2026-10-05 to describe the plugin, controls
+# and CLI features built since, and applied per node on 2026-10-06 so that
+# detail moves one level deeper when a node is full.
 [docs]
-glob = "docs/*.md"
+directory = "docs"
 max_words = 5500
 
 # P: the plan. Added on 2026-10-06, when PLAN.md had grown to 7,377 words of

@@ -22,7 +22,7 @@ use tempfile::TempDir;
 #[derive(Clone, Copy, Debug)]
 pub enum Item<'a> {
     /// A file last modified an hour ago, so that the index's racy-clean
-    /// rule (docs/architecture.md, The index) trusts its metadata.
+    /// rule (docs/architecture/index.md) trusts its metadata.
     File(&'a str),
     /// A file modified just now, as an editor leaves it.
     Fresh(&'a str),

@@ -13,7 +13,7 @@ pub(crate) struct Config {
     _type: ConfigType,
     pub(crate) context: ContextBudget,
     pub(crate) docs_index: FileBudget,
-    pub(crate) docs: GlobBudget,
+    pub(crate) docs: DirectoryBudget,
     pub(crate) plan: FileBudget,
     pub(crate) source: SourceBudget,
     pub(crate) expect: ExpectBudget,
@@ -43,8 +43,8 @@ pub(crate) struct FileBudget {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GlobBudget {
-    pub(crate) glob: String,
+pub(crate) struct DirectoryBudget {
+    pub(crate) directory: String,
     pub(crate) max_words: usize,
 }
 
@@ -61,16 +61,21 @@ pub(crate) struct ExpectBudget {
 }
 
 impl Config {
-    /// Each section with a `max_words`: its name, the files or glob it
-    /// names, and the limit.
-    pub(crate) fn word_budgets(&self) -> [(&'static str, Vec<&str>, usize); 4] {
-        let context = self.context.entry.iter().map(String::as_str).collect();
+    /// Each section with a `max_words`: its name, the files or GLOB it
+    /// names, and the limit. The docs GLOB matches every `.md` file below the
+    /// directory, because `*` matches `/` in `SQLite` GLOB.
+    pub(crate) fn word_budgets(&self) -> [(&'static str, Vec<String>, usize); 4] {
+        let context = self.context.entry.clone();
         let index = &self.docs_index;
         [
             ("context", context, self.context.max_words),
-            ("docs_index", vec![&index.file], index.max_words),
-            ("docs", vec![&self.docs.glob], self.docs.max_words),
-            ("plan", vec![&self.plan.file], self.plan.max_words),
+            ("docs_index", vec![index.file.clone()], index.max_words),
+            (
+                "docs",
+                vec![format!("{}/*.md", self.docs.directory)],
+                self.docs.max_words,
+            ),
+            ("plan", vec![self.plan.file.clone()], self.plan.max_words),
         ]
     }
 

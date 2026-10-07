@@ -1,5 +1,5 @@
 //! `board refs`: the references a record makes and the records that make
-//! references to it (docs/architecture.md, Commands). Both come from what a
+//! references to it (docs/architecture/index.md). Both come from what a
 //! check decides, so each reference is resolved once, as the tree is now.
 
 use std::collections::BTreeMap;

@@ -1,5 +1,6 @@
 //! Mounts: pointers to another local repository at one commit
-//! (docs/architecture.md, Pointers: links and mounts; Testing).
+//! (docs/architecture/paths.md, Pointers: links and mounts;
+//! docs/architecture.md, Testing).
 
 use super::*;
 

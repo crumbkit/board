@@ -5,7 +5,7 @@ use crate::tests::CONFIG;
 fn a_complete_config_parses() {
     let config = Config::parse(CONFIG).unwrap();
     assert_eq!(config.context.max_words, 10);
-    assert_eq!(config.docs.glob, "docs/*.md");
+    assert_eq!(config.docs.directory, "docs");
     assert_eq!(config.plan.file, "PLAN.md");
 }
 

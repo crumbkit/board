@@ -5,7 +5,7 @@ use std::fmt;
 mod hint;
 
 /// A stable code, `board::<area>::<reason>`. A code never changes after
-/// release; docs/architecture.md (Codes) lists the v0 set.
+/// release; docs/architecture/errors.md lists the v0 set.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
     JsonParse,

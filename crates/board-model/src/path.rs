@@ -1,5 +1,5 @@
 //! Logical paths: the addresses agents and records use, read against the root
-//! of the board that holds them (docs/architecture.md, Logical paths).
+//! of the board that holds them (docs/architecture/paths.md, Logical paths).
 
 use std::fmt;
 use std::str::FromStr;

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeSet, VecDeque};
 
-use crate::config::{ContextBudget, FileBudget, GlobBudget};
+use crate::config::{ContextBudget, DirectoryBudget, FileBudget};
 use crate::files::{self, FilesError, Root};
 use crate::report::{Check, CheckKind, Limit, Part};
 use crate::words;
@@ -50,19 +50,25 @@ pub(crate) fn file(root: &Root, kind: CheckKind, budget: &FileBudget) -> Result<
     ))
 }
 
-pub(crate) fn docs(root: &Root, budget: &GlobBudget) -> Result<Check, FilesError> {
-    let mut parts = Vec::new();
-    for path in root.glob(&budget.glob)? {
-        parts.push(Part::new(
-            root.display(&path),
-            words::count(&files::read(&path)?),
-        ));
+/// One check for each directory under the docs directory, itself included.
+/// Each counts only the `.md` files directly inside it, so a subdirectory's
+/// words never count toward its parent.
+pub(crate) fn docs(root: &Root, budget: &DirectoryBudget) -> Result<Vec<Check>, FilesError> {
+    let mut checks = Vec::new();
+    for node in root.markdown_nodes(&budget.directory)? {
+        let mut parts = Vec::new();
+        for path in &node.files {
+            parts.push(Part::new(
+                root.display(path),
+                words::count(&files::read(path)?),
+            ));
+        }
+        checks.push(
+            Check::total(CheckKind::Docs, Limit::AtMost(budget.max_words), parts)
+                .in_node(root.display(&node.directory)),
+        );
     }
-    Ok(Check::total(
-        CheckKind::Docs,
-        Limit::AtMost(budget.max_words),
-        parts,
-    ))
+    Ok(checks)
 }
 
 #[cfg(test)]

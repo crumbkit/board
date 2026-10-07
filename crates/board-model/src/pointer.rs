@@ -1,5 +1,5 @@
 //! Pointers: records of type `board/mount/v1` that resolution continues
-//! through (docs/architecture.md, Pointers: links and mounts).
+//! through (docs/architecture/paths.md, Pointers: links and mounts).
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;

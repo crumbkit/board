@@ -1,4 +1,4 @@
-//! Trees as the index keeps them (docs/architecture.md, The index).
+//! Trees as the index keeps them (docs/architecture/index.md).
 
 use super::*;
 use crate::{TreeRow, TreeRows};

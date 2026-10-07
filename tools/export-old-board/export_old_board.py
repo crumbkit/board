@@ -61,7 +61,7 @@ def list_subjects(board: str, store: str | None, filters: list[str]) -> list[str
 
 
 def path_problem(object_type: str, name: str) -> str | None:
-    """Why `/<type>/<name>` is not a logical path under docs/architecture.md, or None."""
+    """Why `/<type>/<name>` is not a logical path under docs/architecture/paths.md, or None."""
     if not object_type or not set(object_type) <= TYPE_CHARS:
         return "type_invalid"
     for segment in [object_type, *name.split("/")]:

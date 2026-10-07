@@ -69,7 +69,7 @@ max_words = 10
 file = "DOCS.md"
 max_words = 5
 [docs]
-glob = "docs/*.md"
+directory = "docs"
 max_words = 20
 [plan]
 file = "PLAN.md"

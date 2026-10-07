@@ -1,4 +1,4 @@
-//! Where a resolution ends (docs/architecture.md, Pointers: links and mounts).
+//! Where a resolution ends (docs/architecture/paths.md, Pointers: links and mounts).
 
 use std::fmt;
 use std::path::PathBuf;
@@ -94,7 +94,7 @@ pub struct Location {
 impl Location {
     /// The path that names this Location from the root board, with every
     /// link replaced by its target and every mount point kept
-    /// (docs/architecture.md, Pointers: links and mounts). A pointer is a
+    /// (docs/architecture/paths.md, Pointers: links and mounts). A pointer is a
     /// mount exactly when what follows it is in another board, since links
     /// stay inside theirs. `None` only if a physical path is not a valid
     /// logical one, which resolution never produces.

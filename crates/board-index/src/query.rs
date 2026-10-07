@@ -1,4 +1,4 @@
-//! Reading the index with SQL (docs/architecture.md, The index).
+//! Reading the index with SQL (docs/architecture/index.md).
 
 use std::time::{Duration, Instant};
 

@@ -183,3 +183,13 @@ fn a_control_without_a_requirement_stops_the_lint_and_its_twin_with_one_does_not
     );
     assert!(check(&twin.root(), &config).is_ok());
 }
+
+#[test]
+fn only_json_files_in_the_budgets_directory_are_read_as_controls() {
+    let fixture = controls_with("", None);
+    fixture.write("controls/budgets/README.md", "not a control");
+    fixture.write("controls/budgets/old.json/notes.txt", "not a control");
+    assert_eq!(messages(&fixture), NONE);
+    fixture.write("controls/budgets/stray.json", CONTROLS[0].1);
+    assert_ne!(messages(&fixture), NONE);
+}

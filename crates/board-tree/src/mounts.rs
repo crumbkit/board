@@ -1,5 +1,5 @@
-//! The boards reachable through mounts (docs/architecture.md, Pointers:
-//! links and mounts; The index). Each mounted commit is one source, walked
+//! The boards reachable through mounts (docs/architecture/paths.md, Pointers:
+//! links and mounts; docs/architecture/index.md). Each mounted commit is one source, walked
 //! once however many places mount it.
 
 use std::collections::{HashMap, HashSet};
