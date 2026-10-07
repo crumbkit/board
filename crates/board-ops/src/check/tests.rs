@@ -146,7 +146,8 @@ fn extract_everything(index: &Index) {
         .into_iter()
         .map(|unhandled| unhandled.blob)
         .collect();
-    index.handled("p", "1.0.0", &blobs).unwrap();
+    index.trust("p", "1.0.0", "id").unwrap();
+    index.handled("p", "1.0.0", "id", &blobs).unwrap();
 }
 
 #[test]

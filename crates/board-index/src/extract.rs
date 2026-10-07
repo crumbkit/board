@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use board_model::{ObjectId, Source};
-use rusqlite::params;
+use rusqlite::{Connection, OptionalExtension as _, Transaction, TransactionBehavior, params};
 
 use crate::open::{Index, IndexError};
 
@@ -77,29 +77,57 @@ impl Index {
         Ok(unhandled)
     }
 
-    /// Records that `plugin` at `version` handled each of `blobs`.
+    /// Records that `plugin` at `version` handled each of `blobs` into the
+    /// database with this `id`, unless the index now trusts another.
     pub fn handled(
         &self,
         plugin: &str,
         version: &str,
+        id: &str,
         blobs: &[ObjectId],
     ) -> Result<(), IndexError> {
         let mut insert = self.connection.prepare(
-            "INSERT OR IGNORE INTO main.extracted (plugin, version, blob) VALUES (?1, ?2, ?3)",
+            "INSERT OR IGNORE INTO main.extracted (plugin, version, blob)
+             SELECT ?1, ?2, ?3 WHERE (SELECT value FROM main.state WHERE key = ?4) = ?5",
         )?;
+        let key = database(plugin, version);
         for blob in blobs {
-            insert.execute(params![plugin, version, blob.to_string()])?;
+            insert.execute(params![plugin, version, blob.to_string(), key, id])?;
         }
         Ok(())
     }
 
-    /// Forgets every blob `plugin` at `version` handled, as when its
-    /// database is gone.
-    pub fn forget(&self, plugin: &str, version: &str) -> Result<(), IndexError> {
-        self.connection.execute(
-            "DELETE FROM main.extracted WHERE plugin = ?1 AND version = ?2",
-            params![plugin, version],
-        )?;
+    /// Makes what `plugin` at `version` handled describe its database with
+    /// this `id`. Unless the index recorded that id for it, the index forgets
+    /// every blob it handled and records the id. Trusting the recorded id only
+    /// reads, so it does not wait for another process's write.
+    pub fn trust(&self, plugin: &str, version: &str, id: &str) -> Result<(), IndexError> {
+        let key = database(plugin, version);
+        let recorded = |connection: &Connection| {
+            connection
+                .query_row(
+                    "SELECT value FROM main.state WHERE key = ?1",
+                    [&key],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+        };
+        if recorded(&self.connection)?.as_deref() == Some(id) {
+            return Ok(());
+        }
+        let transaction =
+            Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)?;
+        if recorded(&transaction)?.as_deref() != Some(id) {
+            transaction.execute(
+                "DELETE FROM main.extracted WHERE plugin = ?1 AND version = ?2",
+                params![plugin, version],
+            )?;
+            transaction.execute(
+                "INSERT OR REPLACE INTO main.state (key, value) VALUES (?1, ?2)",
+                params![key, id],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -116,6 +144,11 @@ impl Index {
             .execute("ATTACH DATABASE ?1 AS ?2", params![uri, name])?;
         Ok(())
     }
+}
+
+/// The key in `state` of the id of `plugin`'s database at `version`.
+fn database(plugin: &str, version: &str) -> String {
+    format!("database {plugin}@{version}")
 }
 
 /// The source the index names `name`.

@@ -421,9 +421,9 @@ fn query_reports_a_plugin_that_did_not_extract_and_still_answers() {
         Item::File(&TASKS.replace(r#""run""#, r#""extract": ["lr/task/v1"], "run""#)),
     )
     .write("plugins/tasks/run", Item::Executable(&answering("", 3)));
-    let sql = "SELECT count(*) FROM p_tasks.sqlite_schema";
+    let sql = "SELECT name FROM p_tasks.sqlite_schema";
     let report = json(&call(&board, &data, &["--json", "query", sql], ""));
-    assert_eq!(report["rows"], serde_json::json!([[0]]));
+    assert_eq!(report["rows"], serde_json::json!([["board_database"]]));
     assert_eq!(report["plugins"][0]["plugin"], "tasks");
     assert_eq!(report["plugins"][0]["code"], "board::plugin::failed");
     let output = call(&board, &data, &["query", sql], "");
@@ -449,9 +449,12 @@ fn query_attaches_each_enabled_plugins_database_with_hyphens_as_underscores() {
         Item::File(r#"{"$type": "board/config/v1", "plugins": ["reading-list"]}"#),
     );
     install(&data, "reading-list", &answering(RESULT, 0));
-    let attached = "SELECT count(*) FROM p_reading_list.sqlite_schema";
+    let attached = "SELECT name FROM p_reading_list.sqlite_schema";
     let output = call(&board, &data, &["--json", "query", attached], "");
-    assert_eq!(json(&output)["rows"], serde_json::json!([[0]]));
+    assert_eq!(
+        json(&output)["rows"],
+        serde_json::json!([["board_database"]])
+    );
     let disabled = "SELECT count(*) FROM p_tasks.sqlite_schema";
     let output = call(&board, &data, &["--json", "query", disabled], "");
     assert_eq!(json(&output)["code"], "board::query::invalid");

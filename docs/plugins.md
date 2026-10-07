@@ -171,10 +171,10 @@ replies `{"$type": "board/extract-result/v1", "blobs": […]}` naming the blobs 
 handled; exit and stdout are read as for a call. Naming a blob it was not sent
 is `board::plugin::bad_output`; a blob it does not name is sent again next time.
 
-Board remembers in its index's `extracted` table which blobs each plugin
-version has handled, sends only new ones, and forgets them when the plugin's
-database file is missing. A plugin replaces its rows for a blob it receives
-again.
+Board records in `extracted` which blobs each plugin version has handled, sends
+only new ones, and forgets them when the plugin's database is new. If Board
+cannot read or make the database's id, it sends nothing that run. A plugin
+replaces its rows for a blob it receives again.
 
 Extraction runs in the refresh before `query`, for every enabled plugin, and
 before `call`, for the plugin called. It never runs before `check`, so `check`
@@ -188,13 +188,13 @@ plugin's tables with Board's `entries` view when it runs.
 ## Databases
 
 Board gives each plugin version one SQLite file,
-`plugins/<name>@<version>.sqlite` beside the index, and passes its path in every
-request. The plugin owns everything inside it.
-`board query` attaches it read-only as `p_<name>`, with hyphens turned into
-underscores, from before the first extraction. A new version starts with an
-empty file and extracts again. Deleting any plugin database is always safe. A
-plugin installed through a symlink keeps its rows after its code changes, until
-its version changes or its database is deleted.
+`plugins/<name>@<version>.sqlite` beside the index, and passes its path in
+every request. The plugin owns everything inside it but `board_database`, which
+holds Board's id for the file. `board query` attaches it read-only as
+`p_<name>`, with hyphens turned into underscores, from before the first
+extraction. A new version starts with an empty file, extracts again, and
+deletes the files of older versions. Deleting any plugin database is safe. A
+plugin installed through a symlink keeps its rows when its code changes.
 
 ## Codes
 

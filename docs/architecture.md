@@ -209,10 +209,10 @@ The index is SQLite under `$XDG_CACHE_HOME/board/<root-hash>/` (by default
 root's canonical path. The file is `index-<format>.sqlite`, so builds of
 different index formats keep separate files. A file whose contents report
 another format than its name, or that is corrupt, is deleted and rebuilt. A
-build that creates an index file records the board root beside it in `root`,
-and deletes the cache directory of each other board whose recorded root it can
-see is gone. The index is disposable: deleting it changes no answer, only
-speed. SQLite is bundled, so every platform runs the same one.
+build that creates an index file records the board root beside it in `root`. It
+deletes the index files there more than one format older, and the cache
+directory of each other board whose recorded root it can see is gone. The index
+is disposable: deleting it changes no answer, only speed.
 
 | Table | Holds | Keyed by |
 | --- | --- | --- |

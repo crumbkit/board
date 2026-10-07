@@ -41,7 +41,8 @@ pub(crate) fn database(
 ) -> Result<PluginDatabase, CallError> {
     PluginDatabase::open(
         storage,
-        &format!("{}@{}.sqlite", manifest.name, manifest.version),
+        &manifest.name.to_string(),
+        &manifest.version.to_string(),
     )
     .map_err(|source| CallError::Database {
         plugin: manifest.name.clone(),
@@ -51,8 +52,9 @@ pub(crate) fn database(
 
 impl Board {
     /// Sends `manifest`'s plugin, in `directory`, every current record of its
-    /// types it has not handled, and records what it handled. A database that
-    /// was missing makes it forget what it handled before.
+    /// types it has not handled, and records what it handled. A database the
+    /// index did not record makes it forget what it handled before. When the
+    /// database's id cannot be read or made, it sends nothing this run.
     pub(crate) fn extract_into(
         &self,
         index: &Index,
@@ -61,13 +63,12 @@ impl Board {
         database: &PluginDatabase,
         plugins: &Plugins<'_>,
     ) -> Result<(), CallFailed> {
-        if manifest.extract.is_empty() {
+        // A plugin that extracts nothing needs no id.
+        let Some(id) = database.id().filter(|_| !manifest.extract.is_empty()) else {
             return Ok(());
-        }
+        };
         let (name, version) = (manifest.name.as_str(), manifest.version.as_str());
-        if !database.existed() {
-            index.forget(name, version)?;
-        }
+        index.trust(name, version, id)?;
         let types: Vec<&str> = manifest.extract.iter().map(RecordType::as_str).collect();
         let mut mounted: HashMap<PathBuf, Option<Repository>> = HashMap::new();
         let records: Vec<Record> = index
@@ -100,7 +101,7 @@ impl Board {
             limits: plugins.limits,
         };
         let extraction = extract(manifest, directory, records, &context);
-        index.handled(name, version, &extraction.handled)?;
+        index.handled(name, version, id, &extraction.handled)?;
         match extraction.failure {
             Some(failure) => Err(failure.into()),
             None => Ok(()),

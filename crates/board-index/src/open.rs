@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use crate::schema::{INDEX_VERSION, TABLES};
 
 /// How long to wait for another process's write before working in memory.
-const BUSY_WAIT: Duration = Duration::from_secs(5);
+pub(crate) const BUSY_WAIT: Duration = Duration::from_secs(5);
 
 /// The index file for the board at the canonical path `root`, under the
 /// cache directory `cache`. Its name carries the format, so builds of
@@ -161,9 +161,10 @@ fn directory(file: &Path, reset: bool) -> io::Result<()> {
     Ok(())
 }
 
-/// Records `root` in the cache of the board at `root`, under `cache`, and
-/// deletes the cache of each other board whose recorded root is known to be
-/// gone. A root that cannot be looked at may still exist, so it is kept.
+/// Records `root` in the cache of the board at `root`, under `cache`,
+/// deletes the index files there more than one format older, and deletes the
+/// cache of each other board whose recorded root is known to be gone. A root
+/// that cannot be looked at may still exist, so it is kept.
 #[expect(
     clippy::disallowed_methods,
     reason = "board-index owns the cache's files"
@@ -176,6 +177,17 @@ fn tidy(cache: &Path, root: &Path) -> io::Result<()> {
     recording
         .persist(directory.join("root"))
         .map_err(|error| error.error)?;
+    let mut older = Vec::new();
+    for entry in std::fs::read_dir(&directory)? {
+        let path = entry?.path();
+        let format = path.file_name().and_then(OsStr::to_str).and_then(format);
+        if format.is_some_and(|format| format + 1 < INDEX_VERSION) {
+            older.push(path);
+        }
+    }
+    for path in databases_first(older) {
+        std::fs::remove_file(path)?;
+    }
     for board in std::fs::read_dir(cache.join("board"))? {
         let board = board?.path();
         if board == directory {
@@ -192,6 +204,30 @@ fn tidy(cache: &Path, root: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// The format of the index file or journal named `name`. The file from
+/// before formats were in its name counts as format 0.
+fn format(name: &str) -> Option<u32> {
+    let format = stem(name)?.strip_prefix("index")?;
+    if format.is_empty() {
+        return Some(0);
+    }
+    format.strip_prefix('-')?.parse().ok()
+}
+
+/// The name of an `SQLite` database or journal file without its suffix.
+pub(crate) fn stem(name: &str) -> Option<&str> {
+    [".sqlite", ".sqlite-wal", ".sqlite-shm"]
+        .into_iter()
+        .find_map(|suffix| name.strip_suffix(suffix))
+}
+
+/// `paths` with each `SQLite` database before every journal, so deleting
+/// them in order never leaves a database without its journal.
+pub(crate) fn databases_first(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths.sort_by_key(|path| path.extension() != Some(OsStr::new("sqlite")));
+    paths
 }
 
 enum Prepared {
@@ -249,7 +285,7 @@ fn confirm(transaction: &Transaction<'_>) -> Result<bool, Prepared> {
             |row| row.get(0),
         )
         .ok();
-    if version.as_deref() != Some(INDEX_VERSION) {
+    if version != Some(INDEX_VERSION.to_string()) {
         return Err(Prepared::Foreign);
     }
     Ok(true)

@@ -132,7 +132,8 @@ fn filled_with(index: &mut Index, unreachable: bool) -> usize {
         handled.push(blob(3));
         rows += 1;
     }
-    index.handled("p", "1.0.0", &handled).unwrap();
+    index.trust("p", "1.0.0", "id").unwrap();
+    index.handled("p", "1.0.0", "id", &handled).unwrap();
     rows
 }
 

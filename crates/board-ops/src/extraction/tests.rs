@@ -128,8 +128,8 @@ impl Fixture {
 #[test]
 fn query_sends_each_valid_record_of_the_plugins_types_once() {
     let fixture = Fixture::new(EXTRACTING);
-    let report = fixture.query("SELECT count(*) FROM p_tasks.sqlite_schema");
-    assert_eq!(report.rows, [[json!(0)]]);
+    let report = fixture.query("SELECT name FROM p_tasks.sqlite_schema");
+    assert_eq!(report.rows, [[json!("board_database")]]);
     assert!(report.plugins.is_empty(), "{:?}", report.plugins);
     // A dangling reference depends on the tree, not the record's bytes.
     assert_eq!(fixture.sent(), [["/tasks/a", "/tasks/b"]]);
@@ -183,11 +183,31 @@ fn a_missing_database_makes_board_send_everything_again() {
 }
 
 #[test]
+fn a_database_made_again_empty_at_its_path_makes_board_send_everything_again() {
+    let fixture = Fixture::new(EXTRACTING);
+    fixture.query("SELECT 1");
+    let database = &fixture.extractions()[0]["board"]["database"];
+    let database = PathBuf::from(database.as_str().unwrap());
+    let relative = database.strip_prefix(fixture.cache.workdir()).unwrap();
+    fixture
+        .cache
+        .write(relative.to_str().unwrap(), Item::Deleted);
+    fixture
+        .cache
+        .write(relative.to_str().unwrap(), Item::File(""));
+    fixture.query("SELECT 1");
+    assert_eq!(
+        fixture.sent(),
+        [["/tasks/a", "/tasks/b"], ["/tasks/a", "/tasks/b"]]
+    );
+}
+
+#[test]
 fn a_failed_extraction_is_reported_and_the_query_still_answers() {
     let failing = "#!/bin/sh\ncat > /dev/null\necho broken >&2\nexit 3\n";
     let fixture = Fixture::new(failing);
-    let report = fixture.query("SELECT count(*) FROM p_tasks.sqlite_schema");
-    assert_eq!(report.rows, [[json!(0)]]);
+    let report = fixture.query("SELECT name FROM p_tasks.sqlite_schema");
+    assert_eq!(report.rows, [[json!("board_database")]]);
     assert_eq!(report.plugins.len(), 1);
     assert_eq!(report.plugins[0].plugin.as_str(), "tasks");
     assert_eq!(report.plugins[0].code, "board::plugin::failed");
@@ -256,7 +276,7 @@ fn a_database_that_cannot_be_kept_beside_the_index_is_a_noted_temporary_file() {
     fixture
         .cache
         .write(relative.to_str().unwrap(), Item::File("not a directory"));
-    let report = fixture.query("SELECT count(*) FROM p_tasks.sqlite_schema");
+    let report = fixture.query("SELECT name FROM p_tasks.sqlite_schema");
     assert_eq!(
         report
             .fallbacks
@@ -265,7 +285,7 @@ fn a_database_that_cannot_be_kept_beside_the_index_is_a_noted_temporary_file() {
             .collect::<Vec<_>>(),
         ["tasks"]
     );
-    assert_eq!(report.rows, [[json!(0)]]);
+    assert_eq!(report.rows, [[json!("board_database")]]);
     let fixture = Fixture::new(EXTRACTING);
     assert!(fixture.query("SELECT 1").fallbacks.is_empty());
 }
@@ -319,6 +339,7 @@ fn a_plugin_database_sqlite_cannot_read_is_reported_and_the_query_still_answers(
     );
     let report = fixture.query("SELECT count(*) FROM entries WHERE path = 'tasks/a.json'");
     assert_eq!(report.rows, [[json!(1)]]);
+    assert_eq!(fixture.sent().len(), 1, "nothing is sent again");
     assert_eq!(report.plugins.len(), 1);
     assert_eq!(report.plugins[0].code, "board::plugin::failed");
     assert!(

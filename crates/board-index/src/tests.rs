@@ -89,7 +89,7 @@ fn an_index_that_falls_back_is_empty_and_in_memory_and_leaves_the_file() {
     assert_eq!(index.storage(), &Storage::Memory(Fallback::Busy));
     assert!(!has_fact(&mut index));
     let file = location(cache.path(), Path::new(ROOT));
-    assert_eq!(holds(&file), (1, INDEX_VERSION.to_owned()));
+    assert_eq!(holds(&file), (1, INDEX_VERSION.to_string()));
 }
 
 #[test]
@@ -180,11 +180,11 @@ fn an_index_of_this_format_is_reused_while_another_build_has_it_open() {
     let cache = tempfile::tempdir().unwrap();
     let file = location(cache.path(), Path::new(ROOT));
     let name = file.file_name().unwrap().to_str().unwrap();
-    let (other, _holder) = beside(cache.path(), name, INDEX_VERSION);
+    let (other, _holder) = beside(cache.path(), name, &INDEX_VERSION.to_string());
     let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert_eq!(index.storage(), &Storage::File(file));
     assert!(has_fact(&mut index), "it opened the same file");
-    assert_eq!(holds(&other), (1, INDEX_VERSION.to_owned()));
+    assert_eq!(holds(&other), (1, INDEX_VERSION.to_string()));
 }
 
 #[test]
