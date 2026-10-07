@@ -9,6 +9,7 @@ use rusqlite::Connection;
 use super::*;
 use crate::store::{MountRow, SourceRow};
 
+mod cache;
 mod prune;
 
 const ROOT: &str = "/boards/one";

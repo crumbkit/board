@@ -2,8 +2,10 @@
 //! Every way of opening ends in the same preparation, on a file or in memory.
 
 use std::cell::Cell;
+use std::ffi::OsStr;
 use std::fmt::Write as _;
-use std::io;
+use std::io::{self, Write as _};
+use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -20,11 +22,13 @@ const BUSY_WAIT: Duration = Duration::from_secs(5);
 /// cache directory `cache`. Its name carries the format, so builds of
 /// different formats keep separate files and never delete each other's.
 pub fn location(cache: &Path, root: &Path) -> PathBuf {
+    board(cache, root).join(format!("index-{INDEX_VERSION}.sqlite"))
+}
+
+/// The directory under `cache` that holds the cache of the board at `root`.
+fn board(cache: &Path, root: &Path) -> PathBuf {
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
-    cache
-        .join("board")
-        .join(hex(&digest))
-        .join(format!("index-{INDEX_VERSION}.sqlite"))
+    cache.join("board").join(hex(&digest))
 }
 
 /// `bytes` in lowercase hex.
@@ -79,11 +83,10 @@ impl Index {
         let Some(cache) = cache else {
             return Self::memory(Fallback::NoCache);
         };
-        let file = location(cache, root);
-        match Self::file(&file, false) {
+        match Self::file(cache, root, false) {
             Ok(index) => Ok(index),
             Err(Failure::Busy) => Self::memory(Fallback::Busy),
-            Err(Failure::Unusable) => match Self::file(&file, true) {
+            Err(Failure::Unusable) => match Self::file(cache, root, true) {
                 Ok(index) => Ok(index),
                 Err(Failure::Busy) => Self::memory(Fallback::Busy),
                 Err(Failure::Unusable) => Self::memory(Fallback::Unusable),
@@ -102,16 +105,21 @@ impl Index {
         Ok(())
     }
 
-    fn file(file: &Path, reset: bool) -> Result<Self, Failure> {
-        directory(file, reset).map_err(|_| Failure::Unusable)?;
-        let mut connection = Connection::open(file).map_err(|error| failure(&error))?;
-        prepare(&mut connection).map_err(|error| match error {
+    fn file(cache: &Path, root: &Path, reset: bool) -> Result<Self, Failure> {
+        let file = location(cache, root);
+        directory(&file, reset).map_err(|_| Failure::Unusable)?;
+        let mut connection = Connection::open(&file).map_err(|error| failure(&error))?;
+        let created = prepare(&mut connection).map_err(|error| match error {
             Prepared::Sql(error) => failure(&error),
             Prepared::Foreign => Failure::Unusable,
         })?;
+        if created {
+            // The cache is disposable, so tidying it may fail.
+            let _ = tidy(cache, root);
+        }
         Ok(Self {
             connection,
-            storage: Storage::File(file.to_path_buf()),
+            storage: Storage::File(file),
             seen: Cell::new(None),
         })
     }
@@ -153,6 +161,39 @@ fn directory(file: &Path, reset: bool) -> io::Result<()> {
     Ok(())
 }
 
+/// Records `root` in the cache of the board at `root`, under `cache`, and
+/// deletes the cache of each other board whose recorded root is known to be
+/// gone. A root that cannot be looked at may still exist, so it is kept.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-index owns the cache's files"
+)]
+fn tidy(cache: &Path, root: &Path) -> io::Result<()> {
+    let directory = board(cache, root);
+    // Renamed into place, so another build never reads it half written.
+    let mut recording = tempfile::NamedTempFile::new_in(&directory)?;
+    recording.write_all(root.as_os_str().as_bytes())?;
+    recording
+        .persist(directory.join("root"))
+        .map_err(|error| error.error)?;
+    for board in std::fs::read_dir(cache.join("board"))? {
+        let board = board?.path();
+        if board == directory {
+            continue;
+        }
+        let Ok(recorded) = std::fs::read(board.join("root")) else {
+            continue;
+        };
+        if matches!(
+            Path::new(OsStr::from_bytes(&recorded)).try_exists(),
+            Ok(false)
+        ) {
+            std::fs::remove_dir_all(&board)?;
+        }
+    }
+    Ok(())
+}
+
 enum Prepared {
     Sql(rusqlite::Error),
     Foreign,
@@ -165,9 +206,9 @@ impl From<rusqlite::Error> for Prepared {
 }
 
 /// Confirms the format of a filled database, or takes the write lock and
-/// creates the tables in an empty one. Confirming only reads, so it does not
-/// wait for another process's write.
-fn prepare(connection: &mut Connection) -> Result<(), Prepared> {
+/// creates the tables in an empty one, and says whether it created them.
+/// Confirming only reads, so it does not wait for another process's write.
+fn prepare(connection: &mut Connection) -> Result<bool, Prepared> {
     connection.busy_timeout(BUSY_WAIT)?;
     // Room for every statement the writer runs, so each is compiled once.
     connection.set_prepared_statement_cache_capacity(32);
@@ -179,10 +220,11 @@ fn prepare(connection: &mut Connection) -> Result<(), Prepared> {
     }
     connection.pragma_update(None, "journal_mode", "WAL")?;
     if confirm(&connection.transaction()?)? {
-        return Ok(());
+        return Ok(false);
     }
     let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    if !confirm(&transaction)? {
+    let created = !confirm(&transaction)?;
+    if created {
         transaction.execute_batch(TABLES)?;
         transaction.execute(
             "INSERT INTO state (key, value) VALUES ('index_version', ?1)",
@@ -190,7 +232,7 @@ fn prepare(connection: &mut Connection) -> Result<(), Prepared> {
         )?;
     }
     transaction.commit()?;
-    Ok(())
+    Ok(created)
 }
 
 /// Whether the database holds tables, which must be of this format.
