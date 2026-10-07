@@ -1,6 +1,7 @@
 //! Writing facts. Each is keyed by content alone, so a fact once written is
 //! true wherever its key appears and is never updated.
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
@@ -11,7 +12,7 @@ use board_tree::{MountPoint, TreeRow, TreeRows};
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, TransactionState, params};
 
 use crate::open::{Index, IndexError};
-use crate::schema::RESOLVED;
+use crate::schema::{COUNTED, KEPT, PRUNE, PRUNES, RESOLVED};
 
 /// What parsing one blob in one role found. For a schema, the code includes
 /// whether it compiles.
@@ -91,6 +92,7 @@ pub struct Resolved {
 #[derive(Debug)]
 pub struct Writer<'a> {
     transaction: Transaction<'a>,
+    seen: &'a Cell<Option<i64>>,
 }
 
 /// A row of `sources`, and of `mounts`, as stored.
@@ -113,7 +115,10 @@ impl Index {
 
     fn begin(&mut self, behavior: TransactionBehavior) -> Result<Writer<'_>, IndexError> {
         let transaction = self.connection.transaction_with_behavior(behavior)?;
-        Ok(Writer { transaction })
+        Ok(Writer {
+            transaction,
+            seen: &self.seen,
+        })
     }
 }
 
@@ -488,6 +493,61 @@ impl Writer<'_> {
         Ok((sources, mounts))
     }
 
+    /// Prunes when the index has at least doubled in pages since the last
+    /// prune, so pruning costs work in proportion to growth. A new index
+    /// records its size instead, so it does not prune what it just built.
+    /// Returns the rows it deleted.
+    pub fn prune_if_doubled(&self) -> Result<usize, IndexError> {
+        let recorded: Option<String> = self
+            .transaction
+            .prepare_cached("SELECT value FROM main.state WHERE key = 'pruned_pages'")?
+            .query_row([], |row| row.get(0))
+            .optional()?;
+        let pages = self.pages()?;
+        match recorded.and_then(|value| value.parse::<i64>().ok()) {
+            Some(recorded) if pages < 2 * recorded => Ok(0),
+            Some(_) => self.prune(),
+            None => {
+                self.record(pages)?;
+                Ok(0)
+            }
+        }
+    }
+
+    /// Deletes every fact that no source's tree and no working-tree file
+    /// reaches, gives the freed pages back to the file, and records its size.
+    /// Returns the rows it deleted.
+    pub fn prune(&self) -> Result<usize, IndexError> {
+        self.transaction.execute_batch(KEPT)?;
+        let mut deleted = 0;
+        for statement in PRUNE {
+            deleted += self.transaction.execute(statement, [])?;
+        }
+        self.transaction.execute(COUNTED, [])?;
+        // Each step frees one page, so it runs to the end.
+        let mut vacuum = self.transaction.prepare("PRAGMA main.incremental_vacuum")?;
+        let mut freed = vacuum.query([])?;
+        while freed.next()?.is_some() {}
+        self.record(self.pages()?)?;
+        Ok(deleted)
+    }
+
+    /// Records `pages` as the index's size after the last prune.
+    fn record(&self, pages: i64) -> Result<(), IndexError> {
+        self.transaction.execute(
+            "INSERT OR REPLACE INTO main.state (key, value) VALUES ('pruned_pages', ?1)",
+            [pages.to_string()],
+        )?;
+        Ok(())
+    }
+
+    /// The index's size in pages.
+    fn pages(&self) -> Result<i64, IndexError> {
+        Ok(self
+            .transaction
+            .query_row("PRAGMA main.page_count", [], |row| row.get(0))?)
+    }
+
     /// Whether this transaction has written, and so holds the write lock.
     pub fn wrote(&self) -> Result<bool, IndexError> {
         Ok(self.transaction.transaction_state(Some("main"))? == TransactionState::Write)
@@ -524,8 +584,12 @@ impl Writer<'_> {
         Ok(files)
     }
 
-    /// Replaces what this run decided, which the `entries` view shows.
+    /// Replaces what this run decided, which the `entries` view shows, and
+    /// notes the prune count the views are built under.
     pub fn resolve(&self, entries: &[Resolved]) -> Result<(), IndexError> {
+        self.seen.set(Some(
+            self.transaction.query_row(PRUNES, [], |row| row.get(0))?,
+        ));
         self.transaction.execute_batch(RESOLVED)?;
         let mut statement = self.transaction.prepare_cached(
             "INSERT INTO temp.resolved

@@ -29,6 +29,8 @@ pub struct Refreshed {
     pub validated: usize,
     /// Whether it took the index's write lock.
     pub wrote: bool,
+    /// Rows a prune deleted.
+    pub pruned: usize,
 }
 
 /// Parsed values from this refresh, so validation need not read them again.

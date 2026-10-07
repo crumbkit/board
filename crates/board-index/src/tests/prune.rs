@@ -1,0 +1,320 @@
+//! Pruning: what a prune keeps and deletes, and when a writer prunes.
+
+use board_model::Change;
+use board_tree::{TreeRow, TreeRows};
+use rusqlite::OptionalExtension as _;
+
+use super::*;
+
+const TREE_MODE: u32 = 0o40_000;
+const FILE_MODE: u32 = 0o100_644;
+
+fn row(name: &str, mode: u32, object: ObjectId) -> TreeRow {
+    TreeRow {
+        name: name.into(),
+        mode,
+        object,
+        size: None,
+        segment: Some(name.into()),
+        code: None,
+    }
+}
+
+fn valid(target: &str) -> ValidationFact {
+    ValidationFact::Valid(vec![RefFact {
+        pointer: "/see".into(),
+        target: target.parse().unwrap(),
+        accepts: None,
+    }])
+}
+
+/// Stores facts about a source whose root tree is `blob(10)` with a subtree
+/// `blob(11)`, about a working-tree file of blob 4, and, when `unreachable`,
+/// about a tree and blobs that nothing reaches: tree 12 with blob 3, and
+/// blob 5. Returns how many rows the unreachable facts add.
+fn stored(writer: &Writer<'_>, unreachable: bool) -> usize {
+    let repository = Path::new(ROOT);
+    writer
+        .set_mounts(&[(Source::WorkingTree, Some(blob(10)), repository)], &[])
+        .unwrap();
+    let trees = [
+        (
+            10,
+            vec![
+                row("sub", TREE_MODE, blob(11)),
+                row("a.json", FILE_MODE, blob(1)),
+            ],
+        ),
+        (11, vec![row("b.json", FILE_MODE, blob(2))]),
+    ];
+    for (id, rows) in trees {
+        writer.put_tree(&TreeRows { id: blob(id), rows }).unwrap();
+    }
+    writer
+        .put_worktree(
+            "w.json",
+            &WorktreeRow {
+                logical: None,
+                code: None,
+                blob: Some(blob(4)),
+                stat: None,
+            },
+        )
+        .unwrap();
+    for reached in [1, 2, 4] {
+        writer
+            .put_blob(blob(reached), Role::Json, &record())
+            .unwrap();
+        writer
+            .put_body(blob(reached), &serde_json::json!({}))
+            .unwrap();
+    }
+    writer
+        .put_validation(blob(1), blob(2), &valid("/a"))
+        .unwrap();
+    writer
+        .put_validation(blob(4), blob(2), &valid("/b"))
+        .unwrap();
+    if !unreachable {
+        return 0;
+    }
+    writer
+        .put_tree(&TreeRows {
+            id: blob(12),
+            rows: vec![row("c.json", FILE_MODE, blob(3))],
+        })
+        .unwrap();
+    for gone in [3, 5] {
+        writer.put_blob(blob(gone), Role::Json, &record()).unwrap();
+        writer.put_body(blob(gone), &serde_json::json!({})).unwrap();
+    }
+    // A reached record against a schema nothing reaches, and the reverse.
+    writer
+        .put_validation(blob(1), blob(5), &valid("/c"))
+        .unwrap();
+    writer
+        .put_validation(blob(3), blob(2), &valid("/d"))
+        .unwrap();
+    // One tree row, two blobs and two bodies, two validations and their refs.
+    1 + 2 + 2 + 2 + 2
+}
+
+/// The rows of every table a prune may delete from.
+fn counts(index: &Index) -> Vec<(String, i64)> {
+    [
+        "trees",
+        "blobs",
+        "bodies",
+        "validations",
+        "refs",
+        "extracted",
+    ]
+    .into_iter()
+    .map(|table| {
+        let sql = format!("SELECT count(*) FROM main.{table}");
+        let count = index
+            .connection
+            .query_row(&sql, [], |row| row.get(0))
+            .unwrap();
+        (table.to_owned(), count)
+    })
+    .collect()
+}
+
+/// An index holding the facts `stored` gives, and a plugin that handled
+/// blobs 1 and 4, and 3 when `unreachable`. Returns the rows nothing reaches.
+fn filled_with(index: &mut Index, unreachable: bool) -> usize {
+    let writer = index.write().unwrap();
+    let mut rows = stored(&writer, unreachable);
+    writer.commit().unwrap();
+    let mut handled = vec![blob(1), blob(4)];
+    if unreachable {
+        handled.push(blob(3));
+        rows += 1;
+    }
+    index.handled("p", "1.0.0", &handled).unwrap();
+    rows
+}
+
+fn prune(index: &mut Index) -> usize {
+    let writer = index.write().unwrap();
+    let pruned = writer.prune().unwrap();
+    writer.commit().unwrap();
+    pruned
+}
+
+#[test]
+fn a_prune_deletes_the_facts_no_source_or_working_tree_file_reaches() {
+    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    let unreachable = filled_with(&mut index, true);
+    let mut reached = Index::open(None, Path::new(ROOT)).unwrap();
+    filled_with(&mut reached, false);
+    assert_eq!(prune(&mut index), unreachable);
+    assert_eq!(counts(&index), counts(&reached));
+}
+
+#[test]
+fn a_prune_keeps_every_fact_a_source_or_working_tree_file_reaches() {
+    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    filled_with(&mut index, false);
+    let before = counts(&index);
+    assert_eq!(prune(&mut index), 0);
+    assert_eq!(counts(&index), before);
+    assert!(counts(&index).iter().all(|(_, count)| *count > 0));
+}
+
+fn pages(index: &Index) -> i64 {
+    index
+        .connection
+        .query_row("PRAGMA page_count", [], |row| row.get(0))
+        .unwrap()
+}
+
+/// Records `pages` as the index's size after its last prune.
+fn pruned_at(index: &Index, pages: i64) {
+    index
+        .connection
+        .execute(
+            "INSERT OR REPLACE INTO state (key, value) VALUES ('pruned_pages', ?1)",
+            [pages.to_string()],
+        )
+        .unwrap();
+}
+
+/// The value of `key` in `state`.
+fn state(index: &Index, key: &str) -> Option<String> {
+    index
+        .connection
+        .query_row("SELECT value FROM state WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
+        .optional()
+        .unwrap()
+}
+
+fn prune_if_doubled(index: &mut Index) -> usize {
+    let writer = index.write().unwrap();
+    let pruned = writer.prune_if_doubled().unwrap();
+    writer.commit().unwrap();
+    pruned
+}
+
+#[test]
+fn a_writer_prunes_once_the_index_has_doubled_since_the_last_prune() {
+    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    let unreachable = filled_with(&mut index, true);
+    pruned_at(&index, pages(&index) / 2);
+    assert_eq!(prune_if_doubled(&mut index), unreachable);
+    assert_eq!(state(&index, "prunes").as_deref(), Some("1"));
+    assert_eq!(
+        state(&index, "pruned_pages"),
+        Some(pages(&index).to_string())
+    );
+}
+
+#[test]
+fn a_new_index_records_its_size_at_its_first_writer_without_pruning() {
+    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    filled_with(&mut index, true);
+    let before = counts(&index);
+    assert_eq!(state(&index, "pruned_pages"), None);
+    assert_eq!(prune_if_doubled(&mut index), 0);
+    assert_eq!(counts(&index), before);
+    assert_eq!(state(&index, "prunes"), None, "no prune ran");
+    assert_eq!(
+        state(&index, "pruned_pages"),
+        Some(pages(&index).to_string())
+    );
+}
+
+#[test]
+fn a_writer_does_not_prune_before_the_index_has_doubled() {
+    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    filled_with(&mut index, true);
+    let before = counts(&index);
+    pruned_at(&index, pages(&index) / 2 + 1);
+    assert_eq!(prune_if_doubled(&mut index), 0);
+    assert_eq!(counts(&index), before);
+}
+
+#[test]
+fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let writer = index.write().unwrap();
+    let large = serde_json::json!({ "text": "x".repeat(100_000) });
+    writer.put_body(blob(9), &large).unwrap();
+    writer.commit().unwrap();
+    let full = pages(&index);
+    prune(&mut index);
+    let free: i64 = index
+        .connection
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(free, 0);
+    assert!(
+        pages(&index) < full / 2,
+        "{} of {full} pages",
+        pages(&index)
+    );
+}
+
+/// Builds the views of one handle on an index file over a record nothing
+/// reaches, lets a second handle on the file write, pruning when `prunes`,
+/// then queries the views through the first.
+fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError> {
+    let cache = tempfile::tempdir().unwrap();
+    let mut first = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    filled_with(&mut first, true);
+    let writer = first.write().unwrap();
+    writer
+        .resolve(&[Resolved {
+            source: Source::WorkingTree,
+            path: "c.json".into(),
+            logical: None,
+            blob: Some(blob(3)),
+            size: None,
+            role: Some(Role::Json),
+            schema: Some(blob(2)),
+            kind: Kind::Record,
+            code: None,
+            change: Change::Uncommitted,
+        }])
+        .unwrap();
+    writer.commit().unwrap();
+    let mut second = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let writer = second.write().unwrap();
+    if prunes {
+        writer.prune().unwrap();
+    } else {
+        writer.put_blob(blob(6), Role::Json, &record()).unwrap();
+    }
+    writer.commit().unwrap();
+    first.query("SELECT type, status FROM entries", 10)
+}
+
+#[test]
+fn a_query_after_another_process_prunes_is_refused_as_pruned() {
+    let refused = queried_after_another_handle_writes(true).unwrap_err();
+    assert!(matches!(refused, IndexError::Pruned), "{refused:?}");
+}
+
+#[test]
+fn a_query_after_another_process_writes_without_pruning_reads_the_views() {
+    let rows = queried_after_another_handle_writes(false).unwrap();
+    assert_eq!(
+        rows.rows,
+        [[serde_json::json!("test/task/v1"), serde_json::json!("ok")]]
+    );
+}
+
+#[test]
+fn a_new_index_vacuums_incrementally() {
+    let cache = tempfile::tempdir().unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let mode: i64 = index
+        .connection
+        .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(mode, 2, "incremental");
+}

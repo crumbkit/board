@@ -9,6 +9,8 @@ use rusqlite::Connection;
 use super::*;
 use crate::store::{MountRow, SourceRow};
 
+mod prune;
+
 const ROOT: &str = "/boards/one";
 
 fn blob(byte: u8) -> ObjectId {

@@ -9,7 +9,11 @@ use serde_json::json;
 
 use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
-use crate::{Plugins, QueryReport};
+use crate::{Board, Plugins, QueryReport};
+use board_index::{Index, IndexError};
+
+/// Rows as a query returns them.
+type Rows = Vec<Vec<serde_json::Value>>;
 
 /// The names a refusal of `sql` lists, or `None` when `sql` is read.
 fn known(sql: &str) -> Option<crate::Known> {
@@ -245,6 +249,147 @@ fn a_plugin_shipping_an_unusable_schema_fails_the_query_as_a_bad_manifest_and_a_
     );
     let report = open(&board).query("SELECT 1", 10, None, &plugins).unwrap();
     assert!(report.plugins.is_empty(), "{:?}", report.plugins);
+}
+
+/// Writes an empty file at `path`.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test signals a plugin it holds waiting"
+)]
+fn signal(path: &Path) {
+    std::fs::write(path, b"").unwrap();
+}
+
+/// Signals the file it holds when dropped, so a test that fails part way
+/// never leaves its plugin waiting.
+struct Resume<'a>(&'a Path);
+
+impl Drop for Resume<'_> {
+    fn drop(&mut self) {
+        signal(self.0);
+    }
+}
+
+/// Queries a board through an index file while its plugin, each time it
+/// extracts, waits for a second handle on the file to check a changed task
+/// and then, the first `prunes` times, to prune. Returns the rows queried or
+/// the error's code and message, how many times the plugin extracted, and the rows a cold index
+/// gives before and after the changes.
+fn queried_while_another_handle_prunes(
+    prunes: usize,
+) -> (Result<Rows, (Code, String)>, usize, [Rows; 2]) {
+    let scenario = board();
+    scenario
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#),
+        )
+        .write("tasks/a.json", Item::File(&task("")));
+    let signals = tempfile::tempdir().unwrap();
+    let installed = tasks_plugin();
+    installed.write(
+        "tasks/run",
+        Item::Executable(&format!(
+            r#"#!/bin/sh
+blobs=$(sed -n 's/^ *"blob": "\([0-9a-f]*\)",*$/"\1"/p' | paste -s -d, -)
+n=1
+while [ -e '{signals}/started-'$n ]; do n=$((n + 1)); done
+: > '{signals}/started-'$n
+while [ ! -e '{signals}/resume-'$n ]; do sleep 0.01; done
+printf '{{"$type": "board/extract-result/v1", "blobs": [%s]}}' "$blobs"
+"#,
+            signals = signals.path().display(),
+        )),
+    );
+    let plugins = Plugins {
+        directory: Some(installed.workdir()),
+        environment: board_plugin::Environment {
+            path: Some("/usr/bin:/bin".into()),
+            ..board_plugin::Environment::default()
+        },
+        limits: board_plugin::Limits::default(),
+    };
+    let root = scenario.workdir().to_path_buf();
+    let sql = "SELECT path, blob, type, status FROM entries ORDER BY path";
+    // A cold index without the plugin answers the same rows.
+    let cold = || {
+        let board = Board::open(&root, None).unwrap();
+        board
+            .query(sql, 100, None, &Plugins::default())
+            .unwrap()
+            .rows
+    };
+    let before = cold();
+    let cache = tempfile::tempdir().unwrap();
+    let mut runs = 0;
+    let warm = std::thread::scope(|scope| {
+        let warm = scope.spawn(|| {
+            let board = Board::open(&root, None).unwrap();
+            board
+                .query(sql, 100, Some(cache.path()), &plugins)
+                .map(|report| report.rows)
+                .map_err(|error| (error.code(), error.to_string()))
+        });
+        while !warm.is_finished() {
+            let started = signals.path().join(format!("started-{}", runs + 1));
+            if !started.exists() {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                continue;
+            }
+            runs += 1;
+            let resume = signals.path().join(format!("resume-{runs}"));
+            let resumed = Resume(&resume);
+            if runs <= prunes.max(1) {
+                let title = format!(r#"{{"$type": "lr/task/v1", "title": "u{runs}"}}"#);
+                scenario.write("tasks/a.json", Item::File(&title));
+                let board = open(&scenario);
+                let mut second =
+                    Index::open(Some(cache.path()), board.repository().path()).unwrap();
+                board.check_in(&mut second, None).unwrap();
+                if runs <= prunes {
+                    let writer = second.write().unwrap();
+                    writer.prune().unwrap();
+                    writer.commit().unwrap();
+                }
+            }
+            drop(resumed);
+        }
+        warm.join().unwrap()
+    });
+    (warm, runs, [before, cold()])
+}
+
+#[test]
+fn a_query_another_process_prunes_under_runs_again_and_answers_as_a_cold_index() {
+    let (warm, runs, [before, after]) = queried_while_another_handle_prunes(1);
+    assert_ne!(before, after);
+    assert_eq!(warm.unwrap(), after);
+    assert_eq!(runs, 2);
+}
+
+#[test]
+fn a_query_another_process_writes_under_without_pruning_answers_from_its_own_run() {
+    let (warm, runs, [before, after]) = queried_while_another_handle_prunes(0);
+    assert_ne!(before, after);
+    assert_eq!(warm.unwrap(), before);
+    assert_eq!(runs, 1);
+}
+
+#[test]
+fn a_query_pruned_under_three_times_is_refused_as_pruned() {
+    let (warm, runs, _) = queried_while_another_handle_prunes(3);
+    assert_eq!(
+        warm.unwrap_err(),
+        (Code::IndexFailed, IndexError::Pruned.to_string())
+    );
+    assert_eq!(runs, 3);
+}
+
+#[test]
+fn a_query_pruned_under_twice_answers_on_its_third_run() {
+    let (warm, runs, [_, after]) = queried_while_another_handle_prunes(2);
+    assert_eq!(warm.unwrap(), after);
+    assert_eq!(runs, 3);
 }
 
 /// What `sql` answers through the index under `cache`, less whether that

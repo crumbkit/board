@@ -109,7 +109,8 @@ fn viewed(index: &Index) -> Vec<Checked> {
 }
 
 /// Every table and view an agent can name, read whole. `state` leaves out
-/// when the last refresh began, which is a time.
+/// when the last refresh began, which is a time, and the index's size after
+/// its last prune.
 const EVERY_TABLE: [&str; 12] = [
     "SELECT * FROM entries ORDER BY source, path",
     "SELECT * FROM records ORDER BY source, path",
@@ -121,7 +122,7 @@ const EVERY_TABLE: [&str; 12] = [
     "SELECT * FROM worktree ORDER BY path",
     "SELECT * FROM sources ORDER BY source",
     "SELECT * FROM mounts ORDER BY source, path",
-    "SELECT * FROM state WHERE key <> 'refreshed_ns' ORDER BY key",
+    "SELECT * FROM state WHERE key NOT IN ('refreshed_ns', 'pruned_pages', 'prunes') ORDER BY key",
     "SELECT * FROM extracted ORDER BY plugin, version, blob",
 ];
 
@@ -309,6 +310,116 @@ proptest! {
             prop_assert_eq!(warm.query(sql, 10_000).unwrap(), cold.query(sql, 10_000).unwrap(), "{}", sql);
         }
     }
+}
+
+/// Deletes every fact the current tree does not reach.
+fn prune(index: &mut Index) -> usize {
+    let writer = index.write().unwrap();
+    let pruned = writer.prune().unwrap();
+    writer.commit().unwrap();
+    pruned
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    #[test]
+    fn a_pruned_index_checks_as_a_cold_one_after_the_tree_goes_back(
+        before in generated(),
+        after in generated(),
+        committed: bool,
+    ) {
+        let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, &before, committed);
+        let cache = tempfile::tempdir().unwrap();
+        let root = open(generated.scenario()).repository().path().to_path_buf();
+        let mut warm = Index::open(Some(cache.path()), &root).unwrap();
+        check_in(generated.scenario(), &mut warm);
+        extract_everything(&warm);
+        generated.write(&after);
+        check_in(generated.scenario(), &mut warm);
+        extract_everything(&warm);
+        prune(&mut warm);
+        generated.write(&before);
+
+        let pruned = check_in(generated.scenario(), &mut warm);
+        extract_everything(&warm);
+        let mut cold = Index::open(None, &root).unwrap();
+        let fresh = check_in(generated.scenario(), &mut cold);
+        extract_everything(&cold);
+        prop_assert_eq!(&pruned.entries, &fresh.entries);
+        prop_assert_eq!(viewed(&warm), sorted(pruned.entries));
+        for sql in EVERY_TABLE {
+            prop_assert_eq!(warm.query(sql, 10_000).unwrap(), cold.query(sql, 10_000).unwrap(), "{}", sql);
+        }
+        prune(&mut warm);
+        let again = check_in(generated.scenario(), &mut warm);
+        prop_assert_eq!(again.work, Refreshed::default(), "a prune keeps what the tree reaches");
+        prop_assert_eq!(&again.entries, &fresh.entries);
+        for sql in EVERY_TABLE {
+            prop_assert_eq!(warm.query(sql, 10_000).unwrap(), cold.query(sql, 10_000).unwrap(), "{}", sql);
+        }
+    }
+}
+
+/// A task whose title is `bytes` long, so that its facts fill many pages.
+fn large_task(letter: char, bytes: usize) -> String {
+    format!(
+        r#"{{"$type": "lr/task/v1", "title": "{}"}}"#,
+        letter.to_string().repeat(bytes)
+    )
+}
+
+/// How many prunes `index` has run.
+fn prunes(index: &Index) -> i64 {
+    let sql =
+        "SELECT CAST(coalesce(max(value), 0) AS INTEGER) FROM main.state WHERE key = 'prunes'";
+    index.query(sql, 1).unwrap().rows[0][0].as_i64().unwrap()
+}
+
+/// Checks a board holding a large task, then again after the task is
+/// replaced by `replacement`. Returns the rows and the prunes the second
+/// check ran, and how many blobs the index then holds beyond those a cold
+/// index holds.
+fn replaced_by(replacement: &str) -> (usize, i64, i64) {
+    let scenario = board();
+    scenario.write("tasks/a.json", Item::File(&large_task('a', 200_000)));
+    let cache = tempfile::tempdir().unwrap();
+    let root = open(&scenario).repository().path().to_path_buf();
+    let mut warm = Index::open(Some(cache.path()), &root).unwrap();
+    let first = check_in(&scenario, &mut warm);
+    assert_eq!(first.work.pruned, 0);
+    assert_eq!(prunes(&warm), 0, "a new index records its size instead");
+    scenario.write("tasks/a.json", Item::File(replacement));
+    let second = check_in(&scenario, &mut warm);
+    assert!(second.work.wrote);
+    let mut cold = Index::open(None, &root).unwrap();
+    check_in(&scenario, &mut cold);
+    let blobs = |index: &Index| {
+        let rows = index.query("SELECT count(*) FROM main.blobs", 1).unwrap();
+        rows.rows[0][0].as_i64().unwrap()
+    };
+    (
+        second.work.pruned,
+        prunes(&warm),
+        blobs(&warm) - blobs(&cold),
+    )
+}
+
+#[test]
+fn a_check_that_writes_once_the_index_has_doubled_prunes_what_the_tree_left() {
+    let (deleted, prunes, extra) = replaced_by(&large_task('b', 400_000));
+    // The first task's blob, body and validation.
+    assert_eq!(deleted, 3);
+    assert_eq!(prunes, 1);
+    assert_eq!(extra, 0);
+}
+
+#[test]
+fn a_check_that_writes_before_the_index_has_doubled_keeps_what_the_tree_left() {
+    let (deleted, prunes, extra) = replaced_by(&large_task('b', 10));
+    assert_eq!(deleted, 0);
+    assert_eq!(prunes, 0);
+    assert_eq!(extra, 1, "the first task's blob is still cached");
 }
 
 #[test]

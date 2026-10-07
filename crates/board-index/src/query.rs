@@ -8,6 +8,7 @@ use rusqlite::types::ValueRef;
 use serde_json::Value;
 
 use crate::open::{Index, IndexError, hex};
+use crate::schema::PRUNES;
 
 /// How long one query may run before it is stopped. It bounds how long an
 /// agent waits for an answer.
@@ -27,6 +28,8 @@ pub struct Rows {
 
 impl Index {
     /// Runs one statement that cannot write, returning at most `limit` rows.
+    /// It refuses with [`IndexError::Pruned`] when another process has pruned
+    /// since this connection built its views.
     pub fn query(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
         self.connection.pragma_update(None, "query_only", true)?;
         let started = Instant::now();
@@ -34,11 +37,22 @@ impl Index {
             STEPS_PER_CHECK,
             Some(move || started.elapsed() > QUERY_TIME),
         )?;
-        let result = self.read(sql, limit).map_err(blame);
+        let result = self.snapshot(sql, limit);
         self.connection
             .progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
         self.connection.pragma_update(None, "query_only", false)?;
         result
+    }
+
+    /// Reads the prune count and runs `sql` in one transaction, so no prune
+    /// can come between them.
+    fn snapshot(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
+        let _snapshot = self.connection.unchecked_transaction()?;
+        let prunes: i64 = self.connection.query_row(PRUNES, [], |row| row.get(0))?;
+        if self.seen.get().is_some_and(|seen| seen != prunes) {
+            return Err(IndexError::Pruned);
+        }
+        self.read(sql, limit).map_err(blame)
     }
 
     fn read(&self, sql: &str, limit: usize) -> Result<Rows, rusqlite::Error> {

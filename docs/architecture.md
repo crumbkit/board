@@ -223,7 +223,7 @@ bundled, so every platform runs the same one.
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
-| `state` | index format and when the last refresh that hashed or recorded a file began | key |
+| `state` | index format, and when the last refresh that hashed or recorded a file began | key |
 
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
@@ -239,14 +239,18 @@ Each command refreshes the index first, doing work in proportion to what
 changed: it hashes only working-tree files whose stat changed, as git does, and
 parses and validates only blobs it has not seen. A file is hashed again if its
 mtime falls in or after the second in which the last refresh that hashed or
-recorded a file began. A refresh reads in a transaction that takes the write
-lock at its first write. When the refresh hashed nothing and finds every entry,
-source, tree and mount as stored, it writes nothing, so it neither waits for
-nor blocks another process. If another process holds the lock or wrote first,
-the refresh runs again, waiting up to 5 seconds for the lock. If the wait runs
-out, it runs in an index in memory, as opening does when another process holds
-the file. `check`, `refs` and `query` use the index; `get` and `ls` resolve
-directly.
+recorded a file began. A refresh that finds nothing changed writes nothing, so
+it neither waits for nor blocks another process. If another process holds the
+lock or wrote first, the refresh runs again, waiting up to 5 seconds for the
+lock. If the wait runs out, it runs in an index in memory. `check`, `refs` and
+`query` use the index; `get` and `ls` resolve directly.
+
+Once the index has doubled in pages since its last prune or first refresh, a
+refresh that writes also prunes: it deletes the fact rows that neither the
+working tree, `HEAD`'s tree nor a mounted commit reaches, and gives the freed
+pages back. A query that another process prunes under runs again, at most
+three times. Under a concurrent prune, one `board call` can skip a record
+whose file changed after its refresh; the next call sends it.
 
 `board query '<sql>'` runs one read-only statement against the index. Each
 enabled plugin's database is attached read-only as `p_<name>`. Rows return as

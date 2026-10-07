@@ -2,7 +2,7 @@
 //! to them is a new index format.
 
 /// The index format. An index of any other format is deleted and rebuilt.
-pub const INDEX_VERSION: &str = "9";
+pub const INDEX_VERSION: &str = "10";
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -83,12 +83,52 @@ CREATE TABLE extracted (
 ) WITHOUT ROWID;
 ";
 
+/// Deletes the facts nothing current reaches: each tree beneath a source's
+/// root, each object those trees hold, and each working-tree blob. A
+/// validation and its references go unless both blobs are reached.
+pub(crate) const PRUNE: [&str; 6] = [
+    "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
+    "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
+    "DELETE FROM main.bodies WHERE blob NOT IN temp.kept",
+    "DELETE FROM main.validations
+     WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
+    "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
+    "DELETE FROM main.extracted WHERE blob NOT IN temp.kept",
+];
+
+/// Counts a prune in `state`, so a run can tell when another process has
+/// pruned since it built its views.
+pub(crate) const COUNTED: &str = "INSERT INTO main.state (key, value) VALUES ('prunes', 1)
+     ON CONFLICT (key) DO UPDATE SET value = value + 1";
+
+/// How many prunes the index has counted.
+pub(crate) const PRUNES: &str =
+    "SELECT CAST(coalesce(max(value), 0) AS INTEGER) FROM main.state WHERE key = 'prunes'";
+
+/// Fills `temp.kept` with every object a source or the working tree
+/// reaches, for [`PRUNE`].
+pub(crate) const KEPT: &str = "
+CREATE TEMP TABLE IF NOT EXISTS kept (object TEXT PRIMARY KEY) WITHOUT ROWID;
+DELETE FROM temp.kept;
+WITH RECURSIVE reached (tree) AS (
+    SELECT tree FROM main.sources WHERE tree IS NOT NULL
+    UNION
+    SELECT t.object FROM main.trees AS t JOIN reached ON t.tree = reached.tree
+    WHERE t.mode = 16384
+)
+INSERT INTO temp.kept
+SELECT tree FROM reached
+UNION SELECT object FROM main.trees WHERE tree IN (SELECT tree FROM reached)
+UNION SELECT blob FROM main.worktree WHERE blob IS NOT NULL;
+";
+
 /// What one run decides about each entry, the view agents query, and each
 /// fact table filtered to what the current entries reach. All live on the
 /// connection that made them, so nothing decided per run is stored. An
 /// unqualified name finds a temporary view before a table, so a query sees
 /// the same rows warm as cold; `main.<table>` is the whole cache, which
-/// keeps facts about content no longer in the tree so branches share them.
+/// keeps facts about content no longer in the tree so branches share them,
+/// until a prune deletes what nothing current reaches.
 pub(crate) const RESOLVED: &str = "
 CREATE TEMP TABLE IF NOT EXISTS resolved (
     source TEXT NOT NULL,

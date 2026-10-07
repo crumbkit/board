@@ -18,6 +18,9 @@ pub const DEFAULT_LIMIT: usize = 100;
 /// The most rows `query` returns at all, and the largest `--limit`.
 pub const MAX_LIMIT: usize = 10_000;
 
+/// How many times a query runs while other processes prune under it.
+const TRIES: usize = 3;
+
 /// What one statement returned.
 #[derive(Clone, Debug, PartialEq)]
 pub struct QueryReport {
@@ -47,8 +50,28 @@ impl Board {
     /// Refreshes the index kept under `cache` and decides every entry, as an
     /// unscoped check does, extracts for each enabled plugin and attaches its
     /// database as `p_<name>`, then runs `sql`, returning at most `limit`
-    /// rows. A plugin that fails is reported and the query still runs.
+    /// rows. A plugin that fails is reported and the query still runs. When
+    /// another process prunes what the views show before `sql` runs, it all
+    /// runs again, three times in all.
     pub fn query(
+        &self,
+        sql: &str,
+        limit: usize,
+        cache: Option<&Path>,
+        plugins: &Plugins<'_>,
+    ) -> Result<QueryReport, QueryError> {
+        let mut tries = 1;
+        loop {
+            match self.query_once(sql, limit, cache, plugins) {
+                Err(QueryError::Index {
+                    source: IndexError::Pruned,
+                }) if tries < TRIES => tries += 1,
+                result => return result,
+            }
+        }
+    }
+
+    fn query_once(
         &self,
         sql: &str,
         limit: usize,

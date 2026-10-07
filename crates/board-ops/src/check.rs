@@ -247,6 +247,10 @@ impl Board {
             }
         }
         crate::mounts::record(&mounts, writer, self.repository())?;
+        // Every source is now stored, so a prune keeps what this run reached.
+        if writer.wrote()? {
+            work.pruned = writer.prune_if_doubled()?;
+        }
         if view == View::Build {
             writer.resolve(&decided.resolved)?;
         }

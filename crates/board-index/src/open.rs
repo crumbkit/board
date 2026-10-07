@@ -1,6 +1,7 @@
 //! Where the index lives and how it opens (docs/architecture.md, Index).
 //! Every way of opening ends in the same preparation, on a file or in memory.
 
+use std::cell::Cell;
 use std::fmt::Write as _;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -40,6 +41,8 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 pub struct Index {
     pub(crate) connection: Connection,
     storage: Storage,
+    /// The prune count when this run last built its views.
+    pub(crate) seen: Cell<Option<i64>>,
 }
 
 /// Where an index is kept.
@@ -109,6 +112,7 @@ impl Index {
         Ok(Self {
             connection,
             storage: Storage::File(file.to_path_buf()),
+            seen: Cell::new(None),
         })
     }
 
@@ -121,6 +125,7 @@ impl Index {
         Ok(Self {
             connection,
             storage: Storage::Memory(fallback),
+            seen: Cell::new(None),
         })
     }
 }
@@ -166,6 +171,12 @@ fn prepare(connection: &mut Connection) -> Result<(), Prepared> {
     connection.busy_timeout(BUSY_WAIT)?;
     // Room for every statement the writer runs, so each is compiled once.
     connection.set_prepared_statement_cache_capacity(32);
+    // So a prune can give pages back to the file. It takes effect only before
+    // the file has pages, and setting it on a filled one waits to write.
+    let pages: i64 = connection.query_row("PRAGMA page_count", [], |row| row.get(0))?;
+    if pages == 0 {
+        connection.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
+    }
     connection.pragma_update(None, "journal_mode", "WAL")?;
     if confirm(&connection.transaction()?)? {
         return Ok(());
@@ -227,12 +238,18 @@ pub enum IndexError {
     },
     #[error("the query ran longer than {:?}", crate::query::QUERY_TIME)]
     Timeout,
+    /// Another process pruned facts this run's views show, so the run must
+    /// build them again.
+    #[error("another process pruned the index after this run built its views")]
+    Pruned,
 }
 
 impl IndexError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Sql { .. } | Self::Busy { .. } | Self::Foreign => Code::IndexFailed,
+            Self::Sql { .. } | Self::Busy { .. } | Self::Foreign | Self::Pruned => {
+                Code::IndexFailed
+            }
             Self::Query { .. } => Code::QueryInvalid,
             Self::Timeout => Code::QueryTimeout,
         }
