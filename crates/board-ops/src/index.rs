@@ -4,15 +4,16 @@
 //! validated again only against a schema blob it has not met.
 //! A refresh that finds nothing changed writes nothing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_index::{BlobFact, Index, IndexError, RefFact, ValidationFact, WorktreeRow, Writer};
 use board_model::{
-    CONFIG_TYPE, Classified, Code, Content, MANIFEST_TYPE, ObjectId, Role, Source, Stat,
+    CONFIG_TYPE, Classified, Code, Content, MANIFEST_TYPE, MAX_RECORD_BYTES, ObjectId, Role,
+    Source, Stat,
 };
 use board_plugin::Manifest;
-use board_tree::{Entry, GitError, Repository, Status};
+use board_tree::{Entry, GitError, Repository, Status, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -51,6 +52,8 @@ pub(crate) struct Refresh {
     pub(crate) entries: Vec<Entry>,
     /// The fact for each entry that has one, by physical path.
     pub(crate) facts: HashMap<String, Indexed>,
+    /// The paths left out of `facts` because they changed after the walk.
+    pub(crate) changed: HashSet<String>,
     /// What `HEAD` holds at each path; empty before the first commit.
     pub(crate) head: HashMap<String, Option<ObjectId>>,
     pub(crate) work: Refreshed,
@@ -68,7 +71,7 @@ impl Board {
         let started_ns = now_ns();
         let mut work = Refreshed::default();
         let (entries, changed) = self.walk(writer, &mut work.hashed)?;
-        let facts = facts(
+        let (facts, left_out) = facts(
             writer,
             self.repository(),
             &Source::WorkingTree,
@@ -83,6 +86,7 @@ impl Board {
         Ok(Refresh {
             entries,
             facts,
+            changed: left_out,
             head,
             work,
         })
@@ -196,16 +200,18 @@ fn busy<T>(result: &Result<T, RefreshError>) -> bool {
 }
 
 /// What the index holds about each entry of `source` in `repository`,
-/// parsing each blob and validating each record it does not hold yet.
+/// parsing each blob and validating each record it does not hold yet, and
+/// the paths left out because they changed after the walk.
 pub(crate) fn facts(
     writer: &Writer<'_>,
     repository: &Repository,
     source: &Source,
     entries: &[Entry],
     work: &mut Refreshed,
-) -> Result<HashMap<String, Indexed>, RefreshError> {
+) -> Result<(HashMap<String, Indexed>, HashSet<String>), RefreshError> {
     let mut values = Values::new();
     let mut facts: HashMap<String, Indexed> = HashMap::new();
+    let mut changed = HashSet::new();
     for entry in entries {
         let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
             continue;
@@ -213,17 +219,26 @@ pub(crate) fn facts(
         let fact = if let Some(fact) = writer.blob(blob, role)? {
             fact
         } else {
-            // A blob that cannot be read has no content fact to store.
-            let Ok(bytes) = repository.read(source, &entry.path, blob) else {
-                continue;
+            // A blob that cannot be read has no content fact to store. Only a
+            // blob the walk saw over the limit reads as too large.
+            let (read, bytes) = match latest(repository.read(source, &entry.path, blob)) {
+                Ok(Some(contents)) => (contents.blob, Some(contents.bytes)),
+                Ok(None) if entry.size > Some(MAX_RECORD_BYTES as u64) => (blob, None),
+                Ok(None) | Err(_) => continue,
             };
             let classified = role.classify(bytes.as_deref());
             let fact = blob_fact(&classified);
-            writer.put_blob(blob, role, &fact)?;
+            writer.put_blob(read, role, &fact)?;
             if let Content::Record { value, .. } = &classified.content {
-                writer.put_body(blob, value)?;
+                writer.put_body(read, value)?;
             }
             work.parsed += 1;
+            // A file that changed since the walk is left out of this run,
+            // which reports it unreadable.
+            if read != blob {
+                changed.insert(entry.path.clone());
+                continue;
+            }
             if let Some(value) = value(classified) {
                 values.insert((blob, role), value);
             }
@@ -232,7 +247,7 @@ pub(crate) fn facts(
         facts.insert(entry.path.clone(), Indexed { blob, role, fact });
     }
     work.validated += validate_all(writer, repository, source, &facts, &values)?;
-    Ok(facts)
+    Ok((facts, changed))
 }
 
 /// Validates each record against its schema, unless the index already
@@ -366,8 +381,8 @@ fn known(
     if let Some(value) = values.get(&(blob, role)) {
         return Some(value.clone());
     }
-    let bytes = repository.read(source, path, blob).ok()??;
-    value(role.classify(Some(&bytes)))
+    let contents = repository.read(source, path, blob).ok()??;
+    value(role.classify(Some(&contents.bytes)))
 }
 
 fn validate(schema: &Schema, record: &Value) -> ValidationFact {

@@ -283,15 +283,15 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
 fn resolution_takes_a_known_blob_as_given_and_hashes_the_rest() {
     let scenario = Scenario::new();
     scenario
-        .write("work/known.json", Item::File("{}"))
+        .write("work/known.md", Item::File("{}"))
         .write("work/other.json", Item::File("[]"));
     let stand_in = scenario.blob("not what the file holds");
     let repository = scenario.open();
     let mut known =
-        |path: &str, _: &board_model::Stat| (path == "work/known.json").then_some(stand_in);
+        |path: &str, _: &board_model::Stat| (path == "work/known.md").then_some(stand_in);
     let mut resolver = repository.resolver(&mut known).unwrap();
     let mut resolve = |text: &str| resolver.resolve(&path(text)).unwrap().object;
-    assert_eq!(resolve("/work/known"), Object::Blob(stand_in));
+    assert_eq!(resolve("/work/known.md"), Object::Blob(stand_in));
     assert_eq!(resolve("/work/other"), Object::Blob(scenario.blob("[]")));
 }
 

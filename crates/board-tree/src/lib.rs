@@ -15,7 +15,7 @@ mod write;
 #[cfg(test)]
 mod tests;
 
-pub use crate::git::{GitError, Repository};
+pub use crate::git::{Contents, GitError, Repository, latest};
 pub use crate::mounts::{Cache, MountPoint, Mounted, Pin, PinError, Reached, Scopes, in_scope};
 pub use crate::resolve::{Ancestor, MAX_HOPS, ResolveError, Resolver};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};

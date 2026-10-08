@@ -1,6 +1,6 @@
 //! Opening boards and checking them, against real repositories.
 
-use board_model::{Code, Fields, Kind, LogicalPath};
+use board_model::{Code, Fields, Kind, LogicalPath, Object, ObjectId, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
@@ -45,6 +45,20 @@ pub(crate) fn board() -> Scenario {
 
 pub(crate) fn open(scenario: &Scenario) -> Board {
     Board::open(scenario.workdir(), None).unwrap()
+}
+
+/// Makes the next walk of `board`, indexed in `cache`, see `blob` at `path`.
+/// The walk trusts a stored blob whose stat still matches, so a stand-in
+/// makes it see a blob the file does not hold, as if the file changed
+/// after it was hashed.
+pub(crate) fn stand_in(board: &Board, cache: &std::path::Path, path: &str, blob: ObjectId) {
+    let mut index = board_index::Index::open(Some(cache), board.repository().path()).unwrap();
+    crate::index::transact(&mut index, |writer| {
+        let mut row = writer.worktree()?.remove(path).unwrap();
+        row.blob = Some(blob);
+        Ok(writer.put_worktree(path, &row)?)
+    })
+    .unwrap();
 }
 
 fn check(scenario: &Scenario) -> CheckReport {
@@ -452,6 +466,29 @@ fn get_returns_a_records_stored_bytes_and_where_it_is() {
     assert_eq!(report.record.unwrap()["title"], "t");
     assert_eq!(report.location.path, "work/t.json");
     assert_eq!(report.display.as_str(), "/work/t");
+}
+
+#[test]
+fn get_returns_the_blob_of_the_bytes_it_read_when_the_file_changed_after_resolution() {
+    let scenario = board();
+    let (old, new) = (task(""), task(r#", "see": "/y""#));
+    scenario
+        .write("work/a.json", Item::File(&old))
+        .write("work/b.json", Item::File(&old));
+    let board = open(&scenario);
+    let locate = |text: &str| {
+        let resolved = board
+            .repository()
+            .resolve(&Source::WorkingTree, &path(text));
+        resolved.unwrap()
+    };
+    let (changed, unchanged) = (locate("/work/a"), locate("/work/b"));
+    scenario.write("work/a.json", Item::File(&new));
+    let changed = crate::read::read_at(changed, &path("/work/a")).unwrap();
+    assert_eq!(changed.location.object, Object::Blob(scenario.blob(&new)));
+    assert_eq!(changed.bytes, new.as_bytes());
+    let unchanged = crate::read::read_at(unchanged, &path("/work/b")).unwrap();
+    assert_eq!(unchanged.location.object, Object::Blob(scenario.blob(&old)));
 }
 
 #[test]

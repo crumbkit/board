@@ -5,7 +5,7 @@
 //! depends on the whole tree, so each check decides it again.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use board_index::{Fallback, Index, IndexError, Resolved, Storage, ValidationFact, Writer};
@@ -13,7 +13,7 @@ use board_model::{
     Change, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, ObjectId,
     POINTER_TYPE, RecordType, Role, Source, Stat, classify,
 };
-use board_tree::{Entry, Repository, ResolveError, Status, in_scope};
+use board_tree::{Entry, Repository, ResolveError, Status, in_scope, latest};
 
 use crate::board::Board;
 use crate::index::{Indexed, RefreshError, Refreshed, schema_of, schema_path, transact};
@@ -205,6 +205,7 @@ impl Board {
         let mut decided = Decided::default();
         let root = Decide {
             writer,
+            changed: &refresh.changed,
             facts: &refresh.facts,
             resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
         };
@@ -226,10 +227,13 @@ impl Board {
             )?;
         }
         drop(root);
+        // A commit's files never change during a check.
+        let unchanged = HashSet::new();
         for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
                 writer,
+                changed: &unchanged,
                 facts: &mounted.facts,
                 resolve: RefCell::new(Box::new(|path: &LogicalPath| {
                     mounted.repository.resolve(&source, path)
@@ -375,9 +379,14 @@ type Wanted<'a> = (Option<&'a str>, Option<ObjectId>);
 /// Resolves a path in the source being checked.
 type Resolve<'a> = Box<dyn FnMut(&LogicalPath) -> Result<Location, ResolveError> + 'a>;
 
+/// Why an entry the walk listed has no fact.
+const READ_AGAIN: &str = "changed or could not be read; run the command again";
+
 /// What deciding the status of a source's entries reads.
 struct Decide<'a> {
     writer: &'a Writer<'a>,
+    /// The paths the refresh left out because they changed after the walk.
+    changed: &'a HashSet<String>,
     /// What the index holds about the source's entries, by physical path.
     facts: &'a HashMap<String, Indexed>,
     resolve: RefCell<Resolve<'a>>,
@@ -396,8 +405,15 @@ impl Decide<'_> {
         if role.is_none() {
             return Ok(None);
         }
+        // A file that changed after the walk, was removed or could not be
+        // read has no fact.
         let Some(fact) = fact else {
-            return Ok(Some((Code::RepoUnreadable, None)));
+            let detail = Detail {
+                pointer: None,
+                reason: format!("the file {READ_AGAIN}"),
+                failures: 1,
+            };
+            return Ok(Some((Code::RepoUnreadable, Some(detail))));
         };
         if let Some(code) = fact.fact.code {
             return Ok(Some((code, None)));
@@ -434,6 +450,13 @@ impl Decide<'_> {
                     Some("/$type".to_owned()),
                     format!("the schema at {wanted} is degraded"),
                 ),
+                None if self.changed.contains(wanted) => (
+                    Code::RepoUnreadable,
+                    None,
+                    format!(
+                        "its schema at {wanted} changed while it was read; run the command again"
+                    ),
+                ),
                 None => (
                     Code::RecordUnknownType,
                     None,
@@ -448,7 +471,14 @@ impl Decide<'_> {
             return Ok(Some((code, Some(detail))));
         };
         let references = match self.writer.validation(record.blob, schema)? {
-            None => return Ok(Some((Code::RepoUnreadable, None))),
+            None => {
+                let detail = Detail {
+                    pointer: None,
+                    reason: format!("the record or its schema {READ_AGAIN}"),
+                    failures: 1,
+                };
+                return Ok(Some((Code::RepoUnreadable, Some(detail))));
+            }
             Some(ValidationFact::Invalid {
                 code,
                 pointer,
@@ -524,10 +554,8 @@ pub(crate) fn unresolved(error: &ResolveError) -> (Code, Detail) {
 /// The `$type` of the record at `location`, read in its own board.
 pub(crate) fn read_type(location: &Location, blob: ObjectId) -> Option<RecordType> {
     let repository = Repository::open(&location.board.repository).ok()?;
-    let bytes = repository
-        .read(&location.board.source, &location.path, blob)
-        .ok()?;
-    match classify(&location.path, bytes.as_deref()) {
+    let contents = latest(repository.read(&location.board.source, &location.path, blob)).ok()??;
+    match classify(&location.path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, .. },
             code: None,

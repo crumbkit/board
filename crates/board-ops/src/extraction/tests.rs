@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
-use crate::tests::{TASK_SCHEMA, board, open, task};
+use crate::tests::{TASK_SCHEMA, board, open, stand_in, task};
 use crate::{Plugins, QueryReport};
 
 /// Keeps each request as `requests/<n>.json`, answers an extraction by
@@ -162,6 +162,24 @@ fn a_record_already_handled_is_not_sent_again() {
     let report = fixture.query("SELECT blob FROM extracted ORDER BY blob");
     assert_eq!(fixture.sent()[1], ["/tasks/a"]);
     assert_eq!(report.rows.len(), 2, "{:?}", report.rows);
+}
+
+#[test]
+fn a_record_that_changed_after_the_refresh_is_not_sent_and_its_unchanged_twin_is() {
+    let fixture = Fixture::new(EXTRACTING);
+    let held = task(r#", "see": "/c""#);
+    fixture.board.write("tasks/c.json", Item::File(&held));
+    open(&fixture.board)
+        .check(None, Some(fixture.cache.workdir()))
+        .unwrap();
+    // The index keeps the facts of c's blob, which no file holds now, and
+    // the refresh sees that blob at a.
+    fixture.board.write("tasks/c.json", Item::File("{}"));
+    let board = open(&fixture.board);
+    let blob = fixture.board.blob(&held);
+    stand_in(&board, fixture.cache.workdir(), "tasks/a.json", blob);
+    fixture.query("SELECT 1");
+    assert_eq!(fixture.sent(), [["/tasks/b"]]);
 }
 
 #[test]

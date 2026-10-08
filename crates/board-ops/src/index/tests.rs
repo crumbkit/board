@@ -1,10 +1,10 @@
 //! Building the index from real repositories, counting the work done.
 
 use board_index::{BlobFact, Index, RefFact, ValidationFact};
-use board_model::{Code, Kind, Role};
+use board_model::{Code, Kind, Role, Source};
 use board_scenario::{Item, Scenario};
 
-use crate::index::{Refreshed, transact};
+use crate::index::{Refreshed, facts, transact};
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 
 /// Refreshes the index of `scenario` in `cache`.
@@ -370,4 +370,80 @@ fn a_transaction_another_process_wrote_under_runs_again_and_writes() {
 #[test]
 fn a_transaction_no_other_process_wrote_under_runs_once_and_writes() {
     assert_eq!(retried(false), (1, true));
+}
+
+#[test]
+fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while_its_twin_is_kept()
+{
+    let scenario = board();
+    let (old, new, twin) = (task(""), task(r#", "see": "/y""#), task(r#", "see": "/z""#));
+    scenario
+        .write("tasks/a.json", Item::File(&old))
+        .write("tasks/b.json", Item::File(&twin));
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let ((facts, changed, under_new, under_old), _) = transact(&mut index, |writer| {
+        let (entries, _) = board.walk(writer, &mut 0)?;
+        scenario.write("tasks/a.json", Item::File(&new));
+        let mut work = Refreshed::default();
+        let (facts, changed) = facts(
+            writer,
+            board.repository(),
+            &Source::WorkingTree,
+            &entries,
+            &mut work,
+        )?;
+        let under_new = writer.blob(scenario.blob(&new), Role::Json)?;
+        let under_old = writer.blob(scenario.blob(&old), Role::Json)?;
+        Ok((facts, changed, under_new, under_old))
+    })
+    .unwrap();
+    assert!(!facts.contains_key("tasks/a.json"), "left out of this run");
+    assert_eq!(changed, ["tasks/a.json".to_owned()].into());
+    assert_eq!(facts["tasks/b.json"].blob, scenario.blob(&twin));
+    assert_eq!(under_new.map(|fact| fact.kind), Some(Kind::Record));
+    assert_eq!(
+        under_old, None,
+        "the new bytes' fact is not stored under the old blob"
+    );
+}
+
+/// The fact the index gives `big.json`, written with `walked` bytes for the
+/// walk and then rewritten with `read` bytes before it is read, or `None`
+/// when the run leaves it out.
+fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
+    let scenario = board();
+    scenario.write("big.json", Item::File(&"a".repeat(walked)));
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let mut index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let ((facts, _), _) = transact(&mut index, |writer| {
+        let (entries, _) = board.walk(writer, &mut 0)?;
+        if read != walked {
+            scenario.write("big.json", Item::File(&"b".repeat(read)));
+        }
+        facts(
+            writer,
+            board.repository(),
+            &Source::WorkingTree,
+            &entries,
+            &mut Refreshed::default(),
+        )
+    })
+    .unwrap();
+    facts.get("big.json").map(|indexed| indexed.fact.clone())
+}
+
+#[test]
+fn a_file_the_walk_saw_over_16_mib_is_too_large() {
+    let over = board_model::MAX_RECORD_BYTES + 1;
+    let fact = too_large_after(over, over).unwrap();
+    assert_eq!(fact.code, Some(Code::JsonTooLarge));
+}
+
+#[test]
+fn a_file_the_walk_saw_at_16_mib_that_grew_before_the_read_is_left_out() {
+    let limit = board_model::MAX_RECORD_BYTES;
+    assert_eq!(too_large_after(limit, limit + 1), None);
 }

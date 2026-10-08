@@ -6,7 +6,7 @@ use board_model::{
     CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, ObjectId, Source, classify,
 };
 use board_plugin::PluginName;
-use board_tree::{GitError, Repository};
+use board_tree::{GitError, Repository, latest};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
@@ -92,15 +92,13 @@ pub(crate) fn config_file(repository: &Repository) -> Option<(ObjectId, Value, C
     let Object::Blob(blob) = location.object else {
         return None;
     };
-    let bytes = repository
-        .read(&Source::WorkingTree, &location.path, blob)
-        .ok()?;
-    match classify(&location.path, bytes.as_deref()) {
+    let contents = latest(repository.read(&Source::WorkingTree, &location.path, blob)).ok()??;
+    match classify(&location.path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, value },
             code: None,
         } if record_type.as_str() == CONFIG_TYPE => {
-            Config::from_value(&value).map(|config| (blob, value, config))
+            Config::from_value(&value).map(|config| (contents.blob, value, config))
         }
         _ => None,
     }

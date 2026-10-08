@@ -9,7 +9,7 @@ use proptest::prelude::*;
 use serde_json::Value;
 
 use crate::tests::generated::{Generated, generated};
-use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
+use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, stand_in, task};
 use crate::{CheckReport, Checked, Refreshed};
 
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
@@ -263,6 +263,60 @@ fn a_check_that_must_write_after_another_process_let_go_writes_the_file() {
     let report = check_changed_while(false);
     assert_eq!(report.memory, None);
     assert!(report.work.wrote);
+}
+
+#[test]
+fn a_file_whose_bytes_are_not_the_blob_the_walk_saw_is_unreadable_and_its_twin_is_ok() {
+    let scenario = board();
+    scenario
+        .write("tasks/a.json", Item::File(&task("")))
+        .write("tasks/b.json", Item::File(&task("")));
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    board.check(None, Some(cache.path())).unwrap();
+    let held = scenario.blob("what the file held");
+    stand_in(&board, cache.path(), "tasks/a.json", held);
+    let report = board.check(None, Some(cache.path())).unwrap();
+    let entry = |path: &str| {
+        let found = report.entries.iter().find(|entry| entry.path == path);
+        found.unwrap().clone()
+    };
+    let changed = entry("tasks/a.json");
+    assert_eq!(changed.status, Status::Degraded(Code::RepoUnreadable));
+    assert_eq!(
+        changed.detail.unwrap().reason,
+        "the file changed or could not be read; run the command again"
+    );
+    assert_eq!(entry("tasks/b.json").status, Status::Ok);
+}
+
+#[test]
+fn a_record_whose_schema_changed_during_the_check_is_unreadable_and_one_under_an_unchanged_schema_is_ok()
+ {
+    let scenario = board();
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    board.check(None, Some(cache.path())).unwrap();
+    let schema = ".board/types/lr/task/v1.schema.json";
+    stand_in(
+        &board,
+        cache.path(),
+        schema,
+        scenario.blob("what the schema held"),
+    );
+    let report = board.check(None, Some(cache.path())).unwrap();
+    let entry = |path: &str| {
+        let found = report.entries.iter().find(|entry| entry.path == path);
+        found.unwrap().clone()
+    };
+    let task = entry("tasks/a.json");
+    assert_eq!(task.status, Status::Degraded(Code::RepoUnreadable));
+    assert_eq!(
+        task.detail.unwrap().reason,
+        format!("its schema at {schema} changed while it was read; run the command again")
+    );
+    assert_eq!(entry("projects/p.json").status, Status::Ok);
 }
 
 /// Entries in the order the view's key gives them, by source and then path,

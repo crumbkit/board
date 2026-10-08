@@ -165,17 +165,19 @@ impl Repository {
             .collect())
     }
 
-    /// The bytes of the file at the `/`-separated `path` in `source`, whose
-    /// blob is `blob`, or `None` when it holds more than [`MAX_RECORD_BYTES`].
+    /// The contents of the file at the `/`-separated `path` in `source`,
+    /// whose blob was `blob` when it was walked, or `None` when it holds more
+    /// than [`MAX_RECORD_BYTES`]. A working-tree file that no longer holds
+    /// `blob` is [`GitError::Changed`], which carries what was read.
     pub fn read(
         &self,
         source: &Source,
         path: &str,
         blob: ObjectId,
-    ) -> Result<Option<Vec<u8>>, GitError> {
+    ) -> Result<Option<Contents>, GitError> {
         match source {
-            Source::Commit(_) => self.read_blob(blob),
-            Source::WorkingTree => crate::worktree::read_file(&self.path.join(path)),
+            Source::Commit(_) => Ok(self.read_blob(blob)?.map(|bytes| Contents { blob, bytes })),
+            Source::WorkingTree => self.read_working(Path::new(path), Some(blob)),
         }
     }
 
@@ -248,6 +250,22 @@ pub(crate) fn model_id(id: &gix::oid) -> ObjectId {
     }
 }
 
+/// A file's bytes and the blob they make.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Contents {
+    pub blob: ObjectId,
+    pub bytes: Vec<u8>,
+}
+
+/// The contents `read` found, taking those of a file that changed since it
+/// was walked as they are now.
+pub fn latest(read: Result<Option<Contents>, GitError>) -> Result<Option<Contents>, GitError> {
+    match read {
+        Err(GitError::Changed { contents, .. }) => Ok(Some(contents)),
+        read => read,
+    }
+}
+
 /// A repository or object that could not be read.
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
@@ -265,6 +283,8 @@ pub enum GitError {
         #[source]
         source: std::io::Error,
     },
+    #[error("{path:?} changed while it was read; run the command again")]
+    Changed { path: PathBuf, contents: Contents },
     #[error("object {id} in {repository:?} cannot be read")]
     Object {
         repository: PathBuf,
@@ -280,6 +300,7 @@ impl GitError {
             Self::Unreadable { .. }
             | Self::NoWorkingTree { .. }
             | Self::File { .. }
+            | Self::Changed { .. }
             | Self::Object { .. } => Code::RepoUnreadable,
         }
     }

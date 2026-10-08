@@ -83,14 +83,14 @@ impl Board {
                         .as_ref()?,
                 };
                 // A file that changed since the refresh is sent next time.
-                let bytes = repository
+                let contents = repository
                     .read(&unhandled.source, &unhandled.path, unhandled.blob)
                     .ok()??;
                 Some(Record {
                     blob: unhandled.blob,
                     path: unhandled.logical,
                     record_type: unhandled.record_type,
-                    record: parse_json(&bytes).ok()?,
+                    record: parse_json(&contents.bytes).ok()?,
                 })
             })
             .collect();

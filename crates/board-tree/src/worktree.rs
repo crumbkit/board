@@ -17,7 +17,7 @@ use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
 
 use crate::address::{self, Named, Pointers};
-use crate::git::{GitError, Repository, model_id};
+use crate::git::{Contents, GitError, Repository, model_id};
 use crate::tree::{Kind, RawEntry, Tree};
 
 /// Given a file's `/`-separated path and metadata, its blob if already known.
@@ -359,13 +359,13 @@ impl Tree for WorkingTree<'_, '_> {
         directory: &PathBuf,
         entry: &RawEntry<PathBuf>,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        read_file(
-            &self
-                .repository
-                .path()
-                .join(directory)
-                .join(gix::path::from_bstr(entry.name.as_bstr())),
-        )
+        let path = directory.join(gix::path::from_bstr(entry.name.as_bstr()));
+        let listed = match entry.kind {
+            Kind::File(blob) | Kind::Symlink(blob) => Some(blob),
+            _ => None,
+        };
+        let contents = self.repository.read_working(&path, listed)?;
+        Ok(contents.map(|contents| contents.bytes))
     }
 }
 
@@ -405,19 +405,48 @@ fn unix_stat(_metadata: &Metadata) -> (i64, u64, u32) {
     (0, 0, 0)
 }
 
-/// The bytes of the file at `path`, or `None` when it holds more than
-/// [`MAX_RECORD_BYTES`].
-pub(crate) fn read_file(path: &Path) -> Result<Option<Vec<u8>>, GitError> {
-    let unreadable = |source| GitError::File {
-        path: path.to_path_buf(),
-        source,
-    };
-    let file = fs::File::open(path).map_err(unreadable)?;
-    let mut bytes = Vec::new();
-    file.take(MAX_RECORD_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(unreadable)?;
-    Ok((bytes.len() <= MAX_RECORD_BYTES).then_some(bytes))
+impl Repository {
+    /// The contents of the working-tree file at `relative`, or `None` when it
+    /// holds more than [`MAX_RECORD_BYTES`]. A symlink's contents are its
+    /// target path, as git stores it. A file that no longer holds the blob it
+    /// was `walked` with is [`GitError::Changed`].
+    pub(crate) fn read_working(
+        &self,
+        relative: &Path,
+        walked: Option<ObjectId>,
+    ) -> Result<Option<Contents>, GitError> {
+        let path = self.path().join(relative);
+        let unreadable = |source| GitError::File {
+            path: path.clone(),
+            source,
+        };
+        let mut bytes = Vec::new();
+        if fs::symlink_metadata(&path)
+            .map_err(unreadable)?
+            .is_symlink()
+        {
+            let target = fs::read_link(&path).map_err(unreadable)?;
+            bytes = gix::path::into_bstr(target).to_vec();
+        } else {
+            fs::File::open(&path)
+                .and_then(|file| {
+                    file.take(MAX_RECORD_BYTES as u64 + 1)
+                        .read_to_end(&mut bytes)
+                })
+                .map_err(unreadable)?;
+        }
+        if bytes.len() > MAX_RECORD_BYTES {
+            return Ok(None);
+        }
+        let contents = Contents {
+            blob: self.blob_id(&bytes),
+            bytes,
+        };
+        match walked {
+            Some(blob) if blob != contents.blob => Err(GitError::Changed { path, contents }),
+            _ => Ok(Some(contents)),
+        }
+    }
 }
 
 /// Whether `directory` is the root of a repository's working tree: it holds

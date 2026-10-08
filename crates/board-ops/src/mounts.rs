@@ -65,7 +65,8 @@ impl Cache for Indexing<'_, '_> {
         source: &Source,
         entries: &[Entry],
     ) -> Result<Facts, RefreshError> {
-        facts(self.writer, repository, source, entries, self.work)
+        // A commit's files never change, so none is left out.
+        Ok(facts(self.writer, repository, source, entries, self.work)?.0)
     }
 
     fn is_pointer(facts: &Facts, path: &str) -> bool {

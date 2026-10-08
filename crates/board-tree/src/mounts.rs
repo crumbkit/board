@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 
 use board_model::{Code, Fields, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
 
-use crate::git::{GitError, Repository};
+use crate::git::{Contents, GitError, Repository, latest};
 use crate::trees::{TreeRow, TreeRows, walk_stored};
 use crate::walk::{Entry, Status};
 use crate::write::{Target, WriteError};
@@ -144,12 +144,13 @@ impl Repository {
             code,
         };
         let target = self.pointer_target(path)?;
-        let Object::Blob(blob) = target.location.object else {
+        let Object::Blob(resolved) = target.location.object else {
             return Err(not_a_mount());
         };
-        let bytes = self
-            .read_working_file(&target.path)?
-            .ok_or_else(not_a_mount)?;
+        let Contents { blob, bytes } =
+            latest(self.read(&Source::WorkingTree, &target.path, resolved))
+                .map_err(|error| refused(error.code()))?
+                .ok_or_else(not_a_mount)?;
         let mount = match board_model::pointer(&bytes) {
             Ok(Some(Pointer::Mount(mount))) => mount,
             Ok(_) => return Err(not_a_mount()),
@@ -348,8 +349,8 @@ fn pointers<C: Cache>(
         .iter()
         .filter(|entry| entry.status == Status::Ok && C::is_pointer(facts, &entry.path))
         .filter_map(|entry| {
-            let bytes = repository.read(source, &entry.path, entry.blob?).ok()??;
-            match board_model::pointer(&bytes) {
+            let contents = repository.read(source, &entry.path, entry.blob?).ok()??;
+            match board_model::pointer(&contents.bytes) {
                 Ok(Some(Pointer::Mount(mount))) => {
                     Some((entry.logical.clone()?, entry.path.clone(), mount))
                 }
