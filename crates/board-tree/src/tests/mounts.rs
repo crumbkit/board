@@ -110,6 +110,99 @@ fn one_board_mounted_twice_is_one_identity() {
 }
 
 #[test]
+fn resolving_and_reading_through_one_mounted_repository_opens_it_once_and_a_second_repository_opens_once_more()
+ {
+    let (one, two) = (Scenario::new(), Scenario::new());
+    let (a, b) = (
+        one.commit(&[("x.json", "1")]),
+        two.commit(&[("x.json", "2")]),
+    );
+    let outer = Scenario::new();
+    // The second names the first repository through `..`, a path that only
+    // canonicalising matches, and the third by its `.git` directory.
+    let one_path = std::path::PathBuf::from(one.path());
+    let through_parent = format!(
+        "{}/../{}",
+        one.path(),
+        one_path.file_name().unwrap().to_str().unwrap()
+    );
+    let commit = outer.commit(&[
+        ("m.json", &mount(&one.path(), a)),
+        ("n.json", &mount(&through_parent, a)),
+        ("g.json", &mount(&format!("{}/.git", one.path()), a)),
+        ("o.json", &mount(&two.path(), b)),
+    ]);
+    let repositories = outer.repositories();
+    for asked in ["/m/x", "/n/x", "/g/x", "/m/x", "/g/x"] {
+        let location = repositories
+            .resolve(&commit.source(), &path(asked))
+            .unwrap();
+        let read = repositories.read(&location, one.blob("1")).unwrap();
+        assert_eq!(read.unwrap().bytes, b"1", "{asked}");
+    }
+    assert_eq!(repositories.opened(), 1);
+    repositories
+        .resolve(&commit.source(), &path("/o/x"))
+        .unwrap();
+    assert_eq!(repositories.opened(), 2);
+}
+
+#[test]
+fn a_linked_worktree_named_by_its_directory_and_by_its_git_file_is_opened_once() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    // A linked worktree as `git worktree add --detach` lays it out: its
+    // `.git` is a file naming a git directory inside the main one.
+    let linked = format!("{}/linked", inner.path());
+    let git_dir = format!("{}/.git/worktrees/linked", inner.path());
+    inner
+        .write(
+            ".git/worktrees/linked/HEAD",
+            Item::File(&format!("{pinned}\n")),
+        )
+        .write(".git/worktrees/linked/commondir", Item::File("../..\n"))
+        .write(
+            ".git/worktrees/linked/gitdir",
+            Item::File(&format!("{linked}/.git\n")),
+        )
+        .write("linked/.git", Item::File(&format!("gitdir: {git_dir}\n")));
+    let outer = Scenario::new();
+    let commit = outer.commit(&[
+        ("d.json", &mount(&linked, pinned)),
+        ("f.json", &mount(&format!("{linked}/.git"), pinned)),
+    ]);
+    let repositories = outer.repositories();
+    for asked in ["/d/x", "/f/x", "/d/x", "/f/x"] {
+        repositories
+            .resolve(&commit.source(), &path(asked))
+            .unwrap();
+    }
+    assert_eq!(repositories.opened(), 1);
+}
+
+#[test]
+fn a_mount_of_the_boards_own_repository_opens_nothing_and_another_opens_one() {
+    let outer = Scenario::new();
+    let pinned = outer.commit(&[("x.json", "1")]);
+    let inner = Scenario::new();
+    let other = inner.commit(&[("x.json", "2")]);
+    let commit = outer.commit(&[
+        ("self.json", &mount(".", pinned)),
+        ("other.json", &mount(&inner.path(), other)),
+    ]);
+    let repositories = outer.repositories();
+    let location = repositories
+        .resolve(&commit.source(), &path("/self/x"))
+        .unwrap();
+    assert_eq!(location.board.repository, outer.open().path());
+    assert_eq!(repositories.opened(), 0);
+    repositories
+        .resolve(&commit.source(), &path("/other/x"))
+        .unwrap();
+    assert_eq!(repositories.opened(), 1);
+}
+
+#[test]
 fn a_mount_of_a_repository_that_cannot_be_opened_is_repo_missing() {
     let inner = Scenario::new();
     let pinned = inner.commit(&[("x.json", "1")]);
@@ -135,7 +228,7 @@ fn a_home_relative_mount_needs_a_home() {
     let to_inner = mount(&format!("~/{name}"), pinned);
     let commit = outer.commit(&[("m.json", &to_inner)]);
     let home = inner_path.parent().unwrap().to_path_buf();
-    let with_home = outer.open().with_home(home);
+    let with_home = Repositories::open(outer.workdir(), Some(home)).unwrap();
     assert!(with_home.resolve(&commit.source(), &path("/m/x")).is_ok());
     assert_eq!(
         resolve(&outer, commit, "/m/x").unwrap_err(),
@@ -168,7 +261,7 @@ fn a_mount_whose_commit_is_missing_is_named_by_the_mount_and_not_the_path_asked(
     let commit = outer.commit(&[("vendor/m.json", &absent), ("l.json", &link("/vendor/m"))]);
     for asked in ["/vendor/m/x", "/l/x"] {
         let error = outer
-            .open()
+            .repositories()
             .resolve(&commit.source(), &path(asked))
             .unwrap_err();
         assert_eq!(error.code(), Code::MountCommitMissing);
@@ -223,7 +316,7 @@ fn a_dangling_link_inside_a_mount_is_named_through_its_mount_point() {
     let to_inner = mount(&inner.path(), pinned);
     let commit = outer.commit(&[("m.json", &to_inner)]);
     let error = outer
-        .open()
+        .repositories()
         .resolve(&commit.source(), &path("/m/links/x"))
         .unwrap_err();
     assert_eq!(
@@ -322,8 +415,8 @@ fn pinning_a_link_is_refused_naming_the_link_and_pinning_a_mount_is_admitted() {
     outer
         .write("m.json", Item::File(&mount(&inner.path(), pinned)))
         .write("l.json", Item::File(&link("/m")));
-    let error = outer.open().pin(&path("/l")).unwrap_err();
+    let error = outer.repositories().pin(&path("/l")).unwrap_err();
     assert_eq!(error.code(), Code::MountInvalid);
     assert_eq!(error.fields(), board_model::Fields::at(&path("/l")));
-    assert_eq!(outer.open().pin(&path("/m")).unwrap().new, pinned);
+    assert_eq!(outer.repositories().pin(&path("/m")).unwrap().new, pinned);
 }

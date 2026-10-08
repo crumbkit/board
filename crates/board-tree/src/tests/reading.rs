@@ -166,7 +166,7 @@ fn a_pointer_changed_after_its_listing_is_unreadable_and_its_unchanged_twin_is_f
         .write("b/y.json", Item::File("{}"))
         .write("to_a.json", Item::File(&to("/a")))
         .write("to_b.json", Item::File(&to("/b")));
-    let repository = scenario.open();
+    let repository = scenario.repositories();
     let mut known = |_: &str, _: &board_model::Stat| None;
     let mut resolver = repository.resolver(&mut known).unwrap();
     // Lists the root, hashing both pointers, before one of them changes.

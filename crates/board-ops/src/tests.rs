@@ -478,16 +478,17 @@ fn get_returns_the_blob_of_the_bytes_it_read_when_the_file_changed_after_resolut
     let board = open(&scenario);
     let locate = |text: &str| {
         let resolved = board
-            .repository()
+            .repositories()
             .resolve(&Source::WorkingTree, &path(text));
         resolved.unwrap()
     };
     let (changed, unchanged) = (locate("/work/a"), locate("/work/b"));
     scenario.write("work/a.json", Item::File(&new));
-    let changed = crate::read::read_at(changed, &path("/work/a")).unwrap();
+    let changed = crate::read::read_at(board.repositories(), changed, &path("/work/a")).unwrap();
     assert_eq!(changed.location.object, Object::Blob(scenario.blob(&new)));
     assert_eq!(changed.bytes, new.as_bytes());
-    let unchanged = crate::read::read_at(unchanged, &path("/work/b")).unwrap();
+    let unchanged =
+        crate::read::read_at(board.repositories(), unchanged, &path("/work/b")).unwrap();
     assert_eq!(unchanged.location.object, Object::Blob(scenario.blob(&old)));
 }
 

@@ -6,7 +6,7 @@ use board_model::{
     CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, ObjectId, Source, classify,
 };
 use board_plugin::PluginName;
-use board_tree::{GitError, Repository, latest};
+use board_tree::{GitError, Repositories, Repository, latest};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
@@ -39,18 +39,18 @@ impl Config {
     }
 }
 
-/// An open board: the working tree of its repository, and its
-/// configuration.
+/// An open board: the working tree of its repository, the repositories its
+/// mounts name, and its configuration.
 #[derive(Debug)]
 pub struct Board {
-    repository: Repository,
+    repositories: Repositories,
     config: Config,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
-// a cache of mounted repositories or a server adapter would. gix's `parallel`
-// feature makes its repositories `Send`; without it this fails to compile. A
-// Board is not `Sync`: gix keeps per-repository caches in `RefCell`s.
+// a server adapter would. gix's `parallel` feature makes its repositories
+// `Send`; without it this fails to compile. A Board is not `Sync`: gix keeps
+// per-repository caches in `RefCell`s.
 const _: () = {
     const fn send<T: Send>() {}
     send::<Board>();
@@ -68,19 +68,24 @@ impl Board {
         if !board_tree::is_repository_root(&root) {
             return Err(not_found());
         }
-        let mut repository = Repository::open(&root).map_err(|source| OpenError::Git { source })?;
-        if repository.path() != root {
+        let repositories =
+            Repositories::open(&root, home).map_err(|source| OpenError::Git { source })?;
+        if repositories.root().path() != root {
             return Err(not_found());
         }
-        if let Some(home) = home {
-            repository = repository.with_home(home);
-        }
-        let config = read_config(&repository).ok_or(OpenError::Config { root })?;
-        Ok(Self { repository, config })
+        let config = read_config(&repositories).ok_or(OpenError::Config { root })?;
+        Ok(Self {
+            repositories,
+            config,
+        })
     }
 
     pub fn repository(&self) -> &Repository {
-        &self.repository
+        self.repositories.root()
+    }
+
+    pub fn repositories(&self) -> &Repositories {
+        &self.repositories
     }
 
     pub fn config(&self) -> &Config {
@@ -89,19 +94,19 @@ impl Board {
 }
 
 /// The configuration in the working tree's `.board/board.json`.
-pub(crate) fn read_config(repository: &Repository) -> Option<Config> {
-    config_file(repository).map(|(_, _, config)| config)
+pub(crate) fn read_config(repositories: &Repositories) -> Option<Config> {
+    config_file(repositories).map(|(_, _, config)| config)
 }
 
 /// The working tree's `.board/board.json`: its blob, its value and the
 /// configuration it holds, when it holds a valid one.
-pub(crate) fn config_file(repository: &Repository) -> Option<(ObjectId, Value, Config)> {
+pub(crate) fn config_file(repositories: &Repositories) -> Option<(ObjectId, Value, Config)> {
     let path: LogicalPath = "/.board/board".parse().ok()?;
-    let location = repository.resolve(&Source::WorkingTree, &path).ok()?;
+    let location = repositories.resolve(&Source::WorkingTree, &path).ok()?;
     let Object::Blob(blob) = location.object else {
         return None;
     };
-    let contents = latest(repository.read(&Source::WorkingTree, &location.path, blob)).ok()??;
+    let contents = latest(repositories.read(&location, blob)).ok()??;
     match classify(&location.path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, value },

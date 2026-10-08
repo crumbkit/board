@@ -66,7 +66,7 @@ impl Board {
     /// identity, its board and physical path, whatever path they name.
     pub fn refs(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<RefsReport, RefsError> {
         let location = self
-            .repository()
+            .repositories()
             .resolve(&Source::WorkingTree, path)
             .map_err(refused)?;
         let mut index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
@@ -141,13 +141,13 @@ impl Board {
         let stem = path.as_str().strip_suffix(".json");
         if let Some(Ok(stem)) = stem.map(str::parse::<LogicalPath>)
             && self
-                .repository()
+                .repositories()
                 .resolve(&Source::WorkingTree, &stem)
                 .is_ok()
         {
             return Err(not_found());
         }
-        let ancestor = self.repository().ancestor(path).map_err(refused)?;
+        let ancestor = self.repositories().ancestor(path).map_err(refused)?;
         let physical = ancestor.path().ok_or_else(not_found)?;
         let display = display(&ancestor.location, path);
         let named = ancestor

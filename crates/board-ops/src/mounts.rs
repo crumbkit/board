@@ -32,7 +32,7 @@ impl Board {
         refresh: &Refresh,
         work: &mut Refreshed,
     ) -> Result<Mounts, RefreshError> {
-        self.repository().walk_mounts(
+        self.repositories().walk_mounts(
             &refresh.entries,
             &refresh.facts,
             &mut Indexing { writer, work },

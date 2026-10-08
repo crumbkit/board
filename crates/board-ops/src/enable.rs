@@ -45,7 +45,7 @@ impl Board {
             });
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
-        let mut view = self.repository().snapshot().map_err(WriteError::from)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let mut prepared = Vec::new();
         for (record_type, shipped) in &found.schemas {
             match self.held(record_type, shipped)? {
@@ -73,7 +73,7 @@ impl Board {
         // The configuration is read again here, so a plugin another process
         // enabled since the board was opened is kept.
         let changed = || EnableError::Changed { name: name.clone() };
-        let (blob, mut config, current) = config_file(self.repository()).ok_or_else(changed)?;
+        let (blob, mut config, current) = config_file(self.repositories()).ok_or_else(changed)?;
         if !current.plugins.contains(name) {
             let fields = config.as_object_mut().ok_or_else(changed)?;
             let mut enabled = current.plugins;

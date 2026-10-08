@@ -15,7 +15,6 @@ use crate::tree::{Kind, RawEntry, Tree};
 pub struct Repository {
     path: PathBuf,
     git: gix::Repository,
-    home: Option<PathBuf>,
     /// How many directories its working-tree views read from disk.
     listed: AtomicUsize,
 }
@@ -29,7 +28,7 @@ pub(crate) struct CommitTree<'r> {
 }
 
 impl Repository {
-    pub fn open(path: &Path) -> Result<Self, GitError> {
+    pub(crate) fn open(path: &Path) -> Result<Self, GitError> {
         let unreadable = |source: Box<dyn Error + Send + Sync>| GitError::Unreadable {
             repository: path.to_path_buf(),
             source,
@@ -40,24 +39,16 @@ impl Repository {
             .unwrap_or_else(|| git.git_dir())
             .canonicalize()
             .map_err(|error| unreadable(Box::new(error)))?;
-        Ok(Self {
+        Ok(Self::lent(path, git))
+    }
+
+    /// The repository at the canonical `path` that `git` has open.
+    pub(crate) fn lent(path: PathBuf, git: gix::Repository) -> Self {
+        Self {
             path,
             git,
-            home: None,
             listed: AtomicUsize::new(0),
-        })
-    }
-
-    /// Sets the home directory that a mount's `~/` repository path is read
-    /// against. The caller owns the environment, so Board reads it once.
-    #[must_use]
-    pub fn with_home(mut self, home: PathBuf) -> Self {
-        self.home = Some(home);
-        self
-    }
-
-    pub(crate) fn home(&self) -> Option<&Path> {
-        self.home.as_deref()
+        }
     }
 
     /// The repository's canonical working directory, or its git directory
@@ -214,6 +205,10 @@ impl Repository {
 
 impl Tree for CommitTree<'_> {
     type Directory = ObjectId;
+
+    fn repository(&self) -> &Path {
+        self.repository.path()
+    }
 
     fn source(&self) -> Source {
         Source::Commit(self.commit)

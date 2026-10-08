@@ -130,7 +130,7 @@ impl Board {
         bytes: &[u8],
     ) -> Result<PutReport, PutError> {
         let lock = self.repository().lock(LOCK_WAIT)?;
-        let mut view = self.repository().snapshot().map_err(WriteError::from)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let prepared = self.prepare(
             &lock,
             &mut view,
@@ -165,7 +165,7 @@ impl Board {
             });
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
-        let mut view = self.repository().snapshot().map_err(WriteError::from)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (prepared, numbers) =
             self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
         let message = format!("{BINARY_NAME} put --batch ({} records)", prepared.len());
@@ -432,10 +432,10 @@ impl Board {
             },
         };
         drop(lock);
-        let mut view = repository.snapshot().map_err(ResolveError::Git);
+        let mut view = self.repositories().snapshot().map_err(ResolveError::Git);
         for (written, item) in writes.iter_mut().zip(prepared) {
             written.degraded = match &mut view {
-                Ok(view) => Self::degraded(&mut |path| view.resolve(path), item, &written.display),
+                Ok(view) => self.degraded(&mut |path| view.resolve(path), item, &written.display),
                 Err(error) => Self::unresolvable(item, error),
             };
         }
@@ -531,6 +531,7 @@ impl Board {
     /// What `check` finds wrong with `item`, just written at `display`,
     /// with `resolve` reading the working tree as written.
     fn degraded(
+        &self,
         resolve: &mut impl FnMut(&LogicalPath) -> Result<Location, ResolveError>,
         item: &Prepared,
         display: &LogicalPath,
@@ -545,7 +546,7 @@ impl Board {
                 reference.accepts.as_deref(),
                 resolve(&reference.path),
                 |location| match location.object {
-                    Object::Blob(blob) => Ok(read_type(location, blob)),
+                    Object::Blob(blob) => Ok(read_type(self.repositories(), location, blob)),
                     Object::Directory => Ok(None),
                 },
             );

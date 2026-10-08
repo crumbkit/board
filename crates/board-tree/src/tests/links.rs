@@ -70,7 +70,7 @@ fn a_dangling_link_is_named_by_its_display_path_with_the_target_it_points_to() {
     ]);
     let message = |text: &str| {
         scenario
-            .open()
+            .repositories()
             .resolve(&commit.source(), &path(text))
             .unwrap_err()
             .to_string()
@@ -275,6 +275,10 @@ struct Counting<T> {
 impl<T: Tree> Tree for Counting<T> {
     type Directory = T::Directory;
 
+    fn repository(&self) -> &std::path::Path {
+        self.inner.repository()
+    }
+
     fn source(&self) -> Source {
         self.inner.source()
     }
@@ -303,7 +307,8 @@ impl<T: Tree> Tree for Counting<T> {
 #[test]
 fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
     let scenario = Scenario::new();
-    let repository = scenario.open();
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
     for hops in [0, 1, 5, 40] {
         let commit = chain(&scenario, hops);
         let start = if hops == 0 { "/end" } else { "/l0" };
@@ -311,8 +316,8 @@ fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
             inner: repository.commit_tree(commit).unwrap(),
             reads: 0,
         };
-        let location = repository
-            .resolve_in(&mut tree, &path(start), true, &mut Pointers::default())
+        let location = repositories
+            .resolve_tree(&mut tree, &path(start), true, &mut Pointers::default())
             .unwrap();
         assert_eq!(location.pointers.len(), hops);
         assert_eq!(tree.reads, hops + 1, "{hops} hops");
@@ -322,7 +327,8 @@ fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
 #[test]
 fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
     let scenario = Scenario::new();
-    let repository = scenario.open();
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
     for hops in [1, 5, 39] {
         let commit = chain(&scenario, hops);
         let mut tree = Counting {
@@ -331,8 +337,8 @@ fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
         };
         let mut pointers = Pointers::default();
         for start in 0..hops {
-            let location = repository
-                .resolve_in(&mut tree, &path(&format!("/l{start}")), true, &mut pointers)
+            let location = repositories
+                .resolve_tree(&mut tree, &path(&format!("/l{start}")), true, &mut pointers)
                 .unwrap();
             assert_eq!(location.pointers.len(), hops - start);
         }
@@ -346,15 +352,16 @@ fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
 fn many_references_to_one_record_read_it_once_in_one_run() {
     let scenario = Scenario::new();
     let commit = scenario.commit(&[("projects/hub.json", r#"{"$type": "lr/project/v1"}"#)]);
-    let repository = scenario.open();
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
     let mut tree = Counting {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
     let mut pointers = Pointers::default();
     for _ in 0..1_000 {
-        repository
-            .resolve_in(&mut tree, &path("/projects/hub"), true, &mut pointers)
+        repositories
+            .resolve_tree(&mut tree, &path("/projects/hub"), true, &mut pointers)
             .unwrap();
     }
     assert_eq!(tree.reads, 1);
@@ -371,15 +378,16 @@ fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
         ("good.json", &link("/x")),
         ("x.json", "{}"),
     ]);
-    let repository = scenario.open();
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
     let mut tree = Counting {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
     let mut pointers = Pointers::default();
     let mut refused = || {
-        repository
-            .resolve_in(&mut tree, &path("/bad"), true, &mut pointers)
+        repositories
+            .resolve_tree(&mut tree, &path("/bad"), true, &mut pointers)
             .unwrap_err()
     };
     let (first, second) = (refused(), refused());
@@ -389,8 +397,8 @@ fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
         (first.code(), first.to_string())
     );
     let mut admitted = || {
-        repository
-            .resolve_in(&mut tree, &path("/good"), true, &mut pointers)
+        repositories
+            .resolve_tree(&mut tree, &path("/good"), true, &mut pointers)
             .unwrap()
     };
     assert_eq!(admitted(), admitted());
@@ -402,13 +410,14 @@ fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
 fn resolving_a_directory_path_reads_no_blob() {
     let scenario = Scenario::new();
     let commit = scenario.commit(&[("a/b/c.json", "{}"), ("a/b.json", "{}"), ("a/x.json", "{}")]);
-    let repository = scenario.open();
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
     let mut tree = Counting {
         inner: repository.commit_tree(commit).unwrap(),
         reads: 0,
     };
-    repository
-        .resolve_in(&mut tree, &path("/a"), true, &mut Pointers::default())
+    repositories
+        .resolve_tree(&mut tree, &path("/a"), true, &mut Pointers::default())
         .unwrap();
     assert_eq!(tree.reads, 0);
 }
@@ -434,7 +443,7 @@ proptest! {
         let mut linked = plain.clone();
         linked.push(("zz-link.json", &to_target));
         let commit = scenario.commit(&linked);
-        let repository = scenario.open();
+        let repository = scenario.repositories();
         let direct = repository.resolve(&commit.source(), target).unwrap();
         let through = repository.resolve(&commit.source(), &path("/zz-link")).unwrap();
         prop_assert_eq!((&through.board, &through.path, through.object), (&direct.board, &direct.path, direct.object));
@@ -462,7 +471,7 @@ fn linked_board() -> impl Strategy<Value = Vec<(String, Option<String>)>> {
 /// The outcome of resolving `text`, without the repository's own path, so
 /// that two repositories holding the same tree can be compared.
 fn outcome(
-    repository: &Repository,
+    repository: &Repositories,
     commit: ObjectId,
     text: &str,
 ) -> Result<(String, Object, Vec<String>), Code> {
@@ -491,7 +500,7 @@ proptest! {
         let files: Vec<(&str, &str)> = texts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
         let scenario = Scenario::new();
         let commit = scenario.commit(&files);
-        let repository = scenario.open();
+        let repository = scenario.repositories();
         for name in 0..6 {
             for text in [format!("/n{name}"), format!("/n{name}/y")] {
                 if let Ok(location) = repository.resolve(&commit.source(), &path(&text)) {
@@ -517,7 +526,7 @@ proptest! {
         let files: Vec<(&str, &str)> = texts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
         let scenario = Scenario::new();
         let commit = scenario.commit(&files);
-        let repository = scenario.open();
+        let repository = scenario.repositories();
         for name in 0..6 {
             for text in [format!("/n{name}"), format!("/n{name}/y")] {
                 match outcome(&repository, commit, &text) {
@@ -543,7 +552,7 @@ proptest! {
         // The second repository has other history before the same tree.
         second.commit(&[("unrelated.json", "{}")]);
         let (one, two) = (first.commit(&files), second.commit(&files));
-        let (left, right) = (first.open(), second.open());
+        let (left, right) = (first.repositories(), second.repositories());
         for name in 0..6 {
             for text in [format!("/n{name}"), format!("/n{name}/y")] {
                 prop_assert_eq!(outcome(&left, one, &text), outcome(&right, two, &text), "{}", text);

@@ -244,6 +244,10 @@ impl Tree for WorkingTree<'_, '_> {
     /// A directory's path relative to the working directory.
     type Directory = PathBuf;
 
+    fn repository(&self) -> &Path {
+        self.repository.path()
+    }
+
     fn source(&self) -> Source {
         Source::WorkingTree
     }

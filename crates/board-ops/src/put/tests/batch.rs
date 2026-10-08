@@ -236,7 +236,7 @@ fn a_batch_compiles_each_types_schema_once_however_many_lines_use_it() {
     let board = open(&scenario);
     let lines = crate::Board::read_lines(&mut input.as_bytes()).unwrap();
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
-    let mut view = board.repository().snapshot().unwrap();
+    let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
     let (prepared, _) = board
         .check_lines(&lock, &mut view, lines, &mut schemas)
@@ -263,7 +263,7 @@ fn listed_checking(count: usize) -> usize {
     let lines = crate::Board::read_lines(&mut input.as_bytes()).unwrap();
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let before = board.repository().directories_listed();
-    let mut view = board.repository().snapshot().unwrap();
+    let mut view = board.repositories().snapshot().unwrap();
     let (prepared, _) = board
         .check_lines(&lock, &mut view, lines, &mut Schemas::default())
         .unwrap();

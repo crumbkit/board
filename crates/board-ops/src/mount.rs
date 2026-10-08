@@ -32,7 +32,7 @@ impl Board {
             old,
             new,
             canonical,
-        } = self.repository().pin(path)?;
+        } = self.repositories().pin(path)?;
         let mut report = MountUpdateReport {
             path: path.clone(),
             old,

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use board_model::{
     Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Source, classify,
 };
-use board_tree::{Contents, GitError, Repository, ResolveError, Status, latest};
+use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Status, latest};
 use serde_json::Value;
 
 use crate::board::Board;
@@ -50,7 +50,7 @@ impl Board {
     /// directory is `record::not_a_record`, and a file over 16 MiB is
     /// `json::too_large`.
     pub fn get(&self, path: &LogicalPath) -> Result<GetReport, ReadError> {
-        read_at(self.locate(path)?, path)
+        read_at(self.repositories(), self.locate(path)?, path)
     }
 
     /// Resolves `path`, following pointers, and lists the directory there
@@ -59,7 +59,10 @@ impl Board {
     pub fn ls(&self, path: &LogicalPath) -> Result<LsReport, ReadError> {
         let location = self.locate(path)?;
         let display = display(&location, path);
-        let repository = repository_of(&location)?;
+        let repository = self
+            .repositories()
+            .repository(&location.board)
+            .map_err(|source| ReadError::Git { source })?;
         // Only the listed directory, or a listed file's own directory, is
         // walked, so a listing costs what it shows, not the whole board.
         let scope = match location.object {
@@ -127,7 +130,7 @@ impl Board {
     }
 
     fn locate(&self, path: &LogicalPath) -> Result<Location, ReadError> {
-        self.repository()
+        self.repositories()
             .resolve(&Source::WorkingTree, path)
             .map_err(|source| ReadError::Resolve { source })
     }
@@ -135,18 +138,20 @@ impl Board {
 
 /// The file at `location`, which `path` resolved to, with the blob of the
 /// bytes read: the file may have changed since it was resolved.
-pub(crate) fn read_at(mut location: Location, path: &LogicalPath) -> Result<GetReport, ReadError> {
+pub(crate) fn read_at(
+    repositories: &Repositories,
+    mut location: Location,
+    path: &LogicalPath,
+) -> Result<GetReport, ReadError> {
     let Object::Blob(blob) = location.object else {
         return Err(ReadError::NotARecord { path: path.clone() });
     };
-    let repository = repository_of(&location)?;
-    let Contents { blob, bytes } =
-        latest(repository.read(&location.board.source, &location.path, blob))
-            .map_err(|source| ReadError::Git { source })?
-            .ok_or(ReadError::Unread {
-                path: path.clone(),
-                code: Code::JsonTooLarge,
-            })?;
+    let Contents { blob, bytes } = latest(repositories.read(&location, blob))
+        .map_err(|source| ReadError::Git { source })?
+        .ok_or(ReadError::Unread {
+            path: path.clone(),
+            code: Code::JsonTooLarge,
+        })?;
     location.object = Object::Blob(blob);
     let record = match classify(&location.path, Some(&bytes)) {
         Classified {
@@ -164,11 +169,6 @@ pub(crate) fn read_at(mut location: Location, path: &LogicalPath) -> Result<GetR
         bytes,
         record,
     })
-}
-
-/// The repository a Location is in, opened again when it is a mounted one.
-fn repository_of(location: &Location) -> Result<Repository, ReadError> {
-    Repository::open(&location.board.repository).map_err(|source| ReadError::Git { source })
 }
 
 /// An entry's kind and what parsing found, reading it only when it is a

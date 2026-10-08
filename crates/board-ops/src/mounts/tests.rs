@@ -199,3 +199,41 @@ fn a_path_too_long_under_its_mount_point_is_malformed_and_its_shorter_twin_is_ok
     assert_eq!(status(&long), Status::Degraded(Code::PathMalformed));
     assert_eq!(status(&short), Status::Ok);
 }
+
+#[test]
+fn a_check_opens_a_repository_mounted_at_two_commits_once_and_two_repositories_twice() {
+    let (one, first) = library();
+    let second = one.commit(&[("tasks/later.json", &task(""))]);
+    let scenario = board();
+    scenario
+        .write("a.json", Item::File(&mount(&one.path(), first)))
+        .write("b.json", Item::File(&mount(&one.path(), second)));
+    let board = open(&scenario);
+    let report = board.check(None, None).unwrap();
+    let reached: Vec<String> = mounted(&report).into_iter().map(|(at, _)| at).collect();
+    assert!(reached.contains(&"/a/tasks/ok".to_owned()), "{reached:?}");
+    assert!(
+        reached.contains(&"/b/tasks/later".to_owned()),
+        "{reached:?}"
+    );
+    assert_eq!(board.repositories().opened(), 1);
+    let (other, commit) = library();
+    scenario.write("c.json", Item::File(&mount(&other.path(), commit)));
+    let board = open(&scenario);
+    board.check(None, None).unwrap();
+    assert_eq!(board.repositories().opened(), 2);
+}
+
+#[test]
+fn getting_and_listing_through_a_mount_opens_the_mounted_repository_once() {
+    let (one, commit) = library();
+    let scenario = board();
+    scenario.write("a.json", Item::File(&mount(&one.path(), commit)));
+    let board = open(&scenario);
+    assert_eq!(board.repositories().opened(), 0);
+    for _ in 0..2 {
+        board.get(&"/a/tasks/ok".parse().unwrap()).unwrap();
+        board.ls(&"/a/tasks".parse().unwrap()).unwrap();
+    }
+    assert_eq!(board.repositories().opened(), 1);
+}

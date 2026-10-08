@@ -865,7 +865,7 @@ fn a_write_left_with_no_view_reports_the_error_at_its_pointer_or_each_reference(
     let scenario = board();
     let board = open(&scenario);
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
-    let mut view = board.repository().snapshot().unwrap();
+    let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
     let mut prepare = |at: &str, record: &str| {
         let bytes = record.as_bytes();

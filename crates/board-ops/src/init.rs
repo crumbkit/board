@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use board_model::{CONFIG_TYPE, Code, LogicalPath, Source, canonical_json};
-use board_tree::{GitError, LOCK_WAIT, Repository, WriteError, repository_root};
+use board_tree::{GitError, LOCK_WAIT, Repositories, WriteError, repository_root};
 use serde_json::json;
 
 use crate::board::read_config;
@@ -25,7 +25,9 @@ pub fn init(start: &Path) -> Result<InitReport, InitError> {
     let root = repository_root(start).ok_or_else(|| InitError::NotARepository {
         start: start.to_path_buf(),
     })?;
-    let repository = Repository::open(&root).map_err(|source| InitError::Git { source })?;
+    let repositories =
+        Repositories::open(&root, None).map_err(|source| InitError::Git { source })?;
+    let repository = repositories.root();
     if repository.path() != root {
         return Err(InitError::NotARepository {
             start: start.to_path_buf(),
@@ -35,14 +37,14 @@ pub fn init(start: &Path) -> Result<InitReport, InitError> {
     let lock = repository.lock(LOCK_WAIT).map_err(write)?;
     let invalid = || InitError::Config { root: root.clone() };
     let path: LogicalPath = "/.board/board".parse().map_err(|_| invalid())?;
-    if repository.resolve(&Source::WorkingTree, &path).is_ok() {
-        read_config(&repository).ok_or_else(invalid)?;
+    if repositories.resolve(&Source::WorkingTree, &path).is_ok() {
+        read_config(&repositories).ok_or_else(invalid)?;
         return Ok(InitReport {
             root,
             created: false,
         });
     }
-    let target = repository.target(&path, false).map_err(write)?;
+    let target = repositories.target(&path, false).map_err(write)?;
     let config = canonical_json(&json!({ "$type": CONFIG_TYPE }));
     repository
         .write_file(&lock, &target.path, &config)

@@ -89,7 +89,8 @@ keeps mount points.
 Resolving follows pointers. Walking (`ls`, the index) does not: a walk reports
 a pointer as an entry, as `find` does without `-L`. The index includes every
 board reachable through mounts, each commit indexed once however many places
-mount it. Only `board-tree` reads pointers.
+mount it. One command opens each mounted repository once, however many mounts
+name it. Only `board-tree` reads pointers.
 
 ## Writes
 

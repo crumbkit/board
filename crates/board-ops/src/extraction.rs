@@ -1,14 +1,12 @@
 //! Extraction before `query` and `call` (docs/plugins.md, Extraction).
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use board_index::{Index, IndexError, PluginDatabase, Storage};
-use board_model::{Code, RecordType, Source, parse_json};
+use board_model::{Code, RecordType, parse_json};
 use board_plugin::{
     CallError, Context, Environment, Installed, Limits, Manifest, Record, extract, installed,
 };
-use board_tree::Repository;
 use serde_json::{Map, Value};
 
 use crate::board::Board;
@@ -70,21 +68,18 @@ impl Board {
         let (name, version) = (manifest.name.as_str(), manifest.version.as_str());
         index.trust(name, version, id)?;
         let types: Vec<&str> = manifest.extract.iter().map(RecordType::as_str).collect();
-        let mut mounted: HashMap<PathBuf, Option<Repository>> = HashMap::new();
         let records: Vec<Record> = index
             .unhandled(name, version, &types)?
             .into_iter()
             .filter_map(|unhandled| {
-                let repository = match unhandled.source {
-                    Source::WorkingTree => self.repository(),
-                    Source::Commit(_) => mounted
-                        .entry(unhandled.repository.clone())
-                        .or_insert_with(|| Repository::open(&unhandled.repository).ok())
-                        .as_ref()?,
+                let board = board_model::Board {
+                    repository: unhandled.repository,
+                    source: unhandled.source,
                 };
+                let repository = self.repositories().repository(&board).ok()?;
                 // A file that changed since the refresh is sent next time.
                 let contents = repository
-                    .read(&unhandled.source, &unhandled.path, unhandled.blob)
+                    .read(&board.source, &unhandled.path, unhandled.blob)
                     .ok()??;
                 Some(Record {
                     blob: unhandled.blob,

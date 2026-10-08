@@ -1,5 +1,6 @@
 //! What resolution and walking read: the directories of one source.
 
+use std::path::Path;
 use std::rc::Rc;
 
 use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
@@ -11,6 +12,10 @@ use crate::git::GitError;
 pub(crate) trait Tree {
     /// How the source names a directory it can list.
     type Directory: Clone;
+
+    /// The path of the repository the source is in, as
+    /// [`crate::Repository::path`] gives it.
+    fn repository(&self) -> &Path;
 
     fn source(&self) -> Source;
 

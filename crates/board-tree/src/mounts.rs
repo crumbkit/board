@@ -3,10 +3,13 @@
 //! once however many places mount it.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use board_model::{Code, Fields, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
 
 use crate::git::{Contents, GitError, Repository, latest};
+use crate::repositories::Repositories;
+use crate::tree::Tree;
 use crate::trees::{TreeRow, TreeRows, walk_stored};
 use crate::walk::{Entry, Status};
 use crate::write::{Target, WriteError};
@@ -90,11 +93,12 @@ struct Candidate {
     repository: Repository,
 }
 
-impl Repository {
-    /// Every board reachable through mounts from this working tree, whose
-    /// entries are `entries` with the cache's `facts` about them. Each
+impl Repositories {
+    /// Every board reachable through mounts from the board's working tree,
+    /// whose entries are `entries` with the cache's `facts` about them. Each
     /// mounted commit's trees that `cache` does not hold are stored in it,
-    /// then walked from it.
+    /// then walked from it. A repository that several pointers name is
+    /// opened once.
     pub fn walk_mounts<C: Cache>(
         &self,
         entries: &[Entry],
@@ -107,8 +111,10 @@ impl Repository {
             edges: Vec::new(),
         };
         let mut candidates = Vec::new();
-        let found = pointers::<C>(self, &Source::WorkingTree, entries, facts);
-        reached.add(self, &Source::WorkingTree, "", found, &mut candidates);
+        let root = self.root();
+        let found = pointers::<C>(root, &Source::WorkingTree, entries, facts);
+        let from = root.path();
+        reached.add(self, from, &Source::WorkingTree, "", found, &mut candidates);
         let mut seen: HashSet<ObjectId> = HashSet::new();
         while let Some(at) = first(&candidates) {
             let candidate = candidates.swap_remove(at);
@@ -124,7 +130,8 @@ impl Repository {
                 &mounted.facts,
             );
             reached.add(
-                &mounted.repository,
+                self,
+                mounted.repository.path(),
                 &source,
                 &mounted.route,
                 found,
@@ -147,8 +154,9 @@ impl Repository {
         let Object::Blob(resolved) = target.location.object else {
             return Err(not_a_mount());
         };
+        let root = self.root();
         let Contents { blob, bytes } =
-            latest(self.read(&Source::WorkingTree, &target.path, resolved))
+            latest(root.read(&Source::WorkingTree, &target.path, resolved))
                 .map_err(|error| refused(error.code()))?
                 .ok_or_else(not_a_mount)?;
         let mount = match board_model::pointer(&bytes) {
@@ -156,7 +164,7 @@ impl Repository {
             Ok(_) => return Err(not_a_mount()),
             Err(error) => return Err(refused(error.code())),
         };
-        let new = self.followed(&mount).map_err(refused)?;
+        let new = self.followed(root.path(), &mount).map_err(refused)?;
         let canonical =
             board_model::repinned(&bytes, new).map_err(|error| refused(error.code()))?;
         Ok(Pin {
@@ -210,18 +218,29 @@ impl PinError {
 }
 
 impl<F> Reached<F> {
-    /// Records the mounts `found` in `source`, whose route is `route`, and
-    /// adds each one that can be read as a candidate.
+    /// Records the mounts `found` in `source` of the repository at `from`,
+    /// whose route is `route`, and adds each one that can be read as a
+    /// candidate.
     fn add(
         &mut self,
-        repository: &Repository,
+        repositories: &Repositories,
+        from: &Path,
         source: &Source,
         route: &str,
         found: Vec<(LogicalPath, String, Mount)>,
         candidates: &mut Vec<Candidate>,
     ) {
         for (at, path, mount) in found {
-            let mounted = repository.mounted(&mount);
+            let mounted = repositories
+                .mounted(from, &mount)
+                .ok_or(Code::MountRepoMissing)
+                .and_then(|mounted| {
+                    let root = mounted
+                        .commit_tree(mount.commit)
+                        .map_err(|_| Code::MountCommitMissing)?
+                        .root();
+                    Ok((mounted, root))
+                });
             self.points.push(MountPoint {
                 source: source.clone(),
                 path,

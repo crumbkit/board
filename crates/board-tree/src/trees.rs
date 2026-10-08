@@ -61,6 +61,10 @@ struct StoredTree<'r> {
 impl Tree for StoredTree<'_> {
     type Directory = ObjectId;
 
+    fn repository(&self) -> &Path {
+        &self.repository
+    }
+
     fn source(&self) -> Source {
         Source::Commit(self.commit)
     }

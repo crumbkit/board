@@ -13,7 +13,7 @@ use board_model::{
     Change, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, ObjectId,
     POINTER_TYPE, RecordType, Role, Source, Stat, classify,
 };
-use board_tree::{Entry, Repository, ResolveError, Status, in_scope, latest};
+use board_tree::{Entry, Repositories, ResolveError, Status, in_scope, latest};
 
 use crate::board::Board;
 use crate::index::{Indexed, RefreshError, Refreshed, schema_of, schema_path, transact};
@@ -160,7 +160,7 @@ impl Board {
         view: View,
     ) -> Result<(CheckReport, Vec<Referenced>), CheckError> {
         if let Some(scope) = scope {
-            self.repository()
+            self.repositories()
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
@@ -201,9 +201,10 @@ impl Board {
             }
             blob
         };
-        let mut resolver = self.repository().resolver(&mut known)?;
+        let mut resolver = self.repositories().resolver(&mut known)?;
         let mut decided = Decided::default();
         let root = Decide {
+            repositories: self.repositories(),
             writer,
             changed: &refresh.changed,
             facts: &refresh.facts,
@@ -232,11 +233,13 @@ impl Board {
         for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
+                repositories: self.repositories(),
                 writer,
                 changed: &unchanged,
                 facts: &mounted.facts,
                 resolve: RefCell::new(Box::new(|path: &LogicalPath| {
-                    mounted.repository.resolve(&source, path)
+                    self.repositories()
+                        .resolve_in(&mounted.repository, mounted.commit, path)
                 })),
             };
             for entry in &mounted.entries {
@@ -384,6 +387,7 @@ const READ_AGAIN: &str = "changed or could not be read; run the command again";
 
 /// What deciding the status of a source's entries reads.
 struct Decide<'a> {
+    repositories: &'a Repositories,
     writer: &'a Writer<'a>,
     /// The paths the refresh left out because they changed after the walk.
     changed: &'a HashSet<String>,
@@ -531,7 +535,7 @@ impl Decide<'_> {
             return Ok(None);
         };
         let Some(fact) = self.writer.blob(blob, role)? else {
-            return Ok(read_type(location, blob));
+            return Ok(read_type(self.repositories, location, blob));
         };
         Ok(match (fact.code, fact.kind) {
             (Some(_), _) => None,
@@ -552,9 +556,12 @@ pub(crate) fn unresolved(error: &ResolveError) -> (Code, Detail) {
 }
 
 /// The `$type` of the record at `location`, read in its own board.
-pub(crate) fn read_type(location: &Location, blob: ObjectId) -> Option<RecordType> {
-    let repository = Repository::open(&location.board.repository).ok()?;
-    let contents = latest(repository.read(&location.board.source, &location.path, blob)).ok()??;
+pub(crate) fn read_type(
+    repositories: &Repositories,
+    location: &Location,
+    blob: ObjectId,
+) -> Option<RecordType> {
+    let contents = latest(repositories.read(location, blob)).ok()??;
     match classify(&location.path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, .. },

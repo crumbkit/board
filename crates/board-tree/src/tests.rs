@@ -18,20 +18,26 @@ use proptest::prelude::*;
 
 use board_scenario::{Item, Scenario};
 
-use crate::{Entry, Repository, Status};
+use crate::{Entry, Repositories, Repository, Status};
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
 }
 
-/// Opens a scenario's repository as this crate's [`Repository`].
+/// Opens a scenario's repository as this crate's [`Repository`], or as the
+/// root of its [`Repositories`], with no home directory.
 trait Open {
     fn open(&self) -> Repository;
+    fn repositories(&self) -> Repositories;
 }
 
 impl Open for Scenario {
     fn open(&self) -> Repository {
         Repository::open(self.workdir()).unwrap()
+    }
+
+    fn repositories(&self) -> Repositories {
+        Repositories::open(self.workdir(), None).unwrap()
     }
 }
 
@@ -57,7 +63,7 @@ impl At for WorkingTree {
 
 fn resolve(scenario: &Scenario, at: impl At, text: &str) -> Result<Location, Code> {
     scenario
-        .open()
+        .repositories()
         .resolve(&at.source(), &path(text))
         .map_err(|error| error.code())
 }
@@ -384,14 +390,14 @@ proptest! {
         // A file path that is also a directory is not a tree git can hold.
         prop_assume!(files.iter().all(|file| !files.iter().any(|other| other.starts_with(&format!("{file}/")))));
         let commit = scenario.commit_items(&items);
-        let repository = scenario.open();
-        let entries = repository.walk(&commit.source()).unwrap();
+        let repositories = scenario.repositories();
+        let entries = repositories.root().walk(&commit.source()).unwrap();
         let physical: HashSet<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
         prop_assert_eq!(physical.len(), entries.len());
         for entry in &entries {
             if entry.status == Status::Ok {
                 let logical = entry.logical.as_ref().unwrap();
-                let location = repository.resolve(&commit.source(), logical).unwrap();
+                let location = repositories.resolve(&commit.source(), logical).unwrap();
                 prop_assert_eq!(&location.path, &entry.path);
                 prop_assert_eq!(Some(location.object), entry.blob.map(Object::Blob));
             }

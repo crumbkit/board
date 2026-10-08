@@ -286,7 +286,7 @@ fn resolution_takes_a_known_blob_as_given_and_hashes_the_rest() {
         .write("work/known.md", Item::File("{}"))
         .write("work/other.json", Item::File("[]"));
     let stand_in = scenario.blob("not what the file holds");
-    let repository = scenario.open();
+    let repository = scenario.repositories();
     let mut known =
         |path: &str, _: &board_model::Stat| (path == "work/known.md").then_some(stand_in);
     let mut resolver = repository.resolver(&mut known).unwrap();
@@ -309,7 +309,7 @@ fn the_repository_root_is_found_from_below_and_not_outside_a_repository() {
 /// The segments past the deepest ancestor of `text` that resolves, and the
 /// physical path a file there would have.
 fn ancestor(scenario: &Scenario, text: &str) -> (Vec<String>, Option<String>) {
-    let ancestor = scenario.open().ancestor(&path(text)).unwrap();
+    let ancestor = scenario.repositories().ancestor(&path(text)).unwrap();
     (ancestor.rest.clone(), ancestor.path())
 }
 
@@ -354,7 +354,7 @@ fn a_missing_path_lies_beneath_its_deepest_ancestor_and_nothing_lies_beneath_a_f
 fn a_write_beside_a_directory_is_refused_as_shadowed_only_when_it_writes_a_pointer() {
     let scenario = Scenario::new();
     scenario.write("x/c.json", Item::File("{}"));
-    let repository = scenario.open();
+    let repository = scenario.repositories();
     let target = repository.target(&path("/x"), false).unwrap();
     assert_eq!(target.path, "x.json");
     match repository.target(&path("/x"), true) {
@@ -365,7 +365,7 @@ fn a_write_beside_a_directory_is_refused_as_shadowed_only_when_it_writes_a_point
 
 /// Where a write to `text` lands, or the code that refuses it.
 fn target(scenario: &Scenario, text: &str, is_pointer: bool) -> Result<String, Code> {
-    let repository = scenario.open();
+    let repository = scenario.repositories();
     let mut snapshot = repository.snapshot().unwrap();
     snapshot
         .target(&path(text), is_pointer)
@@ -424,12 +424,22 @@ fn a_snapshot_lists_each_directory_once_and_each_target_without_one_lists_again(
     scenario
         .write("tasks/a.json", Item::File("{}"))
         .write("tasks/b.json", Item::File("{}"));
-    let repository = scenario.open();
-    let mut snapshot = repository.snapshot().unwrap();
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
+    let mut snapshot = repositories.snapshot().unwrap();
     for text in ["/tasks/a", "/tasks/b", "/tasks/new"] {
         snapshot.target(&path(text), false).unwrap();
     }
     assert_eq!(repository.directories_listed(), 2, "the root and tasks");
-    repository.target(&path("/tasks/a"), false).unwrap();
+    repositories.target(&path("/tasks/a"), false).unwrap();
     assert_eq!(repository.directories_listed(), 4);
+}
+
+#[test]
+fn a_resolver_names_its_repository_when_debugged() {
+    let scenario = Scenario::new();
+    let repositories = scenario.repositories();
+    let shown = format!("{:?}", repositories.snapshot().unwrap());
+    let path = format!("{:?}", repositories.root().path());
+    assert_eq!(shown, format!("Resolver {{ repository: {path}, .. }}"));
 }

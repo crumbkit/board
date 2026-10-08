@@ -15,6 +15,7 @@ use board_model::{BINARY_NAME, Code, Fields, Location, LogicalPath, Object, Obje
 use gix::lock::acquire::Fail;
 
 use crate::git::{GitError, Repository, model_id};
+use crate::repositories::Repositories;
 use crate::resolve::{ResolveError, Resolver};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned};
@@ -42,7 +43,7 @@ pub struct Lock {
     _held: gix::lock::Marker,
 }
 
-impl Repository {
+impl Repositories {
     /// The record file `path` names for writing, as [`Resolver::target`]
     /// finds it in a snapshot of its own.
     pub fn target(&self, path: &LogicalPath, is_pointer: bool) -> Result<Target, WriteError> {

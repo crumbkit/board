@@ -18,6 +18,10 @@ struct Counting<'t, T> {
 impl<T: Tree> Tree for Counting<'_, T> {
     type Directory = T::Directory;
 
+    fn repository(&self) -> &std::path::Path {
+        self.tree.repository()
+    }
+
     fn source(&self) -> Source {
         self.tree.source()
     }
