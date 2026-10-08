@@ -17,6 +17,8 @@ pub struct Repository {
     git: gix::Repository,
     /// How many directories its working-tree views read from disk.
     listed: AtomicUsize,
+    /// How many working-tree files it opened to hash or read.
+    opened: AtomicUsize,
 }
 
 /// A commit's tree, read from the object database.
@@ -48,6 +50,7 @@ impl Repository {
             path,
             git,
             listed: AtomicUsize::new(0),
+            opened: AtomicUsize::new(0),
         }
     }
 
@@ -70,6 +73,17 @@ impl Repository {
     /// Counts one directory read from disk.
     pub(crate) fn listed_one(&self) {
         self.listed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// How many working-tree files this repository opened to hash or read.
+    /// Work-count tests assert it.
+    pub fn files_opened(&self) -> usize {
+        self.opened.load(Ordering::Relaxed)
+    }
+
+    /// Counts one working-tree file opened.
+    pub(crate) fn opened_one(&self) {
+        self.opened.fetch_add(1, Ordering::Relaxed);
     }
 
     /// The commit `HEAD` names, or `None` before the first commit.

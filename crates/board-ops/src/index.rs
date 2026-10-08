@@ -13,7 +13,7 @@ use board_model::{
     Source, Stat,
 };
 use board_plugin::Manifest;
-use board_tree::{Entry, GitError, Repository, Status, latest};
+use board_tree::{Contents, Entry, GitError, Repository, Status, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -36,6 +36,14 @@ pub struct Refreshed {
 
 /// Parsed values from this refresh, so validation need not read them again.
 type Values = HashMap<(ObjectId, Role), Value>;
+
+/// What a walk learnt from the files it read in full, so `facts` need not
+/// open them again.
+#[derive(Default)]
+pub(crate) struct Kept {
+    facts: HashMap<(ObjectId, Role), BlobFact>,
+    values: Values,
+}
 
 /// One entry's blob, the role its path gives it, and what the index holds
 /// about it.
@@ -70,13 +78,15 @@ impl Board {
     pub(crate) fn refresh(&self, writer: &Writer<'_>) -> Result<Refresh, RefreshError> {
         let started_ns = now_ns();
         let mut work = Refreshed::default();
-        let (entries, changed) = self.walk(writer, &mut work.hashed)?;
+        let mut kept = Kept::default();
+        let (entries, changed) = self.walk(writer, &mut work, &mut kept)?;
         let (facts, left_out) = facts(
             writer,
             self.repository(),
             &Source::WorkingTree,
             &entries,
             &mut work,
+            kept,
         )?;
         let head = self.head(writer, &mut work.trees)?;
         // Keeping the older start time trusts no file the stored one did not.
@@ -111,26 +121,45 @@ impl Board {
     }
 
     /// Walks the working tree, hashing only files whose metadata the index
-    /// does not hold, and records what it saw. Returns the entries and
+    /// does not hold, and records what it saw. Each JSON file it reads in
+    /// full is indexed into `kept` as it is read. Returns the entries and
     /// whether it hashed or recorded anything.
     fn walk(
         &self,
         writer: &Writer<'_>,
-        hashed: &mut usize,
+        work: &mut Refreshed,
+        kept: &mut Kept,
     ) -> Result<(Vec<Entry>, bool), RefreshError> {
         let clean_before_ns = writer.refreshed_ns()?.map(whole_second);
         let stored = writer.worktree()?;
-        let entries = self.repository().walk_working_tree(&mut |path, stat| {
-            let known = stored
-                .get(path)
-                .filter(|row| row.stat.as_ref() == Some(stat) && clean(stat, clean_before_ns))
-                .and_then(|row| row.blob);
-            if known.is_none() {
-                *hashed += 1;
-            }
-            known
-        })?;
-        let mut changed = *hashed > 0;
+        let mut hashed = 0;
+        let mut parsed = 0;
+        let mut failed = None;
+        let entries = self.repository().walk_working_tree(
+            &mut |path, stat| {
+                let known = stored
+                    .get(path)
+                    .filter(|row| row.stat.as_ref() == Some(stat) && clean(stat, clean_before_ns))
+                    .and_then(|row| row.blob);
+                if known.is_none() {
+                    hashed += 1;
+                }
+                known
+            },
+            &mut |path, contents| {
+                if failed.is_none()
+                    && let Err(error) = keep(writer, kept, path, &contents, &mut parsed)
+                {
+                    failed = Some(error);
+                }
+            },
+        )?;
+        if let Some(error) = failed {
+            return Err(error.into());
+        }
+        work.hashed += hashed;
+        work.parsed += parsed;
+        let mut changed = hashed > 0;
         for entry in &entries {
             let row = WorktreeRow {
                 logical: entry.logical.clone(),
@@ -199,24 +228,78 @@ fn busy<T>(result: &Result<T, RefreshError>) -> bool {
     )
 }
 
+/// Indexes the `contents` of the file at `path` that a walk read, unless
+/// the index already holds its blob, and keeps what it holds.
+fn keep(
+    writer: &Writer<'_>,
+    kept: &mut Kept,
+    path: &str,
+    contents: &Contents,
+    parsed: &mut usize,
+) -> Result<(), IndexError> {
+    let Some(role) = Role::of(path) else {
+        return Ok(());
+    };
+    let key = (contents.blob, role);
+    if kept.facts.contains_key(&key) {
+        return Ok(());
+    }
+    let fact = if let Some(fact) = writer.blob(contents.blob, role)? {
+        fact
+    } else {
+        let (fact, value) = index_blob(writer, contents.blob, role, Some(&contents.bytes))?;
+        *parsed += 1;
+        if let Some(value) = value {
+            kept.values.insert(key, value);
+        }
+        fact
+    };
+    kept.facts.insert(key, fact);
+    Ok(())
+}
+
+/// Classifies the `bytes` of `blob` in `role`, or a blob too large to read,
+/// and stores what the index keeps of it. Returns that and the parsed value.
+fn index_blob(
+    writer: &Writer<'_>,
+    blob: ObjectId,
+    role: Role,
+    bytes: Option<&[u8]>,
+) -> Result<(BlobFact, Option<Value>), IndexError> {
+    let classified = role.classify(bytes);
+    let fact = blob_fact(&classified);
+    writer.put_blob(blob, role, &fact)?;
+    if let Content::Record { value, .. } = &classified.content {
+        writer.put_body(blob, value)?;
+    }
+    Ok((fact, value(classified)))
+}
+
 /// What the index holds about each entry of `source` in `repository`,
 /// parsing each blob and validating each record it does not hold yet, and
-/// the paths left out because they changed after the walk.
+/// the paths left out because they changed after the walk. What the walk
+/// `kept` is not read again.
 pub(crate) fn facts(
     writer: &Writer<'_>,
     repository: &Repository,
     source: &Source,
     entries: &[Entry],
     work: &mut Refreshed,
+    kept: Kept,
 ) -> Result<(HashMap<String, Indexed>, HashSet<String>), RefreshError> {
-    let mut values = Values::new();
+    let Kept {
+        facts: walked,
+        mut values,
+    } = kept;
     let mut facts: HashMap<String, Indexed> = HashMap::new();
     let mut changed = HashSet::new();
     for entry in entries {
         let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
             continue;
         };
-        let fact = if let Some(fact) = writer.blob(blob, role)? {
+        let fact = if let Some(fact) = walked.get(&(blob, role)) {
+            fact.clone()
+        } else if let Some(fact) = writer.blob(blob, role)? {
             fact
         } else {
             // A blob that cannot be read has no content fact to store. Only a
@@ -226,12 +309,7 @@ pub(crate) fn facts(
                 Ok(None) if entry.size > Some(MAX_RECORD_BYTES as u64) => (blob, None),
                 Ok(None) | Err(_) => continue,
             };
-            let classified = role.classify(bytes.as_deref());
-            let fact = blob_fact(&classified);
-            writer.put_blob(read, role, &fact)?;
-            if let Content::Record { value, .. } = &classified.content {
-                writer.put_body(read, value)?;
-            }
+            let (fact, value) = index_blob(writer, read, role, bytes.as_deref())?;
             work.parsed += 1;
             // A file that changed since the walk is left out of this run,
             // which reports it unreadable.
@@ -239,7 +317,7 @@ pub(crate) fn facts(
                 changed.insert(entry.path.clone());
                 continue;
             }
-            if let Some(value) = value(classified) {
+            if let Some(value) = value {
                 values.insert((blob, role), value);
             }
             fact

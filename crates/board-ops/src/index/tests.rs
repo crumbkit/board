@@ -4,7 +4,7 @@ use board_index::{BlobFact, Index, RefFact, ValidationFact};
 use board_model::{Code, Kind, Role, Source};
 use board_scenario::{Item, Scenario};
 
-use crate::index::{Refreshed, facts, transact};
+use crate::index::{Kept, Refreshed, facts, transact};
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 
 /// Refreshes the index of `scenario` in `cache`.
@@ -49,6 +49,43 @@ fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_once() {
             ..Refreshed::default()
         }
     );
+}
+
+/// How many files a refresh of `scenario` in `cache` opens.
+fn opened(scenario: &Scenario, cache: &std::path::Path) -> usize {
+    let board = open(scenario);
+    let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let before = board.repository().files_opened();
+    board.refresh_index(&mut index).unwrap();
+    board.repository().files_opened() - before
+}
+
+#[test]
+fn a_cold_refresh_opens_each_file_once_and_a_warm_one_opens_none() {
+    let scenario = tasks();
+    let cache = tempfile::tempdir().unwrap();
+    // The eight files hashed are each opened once: the JSON ones are parsed
+    // from the bytes hashed.
+    assert_eq!(opened(&scenario, cache.path()), 8, "cold");
+    assert_eq!(opened(&scenario, cache.path()), 0, "warm");
+}
+
+#[test]
+fn a_file_of_the_largest_size_kept_is_opened_once() {
+    let scenario = tasks();
+    let big = "a".repeat(board_model::MAX_RECORD_BYTES);
+    scenario.write("big.json", Item::File(&big));
+    let cache = tempfile::tempdir().unwrap();
+    assert_eq!(opened(&scenario, cache.path()), 9);
+}
+
+#[test]
+fn a_file_too_large_to_keep_is_hashed_and_then_opened_again_to_be_classified() {
+    let scenario = tasks();
+    let big = "a".repeat(board_model::MAX_RECORD_BYTES + 1);
+    scenario.write("big.json", Item::File(&big));
+    let cache = tempfile::tempdir().unwrap();
+    assert_eq!(opened(&scenario, cache.path()), 10);
 }
 
 #[test]
@@ -372,6 +409,14 @@ fn a_transaction_no_other_process_wrote_under_runs_once_and_writes() {
     assert_eq!(retried(false), (1, true));
 }
 
+/// The entries of `board`'s working tree, walked without keeping or
+/// indexing any file, as for a file `facts` must open itself.
+fn unkept(board: &crate::Board) -> Result<Vec<board_tree::Entry>, board_tree::GitError> {
+    board
+        .repository()
+        .walk_working_tree(&mut |_, _| None, &mut |_, _| {})
+}
+
 #[test]
 fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while_its_twin_is_kept()
 {
@@ -384,7 +429,7 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
     let cache = tempfile::tempdir().unwrap();
     let mut index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let ((facts, changed, under_new, under_old), _) = transact(&mut index, |writer| {
-        let (entries, _) = board.walk(writer, &mut 0)?;
+        let entries = unkept(&board)?;
         scenario.write("tasks/a.json", Item::File(&new));
         let mut work = Refreshed::default();
         let (facts, changed) = facts(
@@ -393,6 +438,7 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
             &Source::WorkingTree,
             &entries,
             &mut work,
+            Kept::default(),
         )?;
         let under_new = writer.blob(scenario.blob(&new), Role::Json)?;
         let under_old = writer.blob(scenario.blob(&old), Role::Json)?;
@@ -419,7 +465,7 @@ fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
     let cache = tempfile::tempdir().unwrap();
     let mut index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let ((facts, _), _) = transact(&mut index, |writer| {
-        let (entries, _) = board.walk(writer, &mut 0)?;
+        let entries = unkept(&board)?;
         if read != walked {
             scenario.write("big.json", Item::File(&"b".repeat(read)));
         }
@@ -429,6 +475,7 @@ fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
             &Source::WorkingTree,
             &entries,
             &mut Refreshed::default(),
+            Kept::default(),
         )
     })
     .unwrap();

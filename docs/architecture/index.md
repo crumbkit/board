@@ -47,9 +47,11 @@ mtime falls in or after the second in which the last refresh that hashed or
 recorded a file began. A refresh that finds nothing changed writes nothing, so
 it neither waits for nor blocks another process. If another process holds the
 lock or wrote first, the refresh runs again, waiting up to 5 seconds for the
-lock. If the wait runs out, it runs in an index in memory. A file changed after
-hashing is `board::repo::unreadable` until the next run, and so are the records
-of a schema that changed. `check`, `refs` and `query` use the index; `get` and
+lock. If the wait runs out, it runs in an index in memory. A JSON file of up to
+16 MiB is parsed from the bytes hashed, so a cold refresh opens each file once.
+A file that is read again, such as a larger one, and that changed after hashing
+is `board::repo::unreadable` until the next run, and so are the records of a
+schema that changed. `check`, `refs` and `query` use the index; `get` and
 `ls` resolve directly.
 
 Once the index has doubled in pages since its last prune or first refresh, a

@@ -8,6 +8,7 @@ use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree};
+use crate::worktree::{Kept, Known};
 
 /// One file in a tree. Directories are not entries.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,12 +65,16 @@ impl Repository {
 
     /// Walks the working tree as [`Repository::walk`] does, but hashes a
     /// file only when `known`, given its `/`-separated path and metadata,
-    /// does not already know its blob.
+    /// does not already know its blob. Each JSON file it hashes within
+    /// [`MAX_RECORD_BYTES`](board_model::MAX_RECORD_BYTES) is read in full, and `kept` takes its path and
+    /// contents as soon as it is read, so that the caller holds no more of
+    /// the tree than it chooses to.
     pub fn walk_working_tree(
         &self,
-        known: &mut dyn FnMut(&str, &Stat) -> Option<ObjectId>,
+        known: Known<'_>,
+        kept: Kept<'_>,
     ) -> Result<Vec<Entry>, GitError> {
-        walk_in(&mut self.working_tree(Some(known))?)
+        walk_in(&mut self.working_tree(Some(known))?.keeping(kept))
     }
 }
 

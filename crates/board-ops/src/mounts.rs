@@ -9,7 +9,7 @@ use board_model::{Kind, ObjectId, Source};
 use board_tree::{Cache, Entry, Reached, Repository, TreeRow, TreeRows};
 
 use crate::board::Board;
-use crate::index::{Indexed, Refresh, RefreshError, Refreshed, facts};
+use crate::index::{Indexed, Kept, Refresh, RefreshError, Refreshed, facts};
 
 /// What the index holds about one source's entries, by physical path.
 type Facts = HashMap<String, Indexed>;
@@ -66,7 +66,8 @@ impl Cache for Indexing<'_, '_> {
         entries: &[Entry],
     ) -> Result<Facts, RefreshError> {
         // A commit's files never change, so none is left out.
-        Ok(facts(self.writer, repository, source, entries, self.work)?.0)
+        let kept = Kept::default();
+        Ok(facts(self.writer, repository, source, entries, self.work, kept)?.0)
     }
 
     fn is_pointer(facts: &Facts, path: &str) -> bool {

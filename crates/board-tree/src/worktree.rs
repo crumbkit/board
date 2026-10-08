@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::time::UNIX_EPOCH;
 
-use board_model::{MAX_RECORD_BYTES, ObjectId, Source, Stat};
+use board_model::{MAX_RECORD_BYTES, ObjectId, Role, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
@@ -23,6 +23,10 @@ use crate::tree::{Kind, RawEntry, Tree};
 /// Given a file's `/`-separated path and metadata, its blob if already known.
 pub type Known<'k> = &'k mut dyn FnMut(&str, &Stat) -> Option<ObjectId>;
 
+/// Takes the contents of a file the walk read in full to hash it, given its
+/// `/`-separated path.
+pub type Kept<'k> = &'k mut dyn FnMut(&str, Contents);
+
 /// The working tree of a repository, with its index and ignore rules. Each
 /// directory is listed once, so the tree is one snapshot however often it is
 /// read.
@@ -33,6 +37,9 @@ pub(crate) struct WorkingTree<'r, 'k> {
     /// Gives the blobs of files already known; without it, every file
     /// listed is hashed.
     known: Option<Known<'k>>,
+    /// Takes the contents of each JSON file hashed, so the caller need not
+    /// open it again; without it, they are dropped.
+    kept: Option<Kept<'k>>,
     listed: HashMap<PathBuf, Listing>,
 }
 
@@ -120,12 +127,19 @@ impl Repository {
             index,
             excludes,
             known,
+            kept: None,
             listed: HashMap::new(),
         })
     }
 }
 
-impl WorkingTree<'_, '_> {
+impl<'k> WorkingTree<'_, 'k> {
+    /// This tree, handing the contents of each JSON file it hashes to `kept`.
+    pub(crate) fn keeping(mut self, kept: Kept<'k>) -> Self {
+        self.kept = Some(kept);
+        self
+    }
+
     /// What git sees at `relative`, with a file's or symlink's metadata, or
     /// `None` when git does not see it: an untracked path that is ignored,
     /// or something other than a file, directory or symlink. A path whose
@@ -182,12 +196,19 @@ impl WorkingTree<'_, '_> {
             return Some((Kind::File(blob), Some(seen)));
         }
         // The file hashed is the one opened, so its own metadata is kept.
+        self.repository.opened_one();
         let Ok((stat, file)) =
             fs::File::open(&absolute).and_then(|file| Ok((stat(&file.metadata()?), file)))
         else {
             return Some((Kind::Unreadable, None));
         };
-        let blob = self.repository.hash(&mut BufReader::new(file), stat.size);
+        // Only a walk that keeps bytes reads a file in full.
+        let blob = match self.kept.as_mut() {
+            Some(kept) if Role::of(&path).is_some() && stat.size <= MAX_RECORD_BYTES as u64 => {
+                hash_kept(self.repository, kept, &path, file, stat.size)
+            }
+            _ => self.repository.hash(&mut BufReader::new(file), stat.size),
+        };
         Some((blob.map_or(Kind::Unreadable, Kind::File), Some(stat)))
     }
 
@@ -238,6 +259,30 @@ impl WorkingTree<'_, '_> {
     fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
         self.known.as_mut().and_then(|known| known(path, stat))
     }
+}
+
+/// The id of the `length` bytes of `file`, read in full and handed to `kept`,
+/// so the blob is the blob of the bytes kept; `None` if the file cannot be
+/// read or does not hold `length` bytes.
+fn hash_kept(
+    repository: &Repository,
+    kept: &mut Kept<'_>,
+    path: &str,
+    file: fs::File,
+    length: u64,
+) -> Option<ObjectId> {
+    let bytes = read_exactly(file, length)?;
+    let blob = repository.blob_id(&bytes);
+    kept(path, Contents { blob, bytes });
+    Some(blob)
+}
+
+/// The bytes of `stream`, or `None` if it fails or yields fewer or more than
+/// `length` bytes because the file changed while it was read.
+fn read_exactly(stream: impl Read, length: u64) -> Option<Vec<u8>> {
+    let mut bytes = Vec::new();
+    stream.take(length + 1).read_to_end(&mut bytes).ok()?;
+    (bytes.len() as u64 == length).then_some(bytes)
 }
 
 impl Tree for WorkingTree<'_, '_> {
@@ -392,6 +437,7 @@ impl Repository {
             let target = fs::read_link(&path).map_err(unreadable)?;
             bytes = gix::path::into_bstr(target).to_vec();
         } else {
+            self.opened_one();
             fs::File::open(&path)
                 .and_then(|file| {
                     file.take(MAX_RECORD_BYTES as u64 + 1)
@@ -502,6 +548,13 @@ mod tests {
         );
         assert_eq!(repository.hash(&mut &b"abcd"[..], 3), None);
         assert_eq!(repository.hash(&mut &b"ab"[..], 3), None);
+    }
+
+    #[test]
+    fn a_stream_longer_or_shorter_than_its_length_is_not_read() {
+        assert_eq!(read_exactly(&b"abc"[..], 3), Some(b"abc".to_vec()));
+        assert_eq!(read_exactly(&b"abcd"[..], 3), None);
+        assert_eq!(read_exactly(&b"ab"[..], 3), None);
     }
 
     #[test]

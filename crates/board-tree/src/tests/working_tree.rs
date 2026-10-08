@@ -2,7 +2,7 @@
 //! Boards and entries).
 
 use super::*;
-use crate::Entry;
+use crate::{Contents, Entry};
 
 #[test]
 fn a_file_in_the_working_tree_resolves_to_the_blob_git_would_store() {
@@ -247,22 +247,28 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
     let scenario = Scenario::new();
     scenario
         .write("known.json", Item::File("{}"))
-        .write("dir/unknown.json", Item::File("[]"));
+        .write("dir/unknown.json", Item::File("[]"))
+        .write("notes.md", Item::File("[]"));
     let stand_in = scenario.blob("not what the file holds");
     let mut asked = Vec::new();
+    let mut kept = Vec::new();
     let entries = scenario
         .open()
-        .walk_working_tree(&mut |path, stat| {
-            asked.push((path.to_owned(), stat.size));
-            (path == "known.json").then_some(stand_in)
-        })
+        .walk_working_tree(
+            &mut |path, stat| {
+                asked.push((path.to_owned(), stat.size));
+                (path == "known.json").then_some(stand_in)
+            },
+            &mut |path, contents| kept.push((path.to_owned(), contents)),
+        )
         .unwrap();
     asked.sort();
     assert_eq!(
         asked,
         [
             ("dir/unknown.json".to_owned(), 2),
-            ("known.json".to_owned(), 2)
+            ("known.json".to_owned(), 2),
+            ("notes.md".to_owned(), 2),
         ]
     );
     let blobs: Vec<_> = entries
@@ -274,8 +280,18 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         [
             ("dir/unknown.json", Some(scenario.blob("[]"))),
             ("known.json", Some(stand_in)),
+            ("notes.md", Some(scenario.blob("[]"))),
         ],
         "the known blob is taken as given, which shows the file was not hashed"
+    );
+    let contents = Contents {
+        blob: scenario.blob("[]"),
+        bytes: b"[]".to_vec(),
+    };
+    assert_eq!(
+        kept,
+        [("dir/unknown.json".to_owned(), contents)],
+        "only the JSON file hashed is kept, with the blob of its bytes"
     );
 }
 
