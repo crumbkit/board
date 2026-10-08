@@ -327,6 +327,10 @@ impl std::fmt::Debug for Resolver<'_, '_> {
 }
 
 impl Resolver<'_, '_> {
+    pub(crate) fn repository(&self) -> &Repository {
+        self.repository
+    }
+
     /// Resolves `path` as [`Repository::resolve`] does in the working tree.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
         self.repository

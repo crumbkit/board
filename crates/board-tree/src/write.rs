@@ -82,6 +82,7 @@ impl Resolver<'_, '_> {
         if location.board.source != Source::WorkingTree {
             return Err(refused(Code::PutThroughMount));
         }
+        self.repository().refuse_symlink(path, &physical)?;
         self.writable(path, physical, location, is_pointer)
     }
 
@@ -147,6 +148,30 @@ impl Resolver<'_, '_> {
 }
 
 impl Repository {
+    /// Refuses a write to the `/`-separated `file` when it, or a directory
+    /// on the way to it, is a symlink. The working-tree listing hides an
+    /// ignored symlink, so resolution alone would write through one.
+    fn refuse_symlink(&self, path: &LogicalPath, file: &str) -> Result<(), WriteError> {
+        let mut at = self.path().to_path_buf();
+        let mut end = 0;
+        for segment in file.split('/') {
+            at.push(segment);
+            end += segment.len();
+            match fs::symlink_metadata(&at) {
+                Ok(metadata) if metadata.is_symlink() => {
+                    return Err(WriteError::Symlink {
+                        path: path.clone(),
+                        symlink: file[..end].to_owned(),
+                    });
+                }
+                Ok(_) => end += 1,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+                Err(source) => return Err(WriteError::Read { path: at, source }),
+            }
+        }
+        Ok(())
+    }
+
     /// The bytes of the working-tree file at the `/`-separated `path`, at
     /// most one byte past [`MAX_RECORD_BYTES`] so a parse sees it is too
     /// large, or `None` when there is none.
@@ -507,6 +532,8 @@ pub enum WriteError {
     /// Refused for the code of a directory the file would be in.
     #[error("{path} cannot be written: {beneath}")]
     Beneath { path: LogicalPath, beneath: Beneath },
+    #[error("{path} cannot be written: {symlink} is a symlink")]
+    Symlink { path: LogicalPath, symlink: String },
     #[error("{lock:?} is held; if no put is running, remove it")]
     Locked { lock: PathBuf },
     #[error("{path:?} cannot be read")]
@@ -562,6 +589,7 @@ impl WriteError {
         match self {
             Self::Refused { code, .. } => *code,
             Self::Beneath { beneath, .. } => beneath.code,
+            Self::Symlink { .. } => Code::PutSymlink,
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
             Self::Read { .. } => Code::RepoUnreadable,
             Self::Io { .. }
@@ -577,7 +605,7 @@ impl WriteError {
 
     pub fn fields(&self) -> Fields {
         match self {
-            Self::Refused { path, .. } => Fields::at(path),
+            Self::Refused { path, .. } | Self::Symlink { path, .. } => Fields::at(path),
             Self::Beneath { path, beneath } => Fields {
                 directory: Some(beneath.directory.clone()),
                 ..Fields::at(path)
@@ -632,5 +660,20 @@ mod tests {
             source: failure(),
         };
         assert_eq!(failed.fields(), Fields::default());
+    }
+
+    #[test]
+    fn a_write_refused_over_a_symlink_names_its_path_and_the_symlink() {
+        let path: LogicalPath = "/x/y".parse().unwrap();
+        let refused = WriteError::Symlink {
+            path: path.clone(),
+            symlink: "x".to_owned(),
+        };
+        assert_eq!(refused.code(), Code::PutSymlink);
+        assert_eq!(refused.fields(), Fields::at(&path));
+        assert_eq!(
+            refused.to_string(),
+            "/x/y cannot be written: x is a symlink"
+        );
     }
 }

@@ -301,3 +301,21 @@ fn a_batch_with_a_line_that_parses_is_refused_as_locked_while_the_lock_is_held()
     let refused = board.put_batch(&mut input.as_bytes()).unwrap_err();
     assert_eq!(refused.code(), Code::PutLocked);
 }
+
+#[test]
+fn a_line_beneath_an_ignored_file_is_refused_before_any_line_is_written_and_its_twin_is_admitted() {
+    let scenario = board();
+    scenario
+        .write(".gitignore", Item::File("x\n"))
+        .write("x", Item::File(""));
+    let input = line("/tasks/a", None, &task("")) + &line("/x/y", None, &task(""));
+    let (_, refusals) = refused(batch(&scenario, &input));
+    assert_eq!(refusals, [(2, Code::RepoUnreadable)]);
+    assert!(
+        file(&scenario, "tasks/a.json").is_none(),
+        "nothing is written"
+    );
+    scenario.write("x", Item::Deleted);
+    batch(&scenario, &input).unwrap();
+    assert!(file(&scenario, "x/y.json").is_some());
+}

@@ -212,6 +212,9 @@ fn generic(code: Code) -> &'static str {
         Code::PutThroughMount => {
             "a mounted board is read-only here; write in the mounted repository, then run `board mount update <path>`"
         }
+        Code::PutSymlink => {
+            "Board never writes through or over a symlink; replace the symlink the message names with a directory or file, or put to another path"
+        }
         Code::PutInvalid => {
             "send one JSON object with a `$type` on stdin, such as `{\"$type\": \"lr/task/v1\", \"title\": \"a\"}`"
         }

@@ -103,3 +103,12 @@ code the walk would give it, such as `path::shadowed`. When that code comes
 from a directory above, such as one whose name collides in case, the error
 names the directory, says whether the write would create it, and names the
 existing entry it collides with.
+
+Put checks the disk as well as the entries, because the listing hides ignored
+files. A put never writes through or over a symlink: when the file it writes,
+or a directory on the way to it, is a symlink on disk, ignored or not, it is
+refused with `board::put::symlink`, which names the symlink. Otherwise an
+ignored path is written like any other: put writes into an ignored directory
+and commits the file. An ignored file where a directory must go cannot be read
+as one, so the put is refused with `board::repo::unreadable` before anything
+is written.

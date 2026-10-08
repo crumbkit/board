@@ -335,6 +335,52 @@ fn missing_directories_are_created() {
 }
 
 #[test]
+fn a_put_through_an_ignored_symlink_is_refused_and_through_an_ignored_directory_is_admitted() {
+    let scenario = board();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_path = outside.path().to_str().unwrap();
+    scenario
+        .write(".gitignore", Item::File("x\n"))
+        .write("tasks/x", Item::Symlink(outside_path));
+    let refused = open(&scenario)
+        .put(&path("/tasks/x/y"), Expect::Any, task("").as_bytes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PutSymlink);
+    assert_eq!(
+        refused.to_string(),
+        "/tasks/x/y cannot be written: tasks/x is a symlink"
+    );
+    assert!(!outside.path().join("y.json").exists());
+    scenario
+        .write("tasks/x", Item::Deleted)
+        .write("tasks/x/z.md", Item::File(""));
+    put(&scenario, "/tasks/x/y", Expect::Any, &task("")).unwrap();
+    assert_eq!(
+        file(&scenario, "tasks/x/y.json").unwrap(),
+        canonical(&task(""))
+    );
+}
+
+#[test]
+fn a_put_over_a_symlink_named_as_a_record_is_refused_and_over_a_file_is_admitted() {
+    let scenario = board();
+    scenario.write("s.json", Item::Symlink("tasks"));
+    assert_eq!(
+        put(&scenario, "/s", Expect::Any, &task("")).unwrap_err(),
+        Code::PutSymlink
+    );
+    assert!(
+        std::fs::symlink_metadata(scenario.workdir().join("s.json"))
+            .unwrap()
+            .is_symlink()
+    );
+    scenario
+        .write("s.json", Item::Deleted)
+        .write("s.json", Item::File(&task("")));
+    put(&scenario, "/s", Expect::Any, &task("")).unwrap();
+}
+
+#[test]
 fn a_record_gains_children_in_a_directory_beside_it() {
     let scenario = board();
     put(&scenario, "/projects/p/tasks/a", Expect::Absent, &task("")).unwrap();

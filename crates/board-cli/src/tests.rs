@@ -542,6 +542,8 @@ fn the_fixture_board_produces_every_code() {
         dir,
         &["mount", "update", "/mount/unfollowed", "--json"],
     ));
+    scenario.write("symlinked.json", Item::Symlink("projects"));
+    take(put("/symlinked", r#"{"$type": "lr/project/v1"}"#));
     scenario.write(".git/board.lock", Item::File(""));
     take(put("/projects/locked", r#"{"$type": "lr/project/v1"}"#));
 
