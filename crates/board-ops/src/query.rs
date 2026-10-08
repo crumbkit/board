@@ -79,12 +79,13 @@ impl Board {
         plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
         let mut index = Index::open(cache, self.repository().path()).map_err(QueryError::from)?;
-        let checked = self.check_in(&mut index, None)?;
+        let snapshot = self.snapshot(&mut index, None)?;
+        let index = snapshot.index;
         let mut report = QueryReport {
             columns: Vec::new(),
             rows: Vec::new(),
             truncated: false,
-            memory: checked.memory,
+            memory: snapshot.report.memory,
             plugins: Vec::new(),
             fallbacks: Vec::new(),
         };
@@ -140,7 +141,9 @@ impl Board {
                     continue;
                 }
             };
-            if let Err(error) = self.extract_into(&index, manifest, directory, &database, plugins) {
+            if let Err(error) =
+                self.extract_into(&snapshot, manifest, directory, &database, plugins)
+            {
                 report
                     .plugins
                     .push(failed(error.code_text(), error.to_string()));
@@ -163,7 +166,7 @@ impl Board {
         }
         let rows = index
             .query(sql, limit)
-            .map_err(|error| unknown(&index, sql, error))?;
+            .map_err(|error| unknown(index, sql, error))?;
         report.columns = rows.columns;
         report.rows = rows.rows;
         report.truncated = rows.truncated;

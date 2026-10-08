@@ -1,8 +1,9 @@
 //! Building the index from real repositories, counting the work done.
 
-use board_index::{BlobFact, Index, RefFact, ValidationFact};
+use board_index::{BlobFact, Index};
 use board_model::{Code, Kind, Role, Source};
 use board_scenario::{Item, Scenario};
+use serde_json::{Value, json};
 
 use crate::index::{Kept, Refreshed, facts, transact};
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
@@ -11,15 +12,7 @@ use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 fn build(scenario: &Scenario, cache: &std::path::Path) -> Refreshed {
     let board = open(scenario);
     let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.refresh_index(&mut index).unwrap()
-}
-
-/// The index of `scenario` in `cache`, built.
-fn built(scenario: &Scenario, cache: &std::path::Path) -> Index {
-    let board = open(scenario);
-    let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.refresh_index(&mut index).unwrap();
-    index
+    board.snapshot(&mut index, None).unwrap().report.work
 }
 
 /// The board, plus two tasks with the same bytes and one invalid task.
@@ -51,12 +44,12 @@ fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_once() {
     );
 }
 
-/// How many files a refresh of `scenario` in `cache` opens.
+/// How many files a snapshot of `scenario` in `cache` opens.
 fn opened(scenario: &Scenario, cache: &std::path::Path) -> usize {
     let board = open(scenario);
     let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
     let before = board.repository().files_opened();
-    board.refresh_index(&mut index).unwrap();
+    board.snapshot(&mut index, None).unwrap();
     board.repository().files_opened() - before
 }
 
@@ -135,6 +128,16 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
     );
 }
 
+/// The rows `sql` reads from the index of `scenario` in `cache`, once a
+/// snapshot has refreshed it, each as a JSON array.
+fn read(scenario: &Scenario, cache: &std::path::Path, sql: &str) -> Vec<Value> {
+    let board = open(scenario);
+    let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let snapshot = board.snapshot(&mut index, None).unwrap();
+    let rows = snapshot.index.query(sql, 10_000).unwrap().rows;
+    rows.into_iter().map(Value::from).collect()
+}
+
 #[test]
 fn the_index_holds_each_blobs_kind_type_and_code() {
     let scenario = tasks();
@@ -143,35 +146,33 @@ fn the_index_holds_each_blobs_kind_type_and_code() {
         .write(".board/types/lr/broken/v1.schema.json", Item::File(broken))
         .write("bad.json", Item::File("{"));
     let cache = tempfile::tempdir().unwrap();
-    let mut index = built(&scenario, cache.path());
-    let writer = index.write().unwrap();
-    let fact = |text: &str, role| writer.blob(scenario.blob(text), role).unwrap();
-    let fact_of = |kind, record_type: Option<&str>, code| {
-        Some(BlobFact {
-            kind,
-            record_type: record_type.map(|text| text.parse().unwrap()),
-            code,
-        })
+    let fact = |text: &str, role: &str| {
+        let blob = scenario.blob(text);
+        let sql = format!(
+            "SELECT kind, type, code FROM main.blobs WHERE blob = '{blob}' AND role = '{role}'"
+        );
+        read(&scenario, cache.path(), &sql)
     };
     assert_eq!(
-        fact(&task(""), Role::Json),
-        fact_of(Kind::Record, Some("lr/task/v1"), None)
-    );
-    assert_eq!(fact(&task(""), Role::Schema), None, "only roles seen");
-    assert_eq!(
-        fact("{", Role::Json),
-        fact_of(Kind::Json, None, Some(Code::JsonParse))
+        fact(&task(""), "json"),
+        [json!(["record", "lr/task/v1", null])]
     );
     assert_eq!(
-        fact(TASK_SCHEMA, Role::Schema),
-        fact_of(Kind::Schema, None, None)
+        fact(&task(""), "schema"),
+        [] as [Value; 0],
+        "only roles seen"
     );
     assert_eq!(
-        fact(broken, Role::Schema),
-        fact_of(Kind::Schema, None, Some(Code::SchemaInvalid)),
+        fact("{", "json"),
+        [json!(["json", null, "board::json::parse"])]
+    );
+    assert_eq!(fact(TASK_SCHEMA, "schema"), [json!(["schema", null, null])]);
+    assert_eq!(
+        fact(broken, "schema"),
+        [json!(["schema", null, "board::schema::invalid"])],
         "a schema's fact says whether it compiles"
     );
-    assert_eq!(fact("not read", Role::Json), None);
+    assert_eq!(fact("not read", "json"), [] as [Value; 0]);
 }
 
 #[test]
@@ -183,39 +184,41 @@ fn the_index_holds_each_validation_with_its_references_in_the_order_found() {
         .write("tasks/good.json", Item::File(&good))
         .write("tasks/bad.json", Item::File(bad));
     let cache = tempfile::tempdir().unwrap();
-    let mut index = built(&scenario, cache.path());
-    let writer = index.write().unwrap();
-    let schema = scenario.blob(TASK_SCHEMA);
+    let validation = |record: &str, schema: &str| {
+        let (record, schema) = (scenario.blob(record), scenario.blob(schema));
+        let sql = format!(
+            "SELECT code, pointer, reason, failures FROM main.validations \
+             WHERE record = '{record}' AND schema = '{schema}'"
+        );
+        read(&scenario, cache.path(), &sql)
+    };
     assert_eq!(
-        writer.validation(scenario.blob(&good), schema).unwrap(),
-        Some(ValidationFact::Valid(vec![
-            RefFact {
-                pointer: "/project".to_owned(),
-                target: "/projects/p".parse().unwrap(),
-                accepts: Some(vec!["lr/project/v1".parse().unwrap()]),
-            },
-            RefFact {
-                pointer: "/see".to_owned(),
-                target: "/x".parse().unwrap(),
-                accepts: None,
-            },
-        ]))
+        validation(&good, TASK_SCHEMA),
+        [json!([null, null, null, null])]
+    );
+    let references = format!(
+        "SELECT ordinal, pointer, target, accepts FROM main.refs \
+         WHERE record = '{}' AND schema = '{}' ORDER BY ordinal",
+        scenario.blob(&good),
+        scenario.blob(TASK_SCHEMA)
     );
     assert_eq!(
-        writer.validation(scenario.blob(bad), schema).unwrap(),
-        Some(ValidationFact::Invalid {
-            code: Code::RecordInvalid,
-            pointer: String::new(),
-            reason: "\"title\" is a required property".to_owned(),
-            failures: 1,
-        })
+        read(&scenario, cache.path(), &references),
+        [
+            json!([0, "/project", "/projects/p", r#"["lr/project/v1"]"#]),
+            json!([1, "/see", "/x", null]),
+        ]
     );
     assert_eq!(
-        writer
-            .validation(scenario.blob(&good), scenario.blob(PROJECT_SCHEMA))
-            .unwrap(),
-        None
+        validation(bad, TASK_SCHEMA),
+        [json!([
+            "board::record::invalid",
+            "",
+            "\"title\" is a required property",
+            1
+        ])]
     );
+    assert_eq!(validation(&good, PROJECT_SCHEMA), [] as [Value; 0]);
 }
 
 #[test]
@@ -259,15 +262,9 @@ fn a_deleted_file_leaves_the_index_and_a_new_one_is_hashed() {
             ..Refreshed::default()
         }
     );
-    let mut index = built(&scenario, cache.path());
-    let paths: Vec<String> = {
-        let writer = index.write().unwrap();
-        let mut paths: Vec<String> = writer.worktree().unwrap().into_keys().collect();
-        paths.sort();
-        paths
-    };
-    assert!(paths.contains(&"more.md".to_owned()));
-    assert!(!paths.contains(&"notes.md".to_owned()));
+    let paths = read(&scenario, cache.path(), "SELECT path FROM main.worktree");
+    assert!(paths.contains(&json!(["more.md"])));
+    assert!(!paths.contains(&json!(["notes.md"])));
 }
 
 #[test]
@@ -275,17 +272,27 @@ fn the_index_keeps_each_entrys_address_code_blob_and_metadata() {
     let scenario = tasks();
     scenario.write("bad\tname.md", Item::File(""));
     let cache = tempfile::tempdir().unwrap();
-    let mut index = built(&scenario, cache.path());
-    let writer = index.write().unwrap();
-    let rows = writer.worktree().unwrap();
-    let a = &rows["tasks/a.json"];
-    assert_eq!(a.logical, Some("/tasks/a".parse().unwrap()));
-    assert_eq!(a.code, None);
-    assert_eq!(a.blob, Some(scenario.blob(&task(""))));
-    assert_eq!(a.stat.unwrap().size, task("").len() as u64);
-    let malformed = &rows["bad\tname.md"];
-    assert_eq!(malformed.logical, None);
-    assert_eq!(malformed.code, Some(Code::PathMalformed));
+    let sql = "SELECT path, logical, code, blob, size FROM main.worktree \
+               WHERE path IN ('tasks/a.json', 'bad\tname.md') ORDER BY path";
+    assert_eq!(
+        read(&scenario, cache.path(), sql),
+        [
+            json!([
+                "bad\tname.md",
+                null,
+                "board::path::malformed",
+                scenario.blob("").to_string(),
+                0
+            ]),
+            json!([
+                "tasks/a.json",
+                "/tasks/a",
+                null,
+                scenario.blob(&task("")).to_string(),
+                task("").len()
+            ]),
+        ]
+    );
 }
 
 #[test]

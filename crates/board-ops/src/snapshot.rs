@@ -1,0 +1,530 @@
+//! One run's decision about every entry (docs/architecture/index.md). A
+//! snapshot refreshes the index, walks the boards reachable through mounts,
+//! indexing each mounted commit once however many places mount it, decides
+//! every entry and commits. What depends only on content comes from the
+//! index; whether a reference or pointer resolves depends on the whole tree,
+//! so each run decides it again. The index's `entries` and `records` views
+//! show what a snapshot decided, so they are read only through one. This
+//! snapshot is a decided run over the index; `Repositories::snapshot` is a
+//! different thing, a view of the git working tree for resolving paths.
+
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+
+use board_index::{Index, IndexError, Resolved, Storage, ValidationFact, Writer};
+use board_model::{
+    Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
+    RecordType, Role, Source, Stat, classify,
+};
+use board_tree::{
+    Cache, Entry, Repositories, Repository, ResolveError, Status, TreeRow, TreeRows, in_scope,
+    latest,
+};
+
+use crate::board::Board;
+use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, judge, unresolved};
+use crate::index::{
+    Indexed, Kept, RefreshError, Refreshed, facts, schema_of, schema_path, transact,
+};
+
+/// What one run decided about every entry it checked, and the index whose
+/// views show exactly that.
+#[derive(Debug)]
+pub(crate) struct Snapshot<'i> {
+    /// The index, with its views built from this run's decision.
+    pub(crate) index: &'i Index,
+    pub(crate) report: CheckReport,
+    /// Every reference each checked record makes, and where it led.
+    pub(crate) references: Vec<Referenced>,
+}
+
+impl Board {
+    /// Decides every entry of the working tree and of each board it mounts,
+    /// or only those at or beneath `scope`, after refreshing `index`. An
+    /// entry's status is the first problem found: its path, then parsing,
+    /// then its schema, validation and references, or for a pointer its
+    /// target.
+    pub(crate) fn snapshot<'i>(
+        &self,
+        index: &'i mut Index,
+        scope: Option<&LogicalPath>,
+    ) -> Result<Snapshot<'i>, CheckError> {
+        if let Some(scope) = scope {
+            self.repositories()
+                .resolve(&Source::WorkingTree, scope)
+                .map_err(|source| CheckError::Scope { source })?;
+        }
+        let ((mut report, references), wrote) =
+            transact(index, |writer| self.decide(writer, scope))?;
+        report.work.wrote = wrote;
+        report.memory = match index.storage() {
+            Storage::Memory(fallback) => Some(*fallback),
+            Storage::File(_) => None,
+        };
+        Ok(Snapshot {
+            index,
+            report,
+            references,
+        })
+    }
+
+    fn decide(
+        &self,
+        writer: &Writer<'_>,
+        scope: Option<&LogicalPath>,
+    ) -> Result<(CheckReport, Vec<Referenced>), RefreshError> {
+        let refresh = self.refresh(writer)?;
+        let mut work = refresh.work;
+        let mounts = self.repositories().walk_mounts(
+            &refresh.entries,
+            &refresh.facts,
+            &mut Indexing {
+                writer,
+                work: &mut work,
+            },
+        )?;
+        let scopes = mounts.scopes(scope);
+        let mut known = known(&refresh.entries, &mut work.hashed);
+        let mut resolver = self.repositories().resolver(&mut known)?;
+        let mut decided = Decided::default();
+        let root = Decide {
+            repositories: self.repositories(),
+            writer,
+            changed: &refresh.changed,
+            facts: &refresh.facts,
+            resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
+        };
+        for entry in &refresh.entries {
+            if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
+                continue;
+            }
+            let change = if refresh.head.get(&entry.path) == Some(&entry.blob) {
+                Change::Committed
+            } else {
+                Change::Uncommitted
+            };
+            decided.push(
+                &root,
+                &Source::WorkingTree,
+                entry,
+                entry.logical.clone(),
+                change,
+            )?;
+        }
+        drop(root);
+        drop(resolver);
+        drop(known);
+        // A commit's files never change during a run.
+        let unchanged = HashSet::new();
+        for mounted in &mounts.sources {
+            let source = Source::Commit(mounted.commit);
+            let decide = Decide {
+                repositories: self.repositories(),
+                writer,
+                changed: &unchanged,
+                facts: &mounted.facts,
+                resolve: RefCell::new(Box::new(|path: &LogicalPath| {
+                    self.repositories()
+                        .resolve_in(&mounted.repository, mounted.commit, path)
+                })),
+            };
+            for entry in &mounted.entries {
+                if !in_scope(&scopes, &source, entry.logical.as_ref()) {
+                    continue;
+                }
+                let logical = entry
+                    .logical
+                    .as_ref()
+                    .and_then(|logical| mounted.display(logical));
+                decided.push(&decide, &source, entry, logical, Change::Committed)?;
+            }
+        }
+        record(&mounts, writer, self.repository())?;
+        // Every source is now stored, so a prune keeps what this run reached.
+        if writer.wrote()? {
+            work.pruned = writer.prune_if_doubled()?;
+        }
+        writer.resolve(&decided.resolved)?;
+        let report = CheckReport {
+            entries: decided.checked,
+            memory: None,
+            work,
+        };
+        Ok((report, decided.references))
+    }
+}
+
+/// The blob of each file `entries` saw as it is now, so it need not be
+/// hashed again; each file it does not know counts in `hashed`.
+fn known<'e>(
+    entries: &'e [Entry],
+    hashed: &'e mut usize,
+) -> impl FnMut(&str, &Stat) -> Option<ObjectId> + 'e {
+    let stats: HashMap<&str, (Stat, ObjectId)> = entries
+        .iter()
+        .filter_map(|entry| Some((entry.path.as_str(), (entry.stat?, entry.blob?))))
+        .collect();
+    move |path, stat| {
+        let blob = stats
+            .get(path)
+            .filter(|(seen, _)| seen == stat)
+            .map(|(_, blob)| *blob);
+        if blob.is_none() {
+            *hashed += 1;
+        }
+        blob
+    }
+}
+
+/// What a run decided: the report's entries and the rows of `resolved`,
+/// built together so they cannot disagree.
+#[derive(Default)]
+struct Decided {
+    checked: Vec<Checked>,
+    resolved: Vec<Resolved>,
+    references: Vec<Referenced>,
+}
+
+/// One reference a record makes, and where it led this run.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Reached {
+    pub(crate) pointer: String,
+    pub(crate) target: LogicalPath,
+    /// Where it resolved, or `None` when it dangles.
+    pub(crate) location: Option<Location>,
+    pub(crate) code: Option<Code>,
+}
+
+/// A reference, with the record that makes it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Referenced {
+    pub(crate) source: Source,
+    pub(crate) path: String,
+    pub(crate) logical: Option<LogicalPath>,
+    pub(crate) reached: Reached,
+}
+
+impl Decided {
+    /// Decides `entry` of `source`, named `logical` from the root.
+    fn push(
+        &mut self,
+        decide: &Decide<'_>,
+        source: &Source,
+        entry: &Entry,
+        logical: Option<LogicalPath>,
+        change: Change,
+    ) -> Result<(), IndexError> {
+        let fact = decide.facts.get(&entry.path);
+        let role = Role::of(&entry.path);
+        let kind = match (role, fact) {
+            (None, _) => Kind::File,
+            (Some(_), Some(fact)) => fact.fact.kind,
+            (Some(_), None) => Kind::Json,
+        };
+        let wanted = fact.and_then(schema_path);
+        let schema = wanted
+            .as_ref()
+            .and_then(|path| schema_of(decide.facts, path));
+        let failure = match entry.status {
+            Status::Degraded(code) => Some((code, None)),
+            // Only a path too long under its mount point fails here.
+            Status::Ok if logical.is_none() => Some((Code::PathMalformed, None)),
+            Status::Ok => {
+                let mut reached = Vec::new();
+                let failure =
+                    decide.code(entry, &mut reached, role, fact, (wanted.as_deref(), schema))?;
+                self.references
+                    .extend(reached.into_iter().map(|reached| Referenced {
+                        source: source.clone(),
+                        path: entry.path.clone(),
+                        logical: logical.clone(),
+                        reached,
+                    }));
+                failure
+            }
+        };
+        let (code, detail) = failure.map_or((None, None), |(code, detail)| (Some(code), detail));
+        self.resolved.push(Resolved {
+            source: source.clone(),
+            path: entry.path.clone(),
+            logical: logical.clone(),
+            blob: entry.blob,
+            size: entry.size,
+            role,
+            schema,
+            kind,
+            code,
+            change,
+        });
+        self.checked.push(Checked {
+            source: source.clone(),
+            path: entry.path.clone(),
+            logical,
+            kind,
+            status: code.map_or(Status::Ok, Status::Degraded),
+            detail,
+            change,
+            schema: wanted.filter(|_| code == Some(Code::RecordUnknownType)),
+        });
+        Ok(())
+    }
+}
+
+/// The schema file a record's type names, from its source's root, and the
+/// blob of the usable schema there.
+type Wanted<'a> = (Option<&'a str>, Option<ObjectId>);
+
+/// Resolves a path in the source being checked.
+type Resolve<'a> = Box<dyn FnMut(&LogicalPath) -> Result<Location, ResolveError> + 'a>;
+
+/// Why an entry the walk listed has no fact.
+const READ_AGAIN: &str = "changed or could not be read; run the command again";
+
+/// What deciding the status of a source's entries reads.
+struct Decide<'a> {
+    repositories: &'a Repositories,
+    writer: &'a Writer<'a>,
+    /// The paths the refresh left out because they changed after the walk.
+    changed: &'a HashSet<String>,
+    /// What the index holds about the source's entries, by physical path.
+    facts: &'a HashMap<String, Indexed>,
+    resolve: RefCell<Resolve<'a>>,
+}
+
+impl Decide<'_> {
+    /// The failure of an entry whose path is fine.
+    fn code(
+        &self,
+        entry: &Entry,
+        reached: &mut Vec<Reached>,
+        role: Option<Role>,
+        fact: Option<&Indexed>,
+        schema: Wanted<'_>,
+    ) -> Result<Option<Failure>, IndexError> {
+        if role.is_none() {
+            return Ok(None);
+        }
+        // A file that changed after the walk, was removed or could not be
+        // read has no fact.
+        let Some(fact) = fact else {
+            let detail = Detail {
+                pointer: None,
+                reason: format!("the file {READ_AGAIN}"),
+                failures: 1,
+            };
+            return Ok(Some((Code::RepoUnreadable, Some(detail))));
+        };
+        if let Some(code) = fact.fact.code {
+            return Ok(Some((code, None)));
+        }
+        match fact.fact.kind {
+            Kind::Pointer => Ok(entry
+                .logical
+                .as_ref()
+                .and_then(|logical| self.resolve(logical).err())
+                .map(|error| {
+                    let (code, detail) = unresolved(&error);
+                    (code, Some(detail))
+                })),
+            Kind::Record => self.record(fact, schema, reached),
+            Kind::Schema | Kind::Json | Kind::File => Ok(None),
+        }
+    }
+
+    /// Checks a record against its schema and its references.
+    fn record(
+        &self,
+        record: &Indexed,
+        (wanted, schema): Wanted<'_>,
+        reached: &mut Vec<Reached>,
+    ) -> Result<Option<Failure>, IndexError> {
+        let Some(wanted) = wanted else {
+            return Ok(None);
+        };
+        let Some(schema) = schema else {
+            // Anything at a schema path is a schema, so it is there but degraded.
+            let (code, pointer, reason) = match self.facts.get(wanted) {
+                Some(_) => (
+                    Code::SchemaInvalid,
+                    Some("/$type".to_owned()),
+                    format!("the schema at {wanted} is degraded"),
+                ),
+                None if self.changed.contains(wanted) => (
+                    Code::RepoUnreadable,
+                    None,
+                    format!(
+                        "its schema at {wanted} changed while it was read; run the command again"
+                    ),
+                ),
+                None => (
+                    Code::RecordUnknownType,
+                    None,
+                    format!("add its schema at {wanted}"),
+                ),
+            };
+            let detail = Detail {
+                pointer,
+                reason,
+                failures: 1,
+            };
+            return Ok(Some((code, Some(detail))));
+        };
+        let references = match self.writer.validation(record.blob, schema)? {
+            None => {
+                let detail = Detail {
+                    pointer: None,
+                    reason: format!("the record or its schema {READ_AGAIN}"),
+                    failures: 1,
+                };
+                return Ok(Some((Code::RepoUnreadable, Some(detail))));
+            }
+            Some(ValidationFact::Invalid {
+                code,
+                pointer,
+                reason,
+                failures,
+            }) => {
+                let pointer = Some(pointer);
+                let detail = Detail {
+                    pointer,
+                    reason,
+                    failures,
+                };
+                return Ok(Some((code, Some(detail))));
+            }
+            Some(ValidationFact::Valid(references)) => references,
+        };
+        // Every reference is followed, not just those before the first
+        // failure, so `refs` can report each one.
+        let mut tally = Tally::default();
+        for reference in references {
+            let (location, failure) = judge(
+                &reference.target,
+                reference.accepts.as_deref(),
+                self.resolve(&reference.target),
+                |location| self.record_type(location),
+            )?;
+            tally.add(&reference.pointer, failure.as_ref());
+            reached.push(Reached {
+                pointer: reference.pointer,
+                target: reference.target,
+                location,
+                code: failure.map(|(code, _)| code),
+            });
+        }
+        Ok(tally.first().map(|(code, detail)| (code, Some(detail))))
+    }
+
+    fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        (self.resolve.borrow_mut())(path)
+    }
+
+    /// The `$type` of the record at `location`: from the index when it
+    /// holds the blob, which is a fact about content wherever it is, or read
+    /// in its own board.
+    fn record_type(&self, location: &Location) -> Result<Option<RecordType>, IndexError> {
+        let Object::Blob(blob) = location.object else {
+            return Ok(None);
+        };
+        let Some(role) = Role::of(&location.path) else {
+            return Ok(None);
+        };
+        let Some(fact) = self.writer.blob(blob, role)? else {
+            return Ok(read_type(self.repositories, location, blob));
+        };
+        Ok(match (fact.code, fact.kind) {
+            (Some(_), _) => None,
+            (None, Kind::Pointer) => POINTER_TYPE.parse().ok(),
+            (None, _) => fact.record_type,
+        })
+    }
+}
+
+/// The `$type` of the record at `location`, read in its own board.
+pub(crate) fn read_type(
+    repositories: &Repositories,
+    location: &Location,
+    blob: ObjectId,
+) -> Option<RecordType> {
+    let contents = latest(repositories.read(location, blob)).ok()??;
+    match classify(&location.path, Some(&contents.bytes)) {
+        Classified {
+            content: Content::Record { record_type, .. },
+            code: None,
+        } => Some(record_type),
+        Classified {
+            content: Content::Pointer { .. },
+            code: None,
+        } => POINTER_TYPE.parse().ok(),
+        _ => None,
+    }
+}
+
+/// What the index holds about one source's entries, by physical path.
+type Facts = HashMap<String, Indexed>;
+
+/// Every mounted source, with what the index holds about its entries.
+type Mounts = board_tree::Reached<Facts>;
+
+/// The index as the cache a walk through mounts reads and fills.
+struct Indexing<'w, 't> {
+    writer: &'w Writer<'t>,
+    work: &'w mut Refreshed,
+}
+
+// A cache read that fails counts as a miss: the index is disposable.
+impl Cache for Indexing<'_, '_> {
+    type Error = RefreshError;
+    type Facts = Facts;
+
+    fn has_tree(&mut self, tree: ObjectId) -> bool {
+        self.writer.has_tree(tree).unwrap_or(false)
+    }
+
+    fn put_tree(&mut self, tree: &TreeRows) -> Result<(), RefreshError> {
+        self.writer.put_tree(tree)?;
+        self.work.trees += 1;
+        Ok(())
+    }
+
+    fn rows(&mut self, tree: ObjectId) -> Option<Vec<TreeRow>> {
+        self.writer.tree(tree).ok().flatten()
+    }
+
+    fn facts(
+        &mut self,
+        repository: &Repository,
+        source: &Source,
+        entries: &[Entry],
+    ) -> Result<Facts, RefreshError> {
+        // A commit's files never change, so none is left out.
+        let kept = Kept::default();
+        Ok(facts(self.writer, repository, source, entries, self.work, kept)?.0)
+    }
+
+    fn is_pointer(facts: &Facts, path: &str) -> bool {
+        facts.get(path).is_some_and(|indexed| {
+            indexed.fact.kind == Kind::Pointer && indexed.fact.code.is_none()
+        })
+    }
+}
+
+/// Stores every source, the root's repository first, and every mount.
+fn record(mounts: &Mounts, writer: &Writer<'_>, root: &Repository) -> Result<(), IndexError> {
+    let mut sources = vec![(
+        Source::WorkingTree,
+        root.head_tree().ok().flatten(),
+        root.path(),
+    )];
+    sources.extend(mounts.sources.iter().map(|mounted| {
+        (
+            Source::Commit(mounted.commit),
+            Some(mounted.root),
+            mounted.repository.path(),
+        )
+    }));
+    writer.set_mounts(&sources, &mounts.points)
+}
+
+#[cfg(test)]
+mod tests;

@@ -10,12 +10,12 @@ mod extraction;
 mod index;
 mod init;
 mod mount;
-mod mounts;
 mod plugins;
 mod put;
 mod query;
 mod read;
 mod refs;
+mod snapshot;
 
 pub use board_index::{Fallback, source_name};
 

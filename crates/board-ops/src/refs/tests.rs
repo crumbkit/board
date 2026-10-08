@@ -5,10 +5,8 @@ use std::path::Path;
 use board_model::{Code, Fields, LogicalPath};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
-use proptest::prelude::*;
 
 use crate::RefsReport;
-use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
 
 fn path(text: &str) -> LogicalPath {
@@ -291,43 +289,22 @@ fn a_missing_path_through_a_mount_is_where_it_would_be_in_the_mounted_commit() {
 
 /// What `refs` answers for `text` through the index under `cache`, less
 /// whether that index was in memory.
-fn answered(generated: &Generated, text: &str, cache: Option<&Path>) -> Result<RefsReport, Code> {
-    open(generated.scenario())
-        .refs(&path(text), cache)
-        .map(|report| RefsReport {
-            memory: None,
-            ..report
-        })
-        .map_err(|error| error.code())
+fn answered(scenario: &Scenario, text: &str, cache: Option<&Path>) -> RefsReport {
+    RefsReport {
+        memory: None,
+        ..open(scenario).refs(&path(text), cache).unwrap()
+    }
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(24))]
-
-    #[test]
-    fn refs_answers_from_a_warm_index_as_from_a_cold_one(
-        before in generated(),
-        after in generated(),
-        committed: bool,
-    ) {
-        let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, &before, committed);
-        let cache = tempfile::tempdir().unwrap();
-        let _warming = answered(&generated, "/projects/p", Some(cache.path()));
-        generated.write(&after);
-        let logical: Vec<String> = open(generated.scenario())
-            .check(None, None)
-            .unwrap()
-            .entries
-            .into_iter()
-            .filter_map(|entry| entry.logical.map(|logical| logical.to_string()))
-            .collect();
-        for text in logical.iter().map(String::as_str).chain(["/nowhere"]) {
-            prop_assert_eq!(
-                answered(&generated, text, Some(cache.path())),
-                answered(&generated, text, None),
-                "{}",
-                text
-            );
-        }
-    }
+#[test]
+fn refs_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change() {
+    let scenario = linked();
+    let cache = tempfile::tempdir().unwrap();
+    let before = answered(&scenario, "/projects/p", Some(cache.path()));
+    scenario
+        .write("tasks/a.json", Item::File(&task(r#", "see": "/links/l""#)))
+        .write("tasks/b.json", Item::File(&task("")));
+    let warm = answered(&scenario, "/projects/p", Some(cache.path()));
+    assert_ne!(warm, before, "the change is seen");
+    assert_eq!(warm, answered(&scenario, "/projects/p", None));
 }

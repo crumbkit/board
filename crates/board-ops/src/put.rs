@@ -17,7 +17,8 @@ use board_validate::{RecordError, Reference, Schema};
 use serde_json::Value;
 
 use crate::board::{Board, Config};
-use crate::check::{Detail, Tally, judge, read_type, unresolved};
+use crate::check::{Detail, Tally, judge, unresolved};
+use crate::snapshot::read_type;
 
 /// What a put expects to find where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

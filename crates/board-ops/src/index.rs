@@ -54,7 +54,7 @@ pub(crate) struct Indexed {
     pub(crate) fact: BlobFact,
 }
 
-/// What a refresh found, for a check to decide each entry's status.
+/// What a refresh found, for a snapshot to decide each entry's status.
 #[derive(Debug)]
 pub(crate) struct Refresh {
     pub(crate) entries: Vec<Entry>,
@@ -68,13 +68,8 @@ pub(crate) struct Refresh {
 }
 
 impl Board {
-    /// Brings `index` up to date with the working tree, adding every fact it
-    /// does not yet hold.
-    pub fn refresh_index(&self, index: &mut Index) -> Result<Refreshed, RefreshError> {
-        let (work, wrote) = transact(index, |writer| Ok(self.refresh(writer)?.work))?;
-        Ok(Refreshed { wrote, ..work })
-    }
-
+    /// Brings the index up to date with the working tree, adding every fact
+    /// it does not yet hold.
     pub(crate) fn refresh(&self, writer: &Writer<'_>) -> Result<Refresh, RefreshError> {
         let started_ns = now_ns();
         let mut work = Refreshed::default();

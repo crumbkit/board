@@ -30,9 +30,9 @@ impl Board {
         let mut index = Index::open(cache, self.repository().path())?;
         let database = database(index.storage(), &chosen.manifest)?;
         if !chosen.manifest.extract.is_empty() {
-            self.check_in(&mut index, None)?;
+            let snapshot = self.snapshot(&mut index, None)?;
             self.extract_into(
-                &index,
+                &snapshot,
                 &chosen.manifest,
                 &chosen.directory,
                 &database,

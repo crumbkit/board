@@ -1,6 +1,6 @@
 //! `board refs`: the references a record makes and the records that make
 //! references to it (docs/architecture/index.md). Both come from what a
-//! check decides, so each reference is resolved once, as the tree is now.
+//! snapshot decides, so each reference is resolved once, as the tree is now.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -10,8 +10,9 @@ use board_model::{Code, Fields, Location, LogicalPath, Source};
 use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
-use crate::check::{CheckError, Referenced, View};
+use crate::check::CheckError;
 use crate::read::{ReadError, display, join};
+use crate::snapshot::Referenced;
 
 /// One reference the record makes.
 #[derive(Clone, Debug, PartialEq)]
@@ -70,11 +71,12 @@ impl Board {
             .resolve(&Source::WorkingTree, path)
             .map_err(refused)?;
         let mut index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
-        let (checked, references) = self.decide(&mut index, None, View::Skip)?;
+        let snapshot = self.snapshot(&mut index, None)?;
         let same = |source: &Source, physical: &str| {
             *source == location.board.source && physical == location.path
         };
-        let from = references
+        let from = snapshot
+            .references
             .iter()
             .filter(|referenced| same(&referenced.source, &referenced.path))
             .map(|referenced| Outgoing {
@@ -85,7 +87,7 @@ impl Board {
             })
             .collect();
         let mut to: BTreeMap<(String, String), Incoming> = BTreeMap::new();
-        for referenced in references.iter().filter(|referenced| {
+        for referenced in snapshot.references.iter().filter(|referenced| {
             referenced
                 .reached
                 .location
@@ -113,7 +115,7 @@ impl Board {
             location,
             from,
             to: to.into_values().collect(),
-            memory: checked.memory,
+            memory: snapshot.report.memory,
             missing: None,
         })
     }

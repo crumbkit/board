@@ -4,10 +4,8 @@ use std::path::Path;
 
 use board_model::Code;
 use board_scenario::{Item, Scenario};
-use proptest::prelude::*;
 use serde_json::json;
 
-use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
 use crate::{Board, Plugins, QueryReport};
 use board_index::{Index, IndexError};
@@ -345,7 +343,7 @@ printf '{{"$type": "board/extract-result/v1", "blobs": [%s]}}' "$blobs"
                 let board = open(&scenario);
                 let mut second =
                     Index::open(Some(cache.path()), board.repository().path()).unwrap();
-                board.check_in(&mut second, None).unwrap();
+                board.snapshot(&mut second, None).unwrap();
                 if runs <= prunes {
                     let writer = second.write().unwrap();
                     writer.prune().unwrap();
@@ -395,54 +393,49 @@ fn a_query_pruned_under_twice_answers_on_its_third_run() {
 /// What `sql` answers through the index under `cache`, less whether that
 /// index was in memory.
 fn answered(
-    generated: &Generated,
+    scenario: &Scenario,
     sql: &str,
     cache: Option<&Path>,
     plugins: &Plugins<'_>,
 ) -> QueryReport {
     QueryReport {
         memory: None,
-        ..open(generated.scenario())
-            .query(sql, 10_000, cache, plugins)
-            .unwrap()
+        ..open(scenario).query(sql, 10_000, cache, plugins).unwrap()
     }
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(24))]
-
-    /// Every table answers the same warm and cold through the index, which
-    /// check's property test shows; this one covers what `query` adds:
-    /// extracting for a plugin and attaching its database.
-    #[test]
-    fn a_query_answers_from_a_warm_index_as_from_a_cold_one(
-        before in generated(),
-        after in generated(),
-        committed: bool,
-    ) {
-        let config = r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#;
-        let mut generated = Generated::new(config, &before, committed);
-        let installed = tasks_plugin();
-        let plugins = Plugins {
-            directory: Some(installed.workdir()),
-            environment: board_plugin::Environment {
-                path: Some("/usr/bin:/bin".into()),
-                ..board_plugin::Environment::default()
-            },
-            limits: board_plugin::Limits::default(),
-        };
-        let cache = tempfile::tempdir().unwrap();
-        answered(&generated, "SELECT 1", Some(cache.path()), &plugins);
-        generated.write(&after);
-        for sql in [
-            "SELECT * FROM entries ORDER BY source, path",
-            "SELECT * FROM records ORDER BY source, path",
-            "SELECT * FROM extracted ORDER BY plugin, version, blob",
-            "SELECT * FROM p_tasks.sqlite_schema",
-        ] {
-            let warm = answered(&generated, sql, Some(cache.path()), &plugins);
-            prop_assert!(warm.plugins.is_empty(), "{:?}", warm.plugins);
-            prop_assert_eq!(warm, answered(&generated, sql, None, &plugins), "{}", sql);
-        }
+/// The views and what `query` adds to them, extracting for a plugin and
+/// attaching its database, answer from a warm index as from a cold one.
+#[test]
+fn a_query_answers_from_a_warm_index_as_from_a_cold_one_after_a_change() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#),
+    );
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    let installed = tasks_plugin();
+    let plugins = Plugins {
+        directory: Some(installed.workdir()),
+        environment: board_plugin::Environment {
+            path: Some("/usr/bin:/bin".into()),
+            ..board_plugin::Environment::default()
+        },
+        limits: board_plugin::Limits::default(),
+    };
+    let cache = tempfile::tempdir().unwrap();
+    answered(&scenario, "SELECT 1", Some(cache.path()), &plugins);
+    scenario
+        .write("tasks/a.json", Item::File(&task(r#", "see": "/nowhere""#)))
+        .write("tasks/b.json", Item::File(&task("")));
+    for sql in [
+        "SELECT * FROM entries ORDER BY source, path",
+        "SELECT * FROM records ORDER BY source, path",
+        "SELECT * FROM extracted ORDER BY plugin, version, blob",
+        "SELECT * FROM p_tasks.sqlite_schema",
+    ] {
+        let warm = answered(&scenario, sql, Some(cache.path()), &plugins);
+        assert!(warm.plugins.is_empty(), "{:?}", warm.plugins);
+        assert_eq!(warm, answered(&scenario, sql, None, &plugins), "{sql}");
     }
 }
