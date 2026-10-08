@@ -29,7 +29,7 @@ board-scenario = { path = "crates/board-scenario", version = "0.0.0" }
 board-tree = { path = "crates/board-tree", version = "0.0.0" }
 board-validate = { path = "crates/board-validate", version = "0.0.0" }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
-gix = { version = "0.88.0", default-features = false, features = ["excludes", "sha1"] }
+gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
 proptest = "1.11.0"

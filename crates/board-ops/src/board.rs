@@ -47,6 +47,15 @@ pub struct Board {
     config: Config,
 }
 
+// Board must stay `Send` so that a caller can move it to another thread, as
+// a cache of mounted repositories or a server adapter would. gix's `parallel`
+// feature makes its repositories `Send`; without it this fails to compile. A
+// Board is not `Sync`: gix keeps per-repository caches in `RefCell`s.
+const _: () = {
+    const fn send<T: Send>() {}
+    send::<Board>();
+};
+
 impl Board {
     /// Opens the board whose root is `start` or the nearest directory above
     /// it holding `.board/board.json`. That directory must be the root of its
