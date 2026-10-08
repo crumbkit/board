@@ -1,11 +1,12 @@
-//! Reading a working-tree file the walk listed: a file that changed after
-//! the walk is refused, carrying the bytes read and the blob they make, so it
-//! is never taken for the blob the walk saw.
+//! Reading a working-tree file: one size rule and one missing rule for every
+//! reader. A file that changed after the walk is refused, carrying the bytes
+//! read and the blob they make, so it is never taken for the blob the walk
+//! saw.
 
 use board_model::MAX_RECORD_BYTES;
 
 use super::*;
-use crate::{Contents, GitError};
+use crate::{Contents, GitError, Working};
 
 /// The blob the walk of `repository`'s working tree gave each file.
 fn walked(repository: &Repository) -> impl Fn(&str) -> ObjectId {
@@ -17,6 +18,11 @@ fn walked(repository: &Repository) -> impl Fn(&str) -> ObjectId {
             .and_then(|entry| entry.blob)
             .unwrap()
     }
+}
+
+/// The file at `path` as the reader finds it, walked or not.
+fn working(repository: &Repository, path: &str) -> Working {
+    repository.read_working(path, None).unwrap()
 }
 
 fn read(repository: &Repository, path: &str, blob: ObjectId) -> Result<Option<Contents>, GitError> {
@@ -67,7 +73,7 @@ fn a_file_removed_after_the_walk_is_unreadable_and_a_kept_twin_is_read() {
 }
 
 #[test]
-fn a_file_of_exactly_the_limit_is_read_with_its_blob_and_one_byte_more_is_too_large() {
+fn a_file_of_exactly_the_limit_is_read_and_one_byte_more_is_too_large() {
     let scenario = Scenario::new();
     let at = "a".repeat(MAX_RECORD_BYTES);
     let over = "a".repeat(MAX_RECORD_BYTES + 1);
@@ -76,15 +82,63 @@ fn a_file_of_exactly_the_limit_is_read_with_its_blob_and_one_byte_more_is_too_la
         .write("over.json", Item::File(&over));
     let repository = scenario.open();
     let blob = walked(&repository);
-    let read_at = read(&repository, "at.json", blob("at.json"))
-        .unwrap()
-        .unwrap();
+    let Working::Read(read_at) = working(&repository, "at.json") else {
+        panic!("a file of exactly the limit is read");
+    };
     assert_eq!(read_at.blob, blob("at.json"));
     assert_eq!(read_at.bytes.len(), MAX_RECORD_BYTES);
+    assert_eq!(working(&repository, "over.json"), Working::TooLarge);
     assert_eq!(
         read(&repository, "over.json", blob("over.json")).unwrap(),
-        None
+        None,
+        "a walked file too large to read has no contents"
     );
+}
+
+#[test]
+fn a_missing_file_or_a_path_through_a_file_is_missing_and_a_present_twin_is_read() {
+    let scenario = Scenario::new();
+    scenario.write("a.json", Item::File("{}"));
+    let repository = scenario.open();
+    assert_eq!(working(&repository, "b.json"), Working::Missing);
+    assert_eq!(working(&repository, "a.json/c.json"), Working::Missing);
+    let present = Contents {
+        blob: scenario.blob("{}"),
+        bytes: b"{}".to_vec(),
+    };
+    assert_eq!(working(&repository, "a.json"), Working::Read(present));
+}
+
+#[test]
+fn a_file_that_cannot_be_read_is_unreadable_and_a_readable_twin_is_read() {
+    let scenario = Scenario::new();
+    scenario
+        .write("a.json/b.json", Item::File("{}"))
+        .write("b.json", Item::File("{}"));
+    let repository = scenario.open();
+    let directory = repository.read_working("a.json", None);
+    assert_eq!(directory.unwrap_err().code(), Code::RepoUnreadable);
+    assert!(matches!(working(&repository, "b.json"), Working::Read(_)));
+}
+
+#[test]
+fn a_file_in_a_directory_that_cannot_be_searched_is_unreadable_and_not_missing() {
+    use std::os::unix::fs::PermissionsExt;
+    let scenario = Scenario::new();
+    scenario.write("locked/a.json", Item::File("{}"));
+    let repository = scenario.open();
+    assert!(matches!(
+        working(&repository, "locked/a.json"),
+        Working::Read(_)
+    ));
+    let locked = scenario.workdir().join("locked");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let read = repository.read_working("locked/a.json", None);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // Root searches any directory, so the case cannot be made as root.
+    if !matches!(read, Ok(Working::Read(_))) {
+        assert_eq!(read.unwrap_err().code(), Code::RepoUnreadable);
+    }
 }
 
 #[test]

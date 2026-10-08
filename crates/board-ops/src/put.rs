@@ -12,7 +12,7 @@ use board_model::{
     parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
-use board_tree::{LOCK_WAIT, Lock, ResolveError, Resolver, WriteError};
+use board_tree::{LOCK_WAIT, Lock, ResolveError, Resolver, Working, WriteError};
 use board_validate::{RecordError, Reference, Schema};
 use serde_json::Value;
 
@@ -358,12 +358,21 @@ impl Board {
         let mut writes = Vec::with_capacity(prepared.len());
         let mut stale = Vec::new();
         for (at, item) in prepared.iter().enumerate() {
-            let previous = repository
-                .current_blob(&item.target.path)
-                .map_err(|error| Failure::Error(error.into()))?;
+            let found = repository
+                .read_working(&item.target.path, None)
+                .map_err(|error| Failure::Error(WriteError::from(error).into()))?;
+            let previous = match &found {
+                Working::Missing => None,
+                Working::Read(contents) => Some(contents.blob),
+                Working::TooLarge => Some(
+                    repository
+                        .working_blob(&item.target.path)
+                        .map_err(|error| Failure::Error(WriteError::from(error).into()))?,
+                ),
+            };
             let matches = match item.expect {
                 Expect::Any => true,
-                Expect::Absent => previous.is_none(),
+                Expect::Absent => found == Working::Missing,
                 Expect::Blob(blob) => previous == Some(blob),
             };
             if !matches {
@@ -499,15 +508,18 @@ impl Board {
     /// Reads and compiles the schema of `record_type` from the working tree.
     fn compile_schema(&self, record_type: &RecordType) -> Result<Schema, Refused> {
         let schema_path = record_type.schema_path();
-        let schema_bytes = self
-            .repository()
-            .read_working_file(&schema_path)
-            .map_err(|_| Refused::Code(Code::RepoUnreadable))?
-            .ok_or_else(|| Refused::UnknownType {
-                record_type: record_type.clone(),
-                schema: schema_path.clone(),
-            })?;
-        match Role::of(&schema_path).map(|role| role.classify(Some(&schema_bytes))) {
+        let schema_bytes = match self.repository().read_working(&schema_path, None) {
+            Ok(Working::Read(contents)) => Some(contents.bytes),
+            Ok(Working::TooLarge) => None,
+            Ok(Working::Missing) => {
+                return Err(Refused::UnknownType {
+                    record_type: record_type.clone(),
+                    schema: schema_path,
+                });
+            }
+            Err(_) => return Err(Refused::Code(Code::RepoUnreadable)),
+        };
+        match Role::of(&schema_path).map(|role| role.classify(schema_bytes.as_deref())) {
             Some(board_model::Classified {
                 content: Content::Schema { value },
                 code: None,

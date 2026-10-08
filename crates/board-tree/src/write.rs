@@ -7,13 +7,11 @@
 )]
 
 use std::fs::{self, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use board_model::{
-    BINARY_NAME, Code, Fields, Location, LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, Source,
-};
+use board_model::{BINARY_NAME, Code, Fields, Location, LogicalPath, Object, ObjectId, Source};
 use gix::lock::acquire::Fail;
 
 use crate::git::{GitError, Repository, model_id};
@@ -166,31 +164,10 @@ impl Repository {
                 }
                 Ok(_) => end += 1,
                 Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-                Err(source) => return Err(WriteError::Read { path: at, source }),
+                Err(source) => return Err(GitError::File { path: at, source }.into()),
             }
         }
         Ok(())
-    }
-
-    /// The bytes of the working-tree file at the `/`-separated `path`, at
-    /// most one byte past [`MAX_RECORD_BYTES`] so a parse sees it is too
-    /// large, or `None` when there is none.
-    pub fn read_working_file(&self, path: &str) -> Result<Option<Vec<u8>>, WriteError> {
-        let absolute = self.path().join(path);
-        let read = fs::File::open(&absolute).and_then(|file| {
-            let mut bytes = Vec::new();
-            file.take(MAX_RECORD_BYTES as u64 + 1)
-                .read_to_end(&mut bytes)?;
-            Ok(bytes)
-        });
-        match read {
-            Ok(bytes) => Ok(Some(bytes)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(WriteError::Read {
-                path: absolute,
-                source,
-            }),
-        }
     }
 
     /// The git directory of this working tree, where its locks live.
@@ -211,20 +188,6 @@ impl Repository {
                 }
                 Err(error) => return Err(lock_refused(error, resource.with_extension("lock"))),
             }
-        }
-    }
-
-    /// The blob of the working-tree file at the `/`-separated `path`, or
-    /// `None` when there is none. Read in full: a put compares it.
-    pub fn current_blob(&self, path: &str) -> Result<Option<ObjectId>, WriteError> {
-        let absolute = self.path().join(path);
-        match fs::read(&absolute) {
-            Ok(bytes) => Ok(Some(self.blob_id(&bytes))),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(WriteError::Read {
-                path: absolute,
-                source,
-            }),
         }
     }
 
@@ -536,12 +499,6 @@ pub enum WriteError {
     Symlink { path: LogicalPath, symlink: String },
     #[error("{lock:?} is held; if no put is running, remove it")]
     Locked { lock: PathBuf },
-    #[error("{path:?} cannot be read")]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: io::Error,
-    },
     #[error("{path:?} could not be written")]
     Io {
         path: PathBuf,
@@ -591,7 +548,6 @@ impl WriteError {
             Self::Beneath { beneath, .. } => beneath.code,
             Self::Symlink { .. } => Code::PutSymlink,
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
-            Self::Read { .. } => Code::RepoUnreadable,
             Self::Io { .. }
             | Self::Unsynced { .. }
             | Self::Commit { .. }
@@ -634,10 +590,10 @@ mod tests {
             path: path.clone(),
             source: failure(),
         };
-        let read = WriteError::Read {
+        let read = WriteError::from(GitError::File {
             path,
             source: failure(),
-        };
+        });
         assert_eq!(write.code(), Code::PutFailed);
         assert_eq!(unsynced.code(), Code::PutFailed);
         assert!(

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use board_model::{Code, LogicalPath, RecordType, canonical_json, parse_json};
 use board_plugin::{DiscoveryError, ManifestError, PluginName, installed, shipped_schema_path};
-use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
+use board_tree::{LOCK_WAIT, Lock, Resolver, Working, WriteError};
 use serde_json::Value;
 
 use crate::Board;
@@ -117,16 +117,16 @@ impl Board {
         record_type: &RecordType,
         shipped: &Value,
     ) -> Result<Held, WriteError> {
-        Ok(
-            match self
-                .repository()
-                .read_working_file(&record_type.schema_path())?
+        let schema = record_type.schema_path();
+        Ok(match self.repository().read_working(&schema, None)? {
+            Working::Missing => Held::Absent,
+            Working::Read(contents)
+                if parse_json(&contents.bytes).ok().as_ref() == Some(shipped) =>
             {
-                None => Held::Absent,
-                Some(bytes) if parse_json(&bytes).ok().as_ref() == Some(shipped) => Held::Same,
-                Some(_) => Held::Other,
-            },
-        )
+                Held::Same
+            }
+            Working::Read(_) | Working::TooLarge => Held::Other,
+        })
     }
 
     /// A shipped schema, to be written where nothing is.

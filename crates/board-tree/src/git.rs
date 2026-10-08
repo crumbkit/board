@@ -177,7 +177,7 @@ impl Repository {
     ) -> Result<Option<Contents>, GitError> {
         match source {
             Source::Commit(_) => Ok(self.read_blob(blob)?.map(|bytes| Contents { blob, bytes })),
-            Source::WorkingTree => self.read_working(Path::new(path), Some(blob)),
+            Source::WorkingTree => self.read_walked(Path::new(path), Some(blob)),
         }
     }
 

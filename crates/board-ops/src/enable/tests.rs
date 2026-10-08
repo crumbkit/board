@@ -139,6 +139,25 @@ fn a_board_that_commits_on_put_commits_the_enable_once() {
 }
 
 #[test]
+fn a_symlink_to_the_same_schema_refuses_the_enable_and_a_regular_copy_is_kept() {
+    let (board, _data, plugins) = installed(SCHEMA);
+    let at = ".board/types/notes/note/v1.schema.json";
+    board
+        .write("schemas/note.json", Item::File(SCHEMA))
+        .write(at, Item::Symlink("../../../../schemas/note.json"));
+    let refused = open(&board)
+        .plugin_enable(Some(&plugins), &notes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PluginSchemaDiffers);
+    board.write(at, Item::Deleted).write(at, Item::File(SCHEMA));
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), &notes())
+        .unwrap();
+    assert_eq!(report.put.writes.len(), 1, "only the config is written");
+    assert_eq!(read(&board, at), SCHEMA.as_bytes());
+}
+
+#[test]
 fn a_different_schema_in_the_board_refuses_the_enable_and_the_same_one_is_kept() {
     let (board, _data, plugins) = installed(SCHEMA);
     let at = ".board/types/notes/note/v1.schema.json";

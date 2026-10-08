@@ -5,7 +5,7 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::{self, FileType, Metadata};
-use std::io::{BufReader, Read};
+use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
@@ -167,7 +167,8 @@ impl WorkingTree<'_, '_> {
             };
             let blob = self.known(&path, &stat).or_else(|| {
                 let target = gix::path::into_bstr(fs::read_link(&absolute).ok()?);
-                self.hash(&mut target.as_bytes(), target.len() as u64)
+                self.repository
+                    .hash(&mut target.as_bytes(), target.len() as u64)
             });
             return Some((blob.map_or(Kind::Unreadable, Kind::Symlink), Some(stat)));
         }
@@ -186,7 +187,7 @@ impl WorkingTree<'_, '_> {
         else {
             return Some((Kind::Unreadable, None));
         };
-        let blob = self.hash(&mut BufReader::new(file), stat.size);
+        let blob = self.repository.hash(&mut BufReader::new(file), stat.size);
         Some((blob.map_or(Kind::Unreadable, Kind::File), Some(stat)))
     }
 
@@ -236,23 +237,6 @@ impl WorkingTree<'_, '_> {
     /// The blob of the file at `path` with `stat`, if already known.
     fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
         self.known.as_mut().and_then(|known| known(path, stat))
-    }
-
-    /// The id git gives a blob of `length` bytes read from `stream`, in
-    /// constant memory; `None` if the stream fails, or yields fewer or more
-    /// bytes than `length` because the file changed while it was read.
-    fn hash(&self, stream: &mut dyn Read, length: u64) -> Option<ObjectId> {
-        let id = gix::objs::compute_stream_hash(
-            self.repository.git().object_hash(),
-            gix::objs::Kind::Blob,
-            stream,
-            length,
-            &mut gix::features::progress::Discard,
-            &AtomicBool::new(false),
-        )
-        .ok()?;
-        let mut more = [0; 1];
-        (stream.read(&mut more).ok()? == 0).then(|| model_id(&id))
     }
 }
 
@@ -323,7 +307,7 @@ impl Tree for WorkingTree<'_, '_> {
             Kind::File(blob) | Kind::Symlink(blob) => Some(blob),
             _ => None,
         };
-        let contents = self.repository.read_working(&path, listed)?;
+        let contents = self.repository.read_walked(&path, listed)?;
         Ok(contents.map(|contents| contents.bytes))
     }
 }
@@ -364,26 +348,43 @@ fn unix_stat(_metadata: &Metadata) -> (i64, u64, u32) {
     (0, 0, 0)
 }
 
+/// A working-tree file as [`Repository::read_working`] finds it.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Working {
+    /// Nothing is at the path, or a path continues through a file.
+    Missing,
+    /// The file holds more than [`MAX_RECORD_BYTES`].
+    TooLarge,
+    Read(Contents),
+}
+
 impl Repository {
-    /// The contents of the working-tree file at `relative`, or `None` when it
-    /// holds more than [`MAX_RECORD_BYTES`]. A symlink's contents are its
-    /// target path, as git stores it. A file that no longer holds the blob it
-    /// was `walked` with is [`GitError::Changed`].
-    pub(crate) fn read_working(
+    /// The working-tree file at `relative`. A symlink's contents are its
+    /// target path, as git stores it. A file read that no longer holds the
+    /// blob it was `walked` with is [`GitError::Changed`].
+    pub fn read_working(
         &self,
-        relative: &Path,
+        relative: impl AsRef<Path>,
         walked: Option<ObjectId>,
-    ) -> Result<Option<Contents>, GitError> {
+    ) -> Result<Working, GitError> {
         let path = self.path().join(relative);
         let unreadable = |source| GitError::File {
             path: path.clone(),
             source,
         };
+        let metadata = match fs::symlink_metadata(&path) {
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Ok(Working::Missing);
+            }
+            metadata => metadata.map_err(unreadable)?,
+        };
         let mut bytes = Vec::new();
-        if fs::symlink_metadata(&path)
-            .map_err(unreadable)?
-            .is_symlink()
-        {
+        if metadata.is_symlink() {
             let target = fs::read_link(&path).map_err(unreadable)?;
             bytes = gix::path::into_bstr(target).to_vec();
         } else {
@@ -395,7 +396,7 @@ impl Repository {
                 .map_err(unreadable)?;
         }
         if bytes.len() > MAX_RECORD_BYTES {
-            return Ok(None);
+            return Ok(Working::TooLarge);
         }
         let contents = Contents {
             blob: self.blob_id(&bytes),
@@ -403,7 +404,53 @@ impl Repository {
         };
         match walked {
             Some(blob) if blob != contents.blob => Err(GitError::Changed { path, contents }),
-            _ => Ok(Some(contents)),
+            _ => Ok(Working::Read(contents)),
+        }
+    }
+
+    /// The blob of the working-tree file at `relative`, hashed in constant
+    /// memory, for a file too large to read.
+    pub fn working_blob(&self, relative: impl AsRef<Path>) -> Result<ObjectId, GitError> {
+        let path = self.path().join(relative);
+        let hashed = fs::File::open(&path).and_then(|file| {
+            let length = file.metadata()?.len();
+            self.hash(&mut BufReader::new(file), length)
+                .ok_or_else(|| io::Error::other("the file changed while it was hashed"))
+        });
+        hashed.map_err(|source| GitError::File { path, source })
+    }
+
+    /// The id git gives a blob of `length` bytes read from `stream`, in
+    /// constant memory; `None` if the stream fails, or yields fewer or more
+    /// bytes than `length` because the file changed while it was read.
+    fn hash(&self, stream: &mut dyn Read, length: u64) -> Option<ObjectId> {
+        let id = gix::objs::compute_stream_hash(
+            self.git().object_hash(),
+            gix::objs::Kind::Blob,
+            stream,
+            length,
+            &mut gix::features::progress::Discard,
+            &AtomicBool::new(false),
+        )
+        .ok()?;
+        let mut more = [0; 1];
+        (stream.read(&mut more).ok()? == 0).then(|| model_id(&id))
+    }
+
+    /// The contents of a working-tree file that was walked, or `None` when it
+    /// is too large. One that is gone is [`GitError::File`].
+    pub(crate) fn read_walked(
+        &self,
+        relative: &Path,
+        walked: Option<ObjectId>,
+    ) -> Result<Option<Contents>, GitError> {
+        match self.read_working(relative, walked)? {
+            Working::Read(contents) => Ok(Some(contents)),
+            Working::TooLarge => Ok(None),
+            Working::Missing => Err(GitError::File {
+                path: self.path().join(relative),
+                source: io::ErrorKind::NotFound.into(),
+            }),
         }
     }
 }
@@ -443,12 +490,14 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         gix::init(directory.path()).unwrap();
         let repository = Repository::open(directory.path()).unwrap();
-        let tree = repository.working_tree(None).unwrap();
         let expected =
             gix::objs::compute_hash(gix::hash::Kind::Sha1, gix::objs::Kind::Blob, b"abc").unwrap();
-        assert_eq!(tree.hash(&mut &b"abc"[..], 3), Some(model_id(&expected)));
-        assert_eq!(tree.hash(&mut &b"abcd"[..], 3), None);
-        assert_eq!(tree.hash(&mut &b"ab"[..], 3), None);
+        assert_eq!(
+            repository.hash(&mut &b"abc"[..], 3),
+            Some(model_id(&expected))
+        );
+        assert_eq!(repository.hash(&mut &b"abcd"[..], 3), None);
+        assert_eq!(repository.hash(&mut &b"ab"[..], 3), None);
     }
 
     #[test]

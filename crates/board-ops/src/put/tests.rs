@@ -108,6 +108,87 @@ fn expect_must_match_the_file_or_the_put_is_stale() {
     );
 }
 
+#[test]
+fn expect_over_a_file_too_large_to_read_compares_its_whole_blob() {
+    let scenario = board();
+    let big = "a".repeat(board_model::MAX_RECORD_BYTES + 1);
+    scenario.write("tasks/a.json", Item::File(&big));
+    assert_eq!(
+        put(&scenario, "/tasks/a", Expect::Absent, &task("")).unwrap_err(),
+        Code::PutStale
+    );
+    let written = put(
+        &scenario,
+        "/tasks/a",
+        Expect::Blob(scenario.blob(&big)),
+        &task(""),
+    );
+    assert_eq!(
+        written.unwrap().writes[0].previous,
+        Some(scenario.blob(&big))
+    );
+}
+
+#[test]
+fn an_ignored_file_too_large_to_read_is_never_absent_and_its_own_blob_is_expected() {
+    let scenario = board();
+    let big = "a".repeat(board_model::MAX_RECORD_BYTES + 1);
+    scenario
+        .write(".gitignore", Item::File("tasks/r/a.json\n"))
+        .write("tasks/r.json", Item::File(&task("")))
+        .write("tasks/r/a.json", Item::File(&big));
+    let beside = scenario.blob(&task(""));
+    for expect in [Expect::Absent, Expect::Blob(beside)] {
+        let refused = put(&scenario, "/tasks/r/a", expect, &task(""));
+        assert_eq!(refused.unwrap_err(), Code::PutStale);
+    }
+    let own = scenario.blob(&big);
+    let written = put(&scenario, "/tasks/r/a", Expect::Blob(own), &task("")).unwrap();
+    assert_eq!(written.writes[0].previous, Some(own));
+}
+
+#[test]
+fn expect_over_a_symlink_is_refused_whichever_blob_it_names_and_over_the_target_is_admitted() {
+    let scenario = board();
+    scenario
+        .write("tasks/b.json", Item::File(&task("")))
+        .write("tasks/a.json", Item::Symlink("b.json"));
+    let targets = scenario.blob(&task(""));
+    let links = scenario.blob("b.json");
+    for expect in [Expect::Blob(targets), Expect::Blob(links)] {
+        assert_eq!(
+            put(&scenario, "/tasks/a", expect, &task("")).unwrap_err(),
+            Code::PutSymlink
+        );
+    }
+    let written = put(&scenario, "/tasks/b", Expect::Blob(targets), &task("")).unwrap();
+    assert_eq!(written.writes[0].previous, Some(targets));
+}
+
+#[test]
+fn a_record_whose_schema_is_a_symlink_is_refused_as_check_reads_it_and_a_regular_twin_is_admitted()
+{
+    let scenario = board();
+    scenario
+        .write("schemas/note.json", Item::File(r#"{"type": "object"}"#))
+        .write(
+            ".board/types/lr/note/v1.schema.json",
+            Item::Symlink("../../../../schemas/note.json"),
+        );
+    let note = r#"{"$type": "lr/note/v1"}"#;
+    assert_eq!(
+        put(&scenario, "/n", Expect::Any, note).unwrap_err(),
+        Code::SchemaInvalid
+    );
+    scenario
+        .write(".board/types/lr/note/v1.schema.json", Item::Deleted)
+        .write(
+            ".board/types/lr/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+    assert!(put(&scenario, "/n", Expect::Any, note).is_ok());
+}
+
 /// The codes put shares with check are pinned by the property in `parity`;
 /// these are put's own checks, made before it reads the record as check does.
 #[test]
