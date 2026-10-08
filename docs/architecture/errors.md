@@ -28,7 +28,10 @@ The v0 set:
 ## What an error names
 
 An error names the values it knows, and `board/error/v1` gives them in
-`fields`: `path`, `blob`, `pointer`, `type`, `schema`, `plugin`, `capability`.
+`fields`: `path`, `blob`, `pointer`, `type`, `schema`, `plugin`, `capability`,
+`directory`. A put refused for the code of a directory the file would be in
+names that directory by its path from the board's root, without a leading `/`
+(`directory`).
 `check` and `put` name a degraded entry's first failing pointer, why, and how
 many more (`pointer`, `reason`, `failures`); an unknown type's reason names the
 schema file its board lacks (`schema`).

@@ -340,14 +340,13 @@ impl Resolver<'_, '_> {
             .resolve_in(&mut self.tree, path, false, &mut self.pointers)
     }
 
-    /// The code the entry for the `/`-separated `file` would have once
-    /// written, or `None` when it would not be degraded.
-    pub(crate) fn degraded(
+    /// What [`crate::walk::planned_code`] gives `file` in this snapshot.
+    pub(crate) fn planned_code(
         &mut self,
         file: &str,
         is_pointer: bool,
-    ) -> Result<Option<Code>, GitError> {
-        self.tree.degraded(file, is_pointer)
+    ) -> Result<Option<crate::walk::Planned>, GitError> {
+        crate::walk::planned_code(&mut self.tree, file, is_pointer)
     }
 
     /// The deepest ancestor of `path` that resolves, for a `path` that names

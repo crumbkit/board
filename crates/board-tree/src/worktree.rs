@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::time::UNIX_EPOCH;
 
-use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, ObjectId, Source, Stat};
+use board_model::{MAX_RECORD_BYTES, ObjectId, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
@@ -233,58 +233,6 @@ impl WorkingTree<'_, '_> {
         Ok(entries.into())
     }
 
-    /// The code the entry for the `/`-separated `file` would have in the
-    /// deepest directory of its path that exists, once written: the new file
-    /// itself, or the first directory to be created on the way to it.
-    /// `is_pointer` says whether the file will hold a pointer.
-    pub(crate) fn degraded(
-        &mut self,
-        file: &str,
-        is_pointer: bool,
-    ) -> Result<Option<Code>, GitError> {
-        let mut directory = PathBuf::new();
-        let mut parts = file.split('/').peekable();
-        while let Some(part) = parts.next() {
-            let last = parts.peek().is_none();
-            let ours = RawEntry {
-                name: part.as_bytes().to_vec(),
-                kind: if last {
-                    Kind::File(ObjectId::Sha1([0; 20]))
-                } else {
-                    Kind::Directory(directory.join(part))
-                },
-                stat: None,
-                size: None,
-            };
-            // Only the entries with its segment, or its name but for case,
-            // bear on its code, so a write into a large directory addresses
-            // a few entries and not all of them.
-            let alike = self
-                .listing(&directory)?
-                .alike(part.as_bytes(), address::segment(&ours));
-            if !last && alike.iter().any(|entry| entry.name == part.as_bytes()) {
-                directory.push(part);
-                continue;
-            }
-            let mut entries: Vec<RawEntry<PathBuf>> = alike
-                .into_iter()
-                .filter(|entry| entry.name != part.as_bytes())
-                .collect();
-            entries.push(ours);
-            let ours = entries.len() - 1;
-            let mut pointers = Pointers::default();
-            let addressed = address::directory(&LogicalPath::root(), &entries, |record| {
-                if record.name == part.as_bytes() {
-                    Ok(is_pointer)
-                } else {
-                    pointers.shadows(record, || self.read(&directory, record))
-                }
-            });
-            return Ok(addressed.get(ours).and_then(|(_, code)| *code));
-        }
-        Ok(None)
-    }
-
     /// The blob of the file at `path` with `stat`, if already known.
     fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
         self.known.as_mut().and_then(|known| known(path, stat))
@@ -322,6 +270,17 @@ impl Tree for WorkingTree<'_, '_> {
 
     fn list(&mut self, directory: &PathBuf) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
         Ok(Rc::clone(&self.listing(directory)?.entries))
+    }
+
+    /// Finds the entries through the listing's lookup, so a write into a
+    /// large directory addresses a few entries and not all of them.
+    fn alike(
+        &mut self,
+        directory: &PathBuf,
+        name: &[u8],
+        segment: Option<&str>,
+    ) -> Result<Vec<RawEntry<PathBuf>>, GitError> {
+        Ok(self.listing(directory)?.alike(name, segment))
     }
 
     /// Uses the lookup only when `entries` is the listing of `directory` it

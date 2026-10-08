@@ -99,6 +99,35 @@ mod tests {
     }
 
     #[test]
+    fn a_path_refusal_that_names_a_directory_has_a_hint_about_that_directory() {
+        let beneath = Fields {
+            directory: Some("Projects".to_owned()),
+            ..Fields::at(&"/Projects/q".parse().unwrap())
+        };
+        assert_eq!(
+            Code::PathCaseCollision.hint(&beneath),
+            "move any files in `Projects` beneath the spelling the message names, then write there"
+        );
+        assert_eq!(
+            Code::PathMalformed.hint(&beneath),
+            "the logical path beneath `Projects` would be over 4096 bytes; write to a path with fewer or shorter segments, or link to a shallower target"
+        );
+    }
+
+    #[test]
+    fn a_path_refusal_that_names_no_directory_has_the_generic_hint() {
+        let at = Fields::at(&"/Projects/q".parse().unwrap());
+        assert_eq!(
+            Code::PathCaseCollision.hint(&at),
+            "rename one of the names that differ only in case; a macOS working tree cannot hold both"
+        );
+        assert_eq!(
+            Code::PathMalformed.hint(&at),
+            "a logical path starts with `/`, leaves out `.json`, and has no empty, `.` or `..` segment"
+        );
+    }
+
+    #[test]
     fn a_refusal_given_a_hint_carries_it_in_place_of_its_codes_hint_and_keeps_the_rest() {
         let fields = Fields::at(&"/tasks/t9.json".parse().unwrap());
         let refusal = Refusal::new(Code::PathNotFound, "nothing is at /tasks/t9.json", &fields);

@@ -164,6 +164,7 @@ fn every_command_a_hint_names_parses() {
         schema: Some(".board/types/lr/task/v1.schema.json".to_owned()),
         plugin: Some("tasks".to_owned()),
         capability: Some("due".to_owned()),
+        directory: Some("tasks".to_owned()),
     };
     let no_blob = Fields {
         blob: None,

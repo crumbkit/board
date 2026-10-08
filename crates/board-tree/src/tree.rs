@@ -23,6 +23,25 @@ pub(crate) trait Tree {
         directory: &Self::Directory,
     ) -> Result<Rc<[RawEntry<Self::Directory>]>, GitError>;
 
+    /// The entries of `directory` whose segment is `segment` or whose name
+    /// is `name` but for ASCII case, in listing order: the only ones that
+    /// bear on the code of an entry named `name` there.
+    fn alike(
+        &mut self,
+        directory: &Self::Directory,
+        name: &[u8],
+        segment: Option<&str>,
+    ) -> Result<Vec<RawEntry<Self::Directory>>, GitError> {
+        let listed = self.list(directory)?;
+        Ok(listed
+            .iter()
+            .filter(|entry| {
+                entry.name.eq_ignore_ascii_case(name) || address::segment(entry) == segment
+            })
+            .cloned()
+            .collect())
+    }
+
     /// The bytes of the file `entry` in `directory`, or `None` when it holds
     /// more than [`board_model::MAX_RECORD_BYTES`].
     fn read(

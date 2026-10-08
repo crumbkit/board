@@ -98,5 +98,8 @@ lands at its target; put does not create a missing target, and refuses with its
 resolution code. A path through a mount is `board::put::through_mount`. A
 segment git keeps, `.git` under any spelling HFS+ or NTFS opens as it, is
 `board::path::malformed`, in `mount update` too. Missing directories are
-created. A write that would leave its own path degraded is refused with that
-path's code, such as `path::shadowed`.
+created. A write that would leave its own path degraded is refused with the
+code the walk would give it, such as `path::shadowed`. When that code comes
+from a directory above, such as one whose name collides in case, the error
+names the directory, says whether the write would create it, and names the
+existing entry it collides with.

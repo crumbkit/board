@@ -46,6 +46,15 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "change the reference at `{}` to a logical path that starts with `/`, such as `/projects/p`",
             pointer?
         ),
+        Code::PathCaseCollision => format!(
+            "move any files in `{}` beneath the spelling the message names, then write there",
+            fields.directory.as_ref()?
+        ),
+        Code::PathMalformed => format!(
+            "the logical path beneath `{}` would be over {} bytes; write to a path with fewer or shorter segments, or link to a shallower target",
+            fields.directory.as_ref()?,
+            crate::MAX_PATH_BYTES
+        ),
         Code::PathNotFound => format!(
             "run `board ls {}` to see what is there; paths leave out `.json`",
             parent(path?)

@@ -353,16 +353,20 @@ fn a_write_that_would_leave_its_path_degraded_is_refused_and_its_twin_is_admitte
         "a pointer beside a directory shadows it"
     );
     assert!(put(&scenario, "/tasks/x", Expect::Any, &task("")).is_ok());
-    assert_eq!(
-        put(
-            &scenario,
-            "/Projects/q",
+    let error = open(&scenario)
+        .put(
+            &path("/Projects/q"),
             Expect::Any,
-            r#"{"$type": "lr/project/v1"}"#
+            br#"{"$type": "lr/project/v1"}"#,
         )
-        .unwrap_err(),
-        Code::PathCaseCollision
+        .unwrap_err();
+    assert_eq!(error.code(), Code::PathCaseCollision);
+    assert_eq!(
+        error.to_string(),
+        "/Projects/q cannot be written: the directory Projects it would create would be board::path::case_collision with projects"
     );
+    assert_eq!(error.fields().directory.as_deref(), Some("Projects"));
+    assert!(file(&scenario, "Projects/q.json").is_none());
     assert!(
         put(
             &scenario,
@@ -372,6 +376,26 @@ fn a_write_that_would_leave_its_path_degraded_is_refused_and_its_twin_is_admitte
         )
         .is_ok()
     );
+}
+
+/// Only a file system that tells case apart holds `tasks/` and `Tasks/`.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_write_beneath_a_directory_that_collides_in_case_is_refused_naming_it_and_its_twin_is_admitted()
+{
+    let scenario = board();
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    assert!(put(&scenario, "/tasks/b", Expect::Any, &task("")).is_ok());
+    scenario.write("Tasks/a.json", Item::File(&task("")));
+    let error = open(&scenario)
+        .put(&path("/tasks/c"), Expect::Any, task("").as_bytes())
+        .unwrap_err();
+    assert_eq!(error.code(), Code::PathCaseCollision);
+    assert_eq!(
+        error.to_string(),
+        "/tasks/c cannot be written: the directory tasks above it is board::path::case_collision with Tasks"
+    );
+    assert!(file(&scenario, "tasks/c.json").is_none());
 }
 
 #[test]

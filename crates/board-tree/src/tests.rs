@@ -5,6 +5,7 @@ mod address;
 mod commits;
 mod links;
 mod mounts;
+mod planned;
 mod reading;
 mod scoped;
 mod trees;

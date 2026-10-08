@@ -19,6 +19,7 @@ use gix::lock::acquire::Fail;
 use crate::git::{GitError, Repository, model_id};
 use crate::resolve::{ResolveError, Resolver};
 use crate::tree::Tree;
+use crate::walk::{Beneath, Planned};
 
 /// How long a put waits for another put's lock.
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
@@ -81,16 +82,7 @@ impl Resolver<'_, '_> {
         if location.board.source != Source::WorkingTree {
             return Err(refused(Code::PutThroughMount));
         }
-        if names_git(&physical) {
-            return Err(refused(Code::PathMalformed));
-        }
-        if let Some(code) = self.degraded(&physical, is_pointer)? {
-            return Err(refused(code));
-        }
-        Ok(Target {
-            path: physical,
-            location,
-        })
+        self.writable(path, physical, location, is_pointer)
     }
 
     /// The pointer file `path` names, which is not followed, for rewriting
@@ -111,16 +103,32 @@ impl Resolver<'_, '_> {
             Object::Blob(_) => record_file(&location).ok_or(refused(Code::RecordNotARecord))?,
             Object::Directory => return Err(refused(Code::RecordNotARecord)),
         };
+        self.writable(path, physical, location, true)
+    }
+
+    /// The target `physical` names, unless it names git's own directory or
+    /// the walk would degrade it once written: with its own code, or, when
+    /// the code is a directory's, naming that directory.
+    fn writable(
+        &mut self,
+        path: &LogicalPath,
+        physical: String,
+        location: Location,
+        is_pointer: bool,
+    ) -> Result<Target, WriteError> {
+        let path = path.clone();
         if names_git(&physical) {
-            return Err(refused(Code::PathMalformed));
+            let code = Code::PathMalformed;
+            return Err(WriteError::Refused { path, code });
         }
-        if let Some(code) = self.degraded(&physical, true)? {
-            return Err(refused(code));
+        match self.planned_code(&physical, is_pointer)? {
+            None => Ok(Target {
+                path: physical,
+                location,
+            }),
+            Some(Planned::File(code)) => Err(WriteError::Refused { path, code }),
+            Some(Planned::Directory(beneath)) => Err(WriteError::Beneath { path, beneath }),
         }
-        Ok(Target {
-            path: physical,
-            location,
-        })
     }
 
     /// The new record file `path` names: beneath its deepest ancestor that
@@ -496,6 +504,9 @@ fn names_git(file: &str) -> bool {
 pub enum WriteError {
     #[error("{path} cannot be written: {code}")]
     Refused { path: LogicalPath, code: Code },
+    /// Refused for the code of a directory the file would be in.
+    #[error("{path} cannot be written: {beneath}")]
+    Beneath { path: LogicalPath, beneath: Beneath },
     #[error("{lock:?} is held; if no put is running, remove it")]
     Locked { lock: PathBuf },
     #[error("{path:?} cannot be read")]
@@ -550,6 +561,7 @@ impl WriteError {
     pub fn code(&self) -> Code {
         match self {
             Self::Refused { code, .. } => *code,
+            Self::Beneath { beneath, .. } => beneath.code,
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
             Self::Read { .. } => Code::RepoUnreadable,
             Self::Io { .. }
@@ -566,6 +578,10 @@ impl WriteError {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Refused { path, .. } => Fields::at(path),
+            Self::Beneath { path, beneath } => Fields {
+                directory: Some(beneath.directory.clone()),
+                ..Fields::at(path)
+            },
             _ => Fields::default(),
         }
     }

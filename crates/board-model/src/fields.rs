@@ -20,6 +20,9 @@ pub struct Fields {
     pub schema: Option<String>,
     pub plugin: Option<String>,
     pub capability: Option<String>,
+    /// A directory whose code refuses a write beneath it, by its path from
+    /// the board's root, without a leading `/`.
+    pub directory: Option<String>,
 }
 
 impl Fields {
@@ -41,6 +44,7 @@ impl Fields {
             ("schema", self.schema.clone()),
             ("plugin", self.plugin.clone()),
             ("capability", self.capability.clone()),
+            ("directory", self.directory.clone()),
         ];
         known
             .into_iter()
@@ -69,11 +73,12 @@ mod tests {
         let fields = Fields {
             pointer: Some("/title".to_owned()),
             plugin: Some("tasks".to_owned()),
+            directory: Some("tasks".to_owned()),
             ..Fields::default()
         };
         assert_eq!(
             Value::Object(fields.json()),
-            json!({ "pointer": "/title", "plugin": "tasks" })
+            json!({ "pointer": "/title", "plugin": "tasks", "directory": "tasks" })
         );
     }
 }
