@@ -3,6 +3,7 @@
 
 use std::cell::OnceCell;
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fs::{self, FileType, Metadata};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -435,6 +436,13 @@ fn submodule(index: &gix::worktree::Index, relative: &Path, absolute: &Path) -> 
     indexed.is_some_and(|entry| entry.mode == Mode::COMMIT) || absolute.join(".git").exists()
 }
 
+/// The names in `directory`, spelled as the walk lists them.
+fn names(directory: &Path) -> io::Result<Vec<OsString>> {
+    fs::read_dir(directory)?
+        .map(|item| item.map(|item| item.file_name()))
+        .collect()
+}
+
 /// A working-tree directory as [`Repository::working_directory`] finds it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Directory {
@@ -512,10 +520,11 @@ impl Repository {
     /// when it or a directory above it is untracked and ignored, a
     /// submodule when it or a directory above it is one, else a directory
     /// of entries, which includes a path beneath a symlink and anything the
-    /// walk does not list, such as a FIFO. `None` when a file or symlink is
-    /// there, or nothing is, or a file is on the way. A directory on the
-    /// way that cannot be listed, or whose ignore rules cannot be read, is
-    /// [`GitError::File`].
+    /// walk does not list, such as a FIFO, or a name that a case-insensitive
+    /// file system finds under another spelling. `None` when a file or
+    /// symlink is there, or nothing is, or a file is on the way. A directory
+    /// on the way that cannot be listed, or whose ignore rules cannot be
+    /// read, is [`GitError::File`].
     pub fn working_directory(
         &self,
         relative: impl AsRef<Path>,
@@ -524,12 +533,19 @@ impl Repository {
         let mut excludes = self.excludes(&index)?;
         let mut components = relative.as_ref().components().peekable();
         let mut at = PathBuf::new();
+        let mut listed = names(self.path()).map_err(|source| GitError::File {
+            path: self.path().to_path_buf(),
+            source,
+        })?;
         while let Some(component) = components.next() {
             at.push(component);
             let absolute = self.path().join(&at);
             let Ok(metadata) = fs::symlink_metadata(&absolute) else {
                 return Ok(None);
             };
+            if !listed.iter().any(|name| name == component.as_os_str()) {
+                return Ok(Some(Directory::Entries));
+            }
             let unreadable = |source| GitError::File {
                 path: absolute.clone(),
                 source,
@@ -547,7 +563,7 @@ impl Repository {
             if submodule(&index, &at, &absolute) {
                 return Ok(Some(Directory::Submodule));
             }
-            fs::read_dir(&absolute).map_err(unreadable)?;
+            listed = names(&absolute).map_err(unreadable)?;
         }
         Ok(Some(Directory::Entries))
     }

@@ -209,6 +209,24 @@ fn a_path_in_or_at_a_submodule_is_a_submodule_by_the_walks_rule_and_any_other_di
 }
 
 #[test]
+fn a_name_on_the_way_in_another_case_holds_entries_where_the_file_system_finds_it_and_its_own_spelling_is_seen()
+ {
+    let scenario = Scenario::new();
+    scenario.write("Plain/X.json", Item::File("{}"));
+    let repository = scenario.open();
+    let directory = |path: &str| repository.working_directory(path).unwrap();
+    assert_eq!(directory("Plain/X.json"), None);
+    assert_eq!(directory("Plain"), Some(Directory::Entries));
+    // A case-sensitive file system finds nothing at these paths, so both
+    // kinds of file system are checked: each must answer as the walk lists.
+    let folds = scenario.workdir().join("plain/x.json").exists();
+    for path in ["plain/X.json", "Plain/x.json", "plain"] {
+        let found = folds.then_some(Directory::Entries);
+        assert_eq!(directory(path), found, "{path}");
+    }
+}
+
+#[test]
 fn a_directory_on_the_way_that_cannot_be_listed_is_refused_and_one_that_can_holds_entries() {
     let scenario = Scenario::new();
     scenario

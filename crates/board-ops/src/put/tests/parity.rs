@@ -175,6 +175,23 @@ fn put_agrees_with_check_when_the_schema_or_a_directory_above_it_is_ignored_and_
 }
 
 #[test]
+fn put_agrees_with_check_when_a_name_on_the_schema_path_is_spelled_in_another_case() {
+    admitted(&board(), "every name spelled as the record type spells it");
+    // A case-insensitive file system, such as macOS's, opens these paths
+    // under the record type's spelling; the walk lists them as written.
+    for misspelt in [
+        ".board/types/lr/TASK/v1.schema.json",
+        ".board/types/lr/task/V1.schema.json",
+    ] {
+        let scenario = board();
+        scenario
+            .write(".board/types/lr/task", Item::Deleted)
+            .write(misspelt, Item::File(TASK_SCHEMA));
+        agree_with(&scenario, Code::RecordUnknownType, misspelt);
+    }
+}
+
+#[test]
 fn put_agrees_with_check_when_a_fifo_is_at_the_schema_path() {
     admitted(&board(), "a readable schema");
     // The walk lists only files and symlinks. A writer closes the FIFO at

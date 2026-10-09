@@ -64,7 +64,7 @@ Parsing is strict, and the first failure is the entry's code: over 16 MiB
 7493 (I-JSON), except that an integer may use the full 64-bit range. A
 malformed `$type` is `record::bad_type`; a type with no schema file is
 `record::unknown_type`, and so is one whose schema file git ignores and does
-not track. In `check` and `put` alike, a record whose schema file cannot be
+not track, or whose schema path is spelled in another case on disk. In `check` and `put` alike, a record whose schema file cannot be
 read is `repo::unreadable`, though `get` still returns it. A file
 under `.board/types/board/` is `schema::invalid`, because Board's own types are
 checked by Rust types. A schema that does not compile is `schema::invalid`,
