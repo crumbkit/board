@@ -34,7 +34,7 @@ impl PluginDatabase {
         clippy::disallowed_methods,
         reason = "board-index owns the cache's files"
     )]
-    pub fn open(storage: &Storage, plugin: &str, version: &str) -> io::Result<Self> {
+    pub fn open(storage: &Storage, plugin: &str, version: &str) -> Result<Self, DatabaseError> {
         let kept = match storage {
             Storage::File(index) => index
                 .parent()
@@ -49,13 +49,18 @@ impl PluginDatabase {
             }
             (directory, None)
         } else {
-            let temporary = tempfile::tempdir()?;
+            let temporary =
+                tempfile::tempdir().map_err(|source| DatabaseError::TemporaryDirectory {
+                    parent: std::env::temp_dir(),
+                    source,
+                })?;
             (temporary.path().to_path_buf(), Some(temporary))
         };
         let file = directory.join(format!("{plugin}@{version}.sqlite"));
         match OpenOptions::new().append(true).create_new(true).open(&file) {
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-            created => drop(created?),
+            Err(source) => return Err(DatabaseError::File { path: file, source }),
+            Ok(created) => drop(created),
         }
         Ok(Self {
             id: identify(&file).ok(),
@@ -80,6 +85,17 @@ impl PluginDatabase {
     pub fn fallback(&self) -> bool {
         self.fallback
     }
+}
+
+/// A plugin database Board could not make, and why.
+#[derive(Debug, thiserror::Error)]
+pub enum DatabaseError {
+    /// The database file at `path` could not be created.
+    #[error("{} cannot be made: {source}", path.display())]
+    File { path: PathBuf, source: io::Error },
+    /// No temporary directory could be made in `parent` to hold it.
+    #[error("a temporary directory cannot be made in {}: {source}", parent.display())]
+    TemporaryDirectory { parent: PathBuf, source: io::Error },
 }
 
 /// The id Board keeps in the database at `file`, made at random when the

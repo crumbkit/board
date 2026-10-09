@@ -384,9 +384,19 @@ fn environment(inherited: &Environment, depth: u32) -> Vec<(&'static str, OsStri
 pub enum CallError {
     #[error(transparent)]
     Discovery { source: DiscoveryError },
-    #[error("plugin {plugin} has no database: {source}")]
+    #[error("plugin {plugin} has no database: {} cannot be made: {source}", path.display())]
     Database {
         plugin: PluginName,
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error(
+        "plugin {plugin} has no database: a temporary directory cannot be made in {}: {source}",
+        parent.display()
+    )]
+    NoTemporaryDirectory {
+        plugin: PluginName,
+        parent: PathBuf,
         source: std::io::Error,
     },
     #[error("BOARD_CALL_DEPTH {text:?} is not a whole number")]
@@ -547,9 +557,10 @@ impl CallError {
                 at = Some(pointer.clone());
                 (Code::PluginBadInput, None, Some(capability))
             }
-            Self::Database { plugin, .. } | Self::Failed { plugin, .. } => {
-                (Code::PluginFailed, Some(plugin), None)
+            Self::Database { plugin, .. } | Self::NoTemporaryDirectory { plugin, .. } => {
+                (Code::PluginNoDatabase, Some(plugin), None)
             }
+            Self::Failed { plugin, .. } => (Code::PluginFailed, Some(plugin), None),
             Self::Start { plugin, .. } => (Code::PluginNotStarted, Some(plugin), None),
             Self::Timeout { plugin, .. } => (Code::PluginTimeout, Some(plugin), None),
             Self::TooLarge { plugin, .. } => (Code::PluginTooLarge, Some(plugin), None),

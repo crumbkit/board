@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use board_index::{IndexError, PluginDatabase, Storage};
+use board_index::{DatabaseError, IndexError, PluginDatabase, Storage};
 use board_model::{Fields, RecordType, Refusal, parse_json};
 use board_plugin::{
     CallError, Context, Environment, Installed, Limits, Manifest, Record, extract, installed,
@@ -42,9 +42,22 @@ pub(crate) fn database(
         &manifest.name.to_string(),
         &manifest.version.to_string(),
     )
-    .map_err(|source| CallError::Database {
-        plugin: manifest.name.clone(),
-        source,
+    .map_err(|error| {
+        let plugin = manifest.name.clone();
+        match error {
+            DatabaseError::File { path, source } => CallError::Database {
+                plugin,
+                path,
+                source,
+            },
+            DatabaseError::TemporaryDirectory { parent, source } => {
+                CallError::NoTemporaryDirectory {
+                    plugin,
+                    parent,
+                    source,
+                }
+            }
+        }
     })
 }
 

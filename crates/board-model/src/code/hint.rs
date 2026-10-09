@@ -278,6 +278,9 @@ fn generic(code: Code) -> &'static str {
         Code::PluginFailed => {
             "the plugin exited without an answer; the end of its stderr follows this error"
         }
+        Code::PluginNoDatabase => {
+            "Board could not make or read the plugin's database at the path the message names; check that its directory can be written, or delete the file, which is safe; then run the command again"
+        }
         Code::PluginNotStarted => {
             "check that the program the plugin's `run` names exists and can be executed; a name without a `/` is looked up on `PATH`"
         }

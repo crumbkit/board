@@ -312,6 +312,41 @@ fn a_database_that_cannot_be_kept_beside_the_index_is_a_noted_temporary_file() {
     assert!(fixture.query("SELECT 1").fallbacks.is_empty());
 }
 
+/// The plugins `query` lists as failed, by name and code, when the
+/// `plugins` directory beside the index already holds another plugin's
+/// database, and is read-only when `read_only`.
+fn failed_with_databases(read_only: bool) -> Vec<(String, String)> {
+    let fixture = Fixture::new(EXTRACTING);
+    let root = open(&fixture.board).repository().path().to_path_buf();
+    let index = board_index::location(fixture.cache.workdir(), &root);
+    let plugins = index.parent().unwrap().join("plugins");
+    let relative = plugins.strip_prefix(fixture.cache.workdir()).unwrap();
+    fixture.cache.write(
+        relative.join("other@1.0.0.sqlite").to_str().unwrap(),
+        Item::File(""),
+    );
+    if read_only {
+        fixture
+            .cache
+            .write(relative.to_str().unwrap(), Item::ReadOnly);
+    }
+    fixture
+        .query("SELECT 1")
+        .plugins
+        .into_iter()
+        .map(|failed| (failed.plugin.to_string(), failed.code))
+        .collect()
+}
+
+#[test]
+fn query_lists_a_plugin_whose_database_cannot_be_made_and_not_one_whose_can() {
+    assert_eq!(
+        failed_with_databases(true),
+        [("tasks".to_owned(), "board::plugin::no_database".to_owned())]
+    );
+    assert_eq!(failed_with_databases(false), []);
+}
+
 #[test]
 fn call_extracts_for_the_called_plugin_first_and_refuses_with_its_failure() {
     let fixture = Fixture::new(EXTRACTING);
@@ -363,7 +398,7 @@ fn a_plugin_database_sqlite_cannot_read_is_reported_and_the_query_still_answers(
     assert_eq!(report.rows, [[json!(1)]]);
     assert_eq!(fixture.sent().len(), 1, "nothing is sent again");
     assert_eq!(report.plugins.len(), 1);
-    assert_eq!(report.plugins[0].code, "board::plugin::failed");
+    assert_eq!(report.plugins[0].code, "board::plugin::no_database");
     assert!(
         report.plugins[0].message.contains("deleting it is safe"),
         "{}",

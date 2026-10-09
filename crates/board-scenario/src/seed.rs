@@ -52,7 +52,7 @@ const QUERY: &str = "query gives it; check runs no query";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 28] = [
+pub const NOT_CHECKED: [(Code, &str); 29] = [
     (
         Code::RecordNotARecord,
         "get and put give it to a path that is not a record file",
@@ -91,6 +91,7 @@ pub const NOT_CHECKED: [(Code, &str); 28] = [
     (Code::PluginBadInput, PLUGIN),
     (Code::PluginBadOutput, PLUGIN),
     (Code::PluginFailed, PLUGIN),
+    (Code::PluginNoDatabase, PLUGIN),
     (Code::PluginNotStarted, PLUGIN),
     (Code::PluginTimeout, PLUGIN),
     (Code::PluginTooLarge, PLUGIN),

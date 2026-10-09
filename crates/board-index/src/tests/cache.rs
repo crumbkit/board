@@ -412,8 +412,9 @@ fn a_read_only_plugin_database_made_again_forgets_what_it_handled() {
 
 /// Makes the `plugins` directory read-only, after opening plugin `p`'s
 /// database once when `opened`, then opens it. Returns what that opening
-/// failed with, if it failed.
-fn opened_in_read_only_directory(opened: bool) -> Option<std::io::ErrorKind> {
+/// failed with, if it failed, and the path it named from the `plugins`
+/// directory.
+fn opened_in_read_only_directory(opened: bool) -> Option<(std::io::ErrorKind, PathBuf)> {
     use std::os::unix::fs::PermissionsExt as _;
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
@@ -426,14 +427,23 @@ fn opened_in_read_only_directory(opened: bool) -> Option<std::io::ErrorKind> {
     std::fs::set_permissions(&plugins, std::fs::Permissions::from_mode(0o555)).unwrap();
     let result = PluginDatabase::open(index.storage(), "p", "1.0.0");
     std::fs::set_permissions(&plugins, std::fs::Permissions::from_mode(0o755)).unwrap();
-    result.err().map(|error| error.kind())
+    result.err().map(|error| match error {
+        DatabaseError::File { path, source } => (
+            source.kind(),
+            path.strip_prefix(&plugins).unwrap().to_path_buf(),
+        ),
+        DatabaseError::TemporaryDirectory { .. } => panic!("{error}"),
+    })
 }
 
 #[test]
 fn a_plugin_database_that_cannot_be_created_is_refused() {
     assert_eq!(
         opened_in_read_only_directory(false),
-        Some(std::io::ErrorKind::PermissionDenied)
+        Some((
+            std::io::ErrorKind::PermissionDenied,
+            PathBuf::from("p@1.0.0.sqlite")
+        ))
     );
 }
 

@@ -11,7 +11,7 @@ mod query;
 mod schema;
 mod store;
 
-pub use crate::database::PluginDatabase;
+pub use crate::database::{DatabaseError, PluginDatabase};
 pub use crate::extract::Unhandled;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::Rows;

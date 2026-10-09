@@ -192,19 +192,22 @@ plugin's tables with Board's `entries` view when it runs.
 
 Board gives each plugin version one SQLite file,
 `plugins/<name>@<version>.sqlite` beside the index, and passes its path in
-every request. The plugin owns everything inside it but `board_database`, which
+every request. Board puts the file in a temporary directory instead only when
+it cannot make that `plugins` directory or the index is in memory. The plugin owns everything inside it but `board_database`, which
 holds Board's id for the file. `board query` attaches it read-only as
 `p_<name>`, with hyphens turned into underscores, from before the first
 extraction. A new version starts with an empty file, extracts again, and
-deletes the files of older versions. Deleting any plugin database is safe. A
+deletes the files of older versions. When Board cannot make the file, or
+`board query` cannot read it, the plugin fails with
+`board::plugin::no_database`. Deleting any plugin database is safe. A
 plugin installed through a symlink keeps its rows when its code changes.
 
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
 `schema_missing`, `schema_differs`, `ambiguous`,
-`bad_input`, `bad_output`, `failed`, `not_started`, `timeout`, `too_large`,
-`too_deep`.
+`bad_input`, `bad_output`, `failed`, `no_database`, `not_started`, `timeout`,
+`too_large`, `too_deep`.
 
 ## Writing a plugin in Python
 

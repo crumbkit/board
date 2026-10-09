@@ -424,6 +424,7 @@ pub(super) fn refused_calls() -> Vec<Output> {
     outputs.push(json_call(&board, &data, &["call", "fails.due"], "{}"));
     outputs.push(json_call(&board, &data, &["call", "huge.due"], "{}"));
     outputs.push(json_call(&board, &data, &["call", "missing.due"], "{}"));
+    outputs.push(call_without_a_writable_database(&board, &data));
     let deep = board_plugin::Environment {
         depth: Some("8".into()),
         ..board_plugin::Environment::default()
@@ -437,6 +438,31 @@ pub(super) fn refused_calls() -> Vec<Output> {
         b"{}",
     ));
     outputs
+}
+
+/// A call to notes, which has no database yet, after a call to tasks made
+/// the `plugins` directory beside a kept index and it was made read-only.
+fn call_without_a_writable_database(board: &Scenario, data: &Scenario) -> Output {
+    let cache = Scenario::new();
+    let plugins = data.workdir().join("plugins");
+    let cached = |target: &str| {
+        board_full(
+            board.workdir(),
+            Some(cache.workdir()),
+            Some(&plugins),
+            &["call", target, "--json"],
+            b"{}",
+        )
+    };
+    assert_eq!(cached("tasks.due").code, 0);
+    let boards: Vec<_> = std::fs::read_dir(cache.workdir().join("board"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert_eq!(boards.len(), 1, "{boards:?}");
+    let databases = format!("board/{}/plugins", boards[0].to_str().unwrap());
+    cache.write(&databases, Item::ReadOnly);
+    cached("notes.due")
 }
 
 #[test]

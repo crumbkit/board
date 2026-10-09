@@ -63,6 +63,9 @@ pub enum Item<'a> {
     /// A directory, made if absent, that the walk's user can pass through
     /// but not list (mode 111); working tree only. Unlocked like `Locked`.
     Searchable,
+    /// A directory, made if absent, that can be listed and passed through
+    /// but not written (mode 555); working tree only. Unlocked like `Locked`.
+    ReadOnly,
     /// A file anyone may run (mode 755), such as a fixture plugin; working
     /// tree only.
     Executable(&'a str),
@@ -192,11 +195,11 @@ impl Scenario {
                 backdate(&path);
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
             }
-            Item::Locked | Item::Searchable => {
-                let mode = if matches!(item, Item::Locked) {
-                    0o000
-                } else {
-                    0o111
+            Item::Locked | Item::Searchable | Item::ReadOnly => {
+                let mode = match item {
+                    Item::Locked => 0o000,
+                    Item::Searchable => 0o111,
+                    _ => 0o555,
                 };
                 fs::create_dir_all(&path).unwrap();
                 fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
@@ -259,7 +262,7 @@ impl Scenario {
                 ),
                 Item::MissingTree | Item::MissingBlob | Item::EmptyTree => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
-                Item::Locked | Item::Searchable => {
+                Item::Locked | Item::Searchable | Item::ReadOnly => {
                     panic!("a commit cannot hold a locked directory")
                 }
                 Item::Executable(_) => panic!("fixture plugins live outside commits"),

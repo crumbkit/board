@@ -454,11 +454,31 @@ fn a_call_board_refuses_before_the_plugin_runs_has_its_code_and_the_values_at_fa
     assert_refused(&malformed, Code::PluginBadInput, &at, b"");
     let database = CallError::Database {
         plugin: tasks(),
+        path: "/cache/plugins/tasks@0.1.0.sqlite".into(),
         source: std::io::Error::other("gone"),
     };
+    assert_eq!(
+        database.to_string(),
+        "plugin tasks has no database: /cache/plugins/tasks@0.1.0.sqlite cannot be made: gone"
+    );
     assert_refused(
         &database,
-        Code::PluginFailed,
+        Code::PluginNoDatabase,
+        &json!({"plugin": "tasks"}),
+        b"",
+    );
+    let temporary = CallError::NoTemporaryDirectory {
+        plugin: tasks(),
+        parent: "/tmp".into(),
+        source: std::io::Error::other("gone"),
+    };
+    assert_eq!(
+        temporary.to_string(),
+        "plugin tasks has no database: a temporary directory cannot be made in /tmp: gone"
+    );
+    assert_refused(
+        &temporary,
+        Code::PluginNoDatabase,
         &json!({"plugin": "tasks"}),
         b"",
     );

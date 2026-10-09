@@ -1,7 +1,7 @@
 //! `board query`: one read-only SQL statement over the index
 //! (docs/architecture/index.md).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use board_index::{Fallback, Index, IndexError, View};
 use board_model::{Code, Fields, Known, Refusal};
@@ -147,15 +147,15 @@ impl Board {
                 report.fallbacks.push(name.clone());
             }
             let alias = format!("p_{}", name.as_str().replace('-', "_"));
-            if let Err(error) = view.attach(&alias, database.path()) {
-                report.plugins.push(failed(
-                    Code::PluginFailed.as_str(),
-                    format!(
-                        "plugin database {} cannot be read, so {alias} is not attached; \
-                         deleting it is safe: {error}",
-                        database.path().display()
-                    ),
-                ));
+            if let Err(source) = view.attach(&alias, database.path()) {
+                let error = Unattached {
+                    path: database.path().to_path_buf(),
+                    alias,
+                    source,
+                };
+                report
+                    .plugins
+                    .push(failed(Code::PluginNoDatabase.as_str(), error.to_string()));
             }
             databases.push(database);
         }
@@ -167,6 +167,18 @@ impl Board {
         report.truncated = rows.truncated;
         Ok(report)
     }
+}
+
+/// A plugin database `query` could not attach, so its alias is missing.
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "plugin database {} cannot be read, so {alias} is not attached; deleting it is safe: {source}",
+    path.display()
+)]
+struct Unattached {
+    path: PathBuf,
+    alias: String,
+    source: IndexError,
 }
 
 /// A query that could not run.

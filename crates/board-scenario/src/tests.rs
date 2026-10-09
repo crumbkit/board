@@ -4,7 +4,12 @@ use super::*;
 
 #[test]
 fn a_dropped_scenario_removes_its_directory_with_a_locked_directory_inside_and_without() {
-    for item in [Item::Locked, Item::Searchable, Item::File("{}")] {
+    for item in [
+        Item::Locked,
+        Item::Searchable,
+        Item::ReadOnly,
+        Item::File("{}"),
+    ] {
         let scenario = Scenario::new();
         scenario.write("held/x", item);
         let root = scenario.workdir().to_path_buf();
@@ -48,4 +53,18 @@ fn a_fed_fifo_reads_as_empty_and_feeding_returns_when_nothing_reads_it() {
     let read = scenario.feeding("fifo", || std::fs::read(&fifo).unwrap());
     assert_eq!(read, b"");
     assert_eq!(scenario.feeding("fifo", || 7), 7);
+}
+
+#[test]
+fn a_locked_searchable_or_read_only_directory_has_its_own_mode() {
+    for (item, mode) in [
+        (Item::Locked, 0o000),
+        (Item::Searchable, 0o111),
+        (Item::ReadOnly, 0o555),
+    ] {
+        let scenario = Scenario::new();
+        scenario.write("held", item);
+        let held = fs::metadata(scenario.workdir().join("held")).unwrap();
+        assert_eq!(held.permissions().mode() & 0o777, mode, "{item:?}");
+    }
 }
