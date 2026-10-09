@@ -76,22 +76,23 @@ impl Repositories {
     }
 
     /// A resolver for many paths in one snapshot of the working tree, which
-    /// hashes a file only when `known` does not already know its blob.
+    /// hashes a file it picks or reads only when `known` does not already
+    /// know its blob.
     pub fn resolver<'k>(&self, known: Known<'k>) -> Result<Resolver<'_, 'k>, GitError> {
         Ok(Resolver {
             repositories: self,
-            tree: self.root().working_tree(Some(known))?,
+            tree: self.root().working_tree(Some(known))?.on_demand(),
             pointers: Pointers::default(),
         })
     }
 
     /// A resolver for many paths in one snapshot of the working tree, which
-    /// hashes each file it lists. A batch of writes checks every record
+    /// hashes each file it picks or reads, once. A batch of writes checks every record
     /// against one snapshot, so it lists each directory once.
     pub fn snapshot(&self) -> Result<Resolver<'_, 'static>, GitError> {
         Ok(Resolver {
             repositories: self,
-            tree: self.root().working_tree(None)?,
+            tree: self.root().working_tree(None)?.on_demand(),
             pointers: Pointers::default(),
         })
     }
@@ -160,6 +161,7 @@ impl Repositories {
             else {
                 return Err(missing(from_link, trail));
             };
+            let entry = &tree.settle(&current, entry);
             from_link = usize::saturating_sub(from_link, 1);
             physical.push(String::from_utf8_lossy(&entry.name).into_owned());
             match &entry.kind {
@@ -214,6 +216,7 @@ impl Repositories {
                 Kind::Unreadable => {
                     return Err(ResolveError::Unreadable { path: path.clone() });
                 }
+                Kind::Unhashed => unreachable!("resolution settles each entry it picks"),
             }
         }
         Ok(Location {

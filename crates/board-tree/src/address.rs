@@ -16,7 +16,9 @@ use crate::tree::{Kind, RawEntry};
 pub(crate) fn segment<D>(entry: &RawEntry<D>) -> Option<&str> {
     let name = std::str::from_utf8(&entry.name).ok()?;
     Some(match entry.kind {
-        Kind::File(_) | Kind::Unreadable => name.strip_suffix(".json").unwrap_or(name),
+        Kind::File(_) | Kind::Unreadable | Kind::Unhashed => {
+            name.strip_suffix(".json").unwrap_or(name)
+        }
         Kind::Directory(_) | Kind::Symlink(_) | Kind::Submodule => name,
     })
 }
@@ -73,8 +75,8 @@ pub(crate) fn classify<'a, D, E>(
         (None, _, _) => return Ok(Named::Nothing),
         (Some(one), None, _) => return Ok(Named::One(one)),
         (Some(a), Some(b), None) => match (&a.kind, &b.kind) {
-            (Kind::File(_) | Kind::Unreadable, Kind::Directory(_)) => (a, b),
-            (Kind::Directory(_), Kind::File(_) | Kind::Unreadable) => (b, a),
+            (Kind::File(_) | Kind::Unreadable | Kind::Unhashed, Kind::Directory(_)) => (a, b),
+            (Kind::Directory(_), Kind::File(_) | Kind::Unreadable | Kind::Unhashed) => (b, a),
             _ => return Ok(Named::Shadowed),
         },
         _ => return Ok(Named::Shadowed),
@@ -135,7 +137,9 @@ impl Pointers {
 /// `path::shadowed`, and one whose record cannot be read to tell is
 /// `repo::unreadable`; names equal but for ASCII case are
 /// `path::case_collision`; a submodule is `repo::submodule`. `shadows`
-/// reads a record beside its children, as [`named`] does.
+/// reads a record beside its children, as [`named`] does. An unhashed file
+/// gets no code of its own: only a walk reports one, and a walk hashes
+/// every file it lists.
 pub(crate) fn directory<D, E>(
     parent: &LogicalPath,
     entries: &[RawEntry<D>],

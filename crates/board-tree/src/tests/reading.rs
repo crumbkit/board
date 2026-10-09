@@ -158,7 +158,7 @@ fn a_symlink_is_read_as_its_target_path_with_the_blob_the_walk_gave_it() {
 }
 
 #[test]
-fn a_pointer_changed_after_its_listing_is_unreadable_and_its_unchanged_twin_is_followed() {
+fn a_pointer_changed_after_it_was_hashed_is_unreadable_and_its_unchanged_twin_is_followed() {
     let scenario = Scenario::new();
     let to = |target: &str| format!(r#"{{"$type": "board/mount/v1", "path": "{target}"}}"#);
     scenario
@@ -169,8 +169,9 @@ fn a_pointer_changed_after_its_listing_is_unreadable_and_its_unchanged_twin_is_f
     let repository = scenario.repositories();
     let mut known = |_: &str, _: &board_model::Stat| None;
     let mut resolver = repository.resolver(&mut known).unwrap();
-    // Lists the root, hashing both pointers, before one of them changes.
-    resolver.resolve(&path("/a/y")).unwrap();
+    // Hashes both pointers, without following them, before one changes.
+    resolver.resolve_pointer(&path("/to_a")).unwrap();
+    resolver.resolve_pointer(&path("/to_b")).unwrap();
     scenario.write("to_a.json", Item::File(&to("/b")));
     let changed = resolver.resolve(&path("/to_a/y")).unwrap_err();
     assert_eq!(changed.code(), Code::RepoUnreadable);

@@ -459,3 +459,63 @@ fn a_resolver_names_its_repository_when_debugged() {
     let path = format!("{:?}", repositories.root().path());
     assert_eq!(shown, format!("Resolver {{ repository: {path}, .. }}"));
 }
+
+/// Whether resolving `/work/x` finds the blob of `{}` or a code, beside
+/// several root files and one large one, and how many files it opens.
+/// `None` when `x` is unreadable but a superuser reads it anyway.
+fn resolve_beside_large_files(x: Item<'_>) -> Option<(Result<bool, Code>, usize)> {
+    let locked = matches!(x, Item::Unreadable(_));
+    let scenario = Scenario::new();
+    let large = "a".repeat(1 << 20);
+    scenario
+        .write("large.bin", Item::File(&large))
+        .write("a.md", Item::File("a"))
+        .write("b.json", Item::File("{}"))
+        .write("work/y.json", Item::File("{}"))
+        .write("work/x.json", x);
+    if locked && std::fs::File::open(scenario.workdir().join("work/x.json")).is_ok() {
+        return None;
+    }
+    let repositories = scenario.repositories();
+    let found = repositories.resolve(&Source::WorkingTree, &path("/work/x"));
+    let empty = Object::Blob(scenario.blob("{}"));
+    let found = found.map(|location| location.object == empty);
+    Some((
+        found.map_err(|error| error.code()),
+        repositories.root().files_opened(),
+    ))
+}
+
+#[test]
+fn resolution_opens_only_the_file_it_picks_and_an_unreadable_one_is_still_unreadable() {
+    let readable = resolve_beside_large_files(Item::File("{}"));
+    // x.json is hashed when picked and then read to tell whether it is a
+    // pointer; no other file is opened.
+    assert_eq!(readable, Some((Ok(true), 2)));
+    if let Some(unreadable) = resolve_beside_large_files(Item::Unreadable("{}")) {
+        assert_eq!(unreadable, (Err(Code::RepoUnreadable), 1), "x.json alone");
+    }
+}
+
+#[test]
+fn a_record_beside_its_children_is_opened_once_however_many_children_a_resolver_reaches() {
+    let scenario = Scenario::new();
+    scenario
+        .write("p.json", Item::File(r#"{"p": 0}"#))
+        .write("p/a.json", Item::File(r#"{"a": 1}"#))
+        .write("p/b.json", Item::File(r#"{"b": 2}"#))
+        .write("p/c.json", Item::File(r#"{"c": 3}"#));
+    let repositories = scenario.repositories();
+    let mut snapshot = repositories.snapshot().unwrap();
+    let opened: Vec<usize> = ["/p/a", "/p/b", "/p/c", "/p/a", "/p/b"]
+        .into_iter()
+        .map(|text| {
+            snapshot.resolve(&path(text)).unwrap();
+            repositories.root().files_opened()
+        })
+        .collect();
+    // p.json is hashed and read once to tell that it does not shadow p/.
+    // Each child is hashed and read for a pointer the first time it is
+    // reached, and not opened again.
+    assert_eq!(opened, [4, 6, 8, 8, 8]);
+}

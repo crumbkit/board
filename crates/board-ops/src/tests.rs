@@ -118,6 +118,35 @@ fn without_board_json_at_the_repository_root_there_is_no_board() {
     assert!(Board::open(board().workdir(), None).is_ok());
 }
 
+/// A board whose root holds several files beside `.board`, one of them
+/// large.
+fn board_beside_large_files() -> Scenario {
+    let scenario = Scenario::new();
+    let large = "a".repeat(1 << 20);
+    scenario
+        .write("large.bin", Item::File(&large))
+        .write("a.md", Item::File("a"))
+        .write("b.json", Item::File("{}"))
+        .write(".board/types/x.schema.json", Item::File("{}"));
+    scenario
+}
+
+#[test]
+fn opening_a_board_opens_only_its_configuration_and_an_unreadable_one_is_invalid() {
+    let readable = board_beside_large_files();
+    readable.write(".board/board.json", Item::File(CONFIG));
+    let board = open(&readable);
+    // board.json is hashed when resolution picks it and read to tell
+    // whether it is a pointer. The read for its configuration goes through
+    // a lent repository, which counts its own files.
+    assert_eq!(board.repository().files_opened(), 2);
+    let locked = board_beside_large_files();
+    if unreadable(&locked, ".board/board.json", CONFIG) {
+        let error = Board::open(locked.workdir(), None).unwrap_err();
+        assert_eq!(error.code(), Code::ConfigInvalid);
+    }
+}
+
 #[test]
 fn a_board_json_board_cannot_read_is_invalid() {
     for bad in [

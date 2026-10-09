@@ -331,6 +331,7 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
                 }
                 Kind::File(id) | Kind::Symlink(id) => Some(*id),
                 Kind::Submodule | Kind::Unreadable => None,
+                Kind::Unhashed => unreachable!("a walk's working tree hashes every file it lists"),
             };
             entries.push(Entry {
                 path,

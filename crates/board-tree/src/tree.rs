@@ -55,6 +55,16 @@ pub(crate) trait Tree {
         entry: &RawEntry<Self::Directory>,
     ) -> Result<Option<Vec<u8>>, GitError>;
 
+    /// `entry` of `directory` with its blob, for a source that lists a file
+    /// before hashing it.
+    fn settle(
+        &mut self,
+        _directory: &Self::Directory,
+        entry: &RawEntry<Self::Directory>,
+    ) -> RawEntry<Self::Directory> {
+        entry.clone()
+    }
+
     /// What `segment` names among `entries`, the listing of `directory`. A
     /// record beside its directory is read through `pointers` to tell
     /// whether it shadows the directory.
@@ -94,6 +104,8 @@ pub(crate) enum Kind<D> {
     Submodule,
     /// A file or symlink whose contents could not be read.
     Unreadable,
+    /// A working-tree file not hashed yet, which [`Tree::settle`] hashes.
+    Unhashed,
 }
 
 /// One entry of a directory.

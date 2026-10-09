@@ -40,7 +40,12 @@ pub(crate) struct WorkingTree<'r, 'k> {
     /// Takes the contents of each JSON file hashed, so the caller need not
     /// open it again; without it, they are dropped.
     kept: Option<Kept<'k>>,
+    /// Whether a file is listed [`Kind::Unhashed`] and hashed only when
+    /// [`Tree::settle`] is given it.
+    on_demand: bool,
     listed: HashMap<PathBuf, Listing>,
+    /// Each file settled, by path, so it keeps one blob in this snapshot.
+    settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
 }
 
 /// One directory's entries, with the lookup made from them the first time a
@@ -138,7 +143,9 @@ impl Repository {
             excludes,
             known,
             kept: None,
+            on_demand: false,
             listed: HashMap::new(),
+            settled: HashMap::new(),
         })
     }
 }
@@ -147,6 +154,12 @@ impl<'k> WorkingTree<'_, 'k> {
     /// This tree, handing the contents of each JSON file it hashes to `kept`.
     pub(crate) fn keeping(mut self, kept: Kept<'k>) -> Self {
         self.kept = Some(kept);
+        self
+    }
+
+    /// This tree, hashing a file only when resolution picks or reads it.
+    pub(crate) fn on_demand(mut self) -> Self {
+        self.on_demand = true;
         self
     }
 
@@ -193,27 +206,37 @@ impl<'k> WorkingTree<'_, 'k> {
         if !file_type.is_file() {
             return None;
         }
+        if self.on_demand {
+            return Some((Kind::Unhashed, None));
+        }
+        Some(self.file(relative, &path))
+    }
+
+    /// The file at `relative`, whose `/`-separated path is `path`: its blob
+    /// and metadata, or `Unreadable`.
+    fn file(&mut self, relative: &Path, path: &str) -> (Kind<PathBuf>, Option<Stat>) {
+        let absolute = self.repository.path().join(relative);
         let Ok(seen) = fs::metadata(&absolute).map(|metadata| stat(&metadata)) else {
-            return Some((Kind::Unreadable, None));
+            return (Kind::Unreadable, None);
         };
-        if let Some(blob) = self.known(&path, &seen) {
-            return Some((Kind::File(blob), Some(seen)));
+        if let Some(blob) = self.known(path, &seen) {
+            return (Kind::File(blob), Some(seen));
         }
         // The file hashed is the one opened, so its own metadata is kept.
         self.repository.opened_one();
         let Ok((stat, file)) =
             fs::File::open(&absolute).and_then(|file| Ok((stat(&file.metadata()?), file)))
         else {
-            return Some((Kind::Unreadable, None));
+            return (Kind::Unreadable, None);
         };
         // Only a walk that keeps bytes reads a file in full.
         let blob = match self.kept.as_mut() {
-            Some(kept) if Role::of(&path).is_some() && stat.size <= MAX_RECORD_BYTES as u64 => {
-                hash_kept(self.repository, kept, &path, file, stat.size)
+            Some(kept) if Role::of(path).is_some() && stat.size <= MAX_RECORD_BYTES as u64 => {
+                hash_kept(self.repository, kept, path, file, stat.size)
             }
             _ => self.repository.hash(&mut BufReader::new(file), stat.size),
         };
-        Some((blob.map_or(Kind::Unreadable, Kind::File), Some(stat)))
+        (blob.map_or(Kind::Unreadable, Kind::File), Some(stat))
     }
 
     /// The listing of `directory`, read from disk the first time.
@@ -340,8 +363,11 @@ impl Tree for WorkingTree<'_, '_> {
             ),
             _ => None,
         };
-        let shadows =
-            |record: &RawEntry<PathBuf>| pointers.shadows(record, || self.read(directory, record));
+        // The record is settled first, so its parse is cached by blob.
+        let shadows = |record: &RawEntry<PathBuf>| {
+            let record = self.settle(directory, record);
+            pointers.shadows(&record, || self.read(directory, &record))
+        };
         match found {
             Some(found) => {
                 address::classify(found.iter().filter_map(|at| entries.get(*at)), shadows)
@@ -350,11 +376,34 @@ impl Tree for WorkingTree<'_, '_> {
         }
     }
 
+    /// Hashes an `Unhashed` file once; later calls give the same answer.
+    fn settle(&mut self, directory: &PathBuf, entry: &RawEntry<PathBuf>) -> RawEntry<PathBuf> {
+        if entry.kind != Kind::Unhashed {
+            return entry.clone();
+        }
+        let relative = directory.join(gix::path::from_bstr(entry.name.as_bstr()));
+        let (kind, stat) = if let Some(settled) = self.settled.get(&relative) {
+            settled.clone()
+        } else {
+            let path = gix::path::into_bstr(&relative).to_str_lossy().into_owned();
+            let settled = self.file(&relative, &path);
+            self.settled.insert(relative, settled.clone());
+            settled
+        };
+        RawEntry {
+            name: entry.name.clone(),
+            kind,
+            stat,
+            size: stat.map(|stat| stat.size),
+        }
+    }
+
     fn read(
         &mut self,
         directory: &PathBuf,
         entry: &RawEntry<PathBuf>,
     ) -> Result<Option<Vec<u8>>, GitError> {
+        let entry = &self.settle(directory, entry);
         let path = directory.join(gix::path::from_bstr(entry.name.as_bstr()));
         let listed = match entry.kind {
             Kind::File(blob) | Kind::Symlink(blob) => Some(blob),

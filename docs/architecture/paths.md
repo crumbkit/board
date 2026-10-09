@@ -73,7 +73,8 @@ through it. The semantics are POSIX symlinks':
 - A pointer whose target is missing is degraded with `board::ref::dangling`;
   nothing else breaks.
 - The root board is read from its working tree, uncommitted edits included and
-  marked. A
+  marked. Resolution there hashes only the files it picks or reads, once per
+  snapshot, however many files lie beside them. A
   mounted board is read from committed objects at `commit`, so a board at a
   given commit fully determines everything under its mounts.
 - Mounting brings data and schemas, never code. A mounted board's plugin list
