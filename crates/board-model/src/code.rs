@@ -57,6 +57,7 @@ pub enum Code {
     PluginBadInput,
     PluginBadOutput,
     PluginFailed,
+    PluginNotStarted,
     PluginTimeout,
     PluginTooLarge,
     PluginTooDeep,
@@ -65,7 +66,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 53] = [
+    pub const ALL: [Code; 54] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -115,6 +116,7 @@ impl Code {
         Self::PluginBadInput,
         Self::PluginBadOutput,
         Self::PluginFailed,
+        Self::PluginNotStarted,
         Self::PluginTimeout,
         Self::PluginTooLarge,
         Self::PluginTooDeep,
@@ -177,6 +179,7 @@ impl Code {
             Self::PluginBadInput => "board::plugin::bad_input",
             Self::PluginBadOutput => "board::plugin::bad_output",
             Self::PluginFailed => "board::plugin::failed",
+            Self::PluginNotStarted => "board::plugin::not_started",
             Self::PluginTimeout => "board::plugin::timeout",
             Self::PluginTooLarge => "board::plugin::too_large",
             Self::PluginTooDeep => "board::plugin::too_deep",
@@ -249,6 +252,7 @@ mod tests {
             | Code::PluginBadInput
             | Code::PluginBadOutput
             | Code::PluginFailed
+            | Code::PluginNotStarted
             | Code::PluginTimeout
             | Code::PluginTooLarge
             | Code::PluginTooDeep

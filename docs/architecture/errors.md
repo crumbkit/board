@@ -28,10 +28,9 @@ The v0 set:
 ## What an error names
 
 A `board/error/v1` document carries `fields` when the error knows any value at
-fault. Each key appears only when Board knows its value, except that
-`plugin::bad_output` for output that fails the capability's schema carries an
-empty `stderr`. The table lists the keys of Board's own codes;
-[docs/plugins.md](../plugins.md) says what a plugin's own code carries.
+fault. Each key appears only when Board knows its value. The table lists the
+keys of Board's own codes; [docs/plugins.md](../plugins.md) says what a
+plugin's own code carries.
 
 | Key | JSON type | Codes that carry it | Meaning |
 | --- | --- | --- | --- |

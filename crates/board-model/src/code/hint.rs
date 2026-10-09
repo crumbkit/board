@@ -278,6 +278,9 @@ fn generic(code: Code) -> &'static str {
         Code::PluginFailed => {
             "the plugin exited without an answer; the end of its stderr follows this error"
         }
+        Code::PluginNotStarted => {
+            "check that the program the plugin's `run` names exists and can be executed; a name without a `/` is looked up on `PATH`"
+        }
         Code::PluginTimeout => {
             "the plugin ran for more than 30 seconds; narrow its input or report it to the plugin's author"
         }

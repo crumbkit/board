@@ -336,7 +336,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
     );
     assert_eq!(fields, json!({"capability": "due"}));
     let admitted = input_refusal(&schema, r#"{"before": "2026-10-05", "task": "/a/b"}"#);
-    assert_eq!(admitted.0, Board(Code::PluginFailed), "{}", admitted.1);
+    assert_eq!(admitted.0, Board(Code::PluginNotStarted), "{}", admitted.1);
 }
 
 /// Asserts that Board refuses `error` with `code`, naming `fields`, with the
@@ -465,7 +465,12 @@ fn a_call_board_refuses_before_the_plugin_runs_has_its_code_and_the_values_at_fa
         plugin: tasks(),
         source: std::io::Error::other("gone"),
     };
-    assert_refused(&start, Code::PluginFailed, &json!({"plugin": "tasks"}), b"");
+    assert_refused(
+        &start,
+        Code::PluginNotStarted,
+        &json!({"plugin": "tasks"}),
+        b"",
+    );
 }
 
 #[test]

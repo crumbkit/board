@@ -401,12 +401,17 @@ pub(super) fn refused_calls() -> Vec<Output> {
     ] {
         install(&data, name, &script);
     }
+    // A plugin without its run program cannot be started.
+    data.write(
+        "plugins/missing/plugin.json",
+        Item::File(&TASKS.replace(r#""tasks""#, r#""missing""#)),
+    );
     outputs.push(json_call(&board, &data, &["call", "notes.due"], "{}"));
     outputs.push(json_call(&board, &data, &["call", "tasks.due"], "["));
     board.write(
         ".board/board.json",
         Item::File(
-            r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes", "bad", "fails", "huge"]}"#,
+            r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes", "bad", "fails", "huge", "missing"]}"#,
         ),
     );
     outputs.push(json_call(
@@ -418,6 +423,7 @@ pub(super) fn refused_calls() -> Vec<Output> {
     outputs.push(json_call(&board, &data, &["call", "bad.due"], "{}"));
     outputs.push(json_call(&board, &data, &["call", "fails.due"], "{}"));
     outputs.push(json_call(&board, &data, &["call", "huge.due"], "{}"));
+    outputs.push(json_call(&board, &data, &["call", "missing.due"], "{}"));
     let deep = board_plugin::Environment {
         depth: Some("8".into()),
         ..board_plugin::Environment::default()

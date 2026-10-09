@@ -56,15 +56,15 @@ pub fn extract(
                 "database": context.database.to_string_lossy(),
             },
         }));
-        let result = exchange::<RawExtractResult>(
+        let result = exchange(
             manifest,
             directory,
             request,
             context,
             depth,
             EXTRACT_RESULT_TYPE,
-        )
-        .and_then(|result| handled(manifest, &sent, result.blobs));
+            |result: RawExtractResult| handled(&sent, result.blobs),
+        );
         match result {
             Ok(blobs) => extraction.handled.extend(blobs),
             Err(failure) => {
@@ -105,21 +105,13 @@ fn batches(records: Vec<Record>, limits: Limits) -> Vec<Vec<(Record, Value)>> {
 }
 
 /// The blobs a reply names, each of which must have been sent.
-fn handled(
-    manifest: &Manifest,
-    sent: &HashSet<ObjectId>,
-    named: Vec<String>,
-) -> Result<Vec<ObjectId>, CallError> {
+fn handled(sent: &HashSet<ObjectId>, named: Vec<String>) -> Result<Vec<ObjectId>, BadOutput> {
     named
         .into_iter()
         .map(|text| {
             ObjectId::from_hex(&text)
                 .filter(|blob| sent.contains(blob))
-                .ok_or_else(|| CallError::BadOutput {
-                    plugin: manifest.name.clone(),
-                    reason: BadOutput::Unsent { blob: text },
-                    stderr: Vec::new(),
-                })
+                .ok_or(BadOutput::Unsent { blob: text })
         })
         .collect()
 }

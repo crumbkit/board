@@ -123,7 +123,8 @@ A plugin exits 0 with a result, or 1 with an error whose code is
 code as its own, with the plugin's fields and `plugin` added; Board adds no
 other key, and shows the plugin's stderr only in text output. Any other answer
 on stdout is `board::plugin::bad_output`; a non-zero exit without an error
-document, or a signal, is `board::plugin::failed`. Stderr is for logs; Board
+document, or a signal, is `board::plugin::failed`. A `run` program that
+cannot be started is `board::plugin::not_started`. Stderr is for logs; Board
 shows its last 64 KiB when the call fails. A call has 30 seconds and 16 MiB of
 stdout; past either, Board stops the plugin with `board::plugin::timeout` or
 `board::plugin::too_large`.
@@ -202,7 +203,8 @@ plugin installed through a symlink keeps its rows when its code changes.
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
 `schema_missing`, `schema_differs`, `ambiguous`,
-`bad_input`, `bad_output`, `failed`, `timeout`, `too_large`, `too_deep`.
+`bad_input`, `bad_output`, `failed`, `not_started`, `timeout`, `too_large`,
+`too_deep`.
 
 ## Writing a plugin in Python
 

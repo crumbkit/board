@@ -248,43 +248,44 @@ pub fn invoke(
         })?;
     let request = protocol::request(&capability.name, &input, context.root, context.database);
     let plugin = &chosen.manifest.name;
-    let result: RawCallResult = exchange(
+    let output = exchange(
         &chosen.manifest,
         &chosen.directory,
         request,
         context,
         depth,
         CALL_RESULT_TYPE,
+        |result: RawCallResult| {
+            capability
+                .output
+                .validate(&result.output)
+                .map(|()| result.output)
+                .map_err(|source| BadOutput::Output { source })
+        },
     )?;
-    capability
-        .output
-        .validate(&result.output)
-        .map_err(|source| CallError::BadOutput {
-            plugin: plugin.clone(),
-            reason: BadOutput::Output { source },
-            stderr: Vec::new(),
-        })?;
     Ok(CallReport {
         plugin: plugin.clone(),
         capability: capability.name.clone(),
-        output: result.output,
+        output,
     })
 }
 
 /// Runs `manifest`'s plugin in `directory` at `depth` with one request and
-/// reads its one reply: a result of type `expected`, or its own error.
+/// reads its one reply: a result of type `expected` that `check` accepts, or
+/// its own error.
 ///
 /// # Panics
 ///
 /// Never: a manifest's `run` is never empty.
-pub(crate) fn exchange<T: DeserializeOwned>(
+pub(crate) fn exchange<T: DeserializeOwned, U>(
     manifest: &Manifest,
     directory: &Path,
     request: Vec<u8>,
     context: &Context<'_>,
     depth: u32,
     expected: &'static str,
-) -> Result<T, CallError> {
+    check: impl FnOnce(T) -> Result<U, BadOutput>,
+) -> Result<U, CallError> {
     let (program, arguments) = manifest
         .run
         .split_first()
@@ -337,7 +338,7 @@ pub(crate) fn exchange<T: DeserializeOwned>(
         finished.code,
         protocol::reply::<T>(&plugin, &finished.stdout, expected),
     ) {
-        (Some(0), Ok(Reply::Result(result))) => Ok(result),
+        (Some(0), Ok(Reply::Result(result))) => check(result).map_err(bad),
         (Some(1), Ok(Reply::Error(failure))) => Err(CallError::Plugin {
             plugin: plugin.clone(),
             failure,
@@ -543,9 +544,10 @@ impl CallError {
                 at = Some(pointer.clone());
                 (Code::PluginBadInput, None, Some(capability))
             }
-            Self::Database { plugin, .. }
-            | Self::Start { plugin, .. }
-            | Self::Failed { plugin, .. } => (Code::PluginFailed, Some(plugin), None),
+            Self::Database { plugin, .. } | Self::Failed { plugin, .. } => {
+                (Code::PluginFailed, Some(plugin), None)
+            }
+            Self::Start { plugin, .. } => (Code::PluginNotStarted, Some(plugin), None),
             Self::Timeout { plugin, .. } => (Code::PluginTimeout, Some(plugin), None),
             Self::TooLarge { plugin, .. } => (Code::PluginTooLarge, Some(plugin), None),
             Self::BadOutput { plugin, .. } => (Code::PluginBadOutput, Some(plugin), None),

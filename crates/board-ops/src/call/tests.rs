@@ -213,7 +213,7 @@ fn a_bare_program_name_is_found_through_path() {
         .write("plugins/tasks/plugin.json", Item::File(&missing));
     assert_eq!(
         fixture.refused("tasks.due", r#"{"n": 1}"#),
-        Board(Code::PluginFailed)
+        Board(Code::PluginNotStarted)
     );
 }
 
@@ -477,6 +477,24 @@ fn board_keeps_the_end_of_a_failed_plugins_stderr() {
         .unwrap_err();
     assert_eq!(error.refusal().stderr, b"the last line");
     assert_eq!(error.refusal().fields["stderr"], "the last line");
+}
+
+#[test]
+fn board_keeps_the_stderr_of_a_plugin_whose_output_fails_the_output_schema() {
+    let logging = |output: &str| {
+        format!(
+            "#!/bin/sh\ncat > /dev/null\nprintf 'a log line' >&2\nprintf '%s' '{{\"$type\": \"board/call-result/v1\", \"output\": {output}}}'\n"
+        )
+    };
+    let refused = Fixture::tasks(&logging(r#"{"count": "two"}"#))
+        .call("tasks.due", r#"{"n": 1}"#)
+        .unwrap_err()
+        .refusal();
+    assert_eq!(refused.code, Board(Code::PluginBadOutput));
+    assert_eq!(refused.stderr, b"a log line");
+    assert_eq!(refused.fields["stderr"], "a log line");
+    let admitted = Fixture::tasks(&logging(r#"{"count": 2}"#)).call("tasks.due", r#"{"n": 1}"#);
+    assert_eq!(admitted.unwrap().output, json!({"count": 2}));
 }
 
 #[test]
