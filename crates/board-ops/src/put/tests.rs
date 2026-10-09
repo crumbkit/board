@@ -958,6 +958,8 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
         pointer: pointer.map(str::to_owned),
         reason: reason.to_owned(),
         failures,
+        at: None,
+        mount: None,
     };
     assert_eq!(
         dangling,
@@ -985,11 +987,14 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
         link,
         Some((
             Code::RefDangling,
-            detail(
-                None,
-                "does not resolve: the link at /links/l points to /gone, which is missing",
-                1
-            )
+            Detail {
+                at: Some("/links/l".parse().unwrap()),
+                ..detail(
+                    None,
+                    "does not resolve: the link at /links/l points to /gone, which is missing",
+                    1
+                )
+            }
         ))
     );
     let checked = open(&scenario).check(None, None).unwrap();

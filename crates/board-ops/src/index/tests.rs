@@ -89,6 +89,28 @@ fn a_file_of_the_largest_size_kept_is_opened_once() {
 }
 
 #[test]
+fn a_file_that_does_not_parse_is_opened_once_cold_and_a_warm_check_still_says_why() {
+    let scenario = tasks();
+    scenario.write("bad.json", Item::File("{bad"));
+    let cache = tempfile::tempdir().unwrap();
+    assert_eq!(opened(&scenario, cache.path()), 9, "cold");
+    let board = open(&scenario);
+    let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let before = board.repository().files_opened();
+    let report = board.snapshot(index, None).unwrap().report;
+    assert_eq!(board.repository().files_opened() - before, 0, "warm");
+    let bad = report
+        .entries
+        .into_iter()
+        .find(|entry| entry.path == "bad.json")
+        .unwrap();
+    assert_eq!(
+        bad.detail.map(|detail| detail.reason).as_deref(),
+        Some("is invalid: json does not parse: key must be a string at line 1 column 2")
+    );
+}
+
+#[test]
 fn a_file_too_large_to_keep_is_hashed_and_then_opened_again_to_be_classified() {
     let scenario = tasks();
     let big = "a".repeat(board_model::MAX_RECORD_BYTES + 1);
@@ -406,6 +428,7 @@ fn retried(interfere: bool) -> (usize, bool, bool) {
         kind: Kind::Json,
         record_type: None,
         code: None,
+        reason: None,
     };
     let index = Index::open(Some(cache.path()), root).unwrap();
     let mut runs = 0;

@@ -31,14 +31,43 @@ pub struct Checked {
     pub schema: Option<String>,
 }
 
+impl Checked {
+    /// What to try next for a degraded entry, filled in with the path at
+    /// fault and, when that is in a mounted board, the board's mount point.
+    pub fn hint(&self) -> Option<String> {
+        let Status::Degraded(code) = self.status else {
+            return None;
+        };
+        let detail = self.detail.as_ref();
+        let fields = Fields {
+            path: detail
+                .and_then(|detail| detail.at.clone())
+                .or_else(|| self.logical.clone()),
+            pointer: detail.and_then(|detail| detail.pointer.clone()),
+            schema: self.schema.clone(),
+            ..Fields::default()
+        };
+        Some(match detail.and_then(|detail| detail.mount.as_ref()) {
+            Some(mount) => code.hint_in_mount(&fields, mount),
+            None => code.hint(&fields),
+        })
+    }
+}
+
 /// Where an entry fails, as a JSON pointer when it is a field, why, as a
 /// predicate about the entry, and how many failures of that kind the entry
 /// has, of which this is the first.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Detail {
     pub pointer: Option<String>,
     pub reason: String,
     pub failures: u64,
+    /// The path at fault, from the root, when it is not the entry's own:
+    /// the link or mount a pointer fails at.
+    pub at: Option<LogicalPath>,
+    /// The mount point of the mounted board that holds the file at fault,
+    /// which Board cannot write; `None` when the root board holds it.
+    pub mount: Option<LogicalPath>,
 }
 
 /// An entry's code, with its detail when Board knows one.
@@ -64,7 +93,7 @@ impl Tally {
             let detail = Detail {
                 pointer: Some(pointer.to_owned()),
                 reason: format!("holds a reference at {pointer:?}: {reason}"),
-                failures: 0,
+                ..Detail::default()
             };
             (*code, detail)
         });
@@ -140,9 +169,10 @@ impl Board {
 /// A pointer that does not resolve, for the reason `error` gives.
 pub(crate) fn unresolved(error: &ResolveError) -> (Code, Detail) {
     let detail = Detail {
-        pointer: None,
         reason: format!("does not resolve: {error}"),
         failures: 1,
+        at: error.fields().path,
+        ..Detail::default()
     };
     (error.code(), detail)
 }

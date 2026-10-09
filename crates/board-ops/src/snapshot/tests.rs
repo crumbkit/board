@@ -398,6 +398,7 @@ fn only_a_pointer_without_a_code_is_followed_as_a_mount() {
             kind,
             record_type: None,
             code,
+            reason: None,
         },
         validation: None,
     };
@@ -456,6 +457,7 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
         writer: &writer,
         listed: &[],
         facts: &facts,
+        mounted: None,
         resolve: std::cell::RefCell::new(Box::new(|_: &board_model::LogicalPath| {
             panic!("a record with no references resolves nothing")
         })),
@@ -468,6 +470,7 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
             kind: Kind::Record,
             record_type: Some("lr/task/v1".parse().unwrap()),
             code: None,
+            reason: None,
         },
         validation,
     };

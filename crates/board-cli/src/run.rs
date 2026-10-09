@@ -27,12 +27,13 @@ use crate::report::Output;
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
-  board init                   make this git repository a board
-  board check                  check every entry; exit 1 if any is degraded
-  board ls /                   list the board's root
-  board get /projects/p        print the record in projects/p.json
+  board init                        make this git repository a board
+  board check                       check every entry; exit 1 if any is degraded
+  board ls /                        list the board's root
+  board get /projects/p             print the record in projects/p.json
+  board put /tasks/a < task.json    write the record and commit it
   board query 'SELECT logical, status FROM entries LIMIT 5'
-  board -C ~/notes check       check the board at ~/notes from anywhere
+  board -C ~/notes check            check the board at ~/notes from anywhere
 
 A path is logical: it starts with / and leaves out .json.
 A record is a JSON object whose `$type`, such as lr/task/v1, names its schema,
@@ -183,10 +184,26 @@ Examples:
         batch: bool,
     },
     /// Work with mounts.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_help = "\
+A mount is a record of `$type` board/mount/v1 that holds `repo`, `follow` and
+`commit`. Board reads the mounted repository at `commit`; `mount update`
+advances `commit` to the commit `follow` names.
+
+Examples:
+  board mount update /vendor/lib"
+    )]
     Mount(MountCommand),
     /// Work with plugins.
-    #[command(subcommand)]
+    #[command(
+        subcommand,
+        after_help = "\
+Examples:
+  board plugin list
+  board plugin find --capability due
+  board plugin enable tasks"
+    )]
     Plugin(PluginCommand),
     /// Call a plugin's capability with the input JSON on stdin.
     #[command(

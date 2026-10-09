@@ -168,12 +168,16 @@ fn a_file_whose_bytes_are_not_the_blob_the_walk_saw_is_unreadable_and_its_twin_i
     };
     let changed = entry("tasks/a.json");
     assert_eq!(changed.status, Status::Degraded(Code::RepoUnreadable));
+    let detail = changed.detail.unwrap();
     assert_eq!(
-        changed.detail.unwrap().reason,
+        detail.reason,
         "changed or could not be read; run the command again"
     );
+    assert_eq!(detail.failures, 1);
     assert_eq!(changed.schema, None);
-    assert_eq!(entry("tasks/b.json").status, Status::Ok);
+    let twin = entry("tasks/b.json");
+    assert_eq!(twin.status, Status::Ok);
+    assert_eq!(twin.detail, None);
 }
 
 #[test]
@@ -255,6 +259,7 @@ fn a_tally_names_its_first_failing_reference_as_a_predicate_and_counts_every_one
                 pointer: Some("/project".to_owned()),
                 reason: r#"holds a reference at "/project": nothing is at /nowhere"#.to_owned(),
                 failures: 2,
+                ..Detail::default()
             }
         ))
     );

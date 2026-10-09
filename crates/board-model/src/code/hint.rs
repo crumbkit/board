@@ -10,6 +10,54 @@ impl Code {
     pub fn hint(self, fields: &Fields) -> String {
         filled(self, fields).unwrap_or_else(|| generic(self).to_owned())
     }
+
+    /// What to try next when the file at fault is in the board mounted at
+    /// `mount`, which Board cannot write: where the hint names a file, it
+    /// sends the fix to that board's repository.
+    pub fn hint_in_mount(self, fields: &Fields, mount: &LogicalPath) -> String {
+        mounted(self, fields, mount).unwrap_or_else(|| self.hint(fields))
+    }
+}
+
+/// The hint for `code` with the values in `fields` when the file at fault
+/// is in the board mounted at `mount`, if it differs from the root board's.
+fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
+    let repository = format!("in the repository of the board mounted at {mount}");
+    let schema = fields.schema.as_ref();
+    Some(match code {
+        Code::MountCommitMissing => format!(
+            "the mount at {} is {repository}, which Board cannot write; fetch the commit \
+             into the repository the mount names, or update the mount there",
+            fields.path.as_ref()?
+        ),
+        Code::RecordUnknownType => format!(
+            "add the type's schema at `{}` {repository}, or fix `$type` there",
+            schema?
+        ),
+        Code::SchemaInvalid => format!(
+            "fix the schema at `{}` {repository}; `board check {mount}/.board/types` says what failed",
+            schema?
+        ),
+        Code::RefDangling => format!(
+            "{} is {repository}, which Board cannot write; there, {}, then run `board mount update {mount}`",
+            fields.path.as_ref()?,
+            match fields.pointer.as_ref() {
+                Some(pointer) => format!(
+                    "create the record the reference at `{pointer}` names, or change the reference"
+                ),
+                None => "create the file the link names, or change the link's `path`".to_owned(),
+            }
+        ),
+        Code::JsonParse
+        | Code::JsonMergeConflict
+        | Code::JsonDuplicateKey
+        | Code::JsonNotUtf8
+        | Code::JsonLossyNumber => format!(
+            "{} is {repository}, which Board cannot write; fix the file there as the message says, then run `board mount update {mount}`",
+            fields.path.as_ref()?
+        ),
+        _ => return None,
+    })
 }
 
 /// The hint for `code` with the values in `fields`, when it names one and
@@ -67,11 +115,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "run `board ls {}` to see what is there; paths leave out `.json`",
             parent(path?)
         ),
-        Code::RefDangling => format!(
-            "create the file the link at {} names, or change the link's `path`; `board ls {}` shows the link",
-            path?,
-            parent(path?)
-        ),
+        Code::RefDangling => dangling(fields)?,
         Code::MountCommitMissing => format!(
             "fetch the commit into the mounted repository, or run `board mount update {}`",
             path?
@@ -114,6 +158,25 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             }
         },
         _ => return None,
+    })
+}
+
+/// What to do about a reference at `pointer` in the record at `path` that
+/// leads nowhere, or, without a pointer, a link at `path` that does.
+fn dangling(fields: &Fields) -> Option<String> {
+    let path = fields.path.as_ref()?;
+    let pointer = fields
+        .pointer
+        .as_ref()
+        .filter(|pointer| !pointer.is_empty());
+    Some(match pointer {
+        Some(pointer) => format!(
+            "create the record the reference at `{pointer}` names, or change the reference; `board refs {path}` lists the record's references"
+        ),
+        None => format!(
+            "create the file the link at {path} names, or change the link's `path`; `board ls {}` shows the link",
+            parent(path)
+        ),
     })
 }
 

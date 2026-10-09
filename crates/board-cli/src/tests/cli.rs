@@ -131,6 +131,45 @@ fn every_command_that_runs_ends_its_help_in_examples_that_parse() {
 }
 
 #[test]
+fn every_command_group_ends_its_help_in_examples_of_its_commands_that_parse() {
+    for group in Cli::command()
+        .get_subcommands()
+        .filter(|command| command.has_subcommands())
+    {
+        let name = group.get_name();
+        let help = group
+            .get_after_help()
+            .map(ToString::to_string)
+            .unwrap_or_default();
+        assert!(help.contains("Examples:\n"), "{name} has no examples");
+        let shown = examples(&help);
+        for sub in group
+            .get_subcommands()
+            .filter(|sub| sub.get_name() != "help")
+        {
+            let words = format!("board {name} {}", sub.get_name());
+            assert!(
+                shown.iter().any(|example| example.starts_with(&words)),
+                "{name}'s examples do not run {words}: {shown:?}"
+            );
+        }
+        for example in shown {
+            assert_eq!(parses(&example), Ok(()), "{example}");
+        }
+    }
+}
+
+#[test]
+fn the_start_here_block_says_that_put_writes_and_commits() {
+    let root = Cli::command().get_after_help().unwrap().to_string();
+    let put = root
+        .lines()
+        .find(|line| line.trim_start().starts_with("board put "))
+        .unwrap_or_else(|| panic!("no put in {root}"));
+    assert!(put.contains("commit"), "{put}");
+}
+
+#[test]
 fn an_example_that_names_a_missing_command_does_not_parse_and_a_real_one_does() {
     assert_eq!(parses("board chek"), Err(ErrorKind::InvalidSubcommand));
     assert_eq!(parses("board check"), Ok(()));
@@ -461,7 +500,8 @@ fn check_lists_degraded_entries_first_so_a_limit_never_hides_one() {
     assert_eq!(output.code, 1);
     assert_eq!(
         text(&output.stdout),
-        "degraded board::json::parse /zz/bad\n"
+        "degraded board::json::parse /zz/bad \
+         is invalid: json does not parse: EOF while parsing an object at line 1 column 1\n"
     );
     let stderr = text(&output.stderr);
     let note = stderr.lines().last().unwrap();
@@ -737,7 +777,8 @@ fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its
     let output = board_in(scenario.workdir(), &["check"]);
     let stdout = text(&output.stdout);
     for line in [
-        "degraded board::json::parse /zz/bad",
+        "degraded board::json::parse /zz/bad \
+         is invalid: json does not parse: EOF while parsing an object at line 1 column 1",
         "degraded board::path::malformed .json",
         "degraded board::path::shadowed x",
         "degraded board::path::shadowed x.json",

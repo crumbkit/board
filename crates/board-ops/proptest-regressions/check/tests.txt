@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc d6fc436b378fc0f3c3f66294d42b62cec4d16c239b13301479cdf0b5152621e0 # shrinks to before = [Some(1), None, None, None, None, None, None], after = [Some(0), None, None, None, None, None, None], committed = false
 cc 191c016d0dcbea5b09cb6483329bf8c3cbae2afbc9240e1ee3b4b1fa02ef0efb # shrinks to before = [Some(0), None, Some(1), None, None, None, None, None], after = [None, None, Some(1), None, None, None, None, None], committed = false
+cc c5e957430a16ecc4848e8e4f71bd2c948b192db4c2052e48bda6a0a30eb36afc # shrinks to before = [None, None, None, None, None, None, None, None], after = [Some(2), None, None, None, Some(0), None, None, None], committed = false

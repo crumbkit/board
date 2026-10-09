@@ -185,7 +185,10 @@ fn check_prints_one_line_per_entry_and_fails_when_any_is_degraded() {
     scenario.write("bad.json", Item::File("{"));
     let degraded = board_in(scenario.workdir(), &["check"]);
     assert_eq!(degraded.code, 1);
-    assert!(text(&degraded.stdout).contains("degraded board::json::parse /bad\n"));
+    assert!(text(&degraded.stdout).contains(
+        "degraded board::json::parse /bad \
+         is invalid: json does not parse: EOF while parsing an object at line 1 column 1\n"
+    ));
 }
 
 #[test]
@@ -1041,6 +1044,25 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
     assert_eq!(again["old"], new.to_string());
     assert_eq!(again["new"], new.to_string());
     assert_eq!(again["wrote"], false);
+}
+
+#[test]
+fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("a.md", "one")]);
+    let scenario = board();
+    scenario.write("lib.json", Item::File(&mount_of(&library.path(), commit)));
+    let missing = board_in(scenario.workdir(), &["mount", "update", "/nope"]);
+    assert_eq!(missing.code, 1);
+    assert!(
+        text(&missing.stderr).starts_with(
+            "error: board::path::not_found: /nope cannot be written: nothing is at /nope\n"
+        ),
+        "{}",
+        text(&missing.stderr)
+    );
+    let mounted = board_in(scenario.workdir(), &["mount", "update", "/lib"]);
+    assert_eq!(mounted.code, 0, "{}", text(&mounted.stderr));
 }
 
 mod cli;

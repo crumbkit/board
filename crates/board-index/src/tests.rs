@@ -24,6 +24,17 @@ fn record() -> BlobFact {
         kind: Kind::Record,
         record_type: Some("test/task/v1".parse().unwrap()),
         code: None,
+        reason: None,
+    }
+}
+
+/// A file that does not parse, with the parser's message.
+fn unparsed() -> BlobFact {
+    BlobFact {
+        kind: Kind::Json,
+        record_type: None,
+        code: Some(Code::JsonParse),
+        reason: Some("json does not parse: EOF at line 1 column 1".to_owned()),
     }
 }
 
@@ -97,6 +108,15 @@ fn each_board_has_its_own_index_file_under_the_cache() {
         64,
         "the directory is a SHA-256 in hex"
     );
+}
+
+#[test]
+fn a_blob_that_fails_keeps_its_reason_and_one_that_parses_has_none() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    writer.put_blob(blob(1), Role::Json, &record()).unwrap();
+    writer.put_blob(blob(7), Role::Json, &unparsed()).unwrap();
+    assert_eq!(writer.blob(blob(7), Role::Json).unwrap(), Some(unparsed()));
+    assert_eq!(writer.blob(blob(1), Role::Json).unwrap(), Some(record()));
 }
 
 #[test]

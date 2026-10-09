@@ -557,7 +557,15 @@ fn a_degraded_entry_says_where_and_why_and_how_many_failures_it_has() {
             1
         ))
     );
-    assert_eq!(detail(&scenario, "broken.json"), None);
+    assert_eq!(
+        detail(&scenario, "broken.json"),
+        Some((
+            None,
+            "is invalid: json does not parse: EOF while parsing an object at line 1 column 1"
+                .to_owned(),
+            1
+        ))
+    );
 }
 
 #[test]
@@ -803,6 +811,164 @@ fn get_refuses_each_json_fault_with_its_code_and_the_path_before_the_parsers_mes
             format!("/{name} is not a record: {parser}")
         );
     }
+}
+
+#[test]
+fn check_says_why_a_file_or_schema_is_degraded_and_a_healthy_one_has_no_reason() {
+    let scenario = board();
+    scenario
+        .write(".board/types/board/x/v1.schema.json", Item::File("{}"))
+        .write(".board/types/board/y/v1.schema.json", Item::File("{"))
+        .write(
+            ".board/types/lr/five/v1.schema.json",
+            Item::File(r#"{"type": 5}"#),
+        )
+        .write("twice.json", Item::File(r#"{"a": 1, "a": 2}"#))
+        .write(
+            "manifest.json",
+            Item::File(r#"{"$type": "board/plugin-manifest/v1"}"#),
+        );
+    let reason = |path: &str| detail(&scenario, path).map(|(_, reason, _)| reason);
+    assert_eq!(
+        reason(".board/types/board/x/v1.schema.json").as_deref(),
+        Some(
+            "is in the board namespace, which is Board's own, so a board cannot define a schema in it"
+        )
+    );
+    assert_eq!(
+        reason(".board/types/board/y/v1.schema.json").as_deref(),
+        Some("is invalid: json does not parse: EOF while parsing an object at line 1 column 1")
+    );
+    let five = reason(".board/types/lr/five/v1.schema.json").unwrap();
+    assert!(
+        five.starts_with("is invalid: schema does not compile: "),
+        "{five}"
+    );
+    assert_eq!(
+        reason("twice.json").as_deref(),
+        Some(r#"is invalid: json repeats the key "a" in one object"#)
+    );
+    assert_eq!(
+        reason("manifest.json").as_deref(),
+        Some("is invalid: the manifest is not a plugin manifest: missing field `name`")
+    );
+    assert_eq!(reason(".board/types/lr/task/v1.schema.json"), None);
+}
+
+/// A mount of `repo` at `commit`.
+fn mount_of(repo: &Scenario, commit: impl std::fmt::Display) -> String {
+    format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+        repo.path()
+    )
+}
+
+/// The entry `check` reports at `logical`.
+fn checked(scenario: &Scenario, logical: &str) -> crate::Checked {
+    check(scenario)
+        .entries
+        .into_iter()
+        .find(|entry| entry.logical.as_ref().map(LogicalPath::as_str) == Some(logical))
+        .unwrap_or_else(|| panic!("{logical} is not an entry"))
+}
+
+#[test]
+fn a_pointer_failing_inside_a_mount_names_its_fault_from_the_root() {
+    let mounted = Scenario::new();
+    let commit = mounted.commit(&[(
+        "links/gone.json",
+        r#"{"$type": "board/mount/v1", "path": "/nowhere"}"#,
+    )]);
+    let scenario = board();
+    scenario.write("shared.json", Item::File(&mount_of(&mounted, commit)));
+    let entry = checked(&scenario, "/shared/links/gone");
+    assert_eq!(entry.status, Status::Degraded(Code::RefDangling));
+    let detail = entry.detail.unwrap();
+    assert_eq!(
+        detail.at.map(String::from).as_deref(),
+        Some("/shared/links/gone")
+    );
+    assert_eq!(detail.mount.map(String::from).as_deref(), Some("/shared"));
+}
+
+#[test]
+fn a_pointer_fault_in_a_mounted_board_names_its_mount_point_and_one_in_the_root_names_none() {
+    let inner = Scenario::new();
+    inner.commit(&[("x.json", "{}")]);
+    let missing = board_model::ObjectId::Sha1([9; 20]);
+    let deep = Scenario::new();
+    let deep_commit = deep.commit(&[("vendor/q.json", &mount_of(&inner, missing))]);
+    let mounted = Scenario::new();
+    let commit = mounted.commit(&[
+        ("vendor/n.json", &mount_of(&inner, missing)),
+        ("deep.json", &mount_of(&deep, deep_commit)),
+    ]);
+    let link = |path: &str| format!(r#"{{"$type": "board/mount/v1", "path": "{path}"}}"#);
+    let scenario = board();
+    scenario
+        .write("shared.json", Item::File(&mount_of(&mounted, commit)))
+        .write("vendor/m.json", Item::File(&mount_of(&inner, missing)))
+        .write("m.json", Item::File(&mount_of(&inner, missing)))
+        .write("links/r.json", Item::File(&link("/shared/vendor/n/x")))
+        .write("links/d.json", Item::File(&link("/shared/deep/vendor/q/x")))
+        .write("links/s.json", Item::File(&link("/vendor/m/x")));
+    let fault = |logical: &str| {
+        let entry = checked(&scenario, logical);
+        assert_eq!(entry.status, Status::Degraded(Code::MountCommitMissing));
+        let detail = entry.detail.unwrap();
+        (
+            detail.at.unwrap().to_string(),
+            detail.mount.map(String::from),
+        )
+    };
+    let shared = Some("/shared".to_owned());
+    let nested = ("/shared/vendor/n".to_owned(), shared);
+    assert_eq!(fault("/shared/vendor/n"), nested);
+    assert_eq!(fault("/links/r"), nested);
+    let deeper = (
+        "/shared/deep/vendor/q".to_owned(),
+        Some("/shared/deep".to_owned()),
+    );
+    assert_eq!(fault("/links/d"), deeper);
+    assert_eq!(fault("/shared/deep/vendor/q"), deeper);
+    assert_eq!(fault("/links/s"), ("/vendor/m".to_owned(), None));
+    assert_eq!(fault("/vendor/m"), ("/vendor/m".to_owned(), None));
+    assert_eq!(fault("/m"), ("/m".to_owned(), None));
+}
+
+#[test]
+fn a_record_whose_schema_is_at_fault_in_a_mounted_board_names_that_mount_and_one_in_the_root_none()
+{
+    let mounted = Scenario::new();
+    let commit = mounted.commit(&[
+        (".board/types/lr/five/v1.schema.json", r#"{"type": 5}"#),
+        ("notes/r.json", r#"{"$type": "lr/five/v1"}"#),
+        ("notes/u.json", r#"{"$type": "lr/none/v1"}"#),
+    ]);
+    let scenario = board();
+    scenario
+        .write("shared.json", Item::File(&mount_of(&mounted, commit)))
+        .write(
+            ".board/types/lr/five/v1.schema.json",
+            Item::File(r#"{"type": 5}"#),
+        )
+        .write("notes/r.json", Item::File(r#"{"$type": "lr/five/v1"}"#))
+        .write("notes/u.json", Item::File(r#"{"$type": "lr/none/v1"}"#));
+    let said = |logical: &str| {
+        let entry = checked(&scenario, logical);
+        let Status::Degraded(code) = entry.status else {
+            panic!("{logical} is not degraded");
+        };
+        (code, entry.detail.unwrap().mount.map(String::from))
+    };
+    let shared = Some("/shared".to_owned());
+    assert_eq!(
+        said("/shared/notes/r"),
+        (Code::SchemaInvalid, shared.clone())
+    );
+    assert_eq!(said("/shared/notes/u"), (Code::RecordUnknownType, shared));
+    assert_eq!(said("/notes/r"), (Code::SchemaInvalid, None));
+    assert_eq!(said("/notes/u"), (Code::RecordUnknownType, None));
 }
 
 #[test]

@@ -22,7 +22,13 @@ pub struct BlobFact {
     pub kind: Kind,
     pub record_type: Option<RecordType>,
     pub code: Option<Code>,
+    /// Why the blob fails with `code`, when the parser or schema compiler
+    /// says more than the code.
+    pub reason: Option<String>,
 }
+
+/// A `blobs` row as stored: kind, type, code and reason.
+type BlobRow = (String, Option<String>, Option<String>, Option<String>);
 
 /// What checking one record blob against one schema blob found.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,16 +189,16 @@ impl Writer {
     }
 
     pub fn blob(&self, blob: ObjectId, role: Role) -> Result<Option<BlobFact>, IndexError> {
-        let row: Option<(String, Option<String>, Option<String>)> = self
+        let row: Option<BlobRow> = self
             .connection()
             .prepare_cached(
-                "SELECT kind, type, code FROM main.blobs WHERE blob = ?1 AND role = ?2",
+                "SELECT kind, type, code, reason FROM main.blobs WHERE blob = ?1 AND role = ?2",
             )?
             .query_row(params![blob.to_string(), role.as_str()], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })
             .optional()?;
-        Ok(row.and_then(|(kind, record_type, code)| {
+        Ok(row.and_then(|(kind, record_type, code, reason)| {
             Some(BlobFact {
                 kind: Kind::ALL.into_iter().find(|known| known.as_str() == kind)?,
                 record_type: match record_type {
@@ -203,6 +209,7 @@ impl Writer {
                     Some(text) => Some(Code::parse(&text)?),
                     None => None,
                 },
+                reason,
             })
         }))
     }
@@ -210,8 +217,8 @@ impl Writer {
     pub fn put_blob(&self, blob: ObjectId, role: Role, fact: &BlobFact) -> Result<(), IndexError> {
         self.connection()
             .prepare_cached(
-                "INSERT OR REPLACE INTO main.blobs (blob, role, kind, type, code)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT OR REPLACE INTO main.blobs (blob, role, kind, type, code, reason)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )?
             .execute(params![
                 blob.to_string(),
@@ -219,6 +226,7 @@ impl Writer {
                 fact.kind.as_str(),
                 fact.record_type.as_ref().map(RecordType::as_str),
                 fact.code.map(Code::as_str),
+                fact.reason,
             ])?;
         Ok(())
     }

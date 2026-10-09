@@ -230,6 +230,7 @@ impl Kept {
                 _ => None,
             },
             code: judged.as_ref().err().map(Fault::code),
+            reason: judged.as_ref().err().and_then(|fault| fault.reason(bytes)),
         };
         writer.put_blob(blob, role, &fact)?;
         if let Content::Record { value, .. } = classified.content {

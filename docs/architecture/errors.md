@@ -62,3 +62,13 @@ about the entry, such as `holds a reference at "/project": nothing is at
 /nowhere`. When a record's schema is
 missing, cannot be read or does not compile, a check entry names that schema
 file (`schema`), as a refused put does.
+A check entry's reason for a file that does not parse is `is invalid:` and the
+parser's message. For a schema it is `is invalid:` and why the schema does not
+compile, or that it is in the `board` namespace, which is Board's own; for a
+plugin manifest it is `is invalid:` and why the manifest does not read. The
+index keeps the reason with the blob's code, so a warm check reads no file
+again. `check` gives each degraded entry a `hint`, filled in with the path
+at fault: the entry's own, the reference that dangles, the link or mount a
+pointer fails at, or the schema. When that file is in a mounted board, which
+Board cannot write, the hint says to fix it in that board's repository. Text
+prints each hint on stderr as `hint: <path>: <hint>`.

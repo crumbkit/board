@@ -17,8 +17,8 @@ use board_model::{
     RecordType, Role, Source, Stat, classify,
 };
 use board_tree::{
-    Cache, Entry, Repositories, Repository, ResolveError, Status, TreeRow, TreeRows, in_scope,
-    latest,
+    Cache, Entry, Mounted, Repositories, Repository, ResolveError, Status, TreeRow, TreeRows,
+    in_scope, latest,
 };
 
 use crate::board::Board;
@@ -97,6 +97,7 @@ impl Board {
         let mut decided = Decided::default();
         let root = Decide {
             repositories: self.repositories(),
+            mounted: None,
             writer,
             listed: &refresh.entries,
             facts: &refresh.facts,
@@ -126,6 +127,7 @@ impl Board {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
                 repositories: self.repositories(),
+                mounted: Some(mounted),
                 writer,
                 listed: &mounted.entries,
                 facts: &mounted.facts,
@@ -270,11 +272,21 @@ impl Decided {
                     pointer: fields.pointer,
                     reason,
                     failures: 1,
+                    ..Detail::default()
                 };
                 (Some((fault.code(), Some(detail))), fields.schema)
             }
         };
         let (code, detail) = failure.map_or((None, None), |(code, detail)| (Some(code), detail));
+        // The file at fault is the entry itself unless the detail names
+        // another, which says its own mount.
+        let detail = detail.map(|detail| match detail.at {
+            None => Detail {
+                mount: decide.route(),
+                ..detail
+            },
+            Some(_) => detail,
+        });
         self.resolved.push(Resolved {
             source: source.clone(),
             path: entry.path.clone(),
@@ -317,6 +329,8 @@ const READ_AGAIN: &str = "changed or could not be read; run the command again";
 /// What deciding the status of a source's entries reads.
 struct Decide<'a> {
     repositories: &'a Repositories,
+    /// The mounted source being decided; `None` for the root's.
+    mounted: Option<&'a Mounted<Facts>>,
     writer: &'a Writer,
     /// Every entry the walk listed, with a fact or not, sorted by path.
     listed: &'a [Entry],
@@ -342,14 +356,19 @@ impl Decide<'_> {
         // read has no fact.
         let Some(fact) = fact else {
             let detail = Detail {
-                pointer: None,
                 reason: READ_AGAIN.to_owned(),
                 failures: 1,
+                ..Detail::default()
             };
             return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
         };
         if let Some(code) = fact.fact.code {
-            return Ok(Ok(Some((code, None))));
+            let detail = fact.fact.reason.clone().map(|reason| Detail {
+                reason,
+                failures: 1,
+                ..Detail::default()
+            });
+            return Ok(Ok(Some((code, detail))));
         }
         match fact.fact.kind {
             Kind::Pointer => Ok(Ok(entry
@@ -358,7 +377,16 @@ impl Decide<'_> {
                 .and_then(|logical| self.resolve(logical).err())
                 .map(|error| {
                     let (code, detail) = unresolved(&error);
-                    (code, Some(detail))
+                    let mount = detail.at.as_ref().and_then(|at| self.mount(at));
+                    let at = detail.at.as_ref().and_then(|at| self.display(at));
+                    (
+                        code,
+                        Some(Detail {
+                            at,
+                            mount,
+                            ..detail
+                        }),
+                    )
                 }))),
             Kind::Record => self.record(fact, schema, reached),
             Kind::Schema | Kind::Json | Kind::File => Ok(Ok(None)),
@@ -387,6 +415,8 @@ impl Decide<'_> {
                     pointer: None,
                     reason: format!("cannot be checked: it or its schema {READ_AGAIN}"),
                     failures: 1,
+                    at: None,
+                    mount: None,
                 };
                 return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
             }
@@ -401,6 +431,7 @@ impl Decide<'_> {
                     pointer,
                     reason,
                     failures,
+                    ..Detail::default()
                 };
                 return Ok(Ok(Some((code, Some(detail)))));
             }
@@ -457,6 +488,38 @@ impl Decide<'_> {
 
     fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
         (self.resolve.borrow_mut())(path)
+    }
+
+    /// The mount point of the source, from the root; `None` for the root.
+    fn route(&self) -> Option<LogicalPath> {
+        self.mounted?.route.parse().ok()
+    }
+
+    /// `path`, a path in the source, from the root.
+    fn display(&self, path: &LogicalPath) -> Option<LogicalPath> {
+        match self.mounted {
+            Some(mounted) => mounted.display(path),
+            None => Some(path.clone()),
+        }
+    }
+
+    /// The mount point, from the root, of the mounted board that holds
+    /// `at`, a path in the source: the board the directory above `at`
+    /// resolves into. `None` when that is the root board.
+    fn mount(&self, at: &LogicalPath) -> Option<LogicalPath> {
+        let parent = match at.as_str().rsplit_once('/') {
+            Some(("", _)) | None => "/",
+            Some((parent, _)) => parent,
+        };
+        let location = self.resolve(&parent.parse().ok()?).ok()?;
+        if location.board.source == Source::WorkingTree {
+            return None;
+        }
+        let root = Location {
+            path: String::new(),
+            ..location
+        };
+        self.display(&root.display_path()?)
     }
 
     /// The `$type` of the record at `location`: from the index when it

@@ -43,19 +43,22 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
     let output = match format {
         Format::Text => {
             let mut text = String::new();
+            let mut hints = String::new();
             for entry in entries {
                 let path = named(&entry.path, entry.logical.as_ref(), entry.status);
                 let why = entry.detail.as_ref().map(detail_text).unwrap_or_default();
                 let _ = writeln!(text, "{} {path}{why}", status_text(entry.status));
+                if let Some(hint) = entry.hint() {
+                    let _ = writeln!(hints, "hint: {path}: {hint}");
+                }
             }
+            hints.push_str(&shown.note(
+                &format!("entries, {degraded} of them degraded"),
+                "no entries are at or beneath the path",
+            ));
             Output {
                 stdout: text.into_bytes(),
-                stderr: shown
-                    .note(
-                        &format!("entries, {degraded} of them degraded"),
-                        "no entries are at or beneath the path",
-                    )
-                    .into_bytes(),
+                stderr: hints.into_bytes(),
                 code,
             }
         }
@@ -75,6 +78,9 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
                         if let Some(schema) = &entry.schema {
                             object.insert("schema".to_owned(), json!(schema));
                         }
+                    }
+                    if let (Some(hint), Some(object)) = (entry.hint(), value.as_object_mut()) {
+                        object.insert("hint".to_owned(), json!(hint));
                     }
                     value
                 })
