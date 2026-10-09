@@ -72,7 +72,7 @@ impl Resolver<'_, '_> {
         };
         let (location, physical) = match self.resolve(path) {
             Ok(location) => {
-                let physical = record_file(&location).ok_or(refused(Code::RecordNotARecord))?;
+                let physical = record_file(&location);
                 (location, physical)
             }
             Err(ResolveError::NotFound { .. }) => self.new_file(path)?,
@@ -81,6 +81,12 @@ impl Resolver<'_, '_> {
         if location.board.source != Source::WorkingTree {
             return Err(refused(Code::PutThroughMount));
         }
+        // The walk lists a symlink as a file, but on disk it can lead to a
+        // directory that a write beneath it would go into.
+        let Some(physical) = physical else {
+            self.repository().refuse_symlink(path, &location.path)?;
+            return Err(refused(Code::RecordNotARecord));
+        };
         self.repository().refuse_symlink(path, &physical)?;
         self.writable(path, physical, location, is_pointer)
     }
@@ -132,17 +138,16 @@ impl Resolver<'_, '_> {
     }
 
     /// The new record file `path` names: beneath its deepest ancestor that
-    /// resolves, with the segments past it as directories to create.
-    fn new_file(&mut self, path: &LogicalPath) -> Result<(Location, String), WriteError> {
+    /// resolves, with the segments past it as directories to create. `None`
+    /// when the ancestor is a file other than a record, which holds nothing.
+    fn new_file(&mut self, path: &LogicalPath) -> Result<(Location, Option<String>), WriteError> {
         let refused = |code| WriteError::Refused {
             path: path.clone(),
             code,
         };
         let ancestor = self.ancestor(path).map_err(|error| refused(error.code()))?;
-        let file = ancestor
-            .path()
-            .ok_or_else(|| refused(Code::RecordNotARecord))?;
-        Ok((ancestor.location, format!("{file}.json")))
+        let file = ancestor.path().map(|file| format!("{file}.json"));
+        Ok((ancestor.location, file))
     }
 }
 

@@ -400,7 +400,7 @@ fn a_write_through_a_link_lands_at_its_target() {
 #[test]
 fn a_write_through_a_mount_is_refused_and_one_beside_it_is_admitted() {
     let library = Scenario::new();
-    let commit = library.commit(&[("x.json", "{}")]);
+    let commit = library.commit(&[("x.json", "{}"), ("notes.md", "x")]);
     let scenario = board();
     scenario.write(
         "vendor.json",
@@ -413,10 +413,18 @@ fn a_write_through_a_mount_is_refused_and_one_beside_it_is_admitted() {
         put(&scenario, "/vendor/x", Expect::Any, &task("")).unwrap_err(),
         Code::PutThroughMount
     );
-    assert_eq!(
-        put(&scenario, "/vendor/new/y", Expect::Any, &task("")).unwrap_err(),
-        Code::PutThroughMount
-    );
+    for refused in [
+        "/vendor/new/y",
+        "/vendor/notes.md",
+        "/vendor/notes.md/a",
+        "/vendor",
+    ] {
+        assert_eq!(
+            put(&scenario, refused, Expect::Any, &task("")).unwrap_err(),
+            Code::PutThroughMount,
+            "{refused}"
+        );
+    }
     assert_eq!(
         refused_fields(&scenario, "/vendor/x", Expect::Any, &task("")),
         Fields::at(&path("/vendor/x"))
@@ -478,6 +486,47 @@ fn a_put_over_a_symlink_named_as_a_record_is_refused_and_over_a_file_is_admitted
         .write("s.json", Item::Deleted)
         .write("s.json", Item::File(&task("")));
     put(&scenario, "/s", Expect::Any, &task("")).unwrap();
+}
+
+#[test]
+fn a_put_through_a_listed_symlink_is_refused_naming_it_and_through_a_directory_is_admitted() {
+    let scenario = board();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_path = outside.path().to_str().unwrap();
+    let tracked = scenario.commit_items(&[(b"outside", Item::Symlink(outside_path))]);
+    scenario
+        .track(tracked)
+        .write("outside", Item::Symlink(outside_path))
+        .write("sym", Item::Symlink("tasks"))
+        .write("dangling", Item::Symlink("nowhere"))
+        .write("tasks/inner", Item::Symlink(outside_path));
+    let cases = [
+        ("/sym/a", "sym"),
+        ("/sym/deep/a", "sym"),
+        ("/sym", "sym"),
+        ("/outside/a", "outside"),
+        ("/tasks/inner/a", "tasks/inner"),
+        ("/dangling/a", "dangling"),
+    ];
+    for (at, symlink) in cases {
+        let refused = open(&scenario)
+            .put(&path(at), Expect::Any, task("").as_bytes())
+            .unwrap_err();
+        assert_eq!(refused.code(), Code::PutSymlink, "{at}");
+        assert_eq!(
+            refused.to_string(),
+            format!("{at} cannot be written: {symlink} is a symlink")
+        );
+    }
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    for symlink in ["sym", "outside", "tasks/inner", "dangling"] {
+        scenario
+            .write(symlink, Item::Deleted)
+            .write(&format!("{symlink}/z.md"), Item::File(""));
+    }
+    for (at, _) in cases {
+        put(&scenario, at, Expect::Any, &task("")).unwrap();
+    }
 }
 
 #[test]
@@ -550,6 +599,10 @@ fn a_path_that_names_a_file_that_is_not_a_record_is_refused() {
     scenario.write("notes.md", Item::File("text"));
     assert_eq!(
         put(&scenario, "/notes.md", Expect::Any, &task("")).unwrap_err(),
+        Code::RecordNotARecord
+    );
+    assert_eq!(
+        put(&scenario, "/notes.md/a", Expect::Any, &task("")).unwrap_err(),
         Code::RecordNotARecord
     );
     assert!(put(&scenario, "/notes", Expect::Any, &task("")).is_ok());

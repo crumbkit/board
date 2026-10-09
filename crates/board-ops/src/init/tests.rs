@@ -75,7 +75,8 @@ fn init_does_not_write_through_a_symlinked_board_directory() {
     scenario.write("shared/a.md", Item::File(""));
     scenario.write(".board", Item::Symlink("shared"));
     let refused = init(scenario.workdir()).unwrap_err();
-    assert_eq!(refused.code(), Code::RecordNotARecord);
+    assert_eq!(refused.code(), Code::PutSymlink);
+    assert!(refused.to_string().ends_with(".board is a symlink"));
     assert!(!scenario.workdir().join("shared/board.json").exists());
     scenario.write(".board", Item::Deleted);
     assert!(init(scenario.workdir()).unwrap().created);
