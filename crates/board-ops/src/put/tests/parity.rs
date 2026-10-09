@@ -8,7 +8,7 @@ use proptest::prelude::*;
 use super::{board, put};
 use crate::put::Expect;
 use crate::tests::verdicts::{Case, TASK_SCHEMA_PATH, agrees, case, records, schemas, tasks};
-use crate::tests::{TASK_SCHEMA, open, task, unreadable};
+use crate::tests::{TASK_SCHEMA, locked, open, task, unreadable};
 
 /// What `check` and then `put` say of each record, written at
 /// `tasks/r{n}.json` of `scenario`, a test board with whatever is at the
@@ -61,8 +61,15 @@ fn agree_with(scenario: &Scenario, code: Code, case: &str) {
     assert_eq!(verdicts, [(Some(code), Err(code))], "{case}");
 }
 
+/// Asserts that `check` and `put` both admit a task record of `scenario`.
+fn admitted(scenario: &Scenario, case: &str) {
+    let verdicts = verdicts(scenario, &[task("")]);
+    assert_eq!(verdicts, [(None, Ok(()))], "{case}");
+}
+
 #[test]
 fn put_agrees_with_check_when_the_schema_cannot_be_read() {
+    admitted(&board(), "a readable schema");
     let scenario = board();
     if !unreadable(&scenario, TASK_SCHEMA_PATH, TASK_SCHEMA) {
         return;
@@ -109,13 +116,9 @@ fn put_agrees_with_check_when_a_symlink_is_above_the_schema() {
 
 #[test]
 fn put_agrees_with_check_when_a_directory_at_or_above_the_schema_cannot_be_listed() {
-    // A superuser lists any directory, so the case cannot be made as root.
-    let locked = |scenario: &Scenario, path: &str| {
-        scenario.write(path, Item::Locked);
-        std::fs::read_dir(scenario.workdir().join(path)).is_err()
-    };
+    admitted(&board(), "every directory can be listed");
     let at = slot(None);
-    if !locked(&at, TASK_SCHEMA_PATH) {
+    if !locked(&at, TASK_SCHEMA_PATH, Item::Locked) {
         return;
     }
     agree_with(
@@ -125,8 +128,62 @@ fn put_agrees_with_check_when_a_directory_at_or_above_the_schema_cannot_be_liste
     );
 
     let above = board();
-    locked(&above, ".board/types/lr");
+    locked(&above, ".board/types/lr", Item::Locked);
     agree_with(&above, Code::RepoUnreadable, "a locked directory above");
+
+    let searchable = board();
+    locked(&searchable, ".board/types/lr", Item::Searchable);
+    agree_with(
+        &searchable,
+        Code::RepoUnreadable,
+        "a directory above that can be searched but not listed",
+    );
+}
+
+#[test]
+fn put_agrees_with_check_when_the_schema_or_a_directory_above_it_is_ignored_and_admits_when_it_is_tracked()
+ {
+    let ignore = format!("{TASK_SCHEMA_PATH}\n");
+    let ignored = board();
+    ignored.write(".gitignore", Item::File(&ignore));
+    agree_with(&ignored, Code::RecordUnknownType, "an ignored schema");
+
+    let above = board();
+    above.write(".gitignore", Item::File(".board/types/lr/task/\n"));
+    agree_with(
+        &above,
+        Code::RecordUnknownType,
+        "an ignored directory above",
+    );
+
+    let tracked = board();
+    let commit = tracked.commit(&[(TASK_SCHEMA_PATH, TASK_SCHEMA)]);
+    tracked
+        .track(commit)
+        .write(".gitignore", Item::File(&ignore));
+    admitted(&tracked, "a tracked schema that an ignore pattern matches");
+
+    let tracked_above = board();
+    let commit = tracked_above.commit(&[(TASK_SCHEMA_PATH, TASK_SCHEMA)]);
+    tracked_above
+        .track(commit)
+        .write(".gitignore", Item::File(".board/types/lr/task/\n"));
+    admitted(
+        &tracked_above,
+        "a tracked schema beneath a directory an ignore pattern matches",
+    );
+}
+
+#[test]
+fn put_agrees_with_check_when_a_fifo_is_at_the_schema_path() {
+    admitted(&board(), "a readable schema");
+    // The walk lists only files and symlinks. A writer closes the FIFO at
+    // once, so a put that opens it reads an empty schema instead of waiting.
+    let fifo = slot(None);
+    fifo.write(TASK_SCHEMA_PATH, Item::Fifo);
+    let verdicts = fifo.feeding(TASK_SCHEMA_PATH, || verdicts(&fifo, &[task("")]));
+    let unknown = Code::RecordUnknownType;
+    assert_eq!(verdicts, [(Some(unknown), Err(unknown))], "a FIFO");
 }
 
 #[test]

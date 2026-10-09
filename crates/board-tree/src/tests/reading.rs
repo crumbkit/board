@@ -190,7 +190,8 @@ fn a_path_in_or_at_a_submodule_is_a_submodule_by_the_walks_rule_and_any_other_di
         .write("nested", Item::Submodule)
         .write("plain/x.json", Item::File("{}"))
         .write("file.json", Item::File("{}"))
-        .write("link", Item::Symlink("plain"));
+        .write("link", Item::Symlink("plain"))
+        .write("fifo", Item::Fifo);
     let repository = scenario.open();
     let directory = |path: &str| repository.working_directory(path).unwrap();
     assert_eq!(directory("linked"), Some(Directory::Submodule));
@@ -201,26 +202,64 @@ fn a_path_in_or_at_a_submodule_is_a_submodule_by_the_walks_rule_and_any_other_di
     assert_eq!(directory("link/x.json"), Some(Directory::Entries));
     assert_eq!(directory("link"), None);
     assert_eq!(directory("file.json"), None);
+    assert_eq!(directory("file.json/x"), None);
+    // The walk lists nothing that is not a file, directory or symlink.
+    assert_eq!(directory("fifo"), Some(Directory::Entries));
     assert_eq!(directory("absent"), None);
 }
 
 #[test]
-fn a_directory_that_cannot_be_listed_is_refused_and_one_that_can_holds_entries() {
+fn a_directory_on_the_way_that_cannot_be_listed_is_refused_and_one_that_can_holds_entries() {
     let scenario = Scenario::new();
     scenario
         .write("locked", Item::Locked)
+        .write("searchable/x.json", Item::File("{}"))
+        .write("searchable", Item::Searchable)
         .write("open/x.json", Item::File("{}"));
+    let repository = scenario.open();
+    let directory = |path: &str| repository.working_directory(path);
+    assert_eq!(directory("open").unwrap(), Some(Directory::Entries));
+    assert_eq!(directory("open/x.json").unwrap(), None);
     // A superuser lists any directory, so the case cannot be made as root.
     if std::fs::read_dir(scenario.workdir().join("locked")).is_ok() {
         return;
     }
-    let repository = scenario.open();
+    assert!(matches!(directory("locked"), Err(GitError::File { .. })));
+    // The walk cannot list the directory, so it never sees the file.
     assert!(matches!(
-        repository.working_directory("locked"),
+        directory("searchable/x.json"),
         Err(GitError::File { .. })
     ));
-    assert_eq!(
-        repository.working_directory("open").unwrap(),
-        Some(Directory::Entries)
-    );
+}
+
+#[test]
+fn a_path_the_walk_leaves_out_as_ignored_is_ignored_and_a_tracked_twin_is_seen() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit(&[("keep.log", ""), ("build/keep.txt", "")]);
+    scenario
+        .track(commit)
+        .write(".gitignore", Item::File("*.log\nbuild/\nskipped/\n"))
+        .write("keep.log", Item::File(""))
+        .write("new.log", Item::File(""))
+        .write("build/keep.txt", Item::File(""))
+        .write("build/new.txt", Item::File(""))
+        .write("skipped/x.json", Item::File("{}"))
+        .write("seen/x.json", Item::File("{}"));
+    let repository = scenario.open();
+    let walked: Vec<String> = repository
+        .walk(&Source::WorkingTree)
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect();
+    let directory = |path: &str| repository.working_directory(path).unwrap();
+    for path in ["new.log", "build/new.txt", "skipped/x.json", "skipped"] {
+        assert_eq!(directory(path), Some(Directory::Ignored), "{path}");
+        assert!(!walked.iter().any(|walked| walked == path), "{path}");
+    }
+    for path in ["keep.log", "build/keep.txt", "seen/x.json"] {
+        assert_eq!(directory(path), None, "{path}");
+        assert!(walked.iter().any(|walked| walked == path), "{path}");
+    }
+    assert_eq!(directory("build"), Some(Directory::Entries));
 }

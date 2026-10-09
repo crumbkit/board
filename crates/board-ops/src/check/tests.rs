@@ -171,6 +171,7 @@ fn a_file_whose_bytes_are_not_the_blob_the_walk_saw_is_unreadable_and_its_twin_i
         changed.detail.unwrap().reason,
         "the file changed or could not be read; run the command again"
     );
+    assert_eq!(changed.schema, None);
     assert_eq!(entry("tasks/b.json").status, Status::Ok);
 }
 
@@ -196,6 +197,7 @@ fn a_record_whose_schema_changed_during_the_check_is_unreadable_and_one_under_an
     };
     let task = entry("tasks/a.json");
     assert_eq!(task.status, Status::Degraded(Code::RepoUnreadable));
+    assert_eq!(task.schema.as_deref(), Some(schema));
     assert_eq!(entry("projects/p.json").status, Status::Ok);
 }
 

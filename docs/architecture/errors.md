@@ -57,6 +57,7 @@ the hint points at `sqlite_master`. Text output prints one
 `line <n>: <code>: <message>` line for each of a batch's `refusals` between the
 error and the hint, and the plugin's stderr after the hint.
 
-The check and put reports name a degraded entry's first failing pointer, why, and how
-many more (`pointer`, `reason`, `failures`); an unknown type's reason names the
-schema file its board lacks, which check also gives (`schema`).
+The check and put reports name a degraded entry's first failing pointer, why,
+and how many more (`pointer`, `reason`, `failures`). When a record's schema is
+missing, cannot be read or does not compile, a check entry names that schema
+file (`schema`), as a refused put does.

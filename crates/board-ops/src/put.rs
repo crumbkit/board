@@ -457,7 +457,7 @@ impl Board {
         let schema_path = record_type.schema_path();
         match self.repository().working_directory(&schema_path) {
             Ok(None) => {}
-            Ok(Some(Directory::Entries)) => return Err(SchemaFound::Missing),
+            Ok(Some(Directory::Entries | Directory::Ignored)) => return Err(SchemaFound::Missing),
             Ok(Some(Directory::Submodule)) | Err(_) => return Err(SchemaFound::Unreadable),
         }
         let schema_bytes = match self.repository().read_working(&schema_path, None) {

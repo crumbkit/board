@@ -3,7 +3,6 @@
 
 use std::cell::OnceCell;
 use std::collections::HashMap;
-use std::error::Error;
 use std::fs::{self, FileType, Metadata};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -107,28 +106,31 @@ impl Repository {
             })
     }
 
+    /// The ignore rules of the working tree, as git reads them for `index`.
+    fn excludes(&self, index: &gix::worktree::Index) -> Result<gix::AttributeStack<'_>, GitError> {
+        self.git()
+            .excludes(
+                index,
+                None,
+                ignore::Source::WorktreeThenIdMappingIfNotSkipped,
+            )
+            .map_err(|error| GitError::Unreadable {
+                repository: self.path().to_path_buf(),
+                source: Box::new(error),
+            })
+    }
+
     pub(crate) fn working_tree<'k>(
         &self,
         known: Option<Known<'k>>,
     ) -> Result<WorkingTree<'_, 'k>, GitError> {
-        let unreadable = |source: Box<dyn Error + Send + Sync>| GitError::Unreadable {
-            repository: self.path().to_path_buf(),
-            source,
-        };
         if self.git().workdir().is_none() {
             return Err(GitError::NoWorkingTree {
                 repository: self.path().to_path_buf(),
             });
         }
         let index = self.index()?;
-        let excludes = self
-            .git()
-            .excludes(
-                &index,
-                None,
-                ignore::Source::WorktreeThenIdMappingIfNotSkipped,
-            )
-            .map_err(|error| unreadable(error.into()))?;
+        let excludes = self.excludes(&index)?;
         Ok(WorkingTree {
             repository: self,
             index,
@@ -156,25 +158,19 @@ impl<'k> WorkingTree<'_, 'k> {
         relative: &Path,
         file_type: FileType,
     ) -> Option<(Kind<PathBuf>, Option<Stat>)> {
-        let key = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative));
-        let indexed = self.index.entry_by_path(key.as_ref());
-        let tracked = indexed.is_some()
-            || file_type.is_dir() && {
-                let mut prefix = BString::from(key.as_bytes());
-                prefix.push(b'/');
-                self.index.prefixed_entries(prefix.as_ref()).is_some()
-            };
-        if !tracked {
-            let mode = file_type.is_dir().then_some(Mode::DIR);
-            match self.excludes.at_path(relative, mode) {
-                Ok(platform) if platform.is_excluded() => return None,
-                Ok(_) => {}
-                Err(_) => return Some((Kind::Unreadable, None)),
-            }
+        match ignored(
+            &self.index,
+            &mut self.excludes,
+            relative,
+            file_type.is_dir(),
+        ) {
+            Ok(true) => return None,
+            Ok(false) => {}
+            Err(_) => return Some((Kind::Unreadable, None)),
         }
         let absolute = self.repository.path().join(relative);
         if file_type.is_dir() {
-            let kind = if submodule(indexed, &absolute) {
+            let kind = if submodule(&self.index, relative, &absolute) {
                 Kind::Submodule
             } else {
                 Kind::Directory(relative.to_path_buf())
@@ -404,9 +400,38 @@ fn unix_stat(_metadata: &Metadata) -> (i64, u64, u32) {
     (0, 0, 0)
 }
 
-/// Whether the directory at `absolute` is a submodule: the index holds a
-/// gitlink at its path, or it holds `.git`.
-fn submodule(indexed: Option<&gix::index::Entry>, absolute: &Path) -> bool {
+/// `relative` as a key into the index.
+fn key(relative: &Path) -> std::borrow::Cow<'_, gix::bstr::BStr> {
+    gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative))
+}
+
+/// Whether the walk leaves out `relative`, a directory when `is_dir`: git
+/// sees a tracked path whatever the ignore rules say, and an untracked one
+/// unless they ignore it.
+fn ignored(
+    index: &gix::worktree::Index,
+    excludes: &mut gix::AttributeStack<'_>,
+    relative: &Path,
+    is_dir: bool,
+) -> io::Result<bool> {
+    let key = key(relative);
+    let tracked = index.entry_by_path(key.as_ref()).is_some()
+        || is_dir && {
+            let mut prefix = BString::from(key.as_bytes());
+            prefix.push(b'/');
+            index.prefixed_entries(prefix.as_ref()).is_some()
+        };
+    if tracked {
+        return Ok(false);
+    }
+    let mode = is_dir.then_some(Mode::DIR);
+    Ok(excludes.at_path(relative, mode)?.is_excluded())
+}
+
+/// Whether the directory `relative`, at `absolute`, is a submodule: the
+/// index holds a gitlink at its path, or it holds `.git`.
+fn submodule(index: &gix::worktree::Index, relative: &Path, absolute: &Path) -> bool {
+    let indexed = index.entry_by_path(key(relative).as_ref());
     indexed.is_some_and(|entry| entry.mode == Mode::COMMIT) || absolute.join(".git").exists()
 }
 
@@ -417,6 +442,9 @@ pub enum Directory {
     Submodule,
     /// The walk lists nothing at this path.
     Entries,
+    /// The walk leaves out this path, or a directory above it, because it
+    /// is untracked and ignored.
+    Ignored,
 }
 
 /// A working-tree file as [`Repository::read_working`] finds it.
@@ -480,40 +508,47 @@ impl Repository {
         }
     }
 
-    /// The directory at `relative` by the walk's rule: a submodule when it
-    /// or a directory above it is one, else a directory of entries, which
-    /// includes a path beneath a symlink. `None` when no directory is there
-    /// and no submodule or symlink is above it. A directory that cannot be
-    /// listed is [`GitError::File`].
+    /// What the walk finds on the way to `relative`, by its rules: left out
+    /// when it or a directory above it is untracked and ignored, a
+    /// submodule when it or a directory above it is one, else a directory
+    /// of entries, which includes a path beneath a symlink and anything the
+    /// walk does not list, such as a FIFO. `None` when a file or symlink is
+    /// there, or nothing is, or a file is on the way. A directory on the
+    /// way that cannot be listed, or whose ignore rules cannot be read, is
+    /// [`GitError::File`].
     pub fn working_directory(
         &self,
         relative: impl AsRef<Path>,
     ) -> Result<Option<Directory>, GitError> {
         let index = self.index()?;
-        let relative = relative.as_ref();
-        let mut components = relative.components().peekable();
+        let mut excludes = self.excludes(&index)?;
+        let mut components = relative.as_ref().components().peekable();
         let mut at = PathBuf::new();
         while let Some(component) = components.next() {
             at.push(component);
             let absolute = self.path().join(&at);
-            match fs::symlink_metadata(&absolute) {
-                // The walk lists a symlink and does not follow it.
-                Ok(metadata) if metadata.is_symlink() && components.peek().is_some() => {
-                    return Ok(Some(Directory::Entries));
-                }
-                Ok(metadata) if metadata.is_dir() => {}
-                _ => return Ok(None),
+            let Ok(metadata) = fs::symlink_metadata(&absolute) else {
+                return Ok(None);
+            };
+            let unreadable = |source| GitError::File {
+                path: absolute.clone(),
+                source,
+            };
+            if ignored(&index, &mut excludes, &at, metadata.is_dir()).map_err(unreadable)? {
+                return Ok(Some(Directory::Ignored));
             }
-            let key = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(&at));
-            if submodule(index.entry_by_path(key.as_ref()), &absolute) {
+            if !metadata.is_dir() {
+                // The walk lists only files and symlinks, and does not
+                // follow a symlink.
+                let listed =
+                    metadata.is_file() || metadata.is_symlink() && components.peek().is_none();
+                return Ok((!listed).then_some(Directory::Entries));
+            }
+            if submodule(&index, &at, &absolute) {
                 return Ok(Some(Directory::Submodule));
             }
+            fs::read_dir(&absolute).map_err(unreadable)?;
         }
-        let absolute = self.path().join(relative);
-        fs::read_dir(&absolute).map_err(|source| GitError::File {
-            path: absolute,
-            source,
-        })?;
         Ok(Some(Directory::Entries))
     }
 

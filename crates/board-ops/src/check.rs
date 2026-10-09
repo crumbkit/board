@@ -26,7 +26,8 @@ pub struct Checked {
     /// Where a degraded entry fails and why, when Board knows.
     pub detail: Option<Detail>,
     pub change: Change,
-    /// The schema file a record of an unknown type needs, from its source's root.
+    /// The schema file of a record whose schema is missing, cannot be read
+    /// or does not compile, from its source's root.
     pub schema: Option<String>,
 }
 

@@ -30,7 +30,7 @@ fn decided(scenario: &Scenario, index: Index) -> CheckReport {
 fn viewed(view: &View) -> Vec<Checked> {
     let rows = view
         .query(
-            "SELECT path, logical, kind, code, change, status, source, type FROM entries ORDER BY source, path",
+            "SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path",
             10_000,
         )
         .unwrap();
@@ -61,12 +61,7 @@ fn viewed(view: &View) -> Vec<Checked> {
                 } else {
                     Change::Uncommitted
                 },
-                schema: text(&row[7])
-                    .filter(|record_type| {
-                        // Board's own types never have a schema file.
-                        code == Some(Code::RecordUnknownType) && !record_type.starts_with("board/")
-                    })
-                    .map(|record_type| format!(".board/types/{record_type}.schema.json")),
+                schema: None,
             }
         })
         .collect()
@@ -141,11 +136,12 @@ fn the_blobs_view_shows_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
 }
 
 /// Entries in the order the view's key gives them, by source and then path,
-/// without the detail the view does not show.
+/// without the detail and schema file the view does not show.
 fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
     entries.sort_by_key(|entry| (board_index::source_name(&entry.source), entry.path.clone()));
     for entry in &mut entries {
         entry.detail = None;
+        entry.schema = None;
     }
     entries
 }

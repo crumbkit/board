@@ -223,13 +223,13 @@ impl Decided {
         let wanted = fact.and_then(schema_type);
         let schema =
             wanted.map(|record_type| (record_type, decide.found(&record_type.schema_path())));
-        let failure = match entry.status {
-            Status::Degraded(code) => Some((code, None)),
+        let judged = match entry.status {
+            Status::Degraded(code) => Ok(Some((code, None))),
             // Only a path too long under its mount point fails here.
-            Status::Ok if logical.is_none() => Some((Code::PathMalformed, None)),
+            Status::Ok if logical.is_none() => Ok(Some((Code::PathMalformed, None))),
             Status::Ok => {
                 let mut reached = Vec::new();
-                let failure = decide.code(entry, &mut reached, role, fact, schema)?;
+                let judged = decide.code(entry, &mut reached, role, fact, schema)?;
                 self.references
                     .extend(reached.into_iter().map(|reached| Referenced {
                         source: source.clone(),
@@ -237,7 +237,19 @@ impl Decided {
                         logical: logical.clone(),
                         reached,
                     }));
-                failure
+                judged
+            }
+        };
+        let (failure, named) = match judged {
+            Ok(failure) => (failure, None),
+            Err(fault) => {
+                let fields = fault.fields();
+                let detail = Detail {
+                    pointer: fields.pointer,
+                    reason: fault.to_string(),
+                    failures: 1,
+                };
+                (Some((fault.code(), Some(detail))), fields.schema)
             }
         };
         let (code, detail) = failure.map_or((None, None), |(code, detail)| (Some(code), detail));
@@ -261,13 +273,14 @@ impl Decided {
             status: code.map_or(Status::Ok, Status::Degraded),
             detail,
             change,
-            schema: wanted
-                .filter(|_| code == Some(Code::RecordUnknownType))
-                .map(RecordType::schema_path),
+            schema: named,
         });
         Ok(())
     }
 }
+
+/// An entry's failure, or the fault of a record with no usable schema.
+type Judged = Result<Option<Failure>, Fault>;
 
 /// A record's type, and the blob of the usable schema at the path it names
 /// from its source's root, or what is there instead.
@@ -299,9 +312,9 @@ impl Decide<'_> {
         role: Option<Role>,
         fact: Option<&Indexed>,
         schema: Wanted<'_>,
-    ) -> Result<Option<Failure>, IndexError> {
+    ) -> Result<Judged, IndexError> {
         if role.is_none() {
-            return Ok(None);
+            return Ok(Ok(None));
         }
         // A file that changed after the walk, was removed or could not be
         // read has no fact.
@@ -311,22 +324,22 @@ impl Decide<'_> {
                 reason: format!("the file {READ_AGAIN}"),
                 failures: 1,
             };
-            return Ok(Some((Code::RepoUnreadable, Some(detail))));
+            return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
         };
         if let Some(code) = fact.fact.code {
-            return Ok(Some((code, None)));
+            return Ok(Ok(Some((code, None))));
         }
         match fact.fact.kind {
-            Kind::Pointer => Ok(entry
+            Kind::Pointer => Ok(Ok(entry
                 .logical
                 .as_ref()
                 .and_then(|logical| self.resolve(logical).err())
                 .map(|error| {
                     let (code, detail) = unresolved(&error);
                     (code, Some(detail))
-                })),
+                }))),
             Kind::Record => self.record(fact, schema, reached),
-            Kind::Schema | Kind::Json | Kind::File => Ok(None),
+            Kind::Schema | Kind::Json | Kind::File => Ok(Ok(None)),
         }
     }
 
@@ -336,23 +349,17 @@ impl Decide<'_> {
         record: &Indexed,
         wanted: Wanted<'_>,
         reached: &mut Vec<Reached>,
-    ) -> Result<Option<Failure>, IndexError> {
+    ) -> Result<Judged, IndexError> {
         let Some((record_type, schema)) = wanted else {
-            return Ok(None);
+            return Ok(Ok(None));
         };
         let schema = match schema {
             Ok(schema) => schema,
             Err(found) => {
-                let fault = Fault::NoSchema {
+                return Ok(Err(Fault::NoSchema {
                     record_type: record_type.clone(),
                     found,
-                };
-                let detail = Detail {
-                    pointer: fault.fields().pointer,
-                    reason: fault.to_string(),
-                    failures: 1,
-                };
-                return Ok(Some((fault.code(), Some(detail))));
+                }));
             }
         };
         let references = match self.writer.validation(record.blob, schema)? {
@@ -362,7 +369,7 @@ impl Decide<'_> {
                     reason: format!("the record or its schema {READ_AGAIN}"),
                     failures: 1,
                 };
-                return Ok(Some((Code::RepoUnreadable, Some(detail))));
+                return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
             }
             Some(ValidationFact::Invalid {
                 code,
@@ -376,7 +383,7 @@ impl Decide<'_> {
                     reason,
                     failures,
                 };
-                return Ok(Some((code, Some(detail))));
+                return Ok(Ok(Some((code, Some(detail)))));
             }
             Some(ValidationFact::Valid(references)) => references,
         };
@@ -398,7 +405,7 @@ impl Decide<'_> {
                 code: failure.map(|(code, _)| code),
             });
         }
-        Ok(tally.first().map(|(code, detail)| (code, Some(detail))))
+        Ok(Ok(tally.first().map(|(code, detail)| (code, Some(detail)))))
     }
 
     /// The blob of the usable schema at `path`, or what is there instead:

@@ -94,6 +94,14 @@ pub(crate) fn unreadable(scenario: &Scenario, path: &str, text: &str) -> bool {
     std::fs::File::open(scenario.workdir().join(path)).is_err()
 }
 
+/// Writes `item`, a directory the walk's user cannot list, at `path`, and
+/// says whether Board cannot list it. A superuser lists any directory, so
+/// there the fixture cannot stage the failure.
+pub(crate) fn locked(scenario: &Scenario, path: &str, item: Item<'_>) -> bool {
+    scenario.write(path, item);
+    std::fs::read_dir(scenario.workdir().join(path)).is_err()
+}
+
 pub(crate) fn task(fields: &str) -> String {
     format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#)
 }
@@ -390,6 +398,48 @@ fn detail(scenario: &Scenario, path: &str) -> Option<(Option<String>, String, u6
     entry
         .detail
         .map(|detail| (detail.pointer, detail.reason, detail.failures))
+}
+
+/// The schema file `check` names for the entry at `path`.
+fn named(scenario: &Scenario, path: &str) -> Option<String> {
+    check(scenario)
+        .entries
+        .into_iter()
+        .find(|entry| entry.path == path)
+        .unwrap_or_else(|| panic!("{path} is not an entry"))
+        .schema
+}
+
+#[test]
+fn check_names_the_schema_of_a_record_whose_schema_is_missing_unusable_or_unreadable_and_not_of_one_whose_schema_is_usable()
+ {
+    let usable = board();
+    usable
+        .write(NOTE_SCHEMA_PATH, Item::File(PROJECT_SCHEMA))
+        .write("n.json", Item::File(NOTE));
+    assert_eq!(status(&usable, "n.json"), Status::Ok);
+    assert_eq!(named(&usable, "n.json"), None);
+
+    let named_as = |scenario: &Scenario, code: Code| {
+        assert_eq!(status(scenario, "n.json"), Status::Degraded(code));
+        assert_eq!(named(scenario, "n.json").as_deref(), Some(NOTE_SCHEMA_PATH));
+    };
+    let missing = board();
+    missing.write("n.json", Item::File(NOTE));
+    named_as(&missing, Code::RecordUnknownType);
+
+    let unusable = board();
+    unusable
+        .write(NOTE_SCHEMA_PATH, Item::File(r#"{"type": 5}"#))
+        .write("n.json", Item::File(NOTE));
+    named_as(&unusable, Code::SchemaInvalid);
+
+    let unreadable_schema = board();
+    unreadable_schema.write("n.json", Item::File(NOTE));
+    if !unreadable(&unreadable_schema, NOTE_SCHEMA_PATH, PROJECT_SCHEMA) {
+        return;
+    }
+    named_as(&unreadable_schema, Code::RepoUnreadable);
 }
 
 #[test]

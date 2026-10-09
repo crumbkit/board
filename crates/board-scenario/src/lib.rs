@@ -54,6 +54,9 @@ pub enum Item<'a> {
     /// 000); working tree only. The scenario unlocks it when dropped, so its
     /// temporary directory can be removed.
     Locked,
+    /// A directory, made if absent, that the walk's user can pass through
+    /// but not list (mode 111); working tree only. Unlocked like `Locked`.
+    Searchable,
     /// A file anyone may run (mode 755), such as a fixture plugin; working
     /// tree only.
     Executable(&'a str),
@@ -72,7 +75,8 @@ pub struct Scenario {
 
 impl Drop for Scenario {
     fn drop(&mut self) {
-        for path in self.locked.take() {
+        // An inner directory locked before its parent is unlocked after it.
+        for path in self.locked.take().into_iter().rev() {
             // A directory deleted since it was locked has nothing to unlock.
             let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o755));
         }
@@ -104,6 +108,27 @@ impl Scenario {
     /// The working directory.
     pub fn workdir(&self) -> &Path {
         self.git.workdir().unwrap()
+    }
+
+    /// Runs `during` while a writer waits to open the FIFO at the
+    /// `/`-separated `path` and close it at once, so code that opens the FIFO
+    /// to read it reads an empty file instead of waiting forever.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the scenario builder is the one writer of test files, and opens a FIFO's write end"
+    )]
+    pub fn feeding<T>(&self, path: &str, during: impl FnOnce() -> T) -> T {
+        let path = self.git.workdir().unwrap().join(path);
+        std::thread::scope(|scope| {
+            let writer = scope.spawn(|| fs::File::options().write(true).open(&path).map(drop));
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(during));
+            // Opening both ends does not wait on Linux or macOS, and lets a
+            // writer that no reader met finish.
+            let both = fs::File::options().read(true).write(true).open(&path);
+            writer.join().unwrap().unwrap();
+            drop(both);
+            result.unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        })
     }
 
     /// Writes `item` at the `/`-separated `path` in the working tree, creating
@@ -161,9 +186,14 @@ impl Scenario {
                 backdate(&path);
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
             }
-            Item::Locked => {
+            Item::Locked | Item::Searchable => {
+                let mode = if matches!(item, Item::Locked) {
+                    0o000
+                } else {
+                    0o111
+                };
                 fs::create_dir_all(&path).unwrap();
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
                 self.locked.borrow_mut().push(path);
             }
             Item::Executable(text) => {
@@ -223,7 +253,9 @@ impl Scenario {
                 ),
                 Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
-                Item::Locked => panic!("a commit cannot hold a locked directory"),
+                Item::Locked | Item::Searchable => {
+                    panic!("a commit cannot hold a locked directory")
+                }
                 Item::Executable(_) => panic!("fixture plugins live outside commits"),
                 Item::Fifo => panic!("git cannot hold a FIFO"),
                 Item::Deleted | Item::Appended(_) => {
