@@ -260,6 +260,25 @@ proptest! {
 }
 
 #[test]
+fn a_warm_index_shows_no_body_for_a_blob_that_was_a_record_and_is_now_a_file_without_a_logical_path()
+ {
+    let mut task_file = [None; 9];
+    task_file[7] = Some(2);
+    let mut task_project = [None; 9];
+    task_project[2] = Some(1);
+    warm_decides_as_cold(&task_file, &task_project, false).unwrap();
+}
+
+#[test]
+fn a_warm_index_shows_no_body_for_a_blob_that_was_a_record_and_is_now_a_schema() {
+    let mut task_schema = [None; 9];
+    task_schema[0] = Some(3);
+    let mut task_project = [None; 9];
+    task_project[2] = Some(1);
+    warm_decides_as_cold(&task_schema, &task_project, false).unwrap();
+}
+
+#[test]
 fn a_warm_index_lists_no_tree_again_when_heads_root_tree_is_empty() {
     let nothing = [None; 8];
     warm_decides_as_cold(&nothing, &nothing, true).unwrap();

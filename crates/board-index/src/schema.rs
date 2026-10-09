@@ -126,9 +126,11 @@ UNION SELECT blob FROM main.worktree WHERE blob IS NOT NULL;
 /// fact table filtered to what the current entries reach. All live on the
 /// connection that made them, so nothing decided per run is stored. An
 /// unqualified name finds a temporary view before a table, so a query sees
-/// the same rows warm as cold; `main.<table>` is the whole cache, which
-/// keeps facts about content no longer in the tree so branches share them,
-/// until a prune deletes what nothing current reaches.
+/// the same rows warm as cold. A body shows only while an entry holds its
+/// blob as a record: the cache keeps it after the same bytes move to a path
+/// where they are not one. `main.<table>` is the whole cache, which keeps
+/// facts about content no longer in the tree so branches share them, until a
+/// prune deletes what nothing current reaches.
 pub(crate) const RESOLVED: &str = "
 CREATE TEMP TABLE IF NOT EXISTS resolved (
     source TEXT NOT NULL,
@@ -164,7 +166,8 @@ CREATE TEMP VIEW IF NOT EXISTS blobs AS
 SELECT * FROM main.blobs
 WHERE (blob, role) IN (SELECT blob, role FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS bodies AS
-SELECT * FROM main.bodies WHERE blob IN (SELECT blob FROM temp.resolved);
+SELECT * FROM main.bodies
+WHERE blob IN (SELECT blob FROM temp.resolved WHERE kind = 'record');
 CREATE TEMP VIEW IF NOT EXISTS records AS
 SELECT e.source, e.path, e.logical, e.blob, e.type, e.status, e.code, b.body
 FROM temp.entries AS e

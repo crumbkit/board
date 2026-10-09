@@ -42,6 +42,8 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
                     r#""see": {"type": "string"}"#,
                 ),
                 r#"{"type": 7}"#.to_owned(),
+                // The bytes of a task, which `projects/p.json` can hold.
+                task(""),
             ],
         ),
         (
@@ -77,8 +79,13 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             vec![link("/projects/p"), link("/gone"), link("/links/l")],
         ),
         ("notes.md", vec!["a".to_owned(), "b".to_owned()]),
-        // A name with no logical path.
-        ("tasks/.json", vec!["{}".to_owned(), "[]".to_owned()]),
+        // A name with no logical path. Its last content is the same bytes
+        // as a task `projects/p.json` can hold, so one blob can be a record
+        // at one path and a plain file at another.
+        (
+            "tasks/.json",
+            vec!["{}".to_owned(), "[]".to_owned(), task("")],
+        ),
         (
             "vendor.json",
             vec![
