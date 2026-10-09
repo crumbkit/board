@@ -1,4 +1,4 @@
-"""The `lr/task/v1` schema the plugin ships: what `board check` admits and refuses."""
+"""The `tasks/task/v1` schema the plugin ships: what `board check` admits and refuses."""
 
 import json
 
@@ -28,8 +28,8 @@ def test_each_of_the_four_statuses_is_admitted_and_any_other_is_refused(board: B
 
 def test_a_task_needs_a_title_and_a_status(board: Board) -> None:
     board.write("tasks/whole.json", task("Whole"))
-    board.write("tasks/untitled.json", '{"$type": "lr/task/v1", "status": "open"}')
-    board.write("tasks/statusless.json", '{"$type": "lr/task/v1", "title": "Statusless"}')
+    board.write("tasks/untitled.json", '{"$type": "tasks/task/v1", "status": "open"}')
+    board.write("tasks/statusless.json", '{"$type": "tasks/task/v1", "title": "Statusless"}')
     assert checked(board) == {
         "/tasks/whole": None,
         "/tasks/untitled": "board::record::invalid",

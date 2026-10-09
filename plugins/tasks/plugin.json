@@ -184,7 +184,7 @@
   ],
   "description": "Tasks, their due dates and what each waits on.",
   "extract": [
-    "lr/task/v1"
+    "tasks/task/v1"
   ],
   "metadata": {
     "area": "planning"
@@ -198,6 +198,9 @@
     "python",
     "-m",
     "board_tasks"
+  ],
+  "types": [
+    "tasks/task/v1"
   ],
   "version": "0.1.0"
 }

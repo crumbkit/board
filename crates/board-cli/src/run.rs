@@ -38,8 +38,8 @@ Start here:
   board -C ~/notes check            check the board at ~/notes from anywhere
 
 A path is logical: it starts with / and leaves out .json.
-A record is a JSON object whose `$type`, such as lr/task/v1, names its schema,
-here .board/types/lr/task/v1.schema.json.
+A record is a JSON object whose `$type`, such as tasks/task/v1, names its
+schema, here .board/types/tasks/task/v1.schema.json.
 Run `board <command> --help` for a command's arguments and examples.
 
 Tab completion of commands, flags and board paths: in fish, add
@@ -57,7 +57,7 @@ Tables and views:
 
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
-  board query \"SELECT logical FROM records WHERE type = 'lr/task/v1'\" --limit 20
+  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v1'\" --limit 20
   board query 'SELECT name, sql FROM sqlite_master'";
 
 #[derive(Debug, Parser)]

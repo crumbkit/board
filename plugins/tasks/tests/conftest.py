@@ -13,7 +13,7 @@ import pytest
 PLUGIN = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REPOSITORY = PLUGIN.parents[1]
-SCHEMA = PLUGIN / "types" / "lr" / "task" / "v1.schema.json"
+SCHEMA = PLUGIN / "types" / "tasks" / "task" / "v1.schema.json"
 
 
 def board_binary() -> Path:
@@ -36,8 +36,9 @@ class Board:
         target.write_text(text)
 
     def enable(self, *plugins: str) -> None:
-        """Make `.board/board.json` enable `plugins`."""
-        self.write(".board/board.json", json.dumps({"$type": "board/config/v1", "plugins": list(plugins)}))
+        """Make `.board/board.json` enable `plugins`, without committing a put."""
+        config = {"$type": "board/config/v1", "commit_on_put": False, "plugins": list(plugins)}
+        self.write(".board/board.json", json.dumps(config))
 
     def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         """Run `board` in the board's root, with only the variables a user's shell would pass it."""
@@ -69,22 +70,23 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board with the task schema the plugin ships, enabling tasks and digest, which are installed."""
+    """A board enabling digest and tasks, which `board plugin enable` gave the task schema."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
-    fixture.enable("tasks", "digest")
-    fixture.write(".board/types/lr/task/v1.schema.json", SCHEMA.read_text())
+    fixture.enable("digest")
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
     (plugins / "tasks").symlink_to(PLUGIN)
     (plugins / "digest").symlink_to(FIXTURES / "digest")
+    enabled = fixture.run("plugin", "enable", "tasks")
+    assert enabled.returncode == 0, enabled.stderr
     return fixture
 
 
 def task(title: str, status: str = "open", due: str | None = None, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """An `lr/task/v1` record."""
-    record: dict[str, Any] = {"$type": "lr/task/v1", "title": title, "status": status, **fields}
+    """A `tasks/task/v1` record."""
+    record: dict[str, Any] = {"$type": "tasks/task/v1", "title": title, "status": status, **fields}
     if due is not None:
         record["due"] = due
     return json.dumps(record)

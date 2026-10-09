@@ -16,6 +16,7 @@ def manifest() -> dict[str, JsonValue]:
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
         "extract": [TASK_TYPE],
+        "types": [TASK_TYPE],
         "capabilities": [
             {
                 "name": "due",
@@ -39,7 +40,7 @@ def manifest() -> dict[str, JsonValue]:
 
 
 def schema() -> dict[str, JsonValue]:
-    """The schema of `lr/task/v1`, as the plugin ships it."""
+    """The schema of `tasks/task/v1`, as the plugin ships it."""
     return TaskRecord.model_json_schema(by_alias=True)
 
 

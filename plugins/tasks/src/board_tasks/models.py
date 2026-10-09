@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-TASK_TYPE = "lr/task/v1"
+TASK_TYPE = "tasks/task/v1"
 
 # The statuses of a task that is not finished yet; `done` and `dropped` are finished.
 UNFINISHED = ("open", "waiting")
@@ -37,7 +37,7 @@ def shipped(schema: JsonDict) -> None:
 
 
 class TaskRecord(BaseModel):
-    """`lr/task/v1`: something to do, its status, and optionally when it is due and which tasks it waits on.
+    """`tasks/task/v1`: something to do, its status, and optionally when it is due and which tasks it waits on.
 
     `notes` references a Markdown file holding the task's prose, such as its
     phase, pull request, plan and review. `after` references the tasks this
@@ -49,7 +49,7 @@ class TaskRecord(BaseModel):
     # of its own (STANDARDS.md 3), so the plugin reads a task ignoring the rest.
     model_config = ConfigDict(extra="ignore", frozen=True, json_schema_extra=shipped)
 
-    tag: Literal["lr/task/v1"] = Field(alias="$type")
+    tag: Literal["tasks/task/v1"] = Field(alias="$type")
     title: str
     status: Literal["open", "waiting", "done", "dropped"]
     due: datetime.date | SkipJsonSchema[None] = None

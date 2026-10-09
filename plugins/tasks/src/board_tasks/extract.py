@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 def extract(request: ExtractRequest) -> list[str]:
     """Replace the row of each record's blob, and name every blob handled.
 
-    A board's own schema for `lr/task/v1` may admit a record this plugin
+    A board's own schema for `tasks/task/v1` may admit a record this plugin
     cannot read. That record gets no row and is still handled, so it is not
     sent again; one line on stderr says why.
     """

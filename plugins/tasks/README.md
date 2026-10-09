@@ -1,6 +1,6 @@
 # tasks
 
-A Board plugin for `lr/task/v1` records. It extracts each task's title, status
+A Board plugin for `tasks/task/v1` records. It extracts each task's title, status
 and due date into its database, and offers two capabilities: `due` lists the
 unfinished tasks due before a date, and `next` lists every unfinished task in
 the order to work on them, marking each one that is blocked.
@@ -10,18 +10,16 @@ Install it from this checkout:
     uv sync --frozen --no-dev
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/tasks"
 
-Then enable it in a board's `.board/board.json` with `"plugins": ["tasks"]`.
+Then run `board plugin enable tasks` in a board. The manifest lists
+`tasks/task/v1` in `types`, so this writes the schema the plugin ships at
+`types/tasks/task/v1.schema.json` to `.board/types/tasks/task/v1.schema.json`,
+and names the plugin in `.board/board.json`.
 
 ## The task record
 
-The schema is at `types/lr/task/v1.schema.json`. A board needs a copy at
-`.board/types/lr/task/v1.schema.json`. The manifest does not list it in
-`types` yet, because Board refuses a plugin that ships a type outside its own
-namespace, so `board plugin enable tasks` does not write it. Copy it by hand.
-
 ```json
 {
-  "$type": "lr/task/v1",
+  "$type": "tasks/task/v1",
   "title": "Write the plan",
   "status": "open",
   "due": "2026-10-20",
@@ -35,7 +33,7 @@ namespace, so `board plugin enable tasks` does not write it. Copy it by hand.
 - `due` is a date, `YYYY-MM-DD`.
 - `notes` references a file, usually Markdown, that holds the task's prose:
   its phase, pull request, plan and review.
-- `after` lists references to the `lr/task/v1` records this task waits on.
+- `after` lists references to the `tasks/task/v1` records this task waits on.
   `board check` reports one that reaches nothing as `board::ref::dangling`, and
   one that reaches anything but a task as `board::ref::wrong_type`.
 

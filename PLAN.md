@@ -19,9 +19,8 @@ are the owner's:
 2. Time the export with `cargo xtask bench --board <export>`. `cargo xtask
    bench` fails above three times a budget in docs/architecture.md. The
    targets there are speeds to aim for, and nothing enforces them.
-3. Choose a real task type, enable `tasks` and use Board daily. The export
-   writes `legacy/*` records, and `tasks` reads `lr/task/v1`, whose schema
-   #116 (open) adds to the plugin.
+3. Enable `tasks` and use Board daily. The export writes `legacy/*` records,
+   and `tasks` reads `tasks/task/v1`.
 4. Route what daily use finds to builders as small fixes.
 
 After the switch, the export tool and viitta's

@@ -1,9 +1,9 @@
 {
   "additionalProperties": false,
-  "description": "`lr/task/v1`: something to do, its status, and optionally when it is due and which tasks it waits on.\n\n`notes` references a Markdown file holding the task's prose, such as its\nphase, pull request, plan and review. `after` references the tasks this\none waits on. A project is a directory, `/projects/<name>/`, so a task\nnames none, and git history holds a task's earlier states.",
+  "description": "`tasks/task/v1`: something to do, its status, and optionally when it is due and which tasks it waits on.\n\n`notes` references a Markdown file holding the task's prose, such as its\nphase, pull request, plan and review. `after` references the tasks this\none waits on. A project is a directory, `/projects/<name>/`, so a task\nnames none, and git history holds a task's earlier states.",
   "properties": {
     "$type": {
-      "const": "lr/task/v1",
+      "const": "tasks/task/v1",
       "title": "$Type",
       "type": "string"
     },
@@ -11,7 +11,7 @@
       "items": {
         "format": "board-ref",
         "type": "string",
-        "x-board-type": "lr/task/v1"
+        "x-board-type": "tasks/task/v1"
       },
       "title": "After",
       "type": "array"

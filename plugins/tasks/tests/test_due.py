@@ -86,9 +86,9 @@ def tasks_table(board: Board) -> tuple[list[list[object]], list[object]]:
 
 
 def test_a_record_the_boards_schema_admits_but_the_plugin_cannot_read_gets_no_row(board: Board) -> None:
-    board.write(".board/types/lr/task/v1.schema.json", '{"type": "object"}')
+    board.write(".board/types/tasks/task/v1.schema.json", '{"type": "object"}')
     board.write("tasks/good.json", task("Good"))
-    board.write("tasks/misfit.json", '{"$type": "lr/task/v1", "title": "Misfit", "status": "someday"}')
+    board.write("tasks/misfit.json", '{"$type": "tasks/task/v1", "title": "Misfit", "status": "someday"}')
     assert tasks_table(board) == ([["Good"]], [])
     assert tasks_table(board) == ([["Good"]], [])
 
@@ -96,13 +96,13 @@ def test_a_record_the_boards_schema_admits_but_the_plugin_cannot_read_gets_no_ro
 def test_a_record_with_a_field_the_shipped_schema_refuses_gets_a_row_when_the_boards_schema_admits_it(
     board: Board,
 ) -> None:
-    board.write(".board/types/lr/task/v1.schema.json", '{"type": "object"}')
+    board.write(".board/types/tasks/task/v1.schema.json", '{"type": "object"}')
     board.write("tasks/with-project.json", task("With project", project="board"))
     assert tasks_table(board) == ([["With project"]], [])
 
 
 def test_two_records_the_plugin_reads_get_two_rows(board: Board) -> None:
-    board.write(".board/types/lr/task/v1.schema.json", '{"type": "object"}')
+    board.write(".board/types/tasks/task/v1.schema.json", '{"type": "object"}')
     board.write("tasks/good.json", task("Good"))
     board.write("tasks/other.json", task("Other", status="done"))
     assert tasks_table(board) == ([["Good"], ["Other"]], [])

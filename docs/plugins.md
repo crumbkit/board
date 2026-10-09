@@ -35,8 +35,8 @@ nothing.
   "description": "Open tasks and their due dates.",
   "run": ["uv", "run", "--frozen", "python", "-m", "board_tasks"],
   "metadata": { "area": "planning" },
-  "extract": ["lr/task/v1"],
-  "types": ["tasks/note/v1"],
+  "extract": ["tasks/task/v1"],
+  "types": ["tasks/task/v1"],
   "capabilities": [
     {
       "name": "due",
@@ -161,7 +161,7 @@ sends batches, in display path order, of at most 1,000 records or 16 MiB:
 {
   "$type": "board/extract/v1",
   "records": [
-    { "blob": "9c1e…", "path": "/tasks/write-plan", "type": "lr/task/v1", "record": {} }
+    { "blob": "9c1e…", "path": "/tasks/write-plan", "type": "tasks/task/v1", "record": {} }
   ],
   "board": { "root": "…", "database": "…" }
 }
@@ -223,8 +223,8 @@ generate. Its pytest suite drives the real `board` binary against fixture
 boards. CI runs each plugin's gates in its own job.
 
 There are two plugins. `controls` checks requirements on a board's files, as
-plugins/controls/README.md describes. `tasks` keeps the schema of
-`lr/task/v1`: a `title`, a `status` of `open`, `waiting`, `done` or `dropped`,
+plugins/controls/README.md describes. `tasks` ships the schema of
+`tasks/task/v1`: a `title`, a `status` of `open`, `waiting`, `done` or `dropped`,
 an optional `due` date, an optional `notes` reference to a file, and an
 `after` list of references to the tasks it waits on. It extracts each task's
 title, status and due date into a `tasks` table keyed by blob. Its `due`
@@ -234,6 +234,4 @@ and `waiting` tasks by due date, undated ones last, reading the `records` view;
 a task is blocked while a task in its `after`, resolved through `board refs`,
 is not `done`. `next` shows at most 100 tasks, fewer if its `limit` says so,
 with `total` and `truncated`; the cap keeps its `board refs` calls inside a
-call's 30 seconds. The manifest cannot list `lr/task/v1` in `types`,
-because that type is outside the plugin's namespace, so `plugin enable` does
-not write it; plugins/tasks/README.md says how to install it.
+call's 30 seconds.

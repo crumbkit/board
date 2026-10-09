@@ -72,9 +72,9 @@ def test_a_reference_through_a_link_reaches_the_task_it_names(board: Board) -> N
 
 def test_a_done_task_in_a_commit_mounted_twice_unblocks_through_either_mount(board: Board, tmp_path: Path) -> None:
     other = tmp_path / "other"
-    (other / ".board" / "types" / "lr" / "task").mkdir(parents=True)
+    (other / ".board" / "types" / "tasks" / "task").mkdir(parents=True)
     (other / ".board" / "board.json").write_text('{"$type": "board/config/v1"}')
-    (other / ".board" / "types" / "lr" / "task" / "v1.schema.json").write_text(SCHEMA.read_text())
+    (other / ".board" / "types" / "tasks" / "task" / "v1.schema.json").write_text(SCHEMA.read_text())
     (other / "tasks").mkdir()
     (other / "tasks" / "finished.json").write_text(task("Finished", status="done"))
     (other / "tasks" / "pending.json").write_text(task("Pending"))

@@ -32,7 +32,7 @@ def extract_request(database: Path, *records: tuple[str, str]) -> dict[str, Any]
     return {
         "$type": "board/extract/v1",
         "records": [
-            {"blob": blob, "path": f"/tasks/{blob}", "type": "lr/task/v1", "record": json.loads(record)}
+            {"blob": blob, "path": f"/tasks/{blob}", "type": "tasks/task/v1", "record": json.loads(record)}
             for blob, record in records
         ],
         "board": {"root": str(database.parent), "database": str(database)},
@@ -92,7 +92,7 @@ def test_a_request_board_would_not_send_is_refused(tmp_path: Path) -> None:
 
 def test_a_record_the_plugin_cannot_read_is_handled_without_a_row_and_logged(tmp_path: Path) -> None:
     database = tmp_path / "tasks@0.1.0.sqlite"
-    misfit = '{"$type": "lr/task/v1", "title": "Misfit", "status": "someday"}'
+    misfit = '{"$type": "tasks/task/v1", "title": "Misfit", "status": "someday"}'
     ran = subprocess.run(
         [sys.executable, "-m", "board_tasks"],
         cwd=tmp_path,
