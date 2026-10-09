@@ -189,7 +189,7 @@ fn a_reference_that_is_not_a_logical_path_is_malformed() {
         .unwrap_err();
     assert_eq!(error.code(), Code::RefMalformed);
     assert!(
-        matches!(error, RecordError::MalformedReference { ref pointer, .. } if pointer == "/parent")
+        matches!(error, RecordError::MalformedReference { ref pointer, ref value } if pointer == "/parent" && *value == json!("projects/p"))
     );
     assert_eq!(
         error.fields(),
@@ -198,6 +198,30 @@ fn a_reference_that_is_not_a_logical_path_is_malformed() {
             ..Fields::default()
         }
     );
+}
+
+#[test]
+fn a_malformed_reference_names_its_value_as_json_whatever_its_type() {
+    for (value, message) in [
+        (
+            json!("a//b"),
+            r#"holds a reference at "/see": "a//b" is not a logical path"#,
+        ),
+        (
+            json!(5),
+            r#"holds a reference at "/see": 5 is not a logical path"#,
+        ),
+        (
+            json!(["a"]),
+            r#"holds a reference at "/see": ["a"] is not a logical path"#,
+        ),
+    ] {
+        let error = RecordError::MalformedReference {
+            pointer: "/see".to_owned(),
+            value,
+        };
+        assert_eq!(error.to_string(), message);
+    }
 }
 
 #[test]

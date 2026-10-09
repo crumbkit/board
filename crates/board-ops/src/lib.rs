@@ -22,7 +22,7 @@ pub use board_index::{Fallback, source_name};
 
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::call::Called;
-pub use crate::check::{CheckError, CheckReport, Checked, Detail, Wording};
+pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::enable::{EnableError, EnableReport};
 pub use crate::extraction::{CallFailed, Plugins};
 pub use crate::index::{RefreshError, Refreshed};

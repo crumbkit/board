@@ -6,8 +6,9 @@ use board_model::{Change, Code};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
+use crate::check::Tally;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, stand_in, task};
-use crate::{CheckReport, Refreshed};
+use crate::{CheckReport, Detail, Refreshed};
 
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
     open(scenario)
@@ -169,7 +170,7 @@ fn a_file_whose_bytes_are_not_the_blob_the_walk_saw_is_unreadable_and_its_twin_i
     assert_eq!(changed.status, Status::Degraded(Code::RepoUnreadable));
     assert_eq!(
         changed.detail.unwrap().reason,
-        "the file changed or could not be read; run the command again"
+        "changed or could not be read; run the command again"
     );
     assert_eq!(changed.schema, None);
     assert_eq!(entry("tasks/b.json").status, Status::Ok);
@@ -198,6 +199,10 @@ fn a_record_whose_schema_changed_during_the_check_is_unreadable_and_one_under_an
     let task = entry("tasks/a.json");
     assert_eq!(task.status, Status::Degraded(Code::RepoUnreadable));
     assert_eq!(task.schema.as_deref(), Some(schema));
+    assert_eq!(
+        task.detail.unwrap().reason,
+        format!("cannot be checked: its schema at {schema} could not be read")
+    );
     assert_eq!(entry("projects/p.json").status, Status::Ok);
 }
 
@@ -229,4 +234,32 @@ fn a_warm_check_hashes_nothing_even_resolving_references_into_a_large_directory(
         board.check(None, Some(cache.path())).unwrap().work.hashed,
         1
     );
+}
+
+#[test]
+fn a_tally_names_its_first_failing_reference_as_a_predicate_and_counts_every_one() {
+    let dangling = (Code::RefDangling, "nothing is at /nowhere".to_owned());
+    let wrong = (
+        Code::RefWrongType,
+        "/p is not a record of type lr/project/v1".to_owned(),
+    );
+    let mut tally = Tally::default();
+    tally.add("/see", None);
+    tally.add("/project", Some(&dangling));
+    tally.add("/parent", Some(&wrong));
+    assert_eq!(
+        tally.first(),
+        Some((
+            Code::RefDangling,
+            Detail {
+                pointer: Some("/project".to_owned()),
+                reason: r#"holds a reference at "/project": nothing is at /nowhere"#.to_owned(),
+                failures: 2,
+            }
+        ))
+    );
+    let mut clean = Tally::default();
+    clean.add("/see", None);
+    clean.add("/project", None);
+    assert_eq!(clean.first(), None);
 }

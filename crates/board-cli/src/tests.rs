@@ -240,7 +240,7 @@ fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() 
         r#"degraded board::record::invalid /tasks/t6 fails its schema at "/project": 1 is not of type "string" (and 1 more)"#,
         r#"degraded board::record::invalid /tasks/t7 fails its schema at its root: "title" is a required property"#,
         r#"degraded board::ref::malformed /tasks/t10 holds a reference at "/project": "a//b" is not a logical path"#,
-        "degraded board::ref::dangling /tasks/t8 at /project: nothing is at /nowhere",
+        r#"degraded board::ref::dangling /tasks/t8 holds a reference at "/project": nothing is at /nowhere"#,
         "ok /tasks/t9",
     ] {
         assert!(
@@ -868,8 +868,8 @@ fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
     assert_eq!(degraded.code, 0, "the record is written");
     assert_eq!(
         text(&degraded.stderr),
-        "note: /tasks/b is written but degraded: board::ref::dangling at /project: \
-         nothing is at /nowhere\n"
+        "note: /tasks/b is written but degraded: board::ref::dangling /tasks/b holds a reference \
+         at \"/project\": nothing is at /nowhere\n"
     );
     let report = json(&run(&["put", "/tasks/b", "--json"], "/nowhere"));
     assert_eq!(
@@ -877,7 +877,7 @@ fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
         json!({
             "code": "board::ref::dangling",
             "pointer": "/project",
-            "reason": "nothing is at /nowhere",
+            "reason": r#"holds a reference at "/project": nothing is at /nowhere"#,
             "failures": 1,
         })
     );

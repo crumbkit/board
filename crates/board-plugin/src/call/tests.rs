@@ -447,7 +447,7 @@ fn a_call_board_refuses_before_the_plugin_runs_has_its_code_and_the_values_at_fa
         capability: due(),
         source: RecordError::MalformedReference {
             pointer: "/task".to_owned(),
-            value: "/a//b".to_owned(),
+            value: json!("/a//b"),
         },
     };
     let at = json!({"capability": "due", "pointer": "/task"});

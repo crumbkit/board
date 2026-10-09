@@ -337,7 +337,7 @@ fn a_schema_that_does_not_compile_degrades_itself_and_its_records() {
         detail(&scenario, "n.json"),
         Some((
             Some("/$type".to_owned()),
-            format!("its schema at {schema} does not compile"),
+            format!(r#"names a type at "/$type": its schema at {schema} does not compile"#),
             1
         ))
     );
@@ -526,17 +526,25 @@ fn a_degraded_entry_says_where_and_why_and_how_many_failures_it_has() {
     );
     assert_eq!(
         detail(&scenario, "dangling.json"),
-        at("/project", "nothing is at /nowhere", 2)
+        at(
+            "/project",
+            r#"holds a reference at "/project": nothing is at /nowhere"#,
+            2
+        )
     );
     assert_eq!(
         detail(&scenario, "wrong.json"),
-        at("/project", "/ok is not a record of type lr/project/v1", 1)
+        at(
+            "/project",
+            r#"holds a reference at "/project": /ok is not a record of type lr/project/v1"#,
+            1
+        )
     );
     assert_eq!(
         detail(&scenario, "link.json"),
         Some((
             None,
-            "the link at /link points to /gone, which is missing".to_owned(),
+            "does not resolve: the link at /link points to /gone, which is missing".to_owned(),
             1
         ))
     );
@@ -544,7 +552,8 @@ fn a_degraded_entry_says_where_and_why_and_how_many_failures_it_has() {
         detail(&scenario, "unknown.json"),
         Some((
             None,
-            "no schema for lr/note/v1 at .board/types/lr/note/v1.schema.json".to_owned(),
+            "names an unknown type: no schema for lr/note/v1 at .board/types/lr/note/v1.schema.json"
+                .to_owned(),
             1
         ))
     );

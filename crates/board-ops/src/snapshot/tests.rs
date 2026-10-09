@@ -16,7 +16,7 @@ use crate::tests::{board, open, task};
 use crate::{CheckReport, Checked, Refreshed};
 use board_scenario::generated::{Generated, generated};
 
-use super::{Facts, Indexing, known, read_type};
+use super::{Decide, Facts, Indexing, known, read_type};
 
 mod mounts;
 
@@ -442,4 +442,48 @@ fn a_pointer_the_index_does_not_hold_is_read_as_the_pointer_type_and_a_record_as
     };
     assert_eq!(at("l.json", link), POINTER_TYPE.parse().ok());
     assert_eq!(at("tasks/a.json", &task("")), "lr/task/v1".parse().ok());
+}
+
+#[test]
+fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_is_ok() {
+    let scenario = board();
+    let board = open(&scenario);
+    let index = Index::open(None, board.repository().path()).unwrap();
+    let writer = index.write().unwrap();
+    let facts = std::collections::HashMap::new();
+    let decide = Decide {
+        repositories: board.repositories(),
+        writer: &writer,
+        listed: &[],
+        facts: &facts,
+        resolve: std::cell::RefCell::new(Box::new(|_: &board_model::LogicalPath| {
+            panic!("a record with no references resolves nothing")
+        })),
+    };
+    let blob = ObjectId::from_hex("0123456789abcdef0123456789abcdef01234567").unwrap();
+    let record = |validation| Indexed {
+        blob,
+        role: Role::Json,
+        fact: BlobFact {
+            kind: Kind::Record,
+            record_type: Some("lr/task/v1".parse().unwrap()),
+            code: None,
+        },
+        validation,
+    };
+    let record_type: board_model::RecordType = "lr/task/v1".parse().unwrap();
+    let judged = |indexed: &Indexed| {
+        decide
+            .record(indexed, Some((&record_type, Ok(blob))), &mut Vec::new())
+            .unwrap()
+            .unwrap()
+    };
+    let (code, detail) = judged(&record(None)).unwrap();
+    assert_eq!(code, Code::RepoUnreadable);
+    assert_eq!(
+        detail.unwrap().reason,
+        "cannot be checked: it or its schema changed or could not be read; run the command again"
+    );
+    let valid = record(Some(board_index::ValidationFact::Valid(Vec::new())));
+    assert_eq!(judged(&valid), None);
 }

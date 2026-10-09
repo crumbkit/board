@@ -10,9 +10,9 @@ use board_tree::{GitError, LOCK_WAIT, ResolveError, Status};
 use serde_json::{Value, json};
 
 use crate::Board;
+use crate::Detail;
 use crate::put::{Expect, PutReport, Schemas};
 use crate::tests::{MANIFEST, open, task};
-use crate::{Detail, Wording};
 
 mod batch;
 mod parity;
@@ -898,13 +898,16 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
         pointer: pointer.map(str::to_owned),
         reason: reason.to_owned(),
         failures,
-        wording: Wording::Reason,
     };
     assert_eq!(
         dangling,
         Some((
             Code::RefDangling,
-            detail(Some("/project"), "nothing is at /nowhere", 2)
+            detail(
+                Some("/project"),
+                r#"holds a reference at "/project": nothing is at /nowhere"#,
+                2
+            )
         ))
     );
     assert_eq!(
@@ -913,7 +916,7 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
             Code::RefWrongType,
             detail(
                 Some("/project"),
-                "/tasks/b is not a record of type lr/project/v1",
+                r#"holds a reference at "/project": /tasks/b is not a record of type lr/project/v1"#,
                 1
             )
         ))
@@ -924,7 +927,7 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
             Code::RefDangling,
             detail(
                 None,
-                "the link at /links/l points to /gone, which is missing",
+                "does not resolve: the link at /links/l points to /gone, which is missing",
                 1
             )
         ))
@@ -1005,10 +1008,13 @@ fn a_write_left_with_no_view_reports_the_error_at_its_pointer_or_each_reference(
         (code, detail.pointer, detail.failures),
         (error.code(), None, 1)
     );
-    assert_eq!(detail.reason, reason);
+    assert_eq!(detail.reason, format!("does not resolve: {reason}"));
     let (code, detail) = Board::unresolvable(&referring, &error).unwrap();
     assert_eq!((code, detail.failures), (Code::RefDangling, 2));
-    assert_eq!(detail.reason, reason);
+    assert_eq!(
+        detail.reason,
+        format!(r#"holds a reference at "/project": {reason}"#)
+    );
     assert_eq!(Board::unresolvable(&plain, &error), None);
 }
 

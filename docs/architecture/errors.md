@@ -57,6 +57,8 @@ the hint points at `sqlite_master`. Text output prints one
 error and the hint, and the plugin's stderr after the hint.
 
 The check and put reports name a degraded entry's first failing pointer, why,
-and how many more (`pointer`, `reason`, `failures`). When a record's schema is
+and how many more (`pointer`, `reason`, `failures`). `reason` is a predicate
+about the entry, such as `holds a reference at "/project": nothing is at
+/nowhere`. When a record's schema is
 missing, cannot be read or does not compile, a check entry names that schema
 file (`schema`), as a refused put does.

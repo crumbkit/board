@@ -1,7 +1,8 @@
 //! The tables. They are an interface agents write SQL against, so any change
 //! to them is a new index format.
 
-/// The index format. An index of any other format is deleted and rebuilt.
+/// The index format, which names the index file. `open.rs` and
+/// docs/architecture/index.md say what a new format does to older files.
 pub const INDEX_VERSION: u32 = 11;
 
 /// Every table, created in an empty database. Object ids are lowercase hex

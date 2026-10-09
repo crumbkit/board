@@ -31,24 +31,14 @@ pub struct Checked {
     pub schema: Option<String>,
 }
 
-/// Where an entry fails, as a JSON pointer when it is a field, why, and how
-/// many failures of that kind the entry has, of which this is the first.
+/// Where an entry fails, as a JSON pointer when it is a field, why, as a
+/// predicate about the entry, and how many failures of that kind the entry
+/// has, of which this is the first.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Detail {
     pub pointer: Option<String>,
     pub reason: String,
     pub failures: u64,
-    pub wording: Wording,
-}
-
-/// How text output joins a detail's reason to the entry it names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Wording {
-    /// The reason follows the pointer, such as `nothing is at /x`.
-    Reason,
-    /// The reason is a predicate that names its own pointer, such as
-    /// `fails its schema at "/a": …`, and follows the entry directly.
-    Predicate,
 }
 
 /// An entry's code, with its detail when Board knows one.
@@ -62,6 +52,9 @@ pub(crate) struct Tally {
 }
 
 impl Tally {
+    /// Counts the reference at `pointer` when it fails, and keeps the first
+    /// failure as a predicate that names the pointer, as a schema failure's
+    /// does.
     pub(crate) fn add(&mut self, pointer: &str, failure: Option<&(Code, String)>) {
         let Some((code, reason)) = failure else {
             return;
@@ -70,9 +63,8 @@ impl Tally {
         self.first.get_or_insert_with(|| {
             let detail = Detail {
                 pointer: Some(pointer.to_owned()),
-                reason: reason.clone(),
+                reason: format!("holds a reference at {pointer:?}: {reason}"),
                 failures: 0,
-                wording: Wording::Reason,
             };
             (*code, detail)
         });
@@ -149,9 +141,8 @@ impl Board {
 pub(crate) fn unresolved(error: &ResolveError) -> (Code, Detail) {
     let detail = Detail {
         pointer: None,
-        reason: error.to_string(),
+        reason: format!("does not resolve: {error}"),
         failures: 1,
-        wording: Wording::Reason,
     };
     (error.code(), detail)
 }

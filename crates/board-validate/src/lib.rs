@@ -78,7 +78,7 @@ impl Schema {
             ValidationErrorKind::Format { format } if format == REFERENCE_FORMAT => {
                 Err(RecordError::MalformedReference {
                     pointer,
-                    value: error.instance().as_str().unwrap_or_default().to_owned(),
+                    value: error.instance().clone().into_owned(),
                 })
             }
             _ => Err(RecordError::Invalid {
@@ -153,8 +153,8 @@ pub enum RecordError {
         #[source]
         source: Box<ValidationError<'static>>,
     },
-    #[error("holds a reference at {pointer:?}: {} is not a logical path", Value::from(value.as_str()))]
-    MalformedReference { pointer: String, value: String },
+    #[error("holds a reference at {pointer:?}: {value} is not a logical path")]
+    MalformedReference { pointer: String, value: Value },
 }
 
 /// The most characters [`RecordError::reason`] gives.

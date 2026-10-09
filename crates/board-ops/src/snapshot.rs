@@ -22,9 +22,7 @@ use board_tree::{
 };
 
 use crate::board::Board;
-use crate::check::{
-    CheckError, CheckReport, Checked, Detail, Failure, Tally, Wording, follow, unresolved,
-};
+use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{
     Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_type, transact,
 };
@@ -257,11 +255,21 @@ impl Decided {
             Ok(failure) => (failure, None),
             Err(fault) => {
                 let fields = fault.fields();
+                let reason = match (&fields.pointer, &fault) {
+                    (Some(pointer), _) => format!("names a type at {pointer:?}: {fault}"),
+                    (
+                        None,
+                        Fault::NoSchema {
+                            found: SchemaFound::Missing,
+                            ..
+                        },
+                    ) => format!("names an unknown type: {fault}"),
+                    (None, _) => format!("cannot be checked: {fault}"),
+                };
                 let detail = Detail {
                     pointer: fields.pointer,
-                    reason: fault.to_string(),
+                    reason,
                     failures: 1,
-                    wording: Wording::Reason,
                 };
                 (Some((fault.code(), Some(detail))), fields.schema)
             }
@@ -335,9 +343,8 @@ impl Decide<'_> {
         let Some(fact) = fact else {
             let detail = Detail {
                 pointer: None,
-                reason: format!("the file {READ_AGAIN}"),
+                reason: READ_AGAIN.to_owned(),
                 failures: 1,
-                wording: Wording::Reason,
             };
             return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
         };
@@ -378,9 +385,8 @@ impl Decide<'_> {
             None => {
                 let detail = Detail {
                     pointer: None,
-                    reason: format!("the record or its schema {READ_AGAIN}"),
+                    reason: format!("cannot be checked: it or its schema {READ_AGAIN}"),
                     failures: 1,
-                    wording: Wording::Reason,
                 };
                 return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
             }
@@ -395,7 +401,6 @@ impl Decide<'_> {
                     pointer,
                     reason,
                     failures,
-                    wording: Wording::Predicate,
                 };
                 return Ok(Ok(Some((code, Some(detail)))));
             }
