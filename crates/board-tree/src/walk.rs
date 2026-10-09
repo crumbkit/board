@@ -173,8 +173,8 @@ impl fmt::Display for Beneath {
         } else {
             ("above it", Tense::Is)
         };
-        let fault = fault(*code, tense, beside.as_deref());
-        write!(formatter, "the directory {directory} {place} {fault}")
+        let reason = reason(*code, tense, beside.as_deref());
+        write!(formatter, "the directory {directory} {place} {reason}")
     }
 }
 
@@ -188,7 +188,7 @@ pub(crate) enum Tense {
 /// What is wrong with an entry that a walk gives `code`, said of it in
 /// `tense`. `other` names the entry beside it that it collides with, when
 /// that is known.
-pub(crate) fn fault(code: Code, tense: Tense, other: Option<&str>) -> String {
+pub(crate) fn reason(code: Code, tense: Tense, other: Option<&str>) -> String {
     let other = other.unwrap_or("another entry beside it");
     match (code, tense) {
         (Code::PathShadowed, Tense::Is) => format!("shares its name with {other}"),

@@ -449,9 +449,9 @@ pub enum ResolveError {
     NotFound { path: LogicalPath },
     #[error("{segment:?} in {path} names more than one entry")]
     Shadowed { path: LogicalPath, segment: String },
-    #[error("{path} reaches a submodule, which is not descended")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     Submodule { path: LogicalPath },
-    #[error("{path} reaches a file that cannot be read")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     Unreadable { path: LogicalPath },
     #[error("the link at {link} points to {target}, which is missing")]
     Dangling {
@@ -459,26 +459,54 @@ pub enum ResolveError {
         link: LogicalPath,
         target: LogicalPath,
     },
-    #[error("{path} reaches the invalid pointer {pointer:?}: {source}")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     InvalidPointer {
         path: LogicalPath,
         pointer: String,
         #[source]
         source: Arc<PointerError>,
     },
-    #[error("{path} mounts the repository {repo:?}, which cannot be opened")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     RepoMissing { path: LogicalPath, repo: String },
-    #[error("{path} mounts commit {commit}, which its repository does not hold")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     CommitMissing { path: LogicalPath, commit: ObjectId },
-    #[error("{path} returns to a board and path it already resolved through a pointer")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     Cycle { path: LogicalPath },
-    #[error("{path} follows more than {MAX_HOPS} pointers")]
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
     TooManyHops { path: LogicalPath },
     #[error(transparent)]
     Git(#[from] GitError),
 }
 
 impl ResolveError {
+    /// What the message says of its path, for an error whose message starts
+    /// with that path.
+    pub(crate) fn predicate(&self) -> Option<String> {
+        Some(match self {
+            Self::Submodule { .. } => "reaches a submodule, which is not descended".to_owned(),
+            Self::Unreadable { .. } => "reaches a file that cannot be read".to_owned(),
+            Self::InvalidPointer {
+                pointer, source, ..
+            } => format!("reaches the invalid pointer {pointer:?}: {source}"),
+            Self::RepoMissing { repo, .. } => {
+                format!("mounts the repository {repo:?}, which cannot be opened")
+            }
+            Self::CommitMissing { commit, .. } => {
+                format!("mounts commit {commit}, which its repository does not hold")
+            }
+            Self::Cycle { .. } => {
+                "returns to a board and path it already resolved through a pointer".to_owned()
+            }
+            Self::TooManyHops { .. } => format!("follows more than {MAX_HOPS} pointers"),
+            Self::NotFound { .. }
+            | Self::Shadowed { .. }
+            | Self::Dangling { .. }
+            | Self::Git(_) => {
+                return None;
+            }
+        })
+    }
+
     pub fn code(&self) -> Code {
         match self {
             Self::NotFound { .. } => Code::PathNotFound,

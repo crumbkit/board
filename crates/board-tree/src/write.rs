@@ -18,7 +18,7 @@ use crate::git::{GitError, Repository, model_id};
 use crate::repositories::Repositories;
 use crate::resolve::{ResolveError, Resolver};
 use crate::tree::Tree;
-use crate::walk::{Beneath, Planned, Tense, fault};
+use crate::walk::{Beneath, Planned, Tense, reason};
 
 /// How long a put waits for another put's lock.
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
@@ -154,6 +154,15 @@ fn unresolved(path: &LogicalPath, source: ResolveError) -> WriteError {
     WriteError::Unresolved {
         path: path.clone(),
         source,
+    }
+}
+
+/// Why resolving `path` failed, for a message that has already named it:
+/// an error said of `path` itself calls it `it`.
+fn said(path: &LogicalPath, source: &ResolveError) -> String {
+    match source.predicate() {
+        Some(predicate) if source.fields() == Fields::at(path) => format!("it {predicate}"),
+        _ => source.to_string(),
     }
 }
 
@@ -512,7 +521,7 @@ fn names_git(file: &str) -> bool {
 /// A write that cannot be made.
 #[derive(Debug, thiserror::Error)]
 pub enum WriteError {
-    #[error("{path} cannot be written: {source}")]
+    #[error("{path} cannot be written: {}", said(path, source))]
     Unresolved {
         path: LogicalPath,
         #[source]
@@ -530,7 +539,7 @@ pub enum WriteError {
     #[error("{path} cannot be written: {file} would be in git's own directory")]
     InGit { path: LogicalPath, file: String },
     /// Refused for the code the file itself would have once written.
-    #[error("{path} cannot be written: it {}", fault(*code, Tense::Would, None))]
+    #[error("{path} cannot be written: it {}", reason(*code, Tense::Would, None))]
     Degraded { path: LogicalPath, code: Code },
     /// Refused for the code of a directory the file would be in.
     #[error("{path} cannot be written: {beneath}")]

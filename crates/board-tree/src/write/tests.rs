@@ -151,3 +151,106 @@ fn a_write_that_cannot_be_resolved_names_the_resolver_s_path_unless_git_failed()
     assert_eq!(git.code(), Code::RepoUnreadable);
     assert_eq!(git.fields(), Fields::at(&path));
 }
+
+#[test]
+fn a_write_refused_for_its_own_path_says_it_and_names_any_other_path() {
+    let at = |path: &str| path.parse::<LogicalPath>().unwrap();
+    let commit = ObjectId::Sha1([0xab; 20]);
+    let errors = |path: LogicalPath| {
+        [
+            (
+                ResolveError::Submodule { path: path.clone() },
+                "reaches a submodule, which is not descended".to_owned(),
+            ),
+            (
+                ResolveError::Unreadable { path: path.clone() },
+                "reaches a file that cannot be read".to_owned(),
+            ),
+            (
+                ResolveError::InvalidPointer {
+                    path: path.clone(),
+                    pointer: "l.json".to_owned(),
+                    source: std::sync::Arc::new(board_model::PointerError::Target),
+                },
+                r#"reaches the invalid pointer "l.json": pointer must hold either path, or repo, follow and commit"#.to_owned(),
+            ),
+            (
+                ResolveError::RepoMissing {
+                    path: path.clone(),
+                    repo: "../gone".to_owned(),
+                },
+                r#"mounts the repository "../gone", which cannot be opened"#.to_owned(),
+            ),
+            (
+                ResolveError::CommitMissing {
+                    path: path.clone(),
+                    commit,
+                },
+                format!("mounts commit {commit}, which its repository does not hold"),
+            ),
+            (
+                ResolveError::Cycle { path: path.clone() },
+                "returns to a board and path it already resolved through a pointer".to_owned(),
+            ),
+            (
+                ResolveError::TooManyHops { path },
+                "follows more than 40 pointers".to_owned(),
+            ),
+        ]
+    };
+    for (source, predicate) in errors(at("/l/x")) {
+        assert_eq!(source.to_string(), format!("/l/x {predicate}"));
+        let refused = WriteError::Unresolved {
+            path: at("/l/x"),
+            source,
+        };
+        assert_eq!(
+            refused.to_string(),
+            format!("/l/x cannot be written: it {predicate}")
+        );
+    }
+    for (source, predicate) in errors(at("/l")) {
+        let refused = WriteError::Unresolved {
+            path: at("/l/x"),
+            source,
+        };
+        assert_eq!(
+            refused.to_string(),
+            format!("/l/x cannot be written: /l {predicate}")
+        );
+    }
+}
+
+#[test]
+fn a_write_refused_by_an_error_that_does_not_start_with_its_path_keeps_the_message() {
+    let path: LogicalPath = "/l/x".parse().unwrap();
+    let git = GitError::File {
+        path: PathBuf::from("/board/l.json"),
+        source: failure(),
+    };
+    let git_message = git.to_string();
+    for (source, message) in [
+        (
+            ResolveError::NotFound { path: path.clone() },
+            "nothing is at /l/x".to_owned(),
+        ),
+        (
+            ResolveError::Shadowed {
+                path: path.clone(),
+                segment: "x".to_owned(),
+            },
+            r#""x" in /l/x names more than one entry"#.to_owned(),
+        ),
+        (ResolveError::Git(git), git_message),
+    ] {
+        assert_eq!(source.to_string(), message);
+        let refused = WriteError::Unresolved {
+            path: path.clone(),
+            source,
+        };
+        assert_eq!(
+            refused.to_string(),
+            format!("/l/x cannot be written: {message}")
+        );
+    }
+}

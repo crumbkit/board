@@ -512,7 +512,7 @@ fn a_write_through_a_cycle_of_links_says_so_and_its_twin_is_admitted() {
     assert_eq!(error.code(), Code::ResolveCycle);
     assert_eq!(
         error.to_string(),
-        "/a/x cannot be written: /a/x returns to a board and path it already resolved through a pointer"
+        "/a/x cannot be written: it returns to a board and path it already resolved through a pointer"
     );
     assert_eq!(error.fields(), Fields::at(&path("/a/x")));
     scenario.write("b.json", Item::File(&link("/c")));
