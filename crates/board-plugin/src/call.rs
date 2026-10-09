@@ -314,6 +314,8 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
         scope,
     )
     .map_err(|stopped| match stopped {
+        // Soft limit: a failed reap or signal-forwarder setup after the spawn
+        // also lands here, as not_started without the stderr already read.
         Stopped::Io(source) => CallError::Start {
             plugin: plugin.clone(),
             source,

@@ -209,8 +209,7 @@ fn a_path_in_or_at_a_submodule_is_a_submodule_by_the_walks_rule_and_any_other_di
 }
 
 #[test]
-fn a_name_on_the_way_in_another_case_holds_entries_where_the_file_system_finds_it_and_its_own_spelling_is_seen()
- {
+fn a_name_in_another_case_is_entries_where_the_file_system_folds_case_and_its_spelling_is_seen() {
     let scenario = Scenario::new();
     scenario.write("Plain/X.json", Item::File("{}"));
     let repository = scenario.open();

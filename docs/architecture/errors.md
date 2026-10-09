@@ -45,7 +45,7 @@ plugin's own code carries.
 | `offered` | array of strings | `plugin::not_installed` when the named plugin lacks the capability | each capability that plugin offers |
 | `nearest` | string | `plugin::not_installed` when no plugin offers the capability and one offered name is near | the nearest offered name |
 | `plugins` | array of strings | `plugin::ambiguous` | each enabled plugin that offers the capability |
-| `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output` after the plugin ran | the end of the plugin's stderr, with bytes that are not UTF-8 replaced |
+| `stderr` | string | `plugin::failed` when the plugin ran, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output` | the end of the plugin's stderr, with bytes that are not UTF-8 replaced |
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view, and each attached plugin database |
 | `columns` | object of string arrays | `query::invalid` for a missing column | each table or view the statement names, mapped to its columns; `{}` when it names none |
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |
