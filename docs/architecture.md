@@ -190,8 +190,8 @@ new commit and whether it wrote.
 | --- | --- |
 | `board init` | write a minimal `.board/board.json` at this git repository's root unless one exists; commit nothing |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location and blob, and refuses other files with the code saying why; a directory is `board::record::not_a_record` |
-| `board ls <path>` | list a directory without following pointers |
+| `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location, whose source is `worktree` or a commit id, and its blob, and refuses other files with the code saying why; a directory is `board::record::not_a_record` |
+| `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
 | `board refs <path>` | references to and from an object |
 | `board put <path>` | validate and write a record |
 | `board mount update <path>` | advance a mount to its `follow` |
@@ -259,6 +259,7 @@ the other reference board.
 | Operation | Budget |
 | --- | --- |
 | `board get`, warm | 5 ms |
+| `board ls` of a record's directory, warm | 500 ms |
 | `board check`, warm, nothing changed | 500 ms |
 | simple `board query`, warm | 500 ms |
 | full index, cold | 1 s |

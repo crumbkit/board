@@ -1,27 +1,15 @@
 //! Opening boards and checking them, against real repositories.
 
 use board_model::{Code, Fields, Kind, LogicalPath, Object, ObjectId, Refusal, Source};
+pub(crate) use board_scenario::generated::{PROJECT_SCHEMA, TASK_SCHEMA, task};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
 use crate::{Board, CheckReport};
 
-pub(crate) mod generated;
 pub(crate) mod verdicts;
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
-
-pub(crate) const TASK_SCHEMA: &str = r#"{
-  "type": "object",
-  "required": ["title"],
-  "properties": {
-    "title": {"type": "string"},
-    "project": {"type": "string", "format": "board-ref", "x-board-type": "lr/project/v1"},
-    "see": {"type": "string", "format": "board-ref"}
-  }
-}"#;
-
-pub(crate) const PROJECT_SCHEMA: &str = r#"{"type": "object"}"#;
 
 /// A board with the task and project types and one project.
 pub(crate) fn board() -> Scenario {
@@ -100,10 +88,6 @@ pub(crate) fn unreadable(scenario: &Scenario, path: &str, text: &str) -> bool {
 pub(crate) fn locked(scenario: &Scenario, path: &str, item: Item<'_>) -> bool {
     scenario.write(path, item);
     std::fs::read_dir(scenario.workdir().join(path)).is_err()
-}
-
-pub(crate) fn task(fields: &str) -> String {
-    format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#)
 }
 
 #[test]
@@ -783,7 +767,7 @@ fn a_missing_path_that_ends_json_is_refused_with_a_hint_naming_it_without_json()
     let board = open(&scenario);
     let hint = |command: &'static str, text: &str| {
         let refused = match command {
-            "ls" => board.ls(&path(text)).unwrap_err(),
+            "ls" => board.ls(&path(text), None).unwrap_err(),
             _ => board.get(&path(text)).unwrap_err(),
         };
         let refusal = refused.refusal(command);
@@ -844,7 +828,7 @@ fn ls_lists_one_level_with_directories_kinds_and_statuses() {
             "work/l.json",
             Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
         );
-    let report = open(&scenario).ls(&path("/work")).unwrap();
+    let report = open(&scenario).ls(&path("/work"), None).unwrap();
     assert_eq!(
         report.listed,
         [
@@ -875,13 +859,85 @@ fn ls_lists_one_level_with_directories_kinds_and_statuses() {
 }
 
 #[test]
+fn ls_gives_each_entry_the_status_check_gives_it_and_their_valid_twins_are_ok() {
+    let scenario = board();
+    let link = |target: &str| format!(r#"{{"$type": "board/mount/v1", "path": "{target}"}}"#);
+    scenario
+        .write(
+            "work/invalid.json",
+            Item::File(r#"{"$type": "lr/task/v1"}"#),
+        )
+        .write("work/valid.json", Item::File(&task("")))
+        .write("work/dangling.json", Item::File(&link("/projects/q")))
+        .write("work/resolving.json", Item::File(&link("/projects/p")))
+        .write("work/.json", Item::File("{}"));
+    let board = open(&scenario);
+    let listed: Vec<(String, Kind, Status)> = board
+        .ls(&path("/work"), None)
+        .unwrap()
+        .listed
+        .into_iter()
+        .filter_map(|listed| match listed {
+            crate::Listed::Entry {
+                name, kind, status, ..
+            } => Some((name, kind, status)),
+            crate::Listed::Directory { .. } => None,
+        })
+        .collect();
+    let degraded = |name: &str, kind, code| (name.to_owned(), kind, Status::Degraded(code));
+    let ok = |name: &str, kind| (name.to_owned(), kind, Status::Ok);
+    assert_eq!(
+        listed,
+        [
+            degraded(".json", Kind::File, Code::PathMalformed),
+            degraded("dangling.json", Kind::Pointer, Code::RefDangling),
+            degraded("invalid.json", Kind::Record, Code::RecordInvalid),
+            ok("resolving.json", Kind::Pointer),
+            ok("valid.json", Kind::Record),
+        ]
+    );
+}
+
+#[test]
+fn ls_reads_the_tree_once_and_hashes_each_file_once_cold_none_warm_and_only_a_changed_one_after() {
+    let scenario = board();
+    for at in 0..100 {
+        scenario.write(&format!("tasks/a/t{at}.json"), Item::File(&task("")));
+        scenario.write(&format!("tasks/b/t{at}.json"), Item::File(&task("")));
+    }
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    // Files hashed, directories listed and files opened.
+    let work = |asked: &str| {
+        let repository = board.repository();
+        let (listed, opened) = (repository.directories_listed(), repository.files_opened());
+        let report = board.ls(&path(asked), Some(cache.path())).unwrap();
+        (
+            report.work.hashed,
+            repository.directories_listed() - listed,
+            repository.files_opened() - opened,
+        )
+    };
+    // The whole tree has 10 directories. Listing /tasks/a also lists the
+    // root and tasks/ twice more, to resolve the path and the check's scope.
+    assert_eq!(work("/tasks/a"), (204, 14, 204), "every file, once");
+    assert_eq!(work("/tasks/a"), (0, 14, 0));
+    assert_eq!(work("/"), (0, 10, 0));
+    // A new blob is validated, so the task schema is read to compile it.
+    scenario.write("tasks/b/t7.json", Item::File(&task(r#", "x": 1"#)));
+    assert_eq!(work("/tasks/a"), (1, 14, 2));
+    scenario.write("tasks/a/t7.json", Item::File(&task(r#", "x": 1"#)));
+    assert_eq!(work("/tasks/a"), (1, 14, 1));
+}
+
+#[test]
 fn ls_follows_a_link_to_the_directory_it_lists_and_names_it_by_display_path() {
     let scenario = board();
     scenario.write(
         "l.json",
         Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
     );
-    let report = open(&scenario).ls(&path("/l")).unwrap();
+    let report = open(&scenario).ls(&path("/l"), None).unwrap();
     assert_eq!(report.display.as_str(), "/projects");
     assert_eq!(
         report.listed,
@@ -906,7 +962,7 @@ fn ls_of_a_file_lists_that_file() {
         ("/l/p", "p.json", "/projects/p"),
         ("/notes/readme.md", "readme.md", "/notes/readme.md"),
     ] {
-        let report = open(&scenario).ls(&path(asked)).unwrap();
+        let report = open(&scenario).ls(&path(asked), None).unwrap();
         assert_eq!(report.listed.len(), 1, "{asked}");
         assert!(
             matches!(&report.listed[0], crate::Listed::Entry { name: listed, logical: Some(logical), .. }
@@ -941,8 +997,8 @@ fn ls_through_a_mount_lists_what_the_same_directory_lists_in_a_plain_board() {
             mounted.path()
         )),
     );
-    let through = open(&scenario).ls(&path("/shared/work")).unwrap();
-    let direct = open(&plain).ls(&path("/work")).unwrap();
+    let through = open(&scenario).ls(&path("/shared/work"), None).unwrap();
+    let direct = open(&plain).ls(&path("/work"), None).unwrap();
     let shape = |report: &crate::LsReport| -> Vec<(String, Option<Kind>, Option<Status>)> {
         report
             .listed

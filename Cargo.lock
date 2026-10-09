@@ -104,6 +104,7 @@ dependencies = [
  "board-scenario",
  "board-tree",
  "clap",
+ "proptest",
  "serde_json",
  "tempfile",
 ]
@@ -171,6 +172,7 @@ version = "0.0.0"
 dependencies = [
  "board-model",
  "gix",
+ "proptest",
  "tempfile",
 ]
 

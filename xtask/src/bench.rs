@@ -93,7 +93,7 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Duration)>, BenchError>
 }
 
 /// Times every budgeted operation on the board at `root`, a repository root.
-/// `get` reads the first record a check finds.
+/// `get` reads the first record a check finds, and `ls` lists its directory.
 pub(crate) fn run(root: &Path, budgets: &[(String, Duration)]) -> Result<Vec<Timed>, BenchError> {
     let failed = |error: &dyn std::fmt::Display| BenchError::Board {
         message: error.to_string(),
@@ -110,6 +110,11 @@ pub(crate) fn run(root: &Path, budgets: &[(String, Duration)]) -> Result<Vec<Tim
         .and_then(|entry| entry.logical.clone())
         .ok_or_else(|| failed(&"it holds no valid record to get"))?;
     let sample = &sample;
+    let directory = sample
+        .as_str()
+        .rsplit_once('/')
+        .and_then(|(parent, _)| parent.parse().ok())
+        .unwrap_or_else(board_model::LogicalPath::root);
     budgets
         .iter()
         .map(|(operation, budget)| {
@@ -119,6 +124,10 @@ pub(crate) fn run(root: &Path, budgets: &[(String, Duration)]) -> Result<Vec<Tim
                 let started = Instant::now();
                 match operation.as_str() {
                     "`board get`, warm" => board.get(sample).map(drop).map_err(|e| failed(&e)),
+                    "`board ls` of a record's directory, warm" => board
+                        .ls(&directory, Some(warm.path()))
+                        .map(drop)
+                        .map_err(|e| failed(&e)),
                     "`board check`, warm, nothing changed" => board
                         .check(None, Some(warm.path()))
                         .map(drop)

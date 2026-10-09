@@ -233,7 +233,7 @@ fn getting_and_listing_through_a_mount_opens_the_mounted_repository_once() {
     assert_eq!(board.repositories().opened(), 0);
     for _ in 0..2 {
         board.get(&"/a/tasks/ok".parse().unwrap()).unwrap();
-        board.ls(&"/a/tasks".parse().unwrap()).unwrap();
+        board.ls(&"/a/tasks".parse().unwrap(), None).unwrap();
     }
     assert_eq!(board.repositories().opened(), 1);
 }

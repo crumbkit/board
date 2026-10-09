@@ -12,9 +12,9 @@ use proptest::test_runner::TestCaseError;
 use serde_json::Value;
 
 use crate::index::Indexed;
-use crate::tests::generated::{Generated, generated};
 use crate::tests::{board, open, task};
 use crate::{CheckReport, Checked, Refreshed};
+use board_scenario::generated::{Generated, generated};
 
 use super::{Facts, Indexing, known, read_type};
 

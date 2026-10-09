@@ -1,13 +1,31 @@
 //! Generated boards, for the property tests that a warm index answers as a
-//! cold one.
+//! cold one and that the commands agree about each entry.
 
 use std::collections::BTreeMap;
 
 use board_model::ObjectId;
-use board_scenario::{Item, Scenario};
 use proptest::prelude::*;
 
-use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, task};
+use crate::{Item, Scenario};
+
+/// The task type's schema: a required title and two references.
+pub const TASK_SCHEMA: &str = r#"{
+  "type": "object",
+  "required": ["title"],
+  "properties": {
+    "title": {"type": "string"},
+    "project": {"type": "string", "format": "board-ref", "x-board-type": "lr/project/v1"},
+    "see": {"type": "string", "format": "board-ref"}
+  }
+}"#;
+
+/// The project type's schema, which admits any object.
+pub const PROJECT_SCHEMA: &str = r#"{"type": "object"}"#;
+
+/// A valid task with `fields` added after its title.
+pub fn task(fields: &str) -> String {
+    format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#)
+}
 
 /// The files a generated board can hold, and what each may contain.
 fn variants() -> Vec<(&'static str, Vec<String>)> {
@@ -59,6 +77,8 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             vec![link("/projects/p"), link("/gone"), link("/links/l")],
         ),
         ("notes.md", vec!["a".to_owned(), "b".to_owned()]),
+        // A name with no logical path.
+        ("tasks/.json", vec!["{}".to_owned(), "[]".to_owned()]),
         (
             "vendor.json",
             vec![
@@ -70,9 +90,9 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
-/// For each file in [`variants`], which content it holds, if any. Most
-/// files are present, so most records have something to refer to.
-pub(crate) fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
+/// For each file a generated board can hold, which content it holds, if
+/// any. Most files are present, so most records have something to refer to.
+pub fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
     let choices: Vec<_> = variants()
         .into_iter()
         .map(|(_, contents)| prop::option::weighted(0.8, 0..contents.len()))
@@ -81,8 +101,10 @@ pub(crate) fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
 }
 
 /// A board with `config` as its `board.json` and the files [`generated`]
-/// chose, and a library board with two commits for it to mount.
-pub(crate) struct Generated {
+/// chose, and a library board with two commits for it to mount. The second
+/// adds a valid task and an invalid one.
+#[derive(Debug)]
+pub struct Generated {
     scenario: Scenario,
     library: Scenario,
     first: ObjectId,
@@ -93,7 +115,7 @@ pub(crate) struct Generated {
 impl Generated {
     /// Writes the files `choice` names, and commits them too when
     /// `committed`.
-    pub(crate) fn new(config: &str, choice: &[Option<usize>], committed: bool) -> Self {
+    pub fn new(config: &str, choice: &[Option<usize>], committed: bool) -> Self {
         let library = Scenario::new();
         let files = [
             (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
@@ -104,6 +126,7 @@ impl Generated {
         let ok = task(r#", "project": "/projects/p""#);
         let mut more = files.to_vec();
         more.push(("tasks/ok.json", &ok));
+        more.push(("tasks/invalid.json", r#"{"$type": "lr/task/v1"}"#));
         let second = library.commit(&more);
         let mut generated = Self {
             scenario: Scenario::new(),
@@ -136,12 +159,12 @@ impl Generated {
         generated
     }
 
-    pub(crate) fn scenario(&self) -> &Scenario {
+    pub fn scenario(&self) -> &Scenario {
         &self.scenario
     }
 
     /// Writes the files `choice` names over whatever the working tree holds.
-    pub(crate) fn write(&mut self, choice: &[Option<usize>]) {
+    pub fn write(&mut self, choice: &[Option<usize>]) {
         for ((path, contents), chosen) in variants().into_iter().zip(choice) {
             let was = self.present.insert(path.to_owned(), chosen.is_some()) == Some(true);
             match chosen {

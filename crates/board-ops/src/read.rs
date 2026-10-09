@@ -1,8 +1,10 @@
 //! `board get` and `board ls`: reading what a path names
 //! (docs/architecture.md, Commands).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 
+use board_index::{Fallback, Index};
 use board_model::{
     BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
     Source, classify, parse_json,
@@ -11,6 +13,8 @@ use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Sta
 use serde_json::Value;
 
 use crate::board::Board;
+use crate::check::CheckError;
+use crate::index::Refreshed;
 
 /// A file as `get` returns it: where it is, its stored bytes, and its parsed
 /// record or the refusal that says why it has none.
@@ -23,7 +27,7 @@ pub struct GetReport {
 }
 
 /// One line of `ls`: a directory, or an entry with its kind and the status
-/// its path and parsing give it.
+/// `check` gives it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Listed {
     Directory {
@@ -44,6 +48,10 @@ pub struct LsReport {
     pub location: Location,
     pub display: LogicalPath,
     pub listed: Vec<Listed>,
+    /// Why the index was in memory, if it was.
+    pub memory: Option<Fallback>,
+    /// The work the listing's check did.
+    pub work: Refreshed,
 }
 
 impl Board {
@@ -56,26 +64,50 @@ impl Board {
 
     /// Resolves `path`, following pointers, and lists the directory there
     /// one level deep, without following pointers inside it. A path that
-    /// ends at a file lists that file.
-    pub fn ls(&self, path: &LogicalPath) -> Result<LsReport, ReadError> {
+    /// ends at a file lists that file. Each entry has the kind and status
+    /// `check` gives it, from the index kept under `cache`.
+    pub fn ls(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<LsReport, ReadError> {
         let location = self.locate(path)?;
         let display = display(&location, path);
+        let snapshot = Index::open(cache, self.repository().path())
+            .map_err(CheckError::from)
+            .and_then(|index| self.snapshot(index, Some(&display)))
+            .map_err(|source| ReadError::Check { source })?;
+        let checked: HashMap<(&Source, &str), (Kind, Status)> = snapshot
+            .report
+            .entries
+            .iter()
+            .map(|entry| {
+                let at = (&entry.source, entry.path.as_str());
+                (at, (entry.kind, entry.status))
+            })
+            .collect();
         let repository = self
             .repositories()
             .repository(&location.board)
             .map_err(|source| ReadError::Git { source })?;
-        // Only the listed directory, or a listed file's own directory, is
-        // walked, so a listing costs what it shows, not the whole board.
-        let scope = match location.object {
-            Object::Directory => location.path.as_str(),
-            Object::Blob(_) => location
-                .path
-                .rsplit_once('/')
-                .map_or("", |(parent, _)| parent),
+        // The check walked every source; a source it did not reach is walked
+        // only in the listed directory, or a listed file's own directory.
+        let walked = snapshot
+            .walked
+            .iter()
+            .find(|(source, _)| *source == location.board.source);
+        let fallback;
+        let entries = if let Some((_, entries)) = walked {
+            entries
+        } else {
+            let scope = match location.object {
+                Object::Directory => location.path.as_str(),
+                Object::Blob(_) => location
+                    .path
+                    .rsplit_once('/')
+                    .map_or("", |(parent, _)| parent),
+            };
+            fallback = repository
+                .walk_under(&location.board.source, scope)
+                .map_err(|source| ReadError::Git { source })?;
+            &fallback
         };
-        let entries = repository
-            .walk_under(&location.board.source, scope)
-            .map_err(|source| ReadError::Git { source })?;
         let prefix = if location.path.is_empty() {
             String::new()
         } else {
@@ -104,7 +136,19 @@ impl Board {
                     logical,
                 }
             } else {
-                let kind = classify_entry(&repository, &location.board.source, &entry);
+                // A scoped check skips an entry whose path has no logical
+                // path, so `ls` gives it what its path and parsing say.
+                let (kind, status) = checked
+                    .get(&(&location.board.source, entry.path.as_str()))
+                    .copied()
+                    .unwrap_or_else(|| {
+                        let classified = classify_entry(&repository, &location.board.source, entry);
+                        let status = match (entry.status, classified.code) {
+                            (Status::Ok, Some(code)) => Status::Degraded(code),
+                            (status, _) => status,
+                        };
+                        (classified.kind(), status)
+                    });
                 Listed::Entry {
                     name: name.to_owned(),
                     logical: match location.object {
@@ -114,11 +158,8 @@ impl Board {
                             .as_ref()
                             .and_then(|logical| logical.segments().last().and_then(child)),
                     },
-                    kind: kind.kind(),
-                    status: match (entry.status, kind.code) {
-                        (Status::Ok, Some(code)) => Status::Degraded(code),
-                        (status, _) => status,
-                    },
+                    kind,
+                    status,
                 }
             };
             listed.entry(name.to_owned()).or_insert(item);
@@ -127,6 +168,8 @@ impl Board {
             location,
             display,
             listed: listed.into_values().collect(),
+            memory: snapshot.report.memory,
+            work: snapshot.report.work,
         })
     }
 
@@ -240,6 +283,8 @@ pub enum ReadError {
     Unread { path: LogicalPath, code: Code },
     #[error(transparent)]
     Git { source: GitError },
+    #[error(transparent)]
+    Check { source: CheckError },
 }
 
 impl ReadError {
@@ -249,6 +294,7 @@ impl ReadError {
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::Unread { code, .. } => *code,
             Self::Git { source } => source.code(),
+            Self::Check { source } => source.code(),
         }
     }
 
@@ -260,6 +306,7 @@ impl ReadError {
             Self::Resolve { source } => source.fields(),
             Self::NotARecord { path } | Self::Unread { path, .. } => Fields::at(path),
             Self::Git { .. } => Fields::default(),
+            Self::Check { source } => return source.refusal(),
         };
         let refusal = Refusal::new(self.code(), self, &fields);
         let stem = fields

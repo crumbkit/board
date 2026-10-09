@@ -30,7 +30,7 @@ def for_path(request: CallRequest) -> ForPathOutput:
         reaching = board.referencing(report)
         location = report["location"]
         # Patterns match only the board's own working tree, never a mount.
-        own = location["source"] == "working-tree" and Path(location["repository"]).resolve() == Path(root).resolve()
+        own = location["source"] == "worktree" and Path(location["repository"]).resolve() == Path(root).resolve()
         missing = report["missing"]
         written = missing["path"] if missing is not None else location["path"]
         physical = written if own else None

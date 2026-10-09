@@ -402,6 +402,9 @@ fn notes(count: usize) -> Scenario {
 #[test]
 fn a_listing_past_its_limit_says_what_it_left_out_and_one_within_it_says_nothing() {
     let scenario = notes(3);
+    let cache = tempfile::tempdir().unwrap();
+    let board_in =
+        |directory, arguments: &[&str]| board_cached(directory, Some(cache.path()), arguments);
     let cut = board_in(scenario.workdir(), &["ls", "/notes", "--limit", "2"]);
     assert_eq!(cut.code, 0);
     assert_eq!(text(&cut.stdout).lines().count(), 2);
@@ -426,6 +429,9 @@ fn a_listing_past_its_limit_says_what_it_left_out_and_one_within_it_says_nothing
 #[test]
 fn a_listing_shows_one_hundred_entries_unless_asked_for_all() {
     let scenario = notes(101);
+    let cache = tempfile::tempdir().unwrap();
+    let board_in =
+        |directory, arguments: &[&str]| board_cached(directory, Some(cache.path()), arguments);
     let limited = board_in(scenario.workdir(), &["ls", "/notes"]);
     assert_eq!(text(&limited.stdout).lines().count(), 100);
     let all = board_in(scenario.workdir(), &["ls", "/notes", "--all"]);

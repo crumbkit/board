@@ -363,7 +363,7 @@ pub(crate) fn run(
         }
         Command::Ls { path, page } => {
             let path = path.unwrap_or_else(LogicalPath::root);
-            match board.ls(&path) {
+            match board.ls(&path, context.cache.as_deref()) {
                 Ok(report) => render::ls(format, &report, page.limit()),
                 Err(error) => render::refused(format, &error.refusal("ls")),
             }

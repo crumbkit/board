@@ -275,7 +275,7 @@ fn get_prints_the_stored_bytes_and_json_adds_where_they_are() {
     assert_eq!(report["record"]["name"], "q");
     assert_eq!(report["location"]["display"], "/projects/q");
     assert_eq!(report["location"]["path"], "projects/q.json");
-    assert_eq!(report["location"]["source"], "working-tree");
+    assert_eq!(report["location"]["source"], "worktree");
     assert_eq!(report["location"]["pointers"][0]["path"], "l.json");
 }
 
@@ -610,6 +610,21 @@ fn check_says_on_stderr_when_the_index_is_in_memory() {
     assert_eq!(kept.code, 0);
     assert_eq!(text(&kept.stderr), "");
     let memory = board_cached(scenario.workdir(), None, &["check"]);
+    assert_eq!(memory.stdout, kept.stdout);
+    assert_eq!(
+        text(&memory.stderr),
+        "note: the index is in memory for this run: there is no cache directory\n"
+    );
+}
+
+#[test]
+fn ls_says_on_stderr_when_the_index_is_in_memory() {
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    let kept = board_cached(scenario.workdir(), Some(cache.path()), &["ls"]);
+    assert_eq!(kept.code, 0);
+    assert_eq!(text(&kept.stderr), "");
+    let memory = board_cached(scenario.workdir(), None, &["ls"]);
     assert_eq!(memory.stdout, kept.stdout);
     assert_eq!(
         text(&memory.stderr),
@@ -1019,6 +1034,7 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
 }
 
 mod cli;
+mod consistency;
 mod directory;
 mod hints;
 mod plugins;

@@ -53,8 +53,8 @@ A cold refresh compiles each schema once: the compilation that judges the
 schema also validates the records of its type.
 A file that is read again, such as a larger one, and that changed after hashing
 is `board::repo::unreadable` until the next run, and so are the records of a
-schema that changed. `check`, `refs` and `query` use the index; `get` and
-`ls` resolve directly.
+schema that changed. `check`, `refs`, `query` and `ls` use the index; `get`
+resolves directly.
 
 Once the index has doubled in pages since its last prune or first refresh, a
 refresh that writes also prunes: it deletes the fact rows that neither the

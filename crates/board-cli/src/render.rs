@@ -464,7 +464,7 @@ pub(crate) fn get(format: Format, report: &GetReport) -> Output {
 pub(crate) fn ls(format: Format, report: &LsReport, limit: Option<usize>) -> Output {
     let shown = Shown::of(report.listed.len(), limit);
     let listed = &report.listed[..shown.shown];
-    match format {
+    let output = match format {
         Format::Text => {
             let mut text = String::new();
             for listed in listed {
@@ -523,7 +523,8 @@ pub(crate) fn ls(format: Format, report: &LsReport, limit: Option<usize>) -> Out
                 0,
             )
         }
-    }
+    };
+    noted(output, report.memory, None)
 }
 
 /// `mount update`: as text, what the mount moved from and to, or that it
@@ -623,7 +624,7 @@ fn document(value: &Value, code: u8) -> Output {
 fn location(location: &Location, display: &str) -> Value {
     let mut value = json!({
         "repository": location.board.repository.to_string_lossy(),
-        "source": source(&location.board.source),
+        "source": source_name(&location.board.source),
         "path": location.path,
         "display": display,
     });
@@ -634,7 +635,7 @@ fn location(location: &Location, display: &str) -> Value {
             .map(|pointer| {
                 json!({
                     "repository": pointer.board.repository.to_string_lossy(),
-                    "source": source(&pointer.board.source),
+                    "source": source_name(&pointer.board.source),
                     "path": pointer.path,
                 })
             })
@@ -642,13 +643,6 @@ fn location(location: &Location, display: &str) -> Value {
         object.insert("pointers".to_owned(), Value::Array(pointers));
     }
     value
-}
-
-fn source(source: &Source) -> Value {
-    match source {
-        Source::WorkingTree => json!("working-tree"),
-        Source::Commit(commit) => json!({ "commit": commit.to_string() }),
-    }
 }
 
 /// How a text listing names an entry: by the logical path every command

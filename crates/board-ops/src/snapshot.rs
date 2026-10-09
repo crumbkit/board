@@ -28,6 +28,10 @@ use crate::index::{
 };
 use crate::verdict::{Fault, SchemaFound};
 
+/// Every file each source's walk listed, sorted by path: the working tree
+/// first, then each mounted commit.
+pub(crate) type Walked = Vec<(Source, Vec<Entry>)>;
+
 /// What one run decided about every entry it checked, and the index whose
 /// views show exactly that.
 #[derive(Debug)]
@@ -36,6 +40,7 @@ pub(crate) struct Snapshot {
     pub(crate) report: CheckReport,
     /// Every reference each checked record makes, and where it led.
     pub(crate) references: Vec<Referenced>,
+    pub(crate) walked: Walked,
 }
 
 impl Board {
@@ -54,7 +59,7 @@ impl Board {
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let ((mut report, references), wrote, view) =
+        let ((mut report, references, walked), wrote, view) =
             transact(index, |writer| self.decide(writer, scope))?;
         report.work.wrote = wrote;
         report.memory = match view.storage() {
@@ -65,16 +70,17 @@ impl Board {
             view,
             report,
             references,
+            walked,
         })
     }
 
-    /// Decides each entry, and returns the report, the references and the
-    /// rows of `resolved`.
+    /// Decides each entry, and returns the report, the references, the
+    /// files each source's walk listed and the rows of `resolved`.
     fn decide(
         &self,
         writer: &Writer,
         scope: Option<&LogicalPath>,
-    ) -> Run<(CheckReport, Vec<Referenced>)> {
+    ) -> Run<(CheckReport, Vec<Referenced>, Walked)> {
         let refresh = self.refresh(writer)?;
         let mut work = refresh.work;
         let mounts = self.repositories().walk_mounts(
@@ -149,7 +155,12 @@ impl Board {
             memory: None,
             work,
         };
-        Ok(((report, decided.references), decided.resolved))
+        let mut walked = vec![(Source::WorkingTree, refresh.entries)];
+        walked.extend(
+            (mounts.sources.into_iter())
+                .map(|mounted| (Source::Commit(mounted.commit), mounted.entries)),
+        );
+        Ok(((report, decided.references, walked), decided.resolved))
     }
 }
 

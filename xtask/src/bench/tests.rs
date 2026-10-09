@@ -67,5 +67,5 @@ fn every_budgeted_operation_can_be_timed_on_a_small_generated_board() {
     ))
     .unwrap();
     let timed = run(root.path(), &budgets(&docs).unwrap()).unwrap();
-    assert_eq!(timed.len(), 4);
+    assert_eq!(timed.len(), 5);
 }
