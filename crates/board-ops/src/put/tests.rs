@@ -268,6 +268,43 @@ fn a_refusal_names_what_is_wrong_with_the_record_and_its_twin_is_admitted() {
     );
 }
 
+#[test]
+fn a_record_its_schema_refuses_is_named_once_as_the_subject_and_its_twin_is_admitted() {
+    let scenario = board();
+    for (refused, code, message) in [
+        (
+            r#"{"$type": "lr/task/v1", "title": 5}"#.to_owned(),
+            Code::RecordInvalid,
+            r#"the record for /tasks/a fails its schema at "/title": 5 is not of type "string""#,
+        ),
+        (
+            r#"{"$type": "lr/task/v1"}"#.to_owned(),
+            Code::RecordInvalid,
+            r#"the record for /tasks/a fails its schema at its root: "title" is a required property"#,
+        ),
+        (
+            task(r#", "see": "a//b""#),
+            Code::RefMalformed,
+            r#"the record for /tasks/a holds a reference at "/see" that is not a logical path"#,
+        ),
+    ] {
+        let error = open(&scenario)
+            .put(&path("/tasks/a"), Expect::Any, refused.as_bytes())
+            .unwrap_err();
+        assert_eq!(error.code(), code, "{refused}");
+        assert_eq!(error.to_string(), message);
+    }
+    assert!(
+        put(
+            &scenario,
+            "/tasks/a",
+            Expect::Any,
+            &task(r#", "see": "/b""#)
+        )
+        .is_ok()
+    );
+}
+
 /// The fields of the refusal of `record` at `at`.
 fn refused_fields(scenario: &Scenario, at: &str, expect: Expect, record: &str) -> Fields {
     open(scenario)

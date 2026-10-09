@@ -429,10 +429,7 @@ pub enum CallError {
         capability: CapabilityName,
         source: JsonError,
     },
-    #[error(
-        "the input fails the capability's input schema {}",
-        input_failure(source)
-    )]
+    #[error("the input to capability {capability} {source}")]
     Input {
         capability: CapabilityName,
         source: RecordError,
@@ -475,22 +472,6 @@ fn list<T: fmt::Display>(names: &[T]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn input_failure(error: &RecordError) -> String {
-    let (RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer }) =
-        error;
-    let at = if pointer.is_empty() {
-        "its root".to_owned()
-    } else {
-        format!("{pointer:?}")
-    };
-    match error {
-        RecordError::Invalid { source, .. } => format!("at {at}: {source}"),
-        RecordError::MalformedReference { .. } => {
-            format!("at {at}: the reference is not a logical path")
-        }
-    }
 }
 
 fn exit_text(exit: Option<i32>) -> String {

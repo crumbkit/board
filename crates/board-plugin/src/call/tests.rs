@@ -305,7 +305,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         input_refusal(&schema, "[]"),
         (
             Board(Code::PluginBadInput),
-            r#"the input fails the capability's input schema at its root: [] is not of type "object""#
+            r#"the input to capability due fails its schema at its root: [] is not of type "object""#
                 .to_owned(),
             json!({"capability": "due", "pointer": ""}),
         )
@@ -314,7 +314,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         input_refusal(&schema, r#"{"before": 5}"#),
         (
             Board(Code::PluginBadInput),
-            r#"the input fails the capability's input schema at "/before": 5 is not of type "string""#
+            r#"the input to capability due fails its schema at "/before": 5 is not of type "string""#
                 .to_owned(),
             json!({"capability": "due", "pointer": "/before"}),
         )
@@ -323,7 +323,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         input_refusal(&schema, r#"{"task": "/a//b"}"#),
         (
             Board(Code::PluginBadInput),
-            r#"the input fails the capability's input schema at "/task": the reference is not a logical path"#
+            r#"the input to capability due holds a reference at "/task" that is not a logical path"#
                 .to_owned(),
             json!({"capability": "due", "pointer": "/task"}),
         )

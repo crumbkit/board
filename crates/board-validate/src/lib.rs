@@ -139,16 +139,18 @@ impl SchemaError {
     }
 }
 
-/// A record its schema refuses.
+/// A record its schema refuses. The message is a predicate without a
+/// subject: each caller names what failed, such as "the record for /a" or
+/// "the input to capability due", and writes the message after it.
 #[derive(Debug, thiserror::Error)]
 pub enum RecordError {
-    #[error("record fails its schema at {}: {source}", if pointer.is_empty() { "its root".to_owned() } else { format!("{pointer:?}") })]
+    #[error("fails its schema at {}: {source}", if pointer.is_empty() { "its root".to_owned() } else { format!("{pointer:?}") })]
     Invalid {
         pointer: String,
         #[source]
         source: Box<ValidationError<'static>>,
     },
-    #[error("record holds a reference at {pointer:?} that is not a logical path")]
+    #[error("holds a reference at {pointer:?} that is not a logical path")]
     MalformedReference { pointer: String },
 }
 

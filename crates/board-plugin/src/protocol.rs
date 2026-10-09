@@ -156,7 +156,7 @@ pub enum BadOutput {
     Code { code: String },
     #[error("it exited {exit} with {written}")]
     Exit { exit: i32, written: &'static str },
-    #[error("its output fails the output schema: {source}")]
+    #[error("its output {source}")]
     Output { source: board_validate::RecordError },
     #[error("it names blob {blob:?}, which it was not sent")]
     Unsent { blob: String },

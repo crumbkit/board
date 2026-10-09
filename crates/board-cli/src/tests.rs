@@ -956,8 +956,8 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
     assert_eq!(
         text(&refused.stderr),
         "error: board::put::invalid: the batch is refused\n\
-         line 2: board::record::invalid: the record for /tasks/b is refused: \
-         record fails its schema at its root: \"title\" is a required property\n\
+         line 2: board::record::invalid: the record for /tasks/b \
+         fails its schema at its root: \"title\" is a required property\n\
          hint: fix each line listed, then send the whole batch again; nothing was written\n"
     );
     let document = json(&board_with(

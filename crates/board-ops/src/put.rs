@@ -561,9 +561,10 @@ pub(crate) enum Failure {
 /// A put that wrote nothing, or for `head_moved`, wrote but did not commit.
 #[derive(Debug, thiserror::Error)]
 pub enum PutError {
-    #[error("the record for {path} is refused{}", match refused {
-        Refused::Fault(Fault::Code(_)) => String::new(),
-        _ => format!(": {refused}"),
+    #[error("the record for {path} {}", match refused {
+        Refused::Fault(Fault::Code(_)) => "is refused".to_owned(),
+        Refused::Fault(Fault::Record(error)) => error.to_string(),
+        _ => format!("is refused: {refused}"),
     })]
     Record { path: LogicalPath, refused: Refused },
     #[error("{path} is not what --expect says: it holds {}", found.map_or_else(|| "nothing".to_owned(), |blob| blob.to_string()))]

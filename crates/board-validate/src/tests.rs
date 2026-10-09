@@ -121,6 +121,36 @@ fn a_failure_says_why_in_at_most_200_characters_and_counts_every_failure() {
 }
 
 #[test]
+fn a_failure_reads_as_a_predicate_for_its_caller_to_give_a_subject() {
+    let schema = task_schema();
+    assert!(
+        schema
+            .validate(&json!({"title": "t", "parent": "/p"}))
+            .is_ok()
+    );
+    for (record, message) in [
+        (
+            json!({"title": 5}),
+            r#"fails its schema at "/title": 5 is not of type "string""#,
+        ),
+        (
+            json!({}),
+            r#"fails its schema at its root: "title" is a required property"#,
+        ),
+        (
+            json!({"title": "t", "parent": "projects/p"}),
+            r#"holds a reference at "/parent" that is not a logical path"#,
+        ),
+    ] {
+        assert_eq!(
+            schema.validate(&record).unwrap_err().to_string(),
+            message,
+            "{record}"
+        );
+    }
+}
+
+#[test]
 fn the_first_failure_in_sorted_order_is_reported() {
     let schema = Schema::compile(json!({
         "properties": {"a": {"type": "string"}, "b": {"type": "string"}, "c": {"type": "string"}}

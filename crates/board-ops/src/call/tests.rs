@@ -315,13 +315,13 @@ fn input_the_schema_refuses_is_reported_at_its_pointer() {
     assert_eq!(error.refusal().code, Board(Code::PluginBadInput));
     assert_eq!(
         error.to_string(),
-        r#"the input fails the capability's input schema at "/n": "one" is not of type "integer""#
+        r#"the input to capability due fails its schema at "/n": "one" is not of type "integer""#
     );
     assert_eq!(error.refusal().fields["pointer"], "/n");
     let error = fixture.call("tasks.due", "{}").unwrap_err();
     assert_eq!(
         error.to_string(),
-        r#"the input fails the capability's input schema at its root: "n" is a required property"#
+        r#"the input to capability due fails its schema at its root: "n" is a required property"#
     );
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
 }
@@ -432,6 +432,17 @@ fn an_answer_board_cannot_accept_is_bad_output() {
             "{stdout} exit {exit}"
         );
     }
+    let fixture = Fixture::tasks(&answering(
+        r#"{"$type": "board/call-result/v1", "output": {"count": "two"}}"#,
+        0,
+    ));
+    assert_eq!(
+        fixture
+            .call("tasks.due", r#"{"n": 1}"#)
+            .unwrap_err()
+            .to_string(),
+        r#"plugin tasks gave a bad answer: its output fails its schema at "/count": "two" is not of type "integer""#
+    );
     let fixture = Fixture::tasks(&answering(RESULT, 0));
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
 }

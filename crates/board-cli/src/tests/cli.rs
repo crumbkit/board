@@ -711,8 +711,8 @@ fn a_record_its_schema_refuses_names_the_field_and_why_and_a_valid_one_is_writte
     assert_eq!(refused.code, 1);
     assert!(
         text(&refused.stderr).starts_with(
-            "error: board::record::invalid: the record for /tasks/a is refused: \
-             record fails its schema at \"/title\": 5 is not of type \"string\"\nhint: "
+            "error: board::record::invalid: the record for /tasks/a \
+             fails its schema at \"/title\": 5 is not of type \"string\"\nhint: "
         ),
         "{}",
         text(&refused.stderr)
