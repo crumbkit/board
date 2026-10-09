@@ -56,7 +56,7 @@ impl Board {
     /// database's id cannot be read or made, it sends nothing this run.
     pub(crate) fn extract_into(
         &self,
-        snapshot: &Snapshot<'_>,
+        snapshot: &Snapshot,
         manifest: &Manifest,
         directory: &Path,
         database: &PluginDatabase,
@@ -66,11 +66,11 @@ impl Board {
         let Some(id) = database.id().filter(|_| !manifest.extract.is_empty()) else {
             return Ok(());
         };
-        let index = snapshot.index;
+        let view = &snapshot.view;
         let (name, version) = (manifest.name.as_str(), manifest.version.as_str());
-        index.trust(name, version, id)?;
+        view.trust(name, version, id)?;
         let types: Vec<&str> = manifest.extract.iter().map(RecordType::as_str).collect();
-        let records: Vec<Record> = index
+        let records: Vec<Record> = view
             .unhandled(name, version, &types)?
             .into_iter()
             .filter_map(|unhandled| {
@@ -98,7 +98,7 @@ impl Board {
             limits: plugins.limits,
         };
         let extraction = extract(manifest, directory, records, &context);
-        index.handled(name, version, id, &extraction.handled)?;
+        view.handled(name, version, id, &extraction.handled)?;
         match extraction.failure {
             Some(failure) => Err(failure.into()),
             None => Ok(()),

@@ -85,7 +85,7 @@ fn a_check_with_nothing_changed_does_no_work_and_reads_while_another_process_wri
     let board = open(&scenario);
     let cold = board.check(None, Some(cache.path())).unwrap();
     assert!(cold.work.wrote, "{:?}", cold.work);
-    let mut other = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let other = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let writing = other.write().unwrap();
     let warm = board.check(None, Some(cache.path())).unwrap();
     assert_eq!(warm.memory, None, "it used the file without waiting");
@@ -124,7 +124,7 @@ fn check_changed_while(held: bool) -> CheckReport {
     let board = open(&scenario);
     board.check(None, Some(cache.path())).unwrap();
     scenario.write("tasks/a.json", Item::File(&task("")));
-    let mut other = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let other = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let writing = held.then(|| other.write().unwrap());
     let report = board.check(None, Some(cache.path())).unwrap();
     drop(writing);

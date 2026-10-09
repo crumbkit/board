@@ -335,7 +335,8 @@ impl Repository {
     /// commit only if HEAD still holds the commit read when it was staged,
     /// then writes git's index for the committed paths. If HEAD moved, the
     /// index is left as it was and the put's files stay uncommitted edits.
-    pub fn finish_commit(&self, mut staged: Staged) -> Result<ObjectId, WriteError> {
+    /// The board lock taken before staging must still be held.
+    pub fn finish_commit(&self, _lock: &Lock, mut staged: Staged) -> Result<ObjectId, WriteError> {
         use gix::refs::Target as RefTarget;
         use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
         let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {

@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use board_index::{Index, IndexError, Resolved, Storage, ValidationFact, Writer};
+use board_index::{Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
 use board_model::{
     Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
     RecordType, Role, Source, Stat, classify,
@@ -24,15 +24,14 @@ use board_tree::{
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{
-    Indexed, Kept, RefreshError, Refreshed, facts, schema_of, schema_path, transact,
+    Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_path, transact,
 };
 
 /// What one run decided about every entry it checked, and the index whose
 /// views show exactly that.
 #[derive(Debug)]
-pub(crate) struct Snapshot<'i> {
-    /// The index, with its views built from this run's decision.
-    pub(crate) index: &'i Index,
+pub(crate) struct Snapshot {
+    pub(crate) view: View,
     pub(crate) report: CheckReport,
     /// Every reference each checked record makes, and where it led.
     pub(crate) references: Vec<Referenced>,
@@ -44,35 +43,37 @@ impl Board {
     /// entry's status is the first problem found: its path, then parsing,
     /// then its schema, validation and references, or for a pointer its
     /// target.
-    pub(crate) fn snapshot<'i>(
+    pub(crate) fn snapshot(
         &self,
-        index: &'i mut Index,
+        index: Index,
         scope: Option<&LogicalPath>,
-    ) -> Result<Snapshot<'i>, CheckError> {
+    ) -> Result<Snapshot, CheckError> {
         if let Some(scope) = scope {
             self.repositories()
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let ((mut report, references), wrote) =
+        let ((mut report, references), wrote, view) =
             transact(index, |writer| self.decide(writer, scope))?;
         report.work.wrote = wrote;
-        report.memory = match index.storage() {
+        report.memory = match view.storage() {
             Storage::Memory(fallback) => Some(*fallback),
             Storage::File(_) => None,
         };
         Ok(Snapshot {
-            index,
+            view,
             report,
             references,
         })
     }
 
+    /// Decides each entry, and returns the report, the references and the
+    /// rows of `resolved`.
     fn decide(
         &self,
-        writer: &Writer<'_>,
+        writer: &Writer,
         scope: Option<&LogicalPath>,
-    ) -> Result<(CheckReport, Vec<Referenced>), RefreshError> {
+    ) -> Run<(CheckReport, Vec<Referenced>)> {
         let refresh = self.refresh(writer)?;
         let mut work = refresh.work;
         let mounts = self.repositories().walk_mounts(
@@ -144,13 +145,12 @@ impl Board {
         if writer.wrote()? {
             work.pruned = writer.prune_if_doubled()?;
         }
-        writer.resolve(&decided.resolved)?;
         let report = CheckReport {
             entries: decided.checked,
             memory: None,
             work,
         };
-        Ok((report, decided.references))
+        Ok(((report, decided.references), decided.resolved))
     }
 }
 
@@ -283,7 +283,7 @@ const READ_AGAIN: &str = "changed or could not be read; run the command again";
 /// What deciding the status of a source's entries reads.
 struct Decide<'a> {
     repositories: &'a Repositories,
-    writer: &'a Writer<'a>,
+    writer: &'a Writer,
     /// The paths the refresh left out because they changed after the walk.
     changed: &'a HashSet<String>,
     /// What the index holds about the source's entries, by physical path.
@@ -467,13 +467,13 @@ type Facts = HashMap<String, Indexed>;
 type Mounts = board_tree::Reached<Facts>;
 
 /// The index as the cache a walk through mounts reads and fills.
-struct Indexing<'w, 't> {
-    writer: &'w Writer<'t>,
+struct Indexing<'w> {
+    writer: &'w Writer,
     work: &'w mut Refreshed,
 }
 
 // A cache read that fails counts as a miss: the index is disposable.
-impl Cache for Indexing<'_, '_> {
+impl Cache for Indexing<'_> {
     type Error = RefreshError;
     type Facts = Facts;
 
@@ -510,7 +510,7 @@ impl Cache for Indexing<'_, '_> {
 }
 
 /// Stores every source, the root's repository first, and every mount.
-fn record(mounts: &Mounts, writer: &Writer<'_>, root: &Repository) -> Result<(), IndexError> {
+fn record(mounts: &Mounts, writer: &Writer, root: &Repository) -> Result<(), IndexError> {
     let mut sources = vec![(
         Source::WorkingTree,
         root.head_tree().ok().flatten(),

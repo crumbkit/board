@@ -1,6 +1,6 @@
 # Standards
 
-Rules 1 to 26 cover the Rust workspace; P1 to P6 cover Python. Each rule says
+Rules 1 to 27 cover the Rust workspace; P1 to P6 cover Python. Each rule says
 what enforces it. A rule without a gate is still a rule.
 
 ## Types
@@ -102,6 +102,18 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     terminal as to a pipe. It does not use colour, wrap lines or detect a
     terminal. The report goes to stdout. Notes, hints and text errors go to
     stderr.
+
+## Call order
+
+27. **Types enforce a fixed call order.** When calls must happen in a fixed
+    order, each step takes ownership of the value the previous step returned
+    and returns the value the next step needs, so a call out of order does not
+    compile. A step that needs an earlier value to stay held, such as a lock,
+    borrows it instead. In `board-index`, `Index::write` returns a `Writer`,
+    `Writer::decide` consumes it and returns a `View`, and only a `View` reads
+    the views of the current entries; dropping a `Writer` rolls back. In
+    `board-tree`, `lock` returns a `Lock`, `stage_commit` borrows it and returns
+    `Staged`, and `finish_commit` consumes `Staged`.
 
 ## Baseline lints
 

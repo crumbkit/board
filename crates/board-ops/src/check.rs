@@ -127,8 +127,8 @@ impl Board {
         scope: Option<&LogicalPath>,
         cache: Option<&Path>,
     ) -> Result<CheckReport, CheckError> {
-        let mut index = Index::open(cache, self.repository().path())?;
-        Ok(self.snapshot(&mut index, scope)?.report)
+        let index = Index::open(cache, self.repository().path())?;
+        Ok(self.snapshot(index, scope)?.report)
     }
 }
 

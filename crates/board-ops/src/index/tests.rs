@@ -1,6 +1,6 @@
 //! Building the index from real repositories, counting the work done.
 
-use board_index::{BlobFact, Index};
+use board_index::{BlobFact, Index, Storage};
 use board_model::{Code, Kind, Role, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
@@ -12,8 +12,8 @@ use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 /// Refreshes the index of `scenario` in `cache`.
 fn build(scenario: &Scenario, cache: &std::path::Path) -> Refreshed {
     let board = open(scenario);
-    let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.snapshot(&mut index, None).unwrap().report.work
+    let index = Index::open(Some(cache), board.repository().path()).unwrap();
+    board.snapshot(index, None).unwrap().report.work
 }
 
 /// The board, plus two tasks with the same bytes and one invalid task.
@@ -63,9 +63,9 @@ fn a_schema_that_does_not_compile_is_compiled_once_and_validates_nothing() {
 /// How many files a snapshot of `scenario` in `cache` opens.
 fn opened(scenario: &Scenario, cache: &std::path::Path) -> usize {
     let board = open(scenario);
-    let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let index = Index::open(Some(cache), board.repository().path()).unwrap();
     let before = board.repository().files_opened();
-    board.snapshot(&mut index, None).unwrap();
+    board.snapshot(index, None).unwrap();
     board.repository().files_opened() - before
 }
 
@@ -151,9 +151,9 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
 /// snapshot has refreshed it, each as a JSON array.
 fn read(scenario: &Scenario, cache: &std::path::Path, sql: &str) -> Vec<Value> {
     let board = open(scenario);
-    let mut index = Index::open(Some(cache), board.repository().path()).unwrap();
-    let snapshot = board.snapshot(&mut index, None).unwrap();
-    let rows = snapshot.index.query(sql, 10_000).unwrap().rows;
+    let index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let snapshot = board.snapshot(index, None).unwrap();
+    let rows = snapshot.view.query(sql, 10_000).unwrap().rows;
     rows.into_iter().map(Value::from).collect()
 }
 
@@ -396,9 +396,9 @@ fn a_changed_file_or_a_new_commit_writes_and_the_refresh_after_does_not() {
 
 /// Runs a transaction on a filled index whose closure reads, lets another
 /// connection commit a write when `interfere` and this is its first run,
-/// then writes. Returns how many times the closure ran, and whether the
-/// transaction that committed wrote.
-fn retried(interfere: bool) -> (usize, bool) {
+/// then writes. Returns how many times the closure ran, whether the
+/// transaction that committed wrote, and whether it wrote to the file.
+fn retried(interfere: bool) -> (usize, bool, bool) {
     let cache = tempfile::tempdir().unwrap();
     let root = std::path::Path::new("/boards/retry");
     let blob = |byte| board_model::ObjectId::Sha1([byte; 20]);
@@ -407,32 +407,32 @@ fn retried(interfere: bool) -> (usize, bool) {
         record_type: None,
         code: None,
     };
-    let mut index = Index::open(Some(cache.path()), root).unwrap();
+    let index = Index::open(Some(cache.path()), root).unwrap();
     let mut runs = 0;
-    let ((), wrote) = transact(&mut index, |writer| {
+    let ((), wrote, view) = transact(index, |writer| {
         runs += 1;
         writer.blob(blob(1), Role::Json)?;
         if interfere && runs == 1 {
-            let mut other = Index::open(Some(cache.path()), root).unwrap();
+            let other = Index::open(Some(cache.path()), root).unwrap();
             let other = other.write().unwrap();
             other.put_blob(blob(2), Role::Json, &fact).unwrap();
-            other.commit().unwrap();
+            other.decide(&[]).unwrap();
         }
         writer.put_blob(blob(3), Role::Json, &fact)?;
-        Ok(())
+        Ok(((), Vec::new()))
     })
     .unwrap();
-    (runs, wrote)
+    (runs, wrote, matches!(view.storage(), Storage::File(_)))
 }
 
 #[test]
-fn a_transaction_another_process_wrote_under_runs_again_and_writes() {
-    assert_eq!(retried(true), (2, true));
+fn a_transaction_another_process_wrote_under_runs_again_and_writes_to_the_file() {
+    assert_eq!(retried(true), (2, true, true));
 }
 
 #[test]
-fn a_transaction_no_other_process_wrote_under_runs_once_and_writes() {
-    assert_eq!(retried(false), (1, true));
+fn a_transaction_no_other_process_wrote_under_runs_once_and_writes_to_the_file() {
+    assert_eq!(retried(false), (1, true, true));
 }
 
 /// The entries of `board`'s working tree, walked without keeping or
@@ -453,8 +453,8 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
         .write("tasks/b.json", Item::File(&twin));
     let board = open(&scenario);
     let cache = tempfile::tempdir().unwrap();
-    let mut index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
-    let ((facts, changed, under_new, under_old), _) = transact(&mut index, |writer| {
+    let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let ((facts, changed, under_new, under_old), _, _) = transact(index, |writer| {
         let entries = unkept(&board)?;
         scenario.write("tasks/a.json", Item::File(&new));
         let mut work = Refreshed::default();
@@ -468,7 +468,7 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
         )?;
         let under_new = writer.blob(scenario.blob(&new), Role::Json)?;
         let under_old = writer.blob(scenario.blob(&old), Role::Json)?;
-        Ok((facts, changed, under_new, under_old))
+        Ok(((facts, changed, under_new, under_old), Vec::new()))
     })
     .unwrap();
     assert!(!facts.contains_key("tasks/a.json"), "left out of this run");
@@ -489,8 +489,8 @@ fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
     scenario.write("big.json", Item::File(&"a".repeat(walked)));
     let board = open(&scenario);
     let cache = tempfile::tempdir().unwrap();
-    let mut index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
-    let ((facts, _), _) = transact(&mut index, |writer| {
+    let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    let ((facts, _), _, _) = transact(index, |writer| {
         let entries = unkept(&board)?;
         if read != walked {
             scenario.write("big.json", Item::File(&"b".repeat(read)));
@@ -503,6 +503,7 @@ fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
             &mut Refreshed::default(),
             Kept::default(),
         )
+        .map(|facts| (facts, Vec::new()))
     })
     .unwrap();
     facts.get("big.json").map(|indexed| indexed.fact.clone())

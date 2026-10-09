@@ -7,8 +7,9 @@ use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use rusqlite::types::ValueRef;
 use serde_json::Value;
 
-use crate::open::{Index, IndexError, hex};
+use crate::open::{IndexError, hex};
 use crate::schema::PRUNES;
+use crate::store::View;
 
 /// How long one query may run before it is stopped. It bounds how long an
 /// agent waits for an answer.
@@ -26,30 +27,30 @@ pub struct Rows {
     pub truncated: bool,
 }
 
-impl Index {
+impl View {
     /// Runs one statement that cannot write, returning at most `limit` rows.
     /// It refuses with [`IndexError::Pruned`] when another process has pruned
-    /// since this connection built its views.
+    /// since the views were built.
     pub fn query(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
-        self.connection.pragma_update(None, "query_only", true)?;
+        self.connection().pragma_update(None, "query_only", true)?;
         let started = Instant::now();
-        self.connection.progress_handler(
+        self.connection().progress_handler(
             STEPS_PER_CHECK,
             Some(move || started.elapsed() > QUERY_TIME),
         )?;
         let result = self.snapshot(sql, limit);
-        self.connection
+        self.connection()
             .progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
-        self.connection.pragma_update(None, "query_only", false)?;
+        self.connection().pragma_update(None, "query_only", false)?;
         result
     }
 
     /// Reads the prune count and runs `sql` in one transaction, so no prune
     /// can come between them.
     fn snapshot(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
-        let _snapshot = self.connection.unchecked_transaction()?;
-        let prunes: i64 = self.connection.query_row(PRUNES, [], |row| row.get(0))?;
-        if self.seen.get().is_some_and(|seen| seen != prunes) {
+        let _snapshot = self.connection().unchecked_transaction()?;
+        let prunes: i64 = self.connection().query_row(PRUNES, [], |row| row.get(0))?;
+        if prunes != self.prunes {
             return Err(IndexError::Pruned);
         }
         self.read(sql, limit).map_err(blame)
@@ -59,10 +60,10 @@ impl Index {
         // `query_only` does not stop ATTACH, DETACH or a PRAGMA that writes.
         // The authorizer covers only this prepare: a pragma function such as
         // `pragma_table_info` prepares its own PRAGMA while it runs.
-        self.connection.authorizer(Some(authorize))?;
+        self.connection().authorizer(Some(authorize))?;
         // rusqlite refuses a string holding more than one statement.
-        let prepared = self.connection.prepare(sql);
-        self.connection
+        let prepared = self.connection().prepare(sql);
+        self.connection()
             .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)?;
         let mut statement = prepared?;
         // Each check covers a gap in the other: `readonly` passes ATTACH, and

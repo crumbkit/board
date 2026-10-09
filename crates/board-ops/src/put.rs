@@ -424,7 +424,7 @@ impl Board {
         }
         let commit = match staged {
             None => None,
-            Some(staged) => match repository.finish_commit(staged) {
+            Some(staged) => match repository.finish_commit(&lock, staged) {
                 Ok(commit) => Some(commit),
                 Err(WriteError::HeadMoved) => {
                     return Err(Failure::Error(PutError::HeadMoved { writes }));

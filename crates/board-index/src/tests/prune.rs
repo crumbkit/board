@@ -32,7 +32,7 @@ fn valid(target: &str) -> ValidationFact {
 /// `blob(11)`, about a working-tree file of blob 4, and, when `unreachable`,
 /// about a tree and blobs that nothing reaches: tree 12 with blob 3, and
 /// blob 5. Returns how many rows the unreachable facts add.
-fn stored(writer: &Writer<'_>, unreachable: bool) -> usize {
+fn stored(writer: &Writer, unreachable: bool) -> usize {
     let repository = Path::new(ROOT);
     writer
         .set_mounts(&[(Source::WorkingTree, Some(blob(10)), repository)], &[])
@@ -121,45 +121,49 @@ fn counts(index: &Index) -> Vec<(String, i64)> {
     .collect()
 }
 
-/// An index holding the facts `stored` gives, and a plugin that handled
-/// blobs 1 and 4, and 3 when `unreachable`. Returns the rows nothing reaches.
-fn filled_with(index: &mut Index, unreachable: bool) -> usize {
+/// `index` holding the facts `stored` gives, and a plugin that handled
+/// blobs 1 and 4, and 3 when `unreachable`. Returns it and the rows nothing
+/// reaches.
+fn filled_with(index: Index, unreachable: bool) -> (Index, usize) {
     let writer = index.write().unwrap();
     let mut rows = stored(&writer, unreachable);
-    writer.commit().unwrap();
+    let view = writer.decide(&[]).unwrap();
     let mut handled = vec![blob(1), blob(4)];
     if unreachable {
         handled.push(blob(3));
         rows += 1;
     }
-    index.trust("p", "1.0.0", "id").unwrap();
-    index.handled("p", "1.0.0", "id", &handled).unwrap();
-    rows
+    view.trust("p", "1.0.0", "id").unwrap();
+    view.handled("p", "1.0.0", "id", &handled).unwrap();
+    (view.index, rows)
 }
 
-fn prune(index: &mut Index) -> usize {
+/// Prunes `index`, and returns it and the rows the prune deleted.
+fn prune(index: Index) -> (Index, usize) {
     let writer = index.write().unwrap();
     let pruned = writer.prune().unwrap();
-    writer.commit().unwrap();
-    pruned
+    (writer.decide(&[]).unwrap().index, pruned)
+}
+
+fn memory() -> Index {
+    Index::open(None, Path::new(ROOT)).unwrap()
 }
 
 #[test]
 fn a_prune_deletes_the_facts_no_source_or_working_tree_file_reaches() {
-    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
-    let unreachable = filled_with(&mut index, true);
-    let mut reached = Index::open(None, Path::new(ROOT)).unwrap();
-    filled_with(&mut reached, false);
-    assert_eq!(prune(&mut index), unreachable);
+    let (index, unreachable) = filled_with(memory(), true);
+    let (reached, _) = filled_with(memory(), false);
+    let (index, pruned) = prune(index);
+    assert_eq!(pruned, unreachable);
     assert_eq!(counts(&index), counts(&reached));
 }
 
 #[test]
 fn a_prune_keeps_every_fact_a_source_or_working_tree_file_reaches() {
-    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
-    filled_with(&mut index, false);
+    let (index, _) = filled_with(memory(), false);
     let before = counts(&index);
-    assert_eq!(prune(&mut index), 0);
+    let (index, pruned) = prune(index);
+    assert_eq!(pruned, 0);
     assert_eq!(counts(&index), before);
     assert!(counts(&index).iter().all(|(_, count)| *count > 0));
 }
@@ -193,19 +197,18 @@ fn state(index: &Index, key: &str) -> Option<String> {
         .unwrap()
 }
 
-fn prune_if_doubled(index: &mut Index) -> usize {
+fn prune_if_doubled(index: Index) -> (Index, usize) {
     let writer = index.write().unwrap();
     let pruned = writer.prune_if_doubled().unwrap();
-    writer.commit().unwrap();
-    pruned
+    (writer.decide(&[]).unwrap().index, pruned)
 }
 
 #[test]
 fn a_writer_prunes_once_the_index_has_doubled_since_the_last_prune() {
-    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
-    let unreachable = filled_with(&mut index, true);
+    let (index, unreachable) = filled_with(memory(), true);
     pruned_at(&index, pages(&index) / 2);
-    assert_eq!(prune_if_doubled(&mut index), unreachable);
+    let (index, pruned) = prune_if_doubled(index);
+    assert_eq!(pruned, unreachable);
     assert_eq!(state(&index, "prunes").as_deref(), Some("1"));
     assert_eq!(
         state(&index, "pruned_pages"),
@@ -215,11 +218,11 @@ fn a_writer_prunes_once_the_index_has_doubled_since_the_last_prune() {
 
 #[test]
 fn a_new_index_records_its_size_at_its_first_writer_without_pruning() {
-    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
-    filled_with(&mut index, true);
+    let (index, _) = filled_with(memory(), true);
     let before = counts(&index);
     assert_eq!(state(&index, "pruned_pages"), None);
-    assert_eq!(prune_if_doubled(&mut index), 0);
+    let (index, pruned) = prune_if_doubled(index);
+    assert_eq!(pruned, 0);
     assert_eq!(counts(&index), before);
     assert_eq!(state(&index, "prunes"), None, "no prune ran");
     assert_eq!(
@@ -230,24 +233,24 @@ fn a_new_index_records_its_size_at_its_first_writer_without_pruning() {
 
 #[test]
 fn a_writer_does_not_prune_before_the_index_has_doubled() {
-    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
-    filled_with(&mut index, true);
+    let (index, _) = filled_with(memory(), true);
     let before = counts(&index);
     pruned_at(&index, pages(&index) / 2 + 1);
-    assert_eq!(prune_if_doubled(&mut index), 0);
+    let (index, pruned) = prune_if_doubled(index);
+    assert_eq!(pruned, 0);
     assert_eq!(counts(&index), before);
 }
 
 #[test]
 fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
     let cache = tempfile::tempdir().unwrap();
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = index.write().unwrap();
     let large = serde_json::json!({ "text": "x".repeat(100_000) });
     writer.put_body(blob(9), &large).unwrap();
-    writer.commit().unwrap();
+    let index = writer.decide(&[]).unwrap().index;
     let full = pages(&index);
-    prune(&mut index);
+    let (index, _) = prune(index);
     let free: i64 = index
         .connection
         .query_row("PRAGMA freelist_count", [], |row| row.get(0))
@@ -265,11 +268,11 @@ fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
 /// then queries the views through the first.
 fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError> {
     let cache = tempfile::tempdir().unwrap();
-    let mut first = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
-    filled_with(&mut first, true);
+    let first = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let (first, _) = filled_with(first, true);
     let writer = first.write().unwrap();
-    writer
-        .resolve(&[Resolved {
+    let first = writer
+        .decide(&[Resolved {
             source: Source::WorkingTree,
             path: "c.json".into(),
             logical: None,
@@ -282,15 +285,14 @@ fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError>
             change: Change::Uncommitted,
         }])
         .unwrap();
-    writer.commit().unwrap();
-    let mut second = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let second = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = second.write().unwrap();
     if prunes {
         writer.prune().unwrap();
     } else {
         writer.put_blob(blob(6), Role::Json, &record()).unwrap();
     }
-    writer.commit().unwrap();
+    writer.decide(&[]).unwrap();
     first.query("SELECT type, status FROM entries", 10)
 }
 

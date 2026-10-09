@@ -7,7 +7,9 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use board_index::{BlobFact, Index, IndexError, RefFact, ValidationFact, WorktreeRow, Writer};
+use board_index::{
+    BlobFact, Index, IndexError, RefFact, Resolved, ValidationFact, View, WorktreeRow, Writer,
+};
 use board_model::{Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, Role, Source, Stat};
 use board_tree::{Contents, Entry, GitError, Repository, Status, latest};
 use board_validate::Schema;
@@ -71,7 +73,7 @@ pub(crate) struct Refresh {
 impl Board {
     /// Brings the index up to date with the working tree, adding every fact
     /// it does not yet hold.
-    pub(crate) fn refresh(&self, writer: &Writer<'_>) -> Result<Refresh, RefreshError> {
+    pub(crate) fn refresh(&self, writer: &Writer) -> Result<Refresh, RefreshError> {
         let started_ns = now_ns();
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
@@ -101,7 +103,7 @@ impl Board {
     /// Adds `HEAD`'s trees the index does not hold, and returns its files.
     fn head(
         &self,
-        writer: &Writer<'_>,
+        writer: &Writer,
         listed: &mut usize,
     ) -> Result<HashMap<String, Option<ObjectId>>, RefreshError> {
         let repository = self.repository();
@@ -122,7 +124,7 @@ impl Board {
     /// whether it hashed or recorded anything.
     fn walk(
         &self,
-        writer: &Writer<'_>,
+        writer: &Writer,
         work: &mut Refreshed,
         kept: &mut Kept,
     ) -> Result<(Vec<Entry>, bool), RefreshError> {
@@ -181,37 +183,36 @@ impl Board {
     }
 }
 
+/// What a run in a transaction returns: its value, and the entries to decide.
+pub(crate) type Run<T> = Result<(T, Vec<Resolved>), RefreshError>;
+
 /// Runs `run` in a transaction that takes the write lock only when it
 /// writes, so that runs finding nothing changed do not wait on each other,
-/// and returns what it returned and whether it wrote. If another process
-/// holds the lock or wrote first, it runs again in a transaction that waits
-/// for the lock. If the wait runs out, it runs once more in an index in
-/// memory, as opening does.
+/// then decides the entries it returned. Returns what it returned, whether
+/// it wrote, and the view of what it decided. If another process holds the
+/// lock or wrote first, it runs again in a transaction that waits for the
+/// lock, or in an index in memory if the wait runs out, as opening does.
+/// The second run cannot be busy: it holds the write lock from its start,
+/// and in WAL mode, which opening requires of a file, nothing else blocks it.
 pub(crate) fn transact<T>(
-    index: &mut Index,
-    mut run: impl FnMut(&Writer<'_>) -> Result<T, RefreshError>,
-) -> Result<(T, bool), RefreshError> {
-    let first = once(index.deferred(), &mut run);
-    if !busy(&first) {
-        return first;
-    }
-    let second = once(index.write(), &mut run);
-    if !busy(&second) {
-        return second;
-    }
-    index.fall_back()?;
-    once(index.write(), &mut run)
-}
-
-fn once<T>(
-    writer: Result<Writer<'_>, IndexError>,
-    run: &mut impl FnMut(&Writer<'_>) -> Result<T, RefreshError>,
-) -> Result<(T, bool), RefreshError> {
-    let writer = writer?;
-    let value = run(&writer)?;
+    index: Index,
+    mut run: impl FnMut(&Writer) -> Run<T>,
+) -> Result<(T, bool, View), RefreshError> {
+    let writer = index.deferred()?;
+    let first = run(&writer);
+    let (writer, result) = if busy(&first) {
+        let writer = match writer.rollback()?.write() {
+            Err(IndexError::Busy { .. }) => Index::fall_back()?.write()?,
+            writer => writer?,
+        };
+        let second = run(&writer);
+        (writer, second)
+    } else {
+        (writer, first)
+    };
+    let (value, entries) = result?;
     let wrote = writer.wrote()?;
-    writer.commit()?;
-    Ok((value, wrote))
+    Ok((value, wrote, writer.decide(&entries)?))
 }
 
 /// Whether `result` failed because another process held the index.
@@ -227,7 +228,7 @@ fn busy<T>(result: &Result<T, RefreshError>) -> bool {
 /// Indexes the `contents` of the file at `path` that a walk read, unless
 /// the index already holds its blob, and keeps what it holds.
 fn keep(
-    writer: &Writer<'_>,
+    writer: &Writer,
     kept: &mut Kept,
     path: &str,
     contents: &Contents,
@@ -254,7 +255,7 @@ impl Kept {
     /// large to read, stores what the index keeps of it and keeps the rest.
     fn index(
         &mut self,
-        writer: &Writer<'_>,
+        writer: &Writer,
         blob: ObjectId,
         role: Role,
         bytes: Option<&[u8]>,
@@ -298,7 +299,7 @@ impl Kept {
 /// the paths left out because they changed after the walk. What the walk
 /// `kept` is not read again.
 pub(crate) fn facts(
-    writer: &Writer<'_>,
+    writer: &Writer,
     repository: &Repository,
     source: &Source,
     entries: &[Entry],
@@ -344,7 +345,7 @@ pub(crate) fn facts(
 /// holds that pair, and returns how many it validated. A schema this
 /// refresh did not compile is read and compiled once.
 fn validate_all(
-    writer: &Writer<'_>,
+    writer: &Writer,
     repository: &Repository,
     source: &Source,
     facts: &HashMap<String, Indexed>,

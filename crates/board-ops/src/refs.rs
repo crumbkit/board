@@ -70,8 +70,8 @@ impl Board {
             .repositories()
             .resolve(&Source::WorkingTree, path)
             .map_err(refused)?;
-        let mut index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
-        let snapshot = self.snapshot(&mut index, None)?;
+        let index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
+        let snapshot = self.snapshot(index, None)?;
         let same = |source: &Source, physical: &str| {
             *source == location.board.source && physical == location.path
         };

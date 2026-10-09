@@ -1,7 +1,6 @@
 //! Where the index lives and how it opens (docs/architecture/index.md).
 //! Every way of opening ends in the same preparation, on a file or in memory.
 
-use std::cell::Cell;
 use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io::{self, Write as _};
@@ -45,8 +44,6 @@ pub(crate) fn hex(bytes: &[u8]) -> String {
 pub struct Index {
     pub(crate) connection: Connection,
     storage: Storage,
-    /// The prune count when this run last built its views.
-    pub(crate) seen: Cell<Option<i64>>,
 }
 
 /// Where an index is kept.
@@ -98,11 +95,10 @@ impl Index {
         &self.storage
     }
 
-    /// Replaces this index with an empty one in memory, as opening does
-    /// when another process holds the file past the wait.
-    pub fn fall_back(&mut self) -> Result<(), IndexError> {
-        *self = Self::memory(Fallback::Busy)?;
-        Ok(())
+    /// An empty index in memory, as opening gives when another process
+    /// holds the file past the wait.
+    pub fn fall_back() -> Result<Self, IndexError> {
+        Self::memory(Fallback::Busy)
     }
 
     fn file(cache: &Path, root: &Path, reset: bool) -> Result<Self, Failure> {
@@ -113,6 +109,14 @@ impl Index {
             Prepared::Sql(error) => failure(&error),
             Prepared::Foreign => Failure::Unusable,
         })?;
+        // `transact` in board-ops relies on WAL: a run that holds the write
+        // lock can then commit without being busy.
+        let mode: String = connection
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .map_err(|error| failure(&error))?;
+        if mode != "wal" {
+            return Err(Failure::Unusable);
+        }
         if created {
             // The cache is disposable, so tidying it may fail.
             let _ = tidy(cache, root);
@@ -120,7 +124,6 @@ impl Index {
         Ok(Self {
             connection,
             storage: Storage::File(file),
-            seen: Cell::new(None),
         })
     }
 
@@ -133,7 +136,6 @@ impl Index {
         Ok(Self {
             connection,
             storage: Storage::Memory(fallback),
-            seen: Cell::new(None),
         })
     }
 }

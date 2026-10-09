@@ -52,11 +52,12 @@ pub(crate) fn open(scenario: &Scenario) -> Board {
 /// makes it see a blob the file does not hold, as if the file changed
 /// after it was hashed.
 pub(crate) fn stand_in(board: &Board, cache: &std::path::Path, path: &str, blob: ObjectId) {
-    let mut index = board_index::Index::open(Some(cache), board.repository().path()).unwrap();
-    crate::index::transact(&mut index, |writer| {
+    let index = board_index::Index::open(Some(cache), board.repository().path()).unwrap();
+    crate::index::transact(index, |writer| {
         let mut row = writer.worktree()?.remove(path).unwrap();
         row.blob = Some(blob);
-        Ok(writer.put_worktree(path, &row)?)
+        writer.put_worktree(path, &row)?;
+        Ok(((), Vec::new()))
     })
     .unwrap();
 }

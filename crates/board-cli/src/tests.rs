@@ -680,7 +680,7 @@ fn sql_that_cannot_run_fails_with_its_code_and_a_read_succeeds() {
     let scenario = board();
     let refused = json(&board_in(
         scenario.workdir(),
-        &["query", "DELETE FROM blobs", "--json"],
+        &["query", "DELETE FROM main.blobs", "--json"],
     ));
     assert_eq!(refused["code"], "board::query::invalid");
     let admitted = board_in(scenario.workdir(), &["query", "SELECT count(*) FROM blobs"]);

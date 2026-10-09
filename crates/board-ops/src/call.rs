@@ -27,10 +27,14 @@ impl Board {
     ) -> Result<Called, CallFailed> {
         plugins.environment.depth()?;
         let chosen = board_plugin::choose(plugins.installed()?, &self.config().plugins, target)?;
-        let mut index = Index::open(cache, self.repository().path())?;
+        let index = Index::open(cache, self.repository().path())?;
         let database = database(index.storage(), &chosen.manifest)?;
-        if !chosen.manifest.extract.is_empty() {
-            let snapshot = self.snapshot(&mut index, None)?;
+        // The plugin may run `board query` or `board call`, which open the
+        // same index; holding it past here would make them wait and fall back.
+        if chosen.manifest.extract.is_empty() {
+            drop(index);
+        } else {
+            let snapshot = self.snapshot(index, None)?;
             self.extract_into(
                 &snapshot,
                 &chosen.manifest,
@@ -39,9 +43,6 @@ impl Board {
                 plugins,
             )?;
         }
-        // The plugin may run `board query` or `board call`, which open the
-        // same index; holding it here would make them wait and fall back.
-        drop(index);
         let report = board_plugin::invoke(
             &chosen,
             input,

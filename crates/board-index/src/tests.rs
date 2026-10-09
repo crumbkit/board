@@ -26,18 +26,49 @@ fn record() -> BlobFact {
     }
 }
 
-/// An index on disk holding one blob fact.
-fn filled(cache: &Path) -> Index {
-    let mut index = Index::open(Some(cache), Path::new(ROOT)).unwrap();
-    let writer = index.write().unwrap();
+/// The view of an index on disk holding one blob fact.
+fn filled(cache: &Path) -> View {
+    let writer = Index::open(Some(cache), Path::new(ROOT))
+        .unwrap()
+        .write()
+        .unwrap();
     writer.put_blob(blob(1), Role::Json, &record()).unwrap();
-    writer.commit().unwrap();
-    index
+    writer.decide(&[]).unwrap()
 }
 
-fn has_fact(index: &mut Index) -> bool {
+/// `index` once a writer has decided no entries.
+fn decided(index: Index) -> View {
+    index.write().unwrap().decide(&[]).unwrap()
+}
+
+fn has_fact(index: Index) -> bool {
     let writer = index.deferred().unwrap();
     writer.blob(blob(1), Role::Json).unwrap().is_some()
+}
+
+/// Writes one blob fact to a new index file, then decides when `decided`
+/// or drops the writer otherwise. Returns whether the file then holds it.
+fn kept_after(decided: bool) -> bool {
+    let cache = tempfile::tempdir().unwrap();
+    let open = || Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let writer = open().write().unwrap();
+    writer.put_blob(blob(1), Role::Json, &record()).unwrap();
+    if decided {
+        drop(writer.decide(&[]).unwrap());
+    } else {
+        drop(writer);
+    }
+    has_fact(open())
+}
+
+#[test]
+fn a_writer_dropped_before_it_decides_rolls_back_what_it_wrote() {
+    assert!(!kept_after(false));
+}
+
+#[test]
+fn a_writer_that_decides_commits_what_it_wrote() {
+    assert!(kept_after(true));
 }
 
 #[expect(
@@ -71,7 +102,7 @@ fn each_board_has_its_own_index_file_under_the_cache() {
 fn an_index_reopens_with_the_facts_it_was_given() {
     let cache = tempfile::tempdir().unwrap();
     drop(filled(cache.path()));
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert_eq!(
         index.storage(),
         &Storage::File(location(cache.path(), Path::new(ROOT)))
@@ -84,10 +115,10 @@ fn an_index_reopens_with_the_facts_it_was_given() {
 #[test]
 fn an_index_that_falls_back_is_empty_and_in_memory_and_leaves_the_file() {
     let cache = tempfile::tempdir().unwrap();
-    let mut index = filled(cache.path());
-    index.fall_back().unwrap();
+    drop(filled(cache.path()));
+    let index = Index::fall_back().unwrap();
     assert_eq!(index.storage(), &Storage::Memory(Fallback::Busy));
-    assert!(!has_fact(&mut index));
+    assert!(!has_fact(index));
     let file = location(cache.path(), Path::new(ROOT));
     assert_eq!(holds(&file), (1, INDEX_VERSION.to_string()));
 }
@@ -101,9 +132,9 @@ fn a_corrupt_index_is_deleted_and_rebuilt() {
         &file,
         b"this is not a database, and it is long enough to be read",
     );
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert_eq!(index.storage(), &Storage::File(file));
-    assert!(!has_fact(&mut index));
+    assert!(!has_fact(index));
 }
 
 #[test]
@@ -118,9 +149,9 @@ fn an_index_whose_format_differs_from_its_name_is_deleted_and_rebuilt() {
             [],
         )
         .unwrap();
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert_eq!(index.storage(), &Storage::File(file));
-    assert!(!has_fact(&mut index));
+    assert!(!has_fact(index));
 }
 
 /// Leaves the filled index's fact only in a file called `name` beside it,
@@ -166,12 +197,12 @@ fn an_index_another_format_uses_is_left_to_the_build_that_has_it_open() {
     // Builds before the name carried the format used `index.sqlite`, and
     // format 8 is one of theirs.
     let (other, _holder) = beside(cache.path(), "index.sqlite", "8");
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert_eq!(
         index.storage(),
         &Storage::File(location(cache.path(), Path::new(ROOT)))
     );
-    assert!(!has_fact(&mut index), "it opened its own file");
+    assert!(!has_fact(index), "it opened its own file");
     assert_eq!(holds(&other), (1, "8".to_owned()), "the other is intact");
 }
 
@@ -181,9 +212,9 @@ fn an_index_of_this_format_is_reused_while_another_build_has_it_open() {
     let file = location(cache.path(), Path::new(ROOT));
     let name = file.file_name().unwrap().to_str().unwrap();
     let (other, _holder) = beside(cache.path(), name, &INDEX_VERSION.to_string());
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert_eq!(index.storage(), &Storage::File(file));
-    assert!(has_fact(&mut index), "it opened the same file");
+    assert!(has_fact(index), "it opened the same file");
     assert_eq!(holds(&other), (1, INDEX_VERSION.to_string()));
 }
 
@@ -196,13 +227,13 @@ fn an_index_another_process_holds_past_the_wait_is_replaced_by_one_in_memory() {
         .execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE")
         .unwrap();
     let started = Instant::now();
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert!(
         started.elapsed().as_secs() >= 5,
         "it waits before giving up"
     );
     assert_eq!(index.storage(), &Storage::Memory(Fallback::Busy));
-    assert!(!has_fact(&mut index), "the index in memory starts empty");
+    assert!(!has_fact(index), "the index in memory starts empty");
 }
 
 #[test]
@@ -211,12 +242,12 @@ fn an_index_another_process_is_writing_is_used_without_waiting_for_it() {
     drop(filled(cache.path()));
     let holder = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
     holder.execute_batch("BEGIN IMMEDIATE").unwrap();
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert!(
         matches!(index.storage(), Storage::File(_)),
         "a reader shares the file with one writer"
     );
-    assert!(has_fact(&mut index));
+    assert!(has_fact(index));
 }
 
 #[test]
@@ -225,9 +256,9 @@ fn an_index_another_process_has_released_is_used() {
     drop(filled(cache.path()));
     let holder = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
     holder.execute_batch("BEGIN EXCLUSIVE; COMMIT").unwrap();
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     assert!(matches!(index.storage(), Storage::File(_)));
-    assert!(has_fact(&mut index));
+    assert!(has_fact(index));
 }
 
 #[test]
@@ -253,14 +284,14 @@ fn remount(
     first: Result<ObjectId, Code>,
     then: Result<ObjectId, Code>,
 ) -> (bool, (BTreeSet<SourceRow>, BTreeSet<MountRow>)) {
-    let mut index = Index::open(None, Path::new(ROOT)).unwrap();
+    let index = Index::open(None, Path::new(ROOT)).unwrap();
     let repository = Path::new(ROOT);
     let (source, mounts) = mounting(first);
     let writer = index.write().unwrap();
     writer
         .set_mounts(&[(source, Some(blob(3)), repository)], &mounts)
         .unwrap();
-    writer.commit().unwrap();
+    let index = writer.decide(&[]).unwrap().index;
     let (source, mounts) = mounting(then);
     let writer = index.deferred().unwrap();
     writer
@@ -307,7 +338,7 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
         Option<i64>,
     );
     let cache = tempfile::tempdir().unwrap();
-    let mut index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = index.write().unwrap();
     let valid = ValidationFact::Valid(vec![
         RefFact {
@@ -333,7 +364,7 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
     assert_eq!(writer.validation(blob(1), blob(2)).unwrap(), Some(valid));
     assert_eq!(writer.validation(blob(3), blob(2)).unwrap(), Some(invalid));
     assert_eq!(writer.validation(blob(1), blob(4)).unwrap(), None);
-    writer.commit().unwrap();
+    writer.decide(&[]).unwrap();
     let file = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
     let rows: Vec<Row> = file
         .prepare("SELECT record, code, pointer, reason, failures FROM validations ORDER BY record")
@@ -374,18 +405,16 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
 #[test]
 fn a_query_cannot_write_and_leaves_the_index_writable() {
     let cache = tempfile::tempdir().unwrap();
-    let mut index = filled(cache.path());
-    let refused = index.query("DELETE FROM blobs", 10).unwrap_err();
+    let view = filled(cache.path());
+    let refused = view.query("DELETE FROM main.blobs", 10).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
-    let admitted = index.query("SELECT count(*) AS n FROM blobs", 10).unwrap();
+    let admitted = view
+        .query("SELECT count(*) AS n FROM main.blobs", 10)
+        .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
-    assert!(
-        has_fact(&mut index),
-        "the write lock is still there to take"
-    );
-    let writer = index.write().unwrap();
+    let writer = view.index.write().unwrap();
     writer.put_blob(blob(2), Role::Json, &record()).unwrap();
-    writer.commit().unwrap();
+    writer.decide(&[]).unwrap();
 }
 
 #[test]
@@ -419,8 +448,8 @@ fn a_failure_of_the_database_is_the_indexs_and_any_other_is_the_querys() {
     );
 }
 
-fn journal_mode(index: &Index) -> String {
-    index
+fn journal_mode(view: &View) -> String {
+    view.index
         .connection
         .query_row("PRAGMA journal_mode", [], |row| row.get(0))
         .unwrap()
@@ -464,7 +493,7 @@ fn a_query_cannot_attach_a_database_but_a_plugin_database_attaches() {
 #[test]
 fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let cache = tempfile::tempdir().unwrap();
-    let mut index = filled(cache.path());
+    let index = filled(cache.path());
     let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
                      SELECT count(*) FROM c";
     let refused = index.query(unbounded, 10).unwrap_err();
@@ -474,7 +503,7 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let admitted = index.query(bounded, 10).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(10)]]);
     assert_eq!(journal_mode(&index), "wal");
-    assert!(has_fact(&mut index), "the index is still writable");
+    assert!(has_fact(index.index), "the index is still writable");
 }
 
 #[test]
@@ -486,6 +515,8 @@ fn a_query_cannot_vacuum_into_a_file() {
     let refused = index.query(&sql, 10).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert!(!target.exists(), "no file is created");
-    let admitted = index.query("SELECT count(*) AS n FROM blobs", 10).unwrap();
+    let admitted = index
+        .query("SELECT count(*) AS n FROM main.blobs", 10)
+        .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
 }

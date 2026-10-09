@@ -177,8 +177,8 @@ fn databases_are_deleted_before_the_journals() {
 }
 
 /// The `plugins` directory beside an index kept in a file.
-fn plugins(index: &Index) -> PathBuf {
-    let Storage::File(file) = index.storage() else {
+fn plugins(storage: &Storage) -> PathBuf {
+    let Storage::File(file) = storage else {
         panic!("the index is in memory");
     };
     file.parent().unwrap().join("plugins")
@@ -191,7 +191,7 @@ fn databases_left(version: &str) -> Vec<String> {
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let first = PluginDatabase::open(index.storage(), "p", version).unwrap();
-    let plugins = plugins(&index);
+    let plugins = plugins(index.storage());
     for name in [
         "p@0.9.10.sqlite",
         "p@1.2.0.sqlite",
@@ -232,8 +232,8 @@ fn opening_a_plugins_oldest_database_deletes_none() {
 }
 
 /// The number of blobs the index records plugin `p` at 1.0.0 handled.
-fn handled(index: &Index) -> i64 {
-    index
+fn handled(view: &View) -> i64 {
+    view.index
         .connection
         .query_row("SELECT count(*) FROM main.extracted", [], |row| row.get(0))
         .unwrap()
@@ -246,14 +246,14 @@ fn handled(index: &Index) -> i64 {
 /// and the blobs the index then counts as handled.
 fn trusted_after(remade: bool) -> (bool, i64) {
     let cache = tempfile::tempdir().unwrap();
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = decided(Index::open(Some(cache.path()), Path::new(ROOT)).unwrap());
     let first = PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap();
     index.trust("p", "1.0.0", first.id().unwrap()).unwrap();
     index
         .handled("p", "1.0.0", first.id().unwrap(), &[blob(1)])
         .unwrap();
     if remade {
-        let file = plugins(&index).join("p@1.0.0.sqlite");
+        let file = plugins(index.storage()).join("p@1.0.0.sqlite");
         remove(&file);
         put(&file, b"");
     }
@@ -278,10 +278,10 @@ fn a_plugin_database_opened_again_keeps_its_id_and_what_it_handled() {
 /// counts as handled.
 fn handled_into(stale: bool) -> i64 {
     let cache = tempfile::tempdir().unwrap();
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = decided(Index::open(Some(cache.path()), Path::new(ROOT)).unwrap());
     let first = PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap();
     index.trust("p", "1.0.0", first.id().unwrap()).unwrap();
-    remove(&plugins(&index).join("p@1.0.0.sqlite"));
+    remove(&plugins(index.storage()).join("p@1.0.0.sqlite"));
     let second = PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap();
     index.trust("p", "1.0.0", second.id().unwrap()).unwrap();
     let into = if stale { &first } else { &second };
@@ -306,11 +306,11 @@ fn blobs_handled_into_the_database_the_index_trusts_are_recorded() {
 /// `remade`. Returns whether the second trust waited for the lock.
 fn trust_waited(remade: bool) -> bool {
     let cache = tempfile::tempdir().unwrap();
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = decided(Index::open(Some(cache.path()), Path::new(ROOT)).unwrap());
     let first = PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap();
     index.trust("p", "1.0.0", first.id().unwrap()).unwrap();
     if remade {
-        remove(&plugins(&index).join("p@1.0.0.sqlite"));
+        remove(&plugins(index.storage()).join("p@1.0.0.sqlite"));
     }
     let second = PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap();
     let Storage::File(file) = index.storage() else {
@@ -318,7 +318,7 @@ fn trust_waited(remade: bool) -> bool {
     };
     let holder = Connection::open(file).unwrap();
     holder.execute_batch("BEGIN IMMEDIATE").unwrap();
-    index.connection.busy_timeout(Duration::ZERO).unwrap();
+    index.index.connection.busy_timeout(Duration::ZERO).unwrap();
     matches!(
         index.trust("p", "1.0.0", second.id().unwrap()),
         Err(IndexError::Busy { .. })
@@ -352,13 +352,13 @@ enum Unwritable {
 fn handled_while_unwritable(unwritable: Unwritable, remade: bool) -> (bool, i64) {
     use std::os::unix::fs::PermissionsExt as _;
     let cache = tempfile::tempdir().unwrap();
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = decided(Index::open(Some(cache.path()), Path::new(ROOT)).unwrap());
     let first = PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap();
     index.trust("p", "1.0.0", first.id().unwrap()).unwrap();
     index
         .handled("p", "1.0.0", first.id().unwrap(), &[blob(1)])
         .unwrap();
-    let file = plugins(&index).join("p@1.0.0.sqlite");
+    let file = plugins(index.storage()).join("p@1.0.0.sqlite");
     if remade {
         remove(&file);
         drop(PluginDatabase::open(index.storage(), "p", "1.0.0").unwrap());
@@ -417,7 +417,7 @@ fn opened_in_read_only_directory(opened: bool) -> Option<std::io::ErrorKind> {
     use std::os::unix::fs::PermissionsExt as _;
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
-    let plugins = plugins(&index);
+    let plugins = plugins(index.storage());
     // Another plugin's database makes the directory in both cases.
     put(&plugins.join("q@1.0.0.sqlite"), b"");
     if opened {
@@ -447,7 +447,7 @@ fn a_plugin_database_already_created_opens_in_a_read_only_directory() {
 /// again. Returns the blobs the index then counts as handled.
 fn handled_after_trusting(plugin: &str, version: &str) -> i64 {
     let cache = tempfile::tempdir().unwrap();
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let index = decided(Index::open(Some(cache.path()), Path::new(ROOT)).unwrap());
     index.trust("p", "1.0.0", "a").unwrap();
     index.handled("p", "1.0.0", "a", &[blob(1)]).unwrap();
     index.trust(plugin, version, "b").unwrap();

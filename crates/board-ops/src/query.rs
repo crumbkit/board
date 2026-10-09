@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use board_index::{Fallback, Index, IndexError};
+use board_index::{Fallback, Index, IndexError, View};
 use board_model::Code;
 use board_plugin::{Installed, PluginName};
 use serde_json::Value;
@@ -78,9 +78,9 @@ impl Board {
         cache: Option<&Path>,
         plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
-        let mut index = Index::open(cache, self.repository().path()).map_err(QueryError::from)?;
-        let snapshot = self.snapshot(&mut index, None)?;
-        let index = snapshot.index;
+        let index = Index::open(cache, self.repository().path()).map_err(QueryError::from)?;
+        let snapshot = self.snapshot(index, None)?;
+        let view = &snapshot.view;
         let mut report = QueryReport {
             columns: Vec::new(),
             rows: Vec::new(),
@@ -132,7 +132,7 @@ impl Board {
                     continue;
                 }
             };
-            let database = match database(index.storage(), manifest) {
+            let database = match database(view.storage(), manifest) {
                 Ok(database) => database,
                 Err(error) => {
                     report
@@ -152,7 +152,7 @@ impl Board {
                 report.fallbacks.push(name.clone());
             }
             let alias = format!("p_{}", name.as_str().replace('-', "_"));
-            if let Err(error) = index.attach(&alias, database.path()) {
+            if let Err(error) = view.attach(&alias, database.path()) {
                 report.plugins.push(failed(
                     Code::PluginFailed.as_str(),
                     format!(
@@ -164,9 +164,9 @@ impl Board {
             }
             databases.push(database);
         }
-        let rows = index
+        let rows = view
             .query(sql, limit)
-            .map_err(|error| unknown(index, sql, error))?;
+            .map_err(|error| unknown(view, sql, error))?;
         report.columns = rows.columns;
         report.rows = rows.rows;
         report.truncated = rows.truncated;
@@ -221,10 +221,10 @@ const TABLES: &str = "\
 
 /// `error`, with the names there are when `SQLite` says the statement names a
 /// table or column that is not there.
-fn unknown(index: &Index, sql: &str, error: IndexError) -> QueryError {
+fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
     let message = error.to_string();
     let names = |sql: &str| -> Vec<String> {
-        index.query(sql, MAX_LIMIT).map_or_else(
+        view.query(sql, MAX_LIMIT).map_or_else(
             |_| Vec::new(),
             |rows| {
                 rows.rows

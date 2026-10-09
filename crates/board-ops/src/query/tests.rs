@@ -169,7 +169,7 @@ fn sql_that_cannot_run_is_refused_and_one_read_is_admitted() {
     for refused in [
         "SELECT nothing FROM nowhere",
         "SELEC 1",
-        "DELETE FROM blobs",
+        "DELETE FROM main.blobs",
         "SELECT 1; SELECT 2",
     ] {
         assert_eq!(
@@ -341,13 +341,12 @@ printf '{{"$type": "board/extract-result/v1", "blobs": [%s]}}' "$blobs"
                 let title = format!(r#"{{"$type": "lr/task/v1", "title": "u{runs}"}}"#);
                 scenario.write("tasks/a.json", Item::File(&title));
                 let board = open(&scenario);
-                let mut second =
-                    Index::open(Some(cache.path()), board.repository().path()).unwrap();
-                board.snapshot(&mut second, None).unwrap();
+                let second = || Index::open(Some(cache.path()), board.repository().path()).unwrap();
+                board.snapshot(second(), None).unwrap();
                 if runs <= prunes {
-                    let writer = second.write().unwrap();
+                    let writer = second().write().unwrap();
                     writer.prune().unwrap();
-                    writer.commit().unwrap();
+                    writer.decide(&[]).unwrap();
                 }
             }
             drop(resumed);

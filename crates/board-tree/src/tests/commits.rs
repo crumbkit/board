@@ -23,7 +23,7 @@ fn head_moved_since_staging_leaves_the_commit_unmade_and_the_index_alone() {
         .unwrap();
     let moved = scenario.commit(&[("a.json", "{}"), ("c.json", "{}")]);
     assert!(matches!(
-        repository.finish_commit(staged),
+        repository.finish_commit(&lock, staged),
         Err(WriteError::HeadMoved)
     ));
     assert_eq!(scenario.head().unwrap().id, moved);
@@ -43,7 +43,7 @@ fn head_unmoved_since_staging_takes_the_commit_and_the_index_follows() {
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
         .unwrap();
-    let commit = repository.finish_commit(staged).unwrap();
+    let commit = repository.finish_commit(&lock, staged).unwrap();
     let head = scenario.head().unwrap();
     assert_eq!((head.id, head.parents.as_slice()), (commit, &[parent][..]));
     assert_eq!(head.files["b.json"], b"{}\n");
@@ -61,7 +61,7 @@ fn a_detached_head_takes_the_commit_on_itself() {
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
         .unwrap();
-    let commit = repository.finish_commit(staged).unwrap();
+    let commit = repository.finish_commit(&lock, staged).unwrap();
     assert_eq!(
         std::fs::read_to_string(repository.git_dir().join("HEAD"))
             .unwrap()
@@ -87,7 +87,7 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
         .unwrap();
-    let error = repository.finish_commit(staged).unwrap_err();
+    let error = repository.finish_commit(&lock, staged).unwrap_err();
     assert!(matches!(error, WriteError::Uncommitted { .. }), "{error}");
     assert_eq!(error.code(), Code::PutFailed);
     assert!(error.to_string().contains("written but not committed"));
@@ -97,7 +97,7 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
         .unwrap();
-    assert!(repository.finish_commit(staged).is_ok());
+    assert!(repository.finish_commit(&lock, staged).is_ok());
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn an_index_that_cannot_be_written_after_head_moved_names_the_commit() {
     // The index is written into the held lock file, so with it gone the
     // write fails after HEAD has moved.
     scenario.write(".git/index.lock", Item::Deleted);
-    let error = repository.finish_commit(staged).unwrap_err();
+    let error = repository.finish_commit(&lock, staged).unwrap_err();
     let head = scenario.head().unwrap().id;
     assert!(
         matches!(error, WriteError::IndexNotUpdated { commit, .. } if commit == head),

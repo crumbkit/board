@@ -1,13 +1,13 @@
 //! What each plugin version has extracted, and which records it still needs
-//! (docs/plugins.md, Extraction). Call these after a refresh has decided the
-//! current entries.
+//! (docs/plugins.md, Extraction).
 
 use std::path::{Path, PathBuf};
 
 use board_model::{ObjectId, Source};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, TransactionBehavior, params};
 
-use crate::open::{Index, IndexError};
+use crate::open::IndexError;
+use crate::store::View;
 
 /// A record a plugin has not yet handled: one route to its blob.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,7 +23,7 @@ pub struct Unhandled {
     pub repository: PathBuf,
 }
 
-impl Index {
+impl View {
     /// Each current record of one of `types` whose blob parses and validates
     /// through some route, and which `plugin` at `version` has not handled,
     /// once per blob by its first display path, in display path order.
@@ -34,7 +34,7 @@ impl Index {
         types: &[&str],
     ) -> Result<Vec<Unhandled>, IndexError> {
         let types = serde_json::Value::from(types).to_string();
-        let mut statement = self.connection.prepare(
+        let mut statement = self.connection().prepare(
             "SELECT r.blob, r.source, r.path, min(coalesce(r.logical, r.path)), b.type,
                     s.repository
              FROM temp.resolved AS r
@@ -86,7 +86,7 @@ impl Index {
         id: &str,
         blobs: &[ObjectId],
     ) -> Result<(), IndexError> {
-        let mut insert = self.connection.prepare(
+        let mut insert = self.connection().prepare(
             "INSERT OR IGNORE INTO main.extracted (plugin, version, blob)
              SELECT ?1, ?2, ?3 WHERE (SELECT value FROM main.state WHERE key = ?4) = ?5",
         )?;
@@ -112,11 +112,11 @@ impl Index {
                 )
                 .optional()
         };
-        if recorded(&self.connection)?.as_deref() == Some(id) {
+        if recorded(self.connection())?.as_deref() == Some(id) {
             return Ok(());
         }
         let transaction =
-            Transaction::new_unchecked(&self.connection, TransactionBehavior::Immediate)?;
+            Transaction::new_unchecked(self.connection(), TransactionBehavior::Immediate)?;
         if recorded(&transaction)?.as_deref() != Some(id) {
             transaction.execute(
                 "DELETE FROM main.extracted WHERE plugin = ?1 AND version = ?2",
@@ -140,7 +140,7 @@ impl Index {
             .replace('?', "%3F")
             .replace('#', "%23");
         let uri = format!("file:{escaped}?mode=ro");
-        self.connection
+        self.connection()
             .execute("ATTACH DATABASE ?1 AS ?2", params![uri, name])?;
         Ok(())
     }

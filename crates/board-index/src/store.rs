@@ -1,7 +1,6 @@
 //! Writing facts. Each is keyed by content alone, so a fact once written is
 //! true wherever its key appears and is never updated.
 
-use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
@@ -9,9 +8,9 @@ use board_model::{
     Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat, canonical_json,
 };
 use board_tree::{MountPoint, TreeRow, TreeRows};
-use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, TransactionState, params};
+use rusqlite::{Connection, OptionalExtension, TransactionState, params};
 
-use crate::open::{Index, IndexError};
+use crate::open::{Index, IndexError, Storage};
 use crate::schema::{COUNTED, KEPT, PRUNE, PRUNES, RESOLVED};
 
 /// What parsing one blob in one role found. For a schema, the code includes
@@ -88,11 +87,20 @@ pub struct Resolved {
 }
 
 /// One transaction on the index that may write. It reads one snapshot, and
-/// holds the write lock from its first write until it commits.
+/// holds the write lock from its first write until it decides. It owns the
+/// index, so dropping it closes the connection, which rolls back.
 #[derive(Debug)]
-pub struct Writer<'a> {
-    transaction: Transaction<'a>,
-    seen: &'a Cell<Option<i64>>,
+pub struct Writer {
+    index: Index,
+}
+
+/// The index once a run has decided its entries. Only a view reads the
+/// `entries` and `records` views, which show what was decided.
+#[derive(Debug)]
+pub struct View {
+    pub(crate) index: Index,
+    /// The prune count the views were built under.
+    pub(crate) prunes: i64,
 }
 
 /// A row of `sources`, and of `mounts`, as stored.
@@ -101,31 +109,42 @@ pub(crate) type MountRow = (String, String, Option<String>, Option<String>);
 
 impl Index {
     /// A transaction that takes the write lock now, waiting for it.
-    pub fn write(&mut self) -> Result<Writer<'_>, IndexError> {
-        self.begin(TransactionBehavior::Immediate)
+    pub fn write(self) -> Result<Writer, IndexError> {
+        self.begin("BEGIN IMMEDIATE")
     }
 
     /// A transaction that takes the write lock at its first write, as
     /// `BEGIN DEFERRED` does. That write fails at once with
     /// [`IndexError::Busy`] if another process holds the lock or has written
     /// since this transaction began reading.
-    pub fn deferred(&mut self) -> Result<Writer<'_>, IndexError> {
-        self.begin(TransactionBehavior::Deferred)
+    pub fn deferred(self) -> Result<Writer, IndexError> {
+        self.begin("BEGIN DEFERRED")
     }
 
-    fn begin(&mut self, behavior: TransactionBehavior) -> Result<Writer<'_>, IndexError> {
-        let transaction = self.connection.transaction_with_behavior(behavior)?;
-        Ok(Writer {
-            transaction,
-            seen: &self.seen,
-        })
+    fn begin(self, sql: &str) -> Result<Writer, IndexError> {
+        self.connection.execute_batch(sql)?;
+        Ok(Writer { index: self })
     }
 }
 
-impl Writer<'_> {
+impl View {
+    pub fn storage(&self) -> &Storage {
+        self.index.storage()
+    }
+
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.index.connection
+    }
+}
+
+impl Writer {
+    fn connection(&self) -> &Connection {
+        &self.index.connection
+    }
+
     pub fn blob(&self, blob: ObjectId, role: Role) -> Result<Option<BlobFact>, IndexError> {
         let row: Option<(String, Option<String>, Option<String>)> = self
-            .transaction
+            .connection()
             .prepare_cached(
                 "SELECT kind, type, code FROM main.blobs WHERE blob = ?1 AND role = ?2",
             )?
@@ -149,7 +168,7 @@ impl Writer<'_> {
     }
 
     pub fn put_blob(&self, blob: ObjectId, role: Role, fact: &BlobFact) -> Result<(), IndexError> {
-        self.transaction
+        self.connection()
             .prepare_cached(
                 "INSERT OR REPLACE INTO main.blobs (blob, role, kind, type, code)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -166,7 +185,7 @@ impl Writer<'_> {
 
     /// Stores the canonical form of the record `blob` parses to.
     pub fn put_body(&self, blob: ObjectId, value: &serde_json::Value) -> Result<(), IndexError> {
-        self.transaction
+        self.connection()
             .prepare_cached("INSERT OR IGNORE INTO main.bodies (blob, body) VALUES (?1, ?2)")?
             .execute(params![
                 blob.to_string(),
@@ -185,7 +204,7 @@ impl Writer<'_> {
         type Row = (Option<String>, Option<String>, Option<String>, Option<i64>);
         let keys = params![record.to_string(), schema.to_string()];
         let row: Option<Row> = self
-            .transaction
+            .connection()
             .prepare_cached(
                 "SELECT code, pointer, reason, failures FROM main.validations
                  WHERE record = ?1 AND schema = ?2",
@@ -205,7 +224,7 @@ impl Writer<'_> {
                 failures: failures.unwrap_or_default().cast_unsigned(),
             }));
         }
-        let mut statement = self.transaction.prepare_cached(
+        let mut statement = self.connection().prepare_cached(
             "SELECT pointer, target, accepts FROM main.refs
              WHERE record = ?1 AND schema = ?2 ORDER BY ordinal",
         )?;
@@ -250,7 +269,7 @@ impl Writer<'_> {
                 Some(failures.cast_signed()),
             ),
         };
-        self.transaction
+        self.connection()
             .prepare_cached(
                 "INSERT OR REPLACE INTO main.validations
                  (record, schema, code, pointer, reason, failures)
@@ -265,7 +284,7 @@ impl Writer<'_> {
                 serde_json::Value::from(types.iter().map(RecordType::as_str).collect::<Vec<_>>())
                     .to_string()
             });
-            self.transaction.prepare_cached("INSERT OR REPLACE INTO main.refs (record, schema, ordinal, pointer, target, accepts)
+            self.connection().prepare_cached("INSERT OR REPLACE INTO main.refs (record, schema, ordinal, pointer, target, accepts)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?
             .execute(params![
                     record,
@@ -283,7 +302,7 @@ impl Writer<'_> {
     /// When the last refresh began, in nanoseconds since the Unix epoch.
     pub fn refreshed_ns(&self) -> Result<Option<i64>, IndexError> {
         let value: Option<String> = self
-            .transaction
+            .connection()
             .prepare_cached("SELECT value FROM main.state WHERE key = 'refreshed_ns'")?
             .query_row([], |row| row.get(0))
             .optional()?;
@@ -291,7 +310,7 @@ impl Writer<'_> {
     }
 
     pub fn set_refreshed_ns(&self, started_ns: i64) -> Result<(), IndexError> {
-        self.transaction
+        self.connection()
             .prepare_cached(
                 "INSERT OR REPLACE INTO main.state (key, value) VALUES ('refreshed_ns', ?1)",
             )?
@@ -301,7 +320,7 @@ impl Writer<'_> {
 
     /// Every working-tree entry as the last refresh saw it, by path.
     pub fn worktree(&self) -> Result<HashMap<String, WorktreeRow>, IndexError> {
-        let mut statement = self.transaction.prepare_cached(
+        let mut statement = self.connection().prepare_cached(
             "SELECT path, logical, code, blob, size, modified_ns, changed_ns, inode, mode
              FROM main.worktree",
         )?;
@@ -340,7 +359,7 @@ impl Writer<'_> {
 
     pub fn put_worktree(&self, path: &str, row: &WorktreeRow) -> Result<(), IndexError> {
         let stat = row.stat.as_ref();
-        self.transaction
+        self.connection()
             .prepare_cached(
                 "INSERT OR REPLACE INTO main.worktree
              (path, logical, code, blob, size, modified_ns, changed_ns, inode, mode)
@@ -361,7 +380,7 @@ impl Writer<'_> {
     }
 
     pub fn delete_worktree(&self, path: &str) -> Result<(), IndexError> {
-        self.transaction
+        self.connection()
             .prepare_cached("DELETE FROM main.worktree WHERE path = ?1")?
             .execute([path])?;
         Ok(())
@@ -369,7 +388,7 @@ impl Writer<'_> {
 
     pub fn has_tree(&self, tree: ObjectId) -> Result<bool, IndexError> {
         Ok(self
-            .transaction
+            .connection()
             .prepare_cached("SELECT 1 FROM main.trees WHERE tree = ?1 LIMIT 1")?
             .query_row([tree.to_string()], |_| Ok(()))
             .optional()?
@@ -379,7 +398,7 @@ impl Writer<'_> {
     pub fn put_tree(&self, tree: &TreeRows) -> Result<(), IndexError> {
         let id = tree.id.to_string();
         for row in &tree.rows {
-            self.transaction
+            self.connection()
                 .prepare_cached(
                     "INSERT OR REPLACE INTO main.trees (tree, name, mode, object, size, segment, code)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -399,7 +418,7 @@ impl Writer<'_> {
 
     /// The rows of `tree`, or `None` when the index does not hold it.
     pub fn tree(&self, tree: ObjectId) -> Result<Option<Vec<TreeRow>>, IndexError> {
-        let mut statement = self.transaction.prepare_cached(
+        let mut statement = self.connection().prepare_cached(
             "SELECT name, mode, object, size, segment, code FROM main.trees WHERE tree = ?1",
         )?;
         let rows = statement
@@ -457,17 +476,17 @@ impl Writer<'_> {
         if self.mounted()? == (sources.clone(), mounts.clone()) {
             return Ok(());
         }
-        self.transaction
+        self.connection()
             .execute_batch("DELETE FROM main.sources; DELETE FROM main.mounts;")?;
         for (source, tree, repository) in sources {
-            self.transaction
+            self.connection()
                 .prepare_cached(
                     "INSERT INTO main.sources (source, tree, repository) VALUES (?1, ?2, ?3)",
                 )?
                 .execute(params![source, tree, repository])?;
         }
         for (source, path, target, code) in mounts {
-            self.transaction
+            self.connection()
                 .prepare_cached(
                     "INSERT INTO main.mounts (source, path, target, code) VALUES (?1, ?2, ?3, ?4)",
                 )?
@@ -479,12 +498,12 @@ impl Writer<'_> {
     /// The sources and mounts the index holds.
     pub(crate) fn mounted(&self) -> Result<(BTreeSet<SourceRow>, BTreeSet<MountRow>), IndexError> {
         let sources = self
-            .transaction
+            .connection()
             .prepare_cached("SELECT source, tree, repository FROM main.sources")?
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
             .collect::<Result<_, _>>()?;
         let mounts = self
-            .transaction
+            .connection()
             .prepare_cached("SELECT source, path, target, code FROM main.mounts")?
             .query_map([], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
@@ -499,7 +518,7 @@ impl Writer<'_> {
     /// Returns the rows it deleted.
     pub fn prune_if_doubled(&self) -> Result<usize, IndexError> {
         let recorded: Option<String> = self
-            .transaction
+            .connection()
             .prepare_cached("SELECT value FROM main.state WHERE key = 'pruned_pages'")?
             .query_row([], |row| row.get(0))
             .optional()?;
@@ -518,14 +537,16 @@ impl Writer<'_> {
     /// reaches, gives the freed pages back to the file, and records its size.
     /// Returns the rows it deleted.
     pub fn prune(&self) -> Result<usize, IndexError> {
-        self.transaction.execute_batch(KEPT)?;
+        self.connection().execute_batch(KEPT)?;
         let mut deleted = 0;
         for statement in PRUNE {
-            deleted += self.transaction.execute(statement, [])?;
+            deleted += self.connection().execute(statement, [])?;
         }
-        self.transaction.execute(COUNTED, [])?;
+        self.connection().execute(COUNTED, [])?;
         // Each step frees one page, so it runs to the end.
-        let mut vacuum = self.transaction.prepare("PRAGMA main.incremental_vacuum")?;
+        let mut vacuum = self
+            .connection()
+            .prepare("PRAGMA main.incremental_vacuum")?;
         let mut freed = vacuum.query([])?;
         while freed.next()?.is_some() {}
         self.record(self.pages()?)?;
@@ -534,7 +555,7 @@ impl Writer<'_> {
 
     /// Records `pages` as the index's size after the last prune.
     fn record(&self, pages: i64) -> Result<(), IndexError> {
-        self.transaction.execute(
+        self.connection().execute(
             "INSERT OR REPLACE INTO main.state (key, value) VALUES ('pruned_pages', ?1)",
             [pages.to_string()],
         )?;
@@ -544,19 +565,19 @@ impl Writer<'_> {
     /// The index's size in pages.
     fn pages(&self) -> Result<i64, IndexError> {
         Ok(self
-            .transaction
+            .connection()
             .query_row("PRAGMA main.page_count", [], |row| row.get(0))?)
     }
 
     /// Whether this transaction has written, and so holds the write lock.
     pub fn wrote(&self) -> Result<bool, IndexError> {
-        Ok(self.transaction.transaction_state(Some("main"))? == TransactionState::Write)
+        Ok(self.connection().transaction_state(Some("main"))? == TransactionState::Write)
     }
 
     /// Every file, symlink and submodule beneath the tree `root`, by
     /// `/`-separated path, with its blob; a submodule has none.
     pub fn files(&self, root: ObjectId) -> Result<HashMap<String, Option<ObjectId>>, IndexError> {
-        let mut statement = self.transaction.prepare_cached(
+        let mut statement = self.connection().prepare_cached(
             "WITH RECURSIVE walk (path, mode, object) AS (
                  SELECT name, mode, object FROM main.trees WHERE tree = ?1
                  UNION ALL
@@ -585,13 +606,12 @@ impl Writer<'_> {
     }
 
     /// Replaces what this run decided, which the `entries` view shows, and
-    /// notes the prune count the views are built under.
-    pub fn resolve(&self, entries: &[Resolved]) -> Result<(), IndexError> {
-        self.seen.set(Some(
-            self.transaction.query_row(PRUNES, [], |row| row.get(0))?,
-        ));
-        self.transaction.execute_batch(RESOLVED)?;
-        let mut statement = self.transaction.prepare_cached(
+    /// commits.
+    pub fn decide(self, entries: &[Resolved]) -> Result<View, IndexError> {
+        let connection = self.connection();
+        let prunes = connection.query_row(PRUNES, [], |row| row.get(0))?;
+        connection.execute_batch(RESOLVED)?;
+        let mut statement = connection.prepare_cached(
             "INSERT INTO temp.resolved
              (source, path, logical, blob, size, role, schema, kind, code, change)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -610,10 +630,20 @@ impl Writer<'_> {
                 entry.change.as_str(),
             ])?;
         }
-        Ok(())
+        drop(statement);
+        connection.execute_batch("COMMIT")?;
+        Ok(View {
+            index: self.index,
+            prunes,
+        })
     }
 
-    pub fn commit(self) -> Result<(), IndexError> {
-        Ok(self.transaction.commit()?)
+    /// Rolls back, and returns the index to begin again.
+    pub fn rollback(self) -> Result<Index, IndexError> {
+        // A failed statement may already have rolled back the transaction.
+        if !self.connection().is_autocommit() {
+            self.connection().execute_batch("ROLLBACK")?;
+        }
+        Ok(self.index)
     }
 }

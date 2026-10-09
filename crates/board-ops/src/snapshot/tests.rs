@@ -1,7 +1,7 @@
 //! Deciding through the index: a warm index decides as a cold one, its views
 //! show exactly what was decided, and it prunes what the tree left.
 
-use board_index::{BlobFact, Index};
+use board_index::{BlobFact, Index, View};
 use board_model::{
     Change, Code, Kind, Location, Object, ObjectId, POINTER_TYPE, Role, Source, Stat,
 };
@@ -22,13 +22,13 @@ mod mounts;
 
 /// Decides every entry of `scenario` through `index`, and returns what it
 /// reported.
-fn decided(scenario: &Scenario, index: &mut Index) -> CheckReport {
+fn decided(scenario: &Scenario, index: Index) -> CheckReport {
     open(scenario).snapshot(index, None).unwrap().report
 }
 
 /// What `entries` shows, as check reports it.
-fn viewed(index: &Index) -> Vec<Checked> {
-    let rows = index
+fn viewed(view: &View) -> Vec<Checked> {
+    let rows = view
         .query(
             "SELECT path, logical, kind, code, change, status, source, type FROM entries ORDER BY source, path",
             10_000,
@@ -92,8 +92,8 @@ const EVERY_TABLE: [&str; 12] = [
 
 /// Marks every record the index would send a plugin extracting every type
 /// as handled, as a plugin naming every blob it was sent does.
-fn extract_everything(index: &Index) {
-    let types = index
+fn extract_everything(view: &View) {
+    let types = view
         .query(
             "SELECT DISTINCT type FROM entries WHERE type IS NOT NULL",
             10_000,
@@ -104,14 +104,14 @@ fn extract_everything(index: &Index) {
         .iter()
         .filter_map(|row| row[0].as_str())
         .collect();
-    let blobs: Vec<_> = index
+    let blobs: Vec<_> = view
         .unhandled("p", "1.0.0", &types)
         .unwrap()
         .into_iter()
         .map(|unhandled| unhandled.blob)
         .collect();
-    index.trust("p", "1.0.0", "id").unwrap();
-    index.handled("p", "1.0.0", "id", &blobs).unwrap();
+    view.trust("p", "1.0.0", "id").unwrap();
+    view.handled("p", "1.0.0", "id", &blobs).unwrap();
 }
 
 #[test]
@@ -120,22 +120,22 @@ fn the_blobs_view_shows_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
     scenario.write("tasks/a.json", Item::File(&task("")));
     let cache = tempfile::tempdir().unwrap();
     let board = open(&scenario);
-    let mut warm = Index::open(Some(cache.path()), board.repository().path()).unwrap();
-    decided(&scenario, &mut warm);
+    let warm = || Index::open(Some(cache.path()), board.repository().path()).unwrap();
+    decided(&scenario, warm());
     scenario.write(
         "tasks/a.json",
         Item::File(&task(r#", "see": "/projects/p""#)),
     );
-    let mut cold = Index::open(None, board.repository().path()).unwrap();
-    let warm = board.snapshot(&mut warm, None).unwrap();
-    let cold = board.snapshot(&mut cold, None).unwrap();
-    let count = |index: &Index, sql: &str| index.query(sql, 1).unwrap().rows[0][0].clone();
+    let cold = Index::open(None, board.repository().path()).unwrap();
+    let warm = board.snapshot(warm(), None).unwrap();
+    let cold = board.snapshot(cold, None).unwrap();
+    let count = |view: &View, sql: &str| view.query(sql, 1).unwrap().rows[0][0].clone();
     let seen = "SELECT count(*) FROM blobs";
-    assert_eq!(count(warm.index, seen), count(cold.index, seen));
+    assert_eq!(count(&warm.view, seen), count(&cold.view, seen));
     let cached = "SELECT count(*) FROM main.blobs";
     assert_eq!(
-        count(warm.index, cached).as_i64().unwrap(),
-        count(cold.index, cached).as_i64().unwrap() + 1,
+        count(&warm.view, cached).as_i64().unwrap(),
+        count(&cold.view, cached).as_i64().unwrap() + 1,
         "the first version of tasks/a is still cached"
     );
 }
@@ -151,10 +151,10 @@ fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
 }
 
 /// Deletes every fact the current tree does not reach.
-fn prune(index: &mut Index) -> usize {
+fn prune(index: Index) -> usize {
     let writer = index.write().unwrap();
     let pruned = writer.prune().unwrap();
-    writer.commit().unwrap();
+    writer.decide(&[]).unwrap();
     pruned
 }
 
@@ -162,15 +162,15 @@ fn prune(index: &mut Index) -> usize {
 /// everything after each, and requires them to agree: the same entries, the
 /// same references, views that show those entries, and every table alike.
 /// Returns what the warm index reported.
-fn agrees(scenario: &Scenario, warm: &mut Index) -> Result<CheckReport, TestCaseError> {
+fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError> {
     let board = open(scenario);
-    let mut cold = Index::open(None, board.repository().path()).unwrap();
+    let cold = Index::open(None, board.repository().path()).unwrap();
     let warm = board.snapshot(warm, None).unwrap();
-    let cold = board.snapshot(&mut cold, None).unwrap();
+    let cold = board.snapshot(cold, None).unwrap();
     for snapshot in [&warm, &cold] {
-        extract_everything(snapshot.index);
+        extract_everything(&snapshot.view);
         prop_assert_eq!(
-            viewed(snapshot.index),
+            viewed(&snapshot.view),
             sorted(snapshot.report.entries.clone())
         );
     }
@@ -178,8 +178,8 @@ fn agrees(scenario: &Scenario, warm: &mut Index) -> Result<CheckReport, TestCase
     prop_assert_eq!(&warm.references, &cold.references);
     for sql in EVERY_TABLE {
         prop_assert_eq!(
-            warm.index.query(sql, 10_000).unwrap(),
-            cold.index.query(sql, 10_000).unwrap(),
+            warm.view.query(sql, 10_000).unwrap(),
+            cold.view.query(sql, 10_000).unwrap(),
             "{}",
             sql
         );
@@ -199,19 +199,19 @@ proptest! {
         let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, &before, committed);
         let cache = tempfile::tempdir().unwrap();
         let root = open(generated.scenario()).repository().path().to_path_buf();
-        let mut warm = Index::open(Some(cache.path()), &root).unwrap();
-        extract_everything(open(generated.scenario()).snapshot(&mut warm, None).unwrap().index);
+        let warm = || Index::open(Some(cache.path()), &root).unwrap();
+        extract_everything(&open(generated.scenario()).snapshot(warm(), None).unwrap().view);
         generated.write(&after);
 
-        agrees(generated.scenario(), &mut warm)?;
-        let again = agrees(generated.scenario(), &mut warm)?;
+        agrees(generated.scenario(), warm())?;
+        let again = agrees(generated.scenario(), warm())?;
         prop_assert_eq!(again.work, Refreshed::default(), "nothing changed");
 
-        prune(&mut warm);
+        prune(warm());
         generated.write(&before);
-        agrees(generated.scenario(), &mut warm)?;
-        prune(&mut warm);
-        let again = agrees(generated.scenario(), &mut warm)?;
+        agrees(generated.scenario(), warm())?;
+        prune(warm());
+        let again = agrees(generated.scenario(), warm())?;
         prop_assert_eq!(again.work, Refreshed::default(), "a prune keeps what the tree reaches");
     }
 }
@@ -225,10 +225,10 @@ fn large_task(letter: char, bytes: usize) -> String {
 }
 
 /// How many prunes `index` has run.
-fn prunes(index: &Index) -> i64 {
+fn prunes(view: &View) -> i64 {
     let sql =
         "SELECT CAST(coalesce(max(value), 0) AS INTEGER) FROM main.state WHERE key = 'prunes'";
-    index.query(sql, 1).unwrap().rows[0][0].as_i64().unwrap()
+    view.query(sql, 1).unwrap().rows[0][0].as_i64().unwrap()
 }
 
 /// Decides a board holding a large task, then again after the task is
@@ -240,23 +240,28 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
     scenario.write("tasks/a.json", Item::File(&large_task('a', 200_000)));
     let cache = tempfile::tempdir().unwrap();
     let root = open(&scenario).repository().path().to_path_buf();
-    let mut warm = Index::open(Some(cache.path()), &root).unwrap();
-    let first = decided(&scenario, &mut warm);
-    assert_eq!(first.work.pruned, 0);
-    assert_eq!(prunes(&warm), 0, "a new index records its size instead");
+    let warm = || Index::open(Some(cache.path()), &root).unwrap();
+    let first = open(&scenario).snapshot(warm(), None).unwrap();
+    assert_eq!(first.report.work.pruned, 0);
+    assert_eq!(
+        prunes(&first.view),
+        0,
+        "a new index records its size instead"
+    );
+    drop(first);
     scenario.write("tasks/a.json", Item::File(replacement));
-    let second = decided(&scenario, &mut warm);
-    assert!(second.work.wrote);
-    let mut cold = Index::open(None, &root).unwrap();
-    decided(&scenario, &mut cold);
-    let blobs = |index: &Index| {
-        let rows = index.query("SELECT count(*) FROM main.blobs", 1).unwrap();
+    let second = open(&scenario).snapshot(warm(), None).unwrap();
+    assert!(second.report.work.wrote);
+    let cold = Index::open(None, &root).unwrap();
+    let cold = open(&scenario).snapshot(cold, None).unwrap();
+    let blobs = |view: &View| {
+        let rows = view.query("SELECT count(*) FROM main.blobs", 1).unwrap();
         rows.rows[0][0].as_i64().unwrap()
     };
     (
-        second.work.pruned,
-        prunes(&warm),
-        blobs(&warm) - blobs(&cold),
+        second.report.work.pruned,
+        prunes(&second.view),
+        blobs(&second.view) - blobs(&cold.view),
     )
 }
 
@@ -333,7 +338,7 @@ fn only_a_pointer_without_a_code_is_followed_as_a_mount() {
     .collect();
     let followed: Vec<&str> = ["pointer.json", "broken.json", "record.json", "absent.json"]
         .into_iter()
-        .filter(|path| <Indexing<'_, '_> as Cache>::is_pointer(&facts, path))
+        .filter(|path| <Indexing<'_> as Cache>::is_pointer(&facts, path))
         .collect();
     assert_eq!(followed, ["pointer.json"]);
 }
