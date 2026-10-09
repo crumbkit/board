@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use board_index::{Fallback, Index, IndexError};
+use board_index::{Fallback, IndexError};
 use board_model::{Change, Code, Fields, Kind, Location, LogicalPath, RecordType, Refusal, Source};
 use board_tree::{ResolveError, Status};
 
@@ -161,7 +161,7 @@ impl Board {
         scope: Option<&LogicalPath>,
         cache: Option<&Path>,
     ) -> Result<CheckReport, CheckError> {
-        let index = Index::open(cache, self.repository().path())?;
+        let index = self.index(cache)?;
         Ok(self.snapshot(index, scope)?.report)
     }
 }

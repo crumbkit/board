@@ -12,7 +12,7 @@ pub(crate) struct Context {
     pub(crate) start: PathBuf,
     /// What a mount's `~/` means.
     pub(crate) home: Option<PathBuf>,
-    /// Where the index is kept: `$XDG_CACHE_HOME`, or `~/.cache`.
+    /// Where the index and timing log are kept: `$XDG_CACHE_HOME`, or `~/.cache`.
     pub(crate) cache: Option<PathBuf>,
     /// Where plugins are installed: `$XDG_DATA_HOME/board/plugins`, or
     /// `~/.local/share/board/plugins`.
@@ -56,6 +56,7 @@ impl Context {
                 cache: std::env::var_os("XDG_CACHE_HOME"),
                 data: std::env::var_os("XDG_DATA_HOME"),
                 depth: std::env::var_os("BOARD_CALL_DEPTH"),
+                timings: std::env::var_os("BOARD_TIMINGS"),
             },
             complete: std::env::var_os("BOARD_COMPLETE"),
             cursor: std::env::var("_CLAP_COMPLETE_INDEX")

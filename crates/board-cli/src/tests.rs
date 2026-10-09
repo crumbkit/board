@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use crate::config::Context;
 use crate::report::Output;
 use crate::run::run;
+use crate::timing::Ran;
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
 const TASK_SCHEMA: &str = r#"{
@@ -91,7 +92,7 @@ fn board_environment(
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
         .map(OsString::from);
-    run(arguments, &context, &mut &stdin[..])
+    run(arguments, &context, &mut &stdin[..], &mut Ran::default())
 }
 
 fn json(output: &Output) -> Value {

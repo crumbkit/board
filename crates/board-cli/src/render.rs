@@ -60,6 +60,7 @@ pub(crate) fn check(format: Format, report: &CheckReport, limit: Option<usize>) 
                 stdout: text.into_bytes(),
                 stderr: hints.into_bytes(),
                 code,
+                error: None,
             }
         }
         Format::Json => {
@@ -569,6 +570,7 @@ pub(crate) fn error(format: Format, code: Code, message: &dyn Display, fields: &
 /// document on stdout, with `fields` when there are any. The exit code is 2
 /// for a refused command line, else 1.
 pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
+    let error = Some(refusal.code.as_str().to_owned());
     let code = if refusal.code == RefusalCode::Board(Code::UsageInvalid) {
         2
     } else {
@@ -593,6 +595,7 @@ pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
             Output {
                 stderr,
                 code,
+                error,
                 ..Output::default()
             }
         }
@@ -608,7 +611,10 @@ pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
             if !refusal.fields.is_empty() {
                 value["fields"] = Value::Object(refusal.fields.clone());
             }
-            document(&value, code)
+            Output {
+                error,
+                ..document(&value, code)
+            }
         }
     }
 }

@@ -54,6 +54,17 @@ fn a_depth_below_the_limit_is_admitted_and_one_at_it_refused() {
     assert!(matches!(at("8 ").depth(), Err(CallError::BadDepth { .. })));
 }
 
+#[test]
+fn a_plugin_inherits_board_timings_when_it_is_set_and_not_when_it_is_not() {
+    let off = Environment {
+        timings: Some(OsString::from("0")),
+        ..Environment::default()
+    };
+    assert!(environment(&off, 1).contains(&("BOARD_TIMINGS", OsString::from("0"))));
+    let unset = environment(&Environment::default(), 1);
+    assert!(!unset.iter().any(|(key, _)| *key == "BOARD_TIMINGS"));
+}
+
 /// An install of `name` that offers `capabilities`, each taking `input`.
 fn plugin(name: &str, capabilities: &[&str], input: &Value) -> Installed {
     let manifest = json!({

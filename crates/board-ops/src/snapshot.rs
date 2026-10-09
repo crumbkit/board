@@ -54,7 +54,9 @@ impl Board {
         index: Index,
         scope: Option<&LogicalPath>,
     ) -> Result<Snapshot, CheckError> {
+        let _timed = self.timed("snapshot");
         if let Some(scope) = scope {
+            let _timed = self.timed("resolve");
             self.repositories()
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
@@ -66,6 +68,14 @@ impl Board {
             Storage::Memory(fallback) => Some(*fallback),
             Storage::File(_) => None,
         };
+        let work = &report.work;
+        let mut trace = self.trace.borrow_mut();
+        trace.count("entries", report.entries.len());
+        trace.count("hashed", work.hashed);
+        trace.count("parsed", work.parsed);
+        trace.count("validated", work.validated);
+        trace.count("trees", work.trees);
+        drop(trace);
         Ok(Snapshot {
             view,
             report,

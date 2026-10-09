@@ -78,6 +78,7 @@ impl Board {
         let Some(id) = database.id().filter(|_| !manifest.extract.is_empty()) else {
             return Ok(());
         };
+        let _timed = self.timed("plugin.extract");
         let view = &snapshot.view;
         let (name, version) = (manifest.name.as_str(), manifest.version.as_str());
         view.trust(name, version, id)?;

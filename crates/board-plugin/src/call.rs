@@ -68,6 +68,8 @@ pub struct Environment {
     pub data: Option<OsString>,
     /// `BOARD_CALL_DEPTH`.
     pub depth: Option<OsString>,
+    /// `BOARD_TIMINGS`, so a run a plugin starts records as its caller does.
+    pub timings: Option<OsString>,
 }
 
 impl Environment {
@@ -372,6 +374,7 @@ fn environment(inherited: &Environment, depth: u32) -> Vec<(&'static str, OsStri
         ("LANG", &inherited.lang),
         ("XDG_CACHE_HOME", &inherited.cache),
         ("XDG_DATA_HOME", &inherited.data),
+        ("BOARD_TIMINGS", &inherited.timings),
     ]
     .into_iter()
     .filter_map(|(key, value)| Some((key, value.clone()?)))

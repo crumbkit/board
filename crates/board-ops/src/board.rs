@@ -1,5 +1,6 @@
 //! Finding and opening a board (docs/architecture.md, Boards and entries).
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use board_model::{
@@ -10,6 +11,8 @@ use board_tree::{GitError, Repositories, Repository, latest};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
+
+use crate::trace::Trace;
 
 /// `.board/board.json`, a `board/config/v1` record.
 #[derive(Debug, Deserialize)]
@@ -45,6 +48,7 @@ impl Config {
 pub struct Board {
     repositories: Repositories,
     config: Config,
+    pub(crate) trace: RefCell<Trace>,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -81,6 +85,7 @@ impl Board {
         Ok(Self {
             repositories,
             config,
+            trace: RefCell::default(),
         })
     }
 

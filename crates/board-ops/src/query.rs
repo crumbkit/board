@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use board_index::{Fallback, Index, IndexError, View};
+use board_index::{Fallback, IndexError, View};
 use board_model::{Code, Fields, Known, Refusal};
 use board_plugin::{Installed, PluginName};
 use serde_json::Value;
@@ -78,7 +78,7 @@ impl Board {
         cache: Option<&Path>,
         plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
-        let index = Index::open(cache, self.repository().path()).map_err(QueryError::from)?;
+        let index = self.index(cache).map_err(QueryError::from)?;
         let snapshot = self.snapshot(index, None)?;
         let view = &snapshot.view;
         let mut report = QueryReport {
@@ -159,9 +159,12 @@ impl Board {
             }
             databases.push(database);
         }
+        let timed = self.timed("query.sql");
         let rows = view
             .query(sql, limit)
             .map_err(|error| unknown(view, sql, error))?;
+        drop(timed);
+        self.trace.borrow_mut().count("rows", rows.rows.len());
         report.columns = rows.columns;
         report.rows = rows.rows;
         report.truncated = rows.truncated;

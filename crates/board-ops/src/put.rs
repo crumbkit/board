@@ -304,6 +304,7 @@ impl Board {
         expect: Expect,
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
+        let _timed = self.timed("put.validate");
         let admitted = self
             .check_record(schemas, bytes)
             .map_err(|refused| PutError::Record {
@@ -330,6 +331,7 @@ impl Board {
         prepared: &[Prepared],
         message: &str,
     ) -> Result<PutReport, Failure> {
+        let _timed = self.timed("put.write");
         let repository = self.repository();
         let mut writes = Vec::with_capacity(prepared.len());
         let mut stale = Vec::new();

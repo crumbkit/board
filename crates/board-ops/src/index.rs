@@ -77,6 +77,7 @@ impl Board {
     /// Brings the index up to date with the working tree, adding every fact
     /// it does not yet hold.
     pub(crate) fn refresh(&self, writer: &Writer) -> Result<Refresh, RefreshError> {
+        let _timed = self.timed("index.refresh");
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
         let entries = self.walk(writer, &mut work, &mut kept)?;

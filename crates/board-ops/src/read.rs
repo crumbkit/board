@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use board_index::{Fallback, Index};
+use board_index::Fallback;
 use board_model::{
     BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
     Source, classify, parse_json,
@@ -69,8 +69,8 @@ impl Board {
     pub fn ls(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<LsReport, ReadError> {
         let location = self.locate(path)?;
         let display = display(&location, path);
-        let snapshot = Index::open(cache, self.repository().path())
-            .map_err(CheckError::from)
+        let index = self.index(cache).map_err(CheckError::from);
+        let snapshot = index
             .and_then(|index| self.snapshot(index, Some(&display)))
             .map_err(|source| ReadError::Check { source })?;
         let checked: HashMap<(&Source, &str), (Kind, Status)> = snapshot
@@ -227,6 +227,7 @@ impl Board {
     /// that ends `.json` and the path without it resolves, the error says
     /// that the path names an entry by its file.
     pub(crate) fn locate(&self, path: &LogicalPath) -> Result<Location, ReadError> {
+        let _timed = self.timed("resolve");
         let resolve = |path: &LogicalPath| self.repositories().resolve(&Source::WorkingTree, path);
         resolve(path).map_err(|source| {
             let stem = path.as_str().strip_suffix(".json");

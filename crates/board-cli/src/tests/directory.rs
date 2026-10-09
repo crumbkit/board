@@ -214,7 +214,7 @@ fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
         OsString::from_vec(vec![0xff]),
         OsString::from("plugin"),
     ];
-    let refused = run(arguments, &context, &mut &b""[..]);
+    let refused = run(arguments, &context, &mut &b""[..], &mut Ran::default());
     assert_eq!(refused.code, 2);
     assert!(
         text(&refused.stderr)

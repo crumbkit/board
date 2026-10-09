@@ -245,7 +245,7 @@ STANDARDS.md 23 to 26 hold the rules.
 | `board-model` | pure types and decisions: logical paths, Locations, record types, codes and their hints, refusals, canonical JSON, the duplicate-key parse | serde, serde_json, thiserror |
 | `board-tree` | every read and write of git objects and the working tree; resolution; walking a board and every board its mounts reach | board-model, gix |
 | `board-validate` | JSON Schema validation of record bytes against schema bytes | board-model, jsonschema |
-| `board-index` | the index and the cache directory | board-model, board-tree, rusqlite |
+| `board-index` | the index, the timing log and the cache directory | board-model, board-tree, rusqlite |
 | `board-plugin` | manifests, discovery, child processes, signals | board-model, board-validate, rustix and signal-hook (Unix) |
 | `board-ops` | every operation as a typed function returning its report | all of the above |
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-tree |
@@ -299,3 +299,48 @@ enforced yet:
 | --- | --- |
 | `board check`, warm, nothing changed | 100 ms |
 | simple `board query`, warm | 100 ms |
+
+### Timing log
+
+Every `board` run whose command line parses appends one JSON line, tagged
+`board/timing/v1`, to `$XDG_CACHE_HOME/board/timings.jsonl` (by default
+`~/.cache/board/`), beside the boards' indexes. Help, `--version`, completion
+and a refused command line record nothing. The log is created readable only by
+its owner (mode 0600). `BOARD_TIMINGS=0` turns recording off. A plugin inherits
+`BOARD_TIMINGS` and `XDG_CACHE_HOME`, so the runs it starts record to the same
+log.
+
+A record holds the start time (`at_ms`), Board's `version`, the subcommands
+run (`command`, such as `plugin find`, never the values given), the plugin call
+`depth`, the board's absolute path (`root`), the `exit` code and `error` code,
+`total_us`, and `phases`. Each phase gives its
+`name`, its start after the run's (`at_us`), its time (`us`) and how often it
+was `entered`, in the order the phases started. A record has only the phases
+its run entered:
+
+| Phase | What it times |
+| --- | --- |
+| `parse` | parsing the command line |
+| `open` | finding and opening the board |
+| `resolve` | resolving the path that `get`, `ls`, `refs` or a scoped `check` names |
+| `index.open` | opening the index |
+| `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query`, `refs`, and `call` when the plugin extracts records |
+| `index.refresh` | the refresh, within `snapshot` |
+| `query.sql` | running the SQL statement |
+| `plugin.extract` | extracting records for one plugin |
+| `plugin.call` | running a capability |
+| `put.validate` | checking a record before it is written |
+| `put.write` | writing the records and committing |
+| `emit` | printing the output |
+
+`work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
+`trees` and `rows`.
+
+Before a line would take the log past 1 MiB, the log is renamed to
+`timings.jsonl.1`, replacing the one before. The rename takes no lock, so two
+runs that fill the log at once can lose the older file. The run that renames
+second also loses its own record, because the log it tried to rename is
+already gone. Recording happens after the output is printed. A record that cannot be written is dropped silently, and
+the run's output and exit code stay as they were. Read the log with `jq`. The
+`root` of each record shows the names of your directories, so check the log
+before you attach it to a bug report.

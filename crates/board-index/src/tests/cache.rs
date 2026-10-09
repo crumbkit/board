@@ -82,6 +82,25 @@ fn creating_an_index_deletes_a_cache_directory_whose_recorded_root_is_gone() {
     assert!(!unrecorded_kept(true));
 }
 
+#[test]
+fn creating_an_index_keeps_the_timing_logs_beside_a_cache_directory_it_deletes() {
+    let cache = tempfile::tempdir().unwrap();
+    let other = cache.path().join("board/other");
+    put(&other.join("root"), b"/no/such/board");
+    let logs = ["board/timings.jsonl", "board/timings.jsonl.1"].map(|log| cache.path().join(log));
+    for log in &logs {
+        put(log, b"{}\n");
+    }
+    drop(Index::open(Some(cache.path()), Path::new(ROOT)).unwrap());
+    assert!(
+        !other.exists(),
+        "the cache directory of a board that is gone is deleted"
+    );
+    for log in &logs {
+        assert!(log.is_file(), "{} is kept", log.display());
+    }
+}
+
 /// Opens an index for a board inside a directory, removes the board, takes
 /// away permission to look inside that directory when `hidden`, then
 /// creates an index for another board. Returns whether the first board's

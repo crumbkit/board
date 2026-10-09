@@ -9,6 +9,8 @@ pub(crate) struct Output {
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,
     pub(crate) code: u8,
+    /// The code of the error reported, if one was.
+    pub(crate) error: Option<String>,
 }
 
 #[expect(

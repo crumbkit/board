@@ -69,6 +69,7 @@ pub(crate) fn plugin_list(
                     )
                     .into_bytes(),
                 code,
+                error: None,
             }
         }
         Format::Json => {

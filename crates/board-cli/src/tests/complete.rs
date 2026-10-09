@@ -24,7 +24,7 @@ fn with_shell(
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
         .map(OsString::from);
-    run(arguments, &context, &mut &stdin[..])
+    run(arguments, &context, &mut &stdin[..], &mut Ran::default())
 }
 
 fn completing(directory: &Path, shell: &str, arguments: &[&str]) -> Output {

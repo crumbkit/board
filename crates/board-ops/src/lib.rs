@@ -16,9 +16,10 @@ mod query;
 mod read;
 mod refs;
 mod snapshot;
+mod trace;
 mod verdict;
 
-pub use board_index::{Fallback, source_name};
+pub use board_index::{Fallback, append_timing, source_name};
 
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::call::Called;
@@ -35,6 +36,7 @@ pub use crate::put::{Expect, MAX_BATCH_LINES, PutError, PutReport, Refused, Writ
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, PluginFailed, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Incoming, Missing, Outgoing, RefsError, RefsReport};
+pub use crate::trace::{Phase, Trace};
 pub use crate::verdict::{Fault, SchemaFound};
 
 #[cfg(test)]

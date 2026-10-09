@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use board_model::{
     BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId, Refusal,
@@ -19,11 +20,12 @@ fn plugins(context: &Context) -> Plugins<'_> {
     }
 }
 use clap::error::{ContextKind, ContextValue, ErrorKind};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use crate::config::Context;
 use crate::render::{self, Format};
 use crate::report::Output;
+use crate::timing::{self, Ran};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -300,20 +302,27 @@ fn limit(text: &str) -> Result<usize, String> {
 }
 
 /// Runs one command line against the board found from `context`, reading a
-/// record from `stdin` when the command takes one.
+/// record from `stdin` when the command takes one, and traces it in `ran`.
 pub(crate) fn run(
     arguments: impl IntoIterator<Item = OsString>,
     context: &Context,
     stdin: &mut dyn Read,
+    ran: &mut Ran,
 ) -> Output {
     let arguments: Vec<OsString> = arguments.into_iter().collect();
     if let Some(completed) = crate::complete::complete(&arguments, context) {
         return completed;
     }
-    let cli = match Cli::try_parse_from(&arguments) {
-        Ok(cli) => cli,
+    let parsing = Instant::now();
+    let parsed = Cli::command()
+        .try_get_matches_from(&arguments)
+        .and_then(|matches| Ok((Cli::from_arg_matches(&matches)?, timing::command(&matches))));
+    ran.trace.add("parse", parsing);
+    let (cli, invoked) = match parsed {
+        Ok(parsed) => parsed,
         Err(error) => return clap_refused(&error, &arguments),
     };
+    ran.command = Some(invoked);
     let format = if cli.json { Format::Json } else { Format::Text };
     let start = match entered(&context.start, &cli.directories, format) {
         Ok(start) => start,
@@ -328,14 +337,31 @@ pub(crate) fn run(
             }
         };
     }
-    let board = match Board::open(&start, context.home.clone()) {
+    let opening = Instant::now();
+    let opened = Board::open(&start, context.home.clone());
+    ran.trace.add("open", opening);
+    let board = match opened {
         Ok(board) => board,
         Err(error) => {
             let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
             return render::refused(format, &unopened(error.code(), &error, outside));
         }
     };
-    match cli.command {
+    ran.root = Some(board.repository().path().to_path_buf());
+    let output = command(cli.command, &board, context, format, stdin);
+    ran.trace.extend(board.take_trace());
+    output
+}
+
+/// Runs `command` against `board`.
+fn command(
+    command: Command,
+    board: &Board,
+    context: &Context,
+    format: Format,
+    stdin: &mut dyn Read,
+) -> Output {
+    match command {
         Command::Init => unreachable!("init runs before a board is opened"),
         Command::Check { path, page } => match board.check(path.as_ref(), context.cache.as_deref())
         {
@@ -356,13 +382,13 @@ pub(crate) fn run(
             path: Some(path),
             expect,
             ..
-        } => put(&board, format, &path, expect, stdin),
+        } => put(board, format, &path, expect, stdin),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(format, &report),
             Err(error) => render::refused(format, &error.refusal()),
         },
-        Command::Refs(asked) => refs(format, &board, context, &asked),
+        Command::Refs(asked) => refs(format, board, context, &asked),
         Command::Query { sql, limit } => {
             match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
                 Ok(report) => render::query(format, &report),
@@ -390,7 +416,7 @@ pub(crate) fn run(
             Err(error) => render::error(format, error.code(), &error, &Fields::default()),
         },
         Command::Call { target, capability } => {
-            call(&board, context, format, target, capability, stdin)
+            call(board, context, format, target, capability, stdin)
         }
         Command::Ls { path, page } => {
             let path = path.unwrap_or_else(LogicalPath::root);

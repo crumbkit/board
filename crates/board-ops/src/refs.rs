@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use board_index::{Fallback, Index};
+use board_index::Fallback;
 use board_model::{Code, Location, LogicalPath, Refusal, Source};
 use board_tree::{ResolveError, Status};
 
@@ -69,7 +69,7 @@ impl Board {
         let location = self
             .locate(path)
             .map_err(|source| RefsError::Read { source })?;
-        let index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
+        let index = self.index(cache).map_err(CheckError::from)?;
         let snapshot = self.snapshot(index, None)?;
         let same = |source: &Source, physical: &str| {
             *source == location.board.source && physical == location.path

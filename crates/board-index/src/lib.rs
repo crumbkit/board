@@ -10,6 +10,7 @@ mod open;
 mod query;
 mod schema;
 mod store;
+mod timing;
 
 pub use crate::database::{DatabaseError, PluginDatabase};
 pub use crate::extract::Unhandled;
@@ -19,6 +20,7 @@ pub use crate::schema::INDEX_VERSION;
 pub use crate::store::{
     BlobFact, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
 };
+pub use crate::timing::append_timing;
 
 #[cfg(test)]
 mod tests;

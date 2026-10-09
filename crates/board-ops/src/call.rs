@@ -1,6 +1,5 @@
 //! `call` (docs/plugins.md, Calling a capability).
 
-use board_index::Index;
 use board_plugin::{CallReport, Context, Target};
 
 use crate::Board;
@@ -27,7 +26,7 @@ impl Board {
     ) -> Result<Called, CallFailed> {
         plugins.environment.depth()?;
         let chosen = board_plugin::choose(plugins.installed()?, &self.config().plugins, target)?;
-        let index = Index::open(cache, self.repository().path())?;
+        let index = self.index(cache)?;
         let database = database(index.storage(), &chosen.manifest)?;
         // The plugin may run `board query` or `board call`, which open the
         // same index; holding it past here would make them wait and fall back.
@@ -43,6 +42,7 @@ impl Board {
                 plugins,
             )?;
         }
+        let _timed = self.timed("plugin.call");
         let report = board_plugin::invoke(
             &chosen,
             input,
