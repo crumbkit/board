@@ -8,8 +8,7 @@ use std::fmt::Write as _;
 use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode, Source};
 use board_ops::{
     CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Listed, LsReport,
-    MAX_LIMIT, Missing, MountUpdateReport, PutError, PutReport, QueryReport, RefsReport,
-    source_name,
+    MAX_LIMIT, Missing, MountUpdateReport, PutReport, QueryReport, RefsReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -555,61 +554,15 @@ pub(crate) fn mount_update(format: Format, report: &MountUpdateReport) -> Output
     }
 }
 
-/// A refused put. A refused batch lists each failing line: as text one line
-/// each after the error, and in JSON as `fields.refusals`.
-pub(crate) fn put_error(format: Format, error: &PutError) -> Output {
-    let PutError::Batch { code, refusals } = error else {
-        return self::error(format, error.code(), error, &error.fields());
-    };
-    let message = "the batch is refused";
-    if format == Format::Json {
-        let refusals: Vec<Value> = refusals
-            .iter()
-            .map(|refusal| {
-                json!({
-                    "line": refusal.line,
-                    "code": refusal.code.as_str(),
-                    "message": refusal.message,
-                })
-            })
-            .collect();
-        let fields = Map::from_iter([("refusals".to_owned(), Value::Array(refusals))]);
-        return refused(
-            format,
-            &Refusal {
-                fields,
-                ..Refusal::new(*code, message, &Fields::default()).with_hint(BATCH_HINT)
-            },
-        );
-    }
-    let mut text = format!("error: {code}: {message}\n");
-    for refusal in refusals {
-        let _ = writeln!(
-            text,
-            "line {}: {}: {}",
-            refusal.line, refusal.code, refusal.message
-        );
-    }
-    let _ = writeln!(text, "hint: {BATCH_HINT}");
-    Output {
-        stderr: text.into_bytes(),
-        code: 1,
-        ..Output::default()
-    }
-}
-
-/// What to do about a refused batch, whatever refused its lines.
-const BATCH_HINT: &str =
-    "fix each line listed, then send the whole batch again; nothing was written";
-
 /// A failure with the hint for its code, filled in from `fields`, which
 /// JSON carries as `fields`.
 pub(crate) fn error(format: Format, code: Code, message: &dyn Display, fields: &Fields) -> Output {
     refused(format, &Refusal::new(code, message, fields))
 }
 
-/// A refusal: as text, `error: <code>: <message>`, then `hint: <hint>` and
-/// the end of a plugin's stderr, on stderr; as JSON, a `board/error/v1`
+/// A refusal: as text, `error: <code>: <message>`, a line for each refused
+/// line of a batch, then `hint: <hint>` and the end of a plugin's stderr, on
+/// stderr; as JSON, a `board/error/v1`
 /// document on stdout, with `fields` when there are any. The exit code is 2
 /// for a refused command line, else 1.
 pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
@@ -621,6 +574,9 @@ pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
     match format {
         Format::Text => {
             let mut text = format!("error: {}: {}\n", refusal.code.as_str(), refusal.message);
+            for line in &refusal.lines {
+                let _ = writeln!(text, "line {}: {}: {}", line.line, line.code, line.message);
+            }
             if let Some(hint) = &refusal.hint {
                 let _ = writeln!(text, "hint: {hint}");
             }

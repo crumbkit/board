@@ -1,7 +1,7 @@
 //! What to try next after each code (STANDARDS.md 25). The generic match
 //! has no wildcard, so a new code does not compile until it has a hint.
 
-use crate::{Code, Fields, Known, LogicalPath};
+use crate::{Code, Fields, Found, Known, LogicalPath};
 
 impl Code {
     /// What to try next after an error with this code that names `fields`:
@@ -76,11 +76,12 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "fetch the commit into the mounted repository, or run `board mount update {}`",
             path?
         ),
-        Code::PutStale => match (path?, fields.blob) {
-            (path, Some(blob)) => format!(
+        Code::PutInvalid | Code::PutStale if !fields.refusals.is_empty() => BATCH.to_owned(),
+        Code::PutStale => match (path?, fields.found?) {
+            (path, Found::Blob(blob)) => format!(
                 "read the record again with `board get {path}`, reapply your change, and put it with `board put {path} --expect {blob}`"
             ),
-            (path, None) => format!(
+            (path, Found::Nothing) => format!(
                 "nothing is at {path}; put it as a new file with `board put {path} --expect none`"
             ),
         },
@@ -115,6 +116,9 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         _ => return None,
     })
 }
+
+/// What to do about a refused batch, whatever refused its lines.
+const BATCH: &str = "fix each line listed, then send the whole batch again; nothing was written";
 
 /// The directory that holds `path`: `/` for a path at the root.
 fn parent(path: &LogicalPath) -> &str {

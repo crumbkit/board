@@ -166,8 +166,9 @@ record}`, then takes the lock; when no line parses, it is refused without the
 lock. Every line is checked against one snapshot of the working tree, which
 lists each directory once, and every expect is compared before any write; two
 lines resolving to one file, one invalid line or one stale expect refuse the
-whole batch, listing each failing line with its code (in `board/error/v1` as
-`fields.refusals`). Writes go in input order, then one commit.
+whole batch, listing each failing line with its code, as
+[architecture/errors.md](architecture/errors.md) describes. Writes go in input
+order, then one commit.
 
 The report is `board/put-report/v1`: `writes`, each with its Location, display
 path, `previous` blob (null for a new file), `blob` and `degraded` (as `check`

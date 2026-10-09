@@ -1,12 +1,12 @@
 //! `put --batch`: every line is checked and every expect compared before
 //! anything is written, and the writes share one commit.
 
-use board_model::Code;
+use board_model::{Code, Lined, RefusalCode};
 use board_scenario::Item;
 use board_tree::LOCK_WAIT;
 
 use super::{board, canonical, committing, file};
-use crate::put::{MAX_BATCH_LINES, PutError, PutReport, Refusal, Schemas};
+use crate::put::{MAX_BATCH_LINES, PutError, PutReport, Schemas};
 use crate::tests::{open, task};
 
 fn line(path: &str, expect: Option<&str>, record: &str) -> String {
@@ -25,7 +25,7 @@ fn refused(result: Result<PutReport, PutError>) -> (Code, Vec<(usize, Code)>) {
             code,
             refusals
                 .iter()
-                .map(|Refusal { line, code, .. }| (*line, *code))
+                .map(|Lined { line, code, .. }| (*line, *code))
                 .collect(),
         ),
         other => panic!("not a batch refusal: {other}"),
@@ -121,6 +121,40 @@ fn a_stale_expect_refuses_the_batch_and_lists_its_lines() {
 }
 
 #[test]
+fn a_stale_line_names_what_it_found_in_its_own_fields_and_a_line_expecting_that_is_admitted() {
+    let scenario = board();
+    let held = batch(&scenario, &line("/tasks/a", None, &task("")))
+        .unwrap()
+        .writes[0]
+        .blob
+        .to_string();
+    let stale =
+        line("/tasks/a", Some("none"), &task("")) + &line("/tasks/b", Some(&held), &task(""));
+    let refusal = batch(&scenario, &stale).unwrap_err().refusal();
+    assert_eq!(refusal.code, RefusalCode::Board(Code::PutStale));
+    assert_eq!(
+        refusal.fields["refusals"],
+        serde_json::json!([
+            {
+                "line": 1,
+                "code": "board::put::stale",
+                "message": format!("/tasks/a is not what --expect says: it holds {held}"),
+                "fields": { "path": "/tasks/a", "blob": held, "found": held },
+            },
+            {
+                "line": 2,
+                "code": "board::put::stale",
+                "message": "/tasks/b is not what --expect says: it holds nothing",
+                "fields": { "path": "/tasks/b", "found": null },
+            },
+        ])
+    );
+    let admitted =
+        line("/tasks/a", Some(&held), &task("")) + &line("/tasks/b", Some("none"), &task(""));
+    assert_eq!(batch(&scenario, &admitted).unwrap().writes.len(), 2);
+}
+
+#[test]
 fn two_lines_that_write_one_file_are_refused_and_two_files_are_admitted() {
     let scenario = board();
     scenario.write(
@@ -129,14 +163,16 @@ fn two_lines_that_write_one_file_are_refused_and_two_files_are_admitted() {
     );
     scenario.write("tasks/a.json", board_scenario::Item::File(&task("")));
     let same = line("/tasks/a", None, &task("")) + &line("/links/a", None, &task(""));
-    let refusal = batch(&scenario, &same).unwrap_err();
-    assert_eq!(refusal.code(), Code::PutInvalid);
-    assert!(refusal.to_string().contains("line 2"), "{refusal}");
-    assert!(
-        refusal
-            .to_string()
-            .contains("it writes tasks/a.json as line 1 writes tasks/a.json"),
-        "{refusal}"
+    let refusal = batch(&scenario, &same).unwrap_err().refusal();
+    assert_eq!(refusal.code, RefusalCode::Board(Code::PutInvalid));
+    assert_eq!(
+        refusal.fields["refusals"],
+        serde_json::json!([{
+            "line": 2,
+            "code": "board::put::invalid",
+            "message": "it writes tasks/a.json as line 1 writes tasks/a.json",
+            "fields": { "path": "/links/a" },
+        }])
     );
     let apart = line("/tasks/a", None, &task("")) + &line("/tasks/b", None, &task(""));
     assert!(batch(&scenario, &apart).is_ok());
@@ -198,11 +234,9 @@ fn two_lines_differing_only_in_case_collide_and_two_names_are_admitted() {
     let scenario = board();
     let folded = line("/tasks/a", None, &task("")) + &line("/tasks/A", None, &task(""));
     let refusal = batch(&scenario, &folded).unwrap_err();
-    assert!(
-        refusal.to_string().contains(
-            "line 2: board::path::case_collision: it writes tasks/A.json differing only in case from line 1 writes tasks/a.json"
-        ),
-        "{refusal}"
+    assert_eq!(
+        refusal.refusal().fields["refusals"][0]["message"],
+        "it writes tasks/A.json differing only in case from line 1 writes tasks/a.json"
     );
     assert_eq!(refused(Err(refusal)).1, [(2, Code::PathCaseCollision)]);
     assert!(file(&scenario, "tasks/a.json").is_none());

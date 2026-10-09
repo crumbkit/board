@@ -356,6 +356,7 @@ fn assert_refused(error: &CallError, code: Code, fields: &Value, stderr: &[u8]) 
             hint: Some(code.hint(&hinted)),
             fields: fields.as_object().unwrap().clone(),
             stderr: stderr.to_vec(),
+            lines: Vec::new(),
         },
         "{error}"
     );

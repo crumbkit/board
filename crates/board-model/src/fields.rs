@@ -1,10 +1,11 @@
 //! The values an error names, beside its code and message.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
-use crate::{LogicalPath, ObjectId, RecordType};
+use crate::{Code, LogicalPath, ObjectId, RecordType};
 
 /// What an error knows about the values at fault, for `board/error/v1`
 /// `fields` and for filling in its hint. Each is `None` when unknown.
@@ -27,6 +28,37 @@ pub struct Fields {
     pub directory: Option<String>,
     /// The names a query could have used instead of one that is missing.
     pub known: Option<Known>,
+    /// What a put that `--expect` refused found at its path.
+    pub found: Option<Found>,
+    /// Each line of a batch that refused it, in order.
+    pub refusals: Vec<Lined>,
+}
+
+/// What a put found where it would write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Found {
+    Nothing,
+    Blob(ObjectId),
+}
+
+/// One line of a batch, counted from 1, and why it is refused.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Lined {
+    pub line: usize,
+    pub code: Code,
+    pub message: String,
+    pub fields: Fields,
+}
+
+impl Lined {
+    pub fn new(line: usize, code: Code, message: impl fmt::Display, fields: Fields) -> Self {
+        Self {
+            line,
+            code,
+            message: message.to_string(),
+            fields,
+        }
+    }
 }
 
 /// The names a statement could have used instead of one that is missing.
@@ -75,6 +107,25 @@ impl Fields {
                 json.insert("columns".to_owned(), Value::Object(columns.collect()));
             }
             None => {}
+        }
+        if let Some(found) = self.found {
+            let found = match found {
+                Found::Nothing => Value::Null,
+                Found::Blob(blob) => blob.to_string().into(),
+            };
+            json.insert("found".to_owned(), found);
+        }
+        if !self.refusals.is_empty() {
+            let refusals = self.refusals.iter().map(|lined| {
+                let (code, message) = (lined.code.as_str(), &lined.message);
+                let mut entry = json!({ "line": lined.line, "code": code, "message": message });
+                let fields = lined.fields.json();
+                if !fields.is_empty() {
+                    entry["fields"] = fields.into();
+                }
+                entry
+            });
+            json.insert("refusals".to_owned(), refusals.collect());
         }
         json
     }
@@ -141,5 +192,37 @@ mod tests {
             ..Fields::default()
         };
         assert_eq!(Value::Object(none.json()), json!({ "columns": {} }));
+    }
+
+    #[test]
+    fn fields_name_what_a_stale_put_found_and_each_line_a_batch_refused() {
+        let blob = ObjectId::Sha1([1; 20]);
+        let found = |found| {
+            Value::Object(
+                Fields {
+                    found: Some(found),
+                    ..Fields::default()
+                }
+                .json(),
+            )
+        };
+        assert_eq!(found(Found::Nothing), json!({ "found": null }));
+        assert_eq!(
+            found(Found::Blob(blob)),
+            json!({ "found": blob.to_string() })
+        );
+        let path: LogicalPath = "/tasks/a".parse().unwrap();
+        let lined = |line, fields| Lined::new(line, Code::PutInvalid, "it has no $type", fields);
+        let batch = Fields {
+            refusals: vec![lined(2, Fields::at(&path)), lined(5, Fields::default())],
+            ..Fields::default()
+        };
+        assert_eq!(
+            Value::Object(batch.json()),
+            json!({ "refusals": [
+                { "line": 2, "code": "board::put::invalid", "message": "it has no $type", "fields": { "path": "/tasks/a" } },
+                { "line": 5, "code": "board::put::invalid", "message": "it has no $type" },
+            ] })
+        );
     }
 }

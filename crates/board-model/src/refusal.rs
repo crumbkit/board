@@ -4,7 +4,7 @@ use std::fmt;
 
 use serde_json::{Map, Value};
 
-use crate::{Code, Fields};
+use crate::{Code, Fields, Lined};
 
 /// The code a refusal carries: one of Board's, or a plugin's own.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -35,6 +35,8 @@ pub struct Refusal {
     pub fields: Map<String, Value>,
     /// The end of a plugin's stderr, or empty.
     pub stderr: Vec<u8>,
+    /// Each line of a batch that refused it, in order.
+    pub lines: Vec<Lined>,
 }
 
 impl Refusal {
@@ -47,6 +49,7 @@ impl Refusal {
             hint: Some(code.hint(fields)),
             fields: fields.json(),
             stderr: Vec::new(),
+            lines: fields.refusals.clone(),
         }
     }
 
@@ -68,6 +71,7 @@ impl Refusal {
             hint: None,
             fields,
             stderr: Vec::new(),
+            lines: Vec::new(),
         }
     }
 }
@@ -79,7 +83,11 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::Known;
+    use crate::{Found, Known, Lined, ObjectId};
+
+    fn generic(code: Code) -> String {
+        code.hint(&Fields::default())
+    }
 
     #[test]
     fn a_refusal_with_a_board_code_carries_that_codes_hint_filled_from_its_fields() {
@@ -155,6 +163,48 @@ mod tests {
     }
 
     #[test]
+    fn a_stale_refusal_hints_the_expect_that_matches_what_it_found() {
+        let blob = ObjectId::Sha1([1; 20]);
+        let stale = |found| Fields {
+            found: Some(found),
+            ..Fields::at(&"/tasks/a".parse().unwrap())
+        };
+        assert_eq!(
+            Code::PutStale.hint(&stale(Found::Blob(blob))),
+            format!(
+                "read the record again with `board get /tasks/a`, reapply your change, and put it with `board put /tasks/a --expect {blob}`"
+            )
+        );
+        assert_eq!(
+            Code::PutStale.hint(&stale(Found::Nothing)),
+            "nothing is at /tasks/a; put it as a new file with `board put /tasks/a --expect none`"
+        );
+        assert_eq!(
+            Code::PutStale.hint(&Fields::at(&"/tasks/a".parse().unwrap())),
+            Code::PutStale.hint(&Fields::default())
+        );
+    }
+
+    #[test]
+    fn a_put_refusal_that_lists_refused_lines_has_the_batch_hint_and_one_without_has_its_own() {
+        let line = Lined::new(2, Code::PutStale, "it holds nothing", Fields::default());
+        let batch = Fields {
+            refusals: vec![line],
+            ..Fields::default()
+        };
+        let refused = Refusal::new(Code::PutStale, "the batch is refused", &batch);
+        assert_eq!(refused.lines, batch.refusals);
+        for code in [Code::PutInvalid, Code::PutStale] {
+            assert_eq!(
+                code.hint(&batch),
+                "fix each line listed, then send the whole batch again; nothing was written"
+            );
+            assert_eq!(code.hint(&Fields::default()), generic(code));
+        }
+        assert_eq!(Code::JsonParse.hint(&batch), generic(Code::JsonParse));
+    }
+
+    #[test]
     fn a_query_refusal_that_names_the_names_there_are_has_a_hint_that_lists_them() {
         let known = |known: Known| Fields {
             known: Some(known),
@@ -184,6 +234,7 @@ mod tests {
             "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns"
         );
         let refusal = Refusal::new(Code::QueryInvalid, "no such table: entires", &tables);
+        assert_eq!(refusal.lines, []);
         assert_eq!(refusal.hint, Some(Code::QueryInvalid.hint(&tables)));
         assert_eq!(refusal.fields, tables.json());
     }
@@ -213,7 +264,10 @@ mod tests {
 
     #[test]
     fn a_refusal_with_a_plugin_code_has_no_hint_and_keeps_the_plugins_code_and_fields() {
-        let fields = Map::from_iter([("due".to_owned(), json!("2026-10-06"))]);
+        let fields = Map::from_iter([
+            ("due".to_owned(), json!("2026-10-06")),
+            ("refusals".to_owned(), json!([{"line": 1}])),
+        ]);
         let refusal = Refusal::plugin(
             "tasks::due::past".to_owned(),
             "the date is past".to_owned(),
@@ -222,5 +276,6 @@ mod tests {
         assert_eq!(refusal.code.as_str(), "tasks::due::past");
         assert_eq!(refusal.hint, None);
         assert_eq!(refusal.fields, fields);
+        assert_eq!(refusal.lines, []);
     }
 }

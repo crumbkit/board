@@ -2,9 +2,12 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use board_model::{Code, Fields, LogicalPath, ObjectId, canonical_json, parse_json};
+use board_model::{
+    Code, Fields, Found, Lined, LogicalPath, ObjectId, RefusalCode, canonical_json, parse_json,
+};
 use board_scenario::{Item, Scenario};
 use board_tree::{GitError, LOCK_WAIT, ResolveError, Status};
+use serde_json::{Value, json};
 
 use crate::Board;
 use crate::Detail;
@@ -327,12 +330,16 @@ fn a_stale_put_names_the_blob_its_path_holds_and_an_expect_that_matches_is_admit
         refused_fields(&scenario, "/tasks/a", Expect::Absent, &task("")),
         Fields {
             blob: Some(first),
+            found: Some(Found::Blob(first)),
             ..Fields::at(&path("/tasks/a"))
         }
     );
     assert_eq!(
         refused_fields(&scenario, "/tasks/b", Expect::Blob(first), &task("")),
-        Fields::at(&path("/tasks/b"))
+        Fields {
+            found: Some(Found::Nothing),
+            ..Fields::at(&path("/tasks/b"))
+        }
     );
     assert!(
         put(
@@ -912,4 +919,72 @@ fn a_write_left_with_no_view_reports_the_error_at_its_pointer_or_each_reference(
     assert_eq!((code, detail.failures), (Code::RefDangling, 2));
     assert_eq!(detail.reason, reason);
     assert_eq!(Board::unresolvable(&plain, &error), None);
+}
+
+#[test]
+fn a_stale_put_refusal_names_its_path_and_what_it_found_there() {
+    let blob = ObjectId::Sha1([1; 20]);
+    let stale = |found| {
+        crate::PutError::Stale {
+            path: path("/tasks/a"),
+            found,
+        }
+        .refusal()
+    };
+    let held = stale(Some(blob));
+    assert_eq!(held.code, RefusalCode::Board(Code::PutStale));
+    assert_eq!(
+        held.message,
+        format!("/tasks/a is not what --expect says: it holds {blob}")
+    );
+    assert_eq!(
+        Value::Object(held.fields),
+        json!({"path": "/tasks/a", "blob": blob.to_string(), "found": blob.to_string()})
+    );
+    assert!(held.hint.unwrap().ends_with(&format!("--expect {blob}`")));
+    let nothing = stale(None);
+    assert_eq!(
+        Value::Object(nothing.fields),
+        json!({"path": "/tasks/a", "found": null})
+    );
+    assert!(nothing.hint.unwrap().ends_with("--expect none`"));
+}
+
+#[test]
+fn a_batch_refusal_lists_each_line_with_its_own_fields_and_a_single_refusal_lists_none() {
+    let record = crate::PutError::Record {
+        path: path("/tasks/a"),
+        refused: crate::Refused::NoType,
+    };
+    let single = record.refusal();
+    assert_eq!(single.code, RefusalCode::Board(Code::PutInvalid));
+    assert_eq!(
+        single.message,
+        "the record for /tasks/a is refused: it has no $type"
+    );
+    assert_eq!(Value::Object(single.fields), json!({"path": "/tasks/a"}));
+    let batch = crate::PutError::Batch {
+        code: Code::PutInvalid,
+        refusals: vec![Lined::new(3, record.code(), &record, record.fields())],
+    }
+    .refusal();
+    assert_eq!(
+        batch.lines,
+        [Lined::new(3, record.code(), &record, record.fields())]
+    );
+    assert_eq!(batch.code, RefusalCode::Board(Code::PutInvalid));
+    assert_eq!(batch.message, "the batch is refused");
+    assert_eq!(
+        Value::Object(batch.fields),
+        json!({"refusals": [{
+            "line": 3,
+            "code": "board::put::invalid",
+            "message": "the record for /tasks/a is refused: it has no $type",
+            "fields": {"path": "/tasks/a"},
+        }]})
+    );
+    assert_eq!(
+        batch.hint.as_deref(),
+        Some("fix each line listed, then send the whole batch again; nothing was written")
+    );
 }

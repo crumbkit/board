@@ -224,3 +224,24 @@ fn a_committing_update_commits_the_pointer() {
             .contains(&new.to_string())
     );
 }
+
+#[test]
+fn a_mount_update_refused_as_stale_names_what_it_found_and_one_refused_otherwise_does_not() {
+    let blob = ObjectId::Sha1([1; 20]);
+    let stale = crate::MountError::Put(crate::PutError::Stale {
+        path: path("/vendor/lib"),
+        found: Some(blob),
+    })
+    .refusal();
+    assert_eq!(stale.code, board_model::RefusalCode::Board(Code::PutStale));
+    assert_eq!(
+        serde_json::Value::Object(stale.fields),
+        serde_json::json!({"path": "/vendor/lib", "blob": blob.to_string(), "found": blob.to_string()})
+    );
+    let other = crate::MountError::Put(crate::PutError::TooManyLines).refusal();
+    assert_eq!(
+        other.code,
+        board_model::RefusalCode::Board(Code::PutInvalid)
+    );
+    assert!(other.fields.is_empty());
+}

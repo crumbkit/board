@@ -168,9 +168,12 @@ fn every_command_a_hint_names_parses() {
         known: Some(board_model::Known::Columns(
             std::collections::BTreeMap::new(),
         )),
+        found: Some(board_model::Found::Blob(ObjectId::Sha1([1; 20]))),
+        refusals: Vec::new(),
     };
     let no_blob = Fields {
         blob: None,
+        found: Some(board_model::Found::Nothing),
         ..known.clone()
     };
     let tables = Fields {

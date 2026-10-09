@@ -318,7 +318,7 @@ pub(crate) fn run(
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
                 Ok(report) => render::put(format, &report),
-                Err(error) => render::put_error(format, &error),
+                Err(error) => render::refused(format, &error.refusal()),
             }
         }
         Command::Put {
@@ -641,7 +641,7 @@ fn put(
     };
     match board.put(path, expect.unwrap_or(Expect::Any), &record) {
         Ok(report) => render::put(format, &report),
-        Err(error) => render::put_error(format, &error),
+        Err(error) => render::refused(format, &error.refusal()),
     }
 }
 

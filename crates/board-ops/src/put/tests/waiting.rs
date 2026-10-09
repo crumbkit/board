@@ -4,12 +4,12 @@
 use std::io::{BufRead, Read};
 use std::sync::mpsc;
 
-use board_model::Code;
+use board_model::{Code, Lined};
 use board_scenario::{Item, Scenario};
 use board_tree::LOCK_WAIT;
 
 use super::{board, canonical, file};
-use crate::put::{PutError, PutReport, Refusal};
+use crate::put::{PutError, PutReport};
 use crate::tests::{open, task};
 
 /// Batch input that sends on `done` when the batch reads past its end.
@@ -83,7 +83,7 @@ fn refused(result: Result<PutReport, PutError>) -> (Code, Vec<(usize, Code)>) {
             code,
             refusals
                 .iter()
-                .map(|Refusal { line, code, .. }| (*line, *code))
+                .map(|Lined { line, code, .. }| (*line, *code))
                 .collect(),
         ),
         other => panic!("not a batch refusal: {other}"),

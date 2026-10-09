@@ -7,8 +7,8 @@ use std::convert::Infallible;
 use std::io::{BufRead, Read};
 
 use board_model::{
-    BINARY_NAME, Code, Fields, JsonError, Location, LogicalPath, MAX_RECORD_BYTES, Object,
-    ObjectId, RecordType, Role, canonical_json, classify, parse_json,
+    BINARY_NAME, Code, Fields, Found, JsonError, Lined, Location, LogicalPath, MAX_RECORD_BYTES,
+    Object, ObjectId, RecordType, Refusal, Role, canonical_json, classify, parse_json,
 };
 use board_tree::{Directory, LOCK_WAIT, Lock, ResolveError, Resolver, Working, WriteError};
 use board_validate::Schema;
@@ -61,23 +61,6 @@ pub(crate) struct Prepared {
     pub(crate) admitted: Admitted,
 }
 
-/// The refusal of line `line` for `error`.
-fn refusal(line: usize, error: &PutError) -> Refusal {
-    Refusal {
-        line,
-        code: error.code(),
-        message: error.to_string(),
-    }
-}
-
-/// One line of a batch that refused it, counted from 1.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Refusal {
-    pub line: usize,
-    pub code: Code,
-    pub message: String,
-}
-
 /// The most lines one batch may hold.
 pub const MAX_BATCH_LINES: usize = 10_000;
 
@@ -102,7 +85,7 @@ pub(crate) struct Schemas {
 }
 
 /// A batch line read with its number, or why it is refused.
-pub(crate) type ReadLine = Result<(usize, Line), Refusal>;
+pub(crate) type ReadLine = Result<(usize, Line), Lined>;
 
 /// One batch line, read but not yet checked.
 pub(crate) struct Line {
@@ -167,7 +150,9 @@ impl Board {
                     code: Code::PutStale,
                     refusals: stale
                         .into_iter()
-                        .map(|(at, error)| refusal(numbers[at], &error))
+                        .map(|(at, error)| {
+                            Lined::new(numbers[at], error.code(), &error, error.fields())
+                        })
                         .collect(),
                 },
                 Failure::Error(error) => error,
@@ -195,11 +180,12 @@ impl Board {
             if text.len() > MAX_RECORD_BYTES {
                 // The rest of the line has not been read, so no later line
                 // can be found.
-                lines.push(Err(Refusal {
-                    line: number,
-                    code: Code::JsonTooLarge,
-                    message: format!("the line is over {MAX_RECORD_BYTES} bytes"),
-                }));
+                lines.push(Err(Lined::new(
+                    number,
+                    Code::JsonTooLarge,
+                    format!("the line is over {MAX_RECORD_BYTES} bytes"),
+                    Fields::default(),
+                )));
                 break;
             }
             if text.iter().all(u8::is_ascii_whitespace) {
@@ -207,7 +193,7 @@ impl Board {
             }
             lines.push(match Self::parse_line(text) {
                 Ok(parsed) => Ok((number, parsed)),
-                Err(error) => Err(refusal(number, &error)),
+                Err(error) => Err(Lined::new(number, error.code(), &error, error.fields())),
             });
         }
         Ok(lines)
@@ -225,17 +211,18 @@ impl Board {
     ) -> Result<(Vec<Prepared>, Vec<usize>), PutError> {
         let mut prepared: Vec<Prepared> = Vec::new();
         let mut numbers: Vec<usize> = Vec::new();
-        let mut refusals: Vec<Refusal> = Vec::new();
+        let mut refusals: Vec<Lined> = Vec::new();
         // Each target folded as the walk folds names, so two lines that a
         // case-insensitive file system would make one file clash.
         let mut folded: HashMap<String, usize> = HashMap::new();
         for parsed in lines {
-            let checked = parsed.and_then(|(number, line)| {
-                match self.prepare(lock, view, schemas, &line.path, line.expect, &line.bytes) {
-                    Ok(item) => Ok((number, item)),
-                    Err(error) => Err(refusal(number, &error)),
-                }
-            });
+            let checked = match parsed {
+                Ok((number, line)) => self
+                    .prepare(lock, view, schemas, &line.path, line.expect, &line.bytes)
+                    .map(|item| (number, item))
+                    .map_err(|error| Lined::new(number, error.code(), &error, error.fields())),
+                Err(refused) => Err(refused),
+            };
             let (number, item) = match checked {
                 Ok(checked) => checked,
                 Err(refused) => {
@@ -252,14 +239,11 @@ impl Board {
                     } else {
                         (Code::PathCaseCollision, "differing only in case from")
                     };
-                    refusals.push(Refusal {
-                        line: number,
-                        code,
-                        message: format!(
-                            "it writes {} {message} line {} writes {earlier}",
-                            item.target.path, numbers[first]
-                        ),
-                    });
+                    let message = format!(
+                        "it writes {} {message} line {} writes {earlier}",
+                        item.target.path, numbers[first]
+                    );
+                    refusals.push(Lined::new(number, code, message, Fields::at(&item.path)));
                 }
                 Entry::Vacant(entry) => {
                     entry.insert(prepared.len());
@@ -592,8 +576,8 @@ pub enum PutError {
         writes.iter().map(|written| written.display.to_string()).collect::<Vec<_>>().join(", ") + if writes.len() == 1 { " is" } else { " are" }
     )]
     HeadMoved { writes: Vec<Written> },
-    #[error("the batch is refused: {}", refusals.iter().map(|refusal| format!("line {}: {}: {}", refusal.line, refusal.code, refusal.message)).collect::<Vec<_>>().join("; "))]
-    Batch { code: Code, refusals: Vec<Refusal> },
+    #[error("the batch is refused")]
+    Batch { code: Code, refusals: Vec<Lined> },
     #[error("{reason}")]
     Line { code: Code, reason: String },
     #[error("a batch holds more than {MAX_BATCH_LINES} lines")]
@@ -617,8 +601,8 @@ impl PutError {
         }
     }
 
-    /// The path and what is wrong at it; for a stale put, the blob the path
-    /// holds, or none when it holds nothing.
+    /// The path and what is wrong at it; for a stale put, what the path
+    /// holds; for a batch, each line it refuses.
     pub fn fields(&self) -> Fields {
         match self {
             Self::Record { path, refused } => Fields {
@@ -627,15 +611,23 @@ impl PutError {
             },
             Self::Stale { path, found } => Fields {
                 blob: *found,
+                found: Some(found.map_or(Found::Nothing, Found::Blob)),
                 ..Fields::at(path)
+            },
+            Self::Batch { refusals, .. } => Fields {
+                refusals: refusals.clone(),
+                ..Fields::default()
             },
             Self::Write(error) => error.fields(),
             Self::HeadMoved { .. }
-            | Self::Batch { .. }
             | Self::Line { .. }
             | Self::TooManyLines
             | Self::Input { .. } => Fields::default(),
         }
+    }
+
+    pub fn refusal(&self) -> Refusal {
+        Refusal::new(self.code(), self, &self.fields())
     }
 }
 

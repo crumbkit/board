@@ -903,6 +903,41 @@ fn put_refuses_a_stale_expect_with_exit_one_and_a_malformed_one_with_exit_two() 
 }
 
 #[test]
+fn a_batch_refused_for_several_reasons_prints_each_line_as_golden_text_and_its_fixed_twin_writes() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let good = r#"{"path": "/tasks/a", "record": {"$type": "lr/task/v1", "title": "a"}}"#;
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch"],
+        format!("{good}\n{{\n{good}\n{{\"path\": \"/tasks/c\", \"record\": {{\"$type\": \"lr/nope/v1\"}}}}\n")
+            .as_bytes(),
+    );
+    assert_eq!(refused.code, 1);
+    assert!(refused.stdout.is_empty());
+    assert_eq!(
+        text(&refused.stderr),
+        "error: board::put::invalid: the batch is refused\n\
+         line 2: board::json::parse: json does not parse: EOF while parsing an object at line 1 column 1\n\
+         line 3: board::put::invalid: it writes tasks/a.json as line 1 writes tasks/a.json\n\
+         line 4: board::record::unknown_type: the record for /tasks/c is refused: \
+         no schema for lr/nope/v1 at .board/types/lr/nope/v1.schema.json\n\
+         hint: fix each line listed, then send the whole batch again; nothing was written\n"
+    );
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch"],
+        format!("{good}\n").as_bytes(),
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
 fn put_batch_writes_every_line_or_lists_the_refused_ones() {
     let scenario = board();
     scenario.write(
@@ -940,6 +975,10 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
     assert_eq!(
         document["fields"]["refusals"][0]["code"],
         "board::record::invalid"
+    );
+    assert_eq!(
+        document["fields"]["refusals"][0]["fields"]["path"],
+        "/tasks/b"
     );
     assert!(!scenario.workdir().join("tasks/a.json").exists());
     let written = board_with(

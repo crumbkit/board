@@ -66,7 +66,7 @@ fn a_stale_put_hints_the_put_that_succeeds_and_that_put_runs() {
     assert_eq!(error["code"], "board::put::stale");
     assert_eq!(
         error["fields"],
-        json!({"path": "/projects/p", "blob": current.to_string()})
+        json!({"path": "/projects/p", "blob": current.to_string(), "found": current.to_string()})
     );
     let hinted = ["put", "/projects/p", "--expect", &current.to_string()];
     assert_eq!(put(&scenario, &hinted, record).code, 0);
@@ -93,7 +93,10 @@ fn a_stale_put_of_a_path_that_holds_nothing_hints_expect_none_and_that_put_runs(
         &["put", "/projects/q", "--expect", &blob, "--json"],
         record,
     ));
-    assert_eq!(error["fields"], json!({"path": "/projects/q"}));
+    assert_eq!(
+        error["fields"],
+        json!({"path": "/projects/q", "found": null})
+    );
     let hinted = put(
         &scenario,
         &["put", "/projects/q", "--expect", "none"],

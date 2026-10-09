@@ -29,13 +29,18 @@ The v0 set:
 
 An error names the values it knows, and `board/error/v1` gives them in
 `fields`: `path`, `blob`, `pointer`, `type`, `schema`, `plugin`, `capability`,
-`directory`, `tables`, `columns`. A put refused for the code of a directory
-the file would be in names that directory by its path from the board's root,
-without a leading `/` (`directory`). A query that names a missing table lists
-the tables, views and attached plugin databases (`tables`); one that names a
-missing column maps each table it names to its columns (`columns`); `columns`
-is `{}` when the statement names no table, and the hint then points at
-`sqlite_master`.
+`directory`, `tables`, `columns`, `found`, `refusals`. A put refused for the
+code of a directory the file would be in names that directory by its path from
+the board's root, without a leading `/` (`directory`). A query that names a
+missing table lists the tables, views and attached plugin databases
+(`tables`); one that names a missing column maps each table it names to its
+columns (`columns`); `columns` is `{}` when the statement names no table, and
+the hint then points at `sqlite_master`.
+A stale put names its path and what it found there (`found`: the blob, or
+`null` for nothing), and its hint gives the `--expect` that matches. A refused
+batch lists each refused line (`refusals`) with its `line`, `code`, `message`
+and, when it names any, its own `fields`; text output prints one
+`line <n>: <code>: <message>` line for each between the error and the hint.
 `check` and `put` name a degraded entry's first failing pointer, why, and how
 many more (`pointer`, `reason`, `failures`); an unknown type's reason names the
 schema file its board lacks (`schema`). A put refused because its record's
