@@ -279,6 +279,30 @@ fn get_prints_the_stored_bytes_and_json_adds_where_they_are() {
 }
 
 #[test]
+fn get_json_refuses_bytes_that_do_not_parse_with_a_parse_error_and_admits_its_parsed_twin() {
+    let scenario = board();
+    scenario
+        .write("torn.json", Item::File(r#"{"$type": "lr/project/v1", "#))
+        .write("whole.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    let refused = board_in(scenario.workdir(), &["get", "/torn", "--json"]);
+    assert_eq!(refused.code, 1);
+    let error = json(&refused);
+    assert_eq!(error["$type"], "board/error/v1");
+    assert_eq!(error["code"], "board::json::parse");
+    assert!(
+        error["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty())
+    );
+    assert!(error["hint"].is_string());
+    assert_eq!(error["fields"]["path"], "/torn");
+    assert!(error["fields"]["blob"].is_string());
+    let admitted = board_in(scenario.workdir(), &["get", "/whole", "--json"]);
+    assert_eq!(admitted.code, 0);
+    assert_eq!(json(&admitted)["$type"], "board/get-report/v1");
+}
+
+#[test]
 fn get_prints_a_files_bytes_and_json_refuses_it_with_why_it_is_not_a_record() {
     let scenario = board();
     scenario.write("notes.md", Item::File("# n\n"));

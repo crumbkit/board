@@ -138,8 +138,9 @@ fn refs_of_a_path_that_names_nothing_is_refused_and_one_that_names_a_record_is_a
         open(&scenario)
             .refs(&path("/tasks/zz"), None)
             .unwrap_err()
-            .fields(),
-        Fields::at(&path("/tasks/zz"))
+            .refusal()
+            .fields,
+        Fields::at(&path("/tasks/zz")).json()
     );
 }
 
@@ -307,4 +308,22 @@ fn refs_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change
     let warm = answered(&scenario, "/projects/p", Some(cache.path()));
     assert_ne!(warm, before, "the change is seen");
     assert_eq!(warm, answered(&scenario, "/projects/p", None));
+}
+
+#[test]
+fn refs_of_a_missing_path_ending_json_hints_it_without_json_and_one_without_has_no_such_hint() {
+    let scenario = linked();
+    let hint = |text: &str| {
+        let refused = open(&scenario).refs(&path(text), None).unwrap_err();
+        assert_eq!(refused.code(), Code::PathNotFound, "{text}");
+        refused.refusal().hint.unwrap()
+    };
+    assert_eq!(
+        hint("/tasks/zz.json"),
+        "a logical path leaves out .json: try `board refs /tasks/zz`"
+    );
+    assert_eq!(
+        hint("/tasks/zz"),
+        Code::PathNotFound.hint(&Fields::at(&path("/tasks/zz")))
+    );
 }

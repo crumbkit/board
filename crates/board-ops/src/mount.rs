@@ -1,7 +1,7 @@
 //! `board mount update`: advancing a mount to the commit its `follow` ref
 //! names (docs/architecture.md, Writes).
 
-use board_model::{BINARY_NAME, Code, Fields, LogicalPath, ObjectId};
+use board_model::{BINARY_NAME, Code, LogicalPath, ObjectId, Refusal};
 use board_tree::{LOCK_WAIT, Pin, PinError};
 
 use crate::board::Board;
@@ -88,11 +88,12 @@ impl MountError {
         }
     }
 
-    pub fn fields(&self) -> Fields {
-        match self {
+    pub fn refusal(&self) -> Refusal {
+        let fields = match self {
             Self::Pin(error) => error.fields(),
             Self::Put(error) => error.fields(),
-        }
+        };
+        Refusal::new(self.code(), self, &fields)
     }
 }
 

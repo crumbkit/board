@@ -1,6 +1,6 @@
 //! Opening boards and checking them, against real repositories.
 
-use board_model::{Code, Fields, Kind, LogicalPath, Object, ObjectId, Source};
+use board_model::{Code, Fields, Kind, LogicalPath, Object, ObjectId, Refusal, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
@@ -447,7 +447,7 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
     let error = open(&scenario).check(Some(&missing), None).unwrap_err();
     assert_eq!(error.code(), Code::PathNotFound);
     assert_eq!(error.to_string(), "nothing is at /nowhere");
-    assert_eq!(error.fields(), Fields::at(&missing));
+    assert_eq!(error.refusal().fields, Fields::at(&missing).json());
 }
 
 #[test]
@@ -511,7 +511,7 @@ fn get_follows_a_link_and_shows_where_it_landed() {
 }
 
 #[test]
-fn get_returns_any_file_with_its_record_or_the_code_it_has_none() {
+fn get_returns_any_file_with_its_record_or_the_refusal_that_says_why_it_has_none() {
     let scenario = board();
     let broken = r#"{"$type": "task"}"#;
     scenario
@@ -520,14 +520,107 @@ fn get_returns_any_file_with_its_record_or_the_code_it_has_none() {
         .write("bad.json", Item::File(broken))
         .write("conflict.json", Item::File("<<<<<<< ours\n{}\n"));
     let file = |text: &str| open(&scenario).get(&path(text)).unwrap();
+    let refused = |text: &str| {
+        let refusal = file(text).record.unwrap_err();
+        (refusal.code.as_str().to_owned(), refusal.message)
+    };
     assert!(file("/projects/p").record.is_ok());
     assert_eq!(file("/notes.md").bytes, b"# n");
-    assert_eq!(file("/notes.md").record, Err(Code::RecordNotARecord));
+    let not_a_record = |text: &str| {
+        (
+            Code::RecordNotARecord.to_string(),
+            format!("{text} is not a record"),
+        )
+    };
+    assert_eq!(refused("/notes.md"), not_a_record("/notes.md"));
     assert_eq!(file("/data").bytes, b"[1]");
-    assert_eq!(file("/data").record, Err(Code::RecordNotARecord));
+    assert_eq!(refused("/data"), not_a_record("/data"));
     assert_eq!(file("/bad").bytes, broken.as_bytes());
-    assert_eq!(file("/bad").record, Err(Code::RecordBadType));
-    assert_eq!(file("/conflict").record, Err(Code::JsonMergeConflict));
+    assert_eq!(
+        refused("/bad"),
+        (
+            Code::RecordBadType.to_string(),
+            "/bad is not a record".to_owned()
+        )
+    );
+    assert_eq!(
+        refused("/conflict"),
+        (
+            Code::JsonMergeConflict.to_string(),
+            "/conflict is not a record: json holds a git conflict marker on line 1".to_owned()
+        )
+    );
+}
+
+#[test]
+fn get_refuses_bytes_that_do_not_parse_with_the_parsers_message_and_names_the_blob() {
+    let scenario = board();
+    let (torn, whole) = (r#"{"$type": "lr/task/v1", "#, r#"{"$type": "lr/task/v1"}"#);
+    scenario
+        .write("work/torn.json", Item::File(torn))
+        .write("work/whole.json", Item::File(whole));
+    let get = |text: &str| open(&scenario).get(&path(text)).unwrap();
+    assert_eq!(get("/work/whole").record.unwrap()["$type"], "lr/task/v1");
+    let refusal = get("/work/torn").record.unwrap_err();
+    assert_eq!(refusal.code.as_str(), Code::JsonParse.as_str());
+    assert_eq!(
+        refusal.message,
+        "/work/torn is not a record: json does not parse: EOF while parsing an object at line 1 column 24"
+    );
+    let fields = Fields {
+        blob: Some(scenario.blob(torn)),
+        ..Fields::at(&path("/work/torn"))
+    };
+    assert_eq!(
+        refusal,
+        Refusal::new(Code::JsonParse, &refusal.message, &fields)
+    );
+}
+
+#[test]
+fn get_refuses_each_json_fault_with_its_code_and_the_path_before_the_parsers_message() {
+    let scenario = board();
+    let cases: [(&str, &[u8], Code, &str); 3] = [
+        (
+            "twice",
+            br#"{"a": 1, "a": 2}"#,
+            Code::JsonDuplicateKey,
+            r#"json repeats the key "a" in one object"#,
+        ),
+        (
+            "latin",
+            b"{\"a\": \"\xff\"}",
+            Code::JsonNotUtf8,
+            "json is not utf-8: invalid utf-8 sequence of 1 bytes from index 7",
+        ),
+        (
+            "huge",
+            br#"{"$type": "lr/task/v1", "n": 18446744073709551616}"#,
+            Code::JsonLossyNumber,
+            "number 18446744073709551616 cannot be held exactly",
+        ),
+    ];
+    scenario.write(
+        "fine.json",
+        Item::File(r#"{"$type": "lr/task/v1", "n": 18446744073709551615}"#),
+    );
+    for (name, bytes, ..) in &cases {
+        scenario.write(&format!("{name}.json"), Item::Bytes(bytes));
+    }
+    let board = open(&scenario);
+    assert!(board.get(&path("/fine")).unwrap().record.is_ok());
+    for (name, _, code, parser) in cases {
+        let refusal = board
+            .get(&path(&format!("/{name}")))
+            .unwrap()
+            .record
+            .unwrap_err();
+        assert_eq!(refusal.code.as_str(), code.as_str(), "{name}");
+        assert_eq!(
+            refusal.message,
+            format!("/{name} is not a record: {parser}")
+        );
+    }
 }
 
 #[test]
@@ -537,9 +630,47 @@ fn get_refuses_a_directory_and_a_missing_path() {
     let code = |text: &str| open(&scenario).get(&path(text)).unwrap_err().code();
     assert_eq!(code("/projects"), Code::RecordNotARecord);
     assert_eq!(code("/missing"), Code::PathNotFound);
-    let fields = |text: &str| open(&scenario).get(&path(text)).unwrap_err().fields();
-    assert_eq!(fields("/projects"), Fields::at(&path("/projects")));
-    assert_eq!(fields("/missing"), Fields::at(&path("/missing")));
+    let refusal = |text: &str| open(&scenario).get(&path(text)).unwrap_err().refusal("get");
+    assert_eq!(
+        refusal("/projects").fields,
+        Fields::at(&path("/projects")).json()
+    );
+    assert_eq!(
+        refusal("/missing").fields,
+        Fields::at(&path("/missing")).json()
+    );
+}
+
+#[test]
+fn a_missing_path_that_ends_json_is_refused_with_a_hint_naming_it_without_json() {
+    let scenario = board();
+    scenario.write("d.json/n.md", Item::File("n"));
+    let board = open(&scenario);
+    let hint = |command: &'static str, text: &str| {
+        let refused = match command {
+            "ls" => board.ls(&path(text)).unwrap_err(),
+            _ => board.get(&path(text)).unwrap_err(),
+        };
+        let refusal = refused.refusal(command);
+        assert_eq!(refusal.code.as_str(), refused.code().as_str());
+        refusal.hint.unwrap()
+    };
+    assert_eq!(
+        hint("get", "/tasks/t9.json"),
+        "a logical path leaves out .json: try `board get /tasks/t9`"
+    );
+    assert_eq!(
+        hint("ls", "/tasks/t9.json"),
+        "a logical path leaves out .json: try `board ls /tasks/t9`"
+    );
+    let missing = Fields::at(&path("/tasks/t9"));
+    assert_eq!(hint("get", "/tasks/t9"), Code::PathNotFound.hint(&missing));
+    // A refusal other than a missing path keeps its own hint.
+    let directory = Fields::at(&path("/d.json"));
+    assert_eq!(
+        hint("get", "/d.json"),
+        Code::RecordNotARecord.hint(&directory)
+    );
 }
 
 #[test]

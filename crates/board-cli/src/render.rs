@@ -466,14 +466,14 @@ pub(crate) fn get(format: Format, report: &GetReport) -> Output {
             ..Output::default()
         },
         // The report carries the parsed record, so a file that is not one
-        // has no report, and is refused with the code that says why.
-        Format::Json => {
-            let blob = match report.location.object {
-                Object::Blob(blob) => Some(blob),
-                Object::Directory => None,
-            };
-            match &report.record {
-                Ok(record) => document(
+        // has no report, and is refused as the report says.
+        Format::Json => match &report.record {
+            Ok(record) => {
+                let blob = match report.location.object {
+                    Object::Blob(blob) => Some(blob),
+                    Object::Directory => None,
+                };
+                document(
                     &json!({
                         "$type": "board/get-report/v1",
                         "location": location(&report.location, &report.display.to_string()),
@@ -481,18 +481,10 @@ pub(crate) fn get(format: Format, report: &GetReport) -> Output {
                         "record": record,
                     }),
                     0,
-                ),
-                Err(code) => error(
-                    format,
-                    *code,
-                    &format_args!("{} is not a record", report.display),
-                    &Fields {
-                        blob,
-                        ..Fields::at(&report.display)
-                    },
-                ),
+                )
             }
-        }
+            Err(refusal) => refused(format, refusal),
+        },
     }
 }
 

@@ -147,8 +147,9 @@ fn a_path_that_is_not_a_mount_is_refused_and_a_mount_is_admitted() {
             open(&scenario)
                 .mount_update(&path(refused))
                 .unwrap_err()
-                .fields(),
-            Fields::at(&path(refused))
+                .refusal()
+                .fields,
+            Fields::at(&path(refused)).json()
         );
     }
     assert_eq!(

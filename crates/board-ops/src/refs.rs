@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use board_index::{Fallback, Index};
-use board_model::{Code, Fields, Location, LogicalPath, Source};
+use board_model::{Code, Location, LogicalPath, Refusal, Source};
 use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
@@ -198,10 +198,10 @@ impl RefsError {
         }
     }
 
-    pub fn fields(&self) -> Fields {
+    pub fn refusal(&self) -> Refusal {
         match self {
-            Self::Read { source } => source.fields(),
-            Self::Check { source } => source.fields(),
+            Self::Read { source } => source.refusal("refs"),
+            Self::Check { source } => source.refusal(),
         }
     }
 }

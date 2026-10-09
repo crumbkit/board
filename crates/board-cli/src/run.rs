@@ -309,11 +309,11 @@ pub(crate) fn run(
         Command::Check { path, page } => match board.check(path.as_ref(), context.cache.as_deref())
         {
             Ok(report) => render::check(format, &report, page.limit()),
-            Err(error) => render::error(format, error.code(), &error, &error.fields()),
+            Err(error) => render::refused(format, &error.refusal()),
         },
         Command::Get { path } => match board.get(&path) {
             Ok(report) => render::get(format, &report),
-            Err(error) => failed_at(format, "get", &path, error.code(), &error, &error.fields()),
+            Err(error) => render::refused(format, &error.refusal("get")),
         },
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
@@ -329,7 +329,7 @@ pub(crate) fn run(
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(format, &report),
-            Err(error) => render::error(format, error.code(), &error, &error.fields()),
+            Err(error) => render::refused(format, &error.refusal()),
         },
         Command::Refs(asked) => refs(format, &board, context, &asked),
         Command::Query { sql, limit } => {
@@ -365,7 +365,7 @@ pub(crate) fn run(
             let path = path.unwrap_or_else(LogicalPath::root);
             match board.ls(&path) {
                 Ok(report) => render::ls(format, &report, page.limit()),
-                Err(error) => failed_at(format, "ls", &path, error.code(), &error, &error.fields()),
+                Err(error) => render::refused(format, &error.refusal("ls")),
             }
         }
     }
@@ -406,7 +406,7 @@ fn entered(start: &Path, directories: &[OsString], format: Format) -> Result<Pat
     Ok(start)
 }
 
-/// `refs`, refused as `get` is when a path that names nothing ends `.json`.
+/// `refs`, with `--missing` or without.
 fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Output {
     let (path, cache) = (&asked.path, context.cache.as_deref());
     let answered = if asked.missing {
@@ -416,29 +416,7 @@ fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Outpu
     };
     match answered {
         Ok(report) => render::refs(format, &report, asked.page.limit()),
-        Err(error) => failed_at(format, "refs", path, error.code(), &error, &error.fields()),
-    }
-}
-
-/// A failure reading `path`. When nothing is there and the path ends in
-/// `.json`, the hint names the path without it, since a logical path leaves
-/// the extension out.
-fn failed_at(
-    format: Format,
-    command: &str,
-    path: &LogicalPath,
-    code: Code,
-    error: &dyn std::fmt::Display,
-    fields: &Fields,
-) -> Output {
-    match path.as_str().strip_suffix(".json") {
-        Some(stem) if code == Code::PathNotFound => render::refused(
-            format,
-            &Refusal::new(code, error, fields).with_hint(format!(
-                "a logical path leaves out .json: try `{BINARY_NAME} {command} {stem}`"
-            )),
-        ),
-        _ => render::error(format, code, error, fields),
+        Err(error) => render::refused(format, &error.refusal()),
     }
 }
 

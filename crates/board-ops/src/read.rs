@@ -4,7 +4,8 @@
 use std::collections::BTreeMap;
 
 use board_model::{
-    Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Source, classify,
+    BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
+    Source, classify, parse_json,
 };
 use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Status, latest};
 use serde_json::Value;
@@ -12,13 +13,13 @@ use serde_json::Value;
 use crate::board::Board;
 
 /// A file as `get` returns it: where it is, its stored bytes, and its parsed
-/// record or the code that says why it has none.
+/// record or the refusal that says why it has none.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GetReport {
     pub location: Location,
     pub display: LogicalPath,
     pub bytes: Vec<u8>,
-    pub record: Result<Value, Code>,
+    pub record: Result<Value, Refusal>,
 }
 
 /// One line of `ls`: a directory, or an entry with its kind and the status
@@ -153,19 +154,37 @@ pub(crate) fn read_at(
             code: Code::JsonTooLarge,
         })?;
     location.object = Object::Blob(blob);
+    let display = display(&location, path);
+    let fields = Fields {
+        blob: Some(blob),
+        ..Fields::at(&display)
+    };
+    let not_a_record = |code: Option<Code>| {
+        let message = format_args!("{display} is not a record");
+        Refusal::new(code.unwrap_or(Code::RecordNotARecord), message, &fields)
+    };
     let record = match classify(&location.path, Some(&bytes)) {
         Classified {
             content: Content::Record { value, .. },
             ..
         } => Ok(value),
+        // classify keeps only the code, so bytes that failed are parsed
+        // again, and only then, for the parser's message.
         Classified {
-            code: Some(code), ..
-        } => Err(code),
-        Classified { code: None, .. } => Err(Code::RecordNotARecord),
+            content: Content::Unparsed(_),
+            code,
+        } => Err(match parse_json(&bytes) {
+            Err(error) => {
+                let message = format_args!("{display} is not a record: {error}");
+                Refusal::new(error.code(), message, &fields)
+            }
+            Ok(_) => not_a_record(code),
+        }),
+        Classified { code, .. } => Err(not_a_record(code)),
     };
     Ok(GetReport {
-        display: display(&location, path),
         location,
+        display,
         bytes,
         record,
     })
@@ -233,11 +252,25 @@ impl ReadError {
         }
     }
 
-    pub fn fields(&self) -> Fields {
-        match self {
+    /// This error as `board <command>` reports it. When nothing is at a
+    /// path that ends `.json`, the hint names the path without it, since a
+    /// logical path leaves the extension out.
+    pub fn refusal(&self, command: &'static str) -> Refusal {
+        let fields = match self {
             Self::Resolve { source } => source.fields(),
             Self::NotARecord { path } | Self::Unread { path, .. } => Fields::at(path),
             Self::Git { .. } => Fields::default(),
+        };
+        let refusal = Refusal::new(self.code(), self, &fields);
+        let stem = fields
+            .path
+            .as_ref()
+            .and_then(|path| path.as_str().strip_suffix(".json"));
+        match stem {
+            Some(stem) if self.code() == Code::PathNotFound => refusal.with_hint(format!(
+                "a logical path leaves out .json: try `{BINARY_NAME} {command} {stem}`"
+            )),
+            _ => refusal,
         }
     }
 }

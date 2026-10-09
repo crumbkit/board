@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use board_index::{Fallback, Index, IndexError};
-use board_model::{Change, Code, Fields, Kind, Location, LogicalPath, RecordType, Source};
+use board_model::{Change, Code, Fields, Kind, Location, LogicalPath, RecordType, Refusal, Source};
 use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
@@ -168,11 +168,12 @@ impl CheckError {
         }
     }
 
-    pub fn fields(&self) -> Fields {
-        match self {
+    pub fn refusal(&self) -> Refusal {
+        let fields = match self {
             Self::Scope { source } => source.fields(),
             Self::Refresh { .. } | Self::Index { .. } => Fields::default(),
-        }
+        };
+        Refusal::new(self.code(), self, &fields)
     }
 }
 
