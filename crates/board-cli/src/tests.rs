@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use board_model::{BINARY_NAME, Code, Fields, ObjectId};
+use board_scenario::seed::{Exhibit, NOT_CHECKED, NOT_REPRODUCED, Seed, mount_of};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
@@ -407,123 +408,107 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     );
 }
 
-fn pointer_to(path: &str) -> String {
-    format!(r#"{{"$type": "board/mount/v1", "path": "{path}"}}"#)
-}
-
-fn mount_of(repo: &str, commit: ObjectId) -> String {
-    format!(
-        r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
-    )
-}
-
-/// Writes the fixture into a board: an entry for each code `check` gives,
-/// and a mounted board with names a case-insensitive file system cannot
-/// hold and a blob its commit points at but does not store. Returns the
-/// board and the mounted board, which must outlive it.
-fn fixture() -> (Scenario, Scenario) {
-    let scenario = board();
-    let task = |fields: &str| format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#);
-
-    // A mounted board with names a case-insensitive file system cannot hold
-    // and a blob its commit points at but does not store.
-    let mounted = Scenario::new();
-    let mounted_commit = mounted.commit_items(&[
-        (b"A.json", Item::File("{}")),
-        (b"a.json", Item::File("{}")),
-        (b"gone.json", Item::MissingBlob),
-    ]);
-    let mounted_path = mounted.workdir().to_str().unwrap().to_owned();
-
-    let mut chain: Vec<(String, String)> = (0..41)
-        .map(|hop| {
-            (
-                format!("hops/h{hop}.json"),
-                pointer_to(&format!("/hops/h{}", hop + 1)),
-            )
+/// Every entry `check --json` reports, as an exhibit, sorted by path.
+fn exhibits(report: &Value) -> Vec<Exhibit> {
+    let text = |value: &Value| value.as_str().map(str::to_owned);
+    let reported = report["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| Exhibit {
+            logical: text(&entry["logical"]),
+            path: text(&entry["path"]).unwrap(),
+            code: text(&entry["code"]).map(|code| code_named(&code)),
         })
         .collect();
-    chain.push(("hops/h41.json".to_owned(), "{}".to_owned()));
-    for (path, text) in &chain {
-        scenario.write(path, Item::File(text));
-    }
-    scenario
-        .write("json/parse.json", Item::File("{"))
-        .write("json/conflict.json", Item::File("{\n<<<<<<< HEAD\n}\n"))
-        .write("json/duplicate.json", Item::File(r#"{"a": 1, "a": 2}"#))
-        .write(
-            "json/lossy.json",
-            Item::File(r#"{"a": 18446744073709551616}"#),
-        )
-        .write(
-            "json/large.json",
-            Item::File(&" ".repeat(16 * 1024 * 1024 + 1)),
-        )
-        .write("json/latin1.json", Item::Bytes(b"\"\xe9\""))
-        .write("record/bad-type.json", Item::File(r#"{"$type": "task"}"#))
-        .write(
-            "record/unknown.json",
-            Item::File(r#"{"$type": "lr/note/v1"}"#),
-        )
-        .write(
-            "record/invalid.json",
-            Item::File(r#"{"$type": "lr/task/v1", "title": 1}"#),
-        )
-        .write(
-            ".board/types/lr/broken/v1.schema.json",
-            Item::File(r#"{"type": 5}"#),
-        )
-        .write(
-            "ref/malformed.json",
-            Item::File(&task(r#", "project": "projects/p""#)),
-        )
-        .write(
-            "ref/dangling.json",
-            Item::File(&task(r#", "project": "/projects/q""#)),
-        )
-        .write(
-            "ref/wrong.json",
-            Item::File(&task(r#", "project": "/ref/dangling""#)),
-        )
-        .write("path/.json", Item::File("{}"))
-        .write("path/x", Item::File(""))
-        .write("path/x.json", Item::File("{}"))
-        .write("repo/nested", Item::Submodule)
-        .write(
-            "mount/invalid.json",
-            Item::File(r#"{"$type": "board/mount/v1", "path": "/x", "extra": 1}"#),
-        )
-        .write(
-            "mount/repo.json",
-            Item::File(&mount_of(
-                &format!("{mounted_path}/nowhere"),
-                mounted_commit,
-            )),
-        )
-        .write(
-            "mount/commit.json",
-            Item::File(&mount_of(&mounted_path, ObjectId::Sha1([9; 20]))),
-        )
-        .write(
-            "mount/remote.json",
-            Item::File(&mount_of("https://example.com/b.git", mounted_commit)),
-        )
-        .write(
-            "mount/m.json",
-            Item::File(&mount_of(&mounted_path, mounted_commit)),
-        )
-        .write("cycle/a.json", Item::File(&pointer_to("/cycle/b")))
-        .write("cycle/b.json", Item::File(&pointer_to("/cycle/a")));
-
-    (scenario, mounted)
+    by_path(reported)
 }
 
-/// The fixture board: one board whose `check`, plus a few `get` and `ls`
-/// calls and two boards that cannot be opened, between them produce every
-/// code `check`, `get` and `ls` can produce.
+fn by_path(mut exhibits: Vec<Exhibit>) -> Vec<Exhibit> {
+    exhibits.sort_by(|a, b| (&a.logical, &a.path).cmp(&(&b.logical, &b.path)));
+    exhibits
+}
+
+/// Every code but those the seed lists as never given by `check` has an
+/// exhibit, so a new code fails here until it has one or a reason.
 #[test]
-fn the_fixture_board_produces_every_code() {
-    let (scenario, mounted) = fixture();
+fn the_seed_board_has_an_exhibit_for_every_code_check_can_give() {
+    let seed = Seed::new();
+    let exhibited: BTreeSet<&str> = seed
+        .exhibits
+        .iter()
+        .filter_map(|exhibit| exhibit.code.map(Code::as_str))
+        .collect();
+    let checkable: BTreeSet<&str> = Code::ALL
+        .iter()
+        .filter(|code| !NOT_CHECKED.iter().any(|(never, _)| never == *code))
+        .map(|code| code.as_str())
+        .collect();
+    assert_eq!(exhibited, checkable);
+}
+
+/// The seed board checks with exactly the codes it describes, from a cold
+/// index, a warm one and one in memory.
+#[test]
+fn check_gives_each_seed_exhibit_its_code_from_a_warm_index_and_a_cold_one() {
+    let seed = Seed::new();
+    let cache = tempfile::tempdir().unwrap();
+    let dir = seed.board.workdir();
+    let arguments = ["check", "--json", "--all"];
+    let cold = json(&board_cached(dir, Some(cache.path()), &arguments));
+    // A warm check parses nothing, and hashes only a file it could not read
+    // before: the unreadable schema, which it tries again.
+    let unread = seed
+        .exhibits
+        .iter()
+        .filter(|exhibit| {
+            exhibit.path.ends_with(".schema.json") && exhibit.code == Some(Code::RepoUnreadable)
+        })
+        .count();
+    let rechecked = board_ops::Board::open(dir, None)
+        .unwrap()
+        .check(None, Some(cache.path()))
+        .unwrap();
+    assert_eq!(
+        (rechecked.work.hashed, rechecked.work.parsed),
+        (unread, 0),
+        "the cold run left the index warm"
+    );
+    let warm = json(&board_cached(dir, Some(cache.path()), &arguments));
+    let memory = json(&board_cached(dir, None, &arguments));
+    assert_eq!(warm["entries"], cold["entries"]);
+    assert_eq!(memory["entries"], cold["entries"]);
+    let reported = exhibits(&cold);
+    let described = by_path(seed.exhibits);
+    let degraded = |exhibits: &[Exhibit]| -> Vec<Exhibit> {
+        exhibits
+            .iter()
+            .filter(|exhibit| exhibit.code.is_some())
+            .cloned()
+            .collect()
+    };
+    assert_eq!(degraded(&reported), degraded(&described));
+    let unreported: Vec<&Exhibit> = described
+        .iter()
+        .filter(|exhibit| !reported.contains(exhibit))
+        .collect();
+    assert!(
+        unreported.is_empty(),
+        "described but not reported: {unreported:?}"
+    );
+}
+
+/// The seed board's `check`, commands run against it, two boards that
+/// cannot be opened, one that cannot be created and the plugin fixtures
+/// produce every code but those the seed lists as not reproduced, and none
+/// of those.
+#[test]
+fn every_code_is_produced_except_those_the_seed_lists_as_not_reproduced() {
+    let Seed {
+        board: scenario,
+        mounted,
+        ..
+    } = Seed::new();
     let mut produced: BTreeSet<&str> = BTreeSet::new();
     let mut take = |output: Output| {
         for code in codes(&output) {
@@ -580,6 +565,9 @@ fn the_fixture_board_produces_every_code() {
         Item::File(r#"{"$type": "board/config/v1", "x": 1}"#),
     );
     take(board_in(misconfigured.workdir(), &["check", "--json"]));
+    let blocked = Scenario::new();
+    blocked.write(".board/board.json/a.md", Item::File(""));
+    take(board_in(blocked.workdir(), &["init", "--json"]));
     let (enabling, data) = plugins::installed();
     data.write("plugins/tasks", Item::Deleted)
         .write("plugins/broken/plugin.json", Item::File("{}"));
@@ -596,27 +584,21 @@ fn the_fixture_board_produces_every_code() {
     take(plugins::enable_over_another_schema());
     take(plugins::list_lacking_a_schema());
 
-    // The index fails only when SQLite does, even in memory, and a write
-    // only when the disk or its permissions refuse it, which no board can
-    // cause; whether git has an identity to commit as depends on the
-    // machine's own configuration; and HEAD moving needs a commit made in
-    // the middle of a put. A plugin's 30-second limit is too slow for this
-    // test. Each is tested where it can be made to happen.
     let missing: Vec<&str> = Code::ALL
         .iter()
-        .filter(|code| {
-            ![
-                Code::IndexFailed,
-                Code::PutFailed,
-                Code::PutNoIdentity,
-                Code::PutHeadMoved,
-                Code::PluginTimeout,
-            ]
-            .contains(code)
-        })
+        .filter(|code| !NOT_REPRODUCED.iter().any(|(absent, _)| absent == *code))
         .map(|code| code.as_str())
         .filter(|code| !produced.contains(code))
         .collect();
+    let listed: Vec<&str> = NOT_REPRODUCED
+        .iter()
+        .map(|(code, _)| code.as_str())
+        .filter(|code| produced.contains(code))
+        .collect();
+    assert!(
+        listed.is_empty(),
+        "produced but listed as not reproduced: {listed:?}"
+    );
     assert!(missing.is_empty(), "not produced: {missing:?}");
 }
 

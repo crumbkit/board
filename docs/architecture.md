@@ -243,7 +243,12 @@ set and the values an error names in text and in `board/error/v1`.
 
 `board-scenario` builds real git repositories in temporary directories, so
 links, mounts, cycles and writes are tested against git itself. STANDARDS.md 19
-and 20 set the property and work-count tests.
+and 20 set the property and work-count tests. Its degraded seed board
+(`board_scenario::seed`) holds an entry for every degraded code `check`
+reports, each listed with its code. A test requires `board check --json` to
+give exactly those codes from a cold index, a warm one and one in memory.
+Another requires commands run against it and a few other fixtures to produce
+every code except the codes it lists as not reproduced.
 
 ## Performance
 

@@ -19,6 +19,8 @@ use gix::bstr::BStr;
 use gix::object::tree::EntryKind;
 use tempfile::TempDir;
 
+pub mod seed;
+
 #[cfg(test)]
 mod tests;
 
