@@ -54,6 +54,9 @@ pub(crate) struct Indexed {
     pub(crate) blob: ObjectId,
     pub(crate) role: Role,
     pub(crate) fact: BlobFact,
+    /// What checking a record against its schema found, when the index
+    /// holds it.
+    pub(crate) validation: Option<ValidationFact>,
 }
 
 /// What a refresh found, for a snapshot to decide each entry's status.
@@ -290,15 +293,26 @@ pub(crate) fn facts(
             }
             fact
         };
-        facts.insert(entry.path.clone(), Indexed { blob, role, fact });
+        let indexed = Indexed {
+            blob,
+            role,
+            fact,
+            validation: None,
+        };
+        facts.insert(entry.path.clone(), indexed);
     }
-    work.validated += validate_all(writer, repository, source, &facts, &mut kept)?;
+    let validations = validate_all(writer, repository, source, &facts, &mut kept, work)?;
+    for (path, validation) in validations {
+        if let Some(record) = facts.get_mut(&path) {
+            record.validation = Some(validation);
+        }
+    }
     work.compiled += kept.compiled;
     Ok(facts)
 }
 
-/// Validates each record against its schema, unless the index already
-/// holds that pair, and returns how many it validated. A schema this
+/// What checking each record against its schema found, by path: from the
+/// index when it holds that pair, or validated now and stored. A schema this
 /// refresh did not compile is read and compiled once.
 fn validate_all(
     writer: &Writer,
@@ -306,8 +320,9 @@ fn validate_all(
     source: &Source,
     facts: &HashMap<String, Indexed>,
     kept: &mut Kept,
-) -> Result<usize, RefreshError> {
-    let mut validated = 0;
+    work: &mut Refreshed,
+) -> Result<HashMap<String, ValidationFact>, RefreshError> {
+    let mut found = HashMap::new();
     for (path, record) in facts {
         let Some(schema_path) = schema_type(record).map(RecordType::schema_path) else {
             continue;
@@ -315,7 +330,8 @@ fn validate_all(
         let Some(schema) = schema_of(facts, &schema_path) else {
             continue;
         };
-        if writer.validation(record.blob, schema)?.is_some() {
+        if let Some(validation) = writer.validation(record.blob, schema)? {
+            found.insert(path.clone(), validation);
             continue;
         }
         if !kept.schemas.contains_key(&schema) {
@@ -334,10 +350,12 @@ fn validate_all(
         let Some(value) = known(&kept.values, repository, source, path, record.blob) else {
             continue;
         };
-        writer.put_validation(record.blob, schema, &validate(compiled, &value))?;
-        validated += 1;
+        let validation = validate(compiled, &value);
+        writer.put_validation(record.blob, schema, &validation)?;
+        work.validated += 1;
+        found.insert(path.clone(), validation);
     }
-    Ok(validated)
+    Ok(found)
 }
 
 /// The type of a record that is checked against its schema: one that

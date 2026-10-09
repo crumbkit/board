@@ -1,6 +1,7 @@
 //! Writing facts. Each is keyed by content alone, so a fact once written is
 //! true wherever its key appears and is never updated.
 
+use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -126,6 +127,8 @@ pub struct Resolved {
 #[derive(Debug)]
 pub struct Writer {
     index: Index,
+    /// How many validations it has looked up.
+    validations_read: Cell<usize>,
 }
 
 /// The index once a run has decided its entries. Only a view reads the
@@ -157,7 +160,10 @@ impl Index {
 
     fn begin(self, sql: &str) -> Result<Writer, IndexError> {
         self.connection.execute_batch(sql)?;
-        Ok(Writer { index: self })
+        Ok(Writer {
+            index: self,
+            validations_read: Cell::new(0),
+        })
     }
 }
 
@@ -236,6 +242,7 @@ impl Writer {
         schema: ObjectId,
     ) -> Result<Option<ValidationFact>, IndexError> {
         type Row = (Option<String>, Option<String>, Option<String>, Option<i64>);
+        self.validations_read.set(self.validations_read.get() + 1);
         let keys = params![record.to_string(), schema.to_string()];
         let row: Option<Row> = self
             .connection()
@@ -280,6 +287,12 @@ impl Writer {
             })
             .collect::<Result<Option<Vec<RefFact>>, IndexError>>()?;
         Ok(references.map(ValidationFact::Valid))
+    }
+
+    /// How many validations this transaction has looked up. Work-count
+    /// tests assert it.
+    pub fn validations_read(&self) -> usize {
+        self.validations_read.get()
     }
 
     pub fn put_validation(

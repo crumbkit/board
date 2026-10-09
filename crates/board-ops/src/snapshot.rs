@@ -353,16 +353,13 @@ impl Decide<'_> {
         let Some((record_type, schema)) = wanted else {
             return Ok(Ok(None));
         };
-        let schema = match schema {
-            Ok(schema) => schema,
-            Err(found) => {
-                return Ok(Err(Fault::NoSchema {
-                    record_type: record_type.clone(),
-                    found,
-                }));
-            }
-        };
-        let references = match self.writer.validation(record.blob, schema)? {
+        if let Err(found) = schema {
+            return Ok(Err(Fault::NoSchema {
+                record_type: record_type.clone(),
+                found,
+            }));
+        }
+        let references = match record.validation.clone() {
             None => {
                 let detail = Detail {
                     pointer: None,

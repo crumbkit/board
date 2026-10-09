@@ -20,6 +20,32 @@ use super::{Facts, Indexing, known, read_type};
 
 mod mounts;
 
+/// How many validations deciding `scenario` through the index in `cache`
+/// looks up.
+fn validations_read(scenario: &Scenario, cache: &std::path::Path) -> usize {
+    let board = open(scenario);
+    let index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let (read, _, _) = crate::index::transact(index, |writer| {
+        let (_, entries) = board.decide(writer, None)?;
+        Ok((writer.validations_read(), entries))
+    })
+    .unwrap();
+    read
+}
+
+#[test]
+fn a_check_looks_up_each_records_validation_once_cold_and_warm() {
+    let scenario = board();
+    scenario
+        .write("tasks/a.json", Item::File(&task("")))
+        .write("tasks/b.json", Item::File(&task("")))
+        .write("tasks/bad.json", Item::File(r#"{"$type": "lr/task/v1"}"#));
+    let cache = tempfile::tempdir().unwrap();
+    // The project and three tasks are checked against a schema.
+    assert_eq!(validations_read(&scenario, cache.path()), 4, "cold");
+    assert_eq!(validations_read(&scenario, cache.path()), 4, "warm");
+}
+
 /// Decides every entry of `scenario` through `index`, and returns what it
 /// reported.
 fn decided(scenario: &Scenario, index: Index) -> CheckReport {
@@ -320,6 +346,7 @@ fn only_a_pointer_without_a_code_is_followed_as_a_mount() {
             record_type: None,
             code,
         },
+        validation: None,
     };
     let facts: Facts = [
         ("pointer.json", indexed(Kind::Pointer, None)),
