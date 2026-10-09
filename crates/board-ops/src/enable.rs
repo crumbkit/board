@@ -10,7 +10,8 @@ use serde_json::Value;
 
 use crate::Board;
 use crate::board::config_file;
-use crate::put::{Admitted, Expect, Failure, Prepared, PutError, PutReport, Schemas};
+use crate::put::{Expect, Failure, Prepared, PutError, PutReport, Schemas};
+use crate::verdict::Admitted;
 
 /// What `plugin enable` wrote: each schema the board lacked, then
 /// `.board/board.json` when it did not name the plugin.

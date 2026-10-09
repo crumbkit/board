@@ -35,7 +35,7 @@ pub use crate::put::{Expect, MAX_BATCH_LINES, PutError, PutReport, Refusal, Refu
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, PluginFailed, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Incoming, Missing, Outgoing, RefsError, RefsReport};
-pub use crate::verdict::Fault;
+pub use crate::verdict::{Fault, SchemaFound};
 
 #[cfg(test)]
 mod tests;

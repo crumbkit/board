@@ -7,18 +7,17 @@ use std::convert::Infallible;
 use std::io::{BufRead, Read};
 
 use board_model::{
-    BINARY_NAME, CONFIG_TYPE, Code, Content, Fields, JsonError, Location, LogicalPath,
-    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json, classify,
-    parse_json,
+    BINARY_NAME, Code, Fields, JsonError, Location, LogicalPath, MAX_RECORD_BYTES, Object,
+    ObjectId, RecordType, Role, canonical_json, classify, parse_json,
 };
-use board_tree::{LOCK_WAIT, Lock, ResolveError, Resolver, Working, WriteError};
-use board_validate::{RecordError, Reference, Schema};
+use board_tree::{Directory, LOCK_WAIT, Lock, ResolveError, Resolver, Working, WriteError};
+use board_validate::Schema;
 use serde_json::Value;
 
 use crate::board::Board;
 use crate::check::{Detail, Tally, follow, unresolved};
 use crate::snapshot::read_type;
-use crate::verdict::{self, Fault};
+use crate::verdict::{self, Admitted, Fault, SchemaFound};
 
 /// What a put expects to find where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,15 +61,6 @@ pub(crate) struct Prepared {
     pub(crate) admitted: Admitted,
 }
 
-/// A record `check_record` admits: its value, and what `check` follows from
-/// it once written, its target when it is a pointer or else its references.
-#[derive(Debug)]
-pub(crate) struct Admitted {
-    pub(crate) value: Value,
-    pub(crate) pointer: bool,
-    pub(crate) references: Vec<Reference>,
-}
-
 /// The refusal of line `line` for `error`.
 fn refusal(line: usize, error: &PutError) -> Refusal {
     Refusal {
@@ -101,11 +91,12 @@ struct RawLine {
     record: Value,
 }
 
-/// Each record type's schema, read and compiled once while the lock is held,
-/// so a batch compiles a schema once per type and not once per line.
+/// Each record type's schema, or what is there instead, read and compiled
+/// once while the lock is held, so a batch compiles a schema once per type
+/// and not once per line.
 #[derive(Debug, Default)]
 pub(crate) struct Schemas {
-    held: HashMap<RecordType, Schema>,
+    held: HashMap<RecordType, Result<Schema, SchemaFound>>,
     /// How many schemas were compiled. Work-count tests assert it.
     pub(crate) compiled: usize,
 }
@@ -451,11 +442,6 @@ impl Board {
         schemas: &mut Schemas,
         bytes: &[u8],
     ) -> Result<Admitted, Refused> {
-        let admitted = |value, pointer| Admitted {
-            value,
-            pointer,
-            references: Vec::new(),
-        };
         if bytes.iter().all(u8::is_ascii_whitespace) {
             return Err(Refused::Empty);
         }
@@ -466,58 +452,40 @@ impl Board {
         if !object.contains_key("$type") {
             return Err(Refused::NoType);
         }
-        let classified = Role::Json.classify(Some(bytes));
-        verdict::judge(&classified)?;
-        let record_type = match classified.content {
-            Content::Pointer { .. } => return Ok(admitted(value, true)),
-            // Board's own types that pass the verdict need no schema.
-            Content::Record { record_type, .. }
-                if matches!(record_type.as_str(), CONFIG_TYPE | MANIFEST_TYPE) =>
-            {
-                return Ok(admitted(value, false));
-            }
-            Content::Record { record_type, .. } => record_type,
-            Content::Json { .. }
-            | Content::Schema { .. }
-            | Content::File
-            | Content::Unparsed(_) => {
-                return Err(Refused::Code(Code::PutInvalid));
-            }
+        let find = move |record_type: &RecordType| {
+            // Moving the borrow out makes this `FnOnce`, so it can lend the schema.
+            let Schemas { held, compiled } = { schemas };
+            let schema = match held.entry(record_type.clone()) {
+                Entry::Occupied(held) => held.into_mut(),
+                Entry::Vacant(entry) => {
+                    let schema = self.read_schema(entry.key());
+                    *compiled += usize::from(schema.is_ok());
+                    entry.insert(schema)
+                }
+            };
+            schema.as_ref().map_err(|found| *found)
         };
-        let schema = match schemas.held.entry(record_type) {
-            Entry::Occupied(held) => held.into_mut(),
-            Entry::Vacant(entry) => {
-                let schema = self.compile_schema(entry.key())?;
-                schemas.compiled += 1;
-                entry.insert(schema)
-            }
-        };
-        schema.validate(&value)?;
-        let references = schema.references(&value);
-        Ok(Admitted {
-            references,
-            ..admitted(value, false)
-        })
+        Ok(verdict::record(Role::Json.classify(Some(bytes)), find)?)
     }
 
     /// Reads and compiles the schema of `record_type` from the working tree.
-    fn compile_schema(&self, record_type: &RecordType) -> Result<Schema, Refused> {
+    fn read_schema(&self, record_type: &RecordType) -> Result<Schema, SchemaFound> {
         let schema_path = record_type.schema_path();
+        match self.repository().working_directory(&schema_path) {
+            Ok(None) => {}
+            Ok(Some(Directory::Entries)) => return Err(SchemaFound::Missing),
+            Ok(Some(Directory::Submodule)) | Err(_) => return Err(SchemaFound::Unreadable),
+        }
         let schema_bytes = match self.repository().read_working(&schema_path, None) {
             Ok(Working::Read(contents)) => Some(contents.bytes),
             Ok(Working::TooLarge) => None,
-            Ok(Working::Missing) => {
-                return Err(Refused::UnknownType {
-                    record_type: record_type.clone(),
-                    schema: schema_path,
-                });
-            }
-            Err(_) => return Err(Refused::Code(Code::RepoUnreadable)),
+            Ok(Working::Missing) => return Err(SchemaFound::Missing),
+            Err(_) => return Err(SchemaFound::Unreadable),
         };
         verdict::judge(&classify(&schema_path, schema_bytes.as_deref()))
             .ok()
             .flatten()
-            .ok_or(Refused::Code(Code::SchemaInvalid))
+            .ok_or(SchemaFound::Unusable)
     }
 
     /// What `check` finds wrong with `item`, just written at `display`,
@@ -569,8 +537,6 @@ pub enum Refused {
     #[error(transparent)]
     Json(#[from] JsonError),
     #[error(transparent)]
-    Schema(#[from] RecordError),
-    #[error(transparent)]
     Fault(#[from] Fault),
     #[error("it is empty")]
     Empty,
@@ -578,46 +544,24 @@ pub enum Refused {
     NotAnObject,
     #[error("it has no $type")]
     NoType,
-    #[error("no schema for {record_type} at {schema}")]
-    UnknownType {
-        record_type: RecordType,
-        schema: String,
-    },
-    #[error("{0}")]
-    Code(Code),
 }
 
 impl Refused {
     pub fn code(&self) -> Code {
         match self {
             Self::Json(error) => error.code(),
-            Self::Schema(error) => error.code(),
             Self::Fault(fault) => fault.code(),
             Self::Empty => Code::JsonParse,
             Self::NotAnObject | Self::NoType => Code::PutInvalid,
-            Self::UnknownType { .. } => Code::RecordUnknownType,
-            Self::Code(code) => *code,
         }
     }
 
-    /// The type and schema of an unknown type, or the pointer a schema refused.
+    /// The type and schema file of a record with no usable schema, or the
+    /// pointer a schema refused.
     pub fn fields(&self) -> Fields {
         match self {
-            Self::Schema(error) => error.fields(),
-            Self::UnknownType {
-                record_type,
-                schema,
-            } => Fields {
-                record_type: Some(record_type.clone()),
-                schema: Some(schema.clone()),
-                ..Fields::default()
-            },
-            Self::Json(_)
-            | Self::Fault(_)
-            | Self::Empty
-            | Self::NotAnObject
-            | Self::NoType
-            | Self::Code(_) => Fields::default(),
+            Self::Fault(fault) => fault.fields(),
+            Self::Json(_) | Self::Empty | Self::NotAnObject | Self::NoType => Fields::default(),
         }
     }
 }
@@ -634,7 +578,7 @@ pub(crate) enum Failure {
 #[derive(Debug, thiserror::Error)]
 pub enum PutError {
     #[error("the record for {path} is refused{}", match refused {
-        Refused::Code(_) | Refused::Fault(Fault::Code(_)) => String::new(),
+        Refused::Fault(Fault::Code(_)) => String::new(),
         _ => format!(": {refused}"),
     })]
     Record { path: LogicalPath, refused: Refused },

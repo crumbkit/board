@@ -8,15 +8,19 @@
     reason = "test support: a fixture that cannot be built fails the test"
 )]
 
+use std::cell::RefCell;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use board_model::ObjectId;
 use gix::bstr::BStr;
 use gix::object::tree::EntryKind;
 use tempfile::TempDir;
+
+#[cfg(test)]
+mod tests;
 
 /// What a scenario puts at one path of a commit's tree.
 #[derive(Clone, Copy, Debug)]
@@ -46,6 +50,10 @@ pub enum Item<'a> {
     Deleted,
     /// A file the walk's user cannot read (mode 000); working tree only.
     Unreadable(&'a str),
+    /// A directory, made if absent, that the walk's user cannot list (mode
+    /// 000); working tree only. The scenario unlocks it when dropped, so its
+    /// temporary directory can be removed.
+    Locked,
     /// A file anyone may run (mode 755), such as a fixture plugin; working
     /// tree only.
     Executable(&'a str),
@@ -59,6 +67,16 @@ pub enum Item<'a> {
 pub struct Scenario {
     _directory: TempDir,
     git: gix::Repository,
+    locked: RefCell<Vec<PathBuf>>,
+}
+
+impl Drop for Scenario {
+    fn drop(&mut self) {
+        for path in self.locked.take() {
+            // A directory deleted since it was locked has nothing to unlock.
+            let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o755));
+        }
+    }
 }
 
 impl Default for Scenario {
@@ -74,6 +92,7 @@ impl Scenario {
         Self {
             _directory: directory,
             git,
+            locked: RefCell::default(),
         }
     }
 
@@ -142,6 +161,11 @@ impl Scenario {
                 backdate(&path);
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
             }
+            Item::Locked => {
+                fs::create_dir_all(&path).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+                self.locked.borrow_mut().push(path);
+            }
             Item::Executable(text) => {
                 fs::write(&path, text).unwrap();
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -199,6 +223,7 @@ impl Scenario {
                 ),
                 Item::MissingTree | Item::MissingBlob => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
+                Item::Locked => panic!("a commit cannot hold a locked directory"),
                 Item::Executable(_) => panic!("fixture plugins live outside commits"),
                 Item::Fifo => panic!("git cannot hold a FIFO"),
                 Item::Deleted | Item::Appended(_) => {

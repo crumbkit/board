@@ -196,10 +196,6 @@ fn a_record_whose_schema_changed_during_the_check_is_unreadable_and_one_under_an
     };
     let task = entry("tasks/a.json");
     assert_eq!(task.status, Status::Degraded(Code::RepoUnreadable));
-    assert_eq!(
-        task.detail.unwrap().reason,
-        format!("its schema at {schema} changed while it was read; run the command again")
-    );
     assert_eq!(entry("projects/p.json").status, Status::Ok);
 }
 

@@ -9,7 +9,7 @@
 //! different thing, a view of the git working tree for resolving paths.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use board_index::{Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
 use board_model::{
@@ -24,8 +24,9 @@ use board_tree::{
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{
-    Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_path, transact,
+    Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_type, transact,
 };
+use crate::verdict::{Fault, SchemaFound};
 
 /// What one run decided about every entry it checked, and the index whose
 /// views show exactly that.
@@ -91,7 +92,7 @@ impl Board {
         let root = Decide {
             repositories: self.repositories(),
             writer,
-            changed: &refresh.changed,
+            listed: &refresh.entries,
             facts: &refresh.facts,
             resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
         };
@@ -115,14 +116,12 @@ impl Board {
         drop(root);
         drop(resolver);
         drop(known);
-        // A commit's files never change during a run.
-        let unchanged = HashSet::new();
         for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
             let decide = Decide {
                 repositories: self.repositories(),
                 writer,
-                changed: &unchanged,
+                listed: &mounted.entries,
                 facts: &mounted.facts,
                 resolve: RefCell::new(Box::new(|path: &LogicalPath| {
                     self.repositories()
@@ -221,18 +220,16 @@ impl Decided {
             (Some(_), Some(fact)) => fact.fact.kind,
             (Some(_), None) => Kind::Json,
         };
-        let wanted = fact.and_then(schema_path);
-        let schema = wanted
-            .as_ref()
-            .and_then(|path| schema_of(decide.facts, path));
+        let wanted = fact.and_then(schema_type);
+        let schema =
+            wanted.map(|record_type| (record_type, decide.found(&record_type.schema_path())));
         let failure = match entry.status {
             Status::Degraded(code) => Some((code, None)),
             // Only a path too long under its mount point fails here.
             Status::Ok if logical.is_none() => Some((Code::PathMalformed, None)),
             Status::Ok => {
                 let mut reached = Vec::new();
-                let failure =
-                    decide.code(entry, &mut reached, role, fact, (wanted.as_deref(), schema))?;
+                let failure = decide.code(entry, &mut reached, role, fact, schema)?;
                 self.references
                     .extend(reached.into_iter().map(|reached| Referenced {
                         source: source.clone(),
@@ -251,7 +248,7 @@ impl Decided {
             blob: entry.blob,
             size: entry.size,
             role,
-            schema,
+            schema: schema.and_then(|(_, found)| found.ok()),
             kind,
             code,
             change,
@@ -264,15 +261,17 @@ impl Decided {
             status: code.map_or(Status::Ok, Status::Degraded),
             detail,
             change,
-            schema: wanted.filter(|_| code == Some(Code::RecordUnknownType)),
+            schema: wanted
+                .filter(|_| code == Some(Code::RecordUnknownType))
+                .map(RecordType::schema_path),
         });
         Ok(())
     }
 }
 
-/// The schema file a record's type names, from its source's root, and the
-/// blob of the usable schema there.
-type Wanted<'a> = (Option<&'a str>, Option<ObjectId>);
+/// A record's type, and the blob of the usable schema at the path it names
+/// from its source's root, or what is there instead.
+type Wanted<'a> = Option<(&'a RecordType, Result<ObjectId, SchemaFound>)>;
 
 /// Resolves a path in the source being checked.
 type Resolve<'a> = Box<dyn FnMut(&LogicalPath) -> Result<Location, ResolveError> + 'a>;
@@ -284,8 +283,8 @@ const READ_AGAIN: &str = "changed or could not be read; run the command again";
 struct Decide<'a> {
     repositories: &'a Repositories,
     writer: &'a Writer,
-    /// The paths the refresh left out because they changed after the walk.
-    changed: &'a HashSet<String>,
+    /// Every entry the walk listed, with a fact or not, sorted by path.
+    listed: &'a [Entry],
     /// What the index holds about the source's entries, by physical path.
     facts: &'a HashMap<String, Indexed>,
     resolve: RefCell<Resolve<'a>>,
@@ -335,39 +334,26 @@ impl Decide<'_> {
     fn record(
         &self,
         record: &Indexed,
-        (wanted, schema): Wanted<'_>,
+        wanted: Wanted<'_>,
         reached: &mut Vec<Reached>,
     ) -> Result<Option<Failure>, IndexError> {
-        let Some(wanted) = wanted else {
+        let Some((record_type, schema)) = wanted else {
             return Ok(None);
         };
-        let Some(schema) = schema else {
-            // Anything at a schema path is a schema, so it is there but degraded.
-            let (code, pointer, reason) = match self.facts.get(wanted) {
-                Some(_) => (
-                    Code::SchemaInvalid,
-                    Some("/$type".to_owned()),
-                    format!("the schema at {wanted} is degraded"),
-                ),
-                None if self.changed.contains(wanted) => (
-                    Code::RepoUnreadable,
-                    None,
-                    format!(
-                        "its schema at {wanted} changed while it was read; run the command again"
-                    ),
-                ),
-                None => (
-                    Code::RecordUnknownType,
-                    None,
-                    format!("add its schema at {wanted}"),
-                ),
-            };
-            let detail = Detail {
-                pointer,
-                reason,
-                failures: 1,
-            };
-            return Ok(Some((code, Some(detail))));
+        let schema = match schema {
+            Ok(schema) => schema,
+            Err(found) => {
+                let fault = Fault::NoSchema {
+                    record_type: record_type.clone(),
+                    found,
+                };
+                let detail = Detail {
+                    pointer: fault.fields().pointer,
+                    reason: fault.to_string(),
+                    failures: 1,
+                };
+                return Ok(Some((fault.code(), Some(detail))));
+            }
         };
         let references = match self.writer.validation(record.blob, schema)? {
             None => {
@@ -413,6 +399,34 @@ impl Decide<'_> {
             });
         }
         Ok(tally.first().map(|(code, detail)| (code, Some(detail))))
+    }
+
+    /// The blob of the usable schema at `path`, or what is there instead:
+    /// a file the walk listed with no fact, or a degraded directory above
+    /// it, could not be read.
+    fn found(&self, path: &str) -> Result<ObjectId, SchemaFound> {
+        schema_of(self.facts, path).ok_or_else(|| {
+            let above = path.rmatch_indices('/').map(|(at, _)| &path[..at]);
+            if self.facts.contains_key(path) {
+                SchemaFound::Unusable
+            } else if self.listed(path).is_some()
+                || above
+                    .filter_map(|directory| self.listed(directory))
+                    .any(|entry| entry.status != Status::Ok)
+            {
+                SchemaFound::Unreadable
+            } else {
+                SchemaFound::Missing
+            }
+        })
+    }
+
+    /// The entry the walk listed at `path`.
+    fn listed(&self, path: &str) -> Option<&Entry> {
+        let at = self
+            .listed
+            .binary_search_by(|entry| entry.path.as_str().cmp(path));
+        at.ok().map(|at| &self.listed[at])
     }
 
     fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
@@ -497,9 +511,8 @@ impl Cache for Indexing<'_> {
         source: &Source,
         entries: &[Entry],
     ) -> Result<Facts, RefreshError> {
-        // A commit's files never change, so none is left out.
         let kept = Kept::default();
-        Ok(facts(self.writer, repository, source, entries, self.work, kept)?.0)
+        facts(self.writer, repository, source, entries, self.work, kept)
     }
 
     fn is_pointer(facts: &Facts, path: &str) -> bool {

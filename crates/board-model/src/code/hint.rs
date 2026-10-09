@@ -30,6 +30,14 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "add the type's schema at `{}`, or fix `$type`",
             fields.schema.as_ref()?
         ),
+        Code::RepoUnreadable => format!(
+            "check that `{}` can be read, then run the command again",
+            fields.schema.as_ref()?
+        ),
+        Code::SchemaInvalid => format!(
+            "fix the schema at `{}` so it compiles as JSON Schema 2020-12; `board check` says what failed",
+            fields.schema.as_ref()?
+        ),
         Code::RecordInvalid => format!(
             "change the value at `{}` so the record satisfies its schema in `.board/types/`",
             pointer?

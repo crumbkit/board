@@ -4,16 +4,18 @@
 //! validated again only against a schema blob it has not met.
 //! A refresh that finds nothing changed writes nothing.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use board_index::{BlobFact, Index, IndexError, RefFact, Resolved, ValidationFact, View, Writer};
-use board_model::{Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, Role, Source};
+use board_model::{
+    Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
+};
 use board_tree::{Contents, Entry, GitError, Repository, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
 use crate::board::Board;
-use crate::verdict::{Fault, judge};
+use crate::verdict::{Fault, against, judge};
 
 /// The work a refresh did: files hashed, blobs parsed, schemas compiled and
 /// records validated. Work-count tests assert these.
@@ -58,10 +60,9 @@ pub(crate) struct Indexed {
 #[derive(Debug)]
 pub(crate) struct Refresh {
     pub(crate) entries: Vec<Entry>,
-    /// The fact for each entry that has one, by physical path.
+    /// The fact for each entry that has one, by physical path. An entry
+    /// that changed after the walk or could not be read has none.
     pub(crate) facts: HashMap<String, Indexed>,
-    /// The paths left out of `facts` because they changed after the walk.
-    pub(crate) changed: HashSet<String>,
     /// What `HEAD` holds at each path; empty before the first commit.
     pub(crate) head: HashMap<String, Option<ObjectId>>,
     pub(crate) work: Refreshed,
@@ -74,7 +75,7 @@ impl Board {
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
         let entries = self.walk(writer, &mut work, &mut kept)?;
-        let (facts, left_out) = facts(
+        let facts = facts(
             writer,
             self.repository(),
             &Source::WorkingTree,
@@ -86,7 +87,6 @@ impl Board {
         Ok(Refresh {
             entries,
             facts,
-            changed: left_out,
             head,
             work,
         })
@@ -253,9 +253,9 @@ impl Kept {
 }
 
 /// What the index holds about each entry of `source` in `repository`,
-/// parsing each blob and validating each record it does not hold yet, and
-/// the paths left out because they changed after the walk. What the walk
-/// `kept` is not read again.
+/// parsing each blob and validating each record it does not hold yet. An
+/// entry that changed after the walk is left out. What the walk `kept` is
+/// not read again.
 pub(crate) fn facts(
     writer: &Writer,
     repository: &Repository,
@@ -263,9 +263,8 @@ pub(crate) fn facts(
     entries: &[Entry],
     work: &mut Refreshed,
     mut kept: Kept,
-) -> Result<(HashMap<String, Indexed>, HashSet<String>), RefreshError> {
+) -> Result<HashMap<String, Indexed>, RefreshError> {
     let mut facts: HashMap<String, Indexed> = HashMap::new();
-    let mut changed = HashSet::new();
     for entry in entries {
         let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
             continue;
@@ -287,7 +286,6 @@ pub(crate) fn facts(
             // A file that changed since the walk is left out of this run,
             // which reports it unreadable.
             if read != blob {
-                changed.insert(entry.path.clone());
                 continue;
             }
             fact
@@ -296,7 +294,7 @@ pub(crate) fn facts(
     }
     work.validated += validate_all(writer, repository, source, &facts, &mut kept)?;
     work.compiled += kept.compiled;
-    Ok((facts, changed))
+    Ok(facts)
 }
 
 /// Validates each record against its schema, unless the index already
@@ -311,7 +309,7 @@ fn validate_all(
 ) -> Result<usize, RefreshError> {
     let mut validated = 0;
     for (path, record) in facts {
-        let Some(schema_path) = schema_path(record) else {
+        let Some(schema_path) = schema_type(record).map(RecordType::schema_path) else {
             continue;
         };
         let Some(schema) = schema_of(facts, &schema_path) else {
@@ -342,11 +340,11 @@ fn validate_all(
     Ok(validated)
 }
 
-/// The schema path of a record that is checked against a schema: one that
+/// The type of a record that is checked against its schema: one that
 /// parsed, with a type outside the `board` namespace.
-pub(crate) fn schema_path(record: &Indexed) -> Option<String> {
+pub(crate) fn schema_type(record: &Indexed) -> Option<&RecordType> {
     let record_type = record.fact.record_type.as_ref()?;
-    (record.fact.code.is_none() && !record_type.is_board()).then(|| record_type.schema_path())
+    (record.fact.code.is_none() && !record_type.is_board()).then_some(record_type)
 }
 
 /// The blob of the usable schema at `path`.
@@ -376,10 +374,9 @@ fn known(
 }
 
 fn validate(schema: &Schema, record: &Value) -> ValidationFact {
-    match schema.validate(record) {
-        Ok(()) => ValidationFact::Valid(
-            schema
-                .references(record)
+    match against(schema, record) {
+        Ok(references) => ValidationFact::Valid(
+            references
                 .into_iter()
                 .map(|reference| RefFact {
                     pointer: reference.pointer,

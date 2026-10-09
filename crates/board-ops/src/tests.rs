@@ -81,6 +81,19 @@ fn status(scenario: &Scenario, path: &str) -> Status {
         .status
 }
 
+/// Where the note type's schema lives in a board.
+pub(crate) const NOTE_SCHEMA_PATH: &str = ".board/types/lr/note/v1.schema.json";
+
+pub(crate) const NOTE: &str = r#"{"$type": "lr/note/v1"}"#;
+
+/// Writes `text` at `path` as a file no one may read, and says whether
+/// Board cannot read it. A superuser reads a mode-000 file anyway, so there
+/// the fixture cannot stage the failure; CI runs as an ordinary user.
+pub(crate) fn unreadable(scenario: &Scenario, path: &str, text: &str) -> bool {
+    scenario.write(path, Item::Unreadable(text));
+    std::fs::File::open(scenario.workdir().join(path)).is_err()
+}
+
 pub(crate) fn task(fields: &str) -> String {
     format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#)
 }
@@ -194,6 +207,58 @@ fn a_record_whose_type_has_no_schema_is_unknown() {
     );
 }
 
+#[test]
+fn a_record_whose_schema_cannot_be_read_is_unreadable_and_its_twin_under_a_readable_schema_is_ok() {
+    let readable = board();
+    readable
+        .write(NOTE_SCHEMA_PATH, Item::File(PROJECT_SCHEMA))
+        .write("n.json", Item::File(NOTE));
+    assert_eq!(status(&readable, "n.json"), Status::Ok);
+
+    let locked = board();
+    locked.write("n.json", Item::File(NOTE));
+    if !unreadable(&locked, NOTE_SCHEMA_PATH, PROJECT_SCHEMA) {
+        return;
+    }
+    assert_eq!(
+        status(&locked, "n.json"),
+        Status::Degraded(Code::RepoUnreadable)
+    );
+}
+
+#[test]
+fn a_schema_made_unreadable_after_a_check_leaves_its_records_unreadable_warm_and_cold() {
+    let scenario = board();
+    scenario
+        .write(NOTE_SCHEMA_PATH, Item::File(PROJECT_SCHEMA))
+        .write("n.json", Item::File(NOTE));
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    let status = |cache: &std::path::Path| {
+        let report = board.check(None, Some(cache)).unwrap();
+        let entry = report
+            .entries
+            .into_iter()
+            .find(|entry| entry.path == "n.json");
+        entry.unwrap().status
+    };
+    assert_eq!(status(cache.path()), Status::Ok);
+    if !unreadable(&scenario, NOTE_SCHEMA_PATH, PROJECT_SCHEMA) {
+        return;
+    }
+    assert_eq!(
+        status(cache.path()),
+        Status::Degraded(Code::RepoUnreadable),
+        "warm"
+    );
+    let cold = tempfile::tempdir().unwrap();
+    assert_eq!(
+        status(cold.path()),
+        Status::Degraded(Code::RepoUnreadable),
+        "cold"
+    );
+}
+
 /// A plugin manifest that Board admits, with one capability.
 pub(crate) const MANIFEST: &str = r#"{"$type": "board/plugin-manifest/v1", "name": "p", "version": "0.1.0",
   "description": "d", "run": ["./run"], "capabilities": [{"name": "c", "description": "d",
@@ -233,6 +298,14 @@ fn a_schema_that_does_not_compile_degrades_itself_and_its_records() {
     assert_eq!(
         status(&scenario, "n.json"),
         Status::Degraded(Code::SchemaInvalid)
+    );
+    assert_eq!(
+        detail(&scenario, "n.json"),
+        Some((
+            Some("/$type".to_owned()),
+            format!("its schema at {schema} does not compile"),
+            1
+        ))
     );
     assert_eq!(status(&scenario, "t.json"), Status::Ok);
 }
@@ -383,7 +456,7 @@ fn a_degraded_entry_says_where_and_why_and_how_many_failures_it_has() {
         detail(&scenario, "unknown.json"),
         Some((
             None,
-            "add its schema at .board/types/lr/note/v1.schema.json".to_owned(),
+            "no schema for lr/note/v1 at .board/types/lr/note/v1.schema.json".to_owned(),
             1
         ))
     );
@@ -472,6 +545,18 @@ fn get_returns_a_records_stored_bytes_and_where_it_is() {
     assert_eq!(report.record.unwrap()["title"], "t");
     assert_eq!(report.location.path, "work/t.json");
     assert_eq!(report.display.as_str(), "/work/t");
+}
+
+#[test]
+fn get_returns_a_record_whose_schema_cannot_be_read() {
+    let scenario = board();
+    scenario.write("notes/n.json", Item::File(NOTE));
+    if !unreadable(&scenario, NOTE_SCHEMA_PATH, PROJECT_SCHEMA) {
+        return;
+    }
+    let report = open(&scenario).get(&path("/notes/n")).unwrap();
+    assert_eq!(report.bytes, NOTE.as_bytes());
+    assert_eq!(report.record.unwrap()["$type"], "lr/note/v1");
 }
 
 #[test]

@@ -1,11 +1,14 @@
 //! Judging a blob by its bytes alone, as a pure function.
 
-use board_model::{Code, Content, Role};
+use board_model::{Code, Content, Role, parse_json};
+use board_validate::Schema;
 use proptest::prelude::*;
 
-use super::judge;
-use crate::tests::verdicts::{case, records, schemas};
-use crate::tests::{MANIFEST, TASK_SCHEMA};
+use std::cell::Cell;
+
+use super::{Admitted, SchemaFound, against, judge, record};
+use crate::tests::verdicts::{Case, TASK_SCHEMA_PATH, case, records, schemas};
+use crate::tests::{MANIFEST, TASK_SCHEMA, task};
 
 /// The code `judge` gives `bytes` read in `role`, or `None` when it admits them.
 fn code(role: Role, bytes: &str) -> Option<Code> {
@@ -103,6 +106,158 @@ proptest! {
     ) {
         for bytes in records {
             prop_assert!(keeps_the_rule(role, &bytes), "{:?} as {:?}", bytes, role);
+        }
+    }
+}
+
+fn task_schema() -> Schema {
+    Schema::compile(parse_json(TASK_SCHEMA.as_bytes()).unwrap()).unwrap()
+}
+
+/// What `record` makes of `bytes` when the task schema's path holds
+/// `found`, or the task schema when `found` is `None`.
+fn recorded(bytes: &str, found: Option<SchemaFound>) -> Result<Admitted, Code> {
+    let schema = task_schema();
+    let find = |_: &_| found.map_or(Ok(&schema), Err);
+    record(Role::Json.classify(Some(bytes.as_bytes())), find).map_err(|fault| fault.code())
+}
+
+#[test]
+fn a_record_takes_the_code_of_what_is_at_its_schema_path_and_its_twin_under_a_usable_schema_is_admitted()
+ {
+    for (found, code) in [
+        (SchemaFound::Missing, Code::RecordUnknownType),
+        (SchemaFound::Unreadable, Code::RepoUnreadable),
+        (SchemaFound::Unusable, Code::SchemaInvalid),
+    ] {
+        assert_eq!(recorded(&task(""), Some(found)).err(), Some(code));
+    }
+    assert!(recorded(&task(""), None).is_ok());
+}
+
+#[test]
+fn a_record_without_a_usable_schema_is_refused_naming_its_type_and_schema_file() {
+    for (found, message) in [
+        (
+            SchemaFound::Missing,
+            format!("no schema for lr/task/v1 at {TASK_SCHEMA_PATH}"),
+        ),
+        (
+            SchemaFound::Unreadable,
+            format!("its schema at {TASK_SCHEMA_PATH} could not be read"),
+        ),
+        (
+            SchemaFound::Unusable,
+            format!("its schema at {TASK_SCHEMA_PATH} does not compile"),
+        ),
+    ] {
+        let classified = Role::Json.classify(Some(task("").as_bytes()));
+        let fault = record(classified, |_| Err(found)).unwrap_err();
+        assert_eq!(fault.to_string(), message);
+        let fields = fault.fields();
+        assert_eq!(fields.schema.as_deref(), Some(TASK_SCHEMA_PATH));
+        assert_eq!(fields.record_type.unwrap().as_str(), "lr/task/v1");
+        let pointer = (found == SchemaFound::Unusable).then_some("/$type");
+        assert_eq!(fields.pointer.as_deref(), pointer);
+    }
+}
+
+#[test]
+fn a_valid_record_gives_the_references_its_schema_finds_and_its_invalid_twin_is_refused() {
+    let admitted = recorded(&task(r#", "project": "/projects/p""#), None).unwrap();
+    let targets: Vec<String> = admitted
+        .references
+        .iter()
+        .map(|reference| reference.path.to_string())
+        .collect();
+    assert_eq!(targets, ["/projects/p"]);
+    assert!(!admitted.pointer);
+    assert_eq!(admitted.value["project"], "/projects/p");
+    let invalid = recorded(r#"{"$type": "lr/task/v1", "title": 5}"#, None);
+    assert_eq!(invalid.err(), Some(Code::RecordInvalid));
+    let error = against(&task_schema(), &serde_json::json!({"title": 5})).unwrap_err();
+    assert_eq!(error.fields().pointer.as_deref(), Some("/title"));
+}
+
+#[test]
+fn a_pointer_and_boards_own_types_are_admitted_without_a_schema_and_their_broken_twins_are_refused()
+{
+    let unasked = |_: &_| -> Result<&Schema, SchemaFound> { panic!("no schema is needed") };
+    let mount = r#"{"$type": "board/mount/v1", "path": "/projects/p"}"#;
+    let config = r#"{"$type": "board/config/v1"}"#;
+    for (bytes, pointer) in [(mount, true), (config, false), (MANIFEST, false)] {
+        let admitted = record(Role::Json.classify(Some(bytes.as_bytes())), unasked).unwrap();
+        assert_eq!(admitted.pointer, pointer, "{bytes}");
+        assert!(admitted.references.is_empty());
+        assert_eq!(admitted.value, parse_json(bytes.as_bytes()).unwrap());
+    }
+    for (bytes, code) in [
+        (r#"{"$type": "board/mount/v1"}"#, Code::MountInvalid),
+        (
+            r#"{"$type": "board/config/v1", "colour": "red"}"#,
+            Code::ConfigInvalid,
+        ),
+        (
+            &MANIFEST.replace(r#"["./run"]"#, "[]"),
+            Code::PluginBadManifest,
+        ),
+    ] {
+        let refused = record(Role::Json.classify(Some(bytes.as_bytes())), unasked);
+        assert_eq!(
+            refused.err().map(|fault| fault.code()),
+            Some(code),
+            "{bytes}"
+        );
+    }
+}
+
+#[test]
+fn plain_json_is_not_a_record_and_its_typed_twin_is_admitted() {
+    let plain = record(Role::Json.classify(Some(b"{}")), |_| {
+        Err(SchemaFound::Missing)
+    });
+    assert_eq!(
+        plain.err().map(|fault| fault.code()),
+        Some(Code::PutInvalid)
+    );
+    assert!(recorded(&task(""), None).is_ok());
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn a_record_judge_refuses_has_judges_code_and_one_whose_schema_is_not_usable_has_that_states_code(
+        Case { records, .. } in case(),
+    ) {
+        let states = [
+            (SchemaFound::Missing, Code::RecordUnknownType),
+            (SchemaFound::Unreadable, Code::RepoUnreadable),
+            (SchemaFound::Unusable, Code::SchemaInvalid),
+        ];
+        for bytes in records {
+            let judged = code(Role::Json, &bytes);
+            let mut unasked = Vec::new();
+            for (found, its) in states {
+                let asked = Cell::new(false);
+                let classified = Role::Json.classify(Some(bytes.as_bytes()));
+                let refused = record(classified, |_| {
+                    asked.set(true);
+                    Err(found)
+                })
+                .err()
+                .map(|fault| fault.code());
+                if judged.is_some() {
+                    prop_assert_eq!(refused, judged, "{:?}", bytes);
+                } else if asked.get() {
+                    prop_assert_eq!(refused, Some(its), "{:?} with {:?}", bytes, found);
+                } else {
+                    unasked.push(refused);
+                }
+            }
+            // A record that needs no schema has one verdict whatever is there.
+            unasked.dedup();
+            prop_assert!(unasked.len() <= 1, "{:?}: {:?}", bytes, unasked);
         }
     }
 }

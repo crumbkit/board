@@ -144,7 +144,7 @@ fn check_names_the_schema_an_unknown_type_needs_and_a_known_type_checks_clean() 
     assert_eq!(refused.code, 1);
     assert!(
         String::from_utf8_lossy(&refused.stdout).contains(
-            "degraded board::record::unknown_type /notes/a: add its schema at \
+            "degraded board::record::unknown_type /notes/a: no schema for lr/note/v1 at \
              .board/types/lr/note/v1.schema.json\n"
         ),
         "{refused:?}"

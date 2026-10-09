@@ -97,6 +97,16 @@ impl Listing {
 }
 
 impl Repository {
+    /// The index, or an empty one when the repository has none.
+    fn index(&self) -> Result<gix::worktree::Index, GitError> {
+        self.git()
+            .index_or_empty()
+            .map_err(|error| GitError::Unreadable {
+                repository: self.path().to_path_buf(),
+                source: error.into(),
+            })
+    }
+
     pub(crate) fn working_tree<'k>(
         &self,
         known: Option<Known<'k>>,
@@ -110,10 +120,7 @@ impl Repository {
                 repository: self.path().to_path_buf(),
             });
         }
-        let index = self
-            .git()
-            .index_or_empty()
-            .map_err(|error| unreadable(error.into()))?;
+        let index = self.index()?;
         let excludes = self
             .git()
             .excludes(
@@ -167,10 +174,10 @@ impl<'k> WorkingTree<'_, 'k> {
         }
         let absolute = self.repository.path().join(relative);
         if file_type.is_dir() {
-            let kind = match indexed {
-                Some(entry) if entry.mode == Mode::COMMIT => Kind::Submodule,
-                _ if absolute.join(".git").exists() => Kind::Submodule,
-                _ => Kind::Directory(relative.to_path_buf()),
+            let kind = if submodule(indexed, &absolute) {
+                Kind::Submodule
+            } else {
+                Kind::Directory(relative.to_path_buf())
             };
             return Some((kind, None));
         }
@@ -397,6 +404,21 @@ fn unix_stat(_metadata: &Metadata) -> (i64, u64, u32) {
     (0, 0, 0)
 }
 
+/// Whether the directory at `absolute` is a submodule: the index holds a
+/// gitlink at its path, or it holds `.git`.
+fn submodule(indexed: Option<&gix::index::Entry>, absolute: &Path) -> bool {
+    indexed.is_some_and(|entry| entry.mode == Mode::COMMIT) || absolute.join(".git").exists()
+}
+
+/// A working-tree directory as [`Repository::working_directory`] finds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Directory {
+    /// A submodule, or a path beneath one.
+    Submodule,
+    /// The walk lists nothing at this path.
+    Entries,
+}
+
 /// A working-tree file as [`Repository::read_working`] finds it.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Working {
@@ -456,6 +478,43 @@ impl Repository {
             Some(blob) if blob != contents.blob => Err(GitError::Changed { path, contents }),
             _ => Ok(Working::Read(contents)),
         }
+    }
+
+    /// The directory at `relative` by the walk's rule: a submodule when it
+    /// or a directory above it is one, else a directory of entries, which
+    /// includes a path beneath a symlink. `None` when no directory is there
+    /// and no submodule or symlink is above it. A directory that cannot be
+    /// listed is [`GitError::File`].
+    pub fn working_directory(
+        &self,
+        relative: impl AsRef<Path>,
+    ) -> Result<Option<Directory>, GitError> {
+        let index = self.index()?;
+        let relative = relative.as_ref();
+        let mut components = relative.components().peekable();
+        let mut at = PathBuf::new();
+        while let Some(component) = components.next() {
+            at.push(component);
+            let absolute = self.path().join(&at);
+            match fs::symlink_metadata(&absolute) {
+                // The walk lists a symlink and does not follow it.
+                Ok(metadata) if metadata.is_symlink() && components.peek().is_some() => {
+                    return Ok(Some(Directory::Entries));
+                }
+                Ok(metadata) if metadata.is_dir() => {}
+                _ => return Ok(None),
+            }
+            let key = gix::path::to_unix_separators_on_windows(gix::path::into_bstr(&at));
+            if submodule(index.entry_by_path(key.as_ref()), &absolute) {
+                return Ok(Some(Directory::Submodule));
+            }
+        }
+        let absolute = self.path().join(relative);
+        fs::read_dir(&absolute).map_err(|source| GitError::File {
+            path: absolute,
+            source,
+        })?;
+        Ok(Some(Directory::Entries))
     }
 
     /// The blob of the working-tree file at `relative`, hashed in constant

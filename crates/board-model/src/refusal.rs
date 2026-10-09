@@ -131,6 +131,30 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_that_names_a_schema_hints_at_that_file_and_one_without_has_the_generic_hint() {
+        let schema = Fields {
+            schema: Some(".board/types/lr/note/v1.schema.json".to_owned()),
+            ..Fields::at(&"/notes/a".parse().unwrap())
+        };
+        assert_eq!(
+            Code::RepoUnreadable.hint(&schema),
+            "check that `.board/types/lr/note/v1.schema.json` can be read, then run the command again"
+        );
+        assert_eq!(
+            Code::RepoUnreadable.hint(&Fields::at(&"/notes/a".parse().unwrap())),
+            "check that git can read the repository, for example with `git fsck`"
+        );
+        assert_eq!(
+            Code::SchemaInvalid.hint(&schema),
+            "fix the schema at `.board/types/lr/note/v1.schema.json` so it compiles as JSON Schema 2020-12; `board check` says what failed"
+        );
+        assert_eq!(
+            Code::SchemaInvalid.hint(&Fields::at(&"/notes/a".parse().unwrap())),
+            "fix the schema so it compiles as JSON Schema 2020-12; the message says what failed"
+        );
+    }
+
+    #[test]
     fn a_query_refusal_that_names_the_names_there_are_has_a_hint_that_lists_them() {
         let known = |known: Known| Fields {
             known: Some(known),

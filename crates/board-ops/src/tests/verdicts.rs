@@ -11,9 +11,8 @@ use crate::tests::{MANIFEST, TASK_SCHEMA};
 pub(crate) const TASK_SCHEMA_PATH: &str = ".board/types/lr/task/v1.schema.json";
 
 /// What can be at the task schema's path: the task schema, nothing, or a
-/// schema that cannot be used. An unreadable schema is left out: today
-/// `put` says `repo::unreadable` and `check` says `record::unknown_type`, and
-/// V3 of the deepening plan makes both say `repo::unreadable`.
+/// schema that cannot be used. A schema that cannot be read needs a file
+/// system, so its parity test writes one of its own.
 pub(crate) fn schemas() -> Vec<Option<String>> {
     [
         Some(TASK_SCHEMA),

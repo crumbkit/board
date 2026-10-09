@@ -38,4 +38,6 @@ is `{}` when the statement names no table, and the hint then points at
 `sqlite_master`.
 `check` and `put` name a degraded entry's first failing pointer, why, and how
 many more (`pointer`, `reason`, `failures`); an unknown type's reason names the
-schema file its board lacks (`schema`).
+schema file its board lacks (`schema`). A put refused because its record's
+schema is missing, cannot be read or does not compile names the record's type
+and that schema file (`type`, `schema`).

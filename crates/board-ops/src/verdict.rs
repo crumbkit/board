@@ -1,13 +1,15 @@
-//! What a blob's bytes alone say about it, decided once for the index and
-//! for `put` (docs/architecture.md, Records).
+//! What a blob's bytes say about it, and what a record's schema says about
+//! the record, decided once for the index and for `put`
+//! (docs/architecture.md, Records).
 
-use board_model::{CONFIG_TYPE, Classified, Code, Content, MANIFEST_TYPE};
+use board_model::{CONFIG_TYPE, Classified, Code, Content, Fields, MANIFEST_TYPE, RecordType};
 use board_plugin::{Manifest, ManifestError};
-use board_validate::{Schema, SchemaError};
+use board_validate::{RecordError, Reference, Schema, SchemaError};
+use serde_json::Value;
 
 use crate::board::Config;
 
-/// Why a blob cannot be used, whatever else is in the tree.
+/// Why a blob or a record cannot be used, whatever else is in the tree.
 #[derive(Debug, thiserror::Error)]
 pub enum Fault {
     #[error("{0}")]
@@ -16,6 +18,18 @@ pub enum Fault {
     Manifest(#[from] ManifestError),
     #[error(transparent)]
     Schema(#[from] SchemaError),
+    #[error(transparent)]
+    Record(#[from] RecordError),
+    /// A record of a user's type with no usable schema at its schema path.
+    #[error("{}", match found {
+        SchemaFound::Missing => format!("no schema for {record_type} at {}", record_type.schema_path()),
+        SchemaFound::Unreadable => format!("its schema at {} could not be read", record_type.schema_path()),
+        SchemaFound::Unusable => format!("its schema at {} does not compile", record_type.schema_path()),
+    })]
+    NoSchema {
+        record_type: RecordType,
+        found: SchemaFound,
+    },
 }
 
 impl Fault {
@@ -24,8 +38,40 @@ impl Fault {
             Self::Code(code) => *code,
             Self::Manifest(error) => error.code(),
             Self::Schema(error) => error.code(),
+            Self::Record(error) => error.code(),
+            Self::NoSchema { found, .. } => match found {
+                SchemaFound::Missing => Code::RecordUnknownType,
+                SchemaFound::Unreadable => Code::RepoUnreadable,
+                SchemaFound::Unusable => Code::SchemaInvalid,
+            },
         }
     }
+
+    /// The pointer a schema refused, or the type and schema file of a
+    /// record with no usable schema, and `/$type` when that schema does not
+    /// compile.
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Record(error) => error.fields(),
+            Self::NoSchema { record_type, found } => Fields {
+                pointer: (*found == SchemaFound::Unusable).then(|| "/$type".to_owned()),
+                schema: Some(record_type.schema_path()),
+                record_type: Some(record_type.clone()),
+                ..Fields::default()
+            },
+            Self::Code(_) | Self::Manifest(_) | Self::Schema(_) => Fields::default(),
+        }
+    }
+}
+
+/// What is at a record type's schema path when it is not a usable schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SchemaFound {
+    Missing,
+    /// A file that could not be read, or that changed while it was read.
+    Unreadable,
+    /// A file that is not a schema that compiles.
+    Unusable,
 }
 
 /// Judges a classified blob by its bytes alone: its classification's code,
@@ -48,6 +94,54 @@ pub(crate) fn judge(classified: &Classified) -> Result<Option<Schema>, Fault> {
         }
         _ => Ok(None),
     }
+}
+
+/// Validates `record` against `schema`, and returns the references it makes.
+pub(crate) fn against(schema: &Schema, record: &Value) -> Result<Vec<Reference>, RecordError> {
+    schema.validate(record)?;
+    Ok(schema.references(record))
+}
+
+/// A record admitted: its value, and what `check` follows from it once
+/// written, its target when it is a pointer or else its references.
+#[derive(Debug)]
+pub(crate) struct Admitted {
+    pub(crate) value: Value,
+    pub(crate) pointer: bool,
+    pub(crate) references: Vec<Reference>,
+}
+
+/// Judges a classified record by its bytes, then a record of a user's type
+/// against the schema `find` gives for its type. Board's own types that
+/// pass `judge` need no schema.
+pub(crate) fn record<'s>(
+    classified: Classified,
+    find: impl FnOnce(&RecordType) -> Result<&'s Schema, SchemaFound>,
+) -> Result<Admitted, Fault> {
+    judge(&classified)?;
+    let admitted = |value, pointer| Admitted {
+        value,
+        pointer,
+        references: Vec::new(),
+    };
+    let (record_type, value) = match classified.content {
+        Content::Pointer { value, .. } => return Ok(admitted(value, true)),
+        Content::Record { record_type, value }
+            if matches!(record_type.as_str(), CONFIG_TYPE | MANIFEST_TYPE) =>
+        {
+            return Ok(admitted(value, false));
+        }
+        Content::Record { record_type, value } => (record_type, value),
+        Content::Json { .. } | Content::Schema { .. } | Content::File | Content::Unparsed(_) => {
+            return Err(Fault::Code(Code::PutInvalid));
+        }
+    };
+    let schema = find(&record_type).map_err(|found| Fault::NoSchema { record_type, found })?;
+    let references = against(schema, &value)?;
+    Ok(Admitted {
+        references,
+        ..admitted(value, false)
+    })
 }
 
 #[cfg(test)]

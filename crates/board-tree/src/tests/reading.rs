@@ -6,7 +6,7 @@
 use board_model::MAX_RECORD_BYTES;
 
 use super::*;
-use crate::{Contents, GitError, Working};
+use crate::{Contents, Directory, GitError, Working};
 
 /// The blob the walk of `repository`'s working tree gave each file.
 fn walked(repository: &Repository) -> impl Fn(&str) -> ObjectId {
@@ -176,4 +176,51 @@ fn a_pointer_changed_after_its_listing_is_unreadable_and_its_unchanged_twin_is_f
     assert_eq!(changed.code(), Code::RepoUnreadable);
     let unchanged = resolver.resolve(&path("/to_b/y")).unwrap();
     assert_eq!(unchanged.path, "b/y.json");
+}
+
+#[test]
+fn a_path_in_or_at_a_submodule_is_a_submodule_by_the_walks_rule_and_any_other_directory_holds_entries()
+ {
+    let scenario = Scenario::new();
+    let commit = scenario.commit_items(&[(b"linked", Item::Submodule)]);
+    scenario
+        .track(commit)
+        .write("linked/x", Item::File(""))
+        .write("linked/x", Item::Deleted)
+        .write("nested", Item::Submodule)
+        .write("plain/x.json", Item::File("{}"))
+        .write("file.json", Item::File("{}"))
+        .write("link", Item::Symlink("plain"));
+    let repository = scenario.open();
+    let directory = |path: &str| repository.working_directory(path).unwrap();
+    assert_eq!(directory("linked"), Some(Directory::Submodule));
+    assert_eq!(directory("nested"), Some(Directory::Submodule));
+    assert_eq!(directory("nested/x.json"), Some(Directory::Submodule));
+    assert_eq!(directory("plain"), Some(Directory::Entries));
+    // The walk lists a symlink and nothing through it.
+    assert_eq!(directory("link/x.json"), Some(Directory::Entries));
+    assert_eq!(directory("link"), None);
+    assert_eq!(directory("file.json"), None);
+    assert_eq!(directory("absent"), None);
+}
+
+#[test]
+fn a_directory_that_cannot_be_listed_is_refused_and_one_that_can_holds_entries() {
+    let scenario = Scenario::new();
+    scenario
+        .write("locked", Item::Locked)
+        .write("open/x.json", Item::File("{}"));
+    // A superuser lists any directory, so the case cannot be made as root.
+    if std::fs::read_dir(scenario.workdir().join("locked")).is_ok() {
+        return;
+    }
+    let repository = scenario.open();
+    assert!(matches!(
+        repository.working_directory("locked"),
+        Err(GitError::File { .. })
+    ));
+    assert_eq!(
+        repository.working_directory("open").unwrap(),
+        Some(Directory::Entries)
+    );
 }

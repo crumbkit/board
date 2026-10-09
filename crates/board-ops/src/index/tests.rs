@@ -454,11 +454,11 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
     let board = open(&scenario);
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
-    let ((facts, changed, under_new, under_old), _, _) = transact(index, |writer| {
+    let ((facts, under_new, under_old), _, _) = transact(index, |writer| {
         let entries = unkept(&board)?;
         scenario.write("tasks/a.json", Item::File(&new));
         let mut work = Refreshed::default();
-        let (facts, changed) = facts(
+        let facts = facts(
             writer,
             board.repository(),
             &Source::WorkingTree,
@@ -468,11 +468,10 @@ fn a_file_changed_after_the_walk_is_stored_under_its_new_blob_and_left_out_while
         )?;
         let under_new = writer.blob(scenario.blob(&new), Role::Json)?;
         let under_old = writer.blob(scenario.blob(&old), Role::Json)?;
-        Ok(((facts, changed, under_new, under_old), Vec::new()))
+        Ok(((facts, under_new, under_old), Vec::new()))
     })
     .unwrap();
     assert!(!facts.contains_key("tasks/a.json"), "left out of this run");
-    assert_eq!(changed, ["tasks/a.json".to_owned()].into());
     assert_eq!(facts["tasks/b.json"].blob, scenario.blob(&twin));
     assert_eq!(under_new.map(|fact| fact.kind), Some(Kind::Record));
     assert_eq!(
@@ -490,7 +489,7 @@ fn too_large_after(walked: usize, read: usize) -> Option<BlobFact> {
     let board = open(&scenario);
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
-    let ((facts, _), _, _) = transact(index, |writer| {
+    let (facts, _, _) = transact(index, |writer| {
         let entries = unkept(&board)?;
         if read != walked {
             scenario.write("big.json", Item::File(&"b".repeat(read)));
