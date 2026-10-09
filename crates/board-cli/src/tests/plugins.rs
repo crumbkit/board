@@ -2,7 +2,7 @@
 
 use super::*;
 
-const TASKS: &str = r#"{
+pub(super) const TASKS: &str = r#"{
   "$type": "board/plugin-manifest/v1",
   "name": "tasks",
   "version": "0.1.0",
@@ -246,18 +246,18 @@ fn a_capability_or_filter_that_cannot_be_read_refuses_the_command_line() {
     );
 }
 
-const RESULT: &str = r#"{"$type": "board/call-result/v1", "output": {"count": 2}}"#;
+pub(super) const RESULT: &str = r#"{"$type": "board/call-result/v1", "output": {"count": 2}}"#;
 
 /// A script that ignores its request, writes `stdout` and a line of stderr,
 /// and exits `exit`.
-fn answering(stdout: &str, exit: u8) -> String {
+pub(super) fn answering(stdout: &str, exit: u8) -> String {
     format!(
         "#!/bin/sh\ncat > /dev/null\necho 'a log line' >&2\nprintf '%s' '{stdout}'\nexit {exit}\n"
     )
 }
 
 /// Installs `name`, offering `due`, whose run script is `script`.
-fn install(data: &Scenario, name: &str, script: &str) {
+pub(super) fn install(data: &Scenario, name: &str, script: &str) {
     data.write(
         &format!("plugins/{name}/plugin.json"),
         Item::File(&TASKS.replace(r#""tasks""#, &format!("{name:?}"))),
@@ -379,82 +379,19 @@ fn a_call_names_a_target_or_a_capability_but_not_both() {
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
 
-/// One refused call for each `board::plugin::` code a call can give in
-/// under a second.
-pub(super) fn refused_calls() -> Vec<Output> {
-    let json_call = |board: &Scenario, data: &Scenario, arguments: &[&str], input: &str| {
-        let mut arguments = arguments.to_vec();
-        arguments.push("--json");
-        call(board, data, &arguments, input)
-    };
-    let mut outputs = Vec::new();
-    let (board, data) = installed();
-    for (name, script) in [
-        ("tasks", answering(RESULT, 0)),
-        ("notes", answering(RESULT, 0)),
-        ("bad", answering("not json", 0)),
-        ("fails", answering("", 3)),
-        (
-            "huge",
-            "#!/bin/sh\ncat > /dev/null\nhead -c 16777300 /dev/zero\n".to_owned(),
-        ),
-    ] {
-        install(&data, name, &script);
-    }
-    // A plugin without its run program cannot be started.
-    data.write(
-        "plugins/missing/plugin.json",
-        Item::File(&TASKS.replace(r#""tasks""#, r#""missing""#)),
-    );
-    outputs.push(json_call(&board, &data, &["call", "notes.due"], "{}"));
-    outputs.push(json_call(&board, &data, &["call", "tasks.due"], "["));
-    board.write(
-        ".board/board.json",
-        Item::File(
-            r#"{"$type": "board/config/v1", "plugins": ["tasks", "notes", "bad", "fails", "huge", "missing"]}"#,
-        ),
-    );
-    outputs.push(json_call(
-        &board,
-        &data,
-        &["call", "--capability", "due"],
-        "{}",
-    ));
-    outputs.push(json_call(&board, &data, &["call", "bad.due"], "{}"));
-    outputs.push(json_call(&board, &data, &["call", "fails.due"], "{}"));
-    outputs.push(json_call(&board, &data, &["call", "huge.due"], "{}"));
-    outputs.push(json_call(&board, &data, &["call", "missing.due"], "{}"));
-    outputs.push(call_without_a_writable_database(&board, &data));
-    let deep = board_plugin::Environment {
-        depth: Some("8".into()),
-        ..board_plugin::Environment::default()
-    };
-    outputs.push(board_environment(
+/// A cache in which a call to tasks made the `plugins` directory beside a
+/// kept index, then made read-only, so notes, which has no database yet,
+/// cannot make one.
+pub(super) fn unwritable_databases(board: &Scenario, data: &Scenario) -> Scenario {
+    let cache = Scenario::new();
+    let called = board_full(
         board.workdir(),
-        None,
+        Some(cache.workdir()),
         Some(&data.workdir().join("plugins")),
-        deep,
         &["call", "tasks.due", "--json"],
         b"{}",
-    ));
-    outputs
-}
-
-/// A call to notes, which has no database yet, after a call to tasks made
-/// the `plugins` directory beside a kept index and it was made read-only.
-fn call_without_a_writable_database(board: &Scenario, data: &Scenario) -> Output {
-    let cache = Scenario::new();
-    let plugins = data.workdir().join("plugins");
-    let cached = |target: &str| {
-        board_full(
-            board.workdir(),
-            Some(cache.workdir()),
-            Some(&plugins),
-            &["call", target, "--json"],
-            b"{}",
-        )
-    };
-    assert_eq!(cached("tasks.due").code, 0);
+    );
+    assert_eq!(called.code, 0);
     let boards: Vec<_> = std::fs::read_dir(cache.workdir().join("board"))
         .unwrap()
         .map(|entry| entry.unwrap().file_name())
@@ -462,7 +399,7 @@ fn call_without_a_writable_database(board: &Scenario, data: &Scenario) -> Output
     assert_eq!(boards.len(), 1, "{boards:?}");
     let databases = format!("board/{}/plugins", boards[0].to_str().unwrap());
     cache.write(&databases, Item::ReadOnly);
-    cached("notes.due")
+    cache
 }
 
 #[test]
@@ -522,7 +459,7 @@ fn query_attaches_each_enabled_plugins_database_with_hyphens_as_underscores() {
 /// `notes/note/v1`, and a board that does not enable it.
 /// A board that commits on put, as whom it says, and a plugins directory
 /// holding notes, which ships `notes/note/v1`.
-fn shipping() -> (Scenario, Scenario) {
+pub(super) fn shipping() -> (Scenario, Scenario) {
     let board = Scenario::new();
     board
         .write(
@@ -623,19 +560,13 @@ fn plugin_enable_over_another_schema_is_refused_with_a_hint_and_over_none_is_adm
 }
 
 /// A board naming notes in its configuration without its schema.
-fn lacking_a_schema() -> (Scenario, Scenario) {
+pub(super) fn lacking_a_schema() -> (Scenario, Scenario) {
     let (board, data) = shipping();
     board.write(
         ".board/board.json",
         Item::File(r#"{"$type": "board/config/v1", "plugins": ["notes"]}"#),
     );
     (board, data)
-}
-
-/// `plugin list` on a board lacking an enabled plugin's schema.
-pub(super) fn list_lacking_a_schema() -> Output {
-    let (board, data) = lacking_a_schema();
-    plugin(&board, &data, &["--json", "plugin", "list"])
 }
 
 #[test]

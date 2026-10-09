@@ -29,7 +29,7 @@ fn leaves() -> Vec<(String, clap::Command)> {
 
 /// The arguments of a shell command line: words split on spaces, with
 /// single or double quotes holding a word together.
-fn words(line: &str) -> Vec<String> {
+pub(super) fn words(line: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
     let mut quote = None;
@@ -197,6 +197,7 @@ fn every_command_a_hint_names_parses() {
     };
     let known = Fields {
         path: Some("/tasks/a".parse().unwrap()),
+        ancestor: Some("/tasks".parse().unwrap()),
         blob: Some(ObjectId::Sha1([1; 20])),
         pointer: Some("/title".to_owned()),
         record_type: Some("lr/task/v1".parse().unwrap()),
@@ -679,7 +680,7 @@ fn a_query_cut_short_notes_it_on_stderr_only_in_text_and_a_whole_one_does_not() 
 }
 
 #[test]
-fn a_json_path_that_fails_for_another_reason_gets_no_hint_and_a_missing_one_does() {
+fn a_json_path_gets_the_hint_without_json_only_when_that_path_names_an_entry() {
     let scenario = board();
     scenario.write(
         "notes.json/a.json",
@@ -692,8 +693,13 @@ fn a_json_path_that_fails_for_another_reason_gets_no_hint_and_a_missing_one_does
         "error: board::record::not_a_record: /notes.json is not a record"
     );
     assert!(!text(&directory.stderr).contains("leaves out .json"));
+    let named = board_in(scenario.workdir(), &["get", "/projects/p.json"]);
+    assert!(text(&named.stderr).contains("hint: a logical path leaves out .json"));
     let missing = board_in(scenario.workdir(), &["get", "/other.json"]);
-    assert!(text(&missing.stderr).contains("hint: a logical path leaves out .json"));
+    assert_eq!(
+        hint_of(&missing),
+        "run `board ls /` to see what is there; paths leave out `.json`"
+    );
 }
 
 #[test]

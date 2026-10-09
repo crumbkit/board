@@ -142,6 +142,19 @@ proptest! {
     }
 
     #[test]
+    fn a_prefix_is_the_path_of_its_first_segments(
+        segments in proptest::collection::vec(segment(), 0..16),
+        depth in 0usize..20,
+    ) {
+        let text = format!("/{}", segments.join("/"));
+        prop_assume!(text.len() <= MAX_PATH_BYTES);
+        let path: LogicalPath = text.parse().unwrap();
+        let kept = &segments[..depth.min(segments.len())];
+        let expected: LogicalPath = format!("/{}", kept.join("/")).parse().unwrap();
+        prop_assert_eq!(path.prefix(depth), expected);
+    }
+
+    #[test]
     fn an_admitted_path_is_its_segments_and_a_refusal_names_the_input(
         text in "(/|[^/]{0,4}|\\PC{0,4}|\\p{Cc}|\\.){0,12}",
     ) {

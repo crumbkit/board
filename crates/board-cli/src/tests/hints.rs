@@ -32,13 +32,39 @@ fn a_missing_path_hints_ls_of_its_parent_and_that_listing_runs() {
         scenario.workdir(),
         &["get", "/tasks/t9", "--json"],
     ));
-    assert_eq!(error["fields"], json!({"path": "/tasks/t9"}));
+    assert_eq!(
+        error["fields"],
+        json!({"path": "/tasks/t9", "ancestor": "/tasks"})
+    );
     assert_eq!(board_in(scenario.workdir(), &["ls", "/tasks"]).code, 0);
     let top = board_in(scenario.workdir(), &["ls", "/t9"]);
     assert_eq!(
         hint_of(&top),
         "run `board ls /` to see what is there; paths leave out `.json`"
     );
+}
+
+#[test]
+fn a_path_missing_several_levels_deep_hints_ls_of_its_deepest_ancestor_that_exists() {
+    let scenario = board();
+    for (missing, ancestor) in [
+        ("/taks/t1", "/"),
+        ("/a/b/c/d", "/"),
+        ("/projects/q/r", "/projects"),
+        ("/projects/p/x/y", "/projects/p"),
+    ] {
+        let refused = board_in(scenario.workdir(), &["get", missing]);
+        let stderr = text(&refused.stderr);
+        assert!(
+            stderr.starts_with("error: board::path::not_found: "),
+            "{stderr}"
+        );
+        assert_eq!(
+            hint_of(&refused),
+            format!("run `board ls {ancestor}` to see what is there; paths leave out `.json`")
+        );
+        assert_eq!(board_in(scenario.workdir(), &["ls", ancestor]).code, 0);
+    }
 }
 
 #[test]
@@ -447,7 +473,7 @@ fn a_record_whose_schema_is_degraded_hints_at_the_schema_and_is_ok_once_it_is_fi
         .write(schema, Item::File("{"))
         .write("notes/r.json", Item::File(r#"{"$type": "lr/broken/v1"}"#));
     let hint = "hint: /notes/r: fix the schema at `.board/types/lr/broken/v1.schema.json` so it \
-                compiles as JSON Schema 2020-12; `board check` says what failed";
+                compiles as JSON Schema 2020-12; `board check /.board/types` says what failed";
     let hints = check_hints(&scenario);
     assert!(hints.iter().any(|line| line == hint), "{hints:#?}");
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
@@ -592,7 +618,7 @@ fn check_hints_for_the_root_board_name_its_own_files_and_mount_update() {
         "hint: /vendor/n: fetch the commit into the mounted repository, or run \
          `board mount update /vendor/n`",
         "hint: /notes/r: fix the schema at `.board/types/lr/broken/v1.schema.json` so it \
-         compiles as JSON Schema 2020-12; `board check` says what failed",
+         compiles as JSON Schema 2020-12; `board check /.board/types` says what failed",
         "hint: /notes/u: add the type's schema at `.board/types/lr/none/v1.schema.json`, \
          or fix `$type`",
     ] {
@@ -626,4 +652,63 @@ fn a_dangling_link_hints_at_the_link_and_a_link_to_a_record_is_followed() {
     assert_eq!(error["fields"], json!({"path": "/links/gone"}));
     assert_eq!(board_in(scenario.workdir(), &["ls", "/links"]).code, 0);
     assert_eq!(board_in(scenario.workdir(), &["get", "/links/p"]).code, 0);
+}
+
+#[test]
+fn a_put_through_a_mount_hints_updating_that_mount_and_a_put_beside_it_is_written() {
+    let mounted = Scenario::new();
+    let pinned = mounted.commit(&[("x.json", "{}")]);
+    let scenario = uncommitted();
+    let repo = mounted.workdir().to_str().unwrap();
+    scenario.write("vendor/m.json", Item::File(&mount_of(repo, pinned)));
+    let record = r#"{"$type": "lr/project/v1"}"#;
+    let error = json(&put(&scenario, &["put", "/vendor/m/new", "--json"], record));
+    assert_eq!(error["code"], "board::put::through_mount");
+    assert_eq!(
+        error["message"],
+        "/vendor/m/new cannot be written: it is in the board mounted at /vendor/m"
+    );
+    assert_eq!(error["fields"], json!({"path": "/vendor/m"}));
+    assert_eq!(
+        error["hint"],
+        "a mounted board is read-only here; write in the mounted repository, \
+         then run `board mount update /vendor/m`"
+    );
+    let hinted = board_in(scenario.workdir(), &["mount", "update", "/vendor/m"]);
+    assert_eq!(hinted.code, 0);
+    assert_eq!(put(&scenario, &["put", "/vendor/new"], record).code, 0);
+}
+
+#[test]
+fn updating_a_mount_that_names_nothing_hints_ls_of_its_deepest_ancestor_and_that_listing_runs() {
+    let scenario = uncommitted();
+    let error = json(&board_in(
+        scenario.workdir(),
+        &["mount", "update", "/projects/zz", "--json"],
+    ));
+    assert_eq!(error["code"], "board::path::not_found");
+    assert_eq!(
+        error["fields"],
+        json!({"path": "/projects/zz", "ancestor": "/projects"})
+    );
+    assert_eq!(
+        error["hint"],
+        "run `board ls /projects` to see what is there; paths leave out `.json`"
+    );
+    assert_eq!(board_in(scenario.workdir(), &["ls", "/projects"]).code, 0);
+}
+
+#[test]
+fn a_put_beneath_a_dangling_link_names_the_link_and_a_put_beside_it_is_written() {
+    let scenario = uncommitted();
+    scenario.write(
+        "l.json",
+        Item::File(r#"{"$type": "board/mount/v1", "path": "/projects/none"}"#),
+    );
+    let record = r#"{"$type": "lr/project/v1"}"#;
+    let error = json(&put(&scenario, &["put", "/l/new", "--json"], record));
+    assert_eq!(error["code"], "board::ref::dangling");
+    assert_eq!(error["fields"], json!({"path": "/l"}));
+    assert_eq!(board_in(scenario.workdir(), &["ls", "/"]).code, 0);
+    assert_eq!(put(&scenario, &["put", "/projects/new"], record).code, 0);
 }

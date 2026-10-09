@@ -96,8 +96,16 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     refused by its schema names the JSON pointer that failed and why. Gate: the
     hint for each code is chosen by an exhaustive `match` on `Code`, so a new
     code does not compile until it has a hint, and a test requires every command
-    a hint names to parse. A plugin's own codes carry the plugin's message and
-    no hint from Board.
+    a hint names to parse. A property provokes every code it can through the
+    command line and runs each command a hint names, up to three hops; a
+    command that fails again with the code that named it is a dead end, except
+    `check`, which reports what is still degraded. A `check` hint that says to
+    fix something, then run that same `check`, ends its chain. The property
+    accepts the placeholders `<dir>` and `<command>`, which only the reader can
+    fill in. Any other placeholder, such as `<path>`, belongs to a generic
+    hint for an error that lacks the value, and the property counts it as a
+    dead end. A plugin's own codes carry the plugin's message and no hint from
+    Board.
 26. **Output does not depend on the terminal.** Board prints the same bytes to a
     terminal as to a pipe. It does not use colour, wrap lines or detect a
     terminal. The report goes to stdout. Notes, hints and text errors go to

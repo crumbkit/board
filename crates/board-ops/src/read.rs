@@ -223,10 +223,23 @@ impl Board {
         offered
     }
 
-    fn locate(&self, path: &LogicalPath) -> Result<Location, ReadError> {
-        self.repositories()
-            .resolve(&Source::WorkingTree, path)
-            .map_err(|source| ReadError::Resolve { source })
+    /// Where `path` leads in the working tree. When nothing is at a path
+    /// that ends `.json` and the path without it resolves, the error says
+    /// that the path names an entry by its file.
+    pub(crate) fn locate(&self, path: &LogicalPath) -> Result<Location, ReadError> {
+        let resolve = |path: &LogicalPath| self.repositories().resolve(&Source::WorkingTree, path);
+        resolve(path).map_err(|source| {
+            let stem = path.as_str().strip_suffix(".json");
+            match stem.and_then(|stem| stem.parse::<LogicalPath>().ok()) {
+                Some(stem)
+                    if matches!(source, ResolveError::NotFound { .. })
+                        && resolve(&stem).is_ok() =>
+                {
+                    ReadError::ByFile { source, stem }
+                }
+                _ => ReadError::Resolve { source },
+            }
+        })
     }
 }
 
@@ -327,6 +340,13 @@ pub(crate) fn join(parent: &LogicalPath, segment: &str) -> Option<LogicalPath> {
 pub enum ReadError {
     #[error(transparent)]
     Resolve { source: ResolveError },
+    /// Nothing is at the path, which ends `.json`, but `stem`, the path
+    /// without it, resolves.
+    #[error("{source}")]
+    ByFile {
+        source: ResolveError,
+        stem: LogicalPath,
+    },
     #[error("{path} is not a record")]
     NotARecord { path: LogicalPath },
     #[error("{path} cannot be read: {code}")]
@@ -340,7 +360,7 @@ pub enum ReadError {
 impl ReadError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Resolve { source } => source.code(),
+            Self::Resolve { source } | Self::ByFile { source, .. } => source.code(),
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::Unread { code, .. } => *code,
             Self::Git { source } => source.code(),
@@ -348,23 +368,19 @@ impl ReadError {
         }
     }
 
-    /// This error as `board <command>` reports it. When nothing is at a
-    /// path that ends `.json`, the hint names the path without it, since a
-    /// logical path leaves the extension out.
+    /// This error as `board <command>` reports it. A path that names an
+    /// entry by its file is hinted without `.json`, since a logical path
+    /// leaves the extension out.
     pub fn refusal(&self, command: &'static str) -> Refusal {
         let fields = match self {
-            Self::Resolve { source } => source.fields(),
+            Self::Resolve { source } | Self::ByFile { source, .. } => source.fields(),
             Self::NotARecord { path } | Self::Unread { path, .. } => Fields::at(path),
             Self::Git { .. } => Fields::default(),
             Self::Check { source } => return source.refusal(),
         };
         let refusal = Refusal::new(self.code(), self, &fields);
-        let stem = fields
-            .path
-            .as_ref()
-            .and_then(|path| path.as_str().strip_suffix(".json"));
-        match stem {
-            Some(stem) if self.code() == Code::PathNotFound => refusal.with_hint(format!(
+        match self {
+            Self::ByFile { stem, .. } => refusal.with_hint(format!(
                 "a logical path leaves out .json: try `{BINARY_NAME} {command} {stem}`"
             )),
             _ => refusal,

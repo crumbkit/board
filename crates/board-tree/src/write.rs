@@ -75,7 +75,7 @@ impl Resolver<'_, '_> {
             Err(source) => return Err(unresolved(path, source)),
         };
         if location.board.source != Source::WorkingTree {
-            return Err(WriteError::ThroughMount { path: path.clone() });
+            return Err(through_mount(path, &location));
         }
         // The walk lists a symlink as a file, but on disk it can lead to a
         // directory that a write beneath it would go into.
@@ -95,7 +95,7 @@ impl Resolver<'_, '_> {
             .resolve_pointer(path)
             .map_err(|source| unresolved(path, source))?;
         if location.board.source != Source::WorkingTree {
-            return Err(WriteError::ThroughMount { path: path.clone() });
+            return Err(through_mount(path, &location));
         }
         let physical = match location.object {
             Object::Blob(_) => {
@@ -163,6 +163,24 @@ fn said(path: &LogicalPath, source: &ResolveError) -> String {
     match source.predicate() {
         Some(predicate) if source.fields() == Fields::at(path) => format!("it {predicate}"),
         _ => source.to_string(),
+    }
+}
+
+/// A write to `path` refused because `location`, where it leads, is in a
+/// mounted board, naming the last pointer in the working tree: the mount
+/// that leads out of it.
+fn through_mount(path: &LogicalPath, location: &Location) -> WriteError {
+    let pointers = location.pointers.iter();
+    let mount = pointers
+        .take_while(|pointer| pointer.board.source == Source::WorkingTree)
+        .last()
+        .and_then(Location::display_path);
+    // A mount file with no logical path, such as one reached through a
+    // symlink by a path longer than a logical path may be, has no
+    // `display_path`; the error then names `path`.
+    WriteError::ThroughMount {
+        path: path.clone(),
+        mount: mount.unwrap_or_else(|| path.clone()),
     }
 }
 
@@ -527,8 +545,12 @@ pub enum WriteError {
         #[source]
         source: ResolveError,
     },
-    #[error("{path} cannot be written: it is in a mounted board")]
-    ThroughMount { path: LogicalPath },
+    /// `mount` is the mount in the working tree that `path` passes through.
+    #[error("{path} cannot be written: it is in the board mounted at {mount}")]
+    ThroughMount {
+        path: LogicalPath,
+        mount: LogicalPath,
+    },
     /// `file` is what the path reaches: itself, or its deepest ancestor.
     #[error("{path} cannot be written: {file} is not a record")]
     NotARecord {
@@ -618,7 +640,7 @@ impl WriteError {
                 source: ResolveError::Git(_),
                 path,
             }
-            | Self::ThroughMount { path }
+            | Self::ThroughMount { mount: path, .. }
             | Self::InGit { path, .. }
             | Self::Degraded { path, .. }
             | Self::Symlink { path, .. } => Fields::at(path),

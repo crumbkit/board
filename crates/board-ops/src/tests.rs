@@ -5,7 +5,7 @@ pub(crate) use board_scenario::generated::{PROJECT_SCHEMA, TASK_SCHEMA, task};
 use board_scenario::{Item, Scenario};
 use board_tree::{Entry, Status};
 
-use crate::{Board, CheckReport};
+use crate::{Board, CheckReport, OpenError};
 
 mod complete;
 pub(crate) mod verdicts;
@@ -110,13 +110,16 @@ fn a_board_is_found_from_any_directory_inside_it() {
 }
 
 #[test]
-fn without_board_json_at_the_repository_root_there_is_no_board() {
+fn outside_a_repository_or_without_board_json_at_its_root_there_is_no_board() {
+    let outside = tempfile::tempdir().unwrap();
+    let error = Board::open(outside.path(), None).unwrap_err();
+    assert!(matches!(error, OpenError::NoRepository { .. }), "{error}");
+    assert_eq!(error.code(), Code::ConfigNotFound);
     let plain = Scenario::new();
     plain.write("x.json", Item::File("{}"));
-    assert_eq!(
-        Board::open(plain.workdir(), None).unwrap_err().code(),
-        Code::ConfigNotFound
-    );
+    let error = Board::open(plain.workdir(), None).unwrap_err();
+    assert!(matches!(error, OpenError::NotFound { .. }), "{error}");
+    assert_eq!(error.code(), Code::ConfigNotFound);
     let nested = Scenario::new();
     nested.write("sub/.board/board.json", Item::File(CONFIG));
     let error = Board::open(&nested.workdir().join("sub"), None).unwrap_err();
@@ -703,7 +706,14 @@ fn a_scope_checks_only_entries_at_or_beneath_it() {
     let error = open(&scenario).check(Some(&missing), None).unwrap_err();
     assert_eq!(error.code(), Code::PathNotFound);
     assert_eq!(error.to_string(), "nothing is at /nowhere");
-    assert_eq!(error.refusal().fields, Fields::at(&missing).json());
+    assert_eq!(
+        error.refusal().fields,
+        Fields {
+            ancestor: Some(LogicalPath::root()),
+            ..Fields::at(&missing)
+        }
+        .json()
+    );
 }
 
 #[test]
@@ -1062,8 +1072,12 @@ fn get_refuses_a_directory_and_a_missing_path() {
         Fields::at(&path("/projects")).json()
     );
     assert_eq!(
-        refusal("/missing").fields,
-        Fields::at(&path("/missing")).json()
+        refusal("/projects/x/y").fields,
+        Fields {
+            ancestor: Some(path("/projects")),
+            ..Fields::at(&path("/projects/x/y"))
+        }
+        .json()
     );
 }
 
@@ -1082,15 +1096,27 @@ fn a_missing_path_that_ends_json_is_refused_with_a_hint_naming_it_without_json()
         refusal.hint.unwrap()
     };
     assert_eq!(
-        hint("get", "/tasks/t9.json"),
-        "a logical path leaves out .json: try `board get /tasks/t9`"
+        hint("get", "/projects/p.json"),
+        "a logical path leaves out .json: try `board get /projects/p`"
     );
     assert_eq!(
-        hint("ls", "/tasks/t9.json"),
-        "a logical path leaves out .json: try `board ls /tasks/t9`"
+        hint("ls", "/projects/p.json"),
+        "a logical path leaves out .json: try `board ls /projects/p`"
     );
-    let missing = Fields::at(&path("/tasks/t9"));
-    assert_eq!(hint("get", "/tasks/t9"), Code::PathNotFound.hint(&missing));
+    // Without `.json` the path names nothing either, so the hint lists
+    // the deepest ancestor that exists.
+    let missing = |text: &str| Fields {
+        ancestor: Some(path("/projects")),
+        ..Fields::at(&path(text))
+    };
+    assert_eq!(
+        hint("get", "/projects/q.json"),
+        Code::PathNotFound.hint(&missing("/projects/q.json"))
+    );
+    assert_eq!(
+        hint("get", "/projects/q"),
+        Code::PathNotFound.hint(&missing("/projects/q"))
+    );
     // A refusal other than a missing path keeps its own hint.
     let directory = Fields::at(&path("/d.json"));
     assert_eq!(

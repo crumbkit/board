@@ -98,14 +98,18 @@ mod tests {
             assert_eq!(refusal.hint, Some(code.hint(&fields)));
             assert_eq!(refusal.fields, fields.json());
         }
-        let refusal = Refusal::new(Code::PathNotFound, "nothing is at /tasks/t9", &fields);
+        let missing = Fields {
+            ancestor: Some("/tasks".parse().unwrap()),
+            ..fields
+        };
+        let refusal = Refusal::new(Code::PathNotFound, "nothing is at /tasks/t9", &missing);
         assert_eq!(
             refusal.hint.as_deref(),
             Some("run `board ls /tasks` to see what is there; paths leave out `.json`")
         );
         assert_eq!(
             Value::Object(refusal.fields),
-            json!({ "path": "/tasks/t9" })
+            json!({ "path": "/tasks/t9", "ancestor": "/tasks" })
         );
     }
 
@@ -139,6 +143,18 @@ mod tests {
     }
 
     #[test]
+    fn a_put_through_a_named_mount_hints_updating_it_and_one_naming_none_has_the_generic_hint() {
+        assert_eq!(
+            Code::PutThroughMount.hint(&Fields::at(&"/vendor/m".parse().unwrap())),
+            "a mounted board is read-only here; write in the mounted repository, then run `board mount update /vendor/m`"
+        );
+        assert_eq!(
+            Code::PutThroughMount.hint(&Fields::default()),
+            "a mounted board is read-only here; write in the mounted repository, then run `board mount update <path>`"
+        );
+    }
+
+    #[test]
     fn a_refusal_that_names_a_schema_hints_at_that_file_and_one_without_has_the_generic_hint() {
         let schema = Fields {
             schema: Some(".board/types/lr/note/v1.schema.json".to_owned()),
@@ -154,7 +170,7 @@ mod tests {
         );
         assert_eq!(
             Code::SchemaInvalid.hint(&schema),
-            "fix the schema at `.board/types/lr/note/v1.schema.json` so it compiles as JSON Schema 2020-12; `board check` says what failed"
+            "fix the schema at `.board/types/lr/note/v1.schema.json` so it compiles as JSON Schema 2020-12; `board check /.board/types` says what failed"
         );
         assert_eq!(
             Code::SchemaInvalid.hint(&Fields::at(&"/notes/a".parse().unwrap())),

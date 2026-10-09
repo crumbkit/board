@@ -67,9 +67,8 @@ impl Board {
     /// identity, its board and physical path, whatever path they name.
     pub fn refs(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<RefsReport, RefsError> {
         let location = self
-            .repositories()
-            .resolve(&Source::WorkingTree, path)
-            .map_err(refused)?;
+            .locate(path)
+            .map_err(|source| RefsError::Read { source })?;
         let index = Index::open(cache, self.repository().path()).map_err(CheckError::from)?;
         let snapshot = self.snapshot(index, None)?;
         let same = |source: &Source, physical: &str| {
@@ -130,25 +129,21 @@ impl Board {
         path: &LogicalPath,
         cache: Option<&Path>,
     ) -> Result<RefsReport, RefsError> {
-        let not_found = || refused(ResolveError::NotFound { path: path.clone() });
-        match self.refs(path, cache) {
+        let found = match self.refs(path, cache) {
             Err(RefsError::Read {
                 source:
                     ReadError::Resolve {
-                        source: ResolveError::NotFound { .. },
+                        source: ResolveError::NotFound { ancestor, .. },
                     },
-            }) => {}
+            }) => ancestor,
             answered => return answered,
-        }
-        let stem = path.as_str().strip_suffix(".json");
-        if let Some(Ok(stem)) = stem.map(str::parse::<LogicalPath>)
-            && self
-                .repositories()
-                .resolve(&Source::WorkingTree, &stem)
-                .is_ok()
-        {
-            return Err(not_found());
-        }
+        };
+        let not_found = || {
+            refused(ResolveError::NotFound {
+                path: path.clone(),
+                ancestor: found.clone(),
+            })
+        };
         let ancestor = self.repositories().ancestor(path).map_err(refused)?;
         let physical = ancestor.path().ok_or_else(not_found)?;
         let display = display(&ancestor.location, path);

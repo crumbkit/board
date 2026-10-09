@@ -322,12 +322,18 @@ pub(crate) fn run(
     if let Command::Init = cli.command {
         return match board_ops::init(&start) {
             Ok(report) => render::init(format, &report),
-            Err(error) => render::error(format, error.code(), &error, &Fields::default()),
+            Err(error) => {
+                let outside = matches!(error, board_ops::InitError::NotARepository { .. });
+                render::refused(format, &unopened(error.code(), &error, outside))
+            }
         };
     }
     let board = match Board::open(&start, context.home.clone()) {
         Ok(board) => board,
-        Err(error) => return render::error(format, error.code(), &error, &Fields::default()),
+        Err(error) => {
+            let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
+            return render::refused(format, &unopened(error.code(), &error, outside));
+        }
     };
     match cli.command {
         Command::Init => unreachable!("init runs before a board is opened"),
@@ -446,6 +452,19 @@ fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Outpu
     match answered {
         Ok(report) => render::refs(format, &report, asked.page.limit()),
         Err(error) => render::refused(format, &error.refusal()),
+    }
+}
+
+/// The refusal when a board cannot be opened or made. `outside` a git
+/// repository, `board init` fails too, so the hint names only what can run.
+fn unopened(code: Code, error: &dyn std::fmt::Display, outside: bool) -> Refusal {
+    let refusal = Refusal::new(code, error, &Fields::default());
+    if outside {
+        refusal.with_hint(
+            "run `git init` first to make the directory a repository; for a board elsewhere, run `board -C <dir> check`",
+        )
+    } else {
+        refusal
     }
 }
 

@@ -83,7 +83,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             fields.schema.as_ref()?
         ),
         Code::SchemaInvalid => format!(
-            "fix the schema at `{}` so it compiles as JSON Schema 2020-12; `board check` says what failed",
+            "fix the schema at `{}` so it compiles as JSON Schema 2020-12; `board check /.board/types` says what failed",
             fields.schema.as_ref()?
         ),
         Code::RecordInvalid => format!(
@@ -113,11 +113,15 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         ),
         Code::PathNotFound => format!(
             "run `board ls {}` to see what is there; paths leave out `.json`",
-            parent(path?)
+            fields.ancestor.as_ref()?
         ),
         Code::RefDangling => dangling(fields)?,
         Code::MountCommitMissing => format!(
             "fetch the commit into the mounted repository, or run `board mount update {}`",
+            path?
+        ),
+        Code::PutThroughMount => format!(
+            "a mounted board is read-only here; write in the mounted repository, then run `board mount update {}`",
             path?
         ),
         Code::PutInvalid | Code::PutStale if !fields.refusals.is_empty() => BATCH.to_owned(),

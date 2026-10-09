@@ -195,10 +195,11 @@ fn a_mount_inside_a_mounted_board_is_refused() {
         "vendor/lib.json",
         Item::File(&mount(&library.path(), "main", commit)),
     );
-    assert_eq!(
-        update(&scenario, "/vendor/lib/inner").unwrap_err(),
-        Code::PutThroughMount
-    );
+    let refused = open(&scenario)
+        .mount_update(&path("/vendor/lib/inner"))
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PutThroughMount);
+    assert_eq!(refused.refusal().fields["path"], "/vendor/lib");
     assert!(!update(&scenario, "/vendor/lib").unwrap().wrote);
 }
 

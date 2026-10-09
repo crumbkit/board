@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::Path;
 
-use board_model::{BINARY_NAME, Code, Fields, ObjectId};
+use board_model::{BINARY_NAME, Code, Fields, LogicalPath, ObjectId};
 use board_scenario::seed::{Exhibit, NOT_CHECKED, NOT_REPRODUCED, Seed, mount_of};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
@@ -382,6 +382,22 @@ fn init_outside_a_repository_says_to_run_git_init_and_inside_one_succeeds() {
 }
 
 #[test]
+fn check_outside_a_repository_hints_git_init_and_in_a_repository_without_a_board_hints_board_init()
+{
+    let outside = tempfile::tempdir().unwrap();
+    let refused = json(&board_in(outside.path(), &["check", "--json"]));
+    assert_eq!(refused["code"], "board::config::not_found");
+    let hint = refused["hint"].as_str().unwrap();
+    assert!(hint.starts_with("run `git init` first"), "{hint}");
+    assert!(!hint.contains("board init"), "{hint}");
+    let repository = Scenario::new();
+    let refused = json(&board_in(repository.workdir(), &["check", "--json"]));
+    assert_eq!(refused["code"], "board::config::not_found");
+    let hint = refused["hint"].as_str().unwrap();
+    assert!(hint.contains("`board init` makes it a board"), "{hint}");
+}
+
+#[test]
 fn ls_lists_directories_and_entries() {
     let scenario = board();
     scenario.write("projects/sub/x.md", Item::File(""));
@@ -417,7 +433,10 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     assert_eq!(error["code"], "board::path::not_found");
     assert_eq!(
         error["hint"],
-        Code::PathNotFound.hint(&Fields::at(&"/missing".parse().unwrap()))
+        Code::PathNotFound.hint(&Fields {
+            ancestor: Some(LogicalPath::root()),
+            ..Fields::at(&"/missing".parse().unwrap())
+        })
     );
 }
 
@@ -506,110 +525,6 @@ fn check_gives_each_seed_exhibit_its_code_from_a_warm_index_and_a_cold_one() {
         unreported.is_empty(),
         "described but not reported: {unreported:?}"
     );
-}
-
-/// The seed board's `check`, commands run against it, two boards that
-/// cannot be opened, one that cannot be created and the plugin fixtures
-/// produce every code but those the seed lists as not reproduced, and none
-/// of those.
-#[test]
-fn every_code_is_produced_except_those_the_seed_lists_as_not_reproduced() {
-    let Seed {
-        board: scenario,
-        mounted,
-        ..
-    } = Seed::new();
-    let mut produced: BTreeSet<&str> = BTreeSet::new();
-    let mut take = |output: Output| {
-        for code in codes(&output) {
-            produced.insert(code.as_str());
-        }
-    };
-    let dir = scenario.workdir();
-    take(board_in(dir, &["check", "--json"]));
-    take(board_in(dir, &["chek", "--json"]));
-    take(board_in(dir, &["get", "/projects", "--json"]));
-    take(board_in(dir, &["get", "/nowhere", "--json"]));
-    take(board_in(dir, &["get", "/mount/m/gone", "--json"]));
-    take(board_in(dir, &["ls", "/mount/m", "--json"]));
-    take(board_in(dir, &["query", "SELEC 1", "--json"]));
-    let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
-                     SELECT count(*) FROM c";
-    take(board_in(dir, &["query", unbounded, "--json"]));
-    let put = |path: &str, record: &str| {
-        board_with(
-            dir,
-            None,
-            &["put", path, "--expect", "none", "--json"],
-            record.as_bytes(),
-        )
-    };
-    take(put("/projects/p", r#"{"$type": "lr/project/v1"}"#));
-    take(put("/projects/new", r#"{"name": "no type"}"#));
-    take(put("/mount/m/new", r#"{"$type": "lr/project/v1"}"#));
-    scenario.write(
-        "mount/unfollowed.json",
-        Item::File(
-            &mount_of(
-                mounted.workdir().to_str().unwrap(),
-                ObjectId::from_hex(&"1".repeat(40)).unwrap(),
-            )
-            .replace(r#""main""#, r#""gone""#),
-        ),
-    );
-    take(board_in(
-        dir,
-        &["mount", "update", "/mount/unfollowed", "--json"],
-    ));
-    scenario.write("symlinked.json", Item::Symlink("projects"));
-    take(put("/symlinked", r#"{"$type": "lr/project/v1"}"#));
-    scenario.write(".git/board.lock", Item::File(""));
-    take(put("/projects/locked", r#"{"$type": "lr/project/v1"}"#));
-
-    let plain = Scenario::new();
-    plain.write("x.json", Item::File("{}"));
-    take(board_in(plain.workdir(), &["check", "--json"]));
-    let misconfigured = Scenario::new();
-    misconfigured.write(
-        ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "x": 1}"#),
-    );
-    take(board_in(misconfigured.workdir(), &["check", "--json"]));
-    let blocked = Scenario::new();
-    blocked.write(".board/board.json/a.md", Item::File(""));
-    take(board_in(blocked.workdir(), &["init", "--json"]));
-    let (enabling, data) = plugins::installed();
-    data.write("plugins/tasks", Item::Deleted)
-        .write("plugins/broken/plugin.json", Item::File("{}"));
-    take(board_full(
-        enabling.workdir(),
-        None,
-        Some(&data.workdir().join("plugins")),
-        &["plugin", "list", "--json"],
-        b"",
-    ));
-    for output in plugins::refused_calls() {
-        take(output);
-    }
-    take(plugins::enable_over_another_schema());
-    take(plugins::list_lacking_a_schema());
-
-    let missing: Vec<&str> = Code::ALL
-        .iter()
-        .filter(|code| !NOT_REPRODUCED.iter().any(|(absent, _)| absent == *code))
-        .map(|code| code.as_str())
-        .filter(|code| !produced.contains(code))
-        .collect();
-    let listed: Vec<&str> = NOT_REPRODUCED
-        .iter()
-        .map(|(code, _)| code.as_str())
-        .filter(|code| produced.contains(code))
-        .collect();
-    assert!(
-        listed.is_empty(),
-        "produced but listed as not reproduced: {listed:?}"
-    );
-    assert!(missing.is_empty(), "not produced: {missing:?}");
 }
 
 #[test]
@@ -1065,6 +980,7 @@ fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
 mod cli;
 mod complete;
 mod consistency;
+mod dead_ends;
 mod directory;
 mod hints;
 mod plugins;

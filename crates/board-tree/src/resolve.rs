@@ -145,7 +145,7 @@ impl Repositories {
                     link: link.clone(),
                     target: target.clone(),
                 },
-                _ => ResolveError::NotFound { path: path.clone() },
+                _ => not_found(path, remaining.len()),
             };
             let Some(current) = directory.take() else {
                 return Err(missing(from_link, trail));
@@ -339,11 +339,7 @@ impl Resolver<'_, '_> {
     pub fn ancestor(&mut self, path: &LogicalPath) -> Result<Ancestor, ResolveError> {
         let segments: Vec<&str> = path.segments().collect();
         for depth in (0..segments.len()).rev() {
-            // A prefix of a logical path's segments is always one.
-            let Ok(ancestor) = format!("/{}", segments[..depth].join("/")).parse::<LogicalPath>()
-            else {
-                break;
-            };
+            let ancestor = path.prefix(depth);
             match self.resolve(&ancestor) {
                 Ok(location) => {
                     return Ok(Ancestor {
@@ -359,7 +355,10 @@ impl Resolver<'_, '_> {
                 Err(error) => return Err(error),
             }
         }
-        Err(ResolveError::NotFound { path: path.clone() })
+        Err(ResolveError::NotFound {
+            path: path.clone(),
+            ancestor: LogicalPath::root(),
+        })
     }
 }
 
@@ -442,11 +441,26 @@ fn pointer<T: Tree>(
     })
 }
 
+/// `path` missing where `remaining` of its segments were left after the one
+/// that named nothing. Past a link's target, what remains is the end of
+/// `path`, so the segments of `path` before those resolved.
+fn not_found(path: &LogicalPath, remaining: usize) -> ResolveError {
+    let resolved = path.segments().count().saturating_sub(remaining + 1);
+    ResolveError::NotFound {
+        path: path.clone(),
+        ancestor: path.prefix(resolved),
+    }
+}
+
 /// A path that does not resolve.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveError {
+    /// `ancestor` is the deepest ancestor of `path` that resolves.
     #[error("nothing is at {path}")]
-    NotFound { path: LogicalPath },
+    NotFound {
+        path: LogicalPath,
+        ancestor: LogicalPath,
+    },
     #[error("{segment:?} in {path} names more than one entry")]
     Shadowed { path: LogicalPath, segment: String },
     #[error("{path} {}", self.predicate().unwrap_or_default())]
@@ -527,8 +541,11 @@ impl ResolveError {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Dangling { link, .. } => Fields::at(link),
-            Self::NotFound { path }
-            | Self::Shadowed { path, .. }
+            Self::NotFound { path, ancestor } => Fields {
+                ancestor: Some(ancestor.clone()),
+                ..Fields::at(path)
+            },
+            Self::Shadowed { path, .. }
             | Self::Submodule { path }
             | Self::Unreadable { path }
             | Self::InvalidPointer { path, .. }

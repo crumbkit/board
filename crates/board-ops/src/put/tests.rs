@@ -464,7 +464,7 @@ fn a_write_through_a_mount_is_refused_and_one_beside_it_is_admitted() {
     }
     assert_eq!(
         refused_fields(&scenario, "/vendor/x", Expect::Any, &task("")),
-        Fields::at(&path("/vendor/x"))
+        Fields::at(&path("/vendor"))
     );
     assert!(put(&scenario, "/vendors/x", Expect::Any, &task("")).is_ok());
 }

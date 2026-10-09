@@ -140,7 +140,11 @@ fn refs_of_a_path_that_names_nothing_is_refused_and_one_that_names_a_record_is_a
             .unwrap_err()
             .refusal()
             .fields,
-        Fields::at(&path("/tasks/zz")).json()
+        Fields {
+            ancestor: Some(path("/tasks")),
+            ..Fields::at(&path("/tasks/zz"))
+        }
+        .json()
     );
 }
 
@@ -252,6 +256,17 @@ fn a_missing_path_under_a_dangling_link_is_refused_as_dangling_and_once_it_resol
 fn a_path_naming_an_existing_record_by_its_file_is_not_found_and_a_new_records_file_is_admitted() {
     let scenario = linked();
     assert_eq!(missing(&scenario, "/tasks/a.json"), Err(Code::PathNotFound));
+    let refused = open(&scenario)
+        .refs_or_missing(&path("/tasks/a.json"), None)
+        .unwrap_err();
+    assert_eq!(
+        refused.refusal().fields,
+        Fields {
+            ancestor: Some(path("/tasks")),
+            ..Fields::at(&path("/tasks/a.json"))
+        }
+        .json()
+    );
     assert_eq!(
         missing(&scenario, "/tasks/new.json"),
         Ok((
@@ -311,7 +326,8 @@ fn refs_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change
 }
 
 #[test]
-fn refs_of_a_missing_path_ending_json_hints_it_without_json_and_one_without_has_no_such_hint() {
+fn refs_of_a_json_path_whose_stem_names_an_entry_hints_the_stem_and_one_whose_stem_names_nothing_does_not()
+ {
     let scenario = linked();
     let hint = |text: &str| {
         let refused = open(&scenario).refs(&path(text), None).unwrap_err();
@@ -319,11 +335,26 @@ fn refs_of_a_missing_path_ending_json_hints_it_without_json_and_one_without_has_
         refused.refusal().hint.unwrap()
     };
     assert_eq!(
+        hint("/tasks/a.json"),
+        "a logical path leaves out .json: try `board refs /tasks/a`"
+    );
+    // `/links/l` is a link, so its stem resolves through it.
+    assert_eq!(
+        hint("/links/l.json"),
+        "a logical path leaves out .json: try `board refs /links/l`"
+    );
+    assert_eq!(
         hint("/tasks/zz.json"),
-        "a logical path leaves out .json: try `board refs /tasks/zz`"
+        Code::PathNotFound.hint(&Fields {
+            ancestor: Some(path("/tasks")),
+            ..Fields::at(&path("/tasks/zz.json"))
+        })
     );
     assert_eq!(
         hint("/tasks/zz"),
-        Code::PathNotFound.hint(&Fields::at(&path("/tasks/zz")))
+        Code::PathNotFound.hint(&Fields {
+            ancestor: Some(path("/tasks")),
+            ..Fields::at(&path("/tasks/zz"))
+        })
     );
 }

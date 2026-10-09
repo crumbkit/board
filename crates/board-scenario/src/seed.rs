@@ -19,10 +19,9 @@ pub struct Exhibit {
     pub code: Option<Code>,
 }
 
-/// Codes the CLI's every-code test cannot produce through the `board`
-/// command line, why, and where each is tested instead. Every other code
-/// comes from `check` on the seed board, from a command run against it, or
-/// from another small fixture.
+/// Codes the CLI's no-dead-ends property cannot provoke through the `board`
+/// command line, why, and where each is tested instead. The property
+/// provokes every other code, from the seed board or another small fixture.
 pub const NOT_REPRODUCED: [(Code, &str); 4] = [
     (
         Code::IndexFailed,

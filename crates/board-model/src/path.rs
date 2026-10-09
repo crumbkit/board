@@ -38,6 +38,17 @@ impl LogicalPath {
             .skip(1)
             .filter(|segment| !segment.is_empty())
     }
+
+    /// The path of the first `depth` segments: the root for 0, the whole
+    /// path for `depth` past its last segment.
+    #[must_use]
+    pub fn prefix(&self, depth: usize) -> Self {
+        match self.0.match_indices('/').nth(depth) {
+            Some((0, _)) => Self::root(),
+            Some((end, _)) => Self(self.0[..end].to_owned()),
+            None => self.clone(),
+        }
+    }
 }
 
 impl TryFrom<String> for LogicalPath {

@@ -31,13 +31,17 @@ fn a_write_that_fails_is_put_failed_and_a_read_that_fails_is_unreadable() {
 #[test]
 fn a_refused_write_names_its_path_and_a_failed_one_names_nothing() {
     let path: LogicalPath = "/vendor/x".parse().unwrap();
-    let refused = WriteError::ThroughMount { path: path.clone() };
+    let mount: LogicalPath = "/vendor".parse().unwrap();
+    let refused = WriteError::ThroughMount {
+        path,
+        mount: mount.clone(),
+    };
     assert_eq!(refused.code(), Code::PutThroughMount);
     assert_eq!(
         refused.to_string(),
-        "/vendor/x cannot be written: it is in a mounted board"
+        "/vendor/x cannot be written: it is in the board mounted at /vendor"
     );
-    assert_eq!(refused.fields(), Fields::at(&path));
+    assert_eq!(refused.fields(), Fields::at(&mount));
     let failed = WriteError::Io {
         path: PathBuf::from("/board/vendor/x.json"),
         source: failure(),
@@ -231,7 +235,10 @@ fn a_write_refused_by_an_error_that_does_not_start_with_its_path_keeps_the_messa
     let git_message = git.to_string();
     for (source, message) in [
         (
-            ResolveError::NotFound { path: path.clone() },
+            ResolveError::NotFound {
+                path: path.clone(),
+                ancestor: LogicalPath::root(),
+            },
             "nothing is at /l/x".to_owned(),
         ),
         (

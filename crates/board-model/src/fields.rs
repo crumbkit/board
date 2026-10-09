@@ -11,9 +11,11 @@ use crate::{Code, LogicalPath, ObjectId, RecordType};
 /// `fields` and for filling in its hint. Each is `None` when unknown.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fields {
-    /// The logical path at fault: a mount for a mount's code, a link for a
-    /// dangling link.
+    /// The logical path at fault: a mount for a mount's code or a put
+    /// through a mount, a link for a dangling link.
     pub path: Option<LogicalPath>,
+    /// For a path that names nothing, its deepest ancestor that resolves.
+    pub ancestor: Option<LogicalPath>,
     /// The blob the path holds.
     pub blob: Option<ObjectId>,
     /// A JSON pointer into the record or input.
@@ -84,6 +86,7 @@ impl Fields {
     pub fn json(&self) -> Map<String, Value> {
         let strings = [
             ("path", self.path.as_ref().map(ToString::to_string)),
+            ("ancestor", self.ancestor.as_ref().map(ToString::to_string)),
             ("blob", self.blob.as_ref().map(ToString::to_string)),
             ("pointer", self.pointer.clone()),
             ("type", self.record_type.as_ref().map(ToString::to_string)),
@@ -244,6 +247,7 @@ mod tests {
     fn emitted() -> BTreeSet<String> {
         let tables = Fields {
             path: Some("/tasks/a".parse().unwrap()),
+            ancestor: Some("/tasks".parse().unwrap()),
             blob: Some(ObjectId::Sha1([1; 20])),
             pointer: Some("/title".to_owned()),
             record_type: Some("lr/note/v1".parse().unwrap()),

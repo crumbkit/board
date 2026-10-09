@@ -356,10 +356,12 @@ fn a_board_that_mounts_its_own_parent_ends_where_the_pins_run_out() {
     let location = resolve(&outer, outer_second, "/m/p/m/x").unwrap();
     assert_eq!(location.board.source, Source::Commit(inner_first));
     assert_eq!(location.pointers.len(), 3);
-    assert_eq!(
-        resolve(&outer, outer_second, "/m/p/m/p").unwrap_err(),
-        Code::PathNotFound
-    );
+    let missing = outer
+        .repositories()
+        .resolve(&outer_second.source(), &path("/m/p/m/p/q"))
+        .unwrap_err();
+    assert_eq!(missing.code(), Code::PathNotFound);
+    assert_eq!(missing.fields().ancestor, Some(path("/m/p/m")));
 }
 
 #[test]
@@ -405,6 +407,31 @@ fn a_display_path_keeps_mount_points_and_replaces_links() {
         let again = resolve(&outer, commit, display).unwrap();
         assert_eq!(identity(&again), identity(&location), "{asked}");
     }
+}
+
+#[test]
+fn a_write_through_a_mount_is_refused_naming_the_mount_and_a_write_beside_it_is_admitted() {
+    let inner = Scenario::new();
+    let inner_commit = inner.commit(&[("x.json", "1")]);
+    let middle = Scenario::new();
+    let to_inner = mount(&inner.path(), inner_commit);
+    let middle_commit = middle.commit(&[("n.json", &to_inner)]);
+    let outer = Scenario::new();
+    outer
+        .write("m.json", Item::File(&mount(&middle.path(), middle_commit)))
+        .write("l.json", Item::File(&link("/m")));
+    let repository = outer.repositories();
+    for asked in ["/m/new", "/m/n/x", "/l/new", "/l/n/new"] {
+        let error = repository.target(&path(asked), false).unwrap_err();
+        assert_eq!(error.code(), Code::PutThroughMount, "{asked}");
+        assert_eq!(
+            error.fields(),
+            board_model::Fields::at(&path("/m")),
+            "{asked}"
+        );
+    }
+    let admitted = repository.target(&path("/new"), false).unwrap();
+    assert_eq!(admitted.path, "new.json");
 }
 
 #[test]

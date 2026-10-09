@@ -61,8 +61,12 @@ impl Board {
     /// it holding `.board/board.json`. That directory must be the root of its
     /// repository's working tree. `home` is what a mount's `~/` means.
     pub fn open(start: &Path, home: Option<PathBuf>) -> Result<Self, OpenError> {
-        let not_found = || OpenError::NotFound {
-            start: start.to_path_buf(),
+        let not_found = || {
+            let start = start.to_path_buf();
+            match board_tree::repository_root(&start) {
+                Some(_) => OpenError::NotFound { start },
+                None => OpenError::NoRepository { start },
+            }
         };
         let root = board_tree::discover(start).ok_or_else(not_found)?;
         if !board_tree::is_repository_root(&root) {
@@ -123,6 +127,8 @@ pub(crate) fn config_file(repositories: &Repositories) -> Option<(ObjectId, Valu
 pub enum OpenError {
     #[error("no board at or above {start:?}: no .board/board.json at a repository root")]
     NotFound { start: PathBuf },
+    #[error("no board at or above {start:?}: no git repository holds it")]
+    NoRepository { start: PathBuf },
     #[error("the board at {root:?} has a .board/board.json that is not a valid board/config/v1")]
     Config { root: PathBuf },
     #[error(transparent)]
@@ -132,7 +138,7 @@ pub enum OpenError {
 impl OpenError {
     pub fn code(&self) -> Code {
         match self {
-            Self::NotFound { .. } => Code::ConfigNotFound,
+            Self::NotFound { .. } | Self::NoRepository { .. } => Code::ConfigNotFound,
             Self::Config { .. } => Code::ConfigInvalid,
             Self::Git { source } => source.code(),
         }

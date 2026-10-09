@@ -559,6 +559,32 @@ proptest! {
             }
         }
     }
+
+    #[test]
+    fn a_path_that_names_nothing_names_its_deepest_ancestor_that_resolves(board in linked_board()) {
+        let mut texts: Vec<(String, String)> = board
+            .iter()
+            .map(|(name, target)| (name.clone(), target.as_deref().map_or_else(|| "{}".to_owned(), link)))
+            .collect();
+        texts.push(("d/e.json".to_owned(), "{}".to_owned()));
+        let files: Vec<(&str, &str)> = texts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
+        let scenario = Scenario::new();
+        let commit = scenario.commit(&files);
+        let repository = scenario.repositories();
+        let resolves = |path: &LogicalPath| repository.resolve(&commit.source(), path).is_ok();
+        let texts = (0..6)
+            .flat_map(|name| [format!("/n{name}/y/z"), format!("/d/n{name}/y")])
+            .chain(["/d/e/x".to_owned()]);
+        for text in texts {
+            let path = path(&text);
+            if let Err(crate::ResolveError::NotFound { ancestor, .. }) = repository.resolve(&commit.source(), &path) {
+                let depth = ancestor.segments().count();
+                prop_assert_eq!(&path.prefix(depth), &ancestor, "{}", text);
+                prop_assert!(resolves(&ancestor), "{} names {}", text, ancestor);
+                prop_assert!(!resolves(&path.prefix(depth + 1)), "{} names {}", text, ancestor);
+            }
+        }
+    }
 }
 
 #[test]
