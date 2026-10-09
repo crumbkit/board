@@ -681,13 +681,26 @@ pub fn repository_root(start: &Path) -> Option<PathBuf> {
 }
 
 /// The directory holding `.board/board.json` nearest above `start`, or
-/// `start` itself, searching upward as git does.
+/// `start` itself, searching upward as git does. Each name must be listed in
+/// that exact spelling, as the walk requires, so a case-insensitive file
+/// system finds no board at `.Board/board.json`.
 pub fn discover(start: &Path) -> Option<PathBuf> {
     let start = start.canonicalize().ok()?;
     start
         .ancestors()
-        .find(|directory| directory.join(".board").join("board.json").is_file())
+        .find(|directory| holds_config(directory))
         .map(Path::to_path_buf)
+}
+
+fn holds_config(directory: &Path) -> bool {
+    let board = directory.join(".board");
+    board.join("board.json").is_file() && lists(directory, ".board") && lists(&board, "board.json")
+}
+
+/// Whether `directory` lists `name` in that exact spelling.
+fn lists(directory: &Path, name: &str) -> bool {
+    // An unlistable directory stops discovery here, so the walk reports it.
+    names(directory).map_or(true, |names| names.iter().any(|listed| listed == name))
 }
 
 #[cfg(test)]
@@ -714,6 +727,15 @@ mod tests {
         assert_eq!(read_exactly(&b"abc"[..], 3), Some(b"abc".to_vec()));
         assert_eq!(read_exactly(&b"abcd"[..], 3), None);
         assert_eq!(read_exactly(&b"ab"[..], 3), None);
+    }
+
+    #[test]
+    fn a_name_is_listed_only_in_its_own_spelling() {
+        for (written, listed) in [(".board", true), (".Board", false)] {
+            let scenario = board_scenario::Scenario::new();
+            scenario.write(&format!("{written}/x.md"), board_scenario::Item::File(""));
+            assert_eq!(lists(scenario.workdir(), ".board"), listed, "{written}");
+        }
     }
 
     #[test]

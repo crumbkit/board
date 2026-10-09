@@ -28,7 +28,8 @@ fn a_command_runs_in_the_directory_named_and_without_it_finds_no_board() {
     );
     assert_eq!(
         hint_of(&lost),
-        "in a git repository, `board init` makes it a board; outside one, run `git init` \
+        "a board needs `.board/board.json` at its repository root, spelled exactly so; \
+         in a git repository, `board init` makes it a board; outside one, run `git init` \
          first; for a board elsewhere, run `board -C <dir> check`"
     );
     let found = board_in(

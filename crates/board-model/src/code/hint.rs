@@ -164,7 +164,7 @@ fn generic(code: Code) -> &'static str {
             "only a record has a JSON report or can be put; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
         }
         Code::ConfigNotFound => {
-            "in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
+            "a board needs `.board/board.json` at its repository root, spelled exactly so; in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
         }
         Code::ConfigInvalid => {
             "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false) and `plugins` (distinct plugin names), nothing else"

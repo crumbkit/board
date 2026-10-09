@@ -227,6 +227,27 @@ fn a_name_in_another_case_is_entries_where_the_file_system_folds_case_and_its_sp
 }
 
 #[test]
+fn a_board_is_discovered_only_where_its_configuration_is_listed_in_its_own_spelling() {
+    let found = |config: &str| {
+        let scenario = Scenario::new();
+        scenario
+            .write(config, Item::File("{}"))
+            .write("deep/x.md", Item::File(""));
+        let inside = scenario.workdir().join("deep");
+        let root = scenario.workdir().canonicalize().unwrap();
+        crate::discover(&inside).map(|found| found == root)
+    };
+    assert_eq!(found(".board/board.json"), Some(true));
+    // A case-insensitive file system opens these paths as .board/board.json;
+    // the walk lists them as written, so neither holds a board.
+    for misspelt in [".Board/board.json", ".board/Board.json"] {
+        assert_eq!(found(misspelt), None, "{misspelt}");
+    }
+    // A directory named board.json is listed but holds no configuration.
+    assert_eq!(found(".board/board.json/a.md"), None);
+}
+
+#[test]
 fn a_directory_on_the_way_that_cannot_be_listed_is_refused_and_one_that_can_holds_entries() {
     let scenario = Scenario::new();
     scenario

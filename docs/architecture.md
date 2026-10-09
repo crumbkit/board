@@ -14,8 +14,10 @@ records easy to read and write.
 
 A board is the working tree of a git repository whose root holds
 `.board/board.json`. Board finds it by searching upward from the current
-directory, as git does; no board is `board::config::not_found`, and a
-`board.json` Board cannot read is `board::config::invalid`. Every file git sees
+directory, as git does. Both names must be listed in that exact spelling, so
+`.Board/board.json` holds no board even where the file system ignores case. No
+board is `board::config::not_found`, and a `board.json` Board cannot read is
+`board::config::invalid`. Every file git sees
 under the root is an entry: tracked files, and untracked files that are not
 ignored. `.git` is never an entry. An entry has a path, a blob hash, a size, a
 kind and a status.

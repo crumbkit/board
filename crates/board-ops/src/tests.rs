@@ -148,6 +148,18 @@ fn opening_a_board_opens_only_its_configuration_and_an_unreadable_one_is_invalid
 }
 
 #[test]
+fn a_board_directory_spelled_in_another_case_is_no_board() {
+    let scenario = Scenario::new();
+    scenario.write(".board/board.json", Item::File(CONFIG));
+    assert!(Board::open(scenario.workdir(), None).is_ok());
+    scenario
+        .write(".board", Item::Deleted)
+        .write(".Board/board.json", Item::File(CONFIG));
+    let error = Board::open(scenario.workdir(), None).unwrap_err();
+    assert_eq!(error.code(), Code::ConfigNotFound);
+}
+
+#[test]
 fn a_board_json_board_cannot_read_is_invalid() {
     for bad in [
         r#"{"$type": "board/config/v1", "colour": "red"}"#,
