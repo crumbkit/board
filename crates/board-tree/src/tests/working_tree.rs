@@ -374,7 +374,7 @@ fn a_write_beside_a_directory_is_refused_as_shadowed_only_when_it_writes_a_point
     let target = repository.target(&path("/x"), false).unwrap();
     assert_eq!(target.path, "x.json");
     match repository.target(&path("/x"), true) {
-        Err(crate::WriteError::Refused { code, .. }) => assert_eq!(code, Code::PathShadowed),
+        Err(crate::WriteError::Degraded { code, .. }) => assert_eq!(code, Code::PathShadowed),
         other => panic!("expected a refusal, got {other:?}"),
     }
 }

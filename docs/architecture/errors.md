@@ -34,7 +34,7 @@ plugin's own code carries.
 
 | Key | JSON type | Codes that carry it | Meaning |
 | --- | --- | --- | --- |
-| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get`, writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, or a mount for a mount's code |
+| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get`, writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, a mount for a mount's code, or the file that a refused `put` reaches for `record::not_a_record` |
 | `blob` | string | a code `get` gives for a file whose bytes it read (`json`, `record`, and `schema::invalid` for a schema in the reserved `board` namespace); `put::stale` | the blob the path holds |
 | `pointer` | string | `record::invalid`, `ref::malformed`, `plugin::bad_input`; `schema::invalid` from `put`, as `/$type` | a JSON pointer into the record or the call's input |
 | `type` | string | `record::unknown_type`, `repo::unreadable` and `schema::invalid` from a `put` whose record's schema is missing, cannot be read or does not compile | the record's type |

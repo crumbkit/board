@@ -470,6 +470,57 @@ fn a_write_through_a_mount_is_refused_and_one_beside_it_is_admitted() {
 }
 
 #[test]
+fn a_write_beneath_a_mount_whose_commit_is_missing_names_the_mount_and_its_twin_is_admitted() {
+    let library = Scenario::new();
+    let commit = library.commit(&[("x.json", "{}")]);
+    let scenario = board();
+    let mount = |commit: ObjectId| {
+        format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            library.path()
+        )
+    };
+    scenario.write("vendor.json", Item::File(&mount(ObjectId::Sha1([9; 20]))));
+    let error = open(&scenario)
+        .put(&path("/vendor/x"), Expect::Any, task("").as_bytes())
+        .unwrap_err();
+    assert_eq!(error.code(), Code::MountCommitMissing);
+    assert_eq!(error.fields().path, Some(path("/vendor")));
+    assert_eq!(
+        error.code().hint(&error.fields()),
+        "fetch the commit into the mounted repository, or run `board mount update /vendor`"
+    );
+    scenario.write("vendor.json", Item::File(&mount(commit)));
+    assert_eq!(
+        put(&scenario, "/vendor/x", Expect::Any, &task("")).unwrap_err(),
+        Code::PutThroughMount
+    );
+    assert!(put(&scenario, "/vendors/x", Expect::Any, &task("")).is_ok());
+}
+
+#[test]
+fn a_write_through_a_cycle_of_links_says_so_and_its_twin_is_admitted() {
+    let scenario = board();
+    let link = |to: &str| format!(r#"{{"$type": "board/mount/v1", "path": "{to}"}}"#);
+    scenario
+        .write("a.json", Item::File(&link("/b")))
+        .write("b.json", Item::File(&link("/a")))
+        .write("c/y.json", Item::File(&task("")));
+    let error = open(&scenario)
+        .put(&path("/a/x"), Expect::Any, task("").as_bytes())
+        .unwrap_err();
+    assert_eq!(error.code(), Code::ResolveCycle);
+    assert_eq!(
+        error.to_string(),
+        "/a/x cannot be written: /a/x returns to a board and path it already resolved through a pointer"
+    );
+    assert_eq!(error.fields(), Fields::at(&path("/a/x")));
+    scenario.write("b.json", Item::File(&link("/c")));
+    assert!(put(&scenario, "/a/x", Expect::Any, &task("")).is_ok());
+    assert!(file(&scenario, "c/x.json").is_some());
+}
+
+#[test]
 fn missing_directories_are_created() {
     let scenario = board();
     put(&scenario, "/deep/er/a", Expect::Absent, &task("")).unwrap();
@@ -595,7 +646,7 @@ fn a_write_that_would_leave_its_path_degraded_is_refused_and_its_twin_is_admitte
     assert_eq!(error.code(), Code::PathCaseCollision);
     assert_eq!(
         error.to_string(),
-        "/Projects/q cannot be written: the directory Projects it would create would be board::path::case_collision with projects"
+        "/Projects/q cannot be written: the directory Projects it would create would differ only in case from projects"
     );
     assert_eq!(error.fields().directory.as_deref(), Some("Projects"));
     assert!(file(&scenario, "Projects/q.json").is_none());
@@ -625,7 +676,7 @@ fn a_write_beneath_a_directory_that_collides_in_case_is_refused_naming_it_and_it
     assert_eq!(error.code(), Code::PathCaseCollision);
     assert_eq!(
         error.to_string(),
-        "/tasks/c cannot be written: the directory tasks above it is board::path::case_collision with Tasks"
+        "/tasks/c cannot be written: the directory tasks above it differs only in case from Tasks"
     );
     assert!(file(&scenario, "tasks/c.json").is_none());
 }
@@ -638,11 +689,20 @@ fn a_path_that_names_a_file_that_is_not_a_record_is_refused() {
         put(&scenario, "/notes.md", Expect::Any, &task("")).unwrap_err(),
         Code::RecordNotARecord
     );
+    let error = open(&scenario)
+        .put(&path("/notes.md/a"), Expect::Any, task("").as_bytes())
+        .unwrap_err();
+    assert_eq!(error.code(), Code::RecordNotARecord);
     assert_eq!(
-        put(&scenario, "/notes.md/a", Expect::Any, &task("")).unwrap_err(),
-        Code::RecordNotARecord
+        error.to_string(),
+        "/notes.md/a cannot be written: /notes.md is not a record"
+    );
+    assert_eq!(
+        error.code().hint(&error.fields()),
+        "only a record has a JSON report or can be put; `board ls /notes.md` shows what is there"
     );
     assert!(put(&scenario, "/notes", Expect::Any, &task("")).is_ok());
+    assert!(put(&scenario, "/notes/a", Expect::Any, &task("")).is_ok());
 }
 
 #[test]

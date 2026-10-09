@@ -236,3 +236,57 @@ proptest! {
         prop_assert_eq!(written.status, code.map_or(Status::Ok, Status::Degraded));
     }
 }
+
+#[test]
+fn a_directory_with_its_own_code_says_what_is_wrong_with_it_instead_of_the_code() {
+    let beneath = |code, created, beside: Option<&str>| {
+        Beneath {
+            code,
+            directory: "d".to_owned(),
+            created,
+            beside: beside.map(str::to_owned),
+        }
+        .to_string()
+    };
+    let cases = [
+        (
+            beneath(Code::PathShadowed, false, None),
+            "the directory d above it shares its name with another entry beside it",
+        ),
+        (
+            beneath(Code::PathShadowed, true, None),
+            "the directory d it would create would share its name with another entry beside it",
+        ),
+        (
+            beneath(Code::PathCaseCollision, false, Some("D")),
+            "the directory d above it differs only in case from D",
+        ),
+        (
+            beneath(Code::PathCaseCollision, true, Some("D")),
+            "the directory d it would create would differ only in case from D",
+        ),
+        (
+            beneath(Code::PathMalformed, false, None),
+            "the directory d above it has no valid logical path",
+        ),
+        (
+            beneath(Code::PathMalformed, true, None),
+            "the directory d it would create would have no valid logical path",
+        ),
+        (
+            beneath(Code::RepoUnreadable, false, None),
+            "the directory d above it cannot be read, or an entry that may share its name cannot be read",
+        ),
+        (
+            beneath(Code::RepoUnreadable, true, None),
+            "the directory d it would create would be beside an entry that may share its name and cannot be read",
+        ),
+        (
+            beneath(Code::RepoSubmodule, false, None),
+            "the directory d above it is a submodule",
+        ),
+    ];
+    for (said, expected) in cases {
+        assert_eq!(said, expected);
+    }
+}

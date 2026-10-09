@@ -18,7 +18,7 @@ use crate::git::{GitError, Repository, model_id};
 use crate::repositories::Repositories;
 use crate::resolve::{ResolveError, Resolver};
 use crate::tree::Tree;
-use crate::walk::{Beneath, Planned};
+use crate::walk::{Beneath, Planned, Tense, fault};
 
 /// How long a put waits for another put's lock.
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
@@ -66,26 +66,22 @@ impl Resolver<'_, '_> {
     /// a write that would leave its own path degraded is refused with that
     /// path's code.
     pub fn target(&mut self, path: &LogicalPath, is_pointer: bool) -> Result<Target, WriteError> {
-        let refused = |code| WriteError::Refused {
-            path: path.clone(),
-            code,
-        };
-        let (location, physical) = match self.resolve(path) {
+        let (location, physical, reached) = match self.resolve(path) {
             Ok(location) => {
                 let physical = record_file(&location);
-                (location, physical)
+                (location, physical, path.clone())
             }
             Err(ResolveError::NotFound { .. }) => self.new_file(path)?,
-            Err(error) => return Err(refused(error.code())),
+            Err(source) => return Err(unresolved(path, source)),
         };
         if location.board.source != Source::WorkingTree {
-            return Err(refused(Code::PutThroughMount));
+            return Err(WriteError::ThroughMount { path: path.clone() });
         }
         // The walk lists a symlink as a file, but on disk it can lead to a
         // directory that a write beneath it would go into.
         let Some(physical) = physical else {
             self.repository().refuse_symlink(path, &location.path)?;
-            return Err(refused(Code::RecordNotARecord));
+            return Err(not_a_record(path, reached));
         };
         self.repository().refuse_symlink(path, &physical)?;
         self.writable(path, physical, location, is_pointer)
@@ -95,19 +91,17 @@ impl Resolver<'_, '_> {
     /// in place. A path that reaches a mount on the way is refused, as is
     /// one that names no file or a pointer left degraded.
     pub fn pointer_target(&mut self, path: &LogicalPath) -> Result<Target, WriteError> {
-        let refused = |code| WriteError::Refused {
-            path: path.clone(),
-            code,
-        };
         let location = self
             .resolve_pointer(path)
-            .map_err(|error| refused(error.code()))?;
+            .map_err(|source| unresolved(path, source))?;
         if location.board.source != Source::WorkingTree {
-            return Err(refused(Code::PutThroughMount));
+            return Err(WriteError::ThroughMount { path: path.clone() });
         }
         let physical = match location.object {
-            Object::Blob(_) => record_file(&location).ok_or(refused(Code::RecordNotARecord))?,
-            Object::Directory => return Err(refused(Code::RecordNotARecord)),
+            Object::Blob(_) => {
+                record_file(&location).ok_or_else(|| not_a_record(path, path.clone()))?
+            }
+            Object::Directory => return Err(not_a_record(path, path.clone())),
         };
         self.writable(path, physical, location, true)
     }
@@ -124,30 +118,51 @@ impl Resolver<'_, '_> {
     ) -> Result<Target, WriteError> {
         let path = path.clone();
         if names_git(&physical) {
-            let code = Code::PathMalformed;
-            return Err(WriteError::Refused { path, code });
+            return Err(WriteError::InGit {
+                path,
+                file: physical,
+            });
         }
         match self.planned_code(&physical, is_pointer)? {
             None => Ok(Target {
                 path: physical,
                 location,
             }),
-            Some(Planned::File(code)) => Err(WriteError::Refused { path, code }),
+            Some(Planned::File(code)) => Err(WriteError::Degraded { path, code }),
             Some(Planned::Directory(beneath)) => Err(WriteError::Beneath { path, beneath }),
         }
     }
 
     /// The new record file `path` names: beneath its deepest ancestor that
     /// resolves, with the segments past it as directories to create. `None`
-    /// when the ancestor is a file other than a record, which holds nothing.
-    fn new_file(&mut self, path: &LogicalPath) -> Result<(Location, Option<String>), WriteError> {
-        let refused = |code| WriteError::Refused {
-            path: path.clone(),
-            code,
-        };
-        let ancestor = self.ancestor(path).map_err(|error| refused(error.code()))?;
+    /// when the ancestor is a file other than a record, which holds nothing;
+    /// the ancestor's own logical path comes last.
+    fn new_file(
+        &mut self,
+        path: &LogicalPath,
+    ) -> Result<(Location, Option<String>, LogicalPath), WriteError> {
+        let ancestor = self
+            .ancestor(path)
+            .map_err(|source| unresolved(path, source))?;
         let file = ancestor.path().map(|file| format!("{file}.json"));
-        Ok((ancestor.location, file))
+        Ok((ancestor.location, file, ancestor.logical))
+    }
+}
+
+/// A write to `path` refused because resolving it failed.
+fn unresolved(path: &LogicalPath, source: ResolveError) -> WriteError {
+    WriteError::Unresolved {
+        path: path.clone(),
+        source,
+    }
+}
+
+/// A write to `path` refused because it reaches `file`, which is not a
+/// record.
+fn not_a_record(path: &LogicalPath, file: LogicalPath) -> WriteError {
+    WriteError::NotARecord {
+        path: path.clone(),
+        file,
     }
 }
 
@@ -497,8 +512,26 @@ fn names_git(file: &str) -> bool {
 /// A write that cannot be made.
 #[derive(Debug, thiserror::Error)]
 pub enum WriteError {
-    #[error("{path} cannot be written: {code}")]
-    Refused { path: LogicalPath, code: Code },
+    #[error("{path} cannot be written: {source}")]
+    Unresolved {
+        path: LogicalPath,
+        #[source]
+        source: ResolveError,
+    },
+    #[error("{path} cannot be written: it is in a mounted board")]
+    ThroughMount { path: LogicalPath },
+    /// `file` is what the path reaches: itself, or its deepest ancestor.
+    #[error("{path} cannot be written: {file} is not a record")]
+    NotARecord {
+        path: LogicalPath,
+        file: LogicalPath,
+    },
+    /// `file` is the physical path from the board's root.
+    #[error("{path} cannot be written: {file} would be in git's own directory")]
+    InGit { path: LogicalPath, file: String },
+    /// Refused for the code the file itself would have once written.
+    #[error("{path} cannot be written: it {}", fault(*code, Tense::Would, None))]
+    Degraded { path: LogicalPath, code: Code },
     /// Refused for the code of a directory the file would be in.
     #[error("{path} cannot be written: {beneath}")]
     Beneath { path: LogicalPath, beneath: Beneath },
@@ -551,7 +584,11 @@ pub enum WriteError {
 impl WriteError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Refused { code, .. } => *code,
+            Self::Unresolved { source, .. } => source.code(),
+            Self::ThroughMount { .. } => Code::PutThroughMount,
+            Self::NotARecord { .. } => Code::RecordNotARecord,
+            Self::InGit { .. } => Code::PathMalformed,
+            Self::Degraded { code, .. } => *code,
             Self::Beneath { beneath, .. } => beneath.code,
             Self::Symlink { .. } => Code::PutSymlink,
             Self::Locked { .. } | Self::InProgress { .. } => Code::PutLocked,
@@ -568,7 +605,16 @@ impl WriteError {
 
     pub fn fields(&self) -> Fields {
         match self {
-            Self::Refused { path, .. } | Self::Symlink { path, .. } => Fields::at(path),
+            Self::Unresolved {
+                source: ResolveError::Git(_),
+                path,
+            }
+            | Self::ThroughMount { path }
+            | Self::InGit { path, .. }
+            | Self::Degraded { path, .. }
+            | Self::Symlink { path, .. } => Fields::at(path),
+            Self::Unresolved { source, .. } => source.fields(),
+            Self::NotARecord { file, .. } => Fields::at(file),
             Self::Beneath { path, beneath } => Fields {
                 directory: Some(beneath.directory.clone()),
                 ..Fields::at(path)
@@ -579,64 +625,4 @@ impl WriteError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn failure() -> io::Error {
-        io::Error::other("the disk is full")
-    }
-
-    #[test]
-    fn a_write_that_fails_is_put_failed_and_a_read_that_fails_is_unreadable() {
-        let path = PathBuf::from("/board/tasks/a.json");
-        let write = WriteError::Io {
-            path: path.clone(),
-            source: failure(),
-        };
-        let unsynced = WriteError::Unsynced {
-            path: path.clone(),
-            source: failure(),
-        };
-        let read = WriteError::from(GitError::File {
-            path,
-            source: failure(),
-        });
-        assert_eq!(write.code(), Code::PutFailed);
-        assert_eq!(unsynced.code(), Code::PutFailed);
-        assert!(
-            unsynced.to_string().contains("may already be in place"),
-            "nobody may read it as nothing written"
-        );
-        assert_eq!(read.code(), Code::RepoUnreadable);
-    }
-
-    #[test]
-    fn a_refused_write_names_its_path_and_a_failed_one_names_nothing() {
-        let path: LogicalPath = "/vendor/x".parse().unwrap();
-        let refused = WriteError::Refused {
-            path: path.clone(),
-            code: Code::PutThroughMount,
-        };
-        assert_eq!(refused.fields(), Fields::at(&path));
-        let failed = WriteError::Io {
-            path: PathBuf::from("/board/vendor/x.json"),
-            source: failure(),
-        };
-        assert_eq!(failed.fields(), Fields::default());
-    }
-
-    #[test]
-    fn a_write_refused_over_a_symlink_names_its_path_and_the_symlink() {
-        let path: LogicalPath = "/x/y".parse().unwrap();
-        let refused = WriteError::Symlink {
-            path: path.clone(),
-            symlink: "x".to_owned(),
-        };
-        assert_eq!(refused.code(), Code::PutSymlink);
-        assert_eq!(refused.fields(), Fields::at(&path));
-        assert_eq!(
-            refused.to_string(),
-            "/x/y cannot be written: x is a symlink"
-        );
-    }
-}
+mod tests;

@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use board_model::{Code, LogicalPath, ObjectId, Pointer, PointerError};
 
@@ -95,7 +95,7 @@ pub(crate) fn classify<'a, D, E>(
 pub(crate) struct Pointers(HashMap<ObjectId, Parsed>);
 
 /// What a record holds as a pointer: one, none, or why it is not a valid one.
-pub(crate) type Parsed = Result<Option<Pointer>, Rc<PointerError>>;
+pub(crate) type Parsed = Result<Option<Pointer>, Arc<PointerError>>;
 
 impl Pointers {
     /// What the file `entry` holds as a pointer, parsed at most once per
@@ -107,7 +107,7 @@ impl Pointers {
     ) -> Result<Parsed, E> {
         let parse = || -> Result<Parsed, E> {
             Ok(read()?.map_or(Ok(None), |bytes| {
-                board_model::pointer(&bytes).map_err(Rc::new)
+                board_model::pointer(&bytes).map_err(Arc::new)
             }))
         };
         let Kind::File(blob) = entry.kind else {

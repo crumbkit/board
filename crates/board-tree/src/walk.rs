@@ -168,18 +168,49 @@ impl fmt::Display for Beneath {
             created,
             beside,
         } = self;
-        if *created {
-            write!(
-                formatter,
-                "the directory {directory} it would create would be {code}"
-            )?;
+        let (place, tense) = if *created {
+            ("it would create", Tense::Would)
         } else {
-            write!(formatter, "the directory {directory} above it is {code}")?;
+            ("above it", Tense::Is)
+        };
+        let fault = fault(*code, tense, beside.as_deref());
+        write!(formatter, "the directory {directory} {place} {fault}")
+    }
+}
+
+/// Whether an entry with a code exists, or would once a write makes it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Tense {
+    Is,
+    Would,
+}
+
+/// What is wrong with an entry that a walk gives `code`, said of it in
+/// `tense`. `other` names the entry beside it that it collides with, when
+/// that is known.
+pub(crate) fn fault(code: Code, tense: Tense, other: Option<&str>) -> String {
+    let other = other.unwrap_or("another entry beside it");
+    match (code, tense) {
+        (Code::PathShadowed, Tense::Is) => format!("shares its name with {other}"),
+        (Code::PathShadowed, Tense::Would) => format!("would share its name with {other}"),
+        (Code::PathCaseCollision, Tense::Is) => format!("differs only in case from {other}"),
+        (Code::PathCaseCollision, Tense::Would) => {
+            format!("would differ only in case from {other}")
         }
-        match beside {
-            Some(beside) => write!(formatter, " with {beside}"),
-            None => Ok(()),
+        (Code::PathMalformed, Tense::Is) => "has no valid logical path".to_owned(),
+        (Code::PathMalformed, Tense::Would) => "would have no valid logical path".to_owned(),
+        (Code::RepoUnreadable, Tense::Is) => {
+            "cannot be read, or an entry that may share its name cannot be read".to_owned()
         }
+        (Code::RepoUnreadable, Tense::Would) => {
+            "would be beside an entry that may share its name and cannot be read".to_owned()
+        }
+        (Code::RepoSubmodule, Tense::Is) => "is a submodule".to_owned(),
+        // The walk gives a new file only shadowed, case_collision, malformed
+        // or unreadable, and an existing directory those or submodule; this
+        // covers any code it gains later.
+        (_, Tense::Is) => "is degraded".to_owned(),
+        (_, Tense::Would) => "would be degraded".to_owned(),
     }
 }
 

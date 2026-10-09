@@ -3,7 +3,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use board_model::{
     Board, Code, Fields, Location, LogicalPath, Mount, Object, ObjectId, Pointer, PointerError,
@@ -27,6 +27,8 @@ pub struct Ancestor {
     pub location: Location,
     /// The segments of the path past the ancestor; at least one.
     pub rest: Vec<String>,
+    /// The ancestor's own logical path.
+    pub logical: LogicalPath,
 }
 
 impl Ancestor {
@@ -350,6 +352,7 @@ impl Resolver<'_, '_> {
                             .iter()
                             .map(|segment| (*segment).to_owned())
                             .collect(),
+                        logical: ancestor,
                     });
                 }
                 Err(ResolveError::NotFound { .. }) => {}
@@ -461,7 +464,7 @@ pub enum ResolveError {
         path: LogicalPath,
         pointer: String,
         #[source]
-        source: Rc<PointerError>,
+        source: Arc<PointerError>,
     },
     #[error("{path} mounts the repository {repo:?}, which cannot be opened")]
     RepoMissing { path: LogicalPath, repo: String },
