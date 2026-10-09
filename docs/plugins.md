@@ -87,7 +87,8 @@ ability. When more than one offers it, the call is
 `board::plugin::ambiguous`, naming each. A broken install offers nothing. A
 plugin that is not installed, or a capability no installed plugin offers, is
 `board::plugin::not_installed`; the message lists what the named plugin
-offers, or the nearest offered name.
+offers, or the nearest offered name, and so do its `fields`
+([architecture/errors.md](architecture/errors.md)).
 
 ## Calling a capability
 
@@ -119,7 +120,8 @@ on stdin and:
 
 A plugin exits 0 with a result, or 1 with an error whose code is
 `<plugin>::<area>::<reason>`, starting with its own name. Board reports that
-code as its own, with the plugin's fields and `plugin` added. Any other answer
+code as its own, with the plugin's fields and `plugin` added; Board adds no
+other key, and shows the plugin's stderr only in text output. Any other answer
 on stdout is `board::plugin::bad_output`; a non-zero exit without an error
 document, or a signal, is `board::plugin::failed`. Stderr is for logs; Board
 shows its last 64 KiB when the call fails. A call has 30 seconds and 16 MiB of

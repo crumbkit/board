@@ -133,6 +133,8 @@ impl Fields {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use serde_json::json;
 
     use super::*;
@@ -224,5 +226,59 @@ mod tests {
                 { "line": 5, "code": "board::put::invalid", "message": "it has no $type" },
             ] })
         );
+    }
+
+    /// The keys whose rows open the table under `## What an error names`.
+    fn documented(doc: &str) -> BTreeSet<String> {
+        let table = doc
+            .split("## What an error names")
+            .nth(1)
+            .unwrap_or_default();
+        let keys = table.lines().filter_map(|line| line.strip_prefix("| `"));
+        keys.filter_map(|key| Some(key.split('`').next()?.to_owned()))
+            .collect()
+    }
+
+    /// Every key `json` emits, with every field set, and the keys a call's
+    /// refusal adds beside them.
+    fn emitted() -> BTreeSet<String> {
+        let tables = Fields {
+            path: Some("/tasks/a".parse().unwrap()),
+            blob: Some(ObjectId::Sha1([1; 20])),
+            pointer: Some("/title".to_owned()),
+            record_type: Some("lr/note/v1".parse().unwrap()),
+            schema: Some(".board/types/lr/note/v1.schema.json".to_owned()),
+            plugin: Some("tasks".to_owned()),
+            capability: Some("due".to_owned()),
+            directory: Some("tasks".to_owned()),
+            known: Some(Known::Tables(Vec::new())),
+            found: Some(Found::Nothing),
+            refusals: vec![Lined::new(1, Code::PutInvalid, "no", Fields::default())],
+        };
+        let columns = Fields {
+            known: Some(Known::Columns(BTreeMap::new())),
+            ..tables.clone()
+        };
+        let call = ["offered", "nearest", "plugins", "stderr"].map(str::to_owned);
+        let keys = |fields: &Fields| fields.json().into_iter().map(|(key, _)| key);
+        keys(&tables).chain(keys(&columns)).chain(call).collect()
+    }
+
+    const ERRORS_DOC: &str = include_str!("../../../docs/architecture/errors.md");
+
+    #[test]
+    fn the_errors_doc_names_every_key_an_error_can_carry_in_fields_and_no_other() {
+        assert_eq!(documented(ERRORS_DOC), emitted());
+    }
+
+    #[test]
+    fn an_errors_doc_that_misses_a_key_or_names_another_does_not_match() {
+        let twin = ERRORS_DOC
+            .replace("| `found` |", "| found |")
+            .replace("| `path` |", "| `ghost` |\n| `path` |");
+        let mut expected = emitted();
+        expected.remove("found");
+        expected.insert("ghost".to_owned());
+        assert_eq!(documented(&twin), expected);
     }
 }
