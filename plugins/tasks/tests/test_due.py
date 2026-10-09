@@ -20,11 +20,12 @@ def due(board: Board, before: str) -> list[tuple[str, str, str]]:
     return [(item["path"], item["title"], item["due"]) for item in output["tasks"]]
 
 
-def test_due_returns_open_tasks_due_before_the_date_by_due_date_then_path(board: Board) -> None:
+def test_due_returns_open_and_waiting_tasks_due_before_the_date_by_due_date_then_path(board: Board) -> None:
     board.write("tasks/b.json", task("B", due="2026-10-05"))
-    board.write("tasks/a.json", task("A", due="2026-10-05"))
+    board.write("tasks/a.json", task("A", status="waiting", due="2026-10-05"))
     board.write("tasks/early.json", task("Early", due="2026-10-01"))
     board.write("tasks/done.json", task("Done", status="done", due="2026-10-01"))
+    board.write("tasks/dropped.json", task("Dropped", status="dropped", due="2026-10-01"))
     board.write("tasks/later.json", task("Later", due="2026-11-01"))
     board.write("tasks/someday.json", task("Someday"))
     assert due(board, "2026-10-06") == [
@@ -90,6 +91,14 @@ def test_a_record_the_boards_schema_admits_but_the_plugin_cannot_read_gets_no_ro
     board.write("tasks/misfit.json", '{"$type": "lr/task/v1", "title": "Misfit", "status": "someday"}')
     assert tasks_table(board) == ([["Good"]], [])
     assert tasks_table(board) == ([["Good"]], [])
+
+
+def test_a_record_with_a_field_the_shipped_schema_refuses_gets_a_row_when_the_boards_schema_admits_it(
+    board: Board,
+) -> None:
+    board.write(".board/types/lr/task/v1.schema.json", '{"type": "object"}')
+    board.write("tasks/with-project.json", task("With project", project="board"))
+    assert tasks_table(board) == ([["With project"]], [])
 
 
 def test_two_records_the_plugin_reads_get_two_rows(board: Board) -> None:

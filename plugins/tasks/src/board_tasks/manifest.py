@@ -1,9 +1,9 @@
-"""The plugin's manifest, generated from its models (STANDARDS.md P3)."""
+"""The plugin's manifest and the schema it ships, generated from its models (STANDARDS.md P3)."""
 
 from board_plugin.protocol import dumped
 from pydantic import JsonValue
 
-from board_tasks.models import DueInput, DueOutput
+from board_tasks.models import TASK_TYPE, DueInput, DueOutput, NextInput, NextOutput, TaskRecord
 
 
 def manifest() -> dict[str, JsonValue]:
@@ -12,20 +12,35 @@ def manifest() -> dict[str, JsonValue]:
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
         "version": "0.1.0",
-        "description": "Open tasks and their due dates.",
+        "description": "Tasks, their due dates and what each waits on.",
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
-        "extract": ["lr/task/v1"],
+        "extract": [TASK_TYPE],
         "capabilities": [
             {
                 "name": "due",
-                "description": "Open tasks due before a date.",
+                "description": "Unfinished tasks, open or waiting, due before a date.",
                 "inputSchema": DueInput.model_json_schema(),
                 "outputSchema": DueOutput.model_json_schema(),
                 "_meta": {},
             },
+            {
+                "name": "next",
+                "description": (
+                    "Unfinished tasks by due date then path, each blocked while a task it waits on is not done."
+                ),
+                "inputSchema": NextInput.model_json_schema(),
+                "outputSchema": NextOutput.model_json_schema(),
+                "annotations": {"readOnlyHint": True},
+                "_meta": {},
+            },
         ],
     }
+
+
+def schema() -> dict[str, JsonValue]:
+    """The schema of `lr/task/v1`, as the plugin ships it."""
+    return TaskRecord.model_json_schema(by_alias=True)
 
 
 def text() -> str:

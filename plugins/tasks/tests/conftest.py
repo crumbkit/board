@@ -13,6 +13,7 @@ import pytest
 PLUGIN = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REPOSITORY = PLUGIN.parents[1]
+SCHEMA = PLUGIN / "types" / "lr" / "task" / "v1.schema.json"
 
 
 def board_binary() -> Path:
@@ -68,13 +69,12 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board with the task schema, enabling tasks and digest, which are installed."""
+    """A board with the task schema the plugin ships, enabling tasks and digest, which are installed."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.enable("tasks", "digest")
-    fixture.write(".board/types/lr/task/v1.schema.json", (FIXTURES / "task.schema.json").read_text())
-    fixture.write(".board/types/lr/project/v1.schema.json", '{"type": "object"}')
+    fixture.write(".board/types/lr/task/v1.schema.json", SCHEMA.read_text())
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
     (plugins / "tasks").symlink_to(PLUGIN)
@@ -82,9 +82,9 @@ def board(tmp_path: Path) -> Board:
     return fixture
 
 
-def task(title: str, status: str = "open", due: str | None = None) -> str:
+def task(title: str, status: str = "open", due: str | None = None, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """An `lr/task/v1` record."""
-    record: dict[str, str] = {"$type": "lr/task/v1", "title": title, "status": status}
+    record: dict[str, Any] = {"$type": "lr/task/v1", "title": title, "status": status, **fields}
     if due is not None:
         record["due"] = due
     return json.dumps(record)

@@ -220,7 +220,17 @@ generate. Its pytest suite drives the real `board` binary against fixture
 boards. CI runs each plugin's gates in its own job.
 
 There are two plugins. `controls` checks requirements on a board's files, as
-plugins/controls/README.md describes. `tasks` extracts each `lr/task/v1`
-record's title, status and due date into a `tasks` table keyed by blob, and
-its `due` capability finds open tasks due before a date by running `board
-query`, which joins that table with `entries`.
+plugins/controls/README.md describes. `tasks` keeps the schema of
+`lr/task/v1`: a `title`, a `status` of `open`, `waiting`, `done` or `dropped`,
+an optional `due` date, an optional `notes` reference to a file, and an
+`after` list of references to the tasks it waits on. It extracts each task's
+title, status and due date into a `tasks` table keyed by blob. Its `due`
+capability finds `open` and `waiting` tasks due before a date by joining that
+table with `entries` in `board query`. Its `next` capability lists the `open`
+and `waiting` tasks by due date, undated ones last, reading the `records` view;
+a task is blocked while a task in its `after`, resolved through `board refs`,
+is not `done`. `next` shows at most 100 tasks, fewer if its `limit` says so,
+with `total` and `truncated`; the cap keeps its `board refs` calls inside a
+call's 30 seconds. The manifest cannot list `lr/task/v1` in `types`,
+because that type is outside the plugin's namespace, so `plugin enable` does
+not write it; plugins/tasks/README.md says how to install it.
