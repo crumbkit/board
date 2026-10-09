@@ -1,7 +1,7 @@
 //! What to try next after each code (STANDARDS.md 25). The generic match
 //! has no wildcard, so a new code does not compile until it has a hint.
 
-use crate::{Code, Fields, LogicalPath};
+use crate::{Code, Fields, Known, LogicalPath};
 
 impl Code {
     /// What to try next after an error with this code that names `fields`:
@@ -90,6 +90,20 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "send JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {} --json` shows it",
             capability?
         ),
+        Code::QueryInvalid => match fields.known.as_ref()? {
+            Known::Tables(tables) => format!(
+                "the tables and views are {}; `board query --help` describes them",
+                tables.join(", ")
+            ),
+            Known::Columns(tables) if tables.is_empty() => "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns".to_owned(),
+            Known::Columns(tables) => {
+                let tables: Vec<String> = tables
+                    .iter()
+                    .map(|(table, columns)| format!("{table}: {}", columns.join(", ")))
+                    .collect();
+                format!("the columns are {}", tables.join("; "))
+            }
+        },
         _ => return None,
     })
 }

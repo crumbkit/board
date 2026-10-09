@@ -165,13 +165,20 @@ fn every_command_a_hint_names_parses() {
         plugin: Some("tasks".to_owned()),
         capability: Some("due".to_owned()),
         directory: Some("tasks".to_owned()),
+        known: Some(board_model::Known::Columns(
+            std::collections::BTreeMap::new(),
+        )),
     };
     let no_blob = Fields {
         blob: None,
         ..known.clone()
     };
+    let tables = Fields {
+        known: Some(board_model::Known::Tables(vec!["entries".to_owned()])),
+        ..Fields::default()
+    };
     let mut filled = 0;
-    for fields in [Fields::default(), known, no_blob] {
+    for fields in [Fields::default(), known, no_blob, tables] {
         for code in Code::ALL {
             let generic = code.hint(&Fields::default());
             let hint = code.hint(&fields);
@@ -813,6 +820,12 @@ fn a_query_naming_a_missing_table_hints_the_tables_there_are_and_a_real_one_runs
         stderr.contains(" entries, ") && stderr.contains(" records, "),
         "{stderr}"
     );
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["query", "SELECT * FROM entires", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::query::invalid");
+    assert!(refused["fields"]["tables"].is_array());
     let admitted = board_in(scenario.workdir(), &["query", "SELECT * FROM entries"]);
     assert_eq!(admitted.code, 0);
 }
@@ -825,6 +838,7 @@ fn a_query_naming_a_missing_column_hints_the_columns_of_its_tables_and_a_real_on
         &["query", "SELECT logcal FROM entries", "--json"],
     ));
     assert_eq!(refused["code"], "board::query::invalid");
+    assert!(refused["fields"]["columns"]["entries"].is_array());
     let hint = refused["hint"].as_str().unwrap();
     assert!(
         hint.starts_with("the columns are entries: source, path, logical, "),
@@ -834,6 +848,7 @@ fn a_query_naming_a_missing_column_hints_the_columns_of_its_tables_and_a_real_on
         scenario.workdir(),
         &["query", "SELECT logcal", "--json"],
     ));
+    assert_eq!(unnamed["fields"], json!({ "columns": {} }));
     assert_eq!(
         unnamed["hint"],
         "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns"

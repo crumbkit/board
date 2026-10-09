@@ -335,7 +335,7 @@ pub(crate) fn run(
         Command::Query { sql, limit } => {
             match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
                 Ok(report) => render::query(format, &report),
-                Err(error) => render::query_error(format, &error),
+                Err(error) => render::refused(format, &error.refusal()),
             }
         }
         Command::Plugin(PluginCommand::Enable { name }) => {

@@ -7,9 +7,9 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode, Source};
 use board_ops::{
-    CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Known, Listed,
-    LsReport, MAX_LIMIT, Missing, MountUpdateReport, PutError, PutReport, QueryError, QueryReport,
-    RefsReport, source_name,
+    CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Listed, LsReport,
+    MAX_LIMIT, Missing, MountUpdateReport, PutError, PutReport, QueryReport, RefsReport,
+    source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -379,32 +379,6 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
         }
     }
     temporary(output, &report.fallbacks)
-}
-
-/// A query that could not run. When it names a missing table or column, the
-/// hint lists the names there are.
-pub(crate) fn query_error(format: Format, error: &QueryError) -> Output {
-    let QueryError::Unknown { known, .. } = error else {
-        return self::error(format, error.code(), error, &Fields::default());
-    };
-    let hint = match known {
-        Known::Tables(tables) => format!(
-            "the tables and views are {}; `board query --help` describes them",
-            tables.join(", ")
-        ),
-        Known::Columns(tables) if tables.is_empty() => "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns".to_owned(),
-        Known::Columns(tables) => {
-            let tables: Vec<String> = tables
-                .iter()
-                .map(|(table, columns)| format!("{table}: {}", columns.join(", ")))
-                .collect();
-            format!("the columns are {}", tables.join("; "))
-        }
-    };
-    refused(
-        format,
-        &Refusal::new(error.code(), error, &Fields::default()).with_hint(hint),
-    )
 }
 
 /// `output` with a line on stderr before its own notes for each thing a

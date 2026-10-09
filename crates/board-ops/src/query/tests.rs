@@ -4,7 +4,7 @@ use std::path::Path;
 
 use board_model::Code;
 use board_scenario::{Item, Scenario};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::tests::{board, open, task};
 use crate::{Board, Plugins, QueryReport};
@@ -13,35 +13,42 @@ use board_index::{Index, IndexError};
 /// Rows as a query returns them.
 type Rows = Vec<Vec<serde_json::Value>>;
 
-/// The names a refusal of `sql` lists, or `None` when `sql` is read.
-fn known(sql: &str) -> Option<crate::Known> {
+#[test]
+fn a_missing_table_is_refused_naming_the_tables_in_its_fields_and_a_real_one_is_read() {
     let scenario = board();
-    match open(&scenario).query(sql, 10, None, &Plugins::default()) {
-        Err(crate::QueryError::Unknown { known, .. }) => Some(known),
-        Err(error) => panic!("{error}"),
-        Ok(_) => None,
-    }
+    let refused = open(&scenario)
+        .query("SELECT * FROM entires", 10, None, &Plugins::default())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    let refusal = refused.refusal();
+    let Some(Value::Array(tables)) = refusal.fields.get("tables") else {
+        panic!("no tables: {:?}", refusal.fields);
+    };
+    assert!(tables.contains(&json!("entries")), "{tables:?}");
+    assert_eq!(refusal.fields.len(), 1, "{:?}", refusal.fields);
+    assert!(refusal.hint.is_some());
+    assert_eq!(refusal.message, refused.to_string());
+    let admitted = open(&scenario).query("SELECT * FROM entries", 10, None, &Plugins::default());
+    assert!(admitted.is_ok());
 }
 
 #[test]
-fn a_missing_table_is_refused_with_the_tables_there_are_and_a_real_one_is_read() {
-    let Some(crate::Known::Tables(tables)) = known("SELECT * FROM entires") else {
-        panic!("no tables");
+fn a_missing_column_is_refused_naming_each_tables_columns_in_its_fields_and_a_real_one_is_read() {
+    let scenario = board();
+    let refusal = open(&scenario)
+        .query("SELECT logcal FROM entries", 10, None, &Plugins::default())
+        .unwrap_err()
+        .refusal();
+    assert_eq!(refusal.code.as_str(), "board::query::invalid");
+    let Some(Value::Array(columns)) = refusal.fields.get("columns").and_then(|c| c.get("entries"))
+    else {
+        panic!("no columns: {:?}", refusal.fields);
     };
-    assert!(tables.iter().any(|table| table == "entries"), "{tables:?}");
-    assert!(tables.iter().any(|table| table == "records"), "{tables:?}");
-    assert_eq!(known("SELECT * FROM entries"), None);
-}
-
-#[test]
-fn a_missing_column_is_refused_with_the_columns_of_the_tables_named_and_a_real_one_is_read() {
-    let Some(crate::Known::Columns(columns)) = known("SELECT logcal FROM Entries") else {
-        panic!("no columns");
-    };
-    assert_eq!(columns.len(), 1, "{columns:?}");
-    assert_eq!(columns[0].0, "entries");
-    assert!(columns[0].1.iter().any(|column| column == "logical"));
-    assert_eq!(known("SELECT logical FROM entries"), None);
+    assert!(columns.contains(&json!("logical")), "{columns:?}");
+    assert!(refusal.hint.is_some());
+    let admitted =
+        open(&scenario).query("SELECT logical FROM entries", 10, None, &Plugins::default());
+    assert!(admitted.is_ok());
 }
 
 fn query(sql: &str, limit: usize) -> Result<QueryReport, Code> {
@@ -401,6 +408,35 @@ fn answered(
         memory: None,
         ..open(scenario).query(sql, 10_000, cache, plugins).unwrap()
     }
+}
+
+#[test]
+fn a_missing_column_in_an_attached_plugin_database_names_no_columns_and_a_real_one_is_read() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#),
+    );
+    let installed = tasks_plugin();
+    let plugins = Plugins {
+        directory: Some(installed.workdir()),
+        environment: board_plugin::Environment {
+            path: Some("/usr/bin:/bin".into()),
+            ..board_plugin::Environment::default()
+        },
+        limits: board_plugin::Limits::default(),
+    };
+    let refused = open(&scenario)
+        .query("SELECT bad FROM p_tasks.sqlite_schema", 10, None, &plugins)
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryInvalid);
+    assert_eq!(
+        Value::Object(refused.refusal().fields),
+        json!({ "columns": {} })
+    );
+    let admitted =
+        open(&scenario).query("SELECT name FROM p_tasks.sqlite_schema", 10, None, &plugins);
+    assert!(admitted.is_ok());
 }
 
 /// The views and what `query` adds to them, extracting for a plugin and

@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use board_index::{Fallback, Index, IndexError, View};
-use board_model::Code;
+use board_model::{Code, Fields, Known, Refusal};
 use board_plugin::{Installed, PluginName};
 use serde_json::Value;
 
@@ -199,16 +199,17 @@ impl QueryError {
             Self::Index { source } | Self::Unknown { source, .. } => source.code(),
         }
     }
-}
 
-/// The names a statement could have used instead of one that is missing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Known {
-    /// Every table and view, and each attached plugin database.
-    Tables(Vec<String>),
-    /// Each table or view the statement names, with its columns; empty when
-    /// it names none.
-    Columns(Vec<(String, Vec<String>)>),
+    pub fn refusal(&self) -> Refusal {
+        let fields = Fields {
+            known: match self {
+                Self::Unknown { known, .. } => Some(known.clone()),
+                Self::Check { .. } | Self::Index { .. } => None,
+            },
+            ..Fields::default()
+        };
+        Refusal::new(self.code(), self, &fields)
+    }
 }
 
 /// The names a statement can use: the views a run makes, the tables of the
@@ -249,6 +250,8 @@ fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
                     let columns = names(&format!("SELECT name FROM pragma_table_info('{table}')"));
                     (table, columns)
                 })
+                // An attached database's name has no columns; a table has.
+                .filter(|(_, columns)| !columns.is_empty())
                 .collect(),
         )
     } else {

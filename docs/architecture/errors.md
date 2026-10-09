@@ -29,9 +29,13 @@ The v0 set:
 
 An error names the values it knows, and `board/error/v1` gives them in
 `fields`: `path`, `blob`, `pointer`, `type`, `schema`, `plugin`, `capability`,
-`directory`. A put refused for the code of a directory the file would be in
-names that directory by its path from the board's root, without a leading `/`
-(`directory`).
+`directory`, `tables`, `columns`. A put refused for the code of a directory
+the file would be in names that directory by its path from the board's root,
+without a leading `/` (`directory`). A query that names a missing table lists
+the tables, views and attached plugin databases (`tables`); one that names a
+missing column maps each table it names to its columns (`columns`); `columns`
+is `{}` when the statement names no table, and the hint then points at
+`sqlite_master`.
 `check` and `put` name a degraded entry's first failing pointer, why, and how
 many more (`pointer`, `reason`, `failures`); an unknown type's reason names the
 schema file its board lacks (`schema`).

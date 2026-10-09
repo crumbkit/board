@@ -74,9 +74,12 @@ impl Refusal {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use serde_json::json;
 
     use super::*;
+    use crate::Known;
 
     #[test]
     fn a_refusal_with_a_board_code_carries_that_codes_hint_filled_from_its_fields() {
@@ -124,6 +127,48 @@ mod tests {
         assert_eq!(
             Code::PathMalformed.hint(&at),
             "a logical path starts with `/`, leaves out `.json`, and has no empty, `.` or `..` segment"
+        );
+    }
+
+    #[test]
+    fn a_query_refusal_that_names_the_names_there_are_has_a_hint_that_lists_them() {
+        let known = |known: Known| Fields {
+            known: Some(known),
+            ..Fields::default()
+        };
+        let tables = known(Known::Tables(vec![
+            "entries".to_owned(),
+            "records".to_owned(),
+        ]));
+        assert_eq!(
+            Code::QueryInvalid.hint(&tables),
+            "the tables and views are entries, records; `board query --help` describes them"
+        );
+        let columns = known(Known::Columns(BTreeMap::from([
+            ("blobs".to_owned(), vec!["blob".to_owned()]),
+            (
+                "entries".to_owned(),
+                vec!["path".to_owned(), "logical".to_owned()],
+            ),
+        ])));
+        assert_eq!(
+            Code::QueryInvalid.hint(&columns),
+            "the columns are blobs: blob; entries: path, logical"
+        );
+        assert_eq!(
+            Code::QueryInvalid.hint(&known(Known::Columns(BTreeMap::new()))),
+            "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns"
+        );
+        let refusal = Refusal::new(Code::QueryInvalid, "no such table: entires", &tables);
+        assert_eq!(refusal.hint, Some(Code::QueryInvalid.hint(&tables)));
+        assert_eq!(refusal.fields, tables.json());
+    }
+
+    #[test]
+    fn a_query_refusal_that_names_no_names_has_the_generic_hint() {
+        assert_eq!(
+            Code::QueryInvalid.hint(&Fields::default()),
+            "fix the statement as the message describes; Board runs one read-only SQL statement, and `board query --help` lists the tables"
         );
     }
 

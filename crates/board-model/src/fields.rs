@@ -1,5 +1,7 @@
 //! The values an error names, beside its code and message.
 
+use std::collections::BTreeMap;
+
 use serde_json::{Map, Value};
 
 use crate::{LogicalPath, ObjectId, RecordType};
@@ -23,6 +25,18 @@ pub struct Fields {
     /// A directory whose code refuses a write beneath it, by its path from
     /// the board's root, without a leading `/`.
     pub directory: Option<String>,
+    /// The names a query could have used instead of one that is missing.
+    pub known: Option<Known>,
+}
+
+/// The names a statement could have used instead of one that is missing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Known {
+    /// Every table and view, and each attached plugin database.
+    Tables(Vec<String>),
+    /// Each table or view the statement names, with its columns; empty when
+    /// it names none.
+    Columns(BTreeMap<String, Vec<String>>),
 }
 
 impl Fields {
@@ -36,7 +50,7 @@ impl Fields {
 
     /// The values that are known, by their `board/error/v1` names.
     pub fn json(&self) -> Map<String, Value> {
-        let known = [
+        let strings = [
             ("path", self.path.as_ref().map(ToString::to_string)),
             ("blob", self.blob.as_ref().map(ToString::to_string)),
             ("pointer", self.pointer.clone()),
@@ -46,10 +60,23 @@ impl Fields {
             ("capability", self.capability.clone()),
             ("directory", self.directory.clone()),
         ];
-        known
+        let mut json: Map<String, Value> = strings
             .into_iter()
             .filter_map(|(name, value)| Some((name.to_owned(), Value::String(value?))))
-            .collect()
+            .collect();
+        match &self.known {
+            Some(Known::Tables(tables)) => {
+                json.insert("tables".to_owned(), tables.clone().into());
+            }
+            Some(Known::Columns(columns)) => {
+                let columns = columns
+                    .iter()
+                    .map(|(table, names)| (table.clone(), names.clone().into()));
+                json.insert("columns".to_owned(), Value::Object(columns.collect()));
+            }
+            None => {}
+        }
+        json
     }
 }
 
@@ -80,5 +107,39 @@ mod tests {
             Value::Object(fields.json()),
             json!({ "pointer": "/title", "plugin": "tasks", "directory": "tasks" })
         );
+    }
+
+    #[test]
+    fn fields_name_the_tables_or_each_tables_columns_a_query_could_have_used() {
+        let tables = Fields {
+            known: Some(Known::Tables(vec![
+                "entries".to_owned(),
+                "records".to_owned(),
+            ])),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Value::Object(tables.json()),
+            json!({ "tables": ["entries", "records"] })
+        );
+        let columns = Fields {
+            known: Some(Known::Columns(BTreeMap::from([
+                ("blobs".to_owned(), vec!["blob".to_owned()]),
+                (
+                    "entries".to_owned(),
+                    vec!["path".to_owned(), "logical".to_owned()],
+                ),
+            ]))),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Value::Object(columns.json()),
+            json!({ "columns": { "blobs": ["blob"], "entries": ["path", "logical"] } })
+        );
+        let none = Fields {
+            known: Some(Known::Columns(BTreeMap::new())),
+            ..Fields::default()
+        };
+        assert_eq!(Value::Object(none.json()), json!({ "columns": {} }));
     }
 }
