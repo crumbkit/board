@@ -167,24 +167,19 @@ impl Board {
 }
 
 /// The blob of each file `entries` saw as it is now, so it need not be
-/// hashed again; each file it does not know counts in `hashed`.
+/// hashed again; each file it did not see as it is now counts in `hashed`.
 fn known<'e>(
     entries: &'e [Entry],
     hashed: &'e mut usize,
 ) -> impl FnMut(&str, &Stat) -> Option<ObjectId> + 'e {
-    let stats: HashMap<&str, (Stat, ObjectId)> = entries
+    let stats: HashMap<&str, (Stat, Option<ObjectId>)> = entries
         .iter()
-        .filter_map(|entry| Some((entry.path.as_str(), (entry.stat?, entry.blob?))))
+        .filter_map(|entry| Some((entry.path.as_str(), (entry.stat?, entry.blob))))
         .collect();
     move |path, stat| {
-        let blob = stats
-            .get(path)
-            .filter(|(seen, _)| seen == stat)
-            .map(|(_, blob)| *blob);
-        if blob.is_none() {
-            *hashed += 1;
-        }
-        blob
+        let seen = stats.get(path).filter(|(seen, _)| seen == stat);
+        *hashed += usize::from(seen.is_none());
+        seen.and_then(|(_, blob)| *blob)
     }
 }
 

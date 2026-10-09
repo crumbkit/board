@@ -23,6 +23,8 @@ use crate::verdict::{Fault, against, judge};
 pub struct Refreshed {
     /// Trees of `HEAD` listed.
     pub trees: usize,
+    /// Working-tree files hashed. A file the last refresh could not open is
+    /// opened again but not counted, even when it can now be read.
     pub hashed: usize,
     pub parsed: usize,
     /// Schemas compiled, whether or not they compiled.

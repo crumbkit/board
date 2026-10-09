@@ -182,6 +182,10 @@ fn a_file_that_cannot_be_read_is_one_degraded_entry_and_the_walk_goes_on() {
     );
     let entries = locked.open().walk(&Source::WorkingTree).unwrap();
     assert_eq!(entries[0].blob, None);
+    assert!(
+        entries[0].stat.is_some(),
+        "the stat it was seen with is kept"
+    );
     assert_eq!(
         resolve(&locked, WorkingTree, "/a").unwrap_err(),
         Code::RepoUnreadable

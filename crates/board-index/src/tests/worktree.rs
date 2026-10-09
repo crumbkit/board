@@ -149,6 +149,30 @@ fn a_stored_file_modified_before_the_refresh_is_known_without_hashing() {
     );
 }
 
+/// A file at `path` the walk could not read, last modified at `modified_ns`.
+fn unreadable(path: &str, modified_ns: i64) -> Entry {
+    Entry {
+        blob: None,
+        status: Status::Degraded(Code::RepoUnreadable),
+        size: None,
+        ..file(path, 0, modified_ns)
+    }
+}
+
+/// A cold rebuild would try the file again, so a warm walk does too. It is
+/// not counted as hashed, so a walk that still cannot read it writes nothing.
+#[test]
+fn a_stored_unreadable_file_modified_before_the_refresh_is_read_again_but_not_counted() {
+    let old = unreadable("a.md", 0);
+    assert_eq!(known_after(std::slice::from_ref(&old), &old), (None, 0));
+}
+
+#[test]
+fn a_stored_unreadable_file_modified_after_the_refresh_began_is_read_again() {
+    let ahead = unreadable("a.md", i64::MAX);
+    assert_eq!(known_after(std::slice::from_ref(&ahead), &ahead), (None, 1));
+}
+
 #[test]
 fn a_stored_file_modified_after_the_refresh_began_is_hashed() {
     let ahead = file("a.md", 1, i64::MAX);

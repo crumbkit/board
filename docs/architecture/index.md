@@ -42,13 +42,16 @@ shortest display path, then the first lexically.
 
 Each command refreshes the index first, doing work in proportion to what
 changed: it hashes only working-tree files whose stat changed, as git does, and
-parses and validates only blobs it has not seen. A file is hashed again if its
-mtime falls in or after the second in which the last refresh that hashed or
-recorded a file began. A refresh that finds nothing changed writes nothing, so
-it neither waits for nor blocks another process. If another process holds the
-lock or wrote first, the refresh runs again, waiting up to 5 seconds for the
-lock. If the wait runs out, it runs in an index in memory. A JSON file of up to
-16 MiB is parsed from the bytes hashed, so a cold refresh opens each file once.
+parses and validates only blobs it has not seen. A file it could not read is
+tried again by every refresh, because whether it can be read may change while
+its stat does not. A file is hashed again if its mtime falls in or after the
+second in which the last refresh that hashed or recorded a file began. A
+refresh that finds nothing changed, including a file it still cannot read,
+writes nothing, so it neither waits for nor blocks another process. If another
+process holds the lock or wrote first, the refresh runs again, waiting up to 5
+seconds for the lock. If the wait runs out, it runs in an index in memory. A
+JSON file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
+opens each file once.
 A cold refresh compiles each schema once: the compilation that judges the
 schema also validates the records of its type.
 A file that is read again, such as a larger one, and that changed after hashing

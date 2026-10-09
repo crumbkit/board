@@ -358,7 +358,7 @@ fn a_snapshot_that_writes_before_the_index_has_doubled_keeps_what_the_tree_left(
 }
 
 #[test]
-fn a_file_seen_as_it_is_now_is_known_and_any_other_is_counted_for_hashing() {
+fn a_file_seen_as_it_is_now_is_known_or_tried_again_uncounted_and_any_other_is_counted() {
     let stat = Stat {
         size: 2,
         modified_ns: 1,
@@ -367,25 +367,31 @@ fn a_file_seen_as_it_is_now_is_known_and_any_other_is_counted_for_hashing() {
         mode: 0o100_644,
     };
     let blob = ObjectId::from_hex("0123456789abcdef0123456789abcdef01234567").unwrap();
-    let entries = [Entry {
-        path: "a.json".to_owned(),
+    let entry = |path: &str, blob| Entry {
+        path: path.to_owned(),
         logical: None,
-        blob: Some(blob),
+        blob,
         status: Status::Ok,
         stat: Some(stat),
         size: Some(2),
-    }];
+    };
+    let entries = [entry("a.json", Some(blob)), entry("sealed.json", None)];
     let mut hashed = 3;
     let mut known = known(&entries, &mut hashed);
     assert_eq!(known("a.json", &stat), Some(blob));
+    assert_eq!(known("sealed.json", &stat), None);
     let later = Stat {
         modified_ns: 2,
         ..stat
     };
     assert_eq!(known("a.json", &later), None);
+    assert_eq!(known("sealed.json", &later), None);
     assert_eq!(known("b.json", &stat), None);
     drop(known);
-    assert_eq!(hashed, 5, "two files left to hash after the three before");
+    assert_eq!(
+        hashed, 6,
+        "two changed files and one unseen after the three before"
+    );
 }
 
 #[test]

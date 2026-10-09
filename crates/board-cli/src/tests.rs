@@ -469,22 +469,19 @@ fn check_gives_each_seed_exhibit_its_code_from_a_warm_index_and_a_cold_one() {
     let dir = seed.board.workdir();
     let arguments = ["check", "--json", "--all"];
     let cold = json(&board_cached(dir, Some(cache.path()), &arguments));
-    // A warm check parses nothing, and hashes only a file it could not read
-    // before: the unreadable schema, which it tries again.
-    let unread = seed
-        .exhibits
-        .iter()
-        .filter(|exhibit| {
-            exhibit.path.ends_with(".schema.json") && exhibit.code == Some(Code::RepoUnreadable)
-        })
-        .count();
+    // A warm check hashes, parses and writes nothing, and opens only the
+    // schema it could not read.
     let rechecked = board_ops::Board::open(dir, None)
         .unwrap()
         .check(None, Some(cache.path()))
         .unwrap();
     assert_eq!(
-        (rechecked.work.hashed, rechecked.work.parsed),
-        (unread, 0),
+        (
+            rechecked.work.hashed,
+            rechecked.work.parsed,
+            rechecked.work.wrote
+        ),
+        (0, 0, false),
         "the cold run left the index warm"
     );
     let warm = json(&board_cached(dir, Some(cache.path()), &arguments));

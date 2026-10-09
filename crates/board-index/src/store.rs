@@ -78,15 +78,14 @@ pub struct Worktree {
 
 impl Worktree {
     /// The blob stored for `path`, if the file can be trusted to hold it
-    /// still; otherwise `None`, and the walk hashes the file.
+    /// still; otherwise `None`, and the walk hashes the file. A file that
+    /// could not be read and has not changed since is tried again, as a cold
+    /// rebuild would, but is not counted as hashed.
     pub fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
-        let known = self
-            .rows
-            .get(path)
-            .filter(|row| trusted(row.stat.as_ref(), stat, self.refreshed_ns))
-            .and_then(|row| row.blob);
-        self.hashed += usize::from(known.is_none());
-        known
+        let row =
+            (self.rows.get(path)).filter(|row| trusted(row.stat.as_ref(), stat, self.refreshed_ns));
+        self.hashed += usize::from(row.is_none());
+        row.and_then(|row| row.blob)
     }
 }
 

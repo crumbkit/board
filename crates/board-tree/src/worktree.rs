@@ -222,12 +222,14 @@ impl<'k> WorkingTree<'_, 'k> {
         if let Some(blob) = self.known(path, &seen) {
             return (Kind::File(blob), Some(seen));
         }
-        // The file hashed is the one opened, so its own metadata is kept.
+        // The file hashed is the one opened, so its own metadata is kept. A
+        // file it cannot open keeps the stat it was seen with, so a walk that
+        // again cannot open it records no change.
         self.repository.opened_one();
         let Ok((stat, file)) =
             fs::File::open(&absolute).and_then(|file| Ok((stat(&file.metadata()?), file)))
         else {
-            return (Kind::Unreadable, None);
+            return (Kind::Unreadable, Some(seen));
         };
         // Only a walk that keeps bytes reads a file in full.
         let blob = match self.kept.as_mut() {

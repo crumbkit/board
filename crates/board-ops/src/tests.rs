@@ -3,7 +3,7 @@
 use board_model::{Code, Fields, Kind, LogicalPath, Object, ObjectId, Refusal, Source};
 pub(crate) use board_scenario::generated::{PROJECT_SCHEMA, TASK_SCHEMA, task};
 use board_scenario::{Item, Scenario};
-use board_tree::Status;
+use board_tree::{Entry, Status};
 
 use crate::{Board, CheckReport};
 
@@ -41,6 +41,12 @@ pub(crate) fn open(scenario: &Scenario) -> Board {
 /// makes it see a blob the file does not hold, as if the file changed
 /// after it was hashed.
 pub(crate) fn stand_in(board: &Board, cache: &std::path::Path, path: &str, blob: ObjectId) {
+    restage(board, cache, path, |entry| entry.blob = Some(blob));
+}
+
+/// Stores in `cache` a walk of `board` in which `change` alters the entry
+/// at `path`.
+fn restage(board: &Board, cache: &std::path::Path, path: &str, change: impl Fn(&mut Entry)) {
     let index = board_index::Index::open(Some(cache), board.repository().path()).unwrap();
     crate::index::transact(index, |writer| {
         let mut worktree = writer.worktree()?;
@@ -48,8 +54,7 @@ pub(crate) fn stand_in(board: &Board, cache: &std::path::Path, path: &str, blob:
         let mut entries = board
             .repository()
             .walk_working_tree(known, &mut |_, _| {})?;
-        let entry = entries.iter_mut().find(|entry| entry.path == path).unwrap();
-        entry.blob = Some(blob);
+        change(entries.iter_mut().find(|entry| entry.path == path).unwrap());
         assert_eq!(writer.sync_worktree(worktree, &entries)?, 0);
         Ok(((), Vec::new()))
     })
@@ -291,6 +296,79 @@ fn a_schema_made_unreadable_after_a_check_leaves_its_records_unreadable_warm_and
         Status::Degraded(Code::RepoUnreadable),
         "cold"
     );
+}
+
+/// Checks `scenario` twice against one cache, and returns what the second
+/// check hashed, whether it wrote and how many files it opened, with the
+/// status of `n.json`.
+fn checked_again(scenario: &Scenario) -> (usize, bool, usize, Status) {
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(scenario);
+    board.check(None, Some(cache.path())).unwrap();
+    let opened = board.repository().files_opened();
+    let report = board.check(None, Some(cache.path())).unwrap();
+    let opened = board.repository().files_opened() - opened;
+    let entry = report
+        .entries
+        .into_iter()
+        .find(|entry| entry.path == "n.json");
+    let status = entry.unwrap().status;
+    (report.work.hashed, report.work.wrote, opened, status)
+}
+
+/// A warm check opens a file it could not read once, as a cold rebuild
+/// would, in case it now can.
+#[test]
+fn a_second_check_hashes_and_writes_nothing_whether_or_not_a_schema_can_be_read() {
+    let readable = board();
+    readable
+        .write(NOTE_SCHEMA_PATH, Item::File(PROJECT_SCHEMA))
+        .write("n.json", Item::File(NOTE));
+    assert_eq!(checked_again(&readable), (0, false, 0, Status::Ok));
+
+    let locked = board();
+    locked.write("n.json", Item::File(NOTE));
+    if !unreadable(&locked, NOTE_SCHEMA_PATH, PROJECT_SCHEMA) {
+        return;
+    }
+    assert_eq!(
+        checked_again(&locked),
+        (0, false, 1, Status::Degraded(Code::RepoUnreadable))
+    );
+}
+
+/// The status of each entry a check of `board` gives with `cache`, and how
+/// many files it hashed and whether it wrote.
+fn statuses(board: &Board, cache: &std::path::Path) -> (Vec<(String, Status)>, usize, bool) {
+    let report = board.check(None, Some(cache)).unwrap();
+    let statuses = (report.entries.into_iter())
+        .map(|entry| (entry.path, entry.status))
+        .collect();
+    (statuses, report.work.hashed, report.work.wrote)
+}
+
+/// Whether a file can be read can change while its stat does not: a group
+/// is granted, a sandbox is lifted, a ticket is renewed. So a warm check
+/// tries again a schema the index holds as unreadable, and agrees with a
+/// cold one. Its twin, which still cannot read it, is in
+/// `a_second_check_hashes_and_writes_nothing_whether_or_not_a_schema_can_be_read`.
+#[test]
+fn a_schema_the_index_holds_as_unreadable_is_read_by_a_warm_check_once_it_can_be() {
+    let scenario = board();
+    scenario
+        .write(NOTE_SCHEMA_PATH, Item::File(PROJECT_SCHEMA))
+        .write("n.json", Item::File(NOTE));
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let (cold, _, _) = statuses(&board, cache.path());
+    assert!(cold.iter().all(|(_, status)| *status == Status::Ok));
+    restage(&board, cache.path(), NOTE_SCHEMA_PATH, |entry| {
+        entry.blob = None;
+        entry.status = Status::Degraded(Code::RepoUnreadable);
+    });
+    // The schema is read but not counted, and its new row is written.
+    assert_eq!(statuses(&board, cache.path()), (cold.clone(), 0, true));
+    assert_eq!(statuses(&board, cache.path()), (cold, 0, false));
 }
 
 /// A plugin manifest that Board admits, with one capability.
