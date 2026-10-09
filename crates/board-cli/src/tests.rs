@@ -85,6 +85,8 @@ fn board_environment(
         cache: cache.map(Path::to_path_buf),
         plugins: plugins.map(Path::to_path_buf),
         environment,
+        complete: None,
+        cursor: None,
     };
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
@@ -1042,6 +1044,7 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
 }
 
 mod cli;
+mod complete;
 mod consistency;
 mod directory;
 mod hints;

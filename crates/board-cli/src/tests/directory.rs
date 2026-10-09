@@ -205,6 +205,8 @@ fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
         cache: None,
         plugins: None,
         environment: board_plugin::Environment::default(),
+        complete: None,
+        cursor: None,
     };
     let arguments = [
         OsString::from(BINARY_NAME),

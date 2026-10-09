@@ -103,6 +103,41 @@ fn degraded(physical: &str, logical: Option<&str>, code: Code) -> (String, Optio
 }
 
 #[test]
+fn names_list_one_level_by_segment_in_a_commit_and_in_the_working_tree() {
+    let files = [
+        ("work/a.json", "{}"),
+        ("work/b.md", ""),
+        ("work/sub/x.md", ""),
+    ];
+    let scenario = Scenario::new();
+    let commit = scenario.commit(&files);
+    for (path, text) in files {
+        scenario.write(path, Item::File(text));
+    }
+    let names = |source: &Source, path: &str| {
+        let mut names: Vec<(String, bool)> = scenario
+            .open()
+            .names(source, path)
+            .unwrap()
+            .into_iter()
+            .map(|name| (name.segment, name.directory))
+            .collect();
+        names.sort();
+        names
+    };
+    let expected = [
+        ("a".to_owned(), false),
+        ("b.md".to_owned(), false),
+        ("sub".to_owned(), true),
+    ];
+    for source in [Source::Commit(commit), Source::WorkingTree] {
+        assert_eq!(names(&source, "work"), expected, "{source:?}");
+        assert!(names(&source, "missing").is_empty(), "{source:?}");
+        assert!(names(&source, "work/a.json").is_empty(), "{source:?}");
+    }
+}
+
+#[test]
 fn a_plain_path_resolves_to_its_record_in_the_commit() {
     let scenario = Scenario::new();
     let commit = scenario.commit(&[("work/x.json", "{}")]);

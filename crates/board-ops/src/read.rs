@@ -173,6 +173,56 @@ impl Board {
         })
     }
 
+    /// The logical paths that complete `typed`, one directory level deep,
+    /// sorted: each name in the directory before its last `/`, reached by
+    /// following pointers, that starts with what follows. A directory ends
+    /// in `/`. A name that starts with `.` is offered only once a `.` is
+    /// typed, as shells do. Nothing is hashed, validated or indexed, and
+    /// anything that cannot be read offers nothing.
+    pub fn complete(&self, typed: &str) -> Vec<String> {
+        let typed = if typed.is_empty() { "/" } else { typed };
+        let Some((parent, partial)) = typed.rsplit_once('/') else {
+            return Vec::new();
+        };
+        let directory = if parent.is_empty() {
+            Ok(LogicalPath::root())
+        } else {
+            parent.parse()
+        };
+        let Some(location) = directory
+            .ok()
+            .filter(|_| typed.starts_with('/'))
+            .and_then(|directory| self.locate(&directory).ok())
+            .filter(|location| location.object == Object::Directory)
+        else {
+            return Vec::new();
+        };
+        let names = self
+            .repositories()
+            .repository(&location.board)
+            .ok()
+            .and_then(|repository| {
+                repository
+                    .names(&location.board.source, &location.path)
+                    .ok()
+            })
+            .unwrap_or_default();
+        let mut offered: Vec<String> = names
+            .into_iter()
+            .filter(|name| {
+                name.segment.starts_with(partial)
+                    && (partial.starts_with('.') || !name.segment.starts_with('.'))
+            })
+            .map(|name| {
+                let slash = if name.directory { "/" } else { "" };
+                format!("{parent}/{}{slash}", name.segment)
+            })
+            .collect();
+        offered.sort();
+        offered.dedup();
+        offered
+    }
+
     fn locate(&self, path: &LogicalPath) -> Result<Location, ReadError> {
         self.repositories()
             .resolve(&Source::WorkingTree, path)

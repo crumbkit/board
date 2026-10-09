@@ -37,7 +37,12 @@ Start here:
 A path is logical: it starts with / and leaves out .json.
 A record is a JSON object whose `$type`, such as lr/task/v1, names its schema,
 here .board/types/lr/task/v1.schema.json.
-Run `board <command> --help` for a command's arguments and examples.";
+Run `board <command> --help` for a command's arguments and examples.
+
+Tab completion of commands, flags and board paths: in fish, add
+`BOARD_COMPLETE=fish board | source` to ~/.config/fish/config.fish; in bash,
+add `eval \"$(BOARD_COMPLETE=bash board)\"` to ~/.bashrc; in zsh, add
+`eval \"$(BOARD_COMPLETE=zsh board)\"` to ~/.zshrc.";
 
 const QUERY_EXAMPLES: &str = "\
 Tables and views:
@@ -62,7 +67,7 @@ Examples:
 pub(crate) struct Cli {
     /// Run as if Board were started in this directory, as `git -C` does; a
     /// relative one is taken from the one before it.
-    #[arg(short = 'C', value_name = "DIR", value_parser = clap::builder::OsStringValueParser::new())]
+    #[arg(short = 'C', value_name = "DIR", value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
     directories: Vec<OsString>,
     /// Print one JSON document instead of text.
     #[arg(long, global = true)]
@@ -285,6 +290,9 @@ pub(crate) fn run(
     stdin: &mut dyn Read,
 ) -> Output {
     let arguments: Vec<OsString> = arguments.into_iter().collect();
+    if let Some(completed) = crate::complete::complete(&arguments, context) {
+        return completed;
+    }
     let cli = match Cli::try_parse_from(&arguments) {
         Ok(cli) => cli,
         Err(error) => return clap_refused(&error, &arguments),
@@ -373,7 +381,11 @@ pub(crate) fn run(
 
 /// `start` after entering each of `directories` in turn, as `git -C` does,
 /// or the refusal of the first that is not a directory.
-fn entered(start: &Path, directories: &[OsString], format: Format) -> Result<PathBuf, Output> {
+pub(crate) fn entered(
+    start: &Path,
+    directories: &[OsString],
+    format: Format,
+) -> Result<PathBuf, Output> {
     let mut start = start.to_path_buf();
     for directory in directories {
         let joined = start.join(directory);

@@ -1,5 +1,6 @@
 //! The one module that reads the environment, once.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use board_plugin::Environment;
@@ -18,6 +19,13 @@ pub(crate) struct Context {
     pub(crate) plugins: Option<PathBuf>,
     /// What a called plugin inherits.
     pub(crate) environment: Environment,
+    /// `BOARD_COMPLETE`, which names a shell to ask for completion.
+    pub(crate) complete: Option<OsString>,
+    /// `_CLAP_COMPLETE_INDEX`: which word the bash or zsh cursor is on.
+    /// `clap_complete` reads it, `_CLAP_IFS` and its other `_CLAP_*`
+    /// variables from the environment itself, the one exception to this
+    /// module owning the environment.
+    pub(crate) cursor: Option<usize>,
 }
 
 impl Context {
@@ -49,6 +57,10 @@ impl Context {
                 data: std::env::var_os("XDG_DATA_HOME"),
                 depth: std::env::var_os("BOARD_CALL_DEPTH"),
             },
+            complete: std::env::var_os("BOARD_COMPLETE"),
+            cursor: std::env::var("_CLAP_COMPLETE_INDEX")
+                .ok()
+                .and_then(|index| index.parse().ok()),
         }
     }
 }

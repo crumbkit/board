@@ -28,6 +28,14 @@ pub struct Entry {
     pub size: Option<u64>,
 }
 
+/// One name inside a directory: the last segment of its logical path, and
+/// whether a directory is there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Name {
+    pub segment: String,
+    pub directory: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Ok,
@@ -60,6 +68,23 @@ impl Repository {
         match source {
             Source::Commit(commit) => walk_from(&mut self.commit_tree(*commit)?, path),
             Source::WorkingTree => walk_from(&mut self.working_tree(None)?, path),
+        }
+    }
+
+    /// The names one level inside the directory at the `/`-separated
+    /// physical `path` in `source`, each with a logical path, without
+    /// following pointers. No file is hashed, and only a record beside its
+    /// directory is read, so the cost is one directory listing; nothing is
+    /// there when no directory is.
+    pub fn names(&self, source: &Source, path: &str) -> Result<Vec<Name>, GitError> {
+        match source {
+            Source::Commit(commit) => names_in(&mut self.commit_tree(*commit)?, path),
+            // A name needs no blob, so every file is given the null id
+            // instead of being hashed.
+            Source::WorkingTree => names_in(
+                &mut self.working_tree(Some(&mut |_, _| Some(ObjectId::Sha1([0; 20]))))?,
+                path,
+            ),
         }
     }
 
@@ -282,6 +307,33 @@ fn join(directory: &str, segment: &str) -> String {
     } else {
         format!("{directory}/{segment}")
     }
+}
+
+fn names_in<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Name>, GitError> {
+    let Descent { at, rest, .. } = descend(tree, path)?;
+    let (
+        Pending {
+            directory,
+            logical: Some(parent),
+            ..
+        },
+        true,
+    ) = (at, rest.is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    let listed = tree.list(&directory)?;
+    let addressed = tree.address(&directory, &parent, &listed);
+    Ok(listed
+        .iter()
+        .zip(addressed)
+        .filter_map(|(entry, (logical, _))| {
+            Some(Name {
+                segment: logical?.segments().last()?.to_owned(),
+                directory: matches!(entry.kind, Kind::Directory(_)),
+            })
+        })
+        .collect())
 }
 
 pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>, GitError> {

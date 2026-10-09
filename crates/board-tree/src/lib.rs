@@ -21,7 +21,7 @@ pub use crate::mounts::{Cache, MountPoint, Mounted, Pin, PinError, Reached, Scop
 pub use crate::repositories::Repositories;
 pub use crate::resolve::{Ancestor, MAX_HOPS, ResolveError, Resolver};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
-pub use crate::walk::{Beneath, Entry, Status};
+pub use crate::walk::{Beneath, Entry, Name, Status};
 pub use crate::worktree::{
     Directory, Kept, Known, Working, discover, is_repository_root, repository_root,
 };

@@ -2,6 +2,7 @@
 //! prints one report (docs/architecture.md, Commands). Every operation is in
 //! `board-ops`.
 
+mod complete;
 mod config;
 mod render;
 mod report;
