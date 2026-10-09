@@ -3,11 +3,12 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_model::{
     Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat, canonical_json,
 };
-use board_tree::{MountPoint, TreeRow, TreeRows};
+use board_tree::{Entry, MountPoint, Status, TreeRow, TreeRows};
 use rusqlite::{Connection, OptionalExtension, TransactionState, params};
 
 use crate::open::{Index, IndexError, Storage};
@@ -48,14 +49,47 @@ pub struct RefFact {
 }
 
 /// One working-tree entry as the last refresh saw it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WorktreeRow {
-    pub logical: Option<LogicalPath>,
+#[derive(Debug, PartialEq, Eq)]
+struct WorktreeRow {
+    logical: Option<LogicalPath>,
     /// The first problem on the entry's path, or the code it cannot be read
     /// with.
-    pub code: Option<Code>,
-    pub blob: Option<ObjectId>,
-    pub stat: Option<Stat>,
+    code: Option<Code>,
+    blob: Option<ObjectId>,
+    stat: Option<Stat>,
+}
+
+/// The working tree as the last refresh saw it, for a walk to ask which
+/// files it need not hash again.
+#[derive(Debug)]
+pub struct Worktree {
+    rows: HashMap<String, WorktreeRow>,
+    refreshed_ns: Option<i64>,
+    started_ns: i64,
+    hashed: usize,
+}
+
+impl Worktree {
+    /// The blob stored for `path`, if the file can be trusted to hold it
+    /// still; otherwise `None`, and the walk hashes the file.
+    pub fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
+        let known = self
+            .rows
+            .get(path)
+            .filter(|row| trusted(row.stat.as_ref(), stat, self.refreshed_ns))
+            .and_then(|row| row.blob);
+        self.hashed += usize::from(known.is_none());
+        known
+    }
+}
+
+/// Whether a stored blob still holds: the stat is unchanged and, as in git's racy-clean
+/// rule, the file was modified in an earlier whole second than the last refresh began.
+pub(crate) fn trusted(stored: Option<&Stat>, seen: &Stat, refreshed_ns: Option<i64>) -> bool {
+    const SECOND: i64 = 1_000_000_000;
+    stored == Some(seen)
+        && refreshed_ns
+            .is_some_and(|ns| seen.modified_ns.div_euclid(SECOND) < ns.div_euclid(SECOND))
 }
 
 /// git's mode for a submodule, whose object is a commit.
@@ -138,7 +172,7 @@ impl View {
 }
 
 impl Writer {
-    fn connection(&self) -> &Connection {
+    pub(crate) fn connection(&self) -> &Connection {
         &self.index.connection
     }
 
@@ -299,27 +333,14 @@ impl Writer {
         Ok(())
     }
 
-    /// When the last refresh began, in nanoseconds since the Unix epoch.
-    pub fn refreshed_ns(&self) -> Result<Option<i64>, IndexError> {
-        let value: Option<String> = self
+    /// The working tree as the last refresh saw it. The refresh that walks
+    /// it begins now.
+    pub fn worktree(&self) -> Result<Worktree, IndexError> {
+        let refreshed_ns: Option<String> = self
             .connection()
             .prepare_cached("SELECT value FROM main.state WHERE key = 'refreshed_ns'")?
             .query_row([], |row| row.get(0))
             .optional()?;
-        Ok(value.and_then(|value| value.parse().ok()))
-    }
-
-    pub fn set_refreshed_ns(&self, started_ns: i64) -> Result<(), IndexError> {
-        self.connection()
-            .prepare_cached(
-                "INSERT OR REPLACE INTO main.state (key, value) VALUES ('refreshed_ns', ?1)",
-            )?
-            .execute([started_ns.to_string()])?;
-        Ok(())
-    }
-
-    /// Every working-tree entry as the last refresh saw it, by path.
-    pub fn worktree(&self) -> Result<HashMap<String, WorktreeRow>, IndexError> {
         let mut statement = self.connection().prepare_cached(
             "SELECT path, logical, code, blob, size, modified_ns, changed_ns, inode, mode
              FROM main.worktree",
@@ -354,36 +375,76 @@ impl Writer {
                 },
             ))
         })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        Ok(Worktree {
+            rows: rows.collect::<Result<_, _>>()?,
+            refreshed_ns: refreshed_ns.and_then(|value| value.parse().ok()),
+            started_ns: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |since| {
+                    i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
+                }),
+            hashed: 0,
+        })
     }
 
-    pub fn put_worktree(&self, path: &str, row: &WorktreeRow) -> Result<(), IndexError> {
-        let stat = row.stat.as_ref();
-        self.connection()
-            .prepare_cached(
-                "INSERT OR REPLACE INTO main.worktree
-             (path, logical, code, blob, size, modified_ns, changed_ns, inode, mode)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            )?
-            .execute(params![
-                path,
-                row.logical.as_ref().map(ToString::to_string),
-                row.code.map(Code::as_str),
-                row.blob.map(|blob| blob.to_string()),
-                stat.map(|stat| stat.size.cast_signed()),
-                stat.map(|stat| stat.modified_ns),
-                stat.map(|stat| stat.changed_ns),
-                stat.map(|stat| stat.inode.cast_signed()),
-                stat.map(|stat| stat.mode),
-            ])?;
-        Ok(())
-    }
-
-    pub fn delete_worktree(&self, path: &str) -> Result<(), IndexError> {
-        self.connection()
-            .prepare_cached("DELETE FROM main.worktree WHERE path = ?1")?
-            .execute([path])?;
-        Ok(())
+    /// Stores the `entries` a walk of `worktree` found in place of what it
+    /// held, and returns how many files the walk hashed. When it hashed or
+    /// this records anything, files must predate this refresh's start to be
+    /// trusted; keeping the older start trusts no file it did not.
+    pub fn sync_worktree(
+        &self,
+        worktree: Worktree,
+        entries: &[Entry],
+    ) -> Result<usize, IndexError> {
+        let mut rows = worktree.rows;
+        let mut changed = worktree.hashed > 0;
+        for entry in entries {
+            let row = WorktreeRow {
+                logical: entry.logical.clone(),
+                code: match entry.status {
+                    Status::Ok => None,
+                    Status::Degraded(code) => Some(code),
+                },
+                blob: entry.blob,
+                stat: entry.stat,
+            };
+            if rows.remove(&entry.path).as_ref() == Some(&row) {
+                continue;
+            }
+            changed = true;
+            let stat = row.stat.as_ref();
+            self.connection()
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO main.worktree
+                 (path, logical, code, blob, size, modified_ns, changed_ns, inode, mode)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                )?
+                .execute(params![
+                    entry.path,
+                    row.logical.as_ref().map(ToString::to_string),
+                    row.code.map(Code::as_str),
+                    row.blob.map(|blob| blob.to_string()),
+                    stat.map(|stat| stat.size.cast_signed()),
+                    stat.map(|stat| stat.modified_ns),
+                    stat.map(|stat| stat.changed_ns),
+                    stat.map(|stat| stat.inode.cast_signed()),
+                    stat.map(|stat| stat.mode),
+                ])?;
+        }
+        for path in rows.keys() {
+            self.connection()
+                .prepare_cached("DELETE FROM main.worktree WHERE path = ?1")?
+                .execute([path])?;
+            changed = true;
+        }
+        if changed {
+            self.connection()
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO main.state (key, value) VALUES ('refreshed_ns', ?1)",
+                )?
+                .execute([worktree.started_ns.to_string()])?;
+        }
+        Ok(worktree.hashed)
     }
 
     pub fn has_tree(&self, tree: ObjectId) -> Result<bool, IndexError> {

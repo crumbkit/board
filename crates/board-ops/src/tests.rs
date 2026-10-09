@@ -54,9 +54,14 @@ pub(crate) fn open(scenario: &Scenario) -> Board {
 pub(crate) fn stand_in(board: &Board, cache: &std::path::Path, path: &str, blob: ObjectId) {
     let index = board_index::Index::open(Some(cache), board.repository().path()).unwrap();
     crate::index::transact(index, |writer| {
-        let mut row = writer.worktree()?.remove(path).unwrap();
-        row.blob = Some(blob);
-        writer.put_worktree(path, &row)?;
+        let mut worktree = writer.worktree()?;
+        let known = &mut |path: &str, stat: &_| worktree.known(path, stat);
+        let mut entries = board
+            .repository()
+            .walk_working_tree(known, &mut |_, _| {})?;
+        let entry = entries.iter_mut().find(|entry| entry.path == path).unwrap();
+        entry.blob = Some(blob);
+        assert_eq!(writer.sync_worktree(worktree, &entries)?, 0);
         Ok(((), Vec::new()))
     })
     .unwrap();

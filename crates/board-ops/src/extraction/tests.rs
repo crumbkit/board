@@ -174,10 +174,10 @@ fn a_record_that_changed_after_the_refresh_is_not_sent_and_its_unchanged_twin_is
         .unwrap();
     // The index keeps the facts of c's blob, which no file holds now, and
     // the refresh sees that blob at a.
-    fixture.board.write("tasks/c.json", Item::File("{}"));
     let board = open(&fixture.board);
     let blob = fixture.board.blob(&held);
     stand_in(&board, fixture.cache.workdir(), "tasks/a.json", blob);
+    fixture.board.write("tasks/c.json", Item::File("{}"));
     fixture.query("SELECT 1");
     assert_eq!(fixture.sent(), [["/tasks/b"]]);
 }

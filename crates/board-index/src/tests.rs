@@ -11,6 +11,7 @@ use crate::store::{MountRow, SourceRow};
 
 mod cache;
 mod prune;
+mod worktree;
 
 const ROOT: &str = "/boards/one";
 

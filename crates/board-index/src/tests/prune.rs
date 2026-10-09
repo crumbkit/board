@@ -1,7 +1,7 @@
 //! Pruning: what a prune keeps and deletes, and when a writer prunes.
 
 use board_model::Change;
-use board_tree::{TreeRow, TreeRows};
+use board_tree::{Entry, Status, TreeRow, TreeRows};
 use rusqlite::OptionalExtension as _;
 
 use super::*;
@@ -50,17 +50,16 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     for (id, rows) in trees {
         writer.put_tree(&TreeRows { id: blob(id), rows }).unwrap();
     }
-    writer
-        .put_worktree(
-            "w.json",
-            &WorktreeRow {
-                logical: None,
-                code: None,
-                blob: Some(blob(4)),
-                stat: None,
-            },
-        )
-        .unwrap();
+    let file = Entry {
+        path: "w.json".into(),
+        logical: None,
+        blob: Some(blob(4)),
+        status: Status::Ok,
+        stat: None,
+        size: None,
+    };
+    let worktree = writer.worktree().unwrap();
+    writer.sync_worktree(worktree, &[file]).unwrap();
     for reached in [1, 2, 4] {
         writer
             .put_blob(blob(reached), Role::Json, &record())

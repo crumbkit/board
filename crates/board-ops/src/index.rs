@@ -5,13 +5,10 @@
 //! A refresh that finds nothing changed writes nothing.
 
 use std::collections::{HashMap, HashSet};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use board_index::{
-    BlobFact, Index, IndexError, RefFact, Resolved, ValidationFact, View, WorktreeRow, Writer,
-};
-use board_model::{Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, Role, Source, Stat};
-use board_tree::{Contents, Entry, GitError, Repository, Status, latest};
+use board_index::{BlobFact, Index, IndexError, RefFact, Resolved, ValidationFact, View, Writer};
+use board_model::{Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, Role, Source};
+use board_tree::{Contents, Entry, GitError, Repository, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -74,10 +71,9 @@ impl Board {
     /// Brings the index up to date with the working tree, adding every fact
     /// it does not yet hold.
     pub(crate) fn refresh(&self, writer: &Writer) -> Result<Refresh, RefreshError> {
-        let started_ns = now_ns();
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
-        let (entries, changed) = self.walk(writer, &mut work, &mut kept)?;
+        let entries = self.walk(writer, &mut work, &mut kept)?;
         let (facts, left_out) = facts(
             writer,
             self.repository(),
@@ -87,10 +83,6 @@ impl Board {
             kept,
         )?;
         let head = self.head(writer, &mut work.trees)?;
-        // Keeping the older start time trusts no file the stored one did not.
-        if changed {
-            writer.set_refreshed_ns(started_ns)?;
-        }
         Ok(Refresh {
             entries,
             facts,
@@ -120,30 +112,18 @@ impl Board {
 
     /// Walks the working tree, hashing only files whose metadata the index
     /// does not hold, and records what it saw. Each JSON file it reads in
-    /// full is indexed into `kept` as it is read. Returns the entries and
-    /// whether it hashed or recorded anything.
+    /// full is indexed into `kept` as it is read.
     fn walk(
         &self,
         writer: &Writer,
         work: &mut Refreshed,
         kept: &mut Kept,
-    ) -> Result<(Vec<Entry>, bool), RefreshError> {
-        let clean_before_ns = writer.refreshed_ns()?.map(whole_second);
-        let stored = writer.worktree()?;
-        let mut hashed = 0;
+    ) -> Result<Vec<Entry>, RefreshError> {
+        let mut worktree = writer.worktree()?;
         let mut parsed = 0;
         let mut failed = None;
         let entries = self.repository().walk_working_tree(
-            &mut |path, stat| {
-                let known = stored
-                    .get(path)
-                    .filter(|row| row.stat.as_ref() == Some(stat) && clean(stat, clean_before_ns))
-                    .and_then(|row| row.blob);
-                if known.is_none() {
-                    hashed += 1;
-                }
-                known
-            },
+            &mut |path, stat| worktree.known(path, stat),
             &mut |path, contents| {
                 if failed.is_none()
                     && let Err(error) = keep(writer, kept, path, &contents, &mut parsed)
@@ -155,31 +135,9 @@ impl Board {
         if let Some(error) = failed {
             return Err(error.into());
         }
-        work.hashed += hashed;
         work.parsed += parsed;
-        let mut changed = hashed > 0;
-        for entry in &entries {
-            let row = WorktreeRow {
-                logical: entry.logical.clone(),
-                code: match entry.status {
-                    Status::Ok => None,
-                    Status::Degraded(code) => Some(code),
-                },
-                blob: entry.blob,
-                stat: entry.stat,
-            };
-            if stored.get(&entry.path) != Some(&row) {
-                writer.put_worktree(&entry.path, &row)?;
-                changed = true;
-            }
-        }
-        let walked: std::collections::HashSet<&str> =
-            entries.iter().map(|entry| entry.path.as_str()).collect();
-        for path in stored.keys().filter(|path| !walked.contains(path.as_str())) {
-            writer.delete_worktree(path)?;
-            changed = true;
-        }
-        Ok((entries, changed))
+        work.hashed += writer.sync_worktree(worktree, &entries)?;
+        Ok(entries)
     }
 }
 
@@ -397,26 +355,6 @@ pub(crate) fn schema_of(facts: &HashMap<String, Indexed>, path: &str) -> Option<
         .get(path)
         .filter(|schema| schema.role == Role::Schema && schema.fact.code.is_none())
         .map(|schema| schema.blob)
-}
-
-/// Whether a file whose metadata is unchanged can be trusted to be
-/// unchanged: only if it was last modified before the refresh that saw it
-/// began. Like git's racy-clean rule, this compares whole seconds, so a file
-/// system with one-second times cannot hide a change made in the same second.
-fn clean(stat: &Stat, clean_before_ns: Option<i64>) -> bool {
-    clean_before_ns.is_some_and(|before| stat.modified_ns < before)
-}
-
-fn whole_second(ns: i64) -> i64 {
-    ns - ns.rem_euclid(1_000_000_000)
-}
-
-fn now_ns() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| {
-            i64::try_from(since.as_nanos()).unwrap_or(i64::MAX)
-        })
 }
 
 /// The parsed value of a record, from this refresh or read again.
