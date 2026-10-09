@@ -74,7 +74,8 @@ impl Tree for StoredTree<'_> {
     }
 
     fn list(&mut self, directory: &ObjectId) -> Result<Rc<[RawEntry<ObjectId>]>, GitError> {
-        let Some(rows) = (self.rows)(*directory) else {
+        let Some(rows) = (self.rows)(*directory).or_else(|| is_empty(*directory).then(Vec::new))
+        else {
             return Err(GitError::Object {
                 repository: self.repository.clone(),
                 id: *directory,
@@ -133,6 +134,12 @@ impl Tree for StoredTree<'_> {
     }
 }
 
+/// Whether `id` names git's empty tree. It has no rows to store, so a
+/// cache could not tell it apart from a tree it never listed.
+fn is_empty(id: ObjectId) -> bool {
+    gix::ObjectId::try_from(id.as_bytes()).is_ok_and(|id| id.is_empty_tree())
+}
+
 /// Walks the stored rows of `commit`'s tree `root` in `repository`, as
 /// [`Repository::walk`] walks the commit: a tree whose rows are not known
 /// is one degraded entry, as an unreadable one is.
@@ -161,8 +168,8 @@ impl Repository {
         Ok(Some(self.commit_tree(commit)?.root()))
     }
 
-    /// `root` and every tree beneath it, except those `known` already holds
-    /// and the trees beneath them. Only `root` must be readable: a tree
+    /// `root` and every tree beneath it, except the empty tree, those
+    /// `known` already holds and the trees beneath them. Only `root` must be readable: a tree
     /// beneath it that cannot be read is left out.
     pub fn trees(
         &self,
@@ -173,7 +180,7 @@ impl Repository {
         let mut trees: Vec<TreeRows> = Vec::new();
         let mut pointers = Pointers::default();
         while let Some(id) = pending.pop() {
-            if known(id) || trees.iter().any(|tree| tree.id == id) {
+            if is_empty(id) || known(id) || trees.iter().any(|tree| tree.id == id) {
                 continue;
             }
             let entries = match self.tree_entries(id) {

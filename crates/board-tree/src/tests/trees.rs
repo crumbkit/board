@@ -1,7 +1,7 @@
 //! Trees as the index keeps them (docs/architecture/index.md).
 
 use super::*;
-use crate::{TreeRow, TreeRows};
+use crate::{GitError, TreeRow, TreeRows};
 
 fn trees(scenario: &Scenario, known: &[ObjectId]) -> Vec<TreeRows> {
     let repository = scenario.open();
@@ -86,6 +86,59 @@ fn a_tree_that_cannot_be_read_is_left_out() {
     let trees = trees(&scenario, &[]);
     assert_eq!(trees.len(), 1);
     assert_eq!(trees[0].rows.len(), 2);
+}
+
+/// What walking `commit`'s stored trees gives when the cache holds the
+/// rows [`Repository::trees`] lists for it, and what walking the commit
+/// gives.
+fn walked_stored_and_from_the_commit(
+    scenario: &Scenario,
+    commit: ObjectId,
+) -> (Result<Vec<Entry>, GitError>, Vec<Entry>) {
+    let repository = scenario.open();
+    let root = repository.head_tree().unwrap().unwrap();
+    let stored = repository.trees(root, &mut |_| false).unwrap();
+    let mut rows = |id| {
+        stored
+            .iter()
+            .find(|tree: &&TreeRows| tree.id == id)
+            .map(|tree| tree.rows.clone())
+    };
+    let walked = crate::walk_stored(repository.path(), commit, root, &mut rows);
+    (walked, repository.walk(&commit.source()).unwrap())
+}
+
+#[test]
+fn an_empty_tree_is_never_listed_and_walks_stored_as_it_walks_from_the_commit() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit_items(&[(b"empty", Item::EmptyTree), (b"a.md", Item::File(""))]);
+    let (walked, from_commit) = walked_stored_and_from_the_commit(&scenario, commit);
+    assert_eq!(walked.unwrap(), from_commit);
+    let listed = trees(&scenario, &[]);
+    assert_eq!(listed.len(), 1, "only the root is listed");
+    assert_eq!(row(&listed, "empty").mode, TreeRow::TREE_MODE);
+
+    scenario.commit(&[]);
+    assert_eq!(
+        trees(&scenario, &[]),
+        Vec::new(),
+        "an empty root is not listed"
+    );
+}
+
+#[test]
+fn a_root_the_cache_does_not_hold_fails_a_stored_walk_unless_it_is_empty() {
+    let scenario = Scenario::new();
+    let walk = |files: &[(&str, &str)]| {
+        let commit = scenario.commit(files);
+        let repository = scenario.open();
+        let root = repository.head_tree().unwrap().unwrap();
+        let walked = crate::walk_stored(repository.path(), commit, root, &mut |_| None);
+        (walked, root)
+    };
+    let (walked, root) = walk(&[("a.md", "")]);
+    assert!(matches!(walked, Err(GitError::Object { id, .. }) if id == root));
+    assert_eq!(walk(&[]).0.unwrap(), Vec::new());
 }
 
 #[test]

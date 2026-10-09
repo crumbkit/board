@@ -42,6 +42,9 @@ pub enum Item<'a> {
     MissingTree,
     /// A top-level file whose blob object is absent from the repository.
     MissingBlob,
+    /// A top-level directory whose tree is empty, which git's own commands
+    /// never commit.
+    EmptyTree,
     /// Text added to the end of the file at the path, such as a section of
     /// `.git/config`.
     Appended(&'a str),
@@ -204,8 +207,8 @@ impl Scenario {
                 let made = std::process::Command::new("mkfifo").arg(&path).status();
                 assert!(made.unwrap().success(), "mkfifo {}", path.display());
             }
-            Item::MissingTree | Item::MissingBlob => {
-                panic!("a working tree cannot hold a missing object")
+            Item::MissingTree | Item::MissingBlob | Item::EmptyTree => {
+                panic!("a working tree cannot hold a missing object or an empty tree")
             }
         }
         self
@@ -251,7 +254,7 @@ impl Scenario {
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),
                 ),
-                Item::MissingTree | Item::MissingBlob => continue,
+                Item::MissingTree | Item::MissingBlob | Item::EmptyTree => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
                 Item::Locked | Item::Searchable => {
                     panic!("a commit cannot hold a locked directory")
@@ -269,24 +272,26 @@ impl Scenario {
             editor.upsert(BStr::new(path), kind, id).unwrap();
         }
         let mut tree = editor.write().unwrap().detach();
-        // The editor refuses an object it cannot find, so absent ones are
-        // added to the root tree object directly.
-        let missing: Vec<(&[u8], EntryKind, u8)> = items
+        // The editor refuses an object it cannot find and leaves out an
+        // empty tree, so these are added to the root tree object directly.
+        let absent = |digit| gix::ObjectId::from_hex(&[digit; 40]).unwrap();
+        let missing: Vec<(&[u8], EntryKind, gix::ObjectId)> = items
             .iter()
             .filter_map(|(path, item)| match item {
-                Item::MissingTree => Some((*path, EntryKind::Tree, b'2')),
-                Item::MissingBlob => Some((*path, EntryKind::Blob, b'3')),
+                Item::MissingTree => Some((*path, EntryKind::Tree, absent(b'2'))),
+                Item::MissingBlob => Some((*path, EntryKind::Blob, absent(b'3'))),
+                Item::EmptyTree => Some((*path, EntryKind::Tree, empty)),
                 _ => None,
             })
             .collect();
         if !missing.is_empty() {
             let root = self.git.find_tree(tree).unwrap();
             let mut root: gix::objs::Tree = root.decode().unwrap().into();
-            for (name, kind, digit) in missing {
+            for (name, kind, oid) in missing {
                 root.entries.push(gix::objs::tree::Entry {
                     mode: kind.into(),
                     filename: name.into(),
-                    oid: gix::ObjectId::from_hex(&[digit; 40]).unwrap(),
+                    oid,
                 });
             }
             root.entries.sort();

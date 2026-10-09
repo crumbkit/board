@@ -209,6 +209,43 @@ fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError
     Ok(warm.report)
 }
 
+/// Decides the board `before` describes warm, changes it to `after`, and
+/// requires a warm index to decide as a cold one, again after a prune, and
+/// to do no work when nothing changed.
+fn warm_decides_as_cold(
+    before: &[Option<usize>],
+    after: &[Option<usize>],
+    committed: bool,
+) -> Result<(), TestCaseError> {
+    let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, before, committed);
+    let cache = tempfile::tempdir().unwrap();
+    let root = open(generated.scenario()).repository().path().to_path_buf();
+    let warm = || Index::open(Some(cache.path()), &root).unwrap();
+    extract_everything(
+        &open(generated.scenario())
+            .snapshot(warm(), None)
+            .unwrap()
+            .view,
+    );
+    generated.write(after);
+
+    agrees(generated.scenario(), warm())?;
+    let again = agrees(generated.scenario(), warm())?;
+    prop_assert_eq!(again.work, Refreshed::default(), "nothing changed");
+
+    prune(warm());
+    generated.write(before);
+    agrees(generated.scenario(), warm())?;
+    prune(warm());
+    let again = agrees(generated.scenario(), warm())?;
+    prop_assert_eq!(
+        again.work,
+        Refreshed::default(),
+        "a prune keeps what the tree reaches"
+    );
+    Ok(())
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
@@ -218,24 +255,21 @@ proptest! {
         after in generated(),
         committed: bool,
     ) {
-        let mut generated = Generated::new(r#"{"$type": "board/config/v1"}"#, &before, committed);
-        let cache = tempfile::tempdir().unwrap();
-        let root = open(generated.scenario()).repository().path().to_path_buf();
-        let warm = || Index::open(Some(cache.path()), &root).unwrap();
-        extract_everything(&open(generated.scenario()).snapshot(warm(), None).unwrap().view);
-        generated.write(&after);
-
-        agrees(generated.scenario(), warm())?;
-        let again = agrees(generated.scenario(), warm())?;
-        prop_assert_eq!(again.work, Refreshed::default(), "nothing changed");
-
-        prune(warm());
-        generated.write(&before);
-        agrees(generated.scenario(), warm())?;
-        prune(warm());
-        let again = agrees(generated.scenario(), warm())?;
-        prop_assert_eq!(again.work, Refreshed::default(), "a prune keeps what the tree reaches");
+        warm_decides_as_cold(&before, &after, committed)?;
     }
+}
+
+#[test]
+fn a_warm_index_lists_no_tree_again_when_heads_root_tree_is_empty() {
+    let nothing = [None; 8];
+    warm_decides_as_cold(&nothing, &nothing, true).unwrap();
+}
+
+#[test]
+fn a_warm_index_lists_no_tree_again_when_heads_root_tree_holds_a_file() {
+    let mut notes = [None; 8];
+    notes[6] = Some(0);
+    warm_decides_as_cold(&notes, &notes, true).unwrap();
 }
 
 /// A task whose title is `bytes` long, so that its facts fill many pages.
