@@ -49,6 +49,8 @@ it neither waits for nor blocks another process. If another process holds the
 lock or wrote first, the refresh runs again, waiting up to 5 seconds for the
 lock. If the wait runs out, it runs in an index in memory. A JSON file of up to
 16 MiB is parsed from the bytes hashed, so a cold refresh opens each file once.
+A cold refresh compiles each schema once: the compilation that judges the
+schema also validates the records of its type.
 A file that is read again, such as a larger one, and that changed after hashing
 is `board::repo::unreadable` until the next run, and so are the records of a
 schema that changed. `check`, `refs` and `query` use the index; `get` and

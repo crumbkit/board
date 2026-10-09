@@ -8,17 +8,17 @@ use std::io::{BufRead, Read};
 
 use board_model::{
     BINARY_NAME, CONFIG_TYPE, Code, Content, Fields, JsonError, Location, LogicalPath,
-    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json,
+    MANIFEST_TYPE, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Role, canonical_json, classify,
     parse_json,
 };
-use board_plugin::{Manifest, ManifestError};
 use board_tree::{LOCK_WAIT, Lock, ResolveError, Resolver, Working, WriteError};
 use board_validate::{RecordError, Reference, Schema};
 use serde_json::Value;
 
-use crate::board::{Board, Config};
-use crate::check::{Detail, Tally, judge, unresolved};
+use crate::board::Board;
+use crate::check::{Detail, Tally, follow, unresolved};
 use crate::snapshot::read_type;
+use crate::verdict::{self, Fault};
 
 /// What a put expects to find where it writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -467,11 +467,15 @@ impl Board {
             return Err(Refused::NoType);
         }
         let classified = Role::Json.classify(Some(bytes));
-        if let Some(code) = classified.code {
-            return Err(Refused::Code(code));
-        }
+        verdict::judge(&classified)?;
         let record_type = match classified.content {
             Content::Pointer { .. } => return Ok(admitted(value, true)),
+            // Board's own types that pass the verdict need no schema.
+            Content::Record { record_type, .. }
+                if matches!(record_type.as_str(), CONFIG_TYPE | MANIFEST_TYPE) =>
+            {
+                return Ok(admitted(value, false));
+            }
             Content::Record { record_type, .. } => record_type,
             Content::Json { .. }
             | Content::Schema { .. }
@@ -480,16 +484,6 @@ impl Board {
                 return Err(Refused::Code(Code::PutInvalid));
             }
         };
-        if record_type.as_str() == CONFIG_TYPE {
-            return Config::from_value(&value)
-                .map(|_| admitted(value, false))
-                .ok_or(Refused::Code(Code::ConfigInvalid));
-        }
-        if record_type.as_str() == MANIFEST_TYPE {
-            return Manifest::from_value(value.clone())
-                .map(|_| admitted(value, false))
-                .map_err(Refused::from);
-        }
         let schema = match schemas.held.entry(record_type) {
             Entry::Occupied(held) => held.into_mut(),
             Entry::Vacant(entry) => {
@@ -520,13 +514,10 @@ impl Board {
             }
             Err(_) => return Err(Refused::Code(Code::RepoUnreadable)),
         };
-        match Role::of(&schema_path).map(|role| role.classify(schema_bytes.as_deref())) {
-            Some(board_model::Classified {
-                content: Content::Schema { value },
-                code: None,
-            }) => Schema::compile(value).map_err(|_| Refused::Code(Code::SchemaInvalid)),
-            _ => Err(Refused::Code(Code::SchemaInvalid)),
-        }
+        verdict::judge(&classify(&schema_path, schema_bytes.as_deref()))
+            .ok()
+            .flatten()
+            .ok_or(Refused::Code(Code::SchemaInvalid))
     }
 
     /// What `check` finds wrong with `item`, just written at `display`,
@@ -542,7 +533,7 @@ impl Board {
         }
         let mut tally = Tally::default();
         for reference in &item.admitted.references {
-            let Ok((_, failure)) = judge::<Infallible>(
+            let Ok((_, failure)) = follow::<Infallible>(
                 &reference.path,
                 reference.accepts.as_deref(),
                 resolve(&reference.path),
@@ -580,7 +571,7 @@ pub enum Refused {
     #[error(transparent)]
     Schema(#[from] RecordError),
     #[error(transparent)]
-    Manifest(#[from] ManifestError),
+    Fault(#[from] Fault),
     #[error("it is empty")]
     Empty,
     #[error("it is not a json object")]
@@ -601,7 +592,7 @@ impl Refused {
         match self {
             Self::Json(error) => error.code(),
             Self::Schema(error) => error.code(),
-            Self::Manifest(error) => error.code(),
+            Self::Fault(fault) => fault.code(),
             Self::Empty => Code::JsonParse,
             Self::NotAnObject | Self::NoType => Code::PutInvalid,
             Self::UnknownType { .. } => Code::RecordUnknownType,
@@ -622,7 +613,7 @@ impl Refused {
                 ..Fields::default()
             },
             Self::Json(_)
-            | Self::Manifest(_)
+            | Self::Fault(_)
             | Self::Empty
             | Self::NotAnObject
             | Self::NoType
@@ -643,7 +634,7 @@ pub(crate) enum Failure {
 #[derive(Debug, thiserror::Error)]
 pub enum PutError {
     #[error("the record for {path} is refused{}", match refused {
-        Refused::Code(_) => String::new(),
+        Refused::Code(_) | Refused::Fault(Fault::Code(_)) => String::new(),
         _ => format!(": {refused}"),
     })]
     Record { path: LogicalPath, refused: Refused },

@@ -22,7 +22,7 @@ use board_tree::{
 };
 
 use crate::board::Board;
-use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, judge, unresolved};
+use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{
     Indexed, Kept, RefreshError, Refreshed, facts, schema_of, schema_path, transact,
 };
@@ -398,7 +398,7 @@ impl Decide<'_> {
         // failure, so `refs` can report each one.
         let mut tally = Tally::default();
         for reference in references {
-            let (location, failure) = judge(
+            let (location, failure) = follow(
                 &reference.target,
                 reference.accepts.as_deref(),
                 self.resolve(&reference.target),

@@ -8,25 +8,24 @@ use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_index::{BlobFact, Index, IndexError, RefFact, ValidationFact, WorktreeRow, Writer};
-use board_model::{
-    CONFIG_TYPE, Classified, Code, Content, MANIFEST_TYPE, MAX_RECORD_BYTES, ObjectId, Role,
-    Source, Stat,
-};
-use board_plugin::Manifest;
+use board_model::{Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, Role, Source, Stat};
 use board_tree::{Contents, Entry, GitError, Repository, Status, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
-use crate::board::{Board, Config};
+use crate::board::Board;
+use crate::verdict::{Fault, judge};
 
-/// The work a refresh did: files hashed, blobs parsed and records
-/// validated. Work-count tests assert these.
+/// The work a refresh did: files hashed, blobs parsed, schemas compiled and
+/// records validated. Work-count tests assert these.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Refreshed {
     /// Trees of `HEAD` listed.
     pub trees: usize,
     pub hashed: usize,
     pub parsed: usize,
+    /// Schemas compiled, whether or not they compiled.
+    pub compiled: usize,
     pub validated: usize,
     /// Whether it took the index's write lock.
     pub wrote: bool,
@@ -34,15 +33,17 @@ pub struct Refreshed {
     pub pruned: usize,
 }
 
-/// Parsed values from this refresh, so validation need not read them again.
-type Values = HashMap<(ObjectId, Role), Value>;
-
-/// What a walk learnt from the files it read in full, so `facts` need not
-/// open them again.
+/// What this refresh learnt from the blobs it read in full, so it need not
+/// read or compile them again.
 #[derive(Default)]
 pub(crate) struct Kept {
     facts: HashMap<(ObjectId, Role), BlobFact>,
-    values: Values,
+    /// Each record's parsed value.
+    values: HashMap<ObjectId, Value>,
+    /// Each schema compiled, or `None` when validation could not read it.
+    /// Only a schema with no code is asked for, so it always compiles.
+    schemas: HashMap<ObjectId, Option<Schema>>,
+    compiled: usize,
 }
 
 /// One entry's blob, the role its path gives it, and what the index holds
@@ -239,35 +240,57 @@ fn keep(
     if kept.facts.contains_key(&key) {
         return Ok(());
     }
-    let fact = if let Some(fact) = writer.blob(contents.blob, role)? {
-        fact
+    if let Some(fact) = writer.blob(contents.blob, role)? {
+        kept.facts.insert(key, fact);
     } else {
-        let (fact, value) = index_blob(writer, contents.blob, role, Some(&contents.bytes))?;
+        kept.index(writer, contents.blob, role, Some(&contents.bytes))?;
         *parsed += 1;
-        if let Some(value) = value {
-            kept.values.insert(key, value);
-        }
-        fact
-    };
-    kept.facts.insert(key, fact);
+    }
     Ok(())
 }
 
-/// Classifies the `bytes` of `blob` in `role`, or a blob too large to read,
-/// and stores what the index keeps of it. Returns that and the parsed value.
-fn index_blob(
-    writer: &Writer<'_>,
-    blob: ObjectId,
-    role: Role,
-    bytes: Option<&[u8]>,
-) -> Result<(BlobFact, Option<Value>), IndexError> {
-    let classified = role.classify(bytes);
-    let fact = blob_fact(&classified);
-    writer.put_blob(blob, role, &fact)?;
-    if let Content::Record { value, .. } = &classified.content {
-        writer.put_body(blob, value)?;
+impl Kept {
+    /// Classifies and judges the `bytes` of `blob` in `role`, or a blob too
+    /// large to read, stores what the index keeps of it and keeps the rest.
+    fn index(
+        &mut self,
+        writer: &Writer<'_>,
+        blob: ObjectId,
+        role: Role,
+        bytes: Option<&[u8]>,
+    ) -> Result<BlobFact, IndexError> {
+        let classified = role.classify(bytes);
+        let judged = self.judged(&classified);
+        let fact = BlobFact {
+            kind: classified.kind(),
+            record_type: match &classified.content {
+                Content::Record { record_type, .. } => Some(record_type.clone()),
+                _ => None,
+            },
+            code: judged.as_ref().err().map(Fault::code),
+        };
+        writer.put_blob(blob, role, &fact)?;
+        if let Content::Record { value, .. } = classified.content {
+            writer.put_body(blob, &value)?;
+            self.values.insert(blob, value);
+        }
+        // The same bytes in the reserved namespace are refused, and must not
+        // hide the schema they compile to elsewhere.
+        if let Ok(Some(schema)) = judged {
+            self.schemas.insert(blob, Some(schema));
+        }
+        self.facts.insert((blob, role), fact.clone());
+        Ok(fact)
     }
-    Ok((fact, value(classified)))
+
+    /// Judges `classified`, counting each schema it compiles.
+    fn judged(&mut self, classified: &Classified) -> Result<Option<Schema>, Fault> {
+        let judged = judge(classified);
+        if matches!(judged, Ok(Some(_)) | Err(Fault::Schema(_))) {
+            self.compiled += 1;
+        }
+        judged
+    }
 }
 
 /// What the index holds about each entry of `source` in `repository`,
@@ -280,19 +303,15 @@ pub(crate) fn facts(
     source: &Source,
     entries: &[Entry],
     work: &mut Refreshed,
-    kept: Kept,
+    mut kept: Kept,
 ) -> Result<(HashMap<String, Indexed>, HashSet<String>), RefreshError> {
-    let Kept {
-        facts: walked,
-        mut values,
-    } = kept;
     let mut facts: HashMap<String, Indexed> = HashMap::new();
     let mut changed = HashSet::new();
     for entry in entries {
         let (Some(blob), Some(role)) = (entry.blob, Role::of(&entry.path)) else {
             continue;
         };
-        let fact = if let Some(fact) = walked.get(&(blob, role)) {
+        let fact = if let Some(fact) = kept.facts.get(&(blob, role)) {
             fact.clone()
         } else if let Some(fact) = writer.blob(blob, role)? {
             fact
@@ -304,7 +323,7 @@ pub(crate) fn facts(
                 Ok(None) if entry.size > Some(MAX_RECORD_BYTES as u64) => (blob, None),
                 Ok(None) | Err(_) => continue,
             };
-            let (fact, value) = index_blob(writer, read, role, bytes.as_deref())?;
+            let fact = kept.index(writer, read, role, bytes.as_deref())?;
             work.parsed += 1;
             // A file that changed since the walk is left out of this run,
             // which reports it unreadable.
@@ -312,27 +331,25 @@ pub(crate) fn facts(
                 changed.insert(entry.path.clone());
                 continue;
             }
-            if let Some(value) = value {
-                values.insert((blob, role), value);
-            }
             fact
         };
         facts.insert(entry.path.clone(), Indexed { blob, role, fact });
     }
-    work.validated += validate_all(writer, repository, source, &facts, &values)?;
+    work.validated += validate_all(writer, repository, source, &facts, &mut kept)?;
+    work.compiled += kept.compiled;
     Ok((facts, changed))
 }
 
 /// Validates each record against its schema, unless the index already
-/// holds that pair, and returns how many it validated.
+/// holds that pair, and returns how many it validated. A schema this
+/// refresh did not compile is read and compiled once.
 fn validate_all(
     writer: &Writer<'_>,
     repository: &Repository,
     source: &Source,
     facts: &HashMap<String, Indexed>,
-    values: &Values,
+    kept: &mut Kept,
 ) -> Result<usize, RefreshError> {
-    let mut compiled: HashMap<ObjectId, Option<Schema>> = HashMap::new();
     let mut validated = 0;
     for (path, record) in facts {
         let Some(schema_path) = schema_path(record) else {
@@ -344,24 +361,20 @@ fn validate_all(
         if writer.validation(record.blob, schema)?.is_some() {
             continue;
         }
-        let Some(compiled) = compiled
-            .entry(schema)
-            .or_insert_with(|| {
-                known(
-                    values,
-                    repository,
-                    source,
-                    &schema_path,
-                    schema,
-                    Role::Schema,
-                )
-                .and_then(|value| Schema::compile(value).ok())
-            })
-            .as_ref()
-        else {
+        if !kept.schemas.contains_key(&schema) {
+            let compiled = match repository.read(source, &schema_path, schema) {
+                Ok(Some(contents)) => kept
+                    .judged(&Role::Schema.classify(Some(&contents.bytes)))
+                    .ok()
+                    .flatten(),
+                _ => None,
+            };
+            kept.schemas.insert(schema, compiled);
+        }
+        let Some(Some(compiled)) = kept.schemas.get(&schema) else {
             continue;
         };
-        let Some(value) = known(values, repository, source, path, record.blob, Role::Json) else {
+        let Some(value) = known(&kept.values, repository, source, path, record.blob) else {
             continue;
         };
         writer.put_validation(record.blob, schema, &validate(compiled, &value))?;
@@ -405,57 +418,22 @@ fn now_ns() -> i64 {
         })
 }
 
-/// What the index keeps of a classification. A schema that parses is also
-/// compiled, and Board's configuration and plugin manifests read, since
-/// whether each is usable depends on its bytes alone.
-fn blob_fact(classified: &Classified) -> BlobFact {
-    let code = classified.code.or_else(|| match &classified.content {
-        Content::Schema { value } => Schema::compile(value.clone())
-            .err()
-            .map(|error| error.code()),
-        Content::Record { record_type, value } if record_type.as_str() == CONFIG_TYPE => {
-            Config::from_value(value)
-                .is_none()
-                .then_some(Code::ConfigInvalid)
-        }
-        Content::Record { record_type, value } if record_type.as_str() == MANIFEST_TYPE => {
-            Manifest::from_value(value.clone())
-                .err()
-                .map(|error| error.code())
-        }
-        _ => None,
-    });
-    BlobFact {
-        kind: classified.kind(),
-        record_type: match &classified.content {
-            Content::Record { record_type, .. } => Some(record_type.clone()),
-            _ => None,
-        },
-        code,
-    }
-}
-
-fn value(classified: Classified) -> Option<Value> {
-    match classified.content {
-        Content::Record { value, .. } | Content::Schema { value } => Some(value),
-        _ => None,
-    }
-}
-
-/// The parsed value of a blob, from this build or read again.
+/// The parsed value of a record, from this refresh or read again.
 fn known(
-    values: &HashMap<(ObjectId, Role), Value>,
+    values: &HashMap<ObjectId, Value>,
     repository: &Repository,
     source: &Source,
     path: &str,
     blob: ObjectId,
-    role: Role,
 ) -> Option<Value> {
-    if let Some(value) = values.get(&(blob, role)) {
+    if let Some(value) = values.get(&blob) {
         return Some(value.clone());
     }
     let contents = repository.read(source, path, blob).ok()??;
-    value(role.classify(Some(&contents.bytes)))
+    match Role::Json.classify(Some(&contents.bytes)).content {
+        Content::Record { value, .. } => Some(value),
+        _ => None,
+    }
 }
 
 fn validate(schema: &Schema, record: &Value) -> ValidationFact {

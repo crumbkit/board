@@ -3,6 +3,7 @@
 use board_index::{BlobFact, Index};
 use board_model::{Code, Kind, Role, Source};
 use board_scenario::{Item, Scenario};
+use board_tree::Status;
 use serde_json::{Value, json};
 
 use crate::index::{Kept, Refreshed, facts, transact};
@@ -27,21 +28,36 @@ fn tasks() -> Scenario {
 }
 
 #[test]
-fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_once() {
+fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_and_compiles_each_schema_once() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
     // Eight files are hashed; board.json, two schemas, the project, and two
-    // distinct task blobs are parsed; notes.md is never read.
+    // distinct task blobs are parsed; notes.md is never read. Each schema
+    // validates the records of its type with the compilation that judged it.
     assert_eq!(
         build(&scenario, cache.path()),
         Refreshed {
             hashed: 8,
             parsed: 6,
+            compiled: 2,
             validated: 3,
             wrote: true,
             ..Refreshed::default()
         }
     );
+}
+
+#[test]
+fn a_schema_that_does_not_compile_is_compiled_once_and_validates_nothing() {
+    let scenario = tasks();
+    scenario.write(
+        ".board/types/lr/task/v1.schema.json",
+        Item::File(r#"{"type": 5}"#),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let work = build(&scenario, cache.path());
+    // Only the project is validated; no task asks for its schema again.
+    assert_eq!((work.compiled, work.validated), (2, 1));
 }
 
 /// How many files a snapshot of `scenario` in `cache` opens.
@@ -90,16 +106,18 @@ fn a_second_refresh_does_no_work() {
 }
 
 #[test]
-fn one_changed_record_hashes_one_file_parses_one_blob_and_validates_one_record() {
+fn one_changed_record_hashes_one_file_parses_one_blob_and_compiles_and_validates_once() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
     build(&scenario, cache.path());
     scenario.write("tasks/a.json", Item::File(&task(r#", "see": "/x""#)));
+    // The index holds the schema's fact, so it is compiled to validate the record.
     assert_eq!(
         build(&scenario, cache.path()),
         Refreshed {
             hashed: 1,
             parsed: 1,
+            compiled: 1,
             validated: 1,
             wrote: true,
             ..Refreshed::default()
@@ -121,6 +139,7 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
         Refreshed {
             hashed: 1,
             parsed: 1,
+            compiled: 1,
             validated: 2,
             wrote: true,
             ..Refreshed::default()
@@ -500,4 +519,33 @@ fn a_file_the_walk_saw_over_16_mib_is_too_large() {
 fn a_file_the_walk_saw_at_16_mib_that_grew_before_the_read_is_left_out() {
     let limit = board_model::MAX_RECORD_BYTES;
     assert_eq!(too_large_after(limit, limit + 1), None);
+}
+
+#[test]
+fn a_schema_copied_into_the_reserved_namespace_still_validates_the_records_of_its_own_type() {
+    for namespace in ["aa", "zz"] {
+        let scenario = board();
+        let record = format!(r#"{{"$type": "{namespace}/task/v1", "title": "t"}}"#);
+        scenario
+            .write(
+                &format!(".board/types/{namespace}/task/v1.schema.json"),
+                Item::File(TASK_SCHEMA),
+            )
+            .write(
+                ".board/types/board/task/v1.schema.json",
+                Item::File(TASK_SCHEMA),
+            )
+            .write("tasks/a.json", Item::File(&record));
+        let report = open(&scenario).check(None, None).unwrap();
+        let status = |path: &str| {
+            let entry = report.entries.iter().find(|entry| entry.path == path);
+            entry.unwrap().status
+        };
+        assert_eq!(status("tasks/a.json"), Status::Ok, "{namespace}");
+        assert_eq!(
+            status(".board/types/board/task/v1.schema.json"),
+            Status::Degraded(Code::SchemaInvalid),
+            "{namespace}"
+        );
+    }
 }

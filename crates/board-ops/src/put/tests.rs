@@ -242,6 +242,18 @@ fn a_refusal_names_what_is_wrong_with_the_record_and_its_twin_is_admitted() {
             format!("the record for /tasks/a is refused: {message}")
         );
     }
+    // A code alone says what is wrong, so the message adds nothing.
+    let config = |fields: &str| format!(r#"{{"$type": "board/config/v1"{fields}}}"#);
+    let error = open(&scenario)
+        .put(
+            &path("/tasks/a"),
+            Expect::Any,
+            config(r#", "colour": "red""#).as_bytes(),
+        )
+        .unwrap_err();
+    assert_eq!(error.code(), Code::ConfigInvalid);
+    assert_eq!(error.to_string(), "the record for /tasks/a is refused");
+    assert!(put(&scenario, "/tasks/c", Expect::Any, &config("")).is_ok());
     assert!(
         put(
             &scenario,

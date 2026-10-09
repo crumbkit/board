@@ -73,17 +73,17 @@ impl Tally {
 }
 
 /// Where a reference led, and its code and reason when it fails.
-pub(crate) type Judged = (Option<Location>, Option<(Code, String)>);
+pub(crate) type Followed = (Option<Location>, Option<(Code, String)>);
 
-/// Why a reference to `target` fails, if it does: it leads nowhere, or,
+/// Follows a reference to `target`, and says why it fails, if it does: it leads nowhere, or,
 /// when it `accepts` only some record types, to anything else. `type_of`
 /// gives the record type at a location.
-pub(crate) fn judge<E>(
+pub(crate) fn follow<E>(
     target: &LogicalPath,
     accepts: Option<&[RecordType]>,
     resolved: Result<Location, ResolveError>,
     type_of: impl FnOnce(&Location) -> Result<Option<RecordType>, E>,
-) -> Result<Judged, E> {
+) -> Result<Followed, E> {
     let location = match resolved {
         Err(error) => return Ok((None, Some((Code::RefDangling, error.to_string())))),
         Ok(location) => location,

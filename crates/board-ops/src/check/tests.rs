@@ -108,6 +108,7 @@ fn a_check_after_a_change_writes_what_changed() {
         Refreshed {
             hashed: 1,
             parsed: 1,
+            compiled: 1,
             validated: 1,
             wrote: true,
             ..Refreshed::default()
