@@ -98,14 +98,13 @@ impl Board {
                 code: code.to_owned(),
                 message,
             };
+            let refused = |refusal: Refusal| failed(refusal.code.as_str(), refusal.message);
             let found = match &installed {
                 Ok(installed) => installed
                     .iter()
                     .find(|installed| installed.name == name.as_str()),
                 Err(error) => {
-                    report
-                        .plugins
-                        .push(failed(error.code_text(), error.to_string()));
+                    report.plugins.push(refused(error.refusal()));
                     continue;
                 }
             };
@@ -135,18 +134,14 @@ impl Board {
             let database = match database(view.storage(), manifest) {
                 Ok(database) => database,
                 Err(error) => {
-                    report
-                        .plugins
-                        .push(failed(error.code_text(), error.to_string()));
+                    report.plugins.push(refused(error.refusal()));
                     continue;
                 }
             };
             if let Err(error) =
                 self.extract_into(&snapshot, manifest, directory, &database, plugins)
             {
-                report
-                    .plugins
-                    .push(failed(error.code_text(), error.to_string()));
+                report.plugins.push(refused(error.refusal()));
             }
             if database.fallback() {
                 report.fallbacks.push(name.clone());

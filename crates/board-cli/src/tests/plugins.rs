@@ -340,6 +340,32 @@ fn a_plugins_error_prints_as_its_own_code_with_its_stderr() {
 }
 
 #[test]
+fn a_plugin_that_fails_without_an_error_prints_boards_code_and_hint_then_its_stderr() {
+    let (board, data) = installed();
+    install(&data, "tasks", &answering("", 3));
+    let output = call(&board, &data, &["call", "tasks.due"], "{}");
+    assert_eq!(output.code, 1);
+    let stderr = text(&output.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(lines.len(), 3, "{stderr}");
+    assert!(
+        lines[0].starts_with("error: board::plugin::failed: "),
+        "{stderr}"
+    );
+    assert!(lines[1].starts_with("hint: "), "{stderr}");
+    assert_eq!(lines[2], "a log line");
+    let report = json(&call(&board, &data, &["--json", "call", "tasks.due"], "{}"));
+    assert_eq!(report["code"], "board::plugin::failed");
+    assert!(report["hint"].is_string());
+    assert_eq!(
+        report["fields"],
+        serde_json::json!({"plugin": "tasks", "stderr": "a log line\n"})
+    );
+    install(&data, "tasks", &answering(RESULT, 0));
+    assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
+}
+
+#[test]
 fn a_call_names_a_target_or_a_capability_but_not_both() {
     let (board, data) = installed();
     install(&data, "tasks", &answering(RESULT, 0));

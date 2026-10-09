@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use board_model::RefusalCode::{self, Board};
 use serde_json::json;
 
 use crate::installed::Installed;
@@ -88,13 +89,9 @@ fn names<T: FromStr<Err = NameError>>(names: &[&str]) -> Vec<T> {
 }
 
 /// The code, message and fields of the refusal `result` holds.
-fn refusal(result: Result<Chosen, CallError>) -> (Option<Code>, String, Value) {
-    let error = result.unwrap_err();
-    (
-        error.code(),
-        error.to_string(),
-        Value::Object(error.fields()),
-    )
+fn refusal(result: Result<Chosen, CallError>) -> (RefusalCode, String, Value) {
+    let refusal = result.unwrap_err().refusal();
+    (refusal.code, refusal.message, Value::Object(refusal.fields))
 }
 
 #[test]
@@ -119,7 +116,7 @@ fn a_capability_the_named_plugin_lacks_is_refused_listing_what_it_offers() {
             &"tasks.closed".parse().unwrap()
         )),
         (
-            Some(Code::PluginNotInstalled),
+            Board(Code::PluginNotInstalled),
             "plugin tasks has no capability closed; it offers due, open".to_owned(),
             json!({"plugin": "tasks", "capability": "closed", "offered": ["due", "open"]}),
         )
@@ -152,7 +149,7 @@ fn a_named_plugin_that_is_missing_or_not_enabled_is_refused_by_name() {
             &"notes.due".parse().unwrap()
         )),
         (
-            Some(Code::PluginNotInstalled),
+            Board(Code::PluginNotInstalled),
             "plugin notes is not installed".to_owned(),
             json!({"plugin": "notes"}),
         )
@@ -164,7 +161,7 @@ fn a_named_plugin_that_is_missing_or_not_enabled_is_refused_by_name() {
             &"tasks.due".parse().unwrap()
         )),
         (
-            Some(Code::PluginNotEnabled),
+            Board(Code::PluginNotEnabled),
             "plugin tasks is installed but this board does not enable it".to_owned(),
             json!({"plugin": "tasks"}),
         )
@@ -193,7 +190,7 @@ fn a_capability_offered_by_two_enabled_plugins_is_refused_naming_both() {
             &Target::Capability("due".parse().unwrap())
         )),
         (
-            Some(Code::PluginAmbiguous),
+            Board(Code::PluginAmbiguous),
             "capability due is offered by more than one enabled plugin: notes, tasks".to_owned(),
             json!({"capability": "due", "plugins": ["notes", "tasks"]}),
         )
@@ -221,7 +218,7 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
     assert_eq!(
         call("dues"),
         (
-            Some(Code::PluginNotInstalled),
+            Board(Code::PluginNotInstalled),
             "no installed plugin offers capability dues; the nearest is due".to_owned(),
             json!({"capability": "dues", "nearest": "due"}),
         )
@@ -229,7 +226,7 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
     assert_eq!(
         call("closed"),
         (
-            Some(Code::PluginNotInstalled),
+            Board(Code::PluginNotInstalled),
             "no installed plugin offers capability closed".to_owned(),
             json!({"capability": "closed"}),
         )
@@ -275,7 +272,7 @@ fn the_nearest_name_prefers_fewer_edits_then_the_first_in_order() {
 }
 
 /// The refusal of `input` by a capability whose input schema is `schema`.
-fn input_refusal(schema: &Value, input: &str) -> (Option<Code>, String, Value) {
+fn input_refusal(schema: &Value, input: &str) -> (RefusalCode, String, Value) {
     let chosen = choose(
         vec![plugin("tasks", &["due"], schema)],
         &names(&["tasks"]),
@@ -289,12 +286,10 @@ fn input_refusal(schema: &Value, input: &str) -> (Option<Code>, String, Value) {
         environment: &environment,
         limits: Limits::default(),
     };
-    let error = invoke(&chosen, input.as_bytes(), &context).unwrap_err();
-    (
-        error.code(),
-        error.to_string(),
-        Value::Object(error.fields()),
-    )
+    let refusal = invoke(&chosen, input.as_bytes(), &context)
+        .unwrap_err()
+        .refusal();
+    (refusal.code, refusal.message, Value::Object(refusal.fields))
 }
 
 #[test]
@@ -309,7 +304,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
     assert_eq!(
         input_refusal(&schema, "[]"),
         (
-            Some(Code::PluginBadInput),
+            Board(Code::PluginBadInput),
             r#"the input fails the capability's input schema at its root: [] is not of type "object""#
                 .to_owned(),
             json!({"capability": "due", "pointer": ""}),
@@ -318,7 +313,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
     assert_eq!(
         input_refusal(&schema, r#"{"before": 5}"#),
         (
-            Some(Code::PluginBadInput),
+            Board(Code::PluginBadInput),
             r#"the input fails the capability's input schema at "/before": 5 is not of type "string""#
                 .to_owned(),
             json!({"capability": "due", "pointer": "/before"}),
@@ -327,19 +322,242 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
     assert_eq!(
         input_refusal(&schema, r#"{"task": "/a//b"}"#),
         (
-            Some(Code::PluginBadInput),
+            Board(Code::PluginBadInput),
             r#"the input fails the capability's input schema at "/task": the reference is not a logical path"#
                 .to_owned(),
             json!({"capability": "due", "pointer": "/task"}),
         )
     );
     let (code, message, fields) = input_refusal(&schema, "{");
-    assert_eq!(code, Some(Code::PluginBadInput));
+    assert_eq!(code, Board(Code::PluginBadInput));
     assert!(
         message.starts_with("the input is not one strict JSON document: "),
         "{message}"
     );
     assert_eq!(fields, json!({"capability": "due"}));
     let admitted = input_refusal(&schema, r#"{"before": "2026-10-05", "task": "/a/b"}"#);
-    assert_eq!(admitted.0, Some(Code::PluginFailed), "{}", admitted.1);
+    assert_eq!(admitted.0, Board(Code::PluginFailed), "{}", admitted.1);
+}
+
+/// Asserts that Board refuses `error` with `code`, naming `fields`, with the
+/// hint `code` gives for the plugin and capability it names, and `stderr`.
+fn assert_refused(error: &CallError, code: Code, fields: &Value, stderr: &[u8]) {
+    let named = |key: &str| fields.get(key).and_then(Value::as_str).map(str::to_owned);
+    let hinted = Fields {
+        plugin: named("plugin"),
+        capability: named("capability"),
+        ..Fields::default()
+    };
+    assert_eq!(
+        error.refusal(),
+        Refusal {
+            code: RefusalCode::Board(code),
+            message: error.to_string(),
+            hint: Some(code.hint(&hinted)),
+            fields: fields.as_object().unwrap().clone(),
+            stderr: stderr.to_vec(),
+        },
+        "{error}"
+    );
+}
+
+fn tasks() -> PluginName {
+    "tasks".parse().unwrap()
+}
+
+fn due() -> CapabilityName {
+    "due".parse().unwrap()
+}
+
+#[test]
+fn a_call_board_refuses_before_choosing_a_capability_has_its_code_and_the_names_at_fault() {
+    let unreadable = DiscoveryError::Unreadable {
+        directory: PathBuf::from("plugins"),
+        source: std::io::Error::other("gone"),
+    };
+    let discovery = CallError::Discovery { source: unreadable };
+    assert_refused(&discovery, Code::PluginNotInstalled, &json!({}), b"");
+    let depth = CallError::BadDepth { text: "x".into() };
+    assert_refused(&depth, Code::PluginTooDeep, &json!({}), b"");
+    let deep = CallError::TooDeep { depth: 8 };
+    assert_refused(&deep, Code::PluginTooDeep, &json!({}), b"");
+    let missing = CallError::NotInstalled { plugin: tasks() };
+    assert_refused(
+        &missing,
+        Code::PluginNotInstalled,
+        &json!({"plugin": "tasks"}),
+        b"",
+    );
+    let lacking = CallError::NoCapability {
+        plugin: tasks(),
+        capability: due(),
+        offered: names(&["open"]),
+    };
+    let named = json!({"plugin": "tasks", "capability": "due", "offered": ["open"]});
+    assert_refused(&lacking, Code::PluginNotInstalled, &named, b"");
+    let near = CallError::NotOffered {
+        capability: due(),
+        nearest: Some("dew".parse().unwrap()),
+    };
+    let nearest = json!({"capability": "due", "nearest": "dew"});
+    assert_refused(&near, Code::PluginNotInstalled, &nearest, b"");
+    let far = CallError::NotOffered {
+        capability: due(),
+        nearest: None,
+    };
+    assert_refused(
+        &far,
+        Code::PluginNotInstalled,
+        &json!({"capability": "due"}),
+        b"",
+    );
+    let manifest = CallError::BadManifest {
+        plugin: tasks(),
+        source: ManifestError::Missing,
+    };
+    assert_refused(
+        &manifest,
+        Code::PluginBadManifest,
+        &json!({"plugin": "tasks"}),
+        b"",
+    );
+    let disabled = CallError::NotEnabled { plugin: tasks() };
+    assert_refused(
+        &disabled,
+        Code::PluginNotEnabled,
+        &json!({"plugin": "tasks"}),
+        b"",
+    );
+}
+
+#[test]
+fn a_call_board_refuses_before_the_plugin_runs_has_its_code_and_the_values_at_fault() {
+    let torn = CallError::InputJson {
+        capability: due(),
+        source: parse_json(b"{").unwrap_err(),
+    };
+    assert_refused(
+        &torn,
+        Code::PluginBadInput,
+        &json!({"capability": "due"}),
+        b"",
+    );
+    let malformed = CallError::Input {
+        capability: due(),
+        source: RecordError::MalformedReference {
+            pointer: "/task".to_owned(),
+        },
+    };
+    let at = json!({"capability": "due", "pointer": "/task"});
+    assert_refused(&malformed, Code::PluginBadInput, &at, b"");
+    let database = CallError::Database {
+        plugin: tasks(),
+        source: std::io::Error::other("gone"),
+    };
+    assert_refused(
+        &database,
+        Code::PluginFailed,
+        &json!({"plugin": "tasks"}),
+        b"",
+    );
+    let start = CallError::Start {
+        plugin: tasks(),
+        source: std::io::Error::other("gone"),
+    };
+    assert_refused(&start, Code::PluginFailed, &json!({"plugin": "tasks"}), b"");
+}
+
+#[test]
+fn a_call_board_refuses_after_the_plugin_ran_carries_its_stderr_and_names_it_in_its_fields() {
+    let log = b"a log line".to_vec();
+    let logged = json!({"plugin": "tasks", "stderr": "a log line"});
+    let slow = CallError::Timeout {
+        plugin: tasks(),
+        stderr: log.clone(),
+    };
+    assert_refused(&slow, Code::PluginTimeout, &logged, &log);
+    // A plugin that ran and wrote nothing to stderr still names it.
+    let large = CallError::TooLarge {
+        plugin: tasks(),
+        stderr: Vec::new(),
+    };
+    let quiet = json!({"plugin": "tasks", "stderr": ""});
+    assert_refused(&large, Code::PluginTooLarge, &quiet, b"");
+    let bad = CallError::BadOutput {
+        plugin: tasks(),
+        reason: BadOutput::Exit {
+            exit: 0,
+            written: "an error",
+        },
+        stderr: log.clone(),
+    };
+    assert_refused(&bad, Code::PluginBadOutput, &logged, &log);
+    let failed = CallError::Failed {
+        plugin: tasks(),
+        exit: Some(3),
+        stderr: log.clone(),
+    };
+    assert_refused(&failed, Code::PluginFailed, &logged, &log);
+}
+
+#[test]
+fn an_ambiguous_capabilitys_hint_names_the_first_plugin_and_its_fields_name_them_all() {
+    let refusal = CallError::Ambiguous {
+        capability: "due".parse().unwrap(),
+        plugins: names(&["notes", "tasks"]),
+    }
+    .refusal();
+    assert_eq!(refusal.code, Board(Code::PluginAmbiguous));
+    assert_eq!(
+        refusal.hint.as_deref(),
+        Some(
+            "name the plugin as well, as in `board call notes.due`; `board plugin find --capability due` lists the plugins that offer it"
+        )
+    );
+    assert_eq!(
+        Value::Object(refusal.fields),
+        json!({"capability": "due", "plugins": ["notes", "tasks"]})
+    );
+}
+
+#[test]
+fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_from_board() {
+    let tasks: PluginName = "tasks".parse().unwrap();
+    let error = br#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date", "fields": {"date": "x"}}"#;
+    let Ok(Reply::Error(failure)) = protocol::reply::<Value>(&tasks, error, CALL_RESULT_TYPE)
+    else {
+        panic!("the fixture is a plugin's error document");
+    };
+    let own = CallError::Plugin {
+        plugin: tasks.clone(),
+        failure,
+        stderr: b"a log line".to_vec(),
+    }
+    .refusal();
+    assert_eq!(
+        own,
+        Refusal {
+            stderr: b"a log line".to_vec(),
+            ..Refusal::plugin(
+                "tasks::date::bad".to_owned(),
+                "no such date".to_owned(),
+                json!({"date": "x", "plugin": "tasks"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        }
+    );
+    // Board's refusal of the same run has Board's code and hint, and names
+    // its stderr in its fields as well.
+    let board = CallError::Failed {
+        plugin: tasks,
+        exit: Some(1),
+        stderr: b"a log line".to_vec(),
+    }
+    .refusal();
+    assert_eq!(board.code, Board(Code::PluginFailed));
+    assert!(board.hint.is_some());
+    assert_eq!(board.stderr, b"a log line");
+    assert_eq!(board.fields["stderr"], "a log line");
 }

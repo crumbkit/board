@@ -5,7 +5,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use board_model::{Code, JsonError, parse_json};
+use board_model::{Code, Fields, JsonError, Refusal, parse_json};
 use board_validate::RecordError;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -498,111 +498,97 @@ fn exit_text(exit: Option<i32>) -> String {
 }
 
 impl CallError {
-    /// Board's code; `None` for the plugin's own refusal, whose code is in
-    /// [`CallError::code_text`].
-    pub fn code(&self) -> Option<Code> {
-        Some(match self {
-            Self::Discovery { source } => source.code(),
-            Self::BadDepth { .. } | Self::TooDeep { .. } => Code::PluginTooDeep,
-            Self::NotInstalled { .. } | Self::NoCapability { .. } | Self::NotOffered { .. } => {
-                Code::PluginNotInstalled
-            }
-            Self::BadManifest { .. } => Code::PluginBadManifest,
-            Self::NotEnabled { .. } => Code::PluginNotEnabled,
-            Self::Ambiguous { .. } => Code::PluginAmbiguous,
-            Self::InputJson { .. } | Self::Input { .. } => Code::PluginBadInput,
-            Self::Database { .. } | Self::Start { .. } | Self::Failed { .. } => Code::PluginFailed,
-            Self::Timeout { .. } => Code::PluginTimeout,
-            Self::TooLarge { .. } => Code::PluginTooLarge,
-            Self::BadOutput { .. } => Code::PluginBadOutput,
-            Self::Plugin { .. } => return None,
-        })
-    }
-
-    /// The code as `board/error/v1` spells it.
-    pub fn code_text(&self) -> &str {
-        match (self, self.code()) {
-            (Self::Plugin { failure, .. }, _) => failure.code.as_str(),
-            (_, Some(code)) => code.as_str(),
-            (_, None) => "",
-        }
-    }
-
-    /// The typed fields of `board/error/v1`: the plugin's own with `plugin`
-    /// added, or Board's, with the end of the plugin's stderr when it ran.
-    pub fn fields(&self) -> Map<String, Value> {
-        let mut fields = Map::new();
-        match self {
-            Self::Plugin {
-                failure, plugin, ..
-            } => {
-                fields.clone_from(&failure.fields);
-                fields.insert("plugin".to_owned(), json!(plugin));
-            }
-            Self::Ambiguous {
-                capability,
-                plugins,
-            } => {
-                fields.insert("capability".to_owned(), json!(capability));
-                fields.insert("plugins".to_owned(), json!(plugins));
-            }
-            Self::NoCapability {
-                plugin,
-                capability,
-                offered,
-            } => {
-                fields.insert("plugin".to_owned(), json!(plugin));
-                fields.insert("capability".to_owned(), json!(capability));
-                fields.insert("offered".to_owned(), json!(offered));
-            }
-            Self::NotOffered {
-                capability,
-                nearest,
-            } => {
-                fields.insert("capability".to_owned(), json!(capability));
-                if let Some(nearest) = nearest {
-                    fields.insert("nearest".to_owned(), json!(nearest));
-                }
-            }
-            Self::Input {
-                capability,
-                source:
-                    RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer },
-            } => {
-                fields.insert("capability".to_owned(), json!(capability));
-                fields.insert("pointer".to_owned(), json!(pointer));
-            }
-            Self::InputJson { capability, .. } => {
-                fields.insert("capability".to_owned(), json!(capability));
-            }
-            Self::BadManifest { plugin, .. }
-            | Self::NotInstalled { plugin }
-            | Self::Database { plugin, .. }
-            | Self::NotEnabled { plugin }
-            | Self::Start { plugin, .. }
-            | Self::Timeout { plugin, .. }
-            | Self::TooLarge { plugin, .. }
-            | Self::BadOutput { plugin, .. }
-            | Self::Failed { plugin, .. } => {
-                fields.insert("plugin".to_owned(), json!(plugin));
-            }
-            Self::Discovery { .. } | Self::BadDepth { .. } | Self::TooDeep { .. } => {}
-        }
-        if let (Some(stderr), false) = (self.stderr(), matches!(self, Self::Plugin { .. })) {
-            fields.insert("stderr".to_owned(), json!(String::from_utf8_lossy(stderr)));
-        }
-        fields
-    }
-
-    /// The end of the plugin's stderr, when it ran.
-    pub fn stderr(&self) -> Option<&[u8]> {
-        match self {
+    /// This error as `board/error/v1` reports it, with the end of the
+    /// plugin's stderr when it ran. The plugin's own refusal keeps its code
+    /// and fields, with `plugin` added, and has no hint from Board.
+    pub fn refusal(&self) -> Refusal {
+        let stderr = match self {
             Self::Timeout { stderr, .. }
             | Self::TooLarge { stderr, .. }
             | Self::BadOutput { stderr, .. }
             | Self::Failed { stderr, .. }
             | Self::Plugin { stderr, .. } => Some(stderr),
             _ => None,
+        };
+        let (mut extra, mut first, mut at) = (Map::new(), None, None);
+        let (code, plugin, capability) = match self {
+            Self::Plugin {
+                plugin, failure, ..
+            } => {
+                let mut fields = failure.fields.clone();
+                fields.insert("plugin".to_owned(), json!(plugin));
+                let (code, message) = (failure.code.as_str(), failure.message.clone());
+                return Refusal {
+                    stderr: stderr.cloned().unwrap_or_default(),
+                    ..Refusal::plugin(code.to_owned(), message, fields)
+                };
+            }
+            Self::Discovery { source } => (source.code(), None, None),
+            Self::BadDepth { .. } | Self::TooDeep { .. } => (Code::PluginTooDeep, None, None),
+            Self::NotInstalled { plugin } => (Code::PluginNotInstalled, Some(plugin), None),
+            Self::NoCapability {
+                plugin,
+                capability,
+                offered,
+            } => {
+                extra.insert("offered".to_owned(), json!(offered));
+                (Code::PluginNotInstalled, Some(plugin), Some(capability))
+            }
+            Self::NotOffered {
+                capability,
+                nearest,
+            } => {
+                if let Some(nearest) = nearest {
+                    extra.insert("nearest".to_owned(), json!(nearest));
+                }
+                (Code::PluginNotInstalled, None, Some(capability))
+            }
+            Self::BadManifest { plugin, .. } => (Code::PluginBadManifest, Some(plugin), None),
+            Self::NotEnabled { plugin } => (Code::PluginNotEnabled, Some(plugin), None),
+            Self::Ambiguous {
+                capability,
+                plugins,
+            } => {
+                extra.insert("plugins".to_owned(), json!(plugins));
+                first = plugins.first();
+                (Code::PluginAmbiguous, None, Some(capability))
+            }
+            Self::InputJson { capability, .. } => (Code::PluginBadInput, None, Some(capability)),
+            Self::Input {
+                capability,
+                source:
+                    RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer },
+            } => {
+                at = Some(pointer.clone());
+                (Code::PluginBadInput, None, Some(capability))
+            }
+            Self::Database { plugin, .. }
+            | Self::Start { plugin, .. }
+            | Self::Failed { plugin, .. } => (Code::PluginFailed, Some(plugin), None),
+            Self::Timeout { plugin, .. } => (Code::PluginTimeout, Some(plugin), None),
+            Self::TooLarge { plugin, .. } => (Code::PluginTooLarge, Some(plugin), None),
+            Self::BadOutput { plugin, .. } => (Code::PluginBadOutput, Some(plugin), None),
+        };
+        if let Some(stderr) = stderr {
+            extra.insert("stderr".to_owned(), json!(String::from_utf8_lossy(stderr)));
+        }
+        let fields = Fields {
+            plugin: plugin.map(ToString::to_string),
+            capability: capability.map(ToString::to_string),
+            pointer: at,
+            ..Fields::default()
+        };
+        let mut json = fields.json();
+        json.extend(extra);
+        // An ambiguous capability's hint shows a call naming the first plugin.
+        let hinted = Fields {
+            plugin: first.map(ToString::to_string).or(fields.plugin),
+            ..fields
+        };
+        Refusal {
+            fields: json,
+            stderr: stderr.cloned().unwrap_or_default(),
+            ..Refusal::new(code, self, &hinted)
         }
     }
 }

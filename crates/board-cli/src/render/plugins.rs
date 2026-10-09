@@ -2,12 +2,12 @@
 
 use std::fmt::Write as _;
 
-use board_model::{Fields, Refusal, canonical_json};
-use board_ops::{CallFailed, Called, Plugin, PluginFindReport, PluginListReport, PluginState};
+use board_model::canonical_json;
+use board_ops::{Called, Plugin, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{Capability, Manifest, PluginName};
 use serde_json::{Value, json};
 
-use super::{Format, Shown, document, refused};
+use super::{Format, Shown, document};
 use crate::report::Output;
 
 /// `plugin list`: as text, a line per plugin with its status, version,
@@ -285,31 +285,4 @@ pub(crate) fn temporary(mut output: Output, fallbacks: &[PluginName]) -> Output 
         );
     }
     output
-}
-
-/// A refused call, with its typed fields; as text, the end of the plugin's
-/// stderr follows the error. A plugin's own code has no hint from Board.
-pub(crate) fn call_error(format: Format, error: &CallFailed) -> Output {
-    let fields = error.fields();
-    let named = |name: &str| fields.get(name).and_then(Value::as_str).map(str::to_owned);
-    // An ambiguous capability's hint shows a call naming the first plugin.
-    let first = fields
-        .get("plugins")
-        .and_then(|plugins| plugins.get(0))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    let known = Fields {
-        plugin: named("plugin").or(first),
-        capability: named("capability"),
-        ..Fields::default()
-    };
-    let refusal = match error.code() {
-        Some(code) => Refusal {
-            fields,
-            ..Refusal::new(code, error, &known)
-        },
-        None => Refusal::plugin(error.code_text().to_owned(), error.to_string(), fields),
-    };
-    let stderr = error.stderr().unwrap_or_default().to_vec();
-    refused(format, &Refusal { stderr, ..refusal })
 }

@@ -20,7 +20,7 @@ mod page;
 mod plugins;
 
 use page::Shown;
-pub(crate) use plugins::{call, call_error, plugin_find, plugin_list, temporary};
+pub(crate) use plugins::{call, plugin_find, plugin_list, temporary};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {

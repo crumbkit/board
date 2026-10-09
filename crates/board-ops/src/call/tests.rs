@@ -3,7 +3,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use board_model::Code;
+use board_model::RefusalCode::Board;
+use board_model::{Code, RefusalCode};
 use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
@@ -120,8 +121,8 @@ impl Fixture {
     }
 
     /// The code of a refused call.
-    fn refused(&self, target: &str, input: &str) -> Code {
-        self.call(target, input).unwrap_err().code().unwrap()
+    fn refused(&self, target: &str, input: &str) -> RefusalCode {
+        self.call(target, input).unwrap_err().refusal().code
     }
 }
 
@@ -212,7 +213,7 @@ fn a_bare_program_name_is_found_through_path() {
         .write("plugins/tasks/plugin.json", Item::File(&missing));
     assert_eq!(
         fixture.refused("tasks.due", r#"{"n": 1}"#),
-        Code::PluginFailed
+        Board(Code::PluginFailed)
     );
 }
 
@@ -233,8 +234,8 @@ fn a_capability_two_enabled_plugins_offer_is_ambiguous() {
         .install("tasks", &["due"], RECORDING)
         .install("notes", &["due"], RECORDING);
     let error = fixture.call("--capability due", r#"{"n": 1}"#).unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginAmbiguous));
-    assert_eq!(error.fields()["plugins"], json!(["notes", "tasks"]));
+    assert_eq!(error.refusal().code, Board(Code::PluginAmbiguous));
+    assert_eq!(error.refusal().fields["plugins"], json!(["notes", "tasks"]));
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
 }
 
@@ -244,11 +245,11 @@ fn a_plugin_the_board_does_not_enable_is_not_called() {
     fixture.install("tasks", &["due"], RECORDING);
     assert_eq!(
         fixture.refused("tasks.due", r#"{"n": 1}"#),
-        Code::PluginNotEnabled
+        Board(Code::PluginNotEnabled)
     );
     assert_eq!(
         fixture.refused("--capability due", r#"{"n": 1}"#),
-        Code::PluginNotEnabled
+        Board(Code::PluginNotEnabled)
     );
     let fixture = Fixture::tasks(RECORDING);
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
@@ -261,7 +262,7 @@ fn a_plugin_or_capability_that_is_not_installed_is_refused() {
     for target in ["notes.due", "tasks.late", "--capability late"] {
         assert_eq!(
             fixture.refused(target, r#"{"n": 1}"#),
-            Code::PluginNotInstalled,
+            Board(Code::PluginNotInstalled),
             "{target}"
         );
     }
@@ -299,9 +300,9 @@ fn a_refusal_names_the_missing_plugin_or_capability_and_what_is_offered() {
         assert_eq!(error.to_string(), message, "{target}");
     }
     let error = fixture.call("tasks.dew", r#"{"n": 1}"#).unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginNotInstalled));
+    assert_eq!(error.refusal().code, Board(Code::PluginNotInstalled));
     assert_eq!(
-        Value::Object(error.fields()),
+        Value::Object(error.refusal().fields),
         json!({"plugin": "tasks", "capability": "dew", "offered": ["due"]})
     );
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
@@ -311,12 +312,12 @@ fn a_refusal_names_the_missing_plugin_or_capability_and_what_is_offered() {
 fn input_the_schema_refuses_is_reported_at_its_pointer() {
     let fixture = Fixture::tasks(RECORDING);
     let error = fixture.call("tasks.due", r#"{"n": "one"}"#).unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginBadInput));
+    assert_eq!(error.refusal().code, Board(Code::PluginBadInput));
     assert_eq!(
         error.to_string(),
         r#"the input fails the capability's input schema at "/n": "one" is not of type "integer""#
     );
-    assert_eq!(error.fields()["pointer"], "/n");
+    assert_eq!(error.refusal().fields["pointer"], "/n");
     let error = fixture.call("tasks.due", "{}").unwrap_err();
     assert_eq!(
         error.to_string(),
@@ -334,7 +335,7 @@ fn a_named_plugin_with_a_bad_manifest_is_refused_and_skipped_by_capability() {
         .write("plugins/broken/plugin.json", Item::File("{}"));
     assert_eq!(
         fixture.refused("broken.due", r#"{"n": 1}"#),
-        Code::PluginBadManifest
+        Board(Code::PluginBadManifest)
     );
     assert_eq!(
         fixture
@@ -361,7 +362,7 @@ fn a_plugin_shipping_an_unusable_schema_is_a_bad_manifest_and_a_usable_one_is_ca
         );
     assert_eq!(
         fixture.refused("tasks.due", r#"{"n": 1}"#),
-        Code::PluginBadManifest
+        Board(Code::PluginBadManifest)
     );
     fixture.data.write(
         "plugins/tasks/types/tasks/note/v1.schema.json",
@@ -376,7 +377,7 @@ fn input_that_is_not_strict_json_or_fails_the_schema_is_refused_before_the_plugi
     for input in ["{", r#"{"n": 1, "n": 2}"#, r#"{"n": "one"}"#, "{}"] {
         assert_eq!(
             fixture.refused("tasks.due", input),
-            Code::PluginBadInput,
+            Board(Code::PluginBadInput),
             "{input}"
         );
     }
@@ -389,11 +390,13 @@ fn a_plugins_own_error_is_reported_with_its_code_and_fields() {
     let error = r#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "the date 2026-13-01 is not a date", "fields": {"date": "2026-13-01"}}"#;
     let fixture = Fixture::tasks(&answering(error, 1));
     let refused = fixture.call("tasks.due", r#"{"n": 1}"#).unwrap_err();
-    assert_eq!(refused.code(), None);
-    assert_eq!(refused.code_text(), "tasks::date::bad");
+    assert_eq!(
+        refused.refusal().code,
+        RefusalCode::Plugin("tasks::date::bad".to_owned())
+    );
     assert_eq!(refused.to_string(), "the date 2026-13-01 is not a date");
     assert_eq!(
-        Value::Object(refused.fields()),
+        Value::Object(refused.refusal().fields),
         json!({"date": "2026-13-01", "plugin": "tasks"})
     );
 }
@@ -425,7 +428,7 @@ fn an_answer_board_cannot_accept_is_bad_output() {
         let fixture = Fixture::tasks(&answering(stdout, exit));
         assert_eq!(
             fixture.refused("tasks.due", r#"{"n": 1}"#),
-            Code::PluginBadOutput,
+            Board(Code::PluginBadOutput),
             "{stdout} exit {exit}"
         );
     }
@@ -439,14 +442,14 @@ fn a_plugin_that_exits_non_zero_without_an_error_document_failed() {
         let fixture = Fixture::tasks(&answering(stdout, exit));
         assert_eq!(
             fixture.refused("tasks.due", r#"{"n": 1}"#),
-            Code::PluginFailed,
+            Board(Code::PluginFailed),
             "{stdout} exit {exit}"
         );
     }
     let killed = "#!/bin/sh\nkill -9 $$\n";
     assert_eq!(
         Fixture::tasks(killed).refused("tasks.due", r#"{"n": 1}"#),
-        Code::PluginFailed
+        Board(Code::PluginFailed)
     );
 }
 
@@ -461,8 +464,8 @@ fn board_keeps_the_end_of_a_failed_plugins_stderr() {
     let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
-    assert_eq!(error.stderr(), Some(&b"the last line"[..]));
-    assert_eq!(error.fields()["stderr"], "the last line");
+    assert_eq!(error.refusal().stderr, b"the last line");
+    assert_eq!(error.refusal().fields["stderr"], "the last line");
 }
 
 #[test]
@@ -482,8 +485,8 @@ fn board_keeps_the_last_64_kib_of_stderr_by_default() {
             .call("tasks.due", r#"{"n": 1}"#)
             .unwrap_err();
         assert_eq!(
-            error.stderr(),
-            Some(&written[total.saturating_sub(limit)..]),
+            error.refusal().stderr,
+            written[total.saturating_sub(limit)..],
             "{total} bytes written"
         );
     }
@@ -501,7 +504,7 @@ fn a_plugin_past_its_time_limit_is_stopped() {
     let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginTimeout));
+    assert_eq!(error.refusal().code, Board(Code::PluginTimeout));
     assert!(ends(&written_pid(&fixture, "plugin.pid")));
     assert!(!fixture.plugin("tasks").join("finished.txt").exists());
     assert!(
@@ -526,7 +529,7 @@ fn a_grandchild_holding_the_pipes_cannot_keep_board_waiting_past_the_limit() {
     let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginTimeout));
+    assert_eq!(error.refusal().code, Board(Code::PluginTimeout));
     assert!(ends(&written_pid(&fixture, "grandchild.pid")));
     assert!(!fixture.plugin("tasks").join("finished.txt").exists());
 }
@@ -542,7 +545,7 @@ fn a_plugin_past_its_time_limit_is_asked_to_stop_what_it_started() {
     let error = fixture
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginTimeout));
+    assert_eq!(error.refusal().code, Board(Code::PluginTimeout));
     assert!(ends(&written_pid(&fixture, "grandchild.pid")));
 }
 
@@ -561,7 +564,7 @@ fn a_plugin_that_traps_sigterm_has_the_grace_period_to_finish_and_one_that_ignor
         let error = fixture
             .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
             .unwrap_err();
-        assert_eq!(error.code(), Some(Code::PluginTimeout));
+        assert_eq!(error.refusal().code, Board(Code::PluginTimeout));
         assert!(ends(&written_pid(&fixture, "plugin.pid")));
         let stopped = fixture.plugin("tasks").join("stopped.txt");
         assert_eq!(stopped.exists(), finished, "with the trap {action:?}");
@@ -585,8 +588,8 @@ fn a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it() {
             let wrapper = format!("a wrapper with {exec:?} of a program sleeping {seconds} s");
             if timeout {
                 assert_eq!(
-                    called.unwrap_err().code(),
-                    Some(Code::PluginTimeout),
+                    called.unwrap_err().refusal().code,
+                    Board(Code::PluginTimeout),
                     "{wrapper}"
                 );
                 assert!(ends(&written_pid(&fixture, "child.pid")), "{wrapper}");
@@ -614,7 +617,10 @@ fn a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started() {
         let called = fixture.call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits);
         let pid = written_pid(&fixture, "grandchild.pid");
         if timeout {
-            assert_eq!(called.unwrap_err().code(), Some(Code::PluginTimeout));
+            assert_eq!(
+                called.unwrap_err().refusal().code,
+                Board(Code::PluginTimeout)
+            );
             assert!(
                 ends(&pid),
                 "the grandchild of a plugin stopped past its limit"
@@ -713,7 +719,7 @@ fn a_plugin_writing_more_than_the_stdout_limit_is_stopped() {
     let error = Fixture::tasks(large)
         .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
         .unwrap_err();
-    assert_eq!(error.code(), Some(Code::PluginTooLarge));
+    assert_eq!(error.refusal().code, Board(Code::PluginTooLarge));
     assert!(
         Fixture::tasks(&answering(RESULT, 0))
             .call_with("tasks.due", r#"{"n": 1}"#, &environment(), limits)
@@ -731,8 +737,8 @@ fn a_call_nested_eight_deep_is_refused() {
     };
     for refused in ["8", "9", "x", "-1", ""] {
         assert_eq!(
-            at(refused).unwrap_err().code(),
-            Some(Code::PluginTooDeep),
+            at(refused).unwrap_err().refusal().code,
+            Board(Code::PluginTooDeep),
             "{refused:?}"
         );
     }

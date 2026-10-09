@@ -1,10 +1,14 @@
 use std::path::PathBuf;
 
+use board_index::IndexError;
+use board_model::{Code, Fields, Refusal, RefusalCode};
+use board_plugin::CallError;
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
+use crate::check::CheckError;
 use crate::tests::{TASK_SCHEMA, board, open, stand_in, task};
-use crate::{Plugins, QueryReport};
+use crate::{CallFailed, Plugins, QueryReport};
 
 /// Keeps each request as `requests/<n>.json`, answers an extraction by
 /// naming every blob it was sent, and a call with a count.
@@ -336,7 +340,7 @@ fn call_extracts_for_the_called_plugin_first_and_refuses_with_its_failure() {
     let error = open(&failing.board)
         .call(&target, b"{}", &plugins, Some(failing.cache.workdir()))
         .unwrap_err();
-    assert_eq!(error.code_text(), "board::plugin::failed");
+    assert_eq!(error.refusal().code.as_str(), "board::plugin::failed");
 }
 
 #[test]
@@ -394,4 +398,28 @@ fn batches_handled_before_a_failed_one_stay_handled() {
             vec!["/tasks/c"]
         ]
     );
+}
+
+#[test]
+fn a_call_that_fails_in_the_index_or_its_check_is_refused_with_boards_code_and_no_fields() {
+    let no_fields = |code, message| Refusal::new(code, message, &Fields::default());
+    assert_eq!(
+        CallFailed::from(IndexError::Foreign).refusal(),
+        no_fields(
+            Code::IndexFailed,
+            "a new index in memory reports another format"
+        )
+    );
+    assert_eq!(
+        CallFailed::from(CheckError::from(IndexError::Pruned)).refusal(),
+        no_fields(
+            Code::IndexFailed,
+            "another process pruned the index after this run built its views"
+        )
+    );
+    // A call refused before the index carries the call's own fields.
+    let plugin = "tasks".parse().unwrap();
+    let refused = CallFailed::from(CallError::NotEnabled { plugin }).refusal();
+    assert_eq!(refused.code, RefusalCode::Board(Code::PluginNotEnabled));
+    assert_eq!(Value::Object(refused.fields), json!({"plugin": "tasks"}));
 }

@@ -672,7 +672,7 @@ fn call(
     };
     match board.call(&target, &input, &plugins(context), context.cache.as_deref()) {
         Ok(report) => render::call(format, &report),
-        Err(error) => render::call_error(format, &error),
+        Err(error) => render::refused(format, &error.refusal()),
     }
 }
 

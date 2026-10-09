@@ -3,11 +3,10 @@
 use std::path::Path;
 
 use board_index::{IndexError, PluginDatabase, Storage};
-use board_model::{Code, RecordType, parse_json};
+use board_model::{Fields, RecordType, Refusal, parse_json};
 use board_plugin::{
     CallError, Context, Environment, Installed, Limits, Manifest, Record, extract, installed,
 };
-use serde_json::{Map, Value};
 
 use crate::board::Board;
 use crate::check::CheckError;
@@ -128,35 +127,13 @@ pub enum CallFailed {
 }
 
 impl CallFailed {
-    /// The code as `board/error/v1` spells it: Board's or the plugin's own.
-    pub fn code_text(&self) -> &str {
+    /// This failure as `board/error/v1` reports it: Board's code or the
+    /// plugin's own, with the end of the plugin's stderr when it ran.
+    pub fn refusal(&self) -> Refusal {
         match self {
-            Self::Call { source } => source.code_text(),
-            Self::Index { source } => source.code().as_str(),
-            Self::Check { source } => source.code().as_str(),
-        }
-    }
-
-    /// Board's code; `None` for a plugin's own refusal.
-    pub fn code(&self) -> Option<Code> {
-        match self {
-            Self::Call { source } => source.code(),
-            Self::Index { source } => Some(source.code()),
-            Self::Check { source } => Some(source.code()),
-        }
-    }
-
-    pub fn fields(&self) -> Map<String, Value> {
-        match self {
-            Self::Call { source } => source.fields(),
-            Self::Index { .. } | Self::Check { .. } => Map::new(),
-        }
-    }
-
-    pub fn stderr(&self) -> Option<&[u8]> {
-        match self {
-            Self::Call { source } => source.stderr(),
-            Self::Index { .. } | Self::Check { .. } => None,
+            Self::Call { source } => source.refusal(),
+            Self::Index { source } => Refusal::new(source.code(), source, &Fields::default()),
+            Self::Check { source } => source.refusal(),
         }
     }
 }
