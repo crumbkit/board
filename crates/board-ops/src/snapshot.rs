@@ -22,7 +22,9 @@ use board_tree::{
 };
 
 use crate::board::Board;
-use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
+use crate::check::{
+    CheckError, CheckReport, Checked, Detail, Failure, Tally, Wording, follow, unresolved,
+};
 use crate::index::{
     Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_type, transact,
 };
@@ -259,6 +261,7 @@ impl Decided {
                     pointer: fields.pointer,
                     reason: fault.to_string(),
                     failures: 1,
+                    wording: Wording::Reason,
                 };
                 (Some((fault.code(), Some(detail))), fields.schema)
             }
@@ -334,6 +337,7 @@ impl Decide<'_> {
                 pointer: None,
                 reason: format!("the file {READ_AGAIN}"),
                 failures: 1,
+                wording: Wording::Reason,
             };
             return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
         };
@@ -376,6 +380,7 @@ impl Decide<'_> {
                     pointer: None,
                     reason: format!("the record or its schema {READ_AGAIN}"),
                     failures: 1,
+                    wording: Wording::Reason,
                 };
                 return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
             }
@@ -390,6 +395,7 @@ impl Decide<'_> {
                     pointer,
                     reason,
                     failures,
+                    wording: Wording::Predicate,
                 };
                 return Ok(Ok(Some((code, Some(detail)))));
             }

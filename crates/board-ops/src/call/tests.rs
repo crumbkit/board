@@ -405,44 +405,41 @@ fn a_plugins_own_error_is_reported_with_its_code_and_fields() {
 fn an_answer_board_cannot_accept_is_bad_output() {
     let foreign = r#"{"$type": "board/error/v1", "code": "notes::date::bad", "message": "m"}"#;
     let own = r#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "m"}"#;
-    for (stdout, exit) in [
+    let schema_failure = r#"plugin tasks gave a bad answer: its output fails its schema at "/count": "two" is not of type "integer""#;
+    for (stdout, exit, message) in [
         (
             r#"{"$type": "board/call-result/v1", "output": {"count": "two"}}"#,
             0,
+            Some(schema_failure),
         ),
         (
             r#"{"$type": "board/call-result/v1", "output": {"count": 2}, "x": 1}"#,
             0,
+            None,
         ),
         (
             r#"{"$type": "board/call-result/v2", "output": {"count": 2}}"#,
             0,
+            None,
         ),
-        ("not json", 0),
-        ("", 0),
-        (own, 0),
-        (RESULT, 1),
-        (foreign, 1),
-        ("not json", 1),
+        ("not json", 0, None),
+        ("", 0, None),
+        (own, 0, None),
+        (RESULT, 1, None),
+        (foreign, 1, None),
+        ("not json", 1, None),
     ] {
         let fixture = Fixture::tasks(&answering(stdout, exit));
+        let error = fixture.call("tasks.due", r#"{"n": 1}"#).unwrap_err();
         assert_eq!(
-            fixture.refused("tasks.due", r#"{"n": 1}"#),
+            error.refusal().code,
             Board(Code::PluginBadOutput),
             "{stdout} exit {exit}"
         );
+        if let Some(message) = message {
+            assert_eq!(error.to_string(), message);
+        }
     }
-    let fixture = Fixture::tasks(&answering(
-        r#"{"$type": "board/call-result/v1", "output": {"count": "two"}}"#,
-        0,
-    ));
-    assert_eq!(
-        fixture
-            .call("tasks.due", r#"{"n": 1}"#)
-            .unwrap_err()
-            .to_string(),
-        r#"plugin tasks gave a bad answer: its output fails its schema at "/count": "two" is not of type "integer""#
-    );
     let fixture = Fixture::tasks(&answering(RESULT, 0));
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
 }

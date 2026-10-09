@@ -8,7 +8,8 @@ use std::fmt::Write as _;
 use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode, Source};
 use board_ops::{
     CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Listed, LsReport,
-    MAX_LIMIT, Missing, MountUpdateReport, PutReport, QueryReport, RefsReport, source_name,
+    MAX_LIMIT, Missing, MountUpdateReport, PutReport, QueryReport, RefsReport, Wording,
+    source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -188,11 +189,13 @@ pub(crate) fn plugin_enable(format: Format, report: &EnableReport) -> Output {
 
 /// Where and why an entry fails, to follow its path or code: ` at
 /// <pointer>: <reason>`, without `at` when the pointer is unknown or the
-/// record's root, and with a count of the other failures.
+/// record's root, or ` <reason>` when the reason is a predicate, and with a
+/// count of the other failures.
 fn detail_text(detail: &Detail) -> String {
-    let mut text = match detail.pointer.as_deref() {
-        None | Some("") => format!(": {}", detail.reason),
-        Some(pointer) => format!(" at {pointer}: {}", detail.reason),
+    let mut text = match (detail.wording, detail.pointer.as_deref()) {
+        (Wording::Predicate, _) => format!(" {}", detail.reason),
+        (Wording::Reason, None | Some("")) => format!(": {}", detail.reason),
+        (Wording::Reason, Some(pointer)) => format!(" at {pointer}: {}", detail.reason),
     };
     if detail.failures > 1 {
         let _ = write!(text, " (and {} more)", detail.failures - 1);

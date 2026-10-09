@@ -10,9 +10,9 @@ use board_tree::{GitError, LOCK_WAIT, ResolveError, Status};
 use serde_json::{Value, json};
 
 use crate::Board;
-use crate::Detail;
 use crate::put::{Expect, PutReport, Schemas};
 use crate::tests::{MANIFEST, open, task};
+use crate::{Detail, Wording};
 
 mod batch;
 mod parity;
@@ -285,7 +285,7 @@ fn a_record_its_schema_refuses_is_named_once_as_the_subject_and_its_twin_is_admi
         (
             task(r#", "see": "a//b""#),
             Code::RefMalformed,
-            r#"the record for /tasks/a holds a reference at "/see" that is not a logical path"#,
+            r#"the record for /tasks/a holds a reference at "/see": "a//b" is not a logical path"#,
         ),
     ] {
         let error = open(&scenario)
@@ -898,6 +898,7 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
         pointer: pointer.map(str::to_owned),
         reason: reason.to_owned(),
         failures,
+        wording: Wording::Reason,
     };
     assert_eq!(
         dangling,

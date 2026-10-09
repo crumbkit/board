@@ -105,7 +105,7 @@ fn a_failure_says_why_in_at_most_200_characters_and_counts_every_failure() {
     let wrong = json!({"title": 5});
     assert_eq!(
         schema.validate(&wrong).unwrap_err().reason(),
-        r#"5 is not of type "string""#
+        r#"fails its schema at "/title": 5 is not of type "string""#
     );
     assert_eq!(schema.failures(&wrong), 1);
     let long = json!({"title": ["x".repeat(300)]});
@@ -116,7 +116,7 @@ fn a_failure_says_why_in_at_most_200_characters_and_counts_every_failure() {
     let malformed = json!({"title": "t", "parent": "projects/p"});
     assert_eq!(
         schema.validate(&malformed).unwrap_err().reason(),
-        "it is not a logical path"
+        r#"holds a reference at "/parent": "projects/p" is not a logical path"#
     );
 }
 
@@ -139,7 +139,7 @@ fn a_failure_reads_as_a_predicate_for_its_caller_to_give_a_subject() {
         ),
         (
             json!({"title": "t", "parent": "projects/p"}),
-            r#"holds a reference at "/parent" that is not a logical path"#,
+            r#"holds a reference at "/parent": "projects/p" is not a logical path"#,
         ),
     ] {
         assert_eq!(
@@ -148,6 +148,18 @@ fn a_failure_reads_as_a_predicate_for_its_caller_to_give_a_subject() {
             "{record}"
         );
     }
+}
+
+#[test]
+fn a_string_that_fails_another_format_is_invalid_and_not_a_malformed_reference() {
+    let schema = Schema::compile(json!({
+        "type": "object",
+        "properties": {"due": {"type": "string", "format": "date"}},
+    }))
+    .unwrap();
+    assert!(schema.validate(&json!({"due": "2026-01-01"})).is_ok());
+    let error = schema.validate(&json!({"due": "2026-13-01"})).unwrap_err();
+    assert_eq!(error.code(), Code::RecordInvalid);
 }
 
 #[test]
@@ -177,7 +189,7 @@ fn a_reference_that_is_not_a_logical_path_is_malformed() {
         .unwrap_err();
     assert_eq!(error.code(), Code::RefMalformed);
     assert!(
-        matches!(error, RecordError::MalformedReference { ref pointer } if pointer == "/parent")
+        matches!(error, RecordError::MalformedReference { ref pointer, .. } if pointer == "/parent")
     );
     assert_eq!(
         error.fields(),

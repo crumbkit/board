@@ -460,15 +460,27 @@ fn a_degraded_entry_says_where_and_why_and_how_many_failures_it_has() {
     assert_eq!(detail(&scenario, "ok.json"), None);
     assert_eq!(
         detail(&scenario, "invalid.json"),
-        at("/see", r#"1 is not of type "string""#, 2)
+        at(
+            "/see",
+            r#"fails its schema at "/see": 1 is not of type "string""#,
+            2
+        )
     );
     assert_eq!(
         detail(&scenario, "missing.json"),
-        at("", r#""title" is a required property"#, 1)
+        at(
+            "",
+            r#"fails its schema at its root: "title" is a required property"#,
+            1
+        )
     );
     assert_eq!(
         detail(&scenario, "malformed.json"),
-        at("/project", "it is not a logical path", 1)
+        at(
+            "/project",
+            r#"holds a reference at "/project": "projects/p" is not a logical path"#,
+            1
+        )
     );
     assert_eq!(
         detail(&scenario, "dangling.json"),

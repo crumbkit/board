@@ -38,6 +38,17 @@ pub struct Detail {
     pub pointer: Option<String>,
     pub reason: String,
     pub failures: u64,
+    pub wording: Wording,
+}
+
+/// How text output joins a detail's reason to the entry it names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wording {
+    /// The reason follows the pointer, such as `nothing is at /x`.
+    Reason,
+    /// The reason is a predicate that names its own pointer, such as
+    /// `fails its schema at "/a": …`, and follows the entry directly.
+    Predicate,
 }
 
 /// An entry's code, with its detail when Board knows one.
@@ -61,6 +72,7 @@ impl Tally {
                 pointer: Some(pointer.to_owned()),
                 reason: reason.clone(),
                 failures: 0,
+                wording: Wording::Reason,
             };
             (*code, detail)
         });
@@ -139,6 +151,7 @@ pub(crate) fn unresolved(error: &ResolveError) -> (Code, Detail) {
         pointer: None,
         reason: error.to_string(),
         failures: 1,
+        wording: Wording::Reason,
     };
     (error.code(), detail)
 }

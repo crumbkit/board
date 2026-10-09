@@ -323,7 +323,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         input_refusal(&schema, r#"{"task": "/a//b"}"#),
         (
             Board(Code::PluginBadInput),
-            r#"the input to capability due holds a reference at "/task" that is not a logical path"#
+            r#"the input to capability due holds a reference at "/task": "/a//b" is not a logical path"#
                 .to_owned(),
             json!({"capability": "due", "pointer": "/task"}),
         )
@@ -447,6 +447,7 @@ fn a_call_board_refuses_before_the_plugin_runs_has_its_code_and_the_values_at_fa
         capability: due(),
         source: RecordError::MalformedReference {
             pointer: "/task".to_owned(),
+            value: "/a//b".to_owned(),
         },
     };
     let at = json!({"capability": "due", "pointer": "/task"});

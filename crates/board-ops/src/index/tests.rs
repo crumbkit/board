@@ -233,7 +233,7 @@ fn the_index_holds_each_validation_with_its_references_in_the_order_found() {
         [json!([
             "board::record::invalid",
             "",
-            "\"title\" is a required property",
+            "fails its schema at its root: \"title\" is a required property",
             1
         ])]
     );

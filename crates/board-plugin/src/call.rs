@@ -541,7 +541,8 @@ impl CallError {
             Self::Input {
                 capability,
                 source:
-                    RecordError::Invalid { pointer, .. } | RecordError::MalformedReference { pointer },
+                    RecordError::Invalid { pointer, .. }
+                    | RecordError::MalformedReference { pointer, .. },
             } => {
                 at = Some(pointer.clone());
                 (Code::PluginBadInput, None, Some(capability))

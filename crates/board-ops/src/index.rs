@@ -409,7 +409,7 @@ fn validate(schema: &Schema, record: &Value) -> ValidationFact {
             failures: schema.failures(record) as u64,
             pointer: match error {
                 board_validate::RecordError::Invalid { pointer, .. }
-                | board_validate::RecordError::MalformedReference { pointer } => pointer,
+                | board_validate::RecordError::MalformedReference { pointer, .. } => pointer,
             },
         },
     }

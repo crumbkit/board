@@ -76,7 +76,10 @@ impl Schema {
         let pointer = error.instance_path().to_string();
         match error.kind() {
             ValidationErrorKind::Format { format } if format == REFERENCE_FORMAT => {
-                Err(RecordError::MalformedReference { pointer })
+                Err(RecordError::MalformedReference {
+                    pointer,
+                    value: error.instance().as_str().unwrap_or_default().to_owned(),
+                })
             }
             _ => Err(RecordError::Invalid {
                 pointer,
@@ -150,20 +153,17 @@ pub enum RecordError {
         #[source]
         source: Box<ValidationError<'static>>,
     },
-    #[error("holds a reference at {pointer:?} that is not a logical path")]
-    MalformedReference { pointer: String },
+    #[error("holds a reference at {pointer:?}: {} is not a logical path", Value::from(value.as_str()))]
+    MalformedReference { pointer: String, value: String },
 }
 
 /// The most characters [`RecordError::reason`] gives.
 const MAX_REASON: usize = 200;
 
 impl RecordError {
-    /// Why the record fails, without where, cut to 200 characters.
+    /// The message, cut to 200 characters.
     pub fn reason(&self) -> String {
-        let reason = match self {
-            Self::Invalid { source, .. } => source.to_string(),
-            Self::MalformedReference { .. } => "it is not a logical path".to_owned(),
-        };
+        let reason = self.to_string();
         if reason.chars().count() <= MAX_REASON {
             return reason;
         }
@@ -181,7 +181,7 @@ impl RecordError {
 
     /// The JSON pointer that failed.
     pub fn fields(&self) -> Fields {
-        let (Self::Invalid { pointer, .. } | Self::MalformedReference { pointer }) = self;
+        let (Self::Invalid { pointer, .. } | Self::MalformedReference { pointer, .. }) = self;
         Fields {
             pointer: Some(pointer.clone()),
             ..Fields::default()

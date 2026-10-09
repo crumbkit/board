@@ -226,13 +226,18 @@ fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() 
         .write(
             "tasks/t9.json",
             Item::File(r#"{"$type": "lr/task/v1", "title": "t", "project": "/projects/p"}"#),
+        )
+        .write(
+            "tasks/t10.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": "t", "project": "a//b"}"#),
         );
     let output = board_in(scenario.workdir(), &["check"]);
     let lines = text(&output.stdout);
     for line in [
-        r#"degraded board::record::invalid /tasks/t5 at /title: 5 is not of type "string""#,
-        r#"degraded board::record::invalid /tasks/t6 at /project: 1 is not of type "string" (and 1 more)"#,
-        r#"degraded board::record::invalid /tasks/t7: "title" is a required property"#,
+        r#"degraded board::record::invalid /tasks/t5 fails its schema at "/title": 5 is not of type "string""#,
+        r#"degraded board::record::invalid /tasks/t6 fails its schema at "/project": 1 is not of type "string" (and 1 more)"#,
+        r#"degraded board::record::invalid /tasks/t7 fails its schema at its root: "title" is a required property"#,
+        r#"degraded board::ref::malformed /tasks/t10 holds a reference at "/project": "a//b" is not a logical path"#,
         "degraded board::ref::dangling /tasks/t8 at /project: nothing is at /nowhere",
         "ok /tasks/t9",
     ] {
@@ -253,7 +258,10 @@ fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() 
     };
     let t6 = entry("tasks/t6.json");
     assert_eq!(t6["pointer"], "/project");
-    assert_eq!(t6["reason"], r#"1 is not of type "string""#);
+    assert_eq!(
+        t6["reason"],
+        r#"fails its schema at "/project": 1 is not of type "string""#
+    );
     assert_eq!(t6["failures"], 2);
     let t9 = entry("tasks/t9.json");
     assert_eq!(t9.get("pointer"), None);

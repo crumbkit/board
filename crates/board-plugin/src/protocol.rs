@@ -161,3 +161,6 @@ pub enum BadOutput {
     #[error("it names blob {blob:?}, which it was not sent")]
     Unsent { blob: String },
 }
+
+#[cfg(test)]
+mod tests;
