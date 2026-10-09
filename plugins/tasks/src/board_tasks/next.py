@@ -77,10 +77,7 @@ def waiting_on(board: Board, path: str) -> dict[str, Place | None]:
         if location is None:
             targets.setdefault(outgoing["target"], None)
         else:
-            # `refs` names the working tree `working-tree` and a commit `{"commit": id}`; `records` names them
-            # `worktree` and the id.
-            source = location["source"]
-            place = ("worktree" if source == "working-tree" else source["commit"], location["path"])
+            place = (location["source"], location["path"])
             targets.setdefault(location["display"], place)
     return targets
 
