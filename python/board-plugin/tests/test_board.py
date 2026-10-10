@@ -25,9 +25,10 @@ def printing(monkeypatch: pytest.MonkeyPatch, stdout: bytes, code: int = 0, stde
     monkeypatch.setattr(Board, "_run", run)
 
 
-def report(rows: list[list[Any]], *, truncated: bool) -> bytes:
-    """A `board/query-report/v1` holding `rows`."""
-    return json.dumps({"$type": "board/query-report/v1", "rows": rows, "truncated": truncated}).encode()
+def report(rows: list[list[Any]], *, truncated: bool, plugins: list[dict[str, str]] | None = None) -> bytes:
+    """A `board/query-report/v1` holding `rows`, and `plugins` that failed."""
+    document = {"$type": "board/query-report/v1", "rows": rows, "truncated": truncated, "plugins": plugins or []}
+    return json.dumps(document).encode()
 
 
 def test_a_board_that_prints_no_json_is_a_failure_and_one_that_does_is_read(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,6 +65,50 @@ def test_a_truncated_query_is_refused_by_rows_and_reported_by_query(monkeypatch:
     assert refused.value.code == "demo::board::truncated"
     assert DEMO.query("SELECT 1") == ([[1]], True)
     printing(monkeypatch, report([[1]], truncated=False))
+    assert DEMO.rows("SELECT 1") == [[1]]
+
+
+def failed(plugin: str, code: str) -> bytes:
+    """A report of one row, listing `plugin` as failed with `code`."""
+    return report([[1]], truncated=False, plugins=[{"plugin": plugin, "code": code, "message": "it exited 3"}])
+
+
+def test_a_query_reporting_this_plugins_extraction_failed_is_refused_and_another_plugins_failure_is_not(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printing(monkeypatch, failed("demo", "board::plugin::failed"))
+    with pytest.raises(PluginError) as refused:
+        DEMO.rows("SELECT 1")
+    assert refused.value.code == "demo::board::refused"
+    assert refused.value.fields == {"code": "board::plugin::failed"}
+    assert refused.value.message == (
+        "`board query` refused with board::plugin::failed:"
+        " demo could not extract, so its rows may be stale: it exited 3"
+    )
+    printing(monkeypatch, failed("other", "board::plugin::failed"))
+    assert DEMO.rows("SELECT 1") == [[1]]
+
+
+def test_a_query_that_could_not_attach_this_plugins_database_is_read_and_its_extraction_failure_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printing(monkeypatch, failed("demo", "board::plugin::no_database"))
+    assert DEMO.rows("SELECT 1") == [[1]]
+    printing(monkeypatch, failed("demo", "board::plugin::timeout"))
+    with pytest.raises(PluginError) as refused:
+        DEMO.rows("SELECT 1")
+    assert (refused.value.code, refused.value.fields) == ("demo::board::refused", {"code": "board::plugin::timeout"})
+
+
+def test_a_query_report_without_a_list_of_plugins_is_a_failure_and_one_with_it_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    without = {"$type": "board/query-report/v1", "rows": [[1]], "truncated": False}
+    printing(monkeypatch, json.dumps(without).encode())
+    with pytest.raises(PluginError) as refused:
+        DEMO.rows("SELECT 1")
+    assert refused.value.code == "demo::board::failed"
+    printing(monkeypatch, json.dumps({**without, "plugins": []}).encode())
     assert DEMO.rows("SELECT 1") == [[1]]
 
 

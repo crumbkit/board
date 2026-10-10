@@ -6,7 +6,6 @@ use board_plugin::CallError;
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
-use crate::check::CheckError;
 use crate::tests::{TASK_SCHEMA, board, open, stand_in, task};
 use crate::{CallFailed, Plugins, QueryReport};
 
@@ -97,20 +96,24 @@ impl Fixture {
             .unwrap()
     }
 
-    /// Each extraction request the plugin received, in order.
-    fn extractions(&self) -> Vec<Value> {
+    /// Each request the plugin received, in order.
+    fn requests(&self) -> Vec<Value> {
         let directory = self.plugins().join("tasks/requests");
         let mut requests = Vec::new();
         for n in 0.. {
             let Ok(bytes) = std::fs::read(directory.join(format!("{n}.json"))) else {
                 break;
             };
-            let request: Value = serde_json::from_slice(&bytes).unwrap();
-            if request["$type"] == "board/extract/v1" {
-                requests.push(request);
-            }
+            requests.push(serde_json::from_slice(&bytes).unwrap());
         }
         requests
+    }
+
+    /// Each extraction request the plugin received, in order.
+    fn extractions(&self) -> Vec<Value> {
+        (self.requests().into_iter())
+            .filter(|request| request["$type"] == "board/extract/v1")
+            .collect()
     }
 
     /// The paths each extraction request held.
@@ -347,8 +350,17 @@ fn query_lists_a_plugin_whose_database_cannot_be_made_and_not_one_whose_can() {
     assert_eq!(failed_with_databases(false), []);
 }
 
+/// The names of the phases `board` traced, sorted, and how many plugin
+/// processes it started.
+fn traced(board: &crate::Board) -> (Vec<&'static str>, Option<usize>) {
+    let trace = board.take_trace();
+    let mut names: Vec<&str> = trace.phases.iter().map(|phase| phase.name).collect();
+    names.sort_unstable();
+    (names, trace.work.get("started").copied())
+}
+
 #[test]
-fn call_extracts_for_the_called_plugin_first_and_refuses_with_its_failure() {
+fn a_call_starts_only_its_plugin_and_takes_no_snapshot_while_a_query_extracts_each_batch() {
     let fixture = Fixture::new(EXTRACTING);
     let directory = fixture.plugins();
     let plugins = Plugins {
@@ -357,25 +369,36 @@ fn call_extracts_for_the_called_plugin_first_and_refuses_with_its_failure() {
             path: Some("/usr/bin:/bin".into()),
             ..board_plugin::Environment::default()
         },
-        limits: board_plugin::Limits::default(),
+        limits: board_plugin::Limits {
+            batch_records: 1,
+            ..board_plugin::Limits::default()
+        },
     };
     let target: board_plugin::Target = "tasks.due".parse().unwrap();
-    let called = open(&fixture.board)
+    let board = open(&fixture.board);
+    let called = board
         .call(&target, b"{}", &plugins, Some(fixture.cache.workdir()))
         .unwrap();
     assert_eq!(called.report.output, json!({}));
-    assert_eq!(fixture.sent(), [["/tasks/a", "/tasks/b"]]);
+    let types: Vec<Value> = (fixture.requests().iter())
+        .map(|request| request["$type"].clone())
+        .collect();
+    assert_eq!(types, [json!("board/call/v1")]);
+    assert_eq!(
+        traced(&board),
+        (vec!["index.open", "plugin.call", "plugin.reply"], Some(1))
+    );
 
-    let failing = Fixture::new("#!/bin/sh\ncat > /dev/null\nexit 3\n");
-    let directory = failing.plugins();
-    let plugins = Plugins {
-        directory: Some(&directory),
-        ..plugins
-    };
-    let error = open(&failing.board)
-        .call(&target, b"{}", &plugins, Some(failing.cache.workdir()))
-        .unwrap_err();
-    assert_eq!(error.refusal().code.as_str(), "board::plugin::failed");
+    let board = open(&fixture.board);
+    board
+        .query("SELECT 1", 1, Some(fixture.cache.workdir()), &plugins)
+        .unwrap();
+    assert_eq!(fixture.sent(), [["/tasks/a"], ["/tasks/b"]]);
+    let (phases, started) = traced(&board);
+    assert_eq!(started, Some(2), "one start for each batch");
+    for phase in ["snapshot", "view", "plugin.extract"] {
+        assert!(phases.contains(&phase), "{phases:?}");
+    }
 }
 
 #[test]
@@ -436,20 +459,13 @@ fn batches_handled_before_a_failed_one_stay_handled() {
 }
 
 #[test]
-fn a_call_that_fails_in_the_index_or_its_check_is_refused_with_boards_code_and_no_fields() {
+fn a_call_that_fails_in_the_index_is_refused_with_boards_code_and_no_fields() {
     let no_fields = |code, message| Refusal::new(code, message, &Fields::default());
     assert_eq!(
         CallFailed::from(IndexError::Foreign).refusal(),
         no_fields(
             Code::IndexFailed,
             "a new index in memory reports another format"
-        )
-    );
-    assert_eq!(
-        CallFailed::from(CheckError::from(IndexError::Pruned)).refusal(),
-        no_fields(
-            Code::IndexFailed,
-            "another process pruned the index after this run built its views"
         )
     );
     // A call refused before the index carries the call's own fields.

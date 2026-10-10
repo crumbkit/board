@@ -68,7 +68,8 @@ Board's code and hint.
 
 Both capabilities read the board through `board query`, `board refs` and
 `board get`, and only consider controls in the board's own working tree,
-not in mounted boards. The plugin extracts nothing and keeps no database.
+not in mounted boards. The plugin extracts nothing and writes nothing to the
+database Board gives it.
 
 ## Installing
 

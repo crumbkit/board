@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -9,7 +8,7 @@ use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
-use crate::tests::{TASK_SCHEMA, open, task};
+use crate::tests::open;
 use crate::{CallFailed, Phase, Plugins, Trace};
 
 /// Takes a number and answers it.
@@ -862,109 +861,4 @@ fn without_a_cache_the_database_is_a_temporary_file_for_the_run() {
     let database = PathBuf::from(request["board"]["database"].as_str().unwrap());
     assert!(database.ends_with("tasks@0.1.0.sqlite"));
     assert!(!database.parent().unwrap().exists(), "{database:?}");
-}
-
-/// A script that, asked to extract, records in `sent.json` the blobs it was
-/// sent and names them all as handled; called, it answers a count.
-const EXTRACTING: &str = r#"#!/bin/sh
-cat > request.json
-if grep -q '"board/extract/v1"' request.json; then
-  blobs=$(sed -n 's/^ *"blob": "\([0-9a-f]*\)",*$/"\1"/p' request.json | paste -s -d, -)
-  printf '[%s]' "$blobs" > sent.json
-  printf '{"$type": "board/extract-result/v1", "blobs": [%s]}' "$blobs"
-else
-  printf '%s' '{"$type": "board/call-result/v1", "output": {"count": 2}}'
-fi
-"#;
-
-#[test]
-fn a_call_from_a_warm_index_extracts_what_a_cold_one_would_after_a_change() {
-    let fixture = Fixture::tasks(EXTRACTING);
-    let manifest = fixture.plugin("tasks").join("plugin.json");
-    let mut manifest: Value = serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
-    manifest["extract"] = json!(["lr/task/v1"]);
-    fixture.data.write(
-        "plugins/tasks/plugin.json",
-        Item::File(&manifest.to_string()),
-    );
-    let unchanged = r#"{"$type": "lr/task/v1", "title": "b"}"#;
-    fixture
-        .board
-        .write(
-            ".board/types/lr/task/v1.schema.json",
-            Item::File(TASK_SCHEMA),
-        )
-        .write("tasks/a.json", Item::File(&task("")))
-        .write("tasks/b.json", Item::File(unchanged));
-    let blob = |text: &str| fixture.board.blob(text).to_string();
-    let sent = || {
-        let sent = fixture.plugin("tasks").join("sent.json");
-        let blobs: Vec<String> = serde_json::from_slice(&std::fs::read(&sent).unwrap()).unwrap();
-        fixture.data.write("plugins/tasks/sent.json", Item::Deleted);
-        blobs.into_iter().collect::<BTreeSet<String>>()
-    };
-    fixture.call("tasks.due", r#"{"n": 1}"#).unwrap();
-    let first = sent();
-    assert_eq!(first, BTreeSet::from([blob(&task("")), blob(unchanged)]));
-    let changed = task(r#", "see": "/nowhere""#);
-    fixture.board.write("tasks/a.json", Item::File(&changed));
-    fixture.call("tasks.due", r#"{"n": 1}"#).unwrap();
-    let warm = sent();
-    assert_eq!(
-        warm,
-        BTreeSet::from([blob(&changed)]),
-        "only the changed blob"
-    );
-    let directory = fixture.data.workdir().join("plugins");
-    let plugins = Plugins {
-        directory: Some(&directory),
-        environment: environment(),
-        limits: Limits::default(),
-    };
-    open(&fixture.board)
-        .call(
-            &"tasks.due".parse().unwrap(),
-            br#"{"n": 1}"#,
-            &plugins,
-            None,
-        )
-        .unwrap();
-    let cold = sent();
-    let in_tree = BTreeSet::from([blob(&changed), blob(unchanged)]);
-    let ever: BTreeSet<String> = first.union(&warm).cloned().collect();
-    assert_eq!(&ever & &in_tree, cold);
-}
-
-#[test]
-fn each_extraction_batch_and_the_call_count_as_one_plugin_start_with_one_reply() {
-    let fixture = Fixture::tasks(EXTRACTING);
-    let manifest = fixture.plugin("tasks").join("plugin.json");
-    let mut manifest: Value = serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
-    manifest["extract"] = json!(["lr/task/v1"]);
-    fixture.data.write(
-        "plugins/tasks/plugin.json",
-        Item::File(&manifest.to_string()),
-    );
-    fixture
-        .board
-        .write(
-            ".board/types/lr/task/v1.schema.json",
-            Item::File(TASK_SCHEMA),
-        )
-        .write("tasks/a.json", Item::File(&task("")))
-        .write(
-            "tasks/b.json",
-            Item::File(r#"{"$type": "lr/task/v1", "title": "b"}"#),
-        );
-    let limits = Limits {
-        batch_records: 1,
-        ..Limits::default()
-    };
-    let call = || {
-        let (called, trace) = fixture.traced("tasks.due", r#"{"n": 1}"#, &environment(), limits);
-        called.unwrap();
-        starts(&trace)
-    };
-    assert_eq!(call(), (Some(3), Some(3)), "two batches and the call");
-    assert_eq!(call(), (Some(1), Some(1)), "nothing is left to extract");
 }

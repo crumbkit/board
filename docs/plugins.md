@@ -179,10 +179,15 @@ only new ones, and forgets them when the plugin's database is new. If Board
 cannot read or make the database's id, it sends nothing that run. A plugin
 replaces its rows for a blob it receives again.
 
-Extraction runs in the refresh before `query`, for every enabled plugin, and
-before `call`, for the plugin called. It never runs before `check`, so `check`
-runs no plugin code. When a plugin fails, `query` still answers and lists it
-under `plugins` in its report, with its code; `call` refuses with that code.
+Extraction runs in the refresh before `query`, for every enabled plugin, and at
+no other time. `check` runs no plugin code, and `call` starts the plugin without
+extracting first. A plugin that reads its rows through `board query` reads them
+extracted from the tree that query refreshed. A plugin that opens its database
+directly sees what the last `query` extracted, which can be older. When the
+index is in memory, or opening it fell back, each run's database is a new
+temporary file, so such a plugin sees no rows at all. When a
+plugin fails, `query` still answers and lists it under `plugins` in its report,
+with its code.
 
 Extraction must be a pure function of one record's bytes. Anything that spans
 records, like "tasks blocked by an open task", is a query that joins the
@@ -215,7 +220,11 @@ Plugins are written in Python 3.12 or newer with uv, pydantic v2, ruff, pyright
 in strict mode and pytest (STANDARDS.md P1 to P6). Each plugin talks the
 protocol through the shared library in `python/board-plugin/`, which also
 runs `board`: Board's error becomes `<plugin>::board::refused`, carrying
-Board's code.
+Board's code. A `board query` whose report lists the plugin's own extraction as
+failed also becomes `<plugin>::board::refused`, carrying the failure's code, so
+the call fails. The client ignores another plugin's failure, and its own
+`board::plugin::no_database`, which means only that the database was not
+attached.
 
 Each plugin lives in `plugins/<name>/` in this repository, with its lockfile and
 a committed `plugin.json` that a test compares with the one its pydantic models

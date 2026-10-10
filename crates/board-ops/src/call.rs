@@ -17,8 +17,8 @@ pub struct Called {
 
 impl Board {
     /// Runs the capability `target` names with `input`, in an installed plugin
-    /// that this board enables, after extracting for it under the index kept
-    /// in `cache`.
+    /// that this board enables, with its database beside the index kept in
+    /// `cache`. It extracts nothing: the plugin's own `board query` does.
     pub fn call(
         &self,
         target: &Target,
@@ -32,18 +32,7 @@ impl Board {
         let database = database(index.storage(), &chosen.manifest)?;
         // The plugin may run `board query` or `board call`, which open the
         // same index; holding it past here would make them wait and fall back.
-        if chosen.manifest.extract.is_empty() {
-            drop(index);
-        } else {
-            let view = self.view(self.snapshot(index, None)?.decided)?;
-            self.extract_into(
-                &view,
-                &chosen.manifest,
-                &chosen.directory,
-                &database,
-                plugins,
-            )?;
-        }
+        drop(index);
         let _timed = self.timed("plugin.call");
         let spawned = RefCell::default();
         let report = board_plugin::invoke(

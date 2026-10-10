@@ -1,4 +1,4 @@
-//! Extraction before `query` and `call` (docs/plugins.md, Extraction).
+//! Extraction before `query` (docs/plugins.md, Extraction).
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -10,7 +10,6 @@ use board_plugin::{
 };
 
 use crate::board::Board;
-use crate::check::CheckError;
 
 /// Where plugins are installed, what they inherit and what a run may take.
 #[derive(Clone, Debug, Default)]
@@ -122,7 +121,7 @@ impl Board {
 }
 
 /// A call or extraction that failed: the plugin's or Board's refusal, or the
-/// index or check it needed.
+/// index it needed.
 #[derive(Debug, thiserror::Error)]
 pub enum CallFailed {
     #[error(transparent)]
@@ -135,11 +134,6 @@ pub enum CallFailed {
         #[from]
         source: IndexError,
     },
-    #[error(transparent)]
-    Check {
-        #[from]
-        source: CheckError,
-    },
 }
 
 impl CallFailed {
@@ -149,7 +143,6 @@ impl CallFailed {
         match self {
             Self::Call { source } => source.refusal(),
             Self::Index { source } => Refusal::new(source.code(), source, &Fields::default()),
-            Self::Check { source } => source.refusal(),
         }
     }
 }

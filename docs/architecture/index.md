@@ -63,8 +63,8 @@ Once the index has doubled in pages since its last prune or first refresh, a
 refresh that writes also prunes: it deletes the fact rows that neither the
 working tree, `HEAD`'s tree nor a mounted commit reaches, and gives the freed
 pages back. A query that another process prunes under runs again, at most
-three times. Under a concurrent prune, one `board call` can skip a record
-whose file changed after its refresh; the next call sends it.
+three times. Under a concurrent prune, one `board query` can skip extracting a
+record whose file changed after its refresh; the next query sends it.
 
 ## Commands that read it
 

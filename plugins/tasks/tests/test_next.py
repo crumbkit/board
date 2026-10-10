@@ -2,7 +2,9 @@
 
 import json
 import shutil
+import sqlite3
 import subprocess
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -121,3 +123,17 @@ def test_next_answers_the_same_from_a_cold_cache(board: Board) -> None:
     warm = call_next(board)
     shutil.rmtree(board.cache)
     assert call_next(board) == warm
+
+
+def test_a_call_whose_own_extraction_fails_is_refused_with_its_code_and_one_whose_extraction_works_answers(
+    board: Board,
+) -> None:
+    board.write("tasks/a.json", task("A"))
+    assert call_next(board)["total"] == 1
+    (database,) = board.cache.rglob("tasks@*.sqlite")
+    with closing(sqlite3.connect(database)) as connection, connection:
+        connection.execute("DROP TABLE tasks")
+        connection.execute("CREATE TABLE tasks (blob TEXT PRIMARY KEY)")
+    board.write("tasks/b.json", task("B"))
+    error = board.json("call", "tasks.next", stdin="{}")
+    assert (error["code"], error["fields"]["code"]) == ("tasks::board::refused", "board::plugin::failed"), error

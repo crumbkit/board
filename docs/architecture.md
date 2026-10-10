@@ -324,11 +324,11 @@ its run entered:
 | `open` | finding and opening the board |
 | `resolve` | resolving the path that `get`, `ls`, `refs` or a scoped `check` names |
 | `index.open` | opening the index |
-| `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query`, `refs`, and `call` when the plugin extracts records |
+| `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query` and `refs` |
 | `index.refresh` | the refresh, within `snapshot` |
-| `view` | filling the views with what the snapshot decided, for `query`, and `call` when the plugin extracts records |
+| `view` | filling the views with what the snapshot decided, for `query` |
 | `query.sql` | running the SQL statement |
-| `plugin.extract` | extracting records for one plugin |
+| `plugin.extract` | extracting records for one plugin, in `query` |
 | `plugin.call` | running a capability |
 | `plugin.reply` | from starting a plugin process to the first byte of its reply, once for each process that replied |
 | `put.validate` | checking a record before it is written |
@@ -336,11 +336,11 @@ its run entered:
 | `emit` | printing the output |
 
 `work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
-`trees`, `rows`, and `started`, the plugin processes a call or extraction
-started. Each extraction batch and each call starts one. `plugin.reply`
+`trees`, `rows`, and `started`, the plugin processes a call or a query's
+extraction started. Each extraction batch and each call starts one. `plugin.reply`
 includes the plugin's own work, such as the `board query` it runs, which
-records its own line one `depth` deeper. It also covers extraction batches, so
-on a cold call it sums their replies with the call's.
+records its own line one `depth` deeper. In a `query`, it sums the replies of
+the extraction batches.
 
 Before a line would take the log past 1 MiB, the log is renamed to
 `timings.jsonl.1`, replacing the one before. The rename takes no lock, so two

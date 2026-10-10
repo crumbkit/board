@@ -13,6 +13,8 @@ from board_plugin.protocol import PluginError
 
 # The most rows one query returns.
 LIMIT = 10_000
+# What a query report lists for a plugin whose database it could not attach.
+NO_DATABASE = "board::plugin::no_database"
 
 
 def literal(text: str) -> str:
@@ -49,11 +51,22 @@ class Board:
         return document
 
     def query(self, sql: str, limit: int = LIMIT) -> tuple[list[list[Any]], bool]:
-        """The rows of one `board query`, at most `limit`, and whether more were left out."""
+        """The rows of one `board query`, at most `limit`, and whether more were left out.
+
+        When the report lists this plugin's own extraction as failed, its rows
+        may be stale, so that is `<plugin>::board::refused` with the failure's
+        code. `board::plugin::no_database` is not an extraction failure: the
+        database was not attached, and a query that reads it fails on its own.
+        """
         report = self.document("query", "--limit", str(limit), sql)
-        rows, truncated = report.get("rows"), report.get("truncated")
-        if not isinstance(rows, list) or not isinstance(truncated, bool):
+        rows, truncated, plugins = report.get("rows"), report.get("truncated"), report.get("plugins")
+        if not isinstance(rows, list) or not isinstance(truncated, bool) or not isinstance(plugins, list):
             raise self._failed(("query",), None, "printed a report without rows")
+        for failed in cast("list[dict[str, Any]]", plugins):
+            code = failed.get("code")
+            if failed.get("plugin") == self.plugin and isinstance(code, str) and code != NO_DATABASE:
+                why = f"{self.plugin} could not extract, so its rows may be stale: {failed.get('message')}"
+                raise self._refused(("query",), code, why, None)
         return cast("list[list[Any]]", rows), truncated
 
     def rows(self, sql: str) -> list[list[Any]]:

@@ -84,8 +84,8 @@ impl Board {
         })
     }
 
-    /// Fills the index's views with what a snapshot decided, for a run that
-    /// reads them: `query`, and `call` when the plugin extracts records.
+    /// Fills the index's views with what a snapshot decided, for `query`,
+    /// the one run that reads them.
     pub(crate) fn view(&self, decided: Decided) -> Result<View, IndexError> {
         let _timed = self.timed("view");
         decided.view()
