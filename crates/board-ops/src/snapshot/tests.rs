@@ -42,17 +42,43 @@ fn filled(board: &crate::Board, index: Index) -> Filled {
 
 mod mounts;
 
-/// How many validations deciding `scenario` through the index in `cache`
-/// looks up.
-fn validations_read(scenario: &Scenario, cache: &std::path::Path) -> usize {
+/// How many validations and how many blob facts deciding `scenario`
+/// through the index in `cache` looks up.
+fn looked_up(scenario: &Scenario, cache: &std::path::Path) -> (usize, usize) {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
     let (read, _, _) = crate::index::transact(index, |writer| {
         let (_, entries) = board.decide(writer, None)?;
-        Ok((writer.validations_read(), entries))
+        Ok(((writer.validations_read(), writer.blobs_read()), entries))
     })
     .unwrap();
     read
+}
+
+/// How many validations deciding `scenario` through the index in `cache`
+/// looks up.
+fn validations_read(scenario: &Scenario, cache: &std::path::Path) -> usize {
+    looked_up(scenario, cache).0
+}
+
+/// How many blob facts a check of three tasks looks up, cold and then warm,
+/// when each task holds `fields`.
+fn blobs_read(fields: &str) -> [usize; 2] {
+    let scenario = board();
+    for name in ["a", "b", "c"] {
+        // Each task is distinct content, so each is one blob.
+        let fields = format!(r#", "note": "{name}"{fields}"#);
+        scenario.write(&format!("tasks/{name}.json"), Item::File(&task(&fields)));
+    }
+    let cache = tempfile::tempdir().unwrap();
+    [(); 2].map(|()| looked_up(&scenario, cache.path()).1)
+}
+
+#[test]
+fn following_a_reference_to_an_entry_of_the_board_looks_up_no_blob() {
+    let referring = blobs_read(r#", "project": "/projects/p""#);
+    let plain = blobs_read("");
+    assert_eq!(referring, plain, "[cold, warm] with and without references");
 }
 
 #[test]

@@ -237,3 +237,52 @@ fn getting_and_listing_through_a_mount_opens_the_mounted_repository_once() {
     }
     assert_eq!(board.repositories().opened(), 1);
 }
+
+/// A link type whose `task` field expects a task.
+const LINK_SCHEMA: &str = r#"{
+  "type": "object",
+  "properties": {
+    "task": {"type": "string", "format": "board-ref", "x-board-type": "lr/task/v1"}
+  }
+}"#;
+
+#[test]
+fn a_reference_into_a_mount_is_typed_by_the_mounted_record_and_not_the_root_entry_at_its_path() {
+    // The root and the library each hold `projects/p.json`, of different
+    // types. A reference into the library must read the library's.
+    let library = Scenario::new();
+    let commit = library.commit(&[
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ]);
+    let scenario = board();
+    scenario
+        .write(
+            ".board/types/lr/link/v1.schema.json",
+            Item::File(LINK_SCHEMA),
+        )
+        .write("projects/p.json", Item::File(&task("")))
+        .write(
+            "vendor/lib.json",
+            Item::File(&mount(&library.path(), commit)),
+        )
+        .write(
+            "ok.json",
+            Item::File(&task(r#", "project": "/vendor/lib/projects/p""#)),
+        )
+        .write(
+            "wrong.json",
+            Item::File(r#"{"$type": "lr/link/v1", "task": "/vendor/lib/projects/p"}"#),
+        );
+    let report = check(&scenario, None);
+    let status = |path: &str| -> Status {
+        report
+            .entries
+            .iter()
+            .find(|entry: &&Checked| entry.path == path)
+            .unwrap()
+            .status
+    };
+    assert_eq!(status("ok.json"), Status::Ok);
+    assert_eq!(status("wrong.json"), Status::Degraded(Code::RefWrongType));
+}

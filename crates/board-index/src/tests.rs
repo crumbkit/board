@@ -64,6 +64,16 @@ fn has_fact(index: Index) -> bool {
     writer.blob(blob(1), Role::Json).unwrap().is_some()
 }
 
+#[test]
+fn a_writer_counts_each_blob_lookup_whether_or_not_the_index_holds_the_blob() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    writer.put_blob(blob(1), Role::Json, &record()).unwrap();
+    assert_eq!(writer.blobs_read(), 0);
+    assert!(writer.blob(blob(1), Role::Json).unwrap().is_some());
+    assert!(writer.blob(blob(2), Role::Json).unwrap().is_none());
+    assert_eq!(writer.blobs_read(), 2);
+}
+
 /// Writes one blob fact to a new index file, then decides when `decided`
 /// or drops the writer otherwise. Returns whether the file then holds it.
 fn kept_after(decided: bool) -> bool {

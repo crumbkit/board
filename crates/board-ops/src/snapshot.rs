@@ -534,9 +534,10 @@ impl Decide<'_> {
         self.display(&root.display_path()?)
     }
 
-    /// The `$type` of the record at `location`: from the index when it
-    /// holds the blob, which is a fact about content wherever it is, or read
-    /// in its own board.
+    /// The `$type` of the record at `location`: from the facts the refresh
+    /// loaded when the entry at its path holds the same blob, else from the
+    /// index when it holds the blob, or read in its own board. A fact is
+    /// about content, so it holds wherever the blob is.
     fn record_type(&self, location: &Location) -> Result<Option<RecordType>, IndexError> {
         let Object::Blob(blob) = location.object else {
             return Ok(None);
@@ -544,8 +545,13 @@ impl Decide<'_> {
         let Some(role) = Role::of(&location.path) else {
             return Ok(None);
         };
-        let Some(fact) = self.writer.blob(blob, role)? else {
-            return Ok(read_type(self.repositories, location, blob));
+        let own = (self.facts.get(&location.path)).filter(|indexed| indexed.blob == blob);
+        let fact = match own {
+            Some(indexed) => indexed.fact.clone(),
+            None => match self.writer.blob(blob, role)? {
+                Some(fact) => fact,
+                None => return Ok(read_type(self.repositories, location, blob)),
+            },
         };
         Ok(match (fact.code, fact.kind) {
             (Some(_), _) => None,

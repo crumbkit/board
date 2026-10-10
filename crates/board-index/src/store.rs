@@ -134,6 +134,8 @@ pub struct Writer {
     index: Index,
     /// How many validations it has looked up.
     validations_read: Cell<usize>,
+    /// How many blob facts it has looked up.
+    blobs_read: Cell<usize>,
 }
 
 /// The index once a run has committed what it decided. It holds the entries
@@ -182,6 +184,7 @@ impl Index {
         Ok(Writer {
             index: self,
             validations_read: Cell::new(0),
+            blobs_read: Cell::new(0),
         })
     }
 }
@@ -242,6 +245,7 @@ impl Writer {
     }
 
     pub fn blob(&self, blob: ObjectId, role: Role) -> Result<Option<BlobFact>, IndexError> {
+        self.blobs_read.set(self.blobs_read.get() + 1);
         let row: Option<BlobRow> = self
             .connection()
             .prepare_cached(
@@ -354,6 +358,12 @@ impl Writer {
     /// tests assert it.
     pub fn validations_read(&self) -> usize {
         self.validations_read.get()
+    }
+
+    /// How many blob facts this transaction has looked up. Work-count tests
+    /// assert it.
+    pub fn blobs_read(&self) -> usize {
+        self.blobs_read.get()
     }
 
     pub fn put_validation(
