@@ -18,7 +18,7 @@ pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::Rows;
 pub use crate::schema::INDEX_VERSION;
 pub use crate::store::{
-    BlobFact, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
+    BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
 };
 pub use crate::timing::append_timing;
 

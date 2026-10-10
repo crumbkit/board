@@ -174,8 +174,10 @@ fn a_changed_schema_revalidates_exactly_the_records_of_its_type() {
 fn read(scenario: &Scenario, cache: &std::path::Path, sql: &str) -> Vec<Value> {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
-    let snapshot = board.snapshot(index, None).unwrap();
-    let rows = snapshot.view.query(sql, 10_000).unwrap().rows;
+    let view = board
+        .view(board.snapshot(index, None).unwrap().decided)
+        .unwrap();
+    let rows = view.query(sql, 10_000).unwrap().rows;
     rows.into_iter().map(Value::from).collect()
 }
 
@@ -432,20 +434,20 @@ fn retried(interfere: bool) -> (usize, bool, bool) {
     };
     let index = Index::open(Some(cache.path()), root).unwrap();
     let mut runs = 0;
-    let ((), wrote, view) = transact(index, |writer| {
+    let ((), wrote, decided) = transact(index, |writer| {
         runs += 1;
         writer.blob(blob(1), Role::Json)?;
         if interfere && runs == 1 {
             let other = Index::open(Some(cache.path()), root).unwrap();
             let other = other.write().unwrap();
             other.put_blob(blob(2), Role::Json, &fact).unwrap();
-            other.decide(&[]).unwrap();
+            other.decide(Vec::new()).unwrap();
         }
         writer.put_blob(blob(3), Role::Json, &fact)?;
         Ok(((), Vec::new()))
     })
     .unwrap();
-    (runs, wrote, matches!(view.storage(), Storage::File(_)))
+    (runs, wrote, matches!(decided.storage(), Storage::File(_)))
 }
 
 #[test]

@@ -118,8 +118,10 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     and returns the value the next step needs, so a call out of order does not
     compile. A step that needs an earlier value to stay held, such as a lock,
     borrows it instead. In `board-index`, `Index::write` returns a `Writer`,
-    `Writer::decide` consumes it and returns a `View`, and only a `View` reads
-    the views of the current entries; dropping a `Writer` rolls back. In
+    `Writer::decide` consumes it with the entries the run decided, commits
+    and returns a `Decided` holding them, `Decided::view` consumes that, fills
+    the views with them and returns a `View`, and only a `View` reads them;
+    dropping a `Writer` rolls back. In
     `board-tree`, `lock` returns a `Lock`, `stage_commit` borrows it and returns
     `Staged`, and `finish_commit` consumes `Staged`.
 

@@ -33,9 +33,9 @@ impl Board {
         if chosen.manifest.extract.is_empty() {
             drop(index);
         } else {
-            let snapshot = self.snapshot(index, None)?;
+            let view = self.view(self.snapshot(index, None)?.decided)?;
             self.extract_into(
-                &snapshot,
+                &view,
                 &chosen.manifest,
                 &chosen.directory,
                 &database,

@@ -80,7 +80,7 @@ impl Board {
     ) -> Result<QueryReport, QueryError> {
         let index = self.index(cache).map_err(QueryError::from)?;
         let snapshot = self.snapshot(index, None)?;
-        let view = &snapshot.view;
+        let view = &self.view(snapshot.decided)?;
         let mut report = QueryReport {
             columns: Vec::new(),
             rows: Vec::new(),
@@ -138,9 +138,7 @@ impl Board {
                     continue;
                 }
             };
-            if let Err(error) =
-                self.extract_into(&snapshot, manifest, directory, &database, plugins)
-            {
+            if let Err(error) = self.extract_into(view, manifest, directory, &database, plugins) {
                 report.plugins.push(refused(error.refusal()));
             }
             if database.fallback() {

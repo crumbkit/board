@@ -16,7 +16,29 @@ use crate::tests::{board, open, task};
 use crate::{CheckReport, Checked, Refreshed};
 use board_scenario::generated::{Generated, generated};
 
-use super::{Decide, Facts, Indexing, known, read_type};
+use super::{Decide, Facts, Indexing, Referenced, Snapshot, known, read_type};
+
+/// A snapshot with its views filled, as a query reads it.
+struct Filled {
+    view: View,
+    report: CheckReport,
+    references: Vec<Referenced>,
+}
+
+/// Decides every entry of `board` through `index` and fills the views.
+fn filled(board: &crate::Board, index: Index) -> Filled {
+    let Snapshot {
+        decided,
+        report,
+        references,
+        ..
+    } = board.snapshot(index, None).unwrap();
+    Filled {
+        view: board.view(decided).unwrap(),
+        report,
+        references,
+    }
+}
 
 mod mounts;
 
@@ -148,8 +170,8 @@ fn the_blobs_view_shows_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
         Item::File(&task(r#", "see": "/projects/p""#)),
     );
     let cold = Index::open(None, board.repository().path()).unwrap();
-    let warm = board.snapshot(warm(), None).unwrap();
-    let cold = board.snapshot(cold, None).unwrap();
+    let warm = filled(&board, warm());
+    let cold = filled(&board, cold);
     let count = |view: &View, sql: &str| view.query(sql, 1).unwrap().rows[0][0].clone();
     let seen = "SELECT count(*) FROM blobs";
     assert_eq!(count(&warm.view, seen), count(&cold.view, seen));
@@ -176,7 +198,7 @@ fn sorted(mut entries: Vec<Checked>) -> Vec<Checked> {
 fn prune(index: Index) -> usize {
     let writer = index.write().unwrap();
     let pruned = writer.prune().unwrap();
-    writer.decide(&[]).unwrap();
+    writer.decide(Vec::new()).unwrap();
     pruned
 }
 
@@ -187,8 +209,8 @@ fn prune(index: Index) -> usize {
 fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError> {
     let board = open(scenario);
     let cold = Index::open(None, board.repository().path()).unwrap();
-    let warm = board.snapshot(warm, None).unwrap();
-    let cold = board.snapshot(cold, None).unwrap();
+    let warm = filled(&board, warm);
+    let cold = filled(&board, cold);
     for snapshot in [&warm, &cold] {
         extract_everything(&snapshot.view);
         prop_assert_eq!(
@@ -221,12 +243,7 @@ fn warm_decides_as_cold(
     let cache = tempfile::tempdir().unwrap();
     let root = open(generated.scenario()).repository().path().to_path_buf();
     let warm = || Index::open(Some(cache.path()), &root).unwrap();
-    extract_everything(
-        &open(generated.scenario())
-            .snapshot(warm(), None)
-            .unwrap()
-            .view,
-    );
+    extract_everything(&filled(&open(generated.scenario()), warm()).view);
     generated.write(after);
 
     agrees(generated.scenario(), warm())?;
@@ -316,7 +333,7 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
     let cache = tempfile::tempdir().unwrap();
     let root = open(&scenario).repository().path().to_path_buf();
     let warm = || Index::open(Some(cache.path()), &root).unwrap();
-    let first = open(&scenario).snapshot(warm(), None).unwrap();
+    let first = filled(&open(&scenario), warm());
     assert_eq!(first.report.work.pruned, 0);
     assert_eq!(
         prunes(&first.view),
@@ -325,10 +342,10 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
     );
     drop(first);
     scenario.write("tasks/a.json", Item::File(replacement));
-    let second = open(&scenario).snapshot(warm(), None).unwrap();
+    let second = filled(&open(&scenario), warm());
     assert!(second.report.work.wrote);
     let cold = Index::open(None, &root).unwrap();
-    let cold = open(&scenario).snapshot(cold, None).unwrap();
+    let cold = filled(&open(&scenario), cold);
     let blobs = |view: &View| {
         let rows = view.query("SELECT count(*) FROM main.blobs", 1).unwrap();
         rows.rows[0][0].as_i64().unwrap()

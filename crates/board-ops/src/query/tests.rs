@@ -353,7 +353,7 @@ printf '{{"$type": "board/extract-result/v1", "blobs": [%s]}}' "$blobs"
                 if runs <= prunes {
                     let writer = second().write().unwrap();
                     writer.prune().unwrap();
-                    writer.decide(&[]).unwrap();
+                    writer.decide(Vec::new()).unwrap();
                 }
             }
             drop(resumed);

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use board_index::{DatabaseError, IndexError, PluginDatabase, Storage};
+use board_index::{DatabaseError, IndexError, PluginDatabase, Storage, View};
 use board_model::{Fields, RecordType, Refusal, parse_json};
 use board_plugin::{
     CallError, Context, Environment, Installed, Limits, Manifest, Record, extract, installed,
@@ -10,7 +10,6 @@ use board_plugin::{
 
 use crate::board::Board;
 use crate::check::CheckError;
-use crate::snapshot::Snapshot;
 
 /// Where plugins are installed, what they inherit and what a run may take.
 #[derive(Clone, Debug, Default)]
@@ -68,7 +67,7 @@ impl Board {
     /// database's id cannot be read or made, it sends nothing this run.
     pub(crate) fn extract_into(
         &self,
-        snapshot: &Snapshot,
+        view: &View,
         manifest: &Manifest,
         directory: &Path,
         database: &PluginDatabase,
@@ -79,7 +78,6 @@ impl Board {
             return Ok(());
         };
         let _timed = self.timed("plugin.extract");
-        let view = &snapshot.view;
         let (name, version) = (manifest.name.as_str(), manifest.version.as_str());
         view.trust(name, version, id)?;
         let types: Vec<&str> = manifest.extract.iter().map(RecordType::as_str).collect();

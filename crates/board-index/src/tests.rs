@@ -45,12 +45,18 @@ fn filled(cache: &Path) -> View {
         .write()
         .unwrap();
     writer.put_blob(blob(1), Role::Json, &record()).unwrap();
-    writer.decide(&[]).unwrap()
+    writer.decide(Vec::new()).unwrap().view().unwrap()
 }
 
 /// `index` once a writer has decided no entries.
 fn decided(index: Index) -> View {
-    index.write().unwrap().decide(&[]).unwrap()
+    index
+        .write()
+        .unwrap()
+        .decide(Vec::new())
+        .unwrap()
+        .view()
+        .unwrap()
 }
 
 fn has_fact(index: Index) -> bool {
@@ -66,7 +72,7 @@ fn kept_after(decided: bool) -> bool {
     let writer = open().write().unwrap();
     writer.put_blob(blob(1), Role::Json, &record()).unwrap();
     if decided {
-        drop(writer.decide(&[]).unwrap());
+        drop(writer.decide(Vec::new()).unwrap());
     } else {
         drop(writer);
     }
@@ -157,7 +163,7 @@ fn a_new_index_file_has_16_kib_pages_and_keeps_each_body_once_in_a_rowid_table()
     writer
         .put_body(blob(1), &serde_json::json!({"a": 1}))
         .unwrap();
-    drop(writer.decide(&[]).unwrap());
+    drop(writer.decide(Vec::new()).unwrap());
     let file = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
     let page_size: i64 = file
         .query_row("PRAGMA page_size", [], |row| row.get(0))
@@ -341,7 +347,7 @@ fn remount(
     writer
         .set_mounts(&[(source, Some(blob(3)), repository)], &mounts)
         .unwrap();
-    let index = writer.decide(&[]).unwrap().index;
+    let index = writer.decide(Vec::new()).unwrap().index;
     let (source, mounts) = mounting(then);
     let writer = index.deferred().unwrap();
     writer
@@ -414,7 +420,7 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
     assert_eq!(writer.validation(blob(1), blob(2)).unwrap(), Some(valid));
     assert_eq!(writer.validation(blob(3), blob(2)).unwrap(), Some(invalid));
     assert_eq!(writer.validation(blob(1), blob(4)).unwrap(), None);
-    writer.decide(&[]).unwrap();
+    writer.decide(Vec::new()).unwrap();
     let file = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
     let rows: Vec<Row> = file
         .prepare("SELECT record, code, pointer, reason, failures FROM validations ORDER BY record")
@@ -464,7 +470,7 @@ fn a_query_cannot_write_and_leaves_the_index_writable() {
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
     let writer = view.index.write().unwrap();
     writer.put_blob(blob(2), Role::Json, &record()).unwrap();
-    writer.decide(&[]).unwrap();
+    writer.decide(Vec::new()).unwrap();
 }
 
 #[test]

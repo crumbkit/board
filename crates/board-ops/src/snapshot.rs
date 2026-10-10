@@ -11,7 +11,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use board_index::{Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
+use board_index::{Decided, Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
 use board_model::{
     Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
     RecordType, Role, Source, Stat, classify,
@@ -32,11 +32,11 @@ use crate::verdict::{Fault, SchemaFound};
 /// first, then each mounted commit.
 pub(crate) type Walked = Vec<(Source, Vec<Entry>)>;
 
-/// What one run decided about every entry it checked, and the index whose
-/// views show exactly that.
+/// What one run decided about every entry it checked, and the index it
+/// committed, whose views can show exactly that.
 #[derive(Debug)]
 pub(crate) struct Snapshot {
-    pub(crate) view: View,
+    pub(crate) decided: Decided,
     pub(crate) report: CheckReport,
     /// Every reference each checked record makes, and where it led.
     pub(crate) references: Vec<Referenced>,
@@ -61,10 +61,10 @@ impl Board {
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let ((mut report, references, walked), wrote, view) =
+        let ((mut report, references, walked), wrote, decided) =
             transact(index, |writer| self.decide(writer, scope))?;
         report.work.wrote = wrote;
-        report.memory = match view.storage() {
+        report.memory = match decided.storage() {
             Storage::Memory(fallback) => Some(*fallback),
             Storage::File(_) => None,
         };
@@ -77,11 +77,18 @@ impl Board {
         trace.count("trees", work.trees);
         drop(trace);
         Ok(Snapshot {
-            view,
+            decided,
             report,
             references,
             walked,
         })
+    }
+
+    /// Fills the index's views with what a snapshot decided, for a run that
+    /// reads them: `query`, and `call` when the plugin extracts records.
+    pub(crate) fn view(&self, decided: Decided) -> Result<View, IndexError> {
+        let _timed = self.timed("view");
+        decided.view()
     }
 
     /// Decides each entry, and returns the report, the references, the
@@ -104,7 +111,7 @@ impl Board {
         let scopes = mounts.scopes(scope);
         let mut known = known(&refresh.entries, &mut work.hashed);
         let mut resolver = self.repositories().resolver(&mut known)?;
-        let mut decided = Decided::default();
+        let mut decided = Decisions::default();
         let root = Decide {
             repositories: self.repositories(),
             mounted: None,
@@ -196,7 +203,7 @@ fn known<'e>(
 /// What a run decided: the report's entries and the rows of `resolved`,
 /// built together so they cannot disagree.
 #[derive(Default)]
-struct Decided {
+struct Decisions {
     checked: Vec<Checked>,
     resolved: Vec<Resolved>,
     references: Vec<Referenced>,
@@ -221,7 +228,7 @@ pub(crate) struct Referenced {
     pub(crate) reached: Reached,
 }
 
-impl Decided {
+impl Decisions {
     /// Decides `entry` of `source`, named `logical` from the root.
     fn push(
         &mut self,

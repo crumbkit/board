@@ -6,7 +6,9 @@
 
 use std::collections::HashMap;
 
-use board_index::{BlobFact, Index, IndexError, RefFact, Resolved, ValidationFact, View, Writer};
+use board_index::{
+    BlobFact, Decided, Index, IndexError, RefFact, Resolved, ValidationFact, Writer,
+};
 use board_model::{
     Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
 };
@@ -152,16 +154,16 @@ pub(crate) type Run<T> = Result<(T, Vec<Resolved>), RefreshError>;
 
 /// Runs `run` in a transaction that takes the write lock only when it
 /// writes, so that runs finding nothing changed do not wait on each other,
-/// then decides the entries it returned. Returns what it returned, whether
-/// it wrote, and the view of what it decided. If another process holds the
-/// lock or wrote first, it runs again in a transaction that waits for the
-/// lock, or in an index in memory if the wait runs out, as opening does.
-/// The second run cannot be busy: it holds the write lock from its start,
-/// and in WAL mode, which opening requires of a file, nothing else blocks it.
+/// then commits. Returns what it returned, whether it wrote, and the index
+/// decided, holding the entries it decided. If another process holds the lock or
+/// wrote first, it runs again in a transaction that waits for the lock, or
+/// in an index in memory if the wait runs out, as opening does. The second
+/// run cannot be busy: it holds the write lock from its start, and in WAL
+/// mode, which opening requires of a file, nothing else blocks it.
 pub(crate) fn transact<T>(
     index: Index,
     mut run: impl FnMut(&Writer) -> Run<T>,
-) -> Result<(T, bool, View), RefreshError> {
+) -> Result<(T, bool, Decided), RefreshError> {
     let writer = index.deferred()?;
     let first = run(&writer);
     let (writer, result) = if busy(&first) {
@@ -176,7 +178,7 @@ pub(crate) fn transact<T>(
     };
     let (value, entries) = result?;
     let wrote = writer.wrote()?;
-    Ok((value, wrote, writer.decide(&entries)?))
+    Ok((value, wrote, writer.decide(entries)?))
 }
 
 /// Whether `result` failed because another process held the index.

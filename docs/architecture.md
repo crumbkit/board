@@ -326,6 +326,7 @@ its run entered:
 | `index.open` | opening the index |
 | `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query`, `refs`, and `call` when the plugin extracts records |
 | `index.refresh` | the refresh, within `snapshot` |
+| `view` | filling the views with what the snapshot decided, for `query`, and `call` when the plugin extracts records |
 | `query.sql` | running the SQL statement |
 | `plugin.extract` | extracting records for one plugin |
 | `plugin.call` | running a capability |

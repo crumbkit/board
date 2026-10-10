@@ -126,7 +126,7 @@ fn counts(index: &Index) -> Vec<(String, i64)> {
 fn filled_with(index: Index, unreachable: bool) -> (Index, usize) {
     let writer = index.write().unwrap();
     let mut rows = stored(&writer, unreachable);
-    let view = writer.decide(&[]).unwrap();
+    let view = writer.decide(Vec::new()).unwrap().view().unwrap();
     let mut handled = vec![blob(1), blob(4)];
     if unreachable {
         handled.push(blob(3));
@@ -141,7 +141,7 @@ fn filled_with(index: Index, unreachable: bool) -> (Index, usize) {
 fn prune(index: Index) -> (Index, usize) {
     let writer = index.write().unwrap();
     let pruned = writer.prune().unwrap();
-    (writer.decide(&[]).unwrap().index, pruned)
+    (writer.decide(Vec::new()).unwrap().index, pruned)
 }
 
 fn memory() -> Index {
@@ -199,7 +199,7 @@ fn state(index: &Index, key: &str) -> Option<String> {
 fn prune_if_doubled(index: Index) -> (Index, usize) {
     let writer = index.write().unwrap();
     let pruned = writer.prune_if_doubled().unwrap();
-    (writer.decide(&[]).unwrap().index, pruned)
+    (writer.decide(Vec::new()).unwrap().index, pruned)
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
     let writer = index.write().unwrap();
     let large = serde_json::json!({ "text": "x".repeat(400_000) });
     writer.put_body(blob(9), &large).unwrap();
-    let index = writer.decide(&[]).unwrap().index;
+    let index = writer.decide(Vec::new()).unwrap().index;
     let full = pages(&index);
     let (index, _) = prune(index);
     let free: i64 = index
@@ -271,7 +271,7 @@ fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError>
     let (first, _) = filled_with(first, true);
     let writer = first.write().unwrap();
     let first = writer
-        .decide(&[Resolved {
+        .decide(vec![Resolved {
             source: Source::WorkingTree,
             path: "c.json".into(),
             logical: None,
@@ -283,6 +283,8 @@ fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError>
             code: None,
             change: Change::Uncommitted,
         }])
+        .unwrap()
+        .view()
         .unwrap();
     let second = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = second.write().unwrap();
@@ -291,7 +293,7 @@ fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError>
     } else {
         writer.put_blob(blob(6), Role::Json, &record()).unwrap();
     }
-    writer.decide(&[]).unwrap();
+    writer.decide(Vec::new()).unwrap();
     first.query("SELECT type, status FROM entries", 10)
 }
 

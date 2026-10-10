@@ -132,6 +132,32 @@ mod tests {
         assert_eq!(board.take_trace(), Trace::default());
     }
 
+    /// The names of the phases `run` enters on a fresh board.
+    fn phases_of(run: impl Fn(&crate::Board)) -> Vec<&'static str> {
+        let scenario = crate::tests::board();
+        let board = crate::tests::open(&scenario);
+        run(&board);
+        let trace = board.take_trace();
+        let mut names: Vec<&str> = trace.phases.iter().map(|phase| phase.name).collect();
+        names.sort_unstable();
+        names
+    }
+
+    #[test]
+    fn a_query_fills_the_views_of_what_it_decided_and_a_check_does_not() {
+        let plugins = crate::Plugins::default();
+        let query = phases_of(|board| {
+            board
+                .query("SELECT count(*) FROM entries", 1, None, &plugins)
+                .unwrap();
+        });
+        assert!(query.contains(&"view"), "{query:?}");
+        let check = phases_of(|board| {
+            board.check(None, None).unwrap();
+        });
+        assert!(!check.contains(&"view"), "{check:?}");
+    }
+
     #[test]
     fn counts_of_one_name_add_up_and_extending_appends_phases_and_counts() {
         let mut trace = Trace::default();

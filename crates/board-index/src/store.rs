@@ -136,8 +136,22 @@ pub struct Writer {
     validations_read: Cell<usize>,
 }
 
-/// The index once a run has decided its entries. Only a view reads the
-/// `entries` and `records` views, which show what was decided.
+/// The index once a run has committed what it decided. It holds the entries
+/// the run decided, and only [`Decided::view`] fills the views with them, so
+/// a run that reports from its own entries, as `check` and `ls` do, never
+/// pays for the fill.
+#[derive(Debug)]
+pub struct Decided {
+    pub(crate) index: Index,
+    /// The prune count the run decided under.
+    prunes: i64,
+    /// The entries the run decided, which [`Decided::view`] fills the views
+    /// with.
+    entries: Vec<Resolved>,
+}
+
+/// The index once its views are filled with what a run decided. Only a view
+/// reads them.
 #[derive(Debug)]
 pub struct View {
     pub(crate) index: Index,
@@ -168,6 +182,46 @@ impl Index {
         Ok(Writer {
             index: self,
             validations_read: Cell::new(0),
+        })
+    }
+}
+
+impl Decided {
+    pub fn storage(&self) -> &Storage {
+        self.index.storage()
+    }
+
+    /// Fills the views with the entries this run decided, and returns the
+    /// index as a view of them.
+    pub fn view(self) -> Result<View, IndexError> {
+        let connection = &self.index.connection;
+        // One transaction, so the inserts commit together.
+        let fill = connection.unchecked_transaction()?;
+        fill.execute_batch(RESOLVED)?;
+        let mut statement = fill.prepare_cached(
+            "INSERT INTO temp.resolved
+             (source, path, logical, blob, size, role, schema, kind, code, change)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )?;
+        for entry in &self.entries {
+            statement.execute(params![
+                source_name(&entry.source),
+                entry.path,
+                entry.logical.as_ref().map(ToString::to_string),
+                entry.blob.map(|blob| blob.to_string()),
+                entry.size.map(u64::cast_signed),
+                entry.role.map(Role::as_str),
+                entry.schema.map(|schema| schema.to_string()),
+                entry.kind.as_str(),
+                entry.code.map(Code::as_str),
+                entry.change.as_str(),
+            ])?;
+        }
+        drop(statement);
+        fill.commit()?;
+        Ok(View {
+            index: self.index,
+            prunes: self.prunes,
         })
     }
 }
@@ -686,36 +740,15 @@ impl Writer {
         Ok(files)
     }
 
-    /// Replaces what this run decided, which the `entries` view shows, and
-    /// commits.
-    pub fn decide(self, entries: &[Resolved]) -> Result<View, IndexError> {
-        let connection = self.connection();
-        let prunes = connection.query_row(PRUNES, [], |row| row.get(0))?;
-        connection.execute_batch(RESOLVED)?;
-        let mut statement = connection.prepare_cached(
-            "INSERT INTO temp.resolved
-             (source, path, logical, blob, size, role, schema, kind, code, change)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        )?;
-        for entry in entries {
-            statement.execute(params![
-                source_name(&entry.source),
-                entry.path,
-                entry.logical.as_ref().map(ToString::to_string),
-                entry.blob.map(|blob| blob.to_string()),
-                entry.size.map(u64::cast_signed),
-                entry.role.map(Role::as_str),
-                entry.schema.map(|schema| schema.to_string()),
-                entry.kind.as_str(),
-                entry.code.map(Code::as_str),
-                entry.change.as_str(),
-            ])?;
-        }
-        drop(statement);
-        connection.execute_batch("COMMIT")?;
-        Ok(View {
+    /// Commits what this run put, and returns the index decided, holding
+    /// `entries`, what the run decided, which its views can show.
+    pub fn decide(self, entries: Vec<Resolved>) -> Result<Decided, IndexError> {
+        let prunes = self.connection().query_row(PRUNES, [], |row| row.get(0))?;
+        self.connection().execute_batch("COMMIT")?;
+        Ok(Decided {
             index: self.index,
             prunes,
+            entries,
         })
     }
 

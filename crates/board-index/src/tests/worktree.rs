@@ -221,7 +221,7 @@ fn synced_twice(first: &[Entry], second: &[Entry], hashed: usize) -> Synced {
             [],
         )
         .unwrap();
-    writer.decide(&[]).unwrap();
+    writer.decide(Vec::new()).unwrap();
     let writer = open().deferred().unwrap();
     let mut worktree = writer.worktree().unwrap();
     for _ in 0..hashed {
@@ -229,7 +229,7 @@ fn synced_twice(first: &[Entry], second: &[Entry], hashed: usize) -> Synced {
     }
     writer.sync_worktree(worktree, second).unwrap();
     let wrote = writer.wrote().unwrap();
-    let view = writer.decide(&[]).unwrap();
+    let view = writer.decide(Vec::new()).unwrap().view().unwrap();
     let rows = view
         .connection()
         .prepare("SELECT path, blob FROM main.worktree ORDER BY path")
