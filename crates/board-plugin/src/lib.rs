@@ -19,7 +19,7 @@ pub use crate::manifest::{
     Annotations, Capability, CapabilityName, MANIFEST_TYPE, Manifest, ManifestError, MetaFilter,
     MetaFilterError, NameError, PluginName, Side, Version, VersionError,
 };
-pub use crate::process::Limits;
+pub use crate::process::{Limits, Spawned};
 pub use crate::protocol::{
     BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, EXTRACT_RESULT_TYPE, EXTRACT_TYPE,
     PluginCode, PluginFailure,

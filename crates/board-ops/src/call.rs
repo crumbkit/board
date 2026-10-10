@@ -1,5 +1,7 @@
 //! `call` (docs/plugins.md, Calling a capability).
 
+use std::cell::RefCell;
+
 use board_plugin::{CallReport, Context, Target};
 
 use crate::Board;
@@ -43,6 +45,7 @@ impl Board {
             )?;
         }
         let _timed = self.timed("plugin.call");
+        let spawned = RefCell::default();
         let report = board_plugin::invoke(
             &chosen,
             input,
@@ -51,8 +54,11 @@ impl Board {
                 database: database.path(),
                 environment: &plugins.environment,
                 limits: plugins.limits,
+                spawned: &spawned,
             },
-        )?;
+        );
+        self.trace.borrow_mut().started(spawned.take());
+        let report = report?;
         Ok(Called {
             report,
             fallback: database.fallback(),

@@ -330,12 +330,17 @@ its run entered:
 | `query.sql` | running the SQL statement |
 | `plugin.extract` | extracting records for one plugin |
 | `plugin.call` | running a capability |
+| `plugin.reply` | from starting a plugin process to the first byte of its reply, once for each process that replied |
 | `put.validate` | checking a record before it is written |
 | `put.write` | writing the records and committing |
 | `emit` | printing the output |
 
 `work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
-`trees` and `rows`.
+`trees`, `rows`, and `started`, the plugin processes a call or extraction
+started. Each extraction batch and each call starts one. `plugin.reply`
+includes the plugin's own work, such as the `board query` it runs, which
+records its own line one `depth` deeper. It also covers extraction batches, so
+on a cold call it sums their replies with the call's.
 
 Before a line would take the log past 1 MiB, the log is renamed to
 `timings.jsonl.1`, replacing the one before. The rename takes no lock, so two

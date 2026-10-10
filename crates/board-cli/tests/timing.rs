@@ -33,6 +33,14 @@ fn board() -> Scenario {
 /// Runs `board` in `scenario` with `home` as its home and its cache
 /// directory under it, so no record reaches the developer's own log.
 fn run(scenario: &Scenario, home: &Path, timings: Option<&str>, arguments: &[&str]) -> Output {
+    let mut command = command(scenario, home, arguments);
+    if let Some(timings) = timings {
+        command.env("BOARD_TIMINGS", timings);
+    }
+    command.output().unwrap()
+}
+
+fn command(scenario: &Scenario, home: &Path, arguments: &[&str]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_board"));
     command
         .args(arguments)
@@ -40,10 +48,7 @@ fn run(scenario: &Scenario, home: &Path, timings: Option<&str>, arguments: &[&st
         .env_clear()
         .env("HOME", home)
         .env("XDG_CACHE_HOME", home.join("cache"));
-    if let Some(timings) = timings {
-        command.env("BOARD_TIMINGS", timings);
-    }
-    command.output().unwrap()
+    command
 }
 
 fn log(home: &Path) -> PathBuf {
@@ -144,6 +149,54 @@ fn a_scoped_check_resolves_within_its_snapshot_and_refs_resolves_before_opening_
         span(&records[1], "index.open"),
     );
     assert!(resolved.1 <= opened.0, "{}", records[1]);
+}
+
+#[test]
+fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
+    let scenario = Scenario::new();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks"]}"#),
+    );
+    let manifest = serde_json::json!({
+        "$type": "board/plugin-manifest/v1",
+        "name": "tasks",
+        "version": "1.0.0",
+        "description": "",
+        "run": ["sh", "./run"],
+        "capabilities": [{
+            "name": "next",
+            "description": "",
+            "inputSchema": {"type": "object"},
+            "outputSchema": {"type": "object"}
+        }]
+    });
+    let data = Scenario::new();
+    data.write(
+        "board/plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    )
+    .write(
+        "board/plugins/tasks/run",
+        Item::File(
+            "cat > /dev/null\nprintf '%s' '{\"$type\": \"board/call-result/v1\", \"output\": {}}'\n",
+        ),
+    )
+    .write("input.json", Item::File("{}"));
+    let home = tempfile::tempdir().unwrap();
+    let called = command(&scenario, home.path(), &["call", "tasks.next"])
+        .env("PATH", "/usr/bin:/bin")
+        .env("XDG_DATA_HOME", data.workdir())
+        .stdin(std::fs::File::open(data.workdir().join("input.json")).unwrap())
+        .output()
+        .unwrap();
+    assert!(called.status.success(), "{called:?}");
+    let record = &records(home.path())[0];
+    assert_eq!(record["work"]["started"], 1, "{record}");
+    let (reply, call) = (span(record, "plugin.reply"), span(record, "plugin.call"));
+    // As in the scoped check above, a computed end can be one microsecond
+    // short.
+    assert!(call.0 <= reply.0 && reply.1 <= call.1 + 1, "{record}");
 }
 
 #[test]

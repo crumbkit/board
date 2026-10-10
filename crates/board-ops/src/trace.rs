@@ -6,6 +6,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use board_index::{Index, IndexError};
+use board_plugin::Spawned;
 
 use crate::board::Board;
 
@@ -29,7 +30,11 @@ pub struct Phase {
 impl Trace {
     /// Adds the time since `started` to the phase `name`.
     pub fn add(&mut self, name: &'static str, started: Instant) {
-        let took = started.elapsed();
+        self.add_took(name, started, started.elapsed());
+    }
+
+    /// Adds `took`, from `started`, to the phase `name`.
+    fn add_took(&mut self, name: &'static str, started: Instant, took: Duration) {
         if let Some(phase) = self.phases.iter_mut().find(|phase| phase.name == name) {
             phase.took += took;
             phase.entered += 1;
@@ -46,6 +51,17 @@ impl Trace {
     /// Adds `count` to the work count `name`.
     pub fn count(&mut self, name: &'static str, count: usize) {
         *self.work.entry(name).or_default() += count;
+    }
+
+    /// Counts the plugin processes in `spawned` as `started`, and adds the
+    /// time each took to its first byte of reply to the phase `plugin.reply`.
+    pub(crate) fn started(&mut self, spawned: Vec<Spawned>) {
+        self.count("started", spawned.len());
+        for child in spawned {
+            if let Some(took) = child.replied {
+                self.add_took("plugin.reply", child.at, took);
+            }
+        }
     }
 
     /// Appends the phases and counts of `other`, which names none of this

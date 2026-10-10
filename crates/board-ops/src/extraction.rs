@@ -1,5 +1,6 @@
 //! Extraction before `query` and `call` (docs/plugins.md, Extraction).
 
+use std::cell::RefCell;
 use std::path::Path;
 
 use board_index::{DatabaseError, IndexError, PluginDatabase, Storage, View};
@@ -102,13 +103,16 @@ impl Board {
                 })
             })
             .collect();
+        let spawned = RefCell::default();
         let context = Context {
             root: self.repository().path(),
             database: database.path(),
             environment: &plugins.environment,
             limits: plugins.limits,
+            spawned: &spawned,
         };
         let extraction = extract(manifest, directory, records, &context);
+        self.trace.borrow_mut().started(spawned.take());
         view.handled(name, version, id, &extraction.handled)?;
         match extraction.failure {
             Some(failure) => Err(failure.into()),

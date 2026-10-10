@@ -296,6 +296,7 @@ fn input_refusal(schema: &Value, input: &str) -> (RefusalCode, String, Value) {
         database: Path::new("tasks.sqlite"),
         environment: &environment,
         limits: Limits::default(),
+        spawned: &RefCell::default(),
     };
     let refusal = invoke(&chosen, input.as_bytes(), &context)
         .unwrap_err()

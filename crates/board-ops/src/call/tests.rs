@@ -10,7 +10,7 @@ use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use crate::tests::{TASK_SCHEMA, open, task};
-use crate::{CallFailed, Plugins};
+use crate::{CallFailed, Phase, Plugins, Trace};
 
 /// Takes a number and answers it.
 const INPUT_SCHEMA: &str =
@@ -101,6 +101,17 @@ impl Fixture {
         environment: &Environment,
         limits: Limits,
     ) -> Result<CallReport, CallFailed> {
+        self.traced(target, input, environment, limits).0
+    }
+
+    /// A call like `call_with`, and what the board traced while making it.
+    fn traced(
+        &self,
+        target: &str,
+        input: &str,
+        environment: &Environment,
+        limits: Limits,
+    ) -> (Result<CallReport, CallFailed>, Trace) {
         let target = match target.strip_prefix("--capability ") {
             Some(capability) => Target::Capability(capability.parse().unwrap()),
             None => target.parse().unwrap(),
@@ -111,9 +122,11 @@ impl Fixture {
             environment: environment.clone(),
             limits,
         };
-        open(&self.board)
+        let board = open(&self.board);
+        let called = board
             .call(&target, input.as_bytes(), &plugins, Some(self.cache.path()))
-            .map(|called| called.report)
+            .map(|called| called.report);
+        (called, board.take_trace())
     }
 
     fn call(&self, target: &str, input: &str) -> Result<CallReport, CallFailed> {
@@ -458,6 +471,63 @@ fn a_plugin_that_exits_non_zero_without_an_error_document_failed() {
     assert_eq!(
         Fixture::tasks(killed).refused("tasks.due", r#"{"n": 1}"#),
         Board(Code::PluginFailed)
+    );
+}
+
+fn phase<'a>(trace: &'a Trace, name: &str) -> Option<&'a Phase> {
+    trace.phases.iter().find(|phase| phase.name == name)
+}
+
+/// The work count `started` of `trace` and how often it entered the phase
+/// `plugin.reply`.
+fn starts(trace: &Trace) -> (Option<usize>, Option<usize>) {
+    (
+        trace.work.get("started").copied(),
+        phase(trace, "plugin.reply").map(|phase| phase.entered),
+    )
+}
+
+#[test]
+fn a_call_counts_the_plugin_it_started_and_times_its_reply_only_when_one_came() {
+    let call = |fixture: Fixture| {
+        let (called, trace) = fixture.traced(
+            "tasks.due",
+            r#"{"n": 1}"#,
+            &environment(),
+            Limits::default(),
+        );
+        let code = called.err().map(|error| error.refusal().code);
+        (code, starts(&trace), trace)
+    };
+    let (code, counted, trace) = call(Fixture::tasks(&answering(RESULT, 0)));
+    assert_eq!((code, counted), (None, (Some(1), Some(1))));
+    let (reply, run) = (
+        phase(&trace, "plugin.reply").unwrap(),
+        phase(&trace, "plugin.call").unwrap(),
+    );
+    assert!(run.started <= reply.started, "{trace:?}");
+    assert!(
+        reply.started + reply.took <= run.started + run.took,
+        "the reply came within the call: {trace:?}"
+    );
+    let (code, counted, _) = call(Fixture::tasks(&answering("", 1)));
+    assert_eq!(
+        (code, counted),
+        (Some(Board(Code::PluginFailed)), (Some(1), None))
+    );
+    // A program that cannot be spawned is not counted.
+    let fixture = Fixture::tasks(&answering(RESULT, 0));
+    let manifest = fixture.plugin("tasks").join("plugin.json");
+    let missing = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace(r#"["sh","./run"]"#, r#"["no-such-program-anywhere"]"#);
+    fixture
+        .data
+        .write("plugins/tasks/plugin.json", Item::File(&missing));
+    let (code, counted, _) = call(fixture);
+    assert_eq!(
+        (code, counted),
+        (Some(Board(Code::PluginNotStarted)), (Some(0), None))
     );
 }
 
@@ -863,4 +933,38 @@ fn a_call_from_a_warm_index_extracts_what_a_cold_one_would_after_a_change() {
     let in_tree = BTreeSet::from([blob(&changed), blob(unchanged)]);
     let ever: BTreeSet<String> = first.union(&warm).cloned().collect();
     assert_eq!(&ever & &in_tree, cold);
+}
+
+#[test]
+fn each_extraction_batch_and_the_call_count_as_one_plugin_start_with_one_reply() {
+    let fixture = Fixture::tasks(EXTRACTING);
+    let manifest = fixture.plugin("tasks").join("plugin.json");
+    let mut manifest: Value = serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+    manifest["extract"] = json!(["lr/task/v1"]);
+    fixture.data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    );
+    fixture
+        .board
+        .write(
+            ".board/types/lr/task/v1.schema.json",
+            Item::File(TASK_SCHEMA),
+        )
+        .write("tasks/a.json", Item::File(&task("")))
+        .write(
+            "tasks/b.json",
+            Item::File(r#"{"$type": "lr/task/v1", "title": "b"}"#),
+        );
+    let limits = Limits {
+        batch_records: 1,
+        ..Limits::default()
+    };
+    let call = || {
+        let (called, trace) = fixture.traced("tasks.due", r#"{"n": 1}"#, &environment(), limits);
+        called.unwrap();
+        starts(&trace)
+    };
+    assert_eq!(call(), (Some(3), Some(3)), "two batches and the call");
+    assert_eq!(call(), (Some(1), Some(1)), "nothing is left to extract");
 }

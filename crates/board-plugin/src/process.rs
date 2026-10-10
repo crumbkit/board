@@ -67,6 +67,14 @@ pub(crate) enum Scope {
     Process,
 }
 
+/// One plugin process Board started: when, and how long it took to write
+/// the first byte of its reply, if it wrote one.
+#[derive(Debug)]
+pub struct Spawned {
+    pub at: Instant,
+    pub replied: Option<Duration>,
+}
+
 /// A child that exited with its pipes closed.
 #[derive(Debug)]
 pub(crate) struct Finished {
@@ -96,6 +104,7 @@ enum Event {
 /// exits with both closed. Past the deadline or the stdout bound, Board stops
 /// the processes `scope` names and stops waiting, even while a grandchild
 /// holds a pipe. Off Unix, Board ignores `scope` and kills only the child.
+/// Beside the result it returns the child it started, if it started one.
 #[expect(
     clippy::disallowed_methods,
     reason = "board-plugin owns child processes"
@@ -108,7 +117,7 @@ pub(crate) fn run(
     input: Vec<u8>,
     limits: Limits,
     scope: Scope,
-) -> Result<Finished, Stopped> {
+) -> (Option<Spawned>, Result<Finished, Stopped>) {
     let deadline = Instant::now() + limits.time;
     let mut command = Command::new(program);
     command
@@ -119,7 +128,11 @@ pub(crate) fn run(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = spawn(&mut command, scope).map_err(Stopped::Io)?;
+    let spawned = Instant::now();
+    let mut child = match spawn(&mut command, scope) {
+        Ok(child) => child,
+        Err(error) => return (None, Err(Stopped::Io(error))),
+    };
     if let Some(mut stdin) = child.stdin.take() {
         // A child that exits without reading closes the pipe; that is its
         // answer, not Board's failure.
@@ -137,19 +150,21 @@ pub(crate) fn run(
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
     let mut open = 2;
-    loop {
+    let mut replied = None;
+    let finished = loop {
         let now = Instant::now();
         if now >= deadline {
             kill(&mut child, scope);
-            return Err(Stopped::Timeout(stderr));
+            break Err(Stopped::Timeout(stderr));
         }
         let wait = (deadline - now).min(POLL);
         match events.recv_timeout(wait) {
             Ok(Event::Out(bytes)) => {
+                replied.get_or_insert_with(|| spawned.elapsed());
                 stdout.extend_from_slice(&bytes);
                 if stdout.len() > limits.stdout {
                     kill(&mut child, scope);
-                    return Err(Stopped::TooLarge(stderr));
+                    break Err(Stopped::TooLarge(stderr));
                 }
             }
             Ok(Event::Err(bytes)) => {
@@ -166,7 +181,7 @@ pub(crate) fn run(
         if open == 0 {
             match reap(&mut child) {
                 Ok(Some(status)) => {
-                    return Ok(Finished {
+                    break Ok(Finished {
                         code: status.code(),
                         stdout,
                         stderr,
@@ -175,11 +190,16 @@ pub(crate) fn run(
                 Ok(None) => {}
                 Err(error) => {
                     kill(&mut child, scope);
-                    return Err(Stopped::Io(error));
+                    break Err(Stopped::Io(error));
                 }
             }
         }
-    }
+    };
+    let spawned = Spawned {
+        at: spawned,
+        replied,
+    };
+    (Some(spawned), finished)
 }
 
 /// Starts `command`. With `Scope::Group`, the child leads a new process

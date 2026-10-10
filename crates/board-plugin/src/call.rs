@@ -1,5 +1,6 @@
 //! Calling a capability (docs/plugins.md, Calling a capability).
 
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -12,7 +13,7 @@ use serde_json::{Map, Value, json};
 
 use crate::installed::{DiscoveryError, Installed};
 use crate::manifest::{Capability, CapabilityName, Manifest, ManifestError, NameError, PluginName};
-use crate::process::{self, Limits, Scope, Stopped};
+use crate::process::{self, Limits, Scope, Spawned, Stopped};
 use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallResult, Reply};
 
 /// The deepest nesting of calls: a call that arrives at this depth is refused.
@@ -219,13 +220,14 @@ pub struct CallReport {
 }
 
 /// Where a call runs: the board's root, the plugin's database and what the
-/// child inherits.
+/// child inherits, and where each process started is added.
 #[derive(Debug)]
 pub struct Context<'a> {
     pub root: &'a Path,
     pub database: &'a Path,
     pub environment: &'a Environment,
     pub limits: Limits,
+    pub spawned: &'a RefCell<Vec<Spawned>>,
 }
 
 /// Checks `input` against the capability's schema, runs the plugin with one
@@ -306,7 +308,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     } else {
         Scope::Process
     };
-    let finished = process::run(
+    let (spawned, finished) = process::run(
         &program,
         arguments,
         directory,
@@ -314,8 +316,9 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
         request,
         context.limits,
         scope,
-    )
-    .map_err(|stopped| match stopped {
+    );
+    context.spawned.borrow_mut().extend(spawned);
+    let finished = finished.map_err(|stopped| match stopped {
         // Soft limit: a failed reap or signal-forwarder setup after the spawn
         // also lands here, as not_started without the stderr already read.
         Stopped::Io(source) => CallError::Start {
