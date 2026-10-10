@@ -245,7 +245,7 @@ fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
     let cache = tempfile::tempdir().unwrap();
     let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = index.write().unwrap();
-    let large = serde_json::json!({ "text": "x".repeat(100_000) });
+    let large = serde_json::json!({ "text": "x".repeat(400_000) });
     writer.put_body(blob(9), &large).unwrap();
     let index = writer.decide(&[]).unwrap().index;
     let full = pages(&index);

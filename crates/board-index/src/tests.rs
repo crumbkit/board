@@ -145,6 +145,35 @@ fn an_index_that_falls_back_is_empty_and_in_memory_and_leaves_the_file() {
 }
 
 #[test]
+fn a_new_index_file_has_16_kib_pages_and_keeps_each_body_once_in_a_rowid_table() {
+    let cache = tempfile::tempdir().unwrap();
+    let writer = Index::open(Some(cache.path()), Path::new(ROOT))
+        .unwrap()
+        .write()
+        .unwrap();
+    writer
+        .put_body(blob(1), &serde_json::json!({"a": 1}))
+        .unwrap();
+    writer
+        .put_body(blob(1), &serde_json::json!({"a": 1}))
+        .unwrap();
+    drop(writer.decide(&[]).unwrap());
+    let file = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();
+    let page_size: i64 = file
+        .query_row("PRAGMA page_size", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(page_size, 16_384);
+    let rows: Vec<(i64, String)> = file
+        .prepare("SELECT rowid, blob FROM bodies")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, [(1, blob(1).to_string())]);
+}
+
+#[test]
 fn a_corrupt_index_is_deleted_and_rebuilt() {
     let cache = tempfile::tempdir().unwrap();
     drop(filled(cache.path()));

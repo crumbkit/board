@@ -342,7 +342,7 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
 
 #[test]
 fn a_snapshot_that_writes_once_the_index_has_doubled_prunes_what_the_tree_left() {
-    let (deleted, prunes, extra) = replaced_by(&large_task('b', 400_000));
+    let (deleted, prunes, extra) = replaced_by(&large_task('b', 800_000));
     // The first task's blob, body and validation.
     assert_eq!(deleted, 3);
     assert_eq!(prunes, 1);

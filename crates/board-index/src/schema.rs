@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 12;
+pub const INDEX_VERSION: u32 = 13;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -55,10 +55,12 @@ CREATE TABLE blobs (
     reason TEXT,
     PRIMARY KEY (blob, role)
 ) WITHOUT ROWID;
+-- A rowid table: SQLite writes rows of a few KiB faster to one than WITHOUT
+-- ROWID, which suits small rows.
 CREATE TABLE bodies (
-    blob TEXT PRIMARY KEY,
+    blob TEXT NOT NULL UNIQUE,
     body TEXT NOT NULL
-) WITHOUT ROWID;
+);
 CREATE TABLE validations (
     record TEXT NOT NULL,
     schema TEXT NOT NULL,

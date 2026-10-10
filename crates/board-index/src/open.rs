@@ -250,10 +250,12 @@ fn prepare(connection: &mut Connection) -> Result<bool, Prepared> {
     connection.busy_timeout(BUSY_WAIT)?;
     // Room for every statement the writer runs, so each is compiled once.
     connection.set_prepared_statement_cache_capacity(32);
-    // So a prune can give pages back to the file. It takes effect only before
-    // the file has pages, and setting it on a filled one waits to write.
+    // So a prune can give pages back to the file, and a body of a few KiB
+    // fits a page. Both take effect only before the file has pages, and
+    // setting them on a filled one waits to write.
     let pages: i64 = connection.query_row("PRAGMA page_count", [], |row| row.get(0))?;
     if pages == 0 {
+        connection.pragma_update(None, "page_size", 16_384)?;
         connection.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
     }
     connection.pragma_update(None, "journal_mode", "WAL")?;
