@@ -51,6 +51,7 @@ pub enum Code {
     PutFailed,
     GetOverBudget,
     RefsOverBudget,
+    RefsTargetChanged,
     PluginNotInstalled,
     PluginBadManifest,
     PluginNotEnabled,
@@ -70,7 +71,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 58] = [
+    pub const ALL: [Code; 59] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -114,6 +115,7 @@ impl Code {
         Self::PutFailed,
         Self::GetOverBudget,
         Self::RefsOverBudget,
+        Self::RefsTargetChanged,
         Self::PluginNotInstalled,
         Self::PluginBadManifest,
         Self::PluginNotEnabled,
@@ -181,6 +183,7 @@ impl Code {
             Self::PutFailed => "board::put::failed",
             Self::GetOverBudget => "board::get::over_budget",
             Self::RefsOverBudget => "board::refs::over_budget",
+            Self::RefsTargetChanged => "board::refs::target_changed",
             Self::PluginNotInstalled => "board::plugin::not_installed",
             Self::PluginBadManifest => "board::plugin::bad_manifest",
             Self::PluginNotEnabled => "board::plugin::not_enabled",
@@ -258,6 +261,7 @@ mod tests {
             | Code::PutFailed
             | Code::GetOverBudget
             | Code::RefsOverBudget
+            | Code::RefsTargetChanged
             | Code::PluginNotInstalled
             | Code::PluginBadManifest
             | Code::PluginNotEnabled

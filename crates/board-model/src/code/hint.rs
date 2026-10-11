@@ -338,6 +338,9 @@ fn generic(code: Code) -> &'static str {
         Code::RefsOverBudget => {
             "one run prints up to 64 MiB; ask for <path> and the paths after it in another `board refs` run"
         }
+        Code::RefsTargetChanged => {
+            "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
+        }
         Code::PluginNotInstalled => {
             "run `board plugin list` to see the installed plugins and their capabilities"
         }

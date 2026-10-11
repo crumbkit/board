@@ -409,3 +409,88 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
         "board::record::not_a_record"
     );
 }
+
+/// `board refs /projects/p /hub --field /status` in `format`, where
+/// `change`, when set, changes /projects/p, the target of /hub's first
+/// reference, after the first answer and so after the check. With the timing
+/// record the run would append.
+fn changed_between(change: bool, format: Format) -> (Output, serde_json::Value) {
+    let scenario = hub();
+    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let paths = paths(&["/projects/p", "/hub"]);
+    let fields = ["/status".to_owned()];
+    let mut answered = 0;
+    let answers = board
+        .refs(&paths, Absent::Refuse, &fields, Some(1), None)
+        .unwrap()
+        .inspect(|_| {
+            answered += 1;
+            if change && answered == 1 {
+                scenario.write(
+                    "projects/p.json",
+                    Item::File(r#"{"$type": "lr/project/v1", "status": "new"}"#),
+                );
+            }
+        });
+    let output = render::refs(format, &paths, answers, Some(1), usize::MAX);
+    let ran = crate::timing::Ran {
+        command: Some("refs".to_owned()),
+        trace: board.take_trace(),
+        root: None,
+    };
+    let record = crate::timing::record(std::time::Instant::now(), &ran, &output, 0).unwrap();
+    (output, record)
+}
+
+#[test]
+fn a_target_changed_after_the_check_prints_target_changed_without_values_and_its_twin_its_values() {
+    let from = |fields: &str| format!("/hub from /see/0 /links/l ok {fields}\n");
+    let (changed, record) = changed_between(true, Format::Text);
+    assert_eq!(
+        (changed.code, text(&changed.stdout)),
+        (
+            0,
+            format!(
+                "/projects/p to /hub /see/0\n{}",
+                from("target=board::refs::target_changed")
+            )
+        )
+    );
+    assert_eq!(record["work"]["target_changed"], 1);
+    let (unchanged, record) = changed_between(false, Format::Text);
+    assert_eq!(
+        (unchanged.code, text(&unchanged.stdout)),
+        (
+            0,
+            format!(
+                "/projects/p to /hub /see/0\n{}",
+                from("target=- \"/status\"=absent")
+            )
+        )
+    );
+    assert_eq!(record["work"].get("target_changed"), None);
+    assert_eq!(
+        Code::RefsTargetChanged.hint(&Fields::default()),
+        "the target's file changed during this run, so its values were not read; \
+         run the same board refs again. If every run refuses it, delete the board's \
+         directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index \
+         is rebuilt from the tree, and if it persists, report it"
+    );
+}
+
+#[test]
+fn a_target_changed_after_the_check_has_its_code_and_no_values_in_json_and_its_twin_has_values() {
+    let first = |change| {
+        let answers = json(&changed_between(change, Format::Json).0)["answers"].clone();
+        answers[1]["from"][0].clone()
+    };
+    let changed = first(true);
+    assert_eq!(changed["target_code"], "board::refs::target_changed");
+    assert_eq!(changed.get("values"), None);
+    let unchanged = first(false);
+    assert_eq!(unchanged.get("target_code"), None);
+    assert_eq!(
+        unchanged["values"],
+        serde_json::json!([{"pointer": "/status", "absent": true}])
+    );
+}

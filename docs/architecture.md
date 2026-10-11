@@ -379,11 +379,14 @@ its run entered:
 | `emit` | printing the output |
 
 `work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
-`trees`, `rows`, and `started`, the plugin processes a call or a query's
-extraction started. Each extraction batch and each call starts one. `plugin.reply`
-includes the plugin's own work, such as the `board query` it runs, which
-records its own line one `depth` deeper. In a `query`, it sums the replies of
-the extraction batches.
+`trees`, `rows`, `target_changed`, how many targets `refs --field` left
+unread because they changed after the check (it does not name them), and
+`started`, the plugin processes a call or a query's extraction started. Each
+extraction batch and each call starts one. `plugin.reply` includes the
+plugin's own work, such as the `board query` it runs, which records its own
+line one `depth` deeper. In a `query`, it sums the replies of the extraction
+batches. The runs that refused a changed target, from both log files:
+`cat ~/.cache/board/timings.jsonl.1 ~/.cache/board/timings.jsonl 2>/dev/null | jq -c 'select(.work.target_changed) | {at_ms, root, n: .work.target_changed}'`.
 
 Before a line would take the log past 1 MiB, the log is renamed to
 `timings.jsonl.1`, replacing the one before. The rename takes no lock, so two

@@ -22,7 +22,9 @@ With --field, each `from` line whose reference resolves adds
 ` target=<code>`, or ` target=-` for a healthy record, then
 ` <pointer>=<value>` for each field: the pointer as a JSON string, and the
 target's value there as compact JSON, or `absent`. A target that is not a
-record has no values. A reference that resolves to nothing adds nothing.
+record has no values, and neither has a target whose file changed after
+the check: its code is board::refs::target_changed, and running refs again
+reads it. A reference that resolves to nothing adds nothing.
 A pointer is empty or starts with /, with ~0 for ~ and ~1 for / in a token.
 
 With several paths, each is answered as it would be alone, in the order

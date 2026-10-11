@@ -770,11 +770,12 @@ fn get_returns_the_blob_of_the_bytes_it_read_when_the_file_changed_after_resolut
     };
     let (changed, unchanged) = (locate("/work/a"), locate("/work/b"));
     scenario.write("work/a.json", Item::File(&new));
-    let changed = crate::read::read_at(board.repositories(), changed, &path("/work/a")).unwrap();
+    let changed =
+        crate::read::read_at(board.repositories(), changed, &path("/work/a"), true).unwrap();
     assert_eq!(changed.location.object, Object::Blob(scenario.blob(&new)));
     assert_eq!(changed.bytes, new.as_bytes());
     let unchanged =
-        crate::read::read_at(board.repositories(), unchanged, &path("/work/b")).unwrap();
+        crate::read::read_at(board.repositories(), unchanged, &path("/work/b"), true).unwrap();
     assert_eq!(unchanged.location.object, Object::Blob(scenario.blob(&old)));
 }
 

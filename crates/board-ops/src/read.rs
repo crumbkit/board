@@ -9,9 +9,7 @@ use board_model::{
     BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
     Source, classify, parse_json,
 };
-use board_tree::{
-    Contents, GitError, Repositories, Repository, ResolveError, Resolver, Status, latest,
-};
+use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Resolver, Status};
 use serde_json::Value;
 
 use crate::board::Board;
@@ -61,7 +59,7 @@ impl Board {
     /// directory is `record::not_a_record`, and a file over 16 MiB is
     /// `json::too_large`.
     pub fn get(&self, path: &LogicalPath) -> Result<GetReport, ReadError> {
-        read_at(self.repositories(), self.locate(path)?, path)
+        read_at(self.repositories(), self.locate(path)?, path, true)
     }
 
     /// Each of `paths` as [`Board::get`] gives it, in order, read as the
@@ -76,9 +74,14 @@ impl Board {
         let mut view = snapshot.map_err(|source| ReadError::Resolve {
             source: ResolveError::Git(source),
         })?;
-        Ok(paths
-            .iter()
-            .map(move |path| read_at(self.repositories(), self.locate_in(&mut view, path)?, path)))
+        Ok(paths.iter().map(move |path| {
+            read_at(
+                self.repositories(),
+                self.locate_in(&mut view, path)?,
+                path,
+                true,
+            )
+        }))
     }
 
     /// Resolves `path`, following pointers, and lists the directory there
@@ -282,21 +285,28 @@ impl Board {
 }
 
 /// The file at `location`, which `path` resolved to, with the blob of the
-/// bytes read: the file may have changed since it was resolved.
+/// bytes read. With `latest`, a file that changed since it was resolved is
+/// read as it is now; without, it is [`GitError::Changed`].
 pub(crate) fn read_at(
     repositories: &Repositories,
     mut location: Location,
     path: &LogicalPath,
+    latest: bool,
 ) -> Result<GetReport, ReadError> {
     let Object::Blob(blob) = location.object else {
         return Err(ReadError::NotARecord { path: path.clone() });
     };
-    let Contents { blob, bytes } = latest(repositories.read(&location, blob))
-        .map_err(|source| ReadError::Git { source })?
-        .ok_or(ReadError::Unread {
-            path: path.clone(),
-            code: Code::JsonTooLarge,
-        })?;
+    let read = repositories.read(&location, blob);
+    let Contents { blob, bytes } = if latest {
+        board_tree::latest(read)
+    } else {
+        read
+    }
+    .map_err(|source| ReadError::Git { source })?
+    .ok_or(ReadError::Unread {
+        path: path.clone(),
+        code: Code::JsonTooLarge,
+    })?;
     location.object = Object::Blob(blob);
     let display = display(&location, path);
     let fields = Fields {

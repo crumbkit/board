@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use board_index::Fallback;
-use board_model::{Code, Location, LogicalPath, Refusal, RefusalCode, Source};
-use board_tree::{ResolveError, Resolver, Status};
+use board_model::{Code, Location, LogicalPath, Object, Refusal, RefusalCode, Source};
+use board_tree::{GitError, ResolveError, Resolver, Status};
 use serde_json::Value;
 
 use crate::board::Board;
@@ -208,7 +208,10 @@ impl Answering<'_> {
     }
 
     /// What the record at `location`, which `target` resolved to, holds at
-    /// the run's fields, with the code `snapshot` gives it.
+    /// the run's fields, with the code `snapshot` gives it. It reads only
+    /// the blob the walk listed and `snapshot` decided that code for: a file
+    /// that resolved or reads as another blob changed after the walk, and is
+    /// `refs::target_changed`, counted as `target_changed` in the trace.
     fn fielded(&self, snapshot: &Snapshot, location: &Location, target: &LogicalPath) -> Fielded {
         let degraded = snapshot
             .report
@@ -222,14 +225,31 @@ impl Answering<'_> {
                 }
                 _ => None,
             });
-        let record = read_at(self.board.repositories(), location.clone(), target)
-            .map_err(|error| error.code())
-            .and_then(|report| {
-                report.record.map_err(|refusal| match refusal.code {
-                    RefusalCode::Board(code) => code,
-                    RefusalCode::Plugin(_) => Code::RecordNotARecord,
-                })
-            });
+        let walked = (snapshot.walked.iter())
+            .find(|(source, _)| *source == location.board.source)
+            .and_then(|(_, entries)| entries.iter().find(|entry| entry.path == location.path))
+            .map(|entry| entry.blob);
+        let changed = || {
+            self.board.trace.borrow_mut().count("target_changed", 1);
+            Code::RefsTargetChanged
+        };
+        let record = match location.object {
+            Object::Blob(blob) if walked != Some(Some(blob)) => Err(changed()),
+            _ => read_at(self.board.repositories(), location.clone(), target, false).map_err(
+                |error| match error {
+                    ReadError::Git {
+                        source: GitError::Changed { .. },
+                    } => changed(),
+                    error => error.code(),
+                },
+            ),
+        }
+        .and_then(|report| {
+            report.record.map_err(|refusal| match refusal.code {
+                RefusalCode::Board(code) => code,
+                RefusalCode::Plugin(_) => Code::RecordNotARecord,
+            })
+        });
         match record {
             Ok(record) => Fielded {
                 values: Some(

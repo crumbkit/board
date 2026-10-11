@@ -721,3 +721,94 @@ fn a_reference_past_the_limit_has_no_read_for_its_target_and_one_within_it_has()
     assert_eq!(read(1), [true, false]);
     assert_eq!(read(2), [true, true]);
 }
+
+#[test]
+fn a_target_changed_after_the_check_is_target_changed_without_values_and_counted_and_its_twin_is_read()
+ {
+    // The first answer takes the check; the second reads its target after
+    // `change` has run, from that same check.
+    let second = |change: bool| {
+        let scenario = linked();
+        let board = open(&scenario);
+        let paths = [path("/tasks/a"), path("/tasks/b")];
+        let fields = ["/title".to_owned()];
+        let mut answers = board
+            .refs(&paths, Absent::Refuse, &fields, None, None)
+            .unwrap();
+        answers.next().unwrap().unwrap();
+        if change {
+            scenario.write(
+                "projects/p.json",
+                Item::File(r#"{"$type": "lr/project/v1", "title": "new"}"#),
+            );
+        }
+        let fielded = answers.next().unwrap().unwrap().from.remove(0).fields;
+        (
+            fielded,
+            board.take_trace().work.get("target_changed").copied(),
+        )
+    };
+    assert_eq!(
+        second(true),
+        (
+            Some(Fielded {
+                values: None,
+                code: Some(Code::RefsTargetChanged),
+            }),
+            Some(1)
+        )
+    );
+    assert_eq!(second(false), (Some(values(&[("/title", None)])), None));
+}
+
+#[test]
+fn a_target_that_resolved_to_another_blob_than_the_walk_listed_is_target_changed_and_its_twin_is_read()
+ {
+    // No seam lies between the check's walk and its resolver, so the test
+    // gives the snapshot what that resolver finds when the file is rewritten
+    // between them: it hashes the file again and leads to the new blob,
+    // while the walk, and so the code, keep the old one.
+    let answered = |rewrite: bool| {
+        let scenario = linked();
+        let board = open(&scenario);
+        let mut snapshot = board.snapshot(board.index(None).unwrap(), None).unwrap();
+        if rewrite {
+            let new = r#"{"$type": "lr/project/v1", "title": "new"}"#;
+            scenario.write("projects/p.json", Item::File(new));
+            for referenced in &mut snapshot.references {
+                if let Some(location) = &mut referenced.reached.location
+                    && location.path == "projects/p.json"
+                {
+                    location.object = board_model::Object::Blob(scenario.blob(new));
+                }
+            }
+        }
+        let fields = ["/title".to_owned()];
+        let mut answering = super::Answering {
+            board: &board,
+            view: board.repositories().snapshot().unwrap(),
+            absent: Absent::Refuse,
+            fields: &fields,
+            limit: usize::MAX,
+            cache: None,
+            snapshot: Some(snapshot),
+        };
+        let report = answering.answer(&path("/tasks/b")).unwrap();
+        let fielded = report.from.into_iter().next().unwrap().fields;
+        (
+            fielded,
+            board.take_trace().work.get("target_changed").copied(),
+        )
+    };
+    assert_eq!(
+        answered(true),
+        (
+            Some(Fielded {
+                values: None,
+                code: Some(Code::RefsTargetChanged),
+            }),
+            Some(1)
+        )
+    );
+    assert_eq!(answered(false), (Some(values(&[("/title", None)])), None));
+}
