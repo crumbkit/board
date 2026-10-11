@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 79fce6229e40b0508f96a73063f5fb803ec4e2e7b133be1517b7376d836c5172 # shrinks to files = [("A", "{}"), ("a", "{}")]
+cc b12e6b811a63d3f9fdaf8883abab321f14f13894fc34047e5538c24f41c2548e # shrinks to files = [("a", "{}")]
