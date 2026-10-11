@@ -83,12 +83,11 @@ class Board:
         code. `board::plugin::no_database` is not an extraction failure: the
         database was not attached, and a query that reads it fails on its own.
         """
-        rows, truncated, _ = self._query(sql, limit)
-        return rows, truncated
+        return self._query(sql, "--limit", str(limit))
 
-    def _query(self, sql: str, limit: int) -> tuple[list[list[Any]], bool, bool]:
-        """`query`'s answer, and whether Board's byte budget left rows out."""
-        report = self.document("query", "--limit", str(limit), sql)
+    def _query(self, sql: str, *page: str) -> tuple[list[list[Any]], bool]:
+        """`query`'s answer, with `page` the flags that say how many rows to return."""
+        report = self.document("query", *page, sql)
         rows, truncated, plugins = report.get("rows"), report.get("truncated"), report.get("plugins")
         if not isinstance(rows, list) or not isinstance(truncated, bool) or not isinstance(plugins, list):
             raise self._failed(("query",), None, "printed a report without rows")
@@ -97,27 +96,22 @@ class Board:
             if failed.get("plugin") == self.plugin and isinstance(code, str) and code != NO_DATABASE:
                 why = f"{self.plugin} could not extract, so its rows may be stale: {failed.get('message')}"
                 raise self._refused(("query",), code, why, None)
-        return cast("list[list[Any]]", rows), truncated, report.get("code") == QUERY_OVER_BUDGET
+        return cast("list[list[Any]]", rows), truncated
 
     def rows(self, sql: str) -> list[list[Any]]:
-        """Every row of one `board query`.
+        """Every row of one `board query --all`.
 
-        More than `LIMIT` rows is `<plugin>::board::truncated`, and rows past
-        Board's byte budget are `<plugin>::board::over_budget`. A first row or
-        a single value past the budget is `<plugin>::board::refused`, with
-        Board's code `board::query::over_budget`.
+        With `--all`, Board leaves rows out only at its byte budget, so rows
+        left out are `<plugin>::board::over_budget`. A first row or a single
+        value past the budget is `<plugin>::board::refused`, with Board's code
+        `board::query::over_budget`.
         """
-        rows, truncated, over_budget = self._query(sql, LIMIT)
-        if over_budget:
+        rows, truncated = self._query(sql, "--all")
+        if truncated:
             raise PluginError(
                 f"{self.plugin}::board::over_budget",
                 f"a query's rows passed the 64 MiB one board run prints ({QUERY_OVER_BUDGET}); select fewer "
                 "or smaller columns, or add ORDER BY and page by key, as in WHERE (a, b) > (last a, last b)",
-            )
-        if truncated:
-            raise PluginError(
-                f"{self.plugin}::board::truncated",
-                f"a query returned more than {LIMIT} rows; narrow what the board holds or what the query asks",
             )
         return rows
 

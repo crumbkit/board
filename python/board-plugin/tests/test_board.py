@@ -58,14 +58,22 @@ def test_a_failed_board_without_an_error_document_is_a_failure(monkeypatch: pyte
     assert refused.value.code == "demo::board::failed"
 
 
-def test_a_truncated_query_is_refused_by_rows_and_reported_by_query(monkeypatch: pytest.MonkeyPatch) -> None:
-    printing(monkeypatch, report([[1]], truncated=True))
-    with pytest.raises(PluginError) as refused:
-        DEMO.rows("SELECT 1")
-    assert refused.value.code == "demo::board::truncated"
-    assert DEMO.query("SELECT 1") == ([[1]], True)
-    printing(monkeypatch, report([[1]], truncated=False))
+def test_rows_asks_board_for_every_row_and_query_for_at_most_its_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[tuple[str, ...]] = []
+
+    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        asked.append(arguments)
+        return subprocess.CompletedProcess(["board", *arguments], 0, report([[1]], truncated=False), b"")
+
+    monkeypatch.setattr(Board, "_run", run)
     assert DEMO.rows("SELECT 1") == [[1]]
+    assert DEMO.query("SELECT 1") == ([[1]], False)
+    assert DEMO.query("SELECT 1", 2) == ([[1]], False)
+    assert asked == [
+        ("--json", "query", "--all", "SELECT 1"),
+        ("--json", "query", "--limit", "10000", "SELECT 1"),
+        ("--json", "query", "--limit", "2", "SELECT 1"),
+    ]
 
 
 def test_rows_refuses_a_query_cut_at_boards_byte_budget_and_query_returns_it_as_truncated(
