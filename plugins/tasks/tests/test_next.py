@@ -137,3 +137,25 @@ def test_a_call_whose_own_extraction_fails_is_refused_with_its_code_and_one_whos
     board.write("tasks/b.json", task("B"))
     error = board.json("call", "tasks.next", stdin="{}")
     assert (error["code"], error["fields"]["code"]) == ("tasks::board::refused", "board::plugin::failed"), error
+
+
+def refs_runs(board: Board) -> int:
+    """How many `board refs` runs the timing log holds, nested ones included."""
+    log = board.cache / "board" / "timings.jsonl"
+    records = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    return sum(1 for record in records if record["command"] == "refs")
+
+
+def test_next_runs_one_board_refs_however_many_shown_tasks_wait_and_none_when_none_wait(board: Board) -> None:
+    board.write("tasks/first.json", task("First"))
+    before = refs_runs(board)
+    call_next(board)
+    assert refs_runs(board) == before, "no task waits"
+    for count in (1, 3, 5):
+        board.write(f"tasks/after-{count}.json", task("After", after=["/tasks/first"]))
+        for other in range(1, count):
+            board.write(f"tasks/after-{count}-{other}.json", task("After", after=["/tasks/first"]))
+        before = refs_runs(board)
+        blocked = [item for item in call_next(board)["tasks"] if item["blocked"]]
+        assert len(blocked) >= count
+        assert refs_runs(board) == before + 1, f"{len(blocked)} waiting tasks"

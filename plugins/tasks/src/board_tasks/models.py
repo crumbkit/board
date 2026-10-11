@@ -17,10 +17,8 @@ TASK_TYPE = "tasks/task/v1"
 # The statuses of a task that is not finished yet; `done` and `dropped` are finished.
 UNFINISHED = ("open", "waiting")
 
-# The most tasks `next` lists. It runs one `board refs` for each listed task
-# with an `after`, and a call has 30 seconds. Each takes about 50 ms on an idle
-# Mac, and 100 such tasks took 12 seconds on a heavily loaded one. Batching
-# those lookups into one `board refs` is the way to raise it.
+# The most tasks `next` lists, and its default `limit`. The cap keeps the
+# output bounded (STANDARDS 23).
 NEXT_LIMIT = 100
 
 # References Board resolves and checks. Each is a plain property, never an

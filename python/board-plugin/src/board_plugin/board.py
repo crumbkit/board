@@ -6,6 +6,7 @@ plugins only through `board call`, so the same checks, limits and logs apply.
 
 import json
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -29,12 +30,20 @@ class Board:
     root: str
     plugin: str
 
-    def document(self, *arguments: str) -> dict[str, Any]:
+    def document(self, *arguments: str, partial: str | None = None) -> dict[str, Any]:
         """The one JSON document `board --json <arguments>` prints.
 
         Board's own error is `<plugin>::board::refused`, with Board's code and
         hint. Anything else that is not a document is `<plugin>::board::failed`.
+        A document whose `$type` is `partial` is the answer even when Board
+        exits 1, as `refs` does when a path it was asked for is refused.
         """
+        return self._read(*arguments, partial=partial)[0]
+
+    def _read(
+        self, *arguments: str, partial: str | None = None
+    ) -> tuple[dict[str, Any], subprocess.CompletedProcess[bytes]]:
+        """The document `document` reads, and the run that printed it."""
         ran = self._run("--json", *arguments)
         try:
             parsed: object = json.loads(ran.stdout)
@@ -43,12 +52,12 @@ class Board:
         if not isinstance(parsed, dict):
             raise self._failed(arguments, ran, "printed no JSON document")
         document = cast("dict[str, Any]", parsed)
-        if ran.returncode != 0:
+        if ran.returncode != 0 and (partial is None or document.get("$type") != partial):
             code = document.get("code")
             if document.get("$type") == "board/error/v1" and isinstance(code, str):
                 raise self._refused(arguments, code, str(document.get("message", "")), document.get("hint"))
             raise self._failed(arguments, ran, "failed without an error document")
-        return document
+        return document, ran
 
     def query(self, sql: str, limit: int = LIMIT) -> tuple[list[list[Any]], bool]:
         """The rows of one `board query`, at most `limit`, and whether more were left out.
@@ -79,17 +88,36 @@ class Board:
             )
         return rows
 
-    def refs(self, path: str, *, missing: bool = False) -> dict[str, Any] | None:
-        """`board refs --all` for `path`: where it resolves and what reaches it, or `None` when nothing is there.
+    def refs(self, paths: Sequence[str], *, missing: bool = False) -> list[dict[str, Any] | None]:
+        """`board refs --all` for `paths`, from one run and one check of the board.
 
-        With `missing`, a path with nothing there yet reports where a file there would be.
+        Each answer, in order, is where the path resolves and what reaches it,
+        or `None` when nothing is there. With `missing`, a path with nothing
+        there yet reports where a file there would be. Any other refusal of a
+        path raises its code. No paths start no run.
         """
-        try:
-            return self.document("refs", "--all", *(["--missing"] if missing else []), path)
-        except PluginError as error:
-            if error.code == f"{self.plugin}::board::refused" and error.fields.get("code") == "board::path::not_found":
-                return None
-            raise
+        if not paths:
+            return []
+        flags = ["--missing"] if missing else []
+        report, ran = self._read("refs", "--all", *flags, "--", *paths, partial="board/refs-report/v1")
+        answers = report.get("answers")
+        if (
+            not isinstance(answers, list)
+            or len(cast("list[Any]", answers)) != len(paths)
+            or not all(isinstance(answer, dict) for answer in cast("list[Any]", answers))
+        ):
+            raise self._failed(("refs",), ran, "printed a report without one answer per path")
+        found: list[dict[str, Any] | None] = []
+        for answer in cast("list[dict[str, Any]]", answers):
+            if answer.get("$type") != "board/error/v1":
+                found.append(answer)
+            elif answer.get("code") == "board::path::not_found":
+                found.append(None)
+            else:
+                raise self._refused(
+                    ("refs",), str(answer.get("code")), str(answer.get("message", "")), answer.get("hint")
+                )
+        return found
 
     def get(self, path: str) -> bytes:
         """The stored bytes of the file at `path`."""

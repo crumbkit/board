@@ -35,7 +35,7 @@ pub use crate::plugins::{
 pub use crate::put::{Expect, MAX_BATCH_LINES, PutError, PutReport, Refused, Written};
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, PluginFailed, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
-pub use crate::refs::{Incoming, Missing, Outgoing, RefsError, RefsReport};
+pub use crate::refs::{Absent, Incoming, Missing, Outgoing, RefsError, RefsReport};
 pub use crate::trace::{Phase, Trace};
 pub use crate::verdict::{Fault, SchemaFound};
 

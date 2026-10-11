@@ -1,6 +1,7 @@
 //! `board refs`: the references a record makes and the records that make
 //! references to it (docs/architecture/index.md). Both come from what a
-//! snapshot decides, so each reference is resolved once, as the tree is now.
+//! snapshot decides, so each reference is resolved once, as the tree is now,
+//! and one snapshot answers every path a run asks about.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -12,7 +13,7 @@ use board_tree::{ResolveError, Status};
 use crate::board::Board;
 use crate::check::CheckError;
 use crate::read::{ReadError, display, join};
-use crate::snapshot::Referenced;
+use crate::snapshot::{Referenced, Snapshot};
 
 /// One reference the record makes.
 #[derive(Clone, Debug, PartialEq)]
@@ -48,8 +49,8 @@ pub struct Missing {
 }
 
 /// References from and to the object at one path. For a path that names
-/// nothing, from [`Board::refs_or_missing`], `location` and `display` are
-/// the deepest ancestor's, and there are no references.
+/// nothing, with [`Absent::Locate`], `location` and `display` are the
+/// deepest ancestor's, and there are no references.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RefsReport {
     pub location: Location,
@@ -60,83 +61,68 @@ pub struct RefsReport {
     pub missing: Option<Missing>,
 }
 
+/// What `refs` answers for a path that names nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Absent {
+    /// Refuse it, as `board::path::not_found`.
+    Refuse,
+    /// Report its deepest ancestor that resolves and, in `missing`, the
+    /// physical path a file there would have by put's resolution. A path
+    /// ending `.json` whose stem names something is still not found, since
+    /// it names that entry by its file.
+    Locate,
+}
+
+/// Where one asked path leads: an object, or nothing yet.
+enum Found {
+    At(Location),
+    Missing(RefsReport),
+}
+
 impl Board {
-    /// Resolves `path`, then checks the board against the index kept under
-    /// `cache` and reports the references the object there makes and those
-    /// that reach it. Two references reach it when they resolve to its
-    /// identity, its board and physical path, whatever path they name.
-    pub fn refs(&self, path: &LogicalPath, cache: Option<&Path>) -> Result<RefsReport, RefsError> {
-        let location = self
-            .locate(path)
-            .map_err(|source| RefsError::Read { source })?;
-        let index = self.index(cache).map_err(CheckError::from)?;
-        let snapshot = self.snapshot(index, None)?;
-        let same = |source: &Source, physical: &str| {
-            *source == location.board.source && physical == location.path
-        };
-        let from = snapshot
-            .references
-            .iter()
-            .filter(|referenced| same(&referenced.source, &referenced.path))
-            .map(|referenced| Outgoing {
-                pointer: referenced.reached.pointer.clone(),
-                target: referenced.reached.target.clone(),
-                location: referenced.reached.location.clone(),
-                status: referenced.reached.code.map_or(Status::Ok, Status::Degraded),
-            })
-            .collect();
-        let mut to: BTreeMap<(String, String), Incoming> = BTreeMap::new();
-        for referenced in snapshot.references.iter().filter(|referenced| {
-            referenced
-                .reached
-                .location
-                .as_ref()
-                .is_some_and(|reached| same(&reached.board.source, &reached.path))
-        }) {
-            let Referenced {
-                source,
-                path,
-                logical,
-                reached,
-            } = referenced;
-            to.entry((board_index::source_name(source), path.clone()))
-                .or_insert_with(|| Incoming {
-                    source: source.clone(),
-                    path: path.clone(),
-                    logical: logical.clone(),
-                    pointers: Vec::new(),
-                })
-                .pointers
-                .push(reached.pointer.clone());
+    /// Resolves each of `paths`, then checks the board once against the
+    /// index kept under `cache` and answers each path in order: the
+    /// references the object there makes and those that reach it, or why
+    /// there is no answer. Two references reach it when they resolve to its
+    /// identity, its board and physical path, whatever path they name. The
+    /// outer error is a check that could not run, which every path needs.
+    pub fn refs(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+        cache: Option<&Path>,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        let mut snapshot = None;
+        let mut answers = Vec::with_capacity(paths.len());
+        for path in paths {
+            answers.push(match self.found(path, absent) {
+                Ok(Found::At(location)) => {
+                    let taken = match snapshot.take() {
+                        Some(taken) => taken,
+                        None => {
+                            self.snapshot(self.index(cache).map_err(CheckError::from)?, None)?
+                        }
+                    };
+                    let report = answer(&taken, location, path);
+                    snapshot = Some(taken);
+                    Ok(report)
+                }
+                Ok(Found::Missing(report)) => Ok(report),
+                Err(error) => Err(error),
+            });
         }
-        Ok(RefsReport {
-            display: display(&location, path),
-            location,
-            from,
-            to: to.into_values().collect(),
-            memory: snapshot.report.memory,
-            missing: None,
-        })
+        Ok(answers)
     }
 
-    /// As [`Board::refs`], except that a path that names nothing reports
-    /// its deepest ancestor that resolves and, in `missing`, the physical
-    /// path a file there would have by put's resolution. A path ending
-    /// `.json` whose stem names something is still not found, since it
-    /// names that entry by its file.
-    pub fn refs_or_missing(
-        &self,
-        path: &LogicalPath,
-        cache: Option<&Path>,
-    ) -> Result<RefsReport, RefsError> {
-        let found = match self.refs(path, cache) {
-            Err(RefsError::Read {
-                source:
-                    ReadError::Resolve {
-                        source: ResolveError::NotFound { ancestor, .. },
-                    },
-            }) => ancestor,
-            answered => return answered,
+    /// Where `path` leads or, when `absent` says to locate it, where a file
+    /// there would be.
+    fn found(&self, path: &LogicalPath, absent: Absent) -> Result<Found, RefsError> {
+        let found = match self.locate(path) {
+            Ok(location) => return Ok(Found::At(location)),
+            Err(ReadError::Resolve {
+                source: ResolveError::NotFound { ancestor, .. },
+            }) if absent == Absent::Locate => ancestor,
+            Err(source) => return Err(RefsError::Read { source }),
         };
         let not_found = || {
             refused(ResolveError::NotFound {
@@ -152,7 +138,7 @@ impl Board {
             .iter()
             .try_fold(display.clone(), |parent, segment| join(&parent, segment))
             .ok_or_else(not_found)?;
-        Ok(RefsReport {
+        Ok(Found::Missing(RefsReport {
             missing: Some(Missing {
                 display: named,
                 segments: ancestor.rest,
@@ -163,7 +149,58 @@ impl Board {
             from: Vec::new(),
             to: Vec::new(),
             memory: None,
+        }))
+    }
+}
+
+/// The references from and to the object at `location`, which `path`
+/// resolved to, as `snapshot` decided them.
+fn answer(snapshot: &Snapshot, location: Location, path: &LogicalPath) -> RefsReport {
+    let same = |source: &Source, physical: &str| {
+        *source == location.board.source && physical == location.path
+    };
+    let from = snapshot
+        .references
+        .iter()
+        .filter(|referenced| same(&referenced.source, &referenced.path))
+        .map(|referenced| Outgoing {
+            pointer: referenced.reached.pointer.clone(),
+            target: referenced.reached.target.clone(),
+            location: referenced.reached.location.clone(),
+            status: referenced.reached.code.map_or(Status::Ok, Status::Degraded),
         })
+        .collect();
+    let mut to: BTreeMap<(String, String), Incoming> = BTreeMap::new();
+    for referenced in snapshot.references.iter().filter(|referenced| {
+        referenced
+            .reached
+            .location
+            .as_ref()
+            .is_some_and(|reached| same(&reached.board.source, &reached.path))
+    }) {
+        let Referenced {
+            source,
+            path,
+            logical,
+            reached,
+        } = referenced;
+        to.entry((board_index::source_name(source), path.clone()))
+            .or_insert_with(|| Incoming {
+                source: source.clone(),
+                path: path.clone(),
+                logical: logical.clone(),
+                pointers: Vec::new(),
+            })
+            .pointers
+            .push(reached.pointer.clone());
+    }
+    RefsReport {
+        display: display(&location, path),
+        location,
+        from,
+        to: to.into_values().collect(),
+        memory: snapshot.report.memory,
+        missing: None,
     }
 }
 

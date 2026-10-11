@@ -194,7 +194,7 @@ new commit and whether it wrote.
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
 | `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location, whose source is `worktree` or a commit id, and its blob, and refuses other files with the code saying why; a directory is `board::record::not_a_record` |
 | `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
-| `board refs <path>` | references to and from an object |
+| `board refs <path>...` | references to and from each object, all from one check of the board |
 | `board put <path>` | validate and write a record |
 | `board mount update <path>` | advance a mount to its `follow` |
 | `board query <sql>` | read-only SQL over the index |

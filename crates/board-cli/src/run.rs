@@ -8,7 +8,7 @@ use std::time::Instant;
 use board_model::{
     BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId, Refusal,
 };
-use board_ops::{Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
+use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
 
 /// What a plugin run gets from this command line's context.
@@ -99,9 +99,10 @@ impl Page {
 /// `refs`'s arguments.
 #[derive(Debug, clap::Args)]
 struct Refs {
-    /// The record's logical path, such as /projects/p.
-    path: LogicalPath,
-    /// When nothing is at the path yet, report where a file there would be instead of refusing.
+    /// Each record's logical path, such as /projects/p; several are answered from one check of the board.
+    #[arg(required = true, value_name = "PATH")]
+    paths: Vec<LogicalPath>,
+    /// When nothing is at a path yet, report where a file there would be instead of refusing.
     #[arg(long)]
     missing: bool,
     #[command(flatten)]
@@ -153,14 +154,24 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
-    /// List the references a record makes and the records that reach it.
+    /// List the references each record makes and the records that reach it.
     #[command(after_help = "\
 Lines are `from <pointer> <target> <status>` for each reference the record
 makes, then `to <path> <pointer>` for each record that reaches it.
 
+With several paths, each is answered as it would be alone, in the order
+given. The limit applies to each path, so a run prints at most the number of
+paths times the limit lines. Every line, notes and errors included, names its
+path. A path that is refused does not stop the others; the exit code is 1.
+--json prints one board/refs-report/v1, for one path too, whose `answers`
+hold each path's references or its board/error/v1, in order. One run takes
+at most 10000 paths. A path that is not a logical path, such as tasks/a,
+refuses the whole run as board::usage::invalid with exit code 2.
+
 Examples:
   board refs /projects/p
   board refs /projects/p --json
+  board refs /tasks/a /tasks/b --all --json
   board refs --missing /projects/p/notes/new.md --json")]
     Refs(Refs),
     /// Check the record on stdin and write it, in canonical form, at a path.
@@ -467,17 +478,33 @@ pub(crate) fn entered(
     Ok(start)
 }
 
-/// `refs`, with `--missing` or without.
+/// `refs` of one path or several, with `--missing` or without.
 fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Output {
-    let (path, cache) = (&asked.path, context.cache.as_deref());
-    let answered = if asked.missing {
-        board.refs_or_missing(path, cache)
+    let absent = if asked.missing {
+        Absent::Locate
     } else {
-        board.refs(path, cache)
+        Absent::Refuse
     };
-    match answered {
-        Ok(report) => render::refs(format, &report, asked.page.limit()),
+    let limit = asked.page.limit();
+    if asked.paths.len() > MAX_LIMIT {
+        let message = format!(
+            "refs was given {} paths, and one run answers at most {MAX_LIMIT}",
+            asked.paths.len()
+        );
+        let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
+        return render::refused(
+            format,
+            &Refusal::new(Code::UsageInvalid, message, &Fields::default()).with_hint(hint),
+        );
+    }
+    match board.refs(&asked.paths, absent, context.cache.as_deref()) {
         Err(error) => render::refused(format, &error.refusal()),
+        Ok(answers) => {
+            let answers: Vec<_> = (asked.paths.iter().zip(answers))
+                .map(|(path, answer)| (path, answer.map_err(|error| error.refusal())))
+                .collect();
+            render::refs(format, &answers, limit)
+        }
     }
 }
 

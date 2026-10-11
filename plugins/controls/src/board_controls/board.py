@@ -47,7 +47,7 @@ def referenced(board: Board, control: str) -> set[str]:
 
     One `board refs` of the control resolves every reference it makes.
     """
-    report = board.refs(control)
+    [report] = board.refs([control])
     if report is None:
         raise PluginError("controls::board::failed", f"nothing is at {control}")
     reached: set[str] = set()

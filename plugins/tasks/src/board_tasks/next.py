@@ -1,5 +1,7 @@
 """The `next` capability: unfinished tasks in the order to do them, and what blocks each."""
 
+from typing import Any
+
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
 from pydantic import ValidationError
@@ -20,7 +22,10 @@ def listed(values: tuple[str, ...]) -> str:
 
 
 def next_tasks(request: CallRequest) -> NextOutput:
-    """Ask Board, through `board query` and `board refs`, for the unfinished tasks and what blocks them."""
+    """Ask Board for the unfinished tasks and what blocks them.
+
+    It runs at most two `board query` runs and one `board refs`.
+    """
     limit = NextInput.model_validate(request.input).limit
     board = Board(request.board.root, "tasks")
     rows = board.rows(
@@ -38,7 +43,8 @@ def next_tasks(request: CallRequest) -> NextOutput:
             # The board's own schema admits a record this plugin cannot read; `due` skips it too.
             continue
     shown = tasks[:limit]
-    waits = {path: waiting_on(board, path) for path, task in shown if task.after}
+    waiting = [path for path, task in shown if task.after]
+    waits = {path: waiting_on(report) for path, report in zip(waiting, board.refs(waiting), strict=True)}
     done = finished(board, {place for targets in waits.values() for place in targets.values() if place is not None})
     blocking = {
         path: [display for display, place in targets.items() if place is None or place not in done]
@@ -61,12 +67,11 @@ def next_tasks(request: CallRequest) -> NextOutput:
     )
 
 
-def waiting_on(board: Board, path: str) -> dict[str, Place | None]:
-    """Each task the task's `after` reaches, once, by its display path, and where it is.
+def waiting_on(report: dict[str, Any] | None) -> dict[str, Place | None]:
+    """Each task a task's `after` reaches, once, by its display path, and where it is, from its `board refs` report.
 
     A reference that reaches nothing is kept as written, with no place.
     """
-    report = board.refs(path)
     if report is None:
         return {}
     targets: dict[str, Place | None] = {}

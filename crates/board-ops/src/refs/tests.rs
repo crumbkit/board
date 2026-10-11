@@ -6,16 +6,128 @@ use board_model::{Code, Fields, LogicalPath};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
-use crate::RefsReport;
 use crate::tests::{board, open, task};
+use crate::{Absent, Board, RefsError, RefsReport};
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
 }
 
+/// `refs` of one path, as most tests ask.
+trait One {
+    fn one(
+        &self,
+        text: &str,
+        absent: Absent,
+        cache: Option<&Path>,
+    ) -> Result<RefsReport, RefsError>;
+}
+
+impl One for Board {
+    fn one(
+        &self,
+        text: &str,
+        absent: Absent,
+        cache: Option<&Path>,
+    ) -> Result<RefsReport, RefsError> {
+        let mut answers = self.refs(&[path(text)], absent, cache)?;
+        assert_eq!(answers.len(), 1, "one answer for one path");
+        answers.remove(0)
+    }
+}
+
+/// How often the run that traced `board` entered the phase `name`.
+fn entered(board: &Board, name: &str) -> usize {
+    board
+        .take_trace()
+        .phases
+        .iter()
+        .find(|phase| phase.name == name)
+        .map_or(0, |phase| phase.entered)
+}
+
+#[test]
+fn several_paths_are_answered_in_order_from_one_snapshot_each_as_alone() {
+    let scenario = linked();
+    let asked = ["/tasks/c", "/projects/p", "/tasks/c"];
+    let board = open(&scenario);
+    let answers = board.refs(&asked.map(path), Absent::Refuse, None).unwrap();
+    assert_eq!(
+        entered(&board, "snapshot"),
+        1,
+        "one snapshot for three paths"
+    );
+    let alone: Vec<RefsReport> = asked
+        .iter()
+        .map(|text| open(&scenario).one(text, Absent::Refuse, None).unwrap())
+        .collect();
+    let answers: Vec<RefsReport> = answers.into_iter().map(Result::unwrap).collect();
+    assert_eq!(answers, alone);
+}
+
+#[test]
+fn a_path_that_names_nothing_among_several_is_refused_alone_and_the_others_are_answered() {
+    let scenario = linked();
+    let board = open(&scenario);
+    let answers = board
+        .refs(
+            &[path("/tasks/a"), path("/tasks/zz"), path("/projects/p")],
+            Absent::Refuse,
+            None,
+        )
+        .unwrap();
+    let codes: Vec<Result<String, Code>> = answers
+        .into_iter()
+        .map(|answer| {
+            answer
+                .map(|report| report.display.to_string())
+                .map_err(|error| error.code())
+        })
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            Ok("/tasks/a".to_owned()),
+            Err(Code::PathNotFound),
+            Ok("/projects/p".to_owned())
+        ]
+    );
+    let admitted = board
+        .refs(
+            &[path("/tasks/a"), path("/projects/p")],
+            Absent::Refuse,
+            None,
+        )
+        .unwrap();
+    assert!(admitted.iter().all(Result::is_ok));
+}
+
+#[test]
+fn paths_that_all_name_nothing_take_no_snapshot_and_one_that_resolves_takes_one() {
+    let scenario = linked();
+    let board = open(&scenario);
+    let answers = board
+        .refs(
+            &[path("/tasks/a.json"), path("/tasks/new.md")],
+            Absent::Locate,
+            None,
+        )
+        .unwrap();
+    assert_eq!(answers[0].as_ref().unwrap_err().code(), Code::PathNotFound);
+    assert_eq!(
+        answers[1].as_ref().unwrap().missing.as_ref().unwrap().path,
+        "tasks/new.md"
+    );
+    assert_eq!(entered(&board, "snapshot"), 0);
+    board
+        .refs(&[path("/tasks/zz"), path("/tasks/a")], Absent::Locate, None)
+        .unwrap();
+    assert_eq!(entered(&board, "snapshot"), 1);
+}
+
 fn refs(scenario: &Scenario, text: &str) -> Result<RefsReport, Code> {
     open(scenario)
-        .refs(&path(text), None)
+        .one(text, Absent::Refuse, None)
         .map_err(|error| error.code())
 }
 
@@ -23,7 +135,7 @@ fn refs(scenario: &Scenario, text: &str) -> Result<RefsReport, Code> {
 /// display path and the segments past the deepest ancestor that resolves.
 fn missing(scenario: &Scenario, text: &str) -> Result<(String, String, Vec<String>), Code> {
     let report = open(scenario)
-        .refs_or_missing(&path(text), None)
+        .one(text, Absent::Locate, None)
         .map_err(|error| error.code())?;
     let missing = report.missing.expect("nothing is at the path");
     assert!(report.from.is_empty() && report.to.is_empty());
@@ -136,7 +248,7 @@ fn refs_of_a_path_that_names_nothing_is_refused_and_one_that_names_a_record_is_a
     );
     assert_eq!(
         open(&scenario)
-            .refs(&path("/tasks/zz"), None)
+            .one("/tasks/zz", Absent::Refuse, None)
             .unwrap_err()
             .refusal()
             .fields,
@@ -206,7 +318,7 @@ fn a_missing_path_through_a_link_is_where_the_link_leads_and_without_the_flag_it
 fn a_path_that_exists_reports_nothing_missing_with_the_flag_as_without_it() {
     let scenario = linked();
     let flagged = open(&scenario)
-        .refs_or_missing(&path("/links/l"), None)
+        .one("/links/l", Absent::Locate, None)
         .unwrap();
     assert_eq!(flagged.missing, None);
     assert_eq!(Ok(flagged), refs(&scenario, "/links/l"));
@@ -257,7 +369,7 @@ fn a_path_naming_an_existing_record_by_its_file_is_not_found_and_a_new_records_f
     let scenario = linked();
     assert_eq!(missing(&scenario, "/tasks/a.json"), Err(Code::PathNotFound));
     let refused = open(&scenario)
-        .refs_or_missing(&path("/tasks/a.json"), None)
+        .one("/tasks/a.json", Absent::Locate, None)
         .unwrap_err();
     assert_eq!(
         refused.refusal().fields,
@@ -290,7 +402,7 @@ fn a_missing_path_through_a_mount_is_where_it_would_be_in_the_mounted_commit() {
         )),
     );
     let report = open(&scenario)
-        .refs_or_missing(&path("/vendor/lib/docs/new.md"), None)
+        .one("/vendor/lib/docs/new.md", Absent::Locate, None)
         .unwrap();
     assert_eq!(
         report.location.board.source,
@@ -308,7 +420,7 @@ fn a_missing_path_through_a_mount_is_where_it_would_be_in_the_mounted_commit() {
 fn answered(scenario: &Scenario, text: &str, cache: Option<&Path>) -> RefsReport {
     RefsReport {
         memory: None,
-        ..open(scenario).refs(&path(text), cache).unwrap()
+        ..open(scenario).one(text, Absent::Refuse, cache).unwrap()
     }
 }
 
@@ -325,12 +437,43 @@ fn refs_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change
     assert_eq!(warm, answered(&scenario, "/projects/p", None));
 }
 
+/// What `refs` answers for each of `texts`, without where the index was.
+fn answered_each(scenario: &Scenario, texts: &[&str], cache: Option<&Path>) -> Vec<RefsReport> {
+    let paths: Vec<LogicalPath> = texts.iter().map(|text| path(text)).collect();
+    open(scenario)
+        .refs(&paths, Absent::Refuse, cache)
+        .unwrap()
+        .into_iter()
+        .map(|answer| RefsReport {
+            memory: None,
+            ..answer.unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn refs_of_several_paths_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change()
+{
+    let scenario = linked();
+    let cache = tempfile::tempdir().unwrap();
+    let asked = ["/projects/p", "/tasks/a", "/tasks/b"];
+    let before = answered_each(&scenario, &asked, Some(cache.path()));
+    scenario
+        .write("tasks/a.json", Item::File(&task(r#", "see": "/links/l""#)))
+        .write("tasks/b.json", Item::File(&task("")));
+    let warm = answered_each(&scenario, &asked, Some(cache.path()));
+    for (index, (warm, before)) in warm.iter().zip(&before).enumerate() {
+        assert_ne!(warm, before, "the change is seen at {}", asked[index]);
+    }
+    assert_eq!(warm, answered_each(&scenario, &asked, None));
+}
+
 #[test]
 fn refs_of_a_json_path_whose_stem_names_an_entry_hints_the_stem_and_one_whose_stem_names_nothing_does_not()
  {
     let scenario = linked();
     let hint = |text: &str| {
-        let refused = open(&scenario).refs(&path(text), None).unwrap_err();
+        let refused = open(&scenario).one(text, Absent::Refuse, None).unwrap_err();
         assert_eq!(refused.code(), Code::PathNotFound, "{text}");
         refused.refusal().hint.unwrap()
     };

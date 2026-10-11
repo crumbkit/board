@@ -93,3 +93,14 @@ ancestor and, under `missing`, the physical path a file there would have, by
 put's resolution; put may still refuse it, for instance through a mount, and
 names a new record's file with `.json`. Beneath a non-JSON file, or naming an
 existing entry by its `.json` file, the path stays `path::not_found`.
+Several paths are answered in the order given from one snapshot, which is
+taken only when a path resolves, so a plugin needs one run for many records.
+Each answer is what the path alone gives, with the limit applied to each, so
+a run prints at most the number of paths times the limit lines, and the
+caller chooses how many paths to ask. A refused path does not stop the others
+and makes the run exit 1. With several paths, every text line, notes and
+errors included, names its path. JSON is always one `board/refs-report/v1`,
+for one path too. Its `answers` hold, in the order asked, each path's
+references or its refusal as a `board/error/v1`. One run takes at most 10,000
+paths; more is `usage::invalid`. A path that does not parse as a logical
+path, such as `tasks/a`, refuses the whole run as `usage::invalid`.

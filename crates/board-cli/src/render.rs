@@ -5,10 +5,10 @@
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode, Source};
+use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode};
 use board_ops::{
     CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Listed, LsReport,
-    MAX_LIMIT, Missing, MountUpdateReport, PutReport, QueryReport, RefsReport, source_name,
+    MAX_LIMIT, MountUpdateReport, PutReport, QueryReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -17,9 +17,11 @@ use crate::report::Output;
 
 mod page;
 mod plugins;
+mod refs;
 
 use page::Shown;
 pub(crate) use plugins::{call, plugin_find, plugin_list, temporary};
+pub(crate) use refs::refs;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -210,124 +212,6 @@ fn detail_fields(detail: &Detail) -> Map<String, Value> {
     fields.insert("reason".to_owned(), json!(detail.reason));
     fields.insert("failures".to_owned(), json!(detail.failures));
     fields
-}
-
-/// `refs`: as text, a `from` line per reference the object makes, with its
-/// status, and a `to` line per record whose references reach it.
-pub(crate) fn refs(format: Format, report: &RefsReport, limit: Option<usize>) -> Output {
-    // One listing, a line per reference: those made, then each pointer that
-    // reaches the record, so a cut can fall within one incoming record.
-    let reaching: usize = report
-        .to
-        .iter()
-        .map(|incoming| incoming.pointers.len())
-        .sum();
-    let shown = Shown::of(report.from.len() + reaching, limit);
-    let from = &report.from[..shown.shown.min(report.from.len())];
-    let mut budget = shown.shown - from.len();
-    let to: Vec<(&board_ops::Incoming, &[String])> = report
-        .to
-        .iter()
-        .map_while(|incoming| {
-            let take = incoming.pointers.len().min(budget);
-            budget -= take;
-            (take > 0).then(|| (incoming, &incoming.pointers[..take]))
-        })
-        .collect();
-    let output = match format {
-        Format::Text => {
-            let mut text = String::new();
-            for reference in from {
-                let _ = writeln!(
-                    text,
-                    "from {} {} {}",
-                    reference.pointer,
-                    reference.target,
-                    status_text(reference.status)
-                );
-            }
-            for (incoming, pointers) in &to {
-                let name = named(&incoming.path, incoming.logical.as_ref(), Status::Ok);
-                for pointer in *pointers {
-                    let _ = writeln!(text, "to {name} {pointer}");
-                }
-            }
-            Output {
-                stdout: text.into_bytes(),
-                stderr: shown
-                    .note(
-                        "references from and to the record",
-                        &report.missing.as_ref().map_or_else(
-                            || "the record makes no references, and none reach it".to_owned(),
-                            |missing| missing_note(&report.location, missing),
-                        ),
-                    )
-                    .into_bytes(),
-                ..Output::default()
-            }
-        }
-        Format::Json => {
-            let from: Vec<Value> = from
-                .iter()
-                .map(|reference| {
-                    let mut value = json!({
-                        "pointer": reference.pointer,
-                        "target": reference.target.to_string(),
-                        "location": reference.location.as_ref().map(|location| {
-                            let display = location
-                                .display_path()
-                                .map_or_else(|| reference.target.to_string(), |path| path.to_string());
-                            self::location(location, &display)
-                        }),
-                    });
-                    status_fields(&mut value, reference.status);
-                    value
-                })
-                .collect();
-            let to: Vec<Value> = to
-                .iter()
-                .map(|(incoming, pointers)| {
-                    json!({
-                        "source": source_name(&incoming.source),
-                        "path": incoming.path,
-                        "logical": incoming.logical.as_ref().map(ToString::to_string),
-                        "pointers": pointers,
-                    })
-                })
-                .collect();
-            document(
-                &shown.mark(json!({
-                    "$type": "board/refs-report/v1",
-                    "location": location(&report.location, &report.display.to_string()),
-                    "missing": report.missing.as_ref().map(|missing| json!({
-                        "segments": missing.segments,
-                        "path": missing.path,
-                        "display": missing.display.to_string(),
-                    })),
-                    "from": from,
-                    "to": to,
-                })),
-                0,
-            )
-        }
-    };
-    noted(output, report.memory, None)
-}
-
-/// Where a file at a path that names nothing would be, naming the mounted
-/// board when it is in one.
-fn missing_note(location: &Location, missing: &Missing) -> String {
-    let mounted = match &location.board.source {
-        Source::WorkingTree => String::new(),
-        Source::Commit(commit) => format!(
-            " in the board mounted from {} at commit {commit}",
-            location.board.repository.display()
-        ),
-    };
-    format!(
-        "nothing is there yet; a file there would be {}, at {}{mounted}",
-        missing.display, missing.path
-    )
 }
 
 /// `query`'s rows: as text, one JSON array per line, the columns first.
@@ -599,24 +483,27 @@ pub(crate) fn refused(format: Format, refusal: &Refusal) -> Output {
                 ..Output::default()
             }
         }
-        Format::Json => {
-            let mut value = json!({
-                "$type": "board/error/v1",
-                "code": refusal.code.as_str(),
-                "message": refusal.message,
-            });
-            if let Some(hint) = &refusal.hint {
-                value["hint"] = json!(hint);
-            }
-            if !refusal.fields.is_empty() {
-                value["fields"] = Value::Object(refusal.fields.clone());
-            }
-            Output {
-                error,
-                ..document(&value, code)
-            }
-        }
+        Format::Json => Output {
+            error,
+            ..document(&error_value(refusal), code)
+        },
     }
+}
+
+/// The `board/error/v1` document of a refusal.
+fn error_value(refusal: &Refusal) -> Value {
+    let mut value = json!({
+        "$type": "board/error/v1",
+        "code": refusal.code.as_str(),
+        "message": refusal.message,
+    });
+    if let Some(hint) = &refusal.hint {
+        value["hint"] = json!(hint);
+    }
+    if !refusal.fields.is_empty() {
+        value["fields"] = Value::Object(refusal.fields.clone());
+    }
+    value
 }
 
 fn document(value: &Value, code: u8) -> Output {

@@ -99,6 +99,14 @@ fn json(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+/// The one answer in a `board refs --json` run of one path.
+fn answer(output: &Output) -> Value {
+    let report = json(output);
+    assert_eq!(report["$type"], "board/refs-report/v1");
+    assert_eq!(report["answers"].as_array().map(Vec::len), Some(1));
+    report["answers"][0].clone()
+}
+
 fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
@@ -645,12 +653,229 @@ fn refs_prints_what_a_record_reaches_and_what_reaches_it() {
     assert_eq!(text(&from.stdout), "from /project /projects/p ok\n");
     let to = board_in(scenario.workdir(), &["refs", "/projects/p"]);
     assert_eq!(text(&to.stdout), "to /tasks/a /project\n");
-    let report = json(&board_in(
+    let report = answer(&board_in(
         scenario.workdir(),
         &["refs", "/projects/p", "--json"],
     ));
-    assert_eq!(report["$type"], "board/refs-report/v1");
     assert_eq!(report["to"][0]["pointers"][0], "/project");
+}
+
+#[test]
+fn refs_json_is_one_report_whose_answers_match_their_golden_bytes() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
+    );
+    let ran = board_in(
+        scenario.workdir(),
+        &["refs", "/tasks/a", "/tasks/zz", "--json"],
+    );
+    assert_eq!(
+        (ran.code, ran.error.as_deref()),
+        (1, Some("board::path::not_found"))
+    );
+    let root = std::fs::canonicalize(scenario.workdir()).unwrap();
+    let printed = text(&ran.stdout).replace(&root.display().to_string(), "<root>");
+    assert_eq!(printed, GOLDEN_REFS);
+}
+
+/// `board refs /tasks/a /tasks/zz --json`, with the board's root as `<root>`.
+const GOLDEN_REFS: &str = r#"{
+  "$type": "board/refs-report/v1",
+  "answers": [
+    {
+      "from": [
+        {
+          "location": {
+            "display": "/projects/p",
+            "path": "projects/p.json",
+            "pointers": [],
+            "repository": "<root>",
+            "source": "worktree"
+          },
+          "pointer": "/project",
+          "status": "ok",
+          "target": "/projects/p"
+        }
+      ],
+      "location": {
+        "display": "/tasks/a",
+        "path": "tasks/a.json",
+        "pointers": [],
+        "repository": "<root>",
+        "source": "worktree"
+      },
+      "missing": null,
+      "to": [],
+      "total": 1,
+      "truncated": false
+    },
+    {
+      "$type": "board/error/v1",
+      "code": "board::path::not_found",
+      "fields": {
+        "ancestor": "/tasks",
+        "path": "/tasks/zz"
+      },
+      "hint": "run `board ls /tasks` to see what is there; paths leave out `.json`",
+      "message": "nothing is at /tasks/zz"
+    }
+  ]
+}
+"#;
+
+#[test]
+fn refs_of_several_paths_answers_each_as_alone_and_one_that_names_nothing_fails_the_run() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let run = |arguments: &[&str]| board_cached(scenario.workdir(), Some(cache.path()), arguments);
+    let admitted = run(&["refs", "/tasks/a", "/projects/p"]);
+    assert_eq!(admitted.code, 0);
+    assert_eq!(
+        text(&admitted.stdout),
+        "/tasks/a from /project /projects/p ok\n/projects/p to /tasks/a /project\n"
+    );
+    assert_eq!(text(&admitted.stderr), "");
+    let refused = run(&["refs", "/tasks/a", "/tasks/zz", "/projects/p"]);
+    assert_eq!(refused.code, 1);
+    assert_eq!(refused.error.as_deref(), Some("board::path::not_found"));
+    assert_eq!(text(&refused.stdout), text(&admitted.stdout));
+    let alone = text(&run(&["refs", "/tasks/zz"]).stderr);
+    assert_eq!(
+        text(&refused.stderr),
+        alone.replacen("error: ", "error: /tasks/zz: ", 1).replacen(
+            "hint: ",
+            "hint: /tasks/zz: ",
+            1
+        ),
+        "the refusal is printed as it is alone, each line naming the path asked"
+    );
+    assert!(
+        alone.starts_with("error: board::path::not_found: "),
+        "{alone}"
+    );
+    let ran = run(&[
+        "refs",
+        "/tasks/a",
+        "/tasks/zz",
+        "/projects/p",
+        "--limit",
+        "1",
+        "--json",
+    ]);
+    assert_eq!(
+        (ran.code, ran.error.as_deref()),
+        (1, Some("board::path::not_found"))
+    );
+    let report = json(&ran);
+    assert_eq!(report["$type"], "board/refs-report/v1");
+    let alone: Vec<Value> = ["/tasks/a", "/tasks/zz", "/projects/p"]
+        .iter()
+        .map(|path| answer(&run(&["refs", path, "--limit", "1", "--json"])))
+        .collect();
+    assert_eq!(report["answers"], Value::Array(alone));
+    assert_eq!(report["answers"][1]["code"], "board::path::not_found");
+}
+
+#[test]
+fn refs_of_several_refused_paths_names_its_path_on_every_line_of_each_refusal() {
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    let run = |arguments: &[&str]| board_cached(scenario.workdir(), Some(cache.path()), arguments);
+    let mut expected = String::new();
+    for path in ["/tasks/zz", "/projects/p.json"] {
+        let alone = text(&run(&["refs", path]).stderr);
+        assert!(alone.contains("\nhint: "), "{alone}");
+        expected.extend(alone.lines().map(|line| {
+            let (label, rest) = line.split_once(": ").unwrap();
+            format!("{label}: {path}: {rest}\n")
+        }));
+    }
+    let refused = run(&["refs", "/tasks/zz", "/projects/p.json"]);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (1, Some("board::path::not_found"))
+    );
+    assert_eq!(text(&refused.stderr), expected);
+    let admitted = run(&["refs", "/projects/p", "/projects/p"]);
+    assert_eq!((admitted.code, admitted.error.as_deref()), (0, None));
+}
+
+#[test]
+fn refs_answers_at_most_max_limit_paths_and_refuses_one_more() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let run = |count: usize| {
+        let mut arguments = vec!["refs"];
+        arguments.extend(std::iter::repeat_n("/tasks/a", count));
+        board_cached(scenario.workdir(), Some(cache.path()), &arguments)
+    };
+    let admitted = run(board_ops::MAX_LIMIT);
+    assert_eq!((admitted.code, admitted.error.as_deref()), (0, None));
+    assert_eq!(text(&admitted.stdout).lines().count(), board_ops::MAX_LIMIT);
+    let refused = run(board_ops::MAX_LIMIT + 1);
+    assert_eq!(
+        (refused.code, refused.error.as_deref()),
+        (2, Some("board::usage::invalid"))
+    );
+    assert_eq!(text(&refused.stdout), "");
+    assert!(
+        text(&refused.stderr).starts_with(
+            "error: board::usage::invalid: refs was given 10001 paths, and one run answers at most 10000\n"
+        ),
+        "{}",
+        text(&refused.stderr)
+    );
+    assert_eq!(
+        hint_of(&refused),
+        "split the paths over several runs of at most 10000 each"
+    );
+}
+
+#[test]
+fn refs_of_several_paths_names_each_path_in_its_note_and_limits_each_on_its_own() {
+    let scenario = board();
+    scenario.write(
+        "tasks/a.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "a", "project": "/projects/p"}"#),
+    );
+    scenario.write(
+        "tasks/b.json",
+        Item::File(r#"{"$type": "lr/task/v1", "title": "b", "project": "/projects/p"}"#),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let output = board_cached(
+        scenario.workdir(),
+        Some(cache.path()),
+        &[
+            "refs",
+            "/projects/p",
+            "/tasks/a",
+            "--missing",
+            "/tasks/new.md",
+            "--limit",
+            "1",
+        ],
+    );
+    assert_eq!(output.code, 0);
+    assert_eq!(
+        text(&output.stdout),
+        "/projects/p to /tasks/a /project\n/tasks/a from /project /projects/p ok\n"
+    );
+    assert_eq!(
+        text(&output.stderr),
+        "note: /projects/p: showing 1 of 2 references from and to the record; --limit <n> (at most 10000) or --all shows more\n\
+         note: /tasks/new.md: nothing is there yet; a file there would be /tasks/new.md, at tasks/new.md\n"
+    );
 }
 
 #[test]
@@ -660,16 +885,15 @@ fn refs_missing_prints_where_a_new_file_would_be_and_without_it_refuses() {
         "links/l.json",
         Item::File(r#"{"$type": "board/mount/v1", "path": "/projects"}"#),
     );
-    let refused = json(&board_in(
+    let refused = answer(&board_in(
         scenario.workdir(),
         &["refs", "/links/l/new.md", "--json"],
     ));
     assert_eq!(refused["code"], "board::path::not_found");
-    let report = json(&board_in(
+    let report = answer(&board_in(
         scenario.workdir(),
         &["refs", "--missing", "/links/l/new.md", "--json"],
     ));
-    assert_eq!(report["$type"], "board/refs-report/v1");
     assert_eq!(report["location"]["display"], "/projects");
     assert_eq!(
         report["missing"],
@@ -684,7 +908,7 @@ fn refs_missing_prints_where_a_new_file_would_be_and_without_it_refuses() {
         text(&shown.stderr),
         "note: nothing is there yet; a file there would be /projects/new.md, at projects/new.md\n"
     );
-    let present = json(&board_in(
+    let present = answer(&board_in(
         scenario.workdir(),
         &["refs", "--missing", "/projects/p", "--json"],
     ));
@@ -726,7 +950,7 @@ fn refs_missing_names_the_mounted_board_a_new_file_would_be_in() {
 #[test]
 fn refs_missing_refuses_an_existing_record_named_by_its_file_with_a_hint_and_admits_a_new_one() {
     let scenario = board();
-    let refused = json(&board_in(
+    let refused = answer(&board_in(
         scenario.workdir(),
         &["refs", "--missing", "/projects/p.json", "--json"],
     ));
@@ -735,7 +959,7 @@ fn refs_missing_refuses_an_existing_record_named_by_its_file_with_a_hint_and_adm
         refused["hint"],
         "a logical path leaves out .json: try `board refs /projects/p`"
     );
-    let admitted = json(&board_in(
+    let admitted = answer(&board_in(
         scenario.workdir(),
         &["refs", "--missing", "/projects/new.json", "--json"],
     ));

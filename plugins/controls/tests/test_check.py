@@ -160,8 +160,8 @@ def test_check_reads_each_file_once_and_each_controls_references_in_one_call(boa
         "get /docs/c.md",
     ]
     assert sorted(call for call in calls if " refs " in call) == [
-        "--json refs --all /controls/bytes",
-        "--json refs --all /controls/words",
+        "--json refs --all -- /controls/bytes",
+        "--json refs --all -- /controls/words",
     ]
 
 

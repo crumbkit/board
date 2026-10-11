@@ -112,6 +112,44 @@ def test_a_query_report_without_a_list_of_plugins_is_a_failure_and_one_with_it_i
     assert DEMO.rows("SELECT 1") == [[1]]
 
 
+def test_a_refs_report_without_one_dict_answer_per_path_is_a_failure_keeping_stderr_and_one_with_it_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer = {"location": {"display": "/a"}}
+    for paths, answers in (
+        (["/a", "/b"], {"a": answer}),
+        (["/a", "/b"], [answer]),
+        (["/a"], [answer, answer]),
+        (["/a", "/b"], [answer, "/b"]),
+    ):
+        printing(monkeypatch, json.dumps({"$type": "board/refs-report/v1", "answers": answers}).encode())
+        with pytest.raises(PluginError) as refused:
+            DEMO.refs(paths)
+        assert refused.value.code == "demo::board::failed"
+        assert "printed a report without one answer per path" in refused.value.message
+        assert refused.value.fields == {"stderr": "logs"}
+    printing(monkeypatch, json.dumps({"$type": "board/refs-report/v1", "answers": [answer, answer]}).encode())
+    assert DEMO.refs(["/a", "/b"]) == [answer, answer]
+
+
+def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_after_dashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs: list[tuple[str, ...]] = []
+    answer = {"location": {"display": "/-a"}}
+    report = json.dumps({"$type": "board/refs-report/v1", "answers": [answer]}).encode()
+
+    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        runs.append(arguments)
+        return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
+
+    monkeypatch.setattr(Board, "_run", run)
+    assert DEMO.refs([]) == []
+    assert runs == []
+    assert DEMO.refs(["-a"], missing=True) == [answer]
+    assert runs == [("--json", "refs", "--all", "--missing", "--", "-a")]
+
+
 def test_a_literal_doubles_its_quotes() -> None:
     assert board.literal("it's") == "'it''s'"
 
@@ -140,10 +178,35 @@ def test_the_real_board_gives_a_files_bytes_and_refuses_a_directory_with_its_cod
 
 
 def test_the_real_board_resolves_a_path_and_a_missing_one_is_none(real: Board) -> None:
-    found = real.refs("/docs/a.md")
+    [found] = real.refs(["/docs/a.md"])
     assert found is not None
     assert found["location"]["display"] == "/docs/a.md"
-    assert real.refs("/docs/gone.md") is None
-    missing = real.refs("/docs/gone.md", missing=True)
+    assert real.refs(["/docs/gone.md"]) == [None]
+    [missing] = real.refs(["/docs/gone.md"], missing=True)
     assert missing is not None
     assert missing["missing"]["path"] == "docs/gone.md"
+
+
+def test_the_real_board_answers_several_paths_in_order_with_none_where_nothing_is(real: Board) -> None:
+    (Path(real.root) / "docs" / "b.md").write_text("three")
+    answers = real.refs(["/docs/b.md", "/docs/gone.md", "/docs/a.md"])
+    assert [answer and answer["location"]["display"] for answer in answers] == ["/docs/b.md", None, "/docs/a.md"]
+    assert real.refs(["/docs/b.md", "/docs/a.md"]) == real.refs(["/docs/b.md"]) + real.refs(["/docs/a.md"])
+    located = real.refs(["/docs/a.md", "/docs/gone.md"], missing=True)
+    assert located[1] is not None
+    assert located[1]["missing"]["path"] == "docs/gone.md"
+
+
+def test_several_paths_with_one_refused_for_another_reason_raise_its_code_and_without_it_are_answered(
+    real: Board,
+) -> None:
+    (Path(real.root) / "gone.json").write_text('{"$type": "board/mount/v1", "path": "/elsewhere"}')
+    with pytest.raises(PluginError) as refused:
+        real.refs(["/docs/a.md", "/gone/new.md"], missing=True)
+    assert refused.value.code == "demo::board::refused"
+    assert refused.value.fields["code"] == "board::ref::dangling"
+    (Path(real.root) / "elsewhere").mkdir()
+    (Path(real.root) / "elsewhere" / "kept.md").write_text("text")
+    answers = real.refs(["/docs/a.md", "/gone/new.md"], missing=True)
+    assert answers[1] is not None
+    assert answers[1]["missing"]["path"] == "elsewhere/new.md"

@@ -572,7 +572,7 @@ fn refs_counts_a_line_per_pointer_so_a_limit_cuts_within_a_record() {
         "note: showing 1 of 2 references from and to the record; \
          --limit <n> (at most 10000) or --all shows more\n"
     );
-    let report = json(&refs(&["refs", "/projects/p", "--limit", "1", "--json"]));
+    let report = answer(&refs(&["refs", "/projects/p", "--limit", "1", "--json"]));
     assert_eq!(report["to"][0]["pointers"], serde_json::json!(["/a"]));
     assert_eq!(
         (report["total"].clone(), report["truncated"].clone()),
@@ -642,7 +642,7 @@ fn a_refs_limit_that_ends_with_one_record_leaves_the_next_out_of_the_json() {
     let scenario = hub();
     let cache = tempfile::tempdir().unwrap();
     let refs = |limit: &str| {
-        json(&board_cached(
+        answer(&board_cached(
             scenario.workdir(),
             Some(cache.path()),
             &["refs", "/hub", "--limit", limit, "--json"],

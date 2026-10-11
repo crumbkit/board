@@ -56,9 +56,8 @@ blocked until its `after` changes. `total` counts every unfinished task, and
 view through `board query`, and resolves each `after` through `board refs`, so
 a reference through a link or either of two mounts of one commit reaches the
 task it names. It lists a task whose only fault is a dangling or wrong-typed
-reference. It runs one `board refs` for each listed task with an `after`, and
-a call has 30 seconds, so the limit is 100. Batching those lookups into one
-`board refs` is the way to raise it.
+reference. It runs one `board refs` that names every listed task with an
+`after`, so one call starts at most three `board` runs however many tasks wait.
 
 Both capabilities read a task ignoring fields they do not know, so a board
 whose own schema admits more fields still has its tasks listed.

@@ -21,7 +21,7 @@ def for_path(request: CallRequest) -> ForPathOutput:
     root = request.board.root
     reading = Board(root, "controls")
     controls = board.controls(reading)
-    report = reading.refs(asked.path, missing=True)
+    [report] = reading.refs([asked.path], missing=True)
     if report is None:
         # Only a path beneath a file names nothing, and nothing can be written there.
         reaching: set[str] = set()
