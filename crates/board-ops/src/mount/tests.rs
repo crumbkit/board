@@ -60,7 +60,8 @@ fn a_mount_moves_to_its_follow_and_is_written_in_canonical_form() {
         }
     );
     let expected =
-        canonical_json(&parse_json(mount(&library.path(), "main", new).as_bytes()).unwrap());
+        canonical_json(&parse_json(mount(&library.path(), "main", new).as_bytes()).unwrap())
+            .into_bytes();
     assert_eq!(file(&scenario, "vendor/lib.json"), expected);
     let checked = open(&scenario).check(None, None).unwrap();
     let degraded: Vec<_> = checked

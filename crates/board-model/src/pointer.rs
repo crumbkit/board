@@ -108,7 +108,7 @@ pub(crate) fn pointer_from_value(value: &Value) -> Result<Pointer, PointerError>
 pub fn repinned(bytes: &[u8], commit: ObjectId) -> Result<Vec<u8>, JsonError> {
     let mut value = parse_json(bytes)?;
     value["commit"] = Value::String(commit.to_string());
-    Ok(canonical_json(&value))
+    Ok(canonical_json(&value).into_bytes())
 }
 
 /// Whether `repo` names a remote repository: a URL, or git's scp-like

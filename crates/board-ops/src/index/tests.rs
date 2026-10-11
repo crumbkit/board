@@ -28,23 +28,28 @@ fn tasks() -> Scenario {
 }
 
 #[test]
-fn a_cold_refresh_hashes_every_file_and_parses_each_json_blob_and_compiles_each_schema_once() {
+fn a_cold_refresh_hashes_every_file_and_parses_each_json_file_and_compiles_each_schema_once() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
-    // Eight files are hashed; board.json, two schemas, the project, and two
-    // distinct task blobs are parsed; notes.md is never read. Each schema
-    // validates the records of its type with the compilation that judged it.
+    // Eight files are hashed; board.json, two schemas, the project and three
+    // tasks are parsed, each on the thread that hashed it, so the two tasks
+    // that share their bytes are parsed twice and stored once; notes.md is
+    // never read. Each schema validates the records of its type with the
+    // compilation that judged it.
     assert_eq!(
         build(&scenario, cache.path()),
         Refreshed {
             hashed: 8,
-            parsed: 6,
+            parsed: 7,
             compiled: 2,
             validated: 3,
             wrote: true,
             ..Refreshed::default()
         }
     );
+    let twin = scenario.blob(&task(""));
+    let sql = format!("SELECT count(*) FROM main.blobs WHERE blob = '{twin}'");
+    assert_eq!(read(&scenario, cache.path(), &sql), [json!([1])]);
 }
 
 #[test]
@@ -278,6 +283,64 @@ fn a_file_modified_after_the_last_refresh_began_is_hashed_again() {
             ..Refreshed::default()
         },
         "its metadata matches, but it could have changed unseen"
+    );
+}
+
+#[test]
+fn a_schema_modified_after_the_last_refresh_began_is_parsed_again_but_not_compiled_again() {
+    let scenario = tasks();
+    scenario.write(
+        ".board/types/lr/task/v1.schema.json",
+        Item::Ahead(TASK_SCHEMA),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    build(&scenario, cache.path());
+    assert_eq!(
+        build(&scenario, cache.path()),
+        Refreshed {
+            hashed: 1,
+            parsed: 1,
+            wrote: true,
+            ..Refreshed::default()
+        },
+        "the thread that hashes it parses it, and the index holds its blob, so it is not judged again"
+    );
+    scenario.write("tasks/c.json", Item::File(&task(r#", "n": 3"#)));
+    assert_eq!(
+        build(&scenario, cache.path()),
+        Refreshed {
+            hashed: 2,
+            parsed: 2,
+            compiled: 1,
+            validated: 1,
+            wrote: true,
+            ..Refreshed::default()
+        },
+        "a new task of its type compiles the schema once, to validate the task"
+    );
+}
+
+#[test]
+fn a_schema_modified_before_the_last_refresh_began_is_neither_parsed_nor_compiled_again() {
+    let scenario = tasks();
+    scenario.write(
+        ".board/types/lr/task/v1.schema.json",
+        Item::File(TASK_SCHEMA),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    build(&scenario, cache.path());
+    assert_eq!(build(&scenario, cache.path()), Refreshed::default());
+    scenario.write("tasks/c.json", Item::File(&task(r#", "n": 3"#)));
+    assert_eq!(
+        build(&scenario, cache.path()),
+        Refreshed {
+            hashed: 1,
+            parsed: 1,
+            compiled: 1,
+            validated: 1,
+            wrote: true,
+            ..Refreshed::default()
+        }
     );
 }
 

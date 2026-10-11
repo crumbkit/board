@@ -45,7 +45,7 @@ pub fn init(start: &Path) -> Result<InitReport, InitError> {
         });
     }
     let target = repositories.target(&path, false).map_err(write)?;
-    let config = canonical_json(&json!({ "$type": CONFIG_TYPE }));
+    let config = canonical_json(&json!({ "$type": CONFIG_TYPE })).into_bytes();
     repository
         .write_file(&lock, &target.path, &config)
         .map_err(write)?;

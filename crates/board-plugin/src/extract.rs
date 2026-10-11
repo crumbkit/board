@@ -55,7 +55,8 @@ pub fn extract(
                 "root": context.root.to_string_lossy(),
                 "database": context.database.to_string_lossy(),
             },
-        }));
+        }))
+        .into_bytes();
         let result = exchange(
             manifest,
             directory,

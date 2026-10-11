@@ -177,7 +177,7 @@ fn canonical_output_matches_its_golden_bytes() {
     ] {
         let canonical = canonical_json(&parse_json(input).unwrap());
         assert_eq!(
-            String::from_utf8(canonical).unwrap(),
+            canonical.as_str(),
             String::from_utf8(output.to_vec()).unwrap()
         );
     }
@@ -186,7 +186,7 @@ fn canonical_output_matches_its_golden_bytes() {
 #[test]
 fn canonical_output_has_no_byte_order_mark_and_ends_in_one_newline() {
     let canonical = canonical_json(&parse_json(b"{}").unwrap());
-    assert_eq!(canonical, b"{}\n");
+    assert_eq!(canonical.as_bytes(), b"{}\n");
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn bolero_canonical_output_reads_back_as_the_same_value_and_bytes() {
     bolero::check!().for_each(|bytes: &[u8]| {
         if let Ok(value) = parse_json(bytes) {
             let canonical = canonical_json(&value);
-            let again = parse_json(&canonical).unwrap();
+            let again = parse_json(canonical.as_bytes()).unwrap();
             assert_eq!(again, value);
             assert_eq!(canonical_json(&again), canonical);
         }
@@ -230,7 +230,7 @@ fn either_of_two_equally_short_decimals_is_held_and_a_longer_one_is_refused() {
             value
         );
         let canonical = canonical_json(&value);
-        let again = parse_json(&canonical).unwrap();
+        let again = parse_json(canonical.as_bytes()).unwrap();
         assert_eq!(again, value);
         assert_eq!(canonical_json(&again), canonical);
     }

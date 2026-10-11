@@ -1,6 +1,6 @@
 //! Pruning: what a prune keeps and deletes, and when a writer prunes.
 
-use board_model::Change;
+use board_model::{Change, canonical_json};
 use board_tree::{Entry, Status, TreeRow, TreeRows};
 use rusqlite::OptionalExtension as _;
 
@@ -65,7 +65,7 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
             .put_blob(blob(reached), Role::Json, &record())
             .unwrap();
         writer
-            .put_body(blob(reached), &serde_json::json!({}))
+            .put_body(blob(reached), &canonical_json(&serde_json::json!({})))
             .unwrap();
     }
     writer
@@ -85,7 +85,9 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
         .unwrap();
     for gone in [3, 5] {
         writer.put_blob(blob(gone), Role::Json, &record()).unwrap();
-        writer.put_body(blob(gone), &serde_json::json!({})).unwrap();
+        writer
+            .put_body(blob(gone), &canonical_json(&serde_json::json!({})))
+            .unwrap();
     }
     // A reached record against a schema nothing reaches, and the reverse.
     writer
@@ -246,7 +248,7 @@ fn a_prune_gives_the_pages_it_frees_back_to_the_file() {
     let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
     let writer = index.write().unwrap();
     let large = serde_json::json!({ "text": "x".repeat(400_000) });
-    writer.put_body(blob(9), &large).unwrap();
+    writer.put_body(blob(9), &canonical_json(&large)).unwrap();
     let index = writer.decide(Vec::new()).unwrap().index;
     let full = pages(&index);
     let (index, _) = prune(index);

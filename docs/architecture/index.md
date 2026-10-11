@@ -41,8 +41,9 @@ shortest display path, then the first lexically.
 ## Refresh
 
 Each command refreshes the index first, doing work in proportion to what
-changed: it hashes only working-tree files whose stat changed, as git does, and
-parses and validates only blobs it has not seen. A file it could not read is
+changed: it hashes only working-tree files whose stat changed, as git does,
+parses each JSON file it hashes on the thread that hashed it, and stores and
+validates only blobs it has not seen. A file it could not read is
 tried again by every refresh, because whether it can be read may change while
 its stat does not. A file is hashed again if its mtime falls in or after the
 second in which the last refresh that hashed or recorded a file began. A

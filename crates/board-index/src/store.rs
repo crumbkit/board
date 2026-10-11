@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use board_model::{
-    Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat, canonical_json,
+    Canonical, Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat,
 };
 use board_tree::{Entry, MountPoint, Status, TreeRow, TreeRows};
 use rusqlite::{Connection, OptionalExtension, TransactionState, params};
@@ -288,14 +288,11 @@ impl Writer {
         Ok(())
     }
 
-    /// Stores the canonical form of the record `blob` parses to.
-    pub fn put_body(&self, blob: ObjectId, value: &serde_json::Value) -> Result<(), IndexError> {
+    /// Stores `body`, the canonical form of the record `blob` parses to.
+    pub fn put_body(&self, blob: ObjectId, body: &Canonical) -> Result<(), IndexError> {
         self.connection()
             .prepare_cached("INSERT OR IGNORE INTO main.bodies (blob, body) VALUES (?1, ?2)")?
-            .execute(params![
-                blob.to_string(),
-                String::from_utf8_lossy(&canonical_json(value)),
-            ])?;
+            .execute(params![blob.to_string(), body.as_str()])?;
         Ok(())
     }
 

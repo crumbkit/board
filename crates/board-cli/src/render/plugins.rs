@@ -257,7 +257,7 @@ pub(crate) fn call(format: Format, called: &Called) -> Output {
     };
     let output = match format {
         Format::Text => Output {
-            stdout: canonical_json(&report.output),
+            stdout: canonical_json(&report.output).into_bytes(),
             ..Output::default()
         },
         Format::Json => document(

@@ -14,7 +14,7 @@ mod stat;
 pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::code::Code;
 pub use crate::fields::{Fields, Found, Known, Lined};
-pub use crate::json::{JsonError, canonical_json, parse_json};
+pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::path::{LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, Malformation, PathError};
 pub use crate::pointer::{

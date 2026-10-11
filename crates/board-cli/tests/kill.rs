@@ -29,7 +29,7 @@ fn record(version: usize) -> String {
 }
 
 fn canonical(text: &str) -> Vec<u8> {
-    canonical_json(&parse_json(text.as_bytes()).unwrap())
+    canonical_json(&parse_json(text.as_bytes()).unwrap()).into_bytes()
 }
 
 fn put(root: &Path, input: &str) -> Child {

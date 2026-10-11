@@ -87,7 +87,7 @@ impl Board {
                 &mut Schemas::default(),
                 &path,
                 Expect::Blob(blob),
-                &canonical_json(&config),
+                &canonical_json(&config).into_bytes(),
             )?);
         }
         if prepared.is_empty() {
@@ -141,7 +141,7 @@ impl Board {
         Ok(Prepared {
             path,
             expect: Expect::Absent,
-            canonical: canonical_json(schema),
+            canonical: canonical_json(schema).into_bytes(),
             target,
             admitted: Admitted {
                 value: schema.clone(),

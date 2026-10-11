@@ -44,7 +44,7 @@ fn file(scenario: &Scenario, physical: &str) -> Option<Vec<u8>> {
 }
 
 fn canonical(record: &str) -> Vec<u8> {
-    canonical_json(&parse_json(record.as_bytes()).unwrap())
+    canonical_json(&parse_json(record.as_bytes()).unwrap()).into_bytes()
 }
 
 #[test]

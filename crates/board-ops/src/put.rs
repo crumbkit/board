@@ -315,7 +315,7 @@ impl Board {
         Ok(Prepared {
             path: path.clone(),
             expect,
-            canonical: canonical_json(&admitted.value),
+            canonical: canonical_json(&admitted.value).into_bytes(),
             target,
             admitted,
         })

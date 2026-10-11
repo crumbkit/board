@@ -41,20 +41,40 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, JsonError> {
     })
 }
 
-/// The document's canonical bytes (docs/architecture.md, Canonical form):
-/// keys sorted by code point, two-space indentation, one key or array
-/// element per line, empty objects and arrays on one line, numbers as
-/// `serde_json` prints them, `\n` endings and one trailing newline.
+/// A document in canonical form (docs/architecture.md, Canonical form),
+/// which only [`canonical_json`] makes: a store of bodies takes this type,
+/// so no other text can be stored as one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Canonical(String);
+
+impl Canonical {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.0.into_bytes()
+    }
+}
+
+/// The document's canonical form: keys sorted by code point, two-space
+/// indentation, one key or array element per line, empty objects and
+/// arrays on one line, numbers as `serde_json` prints them, `\n` endings
+/// and one trailing newline.
 ///
 /// # Panics
 ///
-/// Never: a `Value`'s keys are all strings, and writing to a `Vec` cannot
-/// fail.
-pub fn canonical_json(value: &Value) -> Vec<u8> {
-    let mut bytes = serde_json::to_vec_pretty(value)
-        .expect("a Value writes to a Vec: every key is a string and no write can fail");
-    bytes.push(b'\n');
-    bytes
+/// Never: a `Value`'s keys are all strings, and writing to a `String`
+/// cannot fail.
+pub fn canonical_json(value: &Value) -> Canonical {
+    let mut text = serde_json::to_string_pretty(value)
+        .expect("a Value writes to a String: every key is a string and no write can fail");
+    text.push('\n');
+    Canonical(text)
 }
 
 /// The first number in the valid JSON `text` that Board cannot hold exactly,

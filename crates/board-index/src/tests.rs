@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use board_model::{Code, Kind, ObjectId, Role, Source};
+use board_model::{Code, Kind, ObjectId, Role, Source, canonical_json};
 use board_tree::MountPoint;
 use rusqlite::Connection;
 
@@ -168,10 +168,10 @@ fn a_new_index_file_has_16_kib_pages_and_keeps_each_body_once_in_a_rowid_table()
         .write()
         .unwrap();
     writer
-        .put_body(blob(1), &serde_json::json!({"a": 1}))
+        .put_body(blob(1), &canonical_json(&serde_json::json!({"a": 1})))
         .unwrap();
     writer
-        .put_body(blob(1), &serde_json::json!({"a": 1}))
+        .put_body(blob(1), &canonical_json(&serde_json::json!({"a": 1})))
         .unwrap();
     drop(writer.decide(Vec::new()).unwrap());
     let file = Connection::open(location(cache.path(), Path::new(ROOT))).unwrap();

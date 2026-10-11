@@ -33,6 +33,7 @@ pub(crate) fn request(
             "database": database.to_string_lossy(),
         },
     }))
+    .into_bytes()
 }
 
 /// A plugin's error code, `<plugin>::<area>::<reason>`, where area and

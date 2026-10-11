@@ -10,9 +10,10 @@ use board_index::{
     BlobFact, Decided, Index, IndexError, RefFact, Resolved, ValidationFact, Writer,
 };
 use board_model::{
-    Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
+    Canonical, Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
+    canonical_json,
 };
-use board_tree::{Contents, Entry, GitError, Repository, latest};
+use board_tree::{Entry, GitError, Repository, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -28,6 +29,9 @@ pub struct Refreshed {
     /// Working-tree files hashed. A file the last refresh could not open is
     /// opened again but not counted, even when it can now be read.
     pub hashed: usize,
+    /// Blobs parsed. Each JSON file hashed within the size limit is parsed
+    /// on the thread that hashed it, so two files with the same bytes count
+    /// twice though the blob is stored once; a blob read later counts once.
     pub parsed: usize,
     /// Schemas compiled, whether or not they compiled.
     pub compiled: usize,
@@ -120,9 +124,10 @@ impl Board {
 
     /// Walks the working tree, hashing only files whose metadata the index
     /// does not hold, and records what it saw. Each JSON file the walk reads
-    /// in full is indexed into `kept` once the walk is done, in the order
-    /// the threads finished reading them; the index keys each fact by blob,
-    /// so that order does not show.
+    /// in full is parsed on the thread that read it, and what the index
+    /// does not hold yet is judged and stored into `kept` once the walk is
+    /// done, in the order the threads finished reading them; the index keys
+    /// each fact by blob, so that order does not show.
     fn walk(
         &self,
         writer: &Writer,
@@ -130,20 +135,22 @@ impl Board {
         kept: &mut Kept,
     ) -> Result<Vec<Entry>, RefreshError> {
         let mut worktree = writer.worktree()?;
-        let (read, hashed) = std::sync::mpsc::channel::<(String, Contents)>();
+        let (send, parsed) = std::sync::mpsc::channel::<(String, Parsed)>();
         let entries = self.repository().walk_working_tree(
             &mut |path, stat| worktree.known(path, stat),
             &|path, contents| {
-                // The receiver outlives the walk, so a send cannot fail.
-                let _ = read.send((path.to_owned(), contents));
+                if let Some(role) = Role::of(path) {
+                    let parsed = parse(contents.blob, role, Some(&contents.bytes));
+                    // The receiver outlives the walk, so a send cannot fail.
+                    let _ = send.send((path.to_owned(), parsed));
+                }
             },
         )?;
-        drop(read);
-        let mut parsed = 0;
-        for (path, contents) in hashed {
-            keep(writer, kept, &path, &contents, &mut parsed)?;
+        drop(send);
+        for (_, parsed) in parsed {
+            work.parsed += 1;
+            kept.keep(writer, parsed)?;
         }
-        work.parsed += parsed;
         work.hashed += writer.sync_worktree(worktree, &entries)?;
         Ok(entries)
     }
@@ -191,32 +198,68 @@ fn busy<T>(result: &Result<T, RefreshError>) -> bool {
     )
 }
 
-/// Indexes the `contents` of the file at `path` that a walk read, unless
-/// the index already holds its blob, and keeps what it holds.
-fn keep(
-    writer: &Writer,
-    kept: &mut Kept,
-    path: &str,
-    contents: &Contents,
-    parsed: &mut usize,
-) -> Result<(), IndexError> {
-    let Some(role) = Role::of(path) else {
-        return Ok(());
+/// What a blob's bytes say about it before it is judged, parsed on any
+/// thread: its classification, why it did not parse, and a record's
+/// canonical body.
+struct Parsed {
+    blob: ObjectId,
+    role: Role,
+    classified: Classified,
+    /// Why the bytes did not parse, which only the bytes can say.
+    reason: Option<String>,
+    body: Option<Canonical>,
+}
+
+/// Classifies the `bytes` of `blob` in `role`, or a blob too large to
+/// read. This reads nothing but `bytes`, so it runs on the thread that read
+/// them; judging, which may compile a schema, waits until the index is
+/// known not to hold the blob.
+fn parse(blob: ObjectId, role: Role, bytes: Option<&[u8]>) -> Parsed {
+    let classified = role.classify(bytes);
+    let reason = classified
+        .code
+        .and_then(|code| Fault::Code(code).reason(bytes));
+    let body = match &classified.content {
+        Content::Record { value, .. } => Some(canonical_json(value)),
+        _ => None,
     };
-    let key = (contents.blob, role);
-    if kept.facts.contains_key(&key) {
-        return Ok(());
+    Parsed {
+        blob,
+        role,
+        classified,
+        reason,
+        body,
     }
-    if let Some(fact) = writer.blob(contents.blob, role)? {
-        kept.facts.insert(key, fact);
-    } else {
-        kept.index(writer, contents.blob, role, Some(&contents.bytes))?;
-        *parsed += 1;
-    }
-    Ok(())
+}
+
+/// Judges `classified` by its bytes alone, and says whether that compiled
+/// a schema, whether or not it compiled.
+fn judged(classified: &Classified) -> (Result<Option<Schema>, Fault>, bool) {
+    let judged = judge(classified);
+    let compiled = matches!(judged, Ok(Some(_)) | Err(Fault::Schema(_)));
+    (judged, compiled)
 }
 
 impl Kept {
+    /// Keeps what `parsed` says: its fact from the index when that holds
+    /// the blob in its role, else judged and stored now. A record's value is
+    /// kept either way, so validating it does not read the file again.
+    fn keep(&mut self, writer: &Writer, parsed: Parsed) -> Result<(), IndexError> {
+        let key = (parsed.blob, parsed.role);
+        if self.facts.contains_key(&key) {
+            return Ok(());
+        }
+        let Some(fact) = writer.blob(parsed.blob, parsed.role)? else {
+            self.store(writer, parsed)?;
+            return Ok(());
+        };
+        self.facts.insert(key, fact);
+        if let Content::Record { value, .. } = parsed.classified.content {
+            self.values.insert(parsed.blob, value);
+        }
+        Ok(())
+    }
+
     /// Classifies and judges the `bytes` of `blob` in `role`, or a blob too
     /// large to read, stores what the index keeps of it and keeps the rest.
     fn index(
@@ -226,8 +269,21 @@ impl Kept {
         role: Role,
         bytes: Option<&[u8]>,
     ) -> Result<BlobFact, IndexError> {
-        let classified = role.classify(bytes);
-        let judged = self.judged(&classified);
+        self.store(writer, parse(blob, role, bytes))
+    }
+
+    /// Judges `parsed`, stores what the index keeps of it and keeps the
+    /// rest: a record's value, and a schema compiled.
+    fn store(&mut self, writer: &Writer, parsed: Parsed) -> Result<BlobFact, IndexError> {
+        let Parsed {
+            blob,
+            role,
+            classified,
+            reason,
+            body,
+        } = parsed;
+        let (judged, compiled) = judged(&classified);
+        self.compiled += usize::from(compiled);
         let fact = BlobFact {
             kind: classified.kind(),
             record_type: match &classified.content {
@@ -235,11 +291,16 @@ impl Kept {
                 _ => None,
             },
             code: judged.as_ref().err().map(Fault::code),
-            reason: judged.as_ref().err().and_then(|fault| fault.reason(bytes)),
+            reason: match &judged {
+                Ok(_) => None,
+                Err(fault) => reason.or_else(|| fault.reason(None)),
+            },
         };
         writer.put_blob(blob, role, &fact)?;
+        if let Some(body) = &body {
+            writer.put_body(blob, body)?;
+        }
         if let Content::Record { value, .. } = classified.content {
-            writer.put_body(blob, &value)?;
             self.values.insert(blob, value);
         }
         // The same bytes in the reserved namespace are refused, and must not
@@ -249,15 +310,6 @@ impl Kept {
         }
         self.facts.insert((blob, role), fact.clone());
         Ok(fact)
-    }
-
-    /// Judges `classified`, counting each schema it compiles.
-    fn judged(&mut self, classified: &Classified) -> Result<Option<Schema>, Fault> {
-        let judged = judge(classified);
-        if matches!(judged, Ok(Some(_)) | Err(Fault::Schema(_))) {
-            self.compiled += 1;
-        }
-        judged
     }
 }
 
@@ -342,10 +394,12 @@ fn validate_all(
         }
         if !kept.schemas.contains_key(&schema) {
             let compiled = match repository.read(source, &schema_path, schema) {
-                Ok(Some(contents)) => kept
-                    .judged(&Role::Schema.classify(Some(&contents.bytes)))
-                    .ok()
-                    .flatten(),
+                Ok(Some(contents)) => {
+                    let classified = Role::Schema.classify(Some(&contents.bytes));
+                    let (judged, compiled) = judged(&classified);
+                    kept.compiled += usize::from(compiled);
+                    judged.ok().flatten()
+                }
                 _ => None,
             };
             kept.schemas.insert(schema, compiled);
