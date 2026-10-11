@@ -150,7 +150,7 @@ impl Repositories {
             let Some(current) = directory.take() else {
                 return Err(missing(from_link, trail));
             };
-            let entries = tree.list(&current)?;
+            let entries = tree.alike(&current, segment.as_bytes(), Some(&segment))?;
             let Some(entry) = pick(
                 tree,
                 &current,
@@ -396,10 +396,10 @@ impl Trail {
     }
 }
 
-/// The entry `segment` names in `entries`, the listing of `directory`, or
-/// `None` when it names nothing. A record beside its directory of children
-/// is the record when `last`, else the directory, unless it shadows the
-/// directory.
+/// The entry `segment` names in `entries`, those of `directory` alike to
+/// it, or `None` when it names nothing. A record beside its directory of
+/// children is the record when `last`, else the directory, unless it
+/// shadows the directory.
 fn pick<'e, T: Tree>(
     tree: &mut T,
     directory: &T::Directory,

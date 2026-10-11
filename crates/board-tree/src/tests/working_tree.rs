@@ -863,3 +863,101 @@ fn a_record_beside_its_children_is_opened_once_however_many_children_a_resolver_
     // reached, and not opened again.
     assert_eq!(opened, [4, 6, 8, 8, 8]);
 }
+
+/// A directory holding a file, an ignored file, two symlinks and a
+/// directory, beside other files.
+fn lazily_listed() -> Scenario {
+    let scenario = Scenario::new();
+    scenario
+        .write(".gitignore", Item::File("d/ignored.json\n"))
+        .write("d/a.json", Item::File("{}"))
+        .write("d/b.json", Item::File("{}"))
+        .write("d/x.json", Item::File(r#"{"x": 1}"#))
+        .write("d/ignored.json", Item::File("{}"))
+        .write("d/link", Item::Symlink("x.json"))
+        .write("d/s.json", Item::Symlink("x.json"))
+        .write("d/sub/z.json", Item::File("{}"));
+    scenario
+}
+
+#[test]
+fn a_resolver_classifies_only_the_entries_a_path_names_in_a_directory() {
+    let scenario = lazily_listed();
+    let repositories = scenario.repositories();
+    let mut asked = Vec::new();
+    let mut known = |path: &str, _: &board_model::Stat| {
+        asked.push(path.to_owned());
+        None
+    };
+    let mut resolver = repositories.resolver(&mut known).unwrap();
+    let found = resolver.resolve(&path("/d/x")).unwrap();
+    let missing = resolver.resolve(&path("/d/missing")).unwrap_err();
+    let again = resolver.resolve(&path("/d/x")).unwrap();
+    drop(resolver);
+    assert_eq!(found.path, "d/x.json");
+    assert_eq!(again, found);
+    assert_eq!(missing.code(), Code::PathNotFound);
+    // Only d/x.json is looked up, once; its neighbours are never classified.
+    assert_eq!(asked, ["d/x.json"]);
+    assert_eq!(
+        repositories.root().directories_listed(),
+        2,
+        "the root and d"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_resolver_answers_the_same_through_a_lazy_listing_as_through_a_full_one() {
+    use crate::address::Pointers;
+    use crate::tree::Tree;
+    use crate::walk::{Planned, planned_code};
+    let scenario = lazily_listed();
+    let repositories = scenario.repositories();
+    let tree = |full: bool| {
+        let mut tree = repositories.root().working_tree(None).unwrap().on_demand();
+        if full {
+            tree.list(&PathBuf::from("d")).unwrap();
+        }
+        tree
+    };
+    let resolve = |full: bool, text: &str| {
+        let mut pointers = Pointers::default();
+        repositories
+            .resolve_tree(&mut tree(full), &path(text), true, &mut pointers)
+            .map(|location| (location.path, location.object))
+            .map_err(|error| error.code())
+    };
+    let symlink = Object::Blob(scenario.blob("x.json"));
+    let expected = [
+        (
+            "/d/x",
+            Ok((
+                "d/x.json".to_owned(),
+                Object::Blob(scenario.blob(r#"{"x": 1}"#)),
+            )),
+        ),
+        ("/d/missing", Err(Code::PathNotFound)),
+        ("/d/ignored", Err(Code::PathNotFound)),
+        ("/d/X", Err(Code::PathNotFound)),
+        ("/d/link", Ok(("d/link".to_owned(), symlink))),
+        ("/d/s.json", Ok(("d/s.json".to_owned(), symlink))),
+        ("/d/s", Err(Code::PathNotFound)),
+        (
+            "/d/sub/z",
+            Ok(("d/sub/z.json".to_owned(), Object::Blob(scenario.blob("{}")))),
+        ),
+    ];
+    for (text, answer) in expected {
+        assert_eq!(resolve(false, text), answer, "{text}, lazily");
+        assert_eq!(resolve(true, text), answer, "{text}, fully listed");
+    }
+    let planned = |full: bool, file: &str| planned_code(&mut tree(full), file, false).unwrap();
+    for (file, code) in [
+        ("d/X.json", Some(Planned::File(Code::PathCaseCollision))),
+        ("d/new.json", None),
+    ] {
+        assert_eq!(planned(false, file), code, "{file}, lazily");
+        assert_eq!(planned(true, file), code, "{file}, fully listed");
+    }
+}

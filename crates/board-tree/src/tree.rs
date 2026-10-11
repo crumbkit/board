@@ -89,7 +89,7 @@ pub(crate) trait Tree {
         visit_each(self, start, visit)
     }
 
-    /// What `segment` names among `entries`, the listing of `directory`. A
+    /// What `segment` names among `entries` of `directory`. A
     /// record beside its directory is read through `pointers` to tell
     /// whether it shadows the directory.
     fn named<'e>(

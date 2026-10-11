@@ -11,6 +11,7 @@ use std::sync::{Mutex, PoisonError};
 use std::thread;
 
 use board_model::Stat;
+use gix::bstr::ByteSlice;
 
 use crate::git::GitError;
 use crate::tree::Visit;
@@ -34,47 +35,77 @@ pub(crate) enum RawKind {
     Unreadable,
 }
 
-/// Lists `directory` beneath `root`, sorted by name, leaving out `.git` at
-/// the root and anything that is not a file, directory or symlink, and
-/// counts the listing in `listings`.
-pub(super) fn read(root: &Path, listings: &AtomicUsize, directory: &Path) -> io::Result<Vec<Raw>> {
+/// One item of a directory as `read_dir` gives it, before any `lstat`: its
+/// name as git spells it, and its type, `None` when that cannot be read.
+#[derive(Clone)]
+pub(crate) struct Item {
+    pub(crate) name: Vec<u8>,
+    file_type: Option<fs::FileType>,
+}
+
+/// The items of `directory` beneath `root`, sorted by name, leaving out
+/// `.git` at the root and anything that is not a file, directory or
+/// symlink, and counts the listing in `listings`. `DirEntry::file_type`
+/// takes each type from the listing, and calls `lstat` only where the file
+/// system does not give it (`DT_UNKNOWN`).
+pub(super) fn items(
+    root: &Path,
+    listings: &AtomicUsize,
+    directory: &Path,
+) -> io::Result<Vec<Item>> {
     listings.fetch_add(1, Ordering::Relaxed);
-    let absolute = root.join(directory);
-    let mut raw = Vec::new();
-    for item in fs::read_dir(&absolute)? {
+    let mut items = Vec::new();
+    for item in fs::read_dir(root.join(directory))? {
         let item = item?;
         let name = item.file_name();
-        if directory.as_os_str().is_empty() && name == ".git" {
+        let file_type = item.file_type().ok();
+        let listed = |kind: fs::FileType| kind.is_dir() || kind.is_symlink() || kind.is_file();
+        if directory.as_os_str().is_empty() && name == ".git" || !file_type.is_none_or(listed) {
             continue;
         }
-        let path = absolute.join(&name);
-        let kind = match item.file_type() {
-            Err(_) => RawKind::Unreadable,
-            Ok(file_type) if file_type.is_dir() => RawKind::Directory {
-                has_git: path.join(".git").exists(),
-            },
-            Ok(file_type) if file_type.is_symlink() => match fs::symlink_metadata(&path) {
-                Ok(metadata) => RawKind::Symlink {
-                    stat: stat(&metadata),
-                    target: fs::read_link(&path)
-                        .ok()
-                        .map(|target| gix::path::into_bstr(target).to_vec()),
-                },
-                Err(_) => RawKind::Unreadable,
-            },
-            Ok(file_type) if file_type.is_file() => match fs::metadata(&path) {
-                Ok(metadata) => RawKind::File(stat(&metadata)),
-                Err(_) => RawKind::Unreadable,
-            },
-            Ok(_) => continue,
-        };
-        raw.push(Raw {
+        items.push(Item {
             name: gix::path::into_bstr(Path::new(&name)).to_vec(),
-            kind,
+            file_type,
         });
     }
-    raw.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(raw)
+    items.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(items)
+}
+
+/// `item` of the directory at `absolute`, with what it is and its metadata.
+pub(super) fn raw(absolute: &Path, item: Item) -> Raw {
+    let path = &absolute.join(gix::path::from_bstr(item.name.as_bstr()));
+    let kind = match item.file_type {
+        None => RawKind::Unreadable,
+        Some(file_type) if file_type.is_dir() => RawKind::Directory {
+            has_git: path.join(".git").exists(),
+        },
+        Some(file_type) if file_type.is_symlink() => match fs::symlink_metadata(path) {
+            Ok(metadata) => RawKind::Symlink {
+                stat: stat(&metadata),
+                target: fs::read_link(path)
+                    .ok()
+                    .map(|target| gix::path::into_bstr(target).to_vec()),
+            },
+            Err(_) => RawKind::Unreadable,
+        },
+        Some(_) => match fs::metadata(path) {
+            Ok(metadata) => RawKind::File(stat(&metadata)),
+            Err(_) => RawKind::Unreadable,
+        },
+    };
+    Raw {
+        name: item.name,
+        kind,
+    }
+}
+
+/// Lists `directory` beneath `root` as [`items`] does, with each item's
+/// metadata.
+pub(super) fn read(root: &Path, listings: &AtomicUsize, directory: &Path) -> io::Result<Vec<Raw>> {
+    let absolute = root.join(directory);
+    let items = items(root, listings, directory)?;
+    Ok(items.into_iter().map(|item| raw(&absolute, item)).collect())
 }
 
 /// A directory to list, with the payload the walk gave it, which comes

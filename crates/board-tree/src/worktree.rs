@@ -21,7 +21,7 @@ use gix::worktree::stack::state::ignore;
 use crate::address::{self, Named, Pointers};
 use crate::git::{Contents, GitError, Repository};
 use crate::tree::{Kind, RawEntry, Settled, Tree, Unhashed, Visit};
-use crate::worktree::list::{Raw, RawKind};
+use crate::worktree::list::{Item, Raw, RawKind};
 use crate::worktree::settle::hash_stream;
 
 /// Given a file's `/`-separated path and metadata, its blob if already known.
@@ -73,56 +73,48 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
 }
 
-/// One directory's entries, with the lookup made from them the first time a
-/// name is looked up there.
+/// One directory's items, each classified the first time a lookup returns
+/// it, so that it keeps one answer in this snapshot.
 struct Listing {
-    entries: Rc<[RawEntry<PathBuf>]>,
-    lookup: OnceCell<Lookup>,
-}
-
-/// Where each segment, and each name folded to lower case, is found in one
-/// directory's entries, so finding a name does not scan a large directory.
-#[derive(Default)]
-struct Lookup {
-    segments: HashMap<String, Vec<usize>>,
-    folded: HashMap<Vec<u8>, Vec<usize>>,
+    items: Vec<Item>,
+    /// Each item as git sees it, once classified: `None` when git does not
+    /// see it.
+    seen: Vec<OnceCell<Option<RawEntry<PathBuf>>>>,
+    /// Where each name, folded to lower case, is found among the items,
+    /// made the first time a name is looked up, so finding a name does not
+    /// scan a large directory.
+    folded: OnceCell<HashMap<Vec<u8>, Vec<usize>>>,
 }
 
 impl Listing {
-    /// The lookup for these entries, made on first use.
-    fn lookup(&self) -> &Lookup {
-        self.lookup.get_or_init(|| {
-            let mut lookup = Lookup::default();
-            for (at, entry) in self.entries.iter().enumerate() {
-                if let Some(segment) = address::segment(entry) {
-                    let found = lookup.segments.entry(segment.to_owned()).or_default();
-                    found.push(at);
-                }
-                let folded = entry.name.to_ascii_lowercase();
-                lookup.folded.entry(folded).or_default().push(at);
-            }
-            lookup
-        })
+    fn new(items: Vec<Item>) -> Self {
+        Self {
+            seen: items.iter().map(|_| OnceCell::new()).collect(),
+            items,
+            folded: OnceCell::new(),
+        }
     }
 
-    /// The entries whose segment is `segment` or whose name is `name` but
-    /// for ASCII case, in listing order.
-    fn alike(&self, name: &[u8], segment: Option<&str>) -> Vec<RawEntry<PathBuf>> {
-        let lookup = self.lookup();
-        let by_segment = segment.and_then(|segment| lookup.segments.get(segment));
-        let by_name = lookup.folded.get(&name.to_ascii_lowercase());
-        let mut found: Vec<usize> = by_segment
-            .into_iter()
-            .chain(by_name)
+    /// Where the items named one of `names` but for ASCII case are, in
+    /// listing order.
+    fn folded(&self, names: &[&[u8]]) -> Vec<usize> {
+        let folded = self.folded.get_or_init(|| {
+            let mut folded: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
+            for (at, item) in self.items.iter().enumerate() {
+                let name = item.name.to_ascii_lowercase();
+                folded.entry(name).or_default().push(at);
+            }
+            folded
+        });
+        let mut found: Vec<usize> = names
+            .iter()
+            .filter_map(|name| folded.get(&name.to_ascii_lowercase()))
             .flatten()
             .copied()
             .collect();
         found.sort_unstable();
         found.dedup();
         found
-            .into_iter()
-            .filter_map(|at| self.entries.get(at).cloned())
-            .collect()
     }
 }
 
@@ -267,40 +259,52 @@ impl<T: Send> WorkingTree<'_, '_, T> {
     fn listing(&mut self, directory: &Path) -> Result<&Listing, GitError> {
         if !self.listed.contains_key(directory) {
             let root = self.repository.path();
-            let raw =
-                list::read(root, self.repository.listings(), directory).map_err(|source| {
+            let items =
+                list::items(root, self.repository.listings(), directory).map_err(|source| {
                     GitError::File {
                         path: root.join(directory),
                         source,
                     }
                 })?;
-            self.classify(directory, raw);
+            self.listed
+                .insert(directory.to_path_buf(), Listing::new(items));
         }
         Ok(&self.listed[directory])
     }
 
-    /// The entries of `directory`, listed as `raw`, as git sees them, kept
-    /// so that the directory is listed once.
-    fn classify(&mut self, directory: &Path, raw: Vec<Raw>) -> Rc<[RawEntry<PathBuf>]> {
-        let mut entries = Vec::with_capacity(raw.len());
-        for item in raw {
-            let relative = directory.join(gix::path::from_bstr(item.name.as_bstr()));
-            if let Some((kind, stat)) = self.kind(&relative, &item) {
-                entries.push(RawEntry {
-                    name: item.name,
-                    kind,
-                    stat,
-                    size: stat.map(|stat| stat.size),
-                });
-            }
+    /// Item `at` of the listing of `directory` as git sees it, classified
+    /// the first time.
+    fn entry(&mut self, directory: &Path, at: usize) -> Option<RawEntry<PathBuf>> {
+        let listing = &self.listed[directory];
+        if let Some(seen) = listing.seen[at].get() {
+            return seen.clone();
         }
-        let entries: Rc<[RawEntry<PathBuf>]> = entries.into();
-        let listing = Listing {
-            entries: Rc::clone(&entries),
-            lookup: OnceCell::new(),
-        };
-        self.listed.insert(directory.to_path_buf(), listing);
-        entries
+        let raw = list::raw(
+            &self.repository.path().join(directory),
+            listing.items[at].clone(),
+        );
+        let seen = self.seen(directory, raw);
+        self.listed[directory].seen[at].get_or_init(|| seen).clone()
+    }
+
+    /// `raw`, an item of `directory`, as git sees it, or `None` when git
+    /// does not see it.
+    fn seen(&mut self, directory: &Path, raw: Raw) -> Option<RawEntry<PathBuf>> {
+        let relative = directory.join(gix::path::from_bstr(raw.name.as_bstr()));
+        let (kind, stat) = self.kind(&relative, &raw)?;
+        Some(RawEntry {
+            name: raw.name,
+            kind,
+            stat,
+            size: stat.map(|stat| stat.size),
+        })
+    }
+
+    /// The entries of `directory`, listed as `raw`, as git sees them.
+    fn classify(&mut self, directory: &Path, raw: Vec<Raw>) -> Rc<[RawEntry<PathBuf>]> {
+        raw.into_iter()
+            .filter_map(|item| self.seen(directory, item))
+            .collect()
     }
 
     /// The blob of the file at `path` with `stat`, if already known.
@@ -334,22 +338,40 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
     }
 
     fn list(&mut self, directory: &PathBuf) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
-        Ok(Rc::clone(&self.listing(directory)?.entries))
+        let count = self.listing(directory)?.items.len();
+        Ok((0..count)
+            .filter_map(|at| self.entry(directory, at))
+            .collect())
     }
 
-    /// Finds the entries through the listing's lookup, so a write into a
-    /// large directory addresses a few entries and not all of them.
+    /// Classifies only the items whose names could give such an entry, so
+    /// a lookup in a large directory classifies a few entries and not all
+    /// of them.
     fn alike(
         &mut self,
         directory: &PathBuf,
         name: &[u8],
         segment: Option<&str>,
     ) -> Result<Vec<RawEntry<PathBuf>>, GitError> {
-        Ok(self.listing(directory)?.alike(name, segment))
+        let record = segment.map(|segment| format!("{segment}.json"));
+        let names = [
+            Some(name),
+            segment.map(str::as_bytes),
+            record.as_deref().map(str::as_bytes),
+        ];
+        let names: Vec<&[u8]> = names.into_iter().flatten().collect();
+        let found = self.listing(directory)?.folded(&names);
+        Ok(found
+            .into_iter()
+            .filter_map(|at| self.entry(directory, at))
+            .filter(|entry| {
+                entry.name.eq_ignore_ascii_case(name) || address::segment(entry) == segment
+            })
+            .collect())
     }
 
-    /// Uses the lookup only when `entries` is the listing of `directory` it
-    /// was made from, and otherwise scans `entries`.
+    /// Settles a record beside its directory first, so its parse is cached
+    /// by blob.
     fn named<'e>(
         &mut self,
         directory: &PathBuf,
@@ -357,28 +379,10 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
         segment: &str,
         pointers: &mut Pointers,
     ) -> Result<Named<'e, PathBuf>, GitError> {
-        let found = match self.listed.get(directory) {
-            Some(listing) if std::ptr::eq(Rc::as_ptr(&listing.entries), entries) => Some(
-                listing
-                    .lookup()
-                    .segments
-                    .get(segment)
-                    .cloned()
-                    .unwrap_or_default(),
-            ),
-            _ => None,
-        };
-        // The record is settled first, so its parse is cached by blob.
-        let shadows = |record: &RawEntry<PathBuf>| {
+        address::named(entries, segment, |record| {
             let record = self.settle(directory, record);
             pointers.shadows(&record, || self.read(directory, &record))
-        };
-        match found {
-            Some(found) => {
-                address::classify(found.iter().filter_map(|at| entries.get(*at)), shadows)
-            }
-            None => address::named(entries, segment, shadows),
-        }
+        })
     }
 
     /// Hashes an `Unhashed` file once; later calls give the same answer.
