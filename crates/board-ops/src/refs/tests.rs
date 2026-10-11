@@ -5,15 +5,16 @@ use std::path::Path;
 use board_model::{Code, Fields, LogicalPath};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
+use serde_json::{Value, json};
 
-use crate::tests::{board, open, task};
-use crate::{Absent, Board, RefsError, RefsReport};
+use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
+use crate::{Absent, Board, Fielded, RefsError, RefsReport};
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
 }
 
-/// `refs` of one path, as most tests ask.
+/// `refs` of one path, as most tests ask, or of several, collected.
 trait One {
     fn one(
         &self,
@@ -21,16 +22,32 @@ trait One {
         absent: Absent,
         cache: Option<&Path>,
     ) -> Result<RefsReport, RefsError>;
+
+    fn refs_all(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+        cache: Option<&Path>,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError>;
 }
 
 impl One for Board {
+    fn refs_all(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+        cache: Option<&Path>,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        Ok(self.refs(paths, absent, &[], None, cache)?.collect())
+    }
+
     fn one(
         &self,
         text: &str,
         absent: Absent,
         cache: Option<&Path>,
     ) -> Result<RefsReport, RefsError> {
-        let mut answers = self.refs(&[path(text)], absent, cache)?;
+        let mut answers = self.refs_all(&[path(text)], absent, cache)?;
         assert_eq!(answers.len(), 1, "one answer for one path");
         answers.remove(0)
     }
@@ -51,7 +68,9 @@ fn several_paths_are_answered_in_order_from_one_snapshot_each_as_alone() {
     let scenario = linked();
     let asked = ["/tasks/c", "/projects/p", "/tasks/c"];
     let board = open(&scenario);
-    let answers = board.refs(&asked.map(path), Absent::Refuse, None).unwrap();
+    let answers = board
+        .refs_all(&asked.map(path), Absent::Refuse, None)
+        .unwrap();
     assert_eq!(
         entered(&board, "snapshot"),
         1,
@@ -70,7 +89,7 @@ fn a_path_that_names_nothing_among_several_is_refused_alone_and_the_others_are_a
     let scenario = linked();
     let board = open(&scenario);
     let answers = board
-        .refs(
+        .refs_all(
             &[path("/tasks/a"), path("/tasks/zz"), path("/projects/p")],
             Absent::Refuse,
             None,
@@ -93,7 +112,7 @@ fn a_path_that_names_nothing_among_several_is_refused_alone_and_the_others_are_a
         ]
     );
     let admitted = board
-        .refs(
+        .refs_all(
             &[path("/tasks/a"), path("/projects/p")],
             Absent::Refuse,
             None,
@@ -107,7 +126,7 @@ fn paths_that_all_name_nothing_take_no_snapshot_and_one_that_resolves_takes_one(
     let scenario = linked();
     let board = open(&scenario);
     let answers = board
-        .refs(
+        .refs_all(
             &[path("/tasks/a.json"), path("/tasks/new.md")],
             Absent::Locate,
             None,
@@ -120,7 +139,7 @@ fn paths_that_all_name_nothing_take_no_snapshot_and_one_that_resolves_takes_one(
     );
     assert_eq!(entered(&board, "snapshot"), 0);
     board
-        .refs(&[path("/tasks/zz"), path("/tasks/a")], Absent::Locate, None)
+        .refs_all(&[path("/tasks/zz"), path("/tasks/a")], Absent::Locate, None)
         .unwrap();
     assert_eq!(entered(&board, "snapshot"), 1);
 }
@@ -262,7 +281,6 @@ fn refs_of_a_path_that_names_nothing_is_refused_and_one_that_names_a_record_is_a
 
 #[test]
 fn refs_inside_a_mounted_board_finds_the_records_there_that_reach_it() {
-    use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA};
     let library = Scenario::new();
     let commit = library.commit(&[
         (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
@@ -441,7 +459,7 @@ fn refs_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change
 fn answered_each(scenario: &Scenario, texts: &[&str], cache: Option<&Path>) -> Vec<RefsReport> {
     let paths: Vec<LogicalPath> = texts.iter().map(|text| path(text)).collect();
     open(scenario)
-        .refs(&paths, Absent::Refuse, cache)
+        .refs_all(&paths, Absent::Refuse, cache)
         .unwrap()
         .into_iter()
         .map(|answer| RefsReport {
@@ -500,4 +518,206 @@ fn refs_of_a_json_path_whose_stem_names_an_entry_hints_the_stem_and_one_whose_st
             ..Fields::at(&path("/tasks/zz"))
         })
     );
+}
+
+/// What `refs` of `text`, asking for `fields`, gives each reference the
+/// record makes: its pointer, and its target's values and code.
+fn fielded(
+    scenario: &Scenario,
+    text: &str,
+    fields: &[&str],
+    cache: Option<&Path>,
+) -> Vec<(String, Fielded)> {
+    limited(scenario, text, fields, None, cache)
+        .into_iter()
+        .map(|(pointer, fielded)| (pointer, fielded.unwrap()))
+        .collect()
+}
+
+/// [`fielded`], within `limit`, where a reference whose target was not
+/// read has `None`.
+fn limited(
+    scenario: &Scenario,
+    text: &str,
+    fields: &[&str],
+    limit: Option<usize>,
+    cache: Option<&Path>,
+) -> Vec<(String, Option<Fielded>)> {
+    let fields: Vec<String> = fields.iter().map(|field| (*field).to_owned()).collect();
+    let paths = [path(text)];
+    let board = open(scenario);
+    let report = board
+        .refs(&paths, Absent::Refuse, &fields, limit, cache)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap();
+    report
+        .from
+        .into_iter()
+        .map(|outgoing| (outgoing.pointer, outgoing.fields))
+        .collect()
+}
+
+/// The values of a target that reads as a record, with no code.
+fn values(values: &[(&str, Option<Value>)]) -> Fielded {
+    Fielded {
+        values: Some(
+            values
+                .iter()
+                .map(|(pointer, value)| ((*pointer).to_owned(), value.clone()))
+                .collect(),
+        ),
+        code: None,
+    }
+}
+
+#[test]
+fn fields_are_read_from_each_target_where_refs_resolves_it_through_links_and_mounts() {
+    let library = Scenario::new();
+    let commit = library.commit(&[
+        (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        (
+            "tasks/ok.json",
+            r#"{"$type": "lr/task/v1", "title": "mounted"}"#,
+        ),
+    ]);
+    let scenario = linked();
+    scenario
+        .write(
+            "vendor/lib.json",
+            Item::File(&format!(
+                r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+                library.path()
+            )),
+        )
+        .write(
+            "projects/p.json",
+            Item::File(r#"{"$type": "lr/project/v1", "title": "p"}"#),
+        )
+        .write(
+            "tasks/d.json",
+            Item::File(&task(r#", "project": "/links/l", "see": "/vendor/lib/tasks/ok""#)),
+        );
+    let fields = ["/title", "/$type", "/nope"];
+    assert_eq!(
+        fielded(&scenario, "/tasks/d", &fields, None),
+        [
+            (
+                "/project".to_owned(),
+                values(&[
+                    ("/title", Some(json!("p"))),
+                    ("/$type", Some(json!("lr/project/v1"))),
+                    ("/nope", None),
+                ])
+            ),
+            (
+                "/see".to_owned(),
+                values(&[
+                    ("/title", Some(json!("mounted"))),
+                    ("/$type", Some(json!("lr/task/v1"))),
+                    ("/nope", None),
+                ])
+            ),
+        ]
+    );
+}
+
+#[test]
+fn a_target_that_is_not_a_record_has_its_code_without_values_and_a_degraded_one_has_both() {
+    let scenario = linked();
+    scenario
+        .write("notes.md", Item::File("# n\n"))
+        .write(
+            "tasks/bad.json",
+            Item::File(r#"{"$type": "lr/task/v1", "status": "done"}"#),
+        )
+        .write(
+            "tasks/to-bad.json",
+            Item::File(&task(r#", "see": "/tasks/bad""#)),
+        )
+        .write(
+            "tasks/to-note.json",
+            Item::File(&task(r#", "see": "/notes.md""#)),
+        )
+        .write(
+            "tasks/to-dir.json",
+            Item::File(&task(r#", "see": "/projects""#)),
+        )
+        .write(
+            "tasks/to-none.json",
+            Item::File(&task(r#", "see": "/nowhere""#)),
+        );
+    let one = |text: &str| fielded(&scenario, text, &["/status"], None).remove(0).1;
+    let unread = |code| Fielded {
+        values: None,
+        code: Some(code),
+    };
+    assert_eq!(
+        one("/tasks/to-bad"),
+        Fielded {
+            code: Some(Code::RecordInvalid),
+            ..values(&[("/status", Some(json!("done")))])
+        }
+    );
+    assert_eq!(one("/tasks/to-note"), unread(Code::RecordNotARecord));
+    assert_eq!(one("/tasks/to-dir"), unread(Code::RecordNotARecord));
+    // A reference that resolves to nothing has no target to read.
+    let dangling = limited(&scenario, "/tasks/to-none", &["/status"], None, None);
+    assert_eq!(dangling, [("/see".to_owned(), None)]);
+    // The twin: a target check admits has its values and no code.
+    assert_eq!(
+        one("/tasks/b"),
+        values(&[("/status", None)]),
+        "/links/l leads to /projects/p"
+    );
+}
+
+#[test]
+fn a_targets_code_is_the_same_from_a_warm_index_as_from_a_cold_one_after_it_changes() {
+    let scenario = linked();
+    scenario.write("tasks/d.json", Item::File(&task(r#", "see": "/tasks/a""#)));
+    let cache = tempfile::tempdir().unwrap();
+    let code = |cache| {
+        fielded(&scenario, "/tasks/d", &["/title"], cache)
+            .remove(0)
+            .1
+            .code
+    };
+    assert_eq!(code(Some(cache.path())), None);
+    scenario.write("tasks/a.json", Item::File(r#"{"$type": "lr/task/v1"}"#));
+    assert_eq!(code(Some(cache.path())), Some(Code::RecordInvalid));
+    assert_eq!(code(None), Some(Code::RecordInvalid));
+}
+
+#[test]
+fn a_run_without_fields_reads_no_target() {
+    let scenario = linked();
+    let board = open(&scenario);
+    let paths = [path("/tasks/a")];
+    let report = board
+        .refs(&paths, Absent::Refuse, &[], None, None)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap();
+    assert!(report.from.iter().all(|outgoing| outgoing.fields.is_none()));
+}
+
+#[test]
+fn a_reference_past_the_limit_has_no_read_for_its_target_and_one_within_it_has() {
+    let scenario = linked();
+    scenario.write(
+        "tasks/d.json",
+        Item::File(&task(r#", "project": "/links/l", "see": "/tasks/a""#)),
+    );
+    let read = |limit| -> Vec<bool> {
+        limited(&scenario, "/tasks/d", &["/status"], Some(limit), None)
+            .iter()
+            .map(|(_, fielded)| fielded.is_some())
+            .collect()
+    };
+    assert_eq!(read(1), [true, false]);
+    assert_eq!(read(2), [true, true]);
 }

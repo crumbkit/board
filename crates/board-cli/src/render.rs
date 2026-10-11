@@ -20,10 +20,86 @@ mod page;
 mod plugins;
 mod refs;
 
-pub(crate) use get::{GET_BUDGET, GET_HELP, get};
+pub(crate) use get::{GET_HELP, get};
 use page::Shown;
 pub(crate) use plugins::{call, plugin_find, plugin_list, temporary};
-pub(crate) use refs::refs;
+pub(crate) use refs::{REFS_HELP, refs};
+
+/// The bytes one `get` or `refs` run prints, in the format it prints,
+/// before it leaves the remaining paths unanswered as `over_budget`.
+pub(crate) const BUDGET: usize = 64 << 20;
+
+/// A run's answers to several paths, printed in order while the run has
+/// printed fewer than `budget` bytes, as text or, as JSON, inside one
+/// report whose `answers` are written one at a time. The output is held
+/// until exit, so it is at most `budget`, one answer, and the refusals of
+/// the paths left.
+struct Answers {
+    output: Output,
+    format: Format,
+    budget: usize,
+    written: usize,
+}
+
+impl Answers {
+    fn open(format: Format, kind: &str, budget: usize) -> Self {
+        let mut output = Output::default();
+        if format == Format::Json {
+            let open = format!("{{\n  \"$type\": \"{kind}\",\n  \"answers\": [");
+            output.stdout.extend(open.bytes());
+        }
+        Self {
+            output,
+            format,
+            budget,
+            written: 0,
+        }
+    }
+
+    /// Whether the answer to the path at `at` is printed, or is
+    /// `over_budget`. The first always is.
+    fn fits(&self, at: usize) -> bool {
+        at == 0 || self.output.stdout.len() + self.output.stderr.len() < self.budget
+    }
+
+    /// The answer to `path` once the run has printed its budget: it was
+    /// not `done`, such as `read`.
+    fn over_budget(&self, code: Code, done: &str, path: &LogicalPath) -> Refusal {
+        let budget = self.budget;
+        let message =
+            format!("{path} was not {done}: this run already printed its budget of {budget} bytes");
+        Refusal::new(code, message, &Fields::at(path))
+    }
+
+    /// Notes `refusal`, whose code becomes the run's when it is the first.
+    fn refused(&mut self, refusal: &Refusal) {
+        (self.output.error).get_or_insert_with(|| refusal.code.as_str().to_owned());
+    }
+
+    /// Writes `value` as the next of the JSON report's `answers`.
+    fn json(&mut self, value: &Value) {
+        let pretty = serde_json::to_string_pretty(value).unwrap_or_default();
+        let separator = if self.written == 0 {
+            "\n    "
+        } else {
+            ",\n    "
+        };
+        self.written += 1;
+        self.output.stdout.extend(separator.bytes());
+        self.output
+            .stdout
+            .extend(pretty.replace('\n', "\n    ").bytes());
+    }
+
+    /// The output, with exit 1 when any path was refused.
+    fn close(mut self) -> Output {
+        if self.format == Format::Json {
+            self.output.stdout.extend_from_slice(b"\n  ]\n}\n");
+        }
+        self.output.code = u8::from(self.output.error.is_some());
+        self.output
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {

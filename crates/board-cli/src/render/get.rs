@@ -1,12 +1,12 @@
 //! `get`, of one path or of several.
 
-use board_model::{Code, Fields, LogicalPath, Object, Refusal};
+use board_model::{Code, LogicalPath, Object, Refusal};
 use board_ops::{GetReport, ReadError};
 use data_encoding::BASE64;
 use serde_json::{Value, json};
 
 use super::refs::named_lines;
-use super::{Format, error_value, location, refused};
+use super::{Answers, Format, error_value, location, refused};
 use crate::report::Output;
 
 /// `board get --help` after its options.
@@ -36,21 +36,15 @@ Examples:
   board get /tasks/a /tasks/b /tasks/c --json
   board get /README.md";
 
-/// The bytes one `board get` run prints, in the format it prints, before it
-/// leaves the remaining paths unread as `get::over_budget`.
-pub(crate) const GET_BUDGET: usize = 64 << 20;
-
 /// `get` of `paths`. Each file is read only once the answers before it are
 /// rendered, and only while the run has printed fewer than `budget` bytes;
 /// every later path is `get::over_budget`, and the first is always read.
-/// So the output held until exit is at most `budget`, one answer, and the
-/// errors of the paths left. When the board could not be read at all, every
-/// path is answered with that one error. As text, one path prints its
-/// file's stored bytes alone; several print each after a `==> <path> <==`
-/// line, as `head` does with several files, and name the path on every line
-/// of a refusal. As JSON, one `board/get-report/v1` whose `answers` hold, in
-/// the order asked, each file or its `board/error/v1`. Exit 1 when any path
-/// is refused.
+/// When the board could not be read at all, every path is answered with
+/// that one error. As text, one path prints its file's stored bytes alone;
+/// several print each after a `==> <path> <==` line, as `head` does with
+/// several files, and name the path on every line of a refusal. As JSON,
+/// one `board/get-report/v1` whose `answers` hold, in the order asked, each
+/// file or its `board/error/v1`. Exit 1 when any path is refused.
 pub(crate) fn get(
     format: Format,
     paths: &[LogicalPath],
@@ -58,22 +52,16 @@ pub(crate) fn get(
     budget: usize,
 ) -> Output {
     let several = paths.len() > 1;
-    let mut output = Output::default();
-    if format == Format::Json {
-        output
-            .stdout
-            .extend_from_slice(b"{\n  \"$type\": \"board/get-report/v1\",\n  \"answers\": [");
-    }
+    let mut run = Answers::open(format, "board/get-report/v1", budget);
     let (mut each, unread) = match answers {
         Ok(each) => (Some(each), None),
         Err(error) => (None, Some(error.refusal("get"))),
     };
     for (at, path) in paths.iter().enumerate() {
-        let printed = output.stdout.len() + output.stderr.len();
         let answer = if let Some(refusal) = &unread {
             Err(refusal.clone())
-        } else if at > 0 && printed >= budget {
-            Err(over_budget(path, budget))
+        } else if !run.fits(at) {
+            Err(run.over_budget(Code::GetOverBudget, "read", path))
         } else {
             match each.as_mut().and_then(Iterator::next) {
                 Some(Ok(report)) => Ok(report),
@@ -82,31 +70,14 @@ pub(crate) fn get(
             }
         };
         if let Err(refusal) = &answer {
-            (output.error).get_or_insert_with(|| refusal.code.as_str().to_owned());
+            run.refused(refusal);
         }
         match format {
-            Format::Text => text(&mut output, several.then_some(path), &answer),
-            Format::Json => {
-                let value = answer.as_ref().map_or_else(error_value, value);
-                let pretty = serde_json::to_string_pretty(&value).unwrap_or_default();
-                let separator = if at == 0 { "\n    " } else { ",\n    " };
-                output.stdout.extend(separator.bytes());
-                output.stdout.extend(pretty.replace('\n', "\n    ").bytes());
-            }
+            Format::Text => text(&mut run.output, several.then_some(path), &answer),
+            Format::Json => run.json(&answer.as_ref().map_or_else(error_value, value)),
         }
     }
-    if format == Format::Json {
-        output.stdout.extend_from_slice(b"\n  ]\n}\n");
-    }
-    output.code = u8::from(output.error.is_some());
-    output
-}
-
-/// The answer to `path` once a run has printed `budget` bytes.
-fn over_budget(path: &LogicalPath, budget: usize) -> Refusal {
-    let message =
-        format!("{path} was not read: this run already printed its budget of {budget} bytes");
-    Refusal::new(Code::GetOverBudget, message, &Fields::at(path))
+    run.close()
 }
 
 /// One answer as text: the file's bytes, after its header when `named`

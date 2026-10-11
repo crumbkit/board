@@ -252,7 +252,11 @@ impl Board {
     }
 
     /// Where `path` leads in `view`, as [`Board::locate`] says.
-    fn locate_in(&self, view: &mut Resolver, path: &LogicalPath) -> Result<Location, ReadError> {
+    pub(crate) fn locate_in(
+        &self,
+        view: &mut Resolver,
+        path: &LogicalPath,
+    ) -> Result<Location, ReadError> {
         let _timed = self.timed("resolve");
         Self::located(path, |path| view.resolve(path))
     }

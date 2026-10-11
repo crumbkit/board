@@ -7,12 +7,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use board_index::Fallback;
-use board_model::{Code, Location, LogicalPath, Refusal, Source};
-use board_tree::{ResolveError, Status};
+use board_model::{Code, Location, LogicalPath, Refusal, RefusalCode, Source};
+use board_tree::{ResolveError, Resolver, Status};
+use serde_json::Value;
 
 use crate::board::Board;
 use crate::check::CheckError;
-use crate::read::{ReadError, display, join};
+use crate::read::{ReadError, display, join, read_at};
 use crate::snapshot::{Referenced, Snapshot};
 
 /// One reference the record makes.
@@ -24,6 +25,10 @@ pub struct Outgoing {
     /// Where it resolved, or `None` when it dangles.
     pub location: Option<Location>,
     pub status: Status,
+    /// What the target holds at the fields the run asked for. `None` when
+    /// the run asked for none, when the reference resolves to nothing, and
+    /// past the run's limit.
+    pub fields: Option<Fielded>,
 }
 
 /// One record that makes references to the object, however it names it.
@@ -79,49 +84,99 @@ enum Found {
     Missing(RefsReport),
 }
 
+/// What a reference's target holds at the pointers a run asked for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fielded {
+    /// Each pointer asked, in order, with the target record's value there,
+    /// or `None` where the record has nothing. `None` as a whole when the
+    /// target is not a record that could be read.
+    pub values: Option<Vec<(String, Option<Value>)>>,
+    /// Why the target could not be read, or the code check gives it.
+    pub code: Option<Code>,
+}
+
+/// A run's state as it answers each path in turn.
+struct Answering<'a> {
+    board: &'a Board,
+    view: Resolver<'a, 'static>,
+    absent: Absent,
+    fields: &'a [String],
+    limit: usize,
+    cache: Option<&'a Path>,
+    snapshot: Option<Snapshot>,
+}
+
 impl Board {
-    /// Resolves each of `paths`, then checks the board once against the
-    /// index kept under `cache` and answers each path in order: the
+    /// Each of `paths`, answered in order as the iterator is advanced: the
     /// references the object there makes and those that reach it, or why
     /// there is no answer. Two references reach it when they resolve to its
-    /// identity, its board and physical path, whatever path they name. The
-    /// outer error is a check that could not run, which every path needs.
-    pub fn refs(
-        &self,
-        paths: &[LogicalPath],
+    /// identity, its board and physical path, whatever path they name. Every
+    /// path resolves in one snapshot of the working tree, and the board is
+    /// checked once, against the index kept under `cache`, when the first
+    /// path that resolves needs it. A check that cannot run is
+    /// [`RefsError::Check`] for that path, which every path after it needs
+    /// too. For each of the first `limit` references a path makes that
+    /// resolve, the target's values at each of `fields`, JSON pointers, are
+    /// read as the answer is made. The outer error is a snapshot that cannot
+    /// be taken.
+    pub fn refs<'a>(
+        &'a self,
+        paths: &'a [LogicalPath],
         absent: Absent,
-        cache: Option<&Path>,
-    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
-        let mut snapshot = None;
-        let mut answers = Vec::with_capacity(paths.len());
-        for path in paths {
-            answers.push(match self.found(path, absent) {
-                Ok(Found::At(location)) => {
-                    let taken = match snapshot.take() {
-                        Some(taken) => taken,
-                        None => {
-                            self.snapshot(self.index(cache).map_err(CheckError::from)?, None)?
-                        }
-                    };
-                    let report = answer(&taken, location, path);
-                    snapshot = Some(taken);
-                    Ok(report)
+        fields: &'a [String],
+        limit: Option<usize>,
+        cache: Option<&'a Path>,
+    ) -> Result<impl Iterator<Item = Result<RefsReport, RefsError>> + 'a, RefsError> {
+        let view = self
+            .repositories()
+            .snapshot()
+            .map_err(|source| refused(ResolveError::Git(source)))?;
+        let mut answering = Answering {
+            board: self,
+            view,
+            absent,
+            fields,
+            limit: limit.unwrap_or(usize::MAX),
+            cache,
+            snapshot: None,
+        };
+        Ok(paths.iter().map(move |path| answering.answer(path)))
+    }
+}
+
+impl Answering<'_> {
+    fn answer(&mut self, path: &LogicalPath) -> Result<RefsReport, RefsError> {
+        let location = match self.found(path)? {
+            Found::At(location) => location,
+            Found::Missing(report) => return Ok(report),
+        };
+        let snapshot = if let Some(snapshot) = self.snapshot.take() {
+            snapshot
+        } else {
+            let index = self.board.index(self.cache).map_err(CheckError::from)?;
+            self.board.snapshot(index, None)?
+        };
+        let mut report = answer(&snapshot, location, path);
+        if !self.fields.is_empty() {
+            for outgoing in report.from.iter_mut().take(self.limit) {
+                if let Some(location) = &outgoing.location {
+                    let fielded = self.fielded(&snapshot, location, &outgoing.target);
+                    outgoing.fields = Some(fielded);
                 }
-                Ok(Found::Missing(report)) => Ok(report),
-                Err(error) => Err(error),
-            });
+            }
         }
-        Ok(answers)
+        self.snapshot = Some(snapshot);
+        Ok(report)
     }
 
     /// Where `path` leads or, when `absent` says to locate it, where a file
     /// there would be.
-    fn found(&self, path: &LogicalPath, absent: Absent) -> Result<Found, RefsError> {
-        let found = match self.locate(path) {
+    fn found(&mut self, path: &LogicalPath) -> Result<Found, RefsError> {
+        let found = match self.board.locate_in(&mut self.view, path) {
             Ok(location) => return Ok(Found::At(location)),
             Err(ReadError::Resolve {
                 source: ResolveError::NotFound { ancestor, .. },
-            }) if absent == Absent::Locate => ancestor,
+            }) if self.absent == Absent::Locate => ancestor,
             Err(source) => return Err(RefsError::Read { source }),
         };
         let not_found = || {
@@ -130,7 +185,7 @@ impl Board {
                 ancestor: found.clone(),
             })
         };
-        let ancestor = self.repositories().ancestor(path).map_err(refused)?;
+        let ancestor = self.view.ancestor(path).map_err(refused)?;
         let physical = ancestor.path().ok_or_else(not_found)?;
         let display = display(&ancestor.location, path);
         let named = ancestor
@@ -151,6 +206,45 @@ impl Board {
             memory: None,
         }))
     }
+
+    /// What the record at `location`, which `target` resolved to, holds at
+    /// the run's fields, with the code `snapshot` gives it.
+    fn fielded(&self, snapshot: &Snapshot, location: &Location, target: &LogicalPath) -> Fielded {
+        let degraded = snapshot
+            .report
+            .entries
+            .iter()
+            .find_map(|entry| match entry.status {
+                Status::Degraded(code)
+                    if entry.source == location.board.source && entry.path == location.path =>
+                {
+                    Some(code)
+                }
+                _ => None,
+            });
+        let record = read_at(self.board.repositories(), location.clone(), target)
+            .map_err(|error| error.code())
+            .and_then(|report| {
+                report.record.map_err(|refusal| match refusal.code {
+                    RefusalCode::Board(code) => code,
+                    RefusalCode::Plugin(_) => Code::RecordNotARecord,
+                })
+            });
+        match record {
+            Ok(record) => Fielded {
+                values: Some(
+                    (self.fields.iter())
+                        .map(|field| (field.clone(), record.pointer(field).cloned()))
+                        .collect(),
+                ),
+                code: degraded,
+            },
+            Err(code) => Fielded {
+                values: None,
+                code: Some(code),
+            },
+        }
+    }
 }
 
 /// The references from and to the object at `location`, which `path`
@@ -168,6 +262,7 @@ fn answer(snapshot: &Snapshot, location: Location, path: &LogicalPath) -> RefsRe
             target: referenced.reached.target.clone(),
             location: referenced.reached.location.clone(),
             status: referenced.reached.code.map_or(Status::Ok, Status::Degraded),
+            fields: None,
         })
         .collect();
     let mut to: BTreeMap<(String, String), Incoming> = BTreeMap::new();

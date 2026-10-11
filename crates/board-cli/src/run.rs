@@ -105,6 +105,9 @@ struct Refs {
     /// When nothing is at a path yet, report where a file there would be instead of refusing.
     #[arg(long)]
     missing: bool,
+    /// A JSON pointer, such as /status, whose value in each reference's target to show; can be repeated.
+    #[arg(long = "field", value_name = "POINTER", value_parser = pointer)]
+    fields: Vec<String>,
     #[command(flatten)]
     page: Page,
 }
@@ -152,25 +155,7 @@ Examples:
         page: Page,
     },
     /// List the references each record makes and the records that reach it.
-    #[command(after_help = "\
-Lines are `from <pointer> <target> <status>` for each reference the record
-makes, then `to <path> <pointer>` for each record that reaches it.
-
-With several paths, each is answered as it would be alone, in the order
-given. The limit applies to each path, so a run prints at most the number of
-paths times the limit reference lines, plus a note or error for each path.
-Every line about a path names it, notes and errors included. A path that is
-refused does not stop the others; the exit code is 1.
---json prints one board/refs-report/v1, for one path too, whose `answers`
-hold each path's references or its board/error/v1, in order. One run takes
-at most 10000 paths. A path that is not a logical path, such as tasks/a,
-refuses the whole run as board::usage::invalid with exit code 2.
-
-Examples:
-  board refs /projects/p
-  board refs /projects/p --json
-  board refs /tasks/a /tasks/b --all --json
-  board refs --missing /projects/p/notes/new.md --json")]
+    #[command(after_help = render::REFS_HELP)]
     Refs(Refs),
     /// Check the record on stdin and write it, in canonical form, at a path.
     #[command(after_help = "\
@@ -302,6 +287,19 @@ fn expect(text: &str) -> Result<Expect, String> {
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
 }
 
+/// A JSON pointer, by RFC 6901: empty, or each token after a `/`, in which
+/// `~` is followed by `0` or `1`.
+fn pointer(text: &str) -> Result<String, String> {
+    let mut escapes = text.split('~').skip(1);
+    if (text.is_empty() || text.starts_with('/'))
+        && escapes.all(|after| after.starts_with(['0', '1']))
+    {
+        Ok(text.to_owned())
+    } else {
+        Err("must be a JSON pointer, such as /status, or /a~1b for the key a/b: empty or starting with /, with ~ only as ~0 or ~1".to_owned())
+    }
+}
+
 /// A row limit from 1 to [`MAX_LIMIT`].
 fn limit(text: &str) -> Result<usize, String> {
     match text.parse::<usize>() {
@@ -378,9 +376,7 @@ fn command(
             Err(error) => render::refused(format, &error.refusal()),
         },
         Command::Get { paths } => (render::too_many(format, "get", paths.len(), MAX_LIMIT))
-            .unwrap_or_else(|| {
-                render::get(format, &paths, board.get_each(&paths), render::GET_BUDGET)
-            }),
+            .unwrap_or_else(|| render::get(format, &paths, board.get_each(&paths), render::BUDGET)),
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
                 Ok(report) => render::put(format, &report),
@@ -487,14 +483,10 @@ fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Outpu
     if let Some(refused) = render::too_many(format, "refs", asked.paths.len(), MAX_LIMIT) {
         return refused;
     }
-    match board.refs(&asked.paths, absent, context.cache.as_deref()) {
+    let cache = context.cache.as_deref();
+    match board.refs(&asked.paths, absent, &asked.fields, limit, cache) {
         Err(error) => render::refused(format, &error.refusal()),
-        Ok(answers) => {
-            let answers: Vec<_> = (asked.paths.iter().zip(answers))
-                .map(|(path, answer)| (path, answer.map_err(|error| error.refusal())))
-                .collect();
-            render::refs(format, &answers, limit)
-        }
+        Ok(answers) => render::refs(format, &asked.paths, answers, limit, render::BUDGET),
     }
 }
 
@@ -653,10 +645,17 @@ fn tips(error: &clap::Error) -> Vec<String> {
 
 /// The command line with the value clap refused written as a logical path,
 /// such as `/tasks/a` for `tasks/a.json`, when clap admits it that way.
+/// Every logical path is a positional argument, such as `<PATH>`.
 fn corrected(error: &clap::Error, arguments: &[OsString]) -> Option<String> {
-    let Some(ContextValue::String(value)) = error.get(ContextKind::InvalidValue) else {
+    let (Some(ContextValue::String(arg)), Some(ContextValue::String(value))) = (
+        error.get(ContextKind::InvalidArg),
+        error.get(ContextKind::InvalidValue),
+    ) else {
         return None;
     };
+    if !arg.starts_with('<') {
+        return None;
+    }
     let stem = value.strip_suffix(".json").unwrap_or(value);
     let path = format!("/{}", stem.trim_start_matches('/'));
     let at = arguments

@@ -194,8 +194,8 @@ fn too_many_admits_as_many_paths_as_the_most_and_refuses_one_more() {
 
 #[test]
 fn get_help_and_the_over_budget_hint_name_the_budget_and_the_path_limit_the_cli_uses() {
-    let budget = format!("{} MiB", render::GET_BUDGET >> 20);
-    assert_eq!(render::GET_BUDGET % (1 << 20), 0);
+    let budget = format!("{} MiB", render::BUDGET >> 20);
+    assert_eq!(render::BUDGET % (1 << 20), 0);
     assert!(render::GET_HELP.contains(&budget), "{budget}");
     let paths = format!("takes at most {}", board_ops::MAX_LIMIT);
     assert!(render::GET_HELP.contains(&paths), "{paths}");

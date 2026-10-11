@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's no-dead-ends property cannot provoke through the `board`
 /// command line, why, and where each is tested instead. The property
 /// provokes every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 5] = [
+pub const NOT_REPRODUCED: [(Code, &str); 6] = [
     (
         Code::IndexFailed,
         "the index fails only when SQLite does, even in memory; \
@@ -44,6 +44,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 5] = [
          board-cli/src/tests/get.rs passes render::get budgets of a few bytes",
     ),
     (
+        Code::RefsOverBudget,
+        "the CLI's 64 MiB refs budget needs a board of millions of references; \
+         board-cli/src/tests/refs.rs passes render::refs budgets of a few bytes",
+    ),
+    (
         Code::PluginTimeout,
         "the CLI's 30-second plugin limit is too slow for a test; \
          board-ops/src/call/tests.rs uses a 500 ms limit",
@@ -56,10 +61,14 @@ const QUERY: &str = "query gives it; check runs no query";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 30] = [
+pub const NOT_CHECKED: [(Code, &str); 31] = [
     (
         Code::GetOverBudget,
         "only get gives it, to a path it leaves unread once a run has printed its budget",
+    ),
+    (
+        Code::RefsOverBudget,
+        "only refs gives it, to a path it leaves unanswered once a run has printed its budget",
     ),
     (
         Code::RecordNotARecord,

@@ -30,7 +30,7 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Interfaces
 
-17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes a document tagged `board/<command>-report/v1`, and `board/error/v1` on failure. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. `board refs` and `board get` exit 1 when any path they were asked is refused, and still print their report. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
+17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes a document tagged `board/<command>-report/v1`, and `board/error/v1` on failure. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. `board refs` and `board get` exit 1 when any path they were asked is refused, and still print their report; a path left past the run's byte budget is refused in its place. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
 18. **No async runtime.** Board is a local, synchronous CLI, and gix and rusqlite are synchronous. A dependency that brings in an async runtime states why in the change that adds it.
 
 ## Tests
@@ -80,8 +80,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     shows more. JSON carries `total` and `truncated`. `check` lists degraded
     entries first, so a cut never hides a problem behind healthy entries. `refs`
     limits each path's answer on its own, so the caller bounds a run by how many
-    paths it asks. `get` stops reading once its output reaches 64 MiB and
-    refuses each later path as `get::over_budget`, to ask for in another run.
+    paths it asks. `get` and `refs` stop answering once their output reaches
+    64 MiB and refuse each later path as `get::over_budget` or
+    `refs::over_budget`, to ask for in another run.
     An empty listing says so on stderr instead of printing nothing. Gate: a test
     walks the clap command tree and requires every listing command to take these
     flags.

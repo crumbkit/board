@@ -194,7 +194,7 @@ new commit and whether it wrote.
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
 | `board get <path>...` | resolve and print each file's stored bytes, up to 16 MiB each, all from one run; see below |
 | `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
-| `board refs <path>...` | references to and from each object, all from one check of the board |
+| `board refs <path>...` | references to and from each object, and values in each target, all from one check of the board; see docs/architecture/index.md |
 | `board put <path>` | validate and write a record |
 | `board mount update <path>` | advance a mount to its `follow` |
 | `board query <sql>` | read-only SQL over the index |

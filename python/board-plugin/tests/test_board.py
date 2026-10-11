@@ -186,6 +186,50 @@ def test_refs_of_one_str_is_refused_and_of_a_list_holding_it_is_read(monkeypatch
     assert DEMO.refs(["/ab"]) == [{"location": {"display": "/ab"}}]
 
 
+def answering_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple[str, ...]]:
+    """Make `board refs` answer each path until `budget` paths, then over budget, and return each run's arguments."""
+    runs: list[tuple[str, ...]] = []
+
+    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        runs.append(arguments)
+        asked = arguments[arguments.index("--") + 1 :]
+        over = {"$type": "board/error/v1", "code": board.REFS_OVER_BUDGET, "message": "not answered"}
+        answers = [{"location": {"display": path}} if at < budget else over for at, path in enumerate(asked)]
+        report = json.dumps({"$type": "board/refs-report/v1", "answers": answers}).encode()
+        return subprocess.CompletedProcess(["board", *arguments], 1 if budget < len(asked) else 0, report, b"")
+
+    monkeypatch.setattr(Board, "_run", run)
+    return runs
+
+
+def test_refs_asks_again_for_the_paths_a_run_left_over_its_budget_with_the_same_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = ["/a", "/b", "/c", "/d"]
+    runs = answering_within(monkeypatch, 4)
+    assert [answer and answer["location"]["display"] for answer in DEMO.refs(paths)] == paths
+    assert [run[run.index("--") + 1 :] for run in runs] == [("/a", "/b", "/c", "/d")]
+    runs = answering_within(monkeypatch, 2)
+    answers = DEMO.refs(paths, fields=["/status", "/$type"])
+    assert [answer and answer["location"]["display"] for answer in answers] == paths
+    flags = ("--json", "refs", "--all", "--field", "/status", "--field", "/$type", "--")
+    assert runs == [(*flags, "/a", "/b", "/c", "/d"), (*flags, "/c", "/d")]
+
+
+def test_refs_fails_on_a_run_that_answers_none_of_its_paths_and_reads_one_that_answers_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs = answering_within(monkeypatch, 0)
+    with pytest.raises(PluginError) as failed:
+        DEMO.refs(["/a", "/b"])
+    assert failed.value.code == "demo::board::failed"
+    assert f"left every path unanswered as {board.REFS_OVER_BUDGET}" in failed.value.message
+    assert [run[-2:] for run in runs] == [("/a", "/b")]
+    runs = answering_within(monkeypatch, 1)
+    assert [answer and answer["location"]["display"] for answer in DEMO.refs(["/a", "/b"])] == ["/a", "/b"]
+    assert [run[run.index("--") + 1 :] for run in runs] == [("/a", "/b"), ("/b",)]
+
+
 def test_a_get_report_without_one_readable_answer_per_path_is_a_failure_keeping_stderr_and_one_with_it_is_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -360,3 +404,22 @@ def test_several_paths_with_one_refused_for_another_reason_raise_its_code_and_wi
     answers = real.refs(["/docs/a.md", "/gone/new.md"], missing=True)
     assert answers[1] is not None
     assert answers[1]["missing"]["path"] == "elsewhere/new.md"
+
+
+def test_the_real_board_gives_each_references_target_values_and_codes(real: Board) -> None:
+    root = Path(real.root)
+    (root / ".board" / "types" / "x" / "item").mkdir(parents=True)
+    schema = {
+        "type": "object",
+        "properties": {"see": {"type": "array", "items": {"type": "string", "format": "board-ref"}}},
+    }
+    (root / ".board" / "types" / "x" / "item" / "v1.schema.json").write_text(json.dumps(schema))
+    (root / "b.json").write_text('{"$type": "x/item/v1", "status": "done"}')
+    (root / "a.json").write_text('{"$type": "x/item/v1", "see": ["/b", "/docs/a.md"]}')
+    [answer] = real.refs(["/a"], fields=["/status", "/nope"])
+    assert answer is not None
+    done, note = answer["from"]
+    assert done["values"] == [{"pointer": "/status", "value": "done"}, {"pointer": "/nope", "absent": True}]
+    assert "target_code" not in done
+    assert "values" not in note
+    assert note["target_code"] == "board::record::not_a_record"

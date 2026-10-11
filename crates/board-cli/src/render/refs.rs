@@ -2,16 +2,50 @@
 
 use std::fmt::Write as _;
 
-use board_model::{Location, LogicalPath, Refusal, Source};
-use board_ops::{Incoming, Missing, Outgoing, RefsReport, source_name};
+use board_model::{Code, Location, LogicalPath, Source};
+use board_ops::{Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport, source_name};
 use board_tree::Status;
 use serde_json::{Value, json};
 
 use super::{
-    Format, Shown, document, error_value, location, named, noted, refused, status_fields,
+    Answers, Format, Shown, error_value, location, named, noted, refused, status_fields,
     status_text,
 };
 use crate::report::Output;
+
+/// `board refs --help` after its options.
+pub(crate) const REFS_HELP: &str = "\
+Lines are `from <pointer> <target> <status>` for each reference the record
+makes, then `to <path> <pointer>` for each record that reaches it.
+
+With --field, each `from` line whose reference resolves adds
+` target=<code>`, or ` target=-` for a healthy record, then
+` <pointer>=<value>` for each field: the pointer as a JSON string, and the
+target's value there as compact JSON, or `absent`. A target that is not a
+record has no values. A reference that resolves to nothing adds nothing.
+A pointer is empty or starts with /, with ~0 for ~ and ~1 for / in a token.
+
+With several paths, each is answered as it would be alone, in the order
+given. The limit applies to each path, so a run prints at most the number of
+paths times the limit reference lines, plus a note or error for each path.
+Every line about a path names it, notes and errors included. A path that is
+refused does not stop the others; the exit code is 1.
+--json prints one board/refs-report/v1, for one path too, whose `answers`
+hold each path's references or its board/error/v1, in order; with --field,
+each `from` whose reference resolves has `values`, each a `pointer` with
+its `value` or `absent`, and `target_code` when the target has a code.
+One run takes at most 10000 paths. It stops answering once its output, as
+text or JSON, reaches 64 MiB, and refuses each path after that as
+board::refs::over_budget, to ask for in another run. A path that is not a
+logical path, such as tasks/a, refuses the whole run as
+board::usage::invalid with exit code 2.
+
+Examples:
+  board refs /projects/p
+  board refs /projects/p --json
+  board refs /tasks/a /tasks/b --all --json
+  board refs /tasks/a --field /status --field /title
+  board refs --missing /projects/p/notes/new.md --json";
 
 /// What a limit shows of one path's answer. It is one listing, a line per
 /// reference: those made, then each pointer that reaches the record, so a
@@ -51,10 +85,11 @@ impl<'a> Cut<'a> {
         for reference in self.from {
             let _ = writeln!(
                 text,
-                "{prefix}from {} {} {}",
+                "{prefix}from {} {} {}{}",
                 reference.pointer,
                 reference.target,
-                status_text(reference.status)
+                status_text(reference.status),
+                fields_text(reference.fields.as_ref())
             );
         }
         for (incoming, pointers) in &self.to {
@@ -95,6 +130,9 @@ impl<'a> Cut<'a> {
                     }),
                 });
                 status_fields(&mut value, reference.status);
+                if let Some(fielded) = &reference.fields {
+                    fields_value(&mut value, fielded);
+                }
                 value
             })
             .collect();
@@ -123,22 +161,38 @@ impl<'a> Cut<'a> {
     }
 }
 
-/// `refs` of one path or several, each answered as it would be alone and
-/// limited on its own. As text, a `from` line per reference the record
-/// makes, with its status, and a `to` line per record whose references
-/// reach it; with several paths, every line about a path names it. As
-/// JSON, one `board/refs-report/v1` whose `answers` hold, in the order
-/// asked, each path's references or its `board/error/v1`.
-/// Exit 1 when any path is refused.
+/// `refs` of `paths`, each answered as it would be alone and limited on its
+/// own, in order. Each path is answered only once the answers before it are
+/// rendered, and only while the run has printed fewer than `budget` bytes;
+/// every later path is `refs::over_budget`, and the first is always
+/// answered. A check that could not run refuses the whole run. As text, a `from` line per reference
+/// the record makes, with its status and any fields, and a `to` line per
+/// record whose references reach it; with several paths, every line about
+/// a path names it. As JSON, one `board/refs-report/v1` whose `answers`
+/// hold, in the order asked, each path's references or its
+/// `board/error/v1`. Exit 1 when any path is refused.
 pub(crate) fn refs(
     format: Format,
-    answers: &[(&LogicalPath, Result<RefsReport, Refusal>)],
+    paths: &[LogicalPath],
+    mut answers: impl Iterator<Item = Result<RefsReport, RefsError>>,
     limit: Option<usize>,
+    budget: usize,
 ) -> Output {
-    let several = answers.len() > 1;
-    let (mut stdout, mut stderr, mut values) = (String::new(), Vec::new(), Vec::new());
-    let mut error = None;
-    for (path, answer) in answers {
+    let several = paths.len() > 1;
+    let mut run = Answers::open(format, "board/refs-report/v1", budget);
+    let mut memory = None;
+    for (at, path) in paths.iter().enumerate() {
+        let answer = if run.fits(at) {
+            match answers.next() {
+                Some(Err(error @ RefsError::Check { .. })) => {
+                    return refused(format, &error.refusal());
+                }
+                Some(answer) => answer.map_err(|error| error.refusal()),
+                None => break,
+            }
+        } else {
+            Err(run.over_budget(Code::RefsOverBudget, "answered", path))
+        };
         let name = |text: &str| {
             if several {
                 named_lines(text, path)
@@ -146,46 +200,75 @@ pub(crate) fn refs(
                 text.to_owned()
             }
         };
-        match answer {
-            Ok(report) => {
+        match &answer {
+            Ok(report) => memory = memory.or(report.memory),
+            Err(refusal) => run.refused(refusal),
+        }
+        match (format, &answer) {
+            (Format::Json, answer) => run.json(
+                &answer
+                    .as_ref()
+                    .map_or_else(error_value, |report| Cut::of(report, limit).value(report)),
+            ),
+            (Format::Text, Ok(report)) => {
                 let cut = Cut::of(report, limit);
                 let line = if several {
                     format!("{path} ")
                 } else {
                     String::new()
                 };
-                stdout.push_str(&cut.lines(&line));
-                stderr.extend(name(&cut.note(report)).bytes());
-                values.push(cut.value(report));
+                run.output.stdout.extend(cut.lines(&line).bytes());
+                run.output.stderr.extend(name(&cut.note(report)).bytes());
             }
-            Err(refusal) => {
-                error.get_or_insert_with(|| refusal.code.as_str().to_owned());
+            (Format::Text, Err(refusal)) => {
                 let alone = refused(Format::Text, refusal).stderr;
-                stderr.extend(name(&String::from_utf8_lossy(&alone)).bytes());
-                values.push(error_value(refusal));
+                run.output
+                    .stderr
+                    .extend(name(&String::from_utf8_lossy(&alone)).bytes());
             }
         }
     }
-    let code = u8::from(error.is_some());
-    let output = match format {
-        Format::Text => Output {
-            stdout: stdout.into_bytes(),
-            stderr,
-            code,
-            error,
-        },
-        Format::Json => Output {
-            error,
-            ..document(
-                &json!({"$type": "board/refs-report/v1", "answers": values}),
-                code,
-            )
-        },
+    noted(run.close(), memory, None)
+}
+
+/// What a `from` line adds for the fields a run asked for, when its
+/// reference resolves: ` target=<code>`, or ` target=-` for a healthy
+/// record, then ` <pointer>=<value>` for each field, with the pointer as a
+/// JSON string and the value as compact JSON or `absent`.
+fn fields_text(fielded: Option<&Fielded>) -> String {
+    let mut text = String::new();
+    let Some(fielded) = fielded else {
+        return text;
     };
-    let memory = answers
-        .iter()
-        .find_map(|(_, answer)| answer.as_ref().ok().and_then(|report| report.memory));
-    noted(output, memory, None)
+    let code = fielded.code.map_or("-", Code::as_str);
+    let _ = write!(text, " target={code}");
+    for (pointer, value) in fielded.values.iter().flatten() {
+        let value = value
+            .as_ref()
+            .map_or_else(|| "absent".to_owned(), Value::to_string);
+        let _ = write!(text, " {}={value}", Value::from(pointer.as_str()));
+    }
+    text
+}
+
+/// Adds to a `from` object the target's `values`, in the order asked, each
+/// `{"pointer", "value"}` or `{"pointer", "absent": true}`, when the
+/// target is a record that could be read, and its `target_code` when it
+/// has one.
+fn fields_value(value: &mut Value, fielded: &Fielded) {
+    if let Some(values) = &fielded.values {
+        let values: Vec<Value> = values
+            .iter()
+            .map(|(pointer, found)| match found {
+                Some(found) => json!({"pointer": pointer, "value": found}),
+                None => json!({"pointer": pointer, "absent": true}),
+            })
+            .collect();
+        value["values"] = json!(values);
+    }
+    if let Some(code) = fielded.code {
+        value["target_code"] = json!(code.as_str());
+    }
 }
 
 /// Each line of `text` with `path` after its label, such as `error: ` or

@@ -1,6 +1,5 @@
 """The `next` capability: unfinished tasks in the order to do them, and what blocks each."""
 
-import json
 from typing import Any
 
 from board_plugin.board import Board, literal
@@ -10,11 +9,12 @@ from pydantic import ValidationError
 from board_tasks.models import TASK_TYPE, UNFINISHED, NextInput, NextOutput, NextTask, TaskRecord
 
 # Codes that depend on the tree rather than the record. A task holding one,
-# such as an `after` that names no task yet, is still a task to list.
+# such as an `after` that names no task yet, is still a task to list, and,
+# when it is done, still done.
 TREE_CODES = ("board::ref::dangling", "board::ref::wrong_type")
 
-# Where a task is: the source that holds it, `worktree` or a commit id, and its physical path there.
-Place = tuple[str, str]
+# What `board refs` reads from each task a task's `after` reaches, to tell whether it is done.
+FIELDS = ("/status", "/$type")
 
 
 def listed(values: tuple[str, ...]) -> str:
@@ -25,25 +25,18 @@ def listed(values: tuple[str, ...]) -> str:
 def next_tasks(request: CallRequest) -> NextOutput:
     """Ask Board for the unfinished tasks and what blocks them.
 
-    It runs one `board query`, and one `board refs` when a shown task waits.
+    It runs one `board query` for the unfinished tasks, and one `board refs` when a shown task waits, which
+    reads the status of each task it waits on. Both are bounded by what is shown, not by how many tasks are done.
     """
     limit = NextInput.model_validate(request.input).limit
     board = Board(request.board.root, "tasks")
     readable = f"type = {literal(TASK_TYPE)} AND (code IS NULL OR code IN {listed(TREE_CODES)})"
     status = "json_extract(body, '$.status')"
-    # The first row holds the source and physical path of every `done` task, as one JSON array, so done
-    # tasks do not count against the query's row limit. `records` gives a commit mounted at two paths only
-    # one display path, so a task is matched by its source and physical path, which every route shares.
-    # Every other row is an unfinished task.
-    first, *rows = board.rows(
-        "SELECT logical, body FROM ("  # noqa: S608 - every value is quoted by literal()
-        "SELECT 0 AS kind, NULL AS logical, json_group_array(json_array(source, path)) AS body"
-        f" FROM records WHERE {readable} AND {status} = 'done'"
-        " UNION ALL SELECT 1, logical, body FROM records"
+    rows = board.rows(
+        "SELECT logical, body FROM records"  # noqa: S608 - every value is quoted by literal()
         f" WHERE {readable} AND logical IS NOT NULL AND {status} IN {listed(UNFINISHED)}"
-        ") ORDER BY kind, json_extract(body, '$.due') IS NULL, json_extract(body, '$.due'), logical",
+        " ORDER BY json_extract(body, '$.due') IS NULL, json_extract(body, '$.due'), logical",
     )
-    done: set[Place] = {(source, path) for source, path in json.loads(first[1])}
     tasks: list[tuple[str, TaskRecord]] = []
     for path, body in rows:
         try:
@@ -53,10 +46,10 @@ def next_tasks(request: CallRequest) -> NextOutput:
             continue
     shown = tasks[:limit]
     waiting = [path for path, task in shown if task.after]
-    waits = {path: waiting_on(report) for path, report in zip(waiting, board.refs(waiting), strict=True)}
+    reports = board.refs(waiting, fields=FIELDS)
+    waits = {path: waiting_on(report) for path, report in zip(waiting, reports, strict=True)}
     blocking = {
-        path: [display for display, place in targets.items() if place is None or place not in done]
-        for path, targets in waits.items()
+        path: [display for display, finished in targets.items() if not finished] for path, targets in waits.items()
     }
     return NextOutput(
         tasks=[
@@ -75,21 +68,30 @@ def next_tasks(request: CallRequest) -> NextOutput:
     )
 
 
-def waiting_on(report: dict[str, Any] | None) -> dict[str, Place | None]:
-    """Each task a task's `after` reaches, once, by its display path, and where it is, from its `board refs` report.
+def waiting_on(report: dict[str, Any] | None) -> dict[str, bool]:
+    """Each task a task's `after` reaches, once, by its display path, and whether it is done, from its refs report.
 
-    A reference that reaches nothing is kept as written, with no place.
+    A reference that reaches nothing is kept as written, and is not done.
     """
     if report is None:
         return {}
-    targets: dict[str, Place | None] = {}
+    targets: dict[str, bool] = {}
     for outgoing in report["from"]:
         if not outgoing["pointer"].startswith("/after/"):
             continue
         location = outgoing["location"]
-        if location is None:
-            targets.setdefault(outgoing["target"], None)
-        else:
-            place = (location["source"], location["path"])
-            targets.setdefault(location["display"], place)
+        display = outgoing["target"] if location is None else location["display"]
+        targets.setdefault(display, done(outgoing))
     return targets
+
+
+def done(outgoing: dict[str, Any]) -> bool:
+    """Whether a reference reaches a done task: a task, as `next` lists them, whose status is `done`.
+
+    A target that check degrades for anything but the tree, or that is not a record, is not done.
+    """
+    values = {value["pointer"]: value.get("value") for value in outgoing.get("values", [])}
+    code = outgoing.get("target_code")
+    return (
+        values.get("/$type") == TASK_TYPE and values.get("/status") == "done" and (code is None or code in TREE_CODES)
+    )

@@ -8,11 +8,13 @@ import base64
 import binascii
 import json
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 from board_plugin.protocol import PluginError
+
+T = TypeVar("T")
 
 # The most rows one query returns.
 LIMIT = 10_000
@@ -22,6 +24,8 @@ PATHS_PER_RUN = 10_000
 NO_DATABASE = "board::plugin::no_database"
 # What `board get` answers for a path it left unread once its run printed its byte budget.
 OVER_BUDGET = "board::get::over_budget"
+# What `board refs` answers for a path it left unanswered once its run printed its byte budget.
+REFS_OVER_BUDGET = "board::refs::over_budget"
 
 
 def literal(text: str) -> str:
@@ -96,35 +100,60 @@ class Board:
             )
         return rows
 
-    def refs(self, paths: Sequence[str], *, missing: bool = False) -> list[dict[str, Any] | None]:
-        """`board refs --all` for `paths`, from one run per `paths_per_run` paths.
+    def refs(
+        self, paths: Sequence[str], *, missing: bool = False, fields: Sequence[str] = ()
+    ) -> list[dict[str, Any] | None]:
+        """`board refs --all` for `paths`, from as few runs as Board allows.
 
         Each answer, in order, is where the path resolves and what reaches it,
         or `None` when nothing is there. With `missing`, a path with nothing
-        there yet reports where a file there would be. Any other refusal of a
-        path raises its code. No paths start no run.
+        there yet reports where a file there would be. Each of `fields`, a
+        JSON pointer, adds to each reference the path makes its target's value
+        there. Any other refusal of a path raises its code. A run takes at
+        most `paths_per_run` paths and leaves the paths after its byte budget
+        unanswered, so those are asked again in the next run. No paths start
+        no run.
         """
         flags = ["--missing"] if missing else []
+        for field in fields:
+            flags += ["--field", field]
+        return self._each(paths, lambda left: self._refs_run(left, flags))
+
+    def _refs_run(self, paths: list[str], flags: list[str]) -> list[dict[str, Any] | None]:
+        """The answers of one `board refs` run, up to the first path it left over its budget."""
+        report, ran = self._read("refs", "--all", *flags, "--", *paths, partial="board/refs-report/v1")
+        answers = report.get("answers")
+        if (
+            not isinstance(answers, list)
+            or len(cast("list[Any]", answers)) != len(paths)
+            or not all(isinstance(answer, dict) for answer in cast("list[Any]", answers))
+        ):
+            raise self._failed(("refs",), ran, "printed a report without one answer per path")
         found: list[dict[str, Any] | None] = []
-        for run in self._runs(paths):
-            report, ran = self._read("refs", "--all", *flags, "--", *run, partial="board/refs-report/v1")
-            answers = report.get("answers")
-            if (
-                not isinstance(answers, list)
-                or len(cast("list[Any]", answers)) != len(run)
-                or not all(isinstance(answer, dict) for answer in cast("list[Any]", answers))
-            ):
-                raise self._failed(("refs",), ran, "printed a report without one answer per path")
-            for answer in cast("list[dict[str, Any]]", answers):
-                if answer.get("$type") != "board/error/v1":
-                    found.append(answer)
-                elif answer.get("code") == "board::path::not_found":
-                    found.append(None)
-                else:
-                    raise self._refused(
-                        ("refs",), str(answer.get("code")), str(answer.get("message", "")), answer.get("hint")
-                    )
+        for answer in cast("list[dict[str, Any]]", answers):
+            code = answer.get("code")
+            if answer.get("$type") != "board/error/v1":
+                found.append(answer)
+            elif code == REFS_OVER_BUDGET:
+                break
+            elif code == "board::path::not_found":
+                found.append(None)
+            else:
+                raise self._refused(("refs",), str(code), str(answer.get("message", "")), answer.get("hint"))
+        if not found:
+            raise self._failed(("refs",), ran, f"left every path unanswered as {REFS_OVER_BUDGET}")
         return found
+
+    def _each(self, paths: Sequence[str], ask: Callable[[list[str]], list[T]]) -> list[T]:
+        """What `ask` answers for each of `paths`, in order, asking again for the paths a run left over its budget."""
+        answered: list[T] = []
+        for run in self._runs(paths):
+            left = list(run)
+            while left:
+                some = ask(left)
+                answered.extend(some)
+                left = left[len(some) :]
+        return answered
 
     def _runs(self, paths: Sequence[str]) -> list[Sequence[str]]:
         """`paths` split into runs of at most `paths_per_run`. One str is a path, not a sequence, so it is refused."""
@@ -143,14 +172,7 @@ class Board:
         `paths_per_run` paths and leaves the paths after its byte budget
         unread, so those are asked again in the next run. No paths start no run.
         """
-        read: list[bytes | PluginError] = []
-        for run in self._runs(paths):
-            left = list(run)
-            while left:
-                answered = self._get_run(left)
-                read.extend(answered)
-                left = left[len(answered) :]
-        return read
+        return self._each(paths, self._get_run)
 
     def _get_run(self, paths: list[str]) -> list[bytes | PluginError]:
         """The answers of one `board get` run, up to the first path it left over its budget.
