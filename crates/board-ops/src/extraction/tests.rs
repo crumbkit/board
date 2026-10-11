@@ -92,7 +92,7 @@ impl Fixture {
             limits,
         };
         open(&self.board)
-            .query(sql, 500, Some(self.cache.workdir()), &plugins)
+            .query(sql, 500, None, Some(self.cache.workdir()), &plugins)
             .unwrap()
     }
 
@@ -391,7 +391,7 @@ fn a_call_starts_only_its_plugin_and_takes_no_snapshot_while_a_query_extracts_ea
 
     let board = open(&fixture.board);
     board
-        .query("SELECT 1", 1, Some(fixture.cache.workdir()), &plugins)
+        .query("SELECT 1", 1, None, Some(fixture.cache.workdir()), &plugins)
         .unwrap();
     assert_eq!(fixture.sent(), [["/tasks/a"], ["/tasks/b"]]);
     let (phases, started) = traced(&board);

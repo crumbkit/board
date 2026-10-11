@@ -472,15 +472,31 @@ fn a_validation_stores_its_outcome_and_the_references_it_found_in_order() {
 fn a_query_cannot_write_and_leaves_the_index_writable() {
     let cache = tempfile::tempdir().unwrap();
     let view = filled(cache.path());
-    let refused = view.query("DELETE FROM main.blobs", 10).unwrap_err();
+    let refused = view.query("DELETE FROM main.blobs", 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let admitted = view
-        .query("SELECT count(*) AS n FROM main.blobs", 10)
+        .query("SELECT count(*) AS n FROM main.blobs", 10, None)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
     let writer = view.index.write().unwrap();
     writer.put_blob(blob(2), Role::Json, &record()).unwrap();
     writer.decide(Vec::new()).unwrap();
+}
+
+#[test]
+fn a_query_keeps_the_rows_within_its_budget_and_always_the_first() {
+    let cache = tempfile::tempdir().unwrap();
+    let view = filled(cache.path());
+    let kept = |bytes| {
+        let budget = crate::Budget { bytes, size: |_| 1 };
+        let rows = view
+            .query("SELECT * FROM (VALUES (1), (2), (3))", 10, Some(budget))
+            .unwrap();
+        (rows.rows.len(), rows.truncated, rows.over_budget)
+    };
+    assert_eq!(kept(3), (3, false, false), "3 bytes fit 3 rows of 1");
+    assert_eq!(kept(2), (2, true, true), "2 bytes fit 2");
+    assert_eq!(kept(0), (1, true, true), "the first row is kept");
 }
 
 #[test]
@@ -525,11 +541,17 @@ fn journal_mode(view: &View) -> String {
 fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
     let cache = tempfile::tempdir().unwrap();
     let index = filled(cache.path());
-    let refused = index.query("PRAGMA journal_mode=delete", 10).unwrap_err();
+    let refused = index
+        .query("PRAGMA journal_mode=delete", 10, None)
+        .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert_eq!(journal_mode(&index), "wal");
     let admitted = index
-        .query("SELECT name FROM pragma_table_info('blobs') LIMIT 1", 10)
+        .query(
+            "SELECT name FROM pragma_table_info('blobs') LIMIT 1",
+            10,
+            None,
+        )
         .unwrap();
     assert_eq!(admitted.rows.len(), 1);
     assert_eq!(journal_mode(&index), "wal");
@@ -541,10 +563,10 @@ fn a_query_cannot_attach_a_database_but_a_plugin_database_attaches() {
     let index = filled(cache.path());
     let target = cache.path().join("x.sqlite");
     let sql = format!("ATTACH '{}' AS x", target.display());
-    let refused = index.query(&sql, 10).unwrap_err();
+    let refused = index.query(&sql, 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert!(!target.exists(), "no file is created");
-    let refused = index.query("DETACH DATABASE temp", 10).unwrap_err();
+    let refused = index.query("DETACH DATABASE temp", 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let plugin = cache.path().join("plugin.sqlite");
     rusqlite::Connection::open(&plugin)
@@ -552,7 +574,9 @@ fn a_query_cannot_attach_a_database_but_a_plugin_database_attaches() {
         .execute_batch("CREATE TABLE notes (n INTEGER); INSERT INTO notes VALUES (7)")
         .unwrap();
     index.attach("p_notes", &plugin).unwrap();
-    let admitted = index.query("SELECT n FROM p_notes.notes", 10).unwrap();
+    let admitted = index
+        .query("SELECT n FROM p_notes.notes", 10, None)
+        .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
 }
 
@@ -562,11 +586,11 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
     let index = filled(cache.path());
     let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
                      SELECT count(*) FROM c";
-    let refused = index.query(unbounded, 10).unwrap_err();
+    let refused = index.query(unbounded, 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryTimeout);
     let bounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 10) \
                    SELECT count(*) FROM c";
-    let admitted = index.query(bounded, 10).unwrap();
+    let admitted = index.query(bounded, 10, None).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(10)]]);
     assert_eq!(journal_mode(&index), "wal");
     assert!(has_fact(index.index), "the index is still writable");
@@ -578,11 +602,11 @@ fn a_query_cannot_vacuum_into_a_file() {
     let index = filled(cache.path());
     let target = cache.path().join("v.sqlite");
     let sql = format!("VACUUM INTO '{}'", target.display());
-    let refused = index.query(&sql, 10).unwrap_err();
+    let refused = index.query(&sql, 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert!(!target.exists(), "no file is created");
     let admitted = index
-        .query("SELECT count(*) AS n FROM main.blobs", 10)
+        .query("SELECT count(*) AS n FROM main.blobs", 10, None)
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
 }

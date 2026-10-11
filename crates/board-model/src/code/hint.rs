@@ -305,6 +305,9 @@ fn generic(code: Code) -> &'static str {
         Code::QueryTimeout => {
             "narrow the query with a WHERE clause or a join on a key; a query may run for 1 second"
         }
+        Code::QueryOverBudget => {
+            "one run prints up to 64 MiB of rows; select fewer or smaller columns, or add ORDER BY and page by key, as in WHERE (a, b) > (last a, last b)"
+        }
         Code::PutStale => {
             "after `plugin enable`, run it again; after a put, read the record again with `board get <path>`, reapply your change, and put it with `--expect` set to the blob this error names"
         }

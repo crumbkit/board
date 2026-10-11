@@ -164,7 +164,7 @@ mod tests {
         let plugins = crate::Plugins::default();
         let query = phases_of(|board| {
             board
-                .query("SELECT count(*) FROM entries", 1, None, &plugins)
+                .query("SELECT count(*) FROM entries", 1, None, None, &plugins)
                 .unwrap();
         });
         assert!(query.contains(&"view"), "{query:?}");

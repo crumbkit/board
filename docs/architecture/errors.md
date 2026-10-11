@@ -21,6 +21,7 @@ The v0 set:
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `query` | `timeout`: the statement ran longer than 1 s |
+| `query` | `over_budget`: the next row would take the rows past 64 MiB, so the report carries this code beside its rows and exits 0; or one value is longer than 64 MiB, which is refused |
 | `get` | `over_budget`: the run's output already reached 64 MiB, so it left this path unread |
 | `refs` | `over_budget`: the run's output already reached 64 MiB, so it left this path unanswered |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |

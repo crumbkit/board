@@ -22,11 +22,16 @@ pub struct Exhibit {
 /// Codes the CLI's no-dead-ends property cannot provoke through the `board`
 /// command line, why, and where each is tested instead. The property
 /// provokes every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 6] = [
+pub const NOT_REPRODUCED: [(Code, &str); 7] = [
     (
         Code::IndexFailed,
         "the index fails only when SQLite does, even in memory; \
          board-index/src/tests.rs maps SQLite's failures to it",
+    ),
+    (
+        Code::QueryOverBudget,
+        "the CLI's 64 MiB query budget needs rows that large; \
+         board-cli/src/tests/query.rs passes render::rows_budget a few bytes",
     ),
     (
         Code::PutNoIdentity,
@@ -61,11 +66,12 @@ const QUERY: &str = "query gives it; check runs no query";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 31] = [
+pub const NOT_CHECKED: [(Code, &str); 32] = [
     (
         Code::GetOverBudget,
         "only get gives it, to a path it leaves unread once a run has printed its budget",
     ),
+    (Code::QueryOverBudget, QUERY),
     (
         Code::RefsOverBudget,
         "only refs gives it, to a path it leaves unanswered once a run has printed its budget",

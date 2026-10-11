@@ -19,7 +19,7 @@ mod snapshot;
 mod trace;
 mod verdict;
 
-pub use board_index::{Fallback, append_timing, source_name};
+pub use board_index::{Budget, Fallback, append_timing, source_name};
 
 pub use crate::board::{Board, Config, OpenError};
 pub use crate::call::Called;

@@ -55,6 +55,10 @@ Tables and views:
   refs, validations, blobs, trees, worktree, mounts, sources, extracted, state
   p_<name>  each enabled plugin's database
 
+Rows stop before one that would take them past 64 MiB as printed, even
+with --all; the report then carries board::query::over_budget, and text
+output notes it.
+
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
   board query \"SELECT logical FROM records WHERE type = 'tasks/task/v1'\" --limit 20
@@ -220,9 +224,8 @@ Examples:
     Query {
         /// One read-only SQL statement, quoted as one argument.
         sql: String,
-        /// The most rows to return, from 1 to 10000.
-        #[arg(long, default_value_t = DEFAULT_LIMIT, value_parser = limit)]
-        limit: usize,
+        #[command(flatten)]
+        page: Page,
     },
 }
 
@@ -394,8 +397,15 @@ fn command(
             Err(error) => render::refused(format, &error.refusal()),
         },
         Command::Refs(asked) => refs(format, board, context, &asked),
-        Command::Query { sql, limit } => {
-            match board.query(&sql, limit, context.cache.as_deref(), &plugins(context)) {
+        Command::Query { sql, page } => {
+            let budget = Some(render::rows_budget(format, render::BUDGET));
+            match board.query(
+                &sql,
+                page.limit().unwrap_or(usize::MAX),
+                budget,
+                context.cache.as_deref(),
+                &plugins(context),
+            ) {
                 Ok(report) => render::query(format, &report),
                 Err(error) => render::refused(format, &error.refusal()),
             }

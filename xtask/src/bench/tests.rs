@@ -82,7 +82,13 @@ fn a_generated_board_holds_valid_open_tasks_and_one_in_five_waits_on_the_first()
         AND json_extract(body, '$.status') = 'open'";
     let report = Board::open(root.path(), None)
         .unwrap()
-        .query(sql, 1, Some(cache.path()), &board_ops::Plugins::default())
+        .query(
+            sql,
+            1,
+            None,
+            Some(cache.path()),
+            &board_ops::Plugins::default(),
+        )
         .unwrap();
     assert_eq!(report.rows, [[100, 20]]);
 }

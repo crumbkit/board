@@ -40,6 +40,7 @@ pub enum Code {
     IndexFailed,
     QueryInvalid,
     QueryTimeout,
+    QueryOverBudget,
     PutStale,
     PutLocked,
     PutThroughMount,
@@ -69,7 +70,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 57] = [
+    pub const ALL: [Code; 58] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -102,6 +103,7 @@ impl Code {
         Self::IndexFailed,
         Self::QueryInvalid,
         Self::QueryTimeout,
+        Self::QueryOverBudget,
         Self::PutStale,
         Self::PutLocked,
         Self::PutThroughMount,
@@ -168,6 +170,7 @@ impl Code {
             Self::IndexFailed => "board::index::failed",
             Self::QueryInvalid => "board::query::invalid",
             Self::QueryTimeout => "board::query::timeout",
+            Self::QueryOverBudget => "board::query::over_budget",
             Self::PutStale => "board::put::stale",
             Self::PutLocked => "board::put::locked",
             Self::PutThroughMount => "board::put::through_mount",
@@ -244,6 +247,7 @@ mod tests {
             | Code::IndexFailed
             | Code::QueryInvalid
             | Code::QueryTimeout
+            | Code::QueryOverBudget
             | Code::PutStale
             | Code::PutLocked
             | Code::PutThroughMount

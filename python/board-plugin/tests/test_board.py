@@ -68,6 +68,20 @@ def test_a_truncated_query_is_refused_by_rows_and_reported_by_query(monkeypatch:
     assert DEMO.rows("SELECT 1") == [[1]]
 
 
+def test_rows_refuses_a_query_cut_at_boards_byte_budget_and_query_returns_it_as_truncated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    over = {"$type": "board/query-report/v1", "rows": [[1]], "truncated": True, "plugins": []}
+    printing(monkeypatch, json.dumps({**over, "code": board.QUERY_OVER_BUDGET}).encode())
+    assert DEMO.query("SELECT 1") == ([[1]], True)
+    with pytest.raises(PluginError) as refused:
+        DEMO.rows("SELECT 1")
+    assert refused.value.code == "demo::board::over_budget"
+    assert "ORDER BY" in refused.value.message
+    printing(monkeypatch, json.dumps({**over, "truncated": False}).encode())
+    assert DEMO.rows("SELECT 1") == [[1]]
+
+
 def failed(plugin: str, code: str) -> bytes:
     """A report of one row, listing `plugin` as failed with `code`."""
     return report([[1]], truncated=False, plugins=[{"plugin": plugin, "code": code, "message": "it exited 3"}])

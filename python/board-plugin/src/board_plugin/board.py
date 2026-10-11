@@ -26,6 +26,8 @@ NO_DATABASE = "board::plugin::no_database"
 OVER_BUDGET = "board::get::over_budget"
 # What `board refs` answers for a path it left unanswered once its run printed its byte budget.
 REFS_OVER_BUDGET = "board::refs::over_budget"
+# What a query report carries when it left rows out because they would pass its byte budget.
+QUERY_OVER_BUDGET = "board::query::over_budget"
 
 
 def literal(text: str) -> str:
@@ -74,11 +76,18 @@ class Board:
     def query(self, sql: str, limit: int = LIMIT) -> tuple[list[list[Any]], bool]:
         """The rows of one `board query`, at most `limit`, and whether more were left out.
 
+        Board leaves rows out past `limit` or at its byte budget, and either
+        is `True` here, so the caller can ask for the rest by key.
         When the report lists this plugin's own extraction as failed, its rows
         may be stale, so that is `<plugin>::board::refused` with the failure's
         code. `board::plugin::no_database` is not an extraction failure: the
         database was not attached, and a query that reads it fails on its own.
         """
+        rows, truncated, _ = self._query(sql, limit)
+        return rows, truncated
+
+    def _query(self, sql: str, limit: int) -> tuple[list[list[Any]], bool, bool]:
+        """`query`'s answer, and whether Board's byte budget left rows out."""
         report = self.document("query", "--limit", str(limit), sql)
         rows, truncated, plugins = report.get("rows"), report.get("truncated"), report.get("plugins")
         if not isinstance(rows, list) or not isinstance(truncated, bool) or not isinstance(plugins, list):
@@ -88,11 +97,21 @@ class Board:
             if failed.get("plugin") == self.plugin and isinstance(code, str) and code != NO_DATABASE:
                 why = f"{self.plugin} could not extract, so its rows may be stale: {failed.get('message')}"
                 raise self._refused(("query",), code, why, None)
-        return cast("list[list[Any]]", rows), truncated
+        return cast("list[list[Any]]", rows), truncated, report.get("code") == QUERY_OVER_BUDGET
 
     def rows(self, sql: str) -> list[list[Any]]:
-        """Every row of one `board query`. More than `LIMIT` is `<plugin>::board::truncated`."""
-        rows, truncated = self.query(sql)
+        """Every row of one `board query`.
+
+        More than `LIMIT` rows is `<plugin>::board::truncated`, and more than
+        Board's byte budget is `<plugin>::board::over_budget`.
+        """
+        rows, truncated, over_budget = self._query(sql, LIMIT)
+        if over_budget:
+            raise PluginError(
+                f"{self.plugin}::board::over_budget",
+                f"a query's rows passed the 64 MiB one board run prints ({QUERY_OVER_BUDGET}); select fewer "
+                "or smaller columns, or add ORDER BY and page by key, as in WHERE (a, b) > (last a, last b)",
+            )
         if truncated:
             raise PluginError(
                 f"{self.plugin}::board::truncated",

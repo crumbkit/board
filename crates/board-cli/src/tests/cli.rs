@@ -252,7 +252,7 @@ fn every_command_a_hint_names_parses() {
 /// command is named here as not listing, so a new one has to be placed.
 #[test]
 fn every_listing_command_takes_limit_and_all() {
-    let listing = ["check", "ls", "refs", "plugin list", "plugin find"];
+    let listing = ["check", "ls", "refs", "plugin list", "plugin find", "query"];
     let other = [
         "init",
         "get",
@@ -260,7 +260,6 @@ fn every_listing_command_takes_limit_and_all() {
         "mount update",
         "plugin enable",
         "call",
-        "query",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {
@@ -274,12 +273,6 @@ fn every_listing_command_takes_limit_and_all() {
             assert!(other.contains(&name.as_str()), "{name} is not placed");
         }
     }
-    assert!(leaves().iter().any(|(name, command)| {
-        name == "query"
-            && command
-                .get_arguments()
-                .any(|argument| argument.get_long() == Some("limit"))
-    }));
 }
 
 #[test]
@@ -673,7 +666,7 @@ fn a_query_cut_short_notes_it_on_stderr_only_in_text_and_a_whole_one_does_not() 
     assert_eq!(
         text(&query(&["--limit", "2"]).stderr),
         "note: showing the first 2 rows, and more matched; \
-         --limit <n> (at most 10000) shows more\n"
+         --limit <n> (at most 10000) or --all shows more\n"
     );
     assert_eq!(text(&query(&["--limit", "2", "--json"]).stderr), "");
     assert_eq!(text(&query(&["--limit", "3"]).stderr), "");

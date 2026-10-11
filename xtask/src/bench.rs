@@ -212,6 +212,7 @@ pub(crate) fn run(
                         .query(
                             "SELECT count(*) FROM entries",
                             1,
+                            None,
                             Some(warm.path()),
                             &board_ops::Plugins::default(),
                         )

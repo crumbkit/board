@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use rusqlite::ErrorCode;
 use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+use rusqlite::limits::Limit;
 use rusqlite::types::ValueRef;
 use serde_json::Value;
 
@@ -25,20 +26,41 @@ pub struct Rows {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Value>>,
     pub truncated: bool,
+    /// Whether the rows left out start with one that would have taken the
+    /// rows past their [`Budget`].
+    pub over_budget: bool,
+}
+
+/// The bytes a query's rows may take, by `size`, the bytes one row takes
+/// as it is printed. The first row is kept whatever its size.
+#[derive(Clone, Copy, Debug)]
+pub struct Budget {
+    pub bytes: usize,
+    pub size: fn(&[Value]) -> usize,
 }
 
 impl View {
-    /// Runs one statement that cannot write, returning at most `limit` rows.
+    /// Runs one statement that cannot write, returning at most `limit` rows,
+    /// within `budget` when there is one. No value may be longer than the
+    /// budget, so one cell cannot take more memory than the rows may print.
     /// It refuses with [`IndexError::Pruned`] when another process has pruned
     /// since the views were built.
-    pub fn query(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
+    pub fn query(
+        &self,
+        sql: &str,
+        limit: usize,
+        budget: Option<Budget>,
+    ) -> Result<Rows, IndexError> {
         self.connection().pragma_update(None, "query_only", true)?;
         let started = Instant::now();
         self.connection().progress_handler(
             STEPS_PER_CHECK,
             Some(move || started.elapsed() > QUERY_TIME),
         )?;
-        let result = self.snapshot(sql, limit);
+        let before = self.connection().limit(Limit::SQLITE_LIMIT_LENGTH)?;
+        let result = self.snapshot(sql, limit, budget);
+        self.connection()
+            .set_limit(Limit::SQLITE_LIMIT_LENGTH, before)?;
         self.connection()
             .progress_handler(STEPS_PER_CHECK, None::<fn() -> bool>)?;
         self.connection().pragma_update(None, "query_only", false)?;
@@ -47,16 +69,26 @@ impl View {
 
     /// Reads the prune count and runs `sql` in one transaction, so no prune
     /// can come between them.
-    fn snapshot(&self, sql: &str, limit: usize) -> Result<Rows, IndexError> {
+    fn snapshot(
+        &self,
+        sql: &str,
+        limit: usize,
+        budget: Option<Budget>,
+    ) -> Result<Rows, IndexError> {
         let _snapshot = self.connection().unchecked_transaction()?;
         let prunes: i64 = self.connection().query_row(PRUNES, [], |row| row.get(0))?;
         if prunes != self.prunes {
             return Err(IndexError::Pruned);
         }
-        self.read(sql, limit).map_err(blame)
+        self.read(sql, limit, budget).map_err(blame)
     }
 
-    fn read(&self, sql: &str, limit: usize) -> Result<Rows, rusqlite::Error> {
+    fn read(
+        &self,
+        sql: &str,
+        limit: usize,
+        budget: Option<Budget>,
+    ) -> Result<Rows, rusqlite::Error> {
         // `query_only` does not stop ATTACH, DETACH or a PRAGMA that writes.
         // The authorizer covers only this prepare: a pragma function such as
         // `pragma_table_info` prepares its own PRAGMA while it runs.
@@ -81,23 +113,38 @@ impl View {
             .collect();
         let width = columns.len();
         let mut rows = Vec::new();
+        // SQLite raises a length limit under 30 bytes to 30.
+        if let Some(Budget { bytes, .. }) = budget {
+            let length = i32::try_from(bytes).unwrap_or(i32::MAX);
+            self.connection()
+                .set_limit(Limit::SQLITE_LIMIT_LENGTH, length)?;
+        }
         let mut cursor = statement.query([])?;
         let mut truncated = false;
+        let mut over_budget = false;
+        let mut spent = 0;
         while let Some(row) = cursor.next()? {
             if rows.len() == limit {
                 truncated = true;
                 break;
             }
-            rows.push(
-                (0..width)
-                    .map(|at| Ok(value(row.get_ref(at)?)))
-                    .collect::<Result<Vec<Value>, rusqlite::Error>>()?,
-            );
+            let row = (0..width)
+                .map(|at| Ok(value(row.get_ref(at)?)))
+                .collect::<Result<Vec<Value>, rusqlite::Error>>()?;
+            if let Some(Budget { bytes, size }) = budget {
+                spent += size(&row);
+                if spent > bytes && !rows.is_empty() {
+                    (truncated, over_budget) = (true, true);
+                    break;
+                }
+            }
+            rows.push(row);
         }
         Ok(Rows {
             columns,
             rows,
             truncated,
+            over_budget,
         })
     }
 }
@@ -126,6 +173,7 @@ pub(crate) fn blame(source: rusqlite::Error) -> IndexError {
             | ErrorCode::CannotOpen,
         ) => IndexError::Sql { source },
         Some(ErrorCode::OperationInterrupted) => IndexError::Timeout,
+        Some(ErrorCode::TooBig) => IndexError::TooBig,
         _ => IndexError::Query { source },
     }
 }

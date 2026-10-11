@@ -17,7 +17,7 @@ type Rows = Vec<Vec<serde_json::Value>>;
 fn a_missing_table_is_refused_naming_the_tables_in_its_fields_and_a_real_one_is_read() {
     let scenario = board();
     let refused = open(&scenario)
-        .query("SELECT * FROM entires", 10, None, &Plugins::default())
+        .query("SELECT * FROM entires", 10, None, None, &Plugins::default())
         .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     let refusal = refused.refusal();
@@ -28,7 +28,8 @@ fn a_missing_table_is_refused_naming_the_tables_in_its_fields_and_a_real_one_is_
     assert_eq!(refusal.fields.len(), 1, "{:?}", refusal.fields);
     assert!(refusal.hint.is_some());
     assert_eq!(refusal.message, refused.to_string());
-    let admitted = open(&scenario).query("SELECT * FROM entries", 10, None, &Plugins::default());
+    let admitted =
+        open(&scenario).query("SELECT * FROM entries", 10, None, None, &Plugins::default());
     assert!(admitted.is_ok());
 }
 
@@ -36,7 +37,13 @@ fn a_missing_table_is_refused_naming_the_tables_in_its_fields_and_a_real_one_is_
 fn a_missing_column_is_refused_naming_each_tables_columns_in_its_fields_and_a_real_one_is_read() {
     let scenario = board();
     let refusal = open(&scenario)
-        .query("SELECT logcal FROM entries", 10, None, &Plugins::default())
+        .query(
+            "SELECT logcal FROM entries",
+            10,
+            None,
+            None,
+            &Plugins::default(),
+        )
         .unwrap_err()
         .refusal();
     assert_eq!(refusal.code.as_str(), "board::query::invalid");
@@ -46,8 +53,13 @@ fn a_missing_column_is_refused_naming_each_tables_columns_in_its_fields_and_a_re
     };
     assert!(columns.contains(&json!("logical")), "{columns:?}");
     assert!(refusal.hint.is_some());
-    let admitted =
-        open(&scenario).query("SELECT logical FROM entries", 10, None, &Plugins::default());
+    let admitted = open(&scenario).query(
+        "SELECT logical FROM entries",
+        10,
+        None,
+        None,
+        &Plugins::default(),
+    );
     assert!(admitted.is_ok());
 }
 
@@ -57,7 +69,7 @@ fn query(sql: &str, limit: usize) -> Result<QueryReport, Code> {
         .write("tasks/a.json", Item::File(&task("")))
         .write("tasks/b.json", Item::File(r#"{"$type": "lr/task/v1"}"#));
     open(&scenario)
-        .query(sql, limit, None, &crate::Plugins::default())
+        .query(sql, limit, None, None, &crate::Plugins::default())
         .map_err(|error| error.code())
 }
 
@@ -96,6 +108,7 @@ fn records_lists_each_record_with_its_status_and_degraded_ones_with_their_code()
             "SELECT path, type, status, code, body IS NOT NULL AS parsed FROM records
              WHERE path <> '.board/board.json' ORDER BY path",
             500,
+            None,
             None,
             &Plugins::default(),
         )
@@ -147,6 +160,7 @@ fn a_record_body_is_its_canonical_form() {
         .query(
             "SELECT body FROM records WHERE path = 'tasks/a.json'",
             500,
+            None,
             None,
             &Plugins::default(),
         )
@@ -241,7 +255,9 @@ fn a_plugin_shipping_an_unusable_schema_fails_the_query_as_a_bad_manifest_and_a_
         directory: Some(installed.workdir()),
         ..Plugins::default()
     };
-    let report = open(&board).query("SELECT 1", 10, None, &plugins).unwrap();
+    let report = open(&board)
+        .query("SELECT 1", 10, None, None, &plugins)
+        .unwrap();
     let codes: Vec<&str> = report
         .plugins
         .iter()
@@ -252,7 +268,9 @@ fn a_plugin_shipping_an_unusable_schema_fails_the_query_as_a_bad_manifest_and_a_
         "tasks/types/tasks/note/v1.schema.json",
         Item::File(r#"{"type": "object"}"#),
     );
-    let report = open(&board).query("SELECT 1", 10, None, &plugins).unwrap();
+    let report = open(&board)
+        .query("SELECT 1", 10, None, None, &plugins)
+        .unwrap();
     assert!(report.plugins.is_empty(), "{:?}", report.plugins);
 }
 
@@ -320,7 +338,7 @@ printf '{{"$type": "board/extract-result/v1", "blobs": [%s]}}' "$blobs"
     let cold = || {
         let board = Board::open(&root, None).unwrap();
         board
-            .query(sql, 100, None, &Plugins::default())
+            .query(sql, 100, None, None, &Plugins::default())
             .unwrap()
             .rows
     };
@@ -331,7 +349,7 @@ printf '{{"$type": "board/extract-result/v1", "blobs": [%s]}}' "$blobs"
         let warm = scope.spawn(|| {
             let board = Board::open(&root, None).unwrap();
             board
-                .query(sql, 100, Some(cache.path()), &plugins)
+                .query(sql, 100, None, Some(cache.path()), &plugins)
                 .map(|report| report.rows)
                 .map_err(|error| (error.code(), error.to_string()))
         });
@@ -406,7 +424,9 @@ fn answered(
 ) -> QueryReport {
     QueryReport {
         memory: None,
-        ..open(scenario).query(sql, 10_000, cache, plugins).unwrap()
+        ..open(scenario)
+            .query(sql, 10_000, None, cache, plugins)
+            .unwrap()
     }
 }
 
@@ -427,15 +447,26 @@ fn a_missing_column_in_an_attached_plugin_database_names_no_columns_and_a_real_o
         limits: board_plugin::Limits::default(),
     };
     let refused = open(&scenario)
-        .query("SELECT bad FROM p_tasks.sqlite_schema", 10, None, &plugins)
+        .query(
+            "SELECT bad FROM p_tasks.sqlite_schema",
+            10,
+            None,
+            None,
+            &plugins,
+        )
         .unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
     assert_eq!(
         Value::Object(refused.refusal().fields),
         json!({ "columns": {} })
     );
-    let admitted =
-        open(&scenario).query("SELECT name FROM p_tasks.sqlite_schema", 10, None, &plugins);
+    let admitted = open(&scenario).query(
+        "SELECT name FROM p_tasks.sqlite_schema",
+        10,
+        None,
+        None,
+        &plugins,
+    );
     assert!(admitted.is_ok());
 }
 

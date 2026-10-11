@@ -1193,5 +1193,6 @@ mod directory;
 mod get;
 mod hints;
 mod plugins;
+mod query;
 mod refs;
 mod refused;

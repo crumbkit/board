@@ -296,7 +296,7 @@ fn queried_after_another_handle_writes(prunes: bool) -> Result<Rows, IndexError>
         writer.put_blob(blob(6), Role::Json, &record()).unwrap();
     }
     writer.decide(Vec::new()).unwrap();
-    first.query("SELECT type, status FROM entries", 10)
+    first.query("SELECT type, status FROM entries", 10, None)
 }
 
 #[test]

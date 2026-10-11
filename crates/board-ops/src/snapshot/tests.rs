@@ -106,7 +106,7 @@ fn viewed(view: &View) -> Vec<Checked> {
         .query(
             "SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path",
             10_000,
-        )
+         None,)
         .unwrap();
     let text = |value: &Value| value.as_str().map(str::to_owned);
     rows.rows
@@ -166,6 +166,7 @@ fn extract_everything(view: &View) {
         .query(
             "SELECT DISTINCT type FROM entries WHERE type IS NOT NULL",
             10_000,
+            None,
         )
         .unwrap();
     let types: Vec<&str> = types
@@ -198,7 +199,7 @@ fn the_blobs_view_shows_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
     let cold = Index::open(None, board.repository().path()).unwrap();
     let warm = filled(&board, warm());
     let cold = filled(&board, cold);
-    let count = |view: &View, sql: &str| view.query(sql, 1).unwrap().rows[0][0].clone();
+    let count = |view: &View, sql: &str| view.query(sql, 1, None).unwrap().rows[0][0].clone();
     let seen = "SELECT count(*) FROM blobs";
     assert_eq!(count(&warm.view, seen), count(&cold.view, seen));
     let cached = "SELECT count(*) FROM main.blobs";
@@ -248,8 +249,8 @@ fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError
     prop_assert_eq!(&warm.references, &cold.references);
     for sql in EVERY_TABLE {
         prop_assert_eq!(
-            warm.view.query(sql, 10_000).unwrap(),
-            cold.view.query(sql, 10_000).unwrap(),
+            warm.view.query(sql, 10_000, None).unwrap(),
+            cold.view.query(sql, 10_000, None).unwrap(),
             "{}",
             sql
         );
@@ -314,7 +315,7 @@ fn built_on(scenario: &Scenario, threads: usize) -> (CheckReport, Vec<Referenced
     let view = board.view(snapshot.decided).unwrap();
     let tables = EVERY_TABLE
         .iter()
-        .map(|sql| view.query(sql, 10_000).unwrap())
+        .map(|sql| view.query(sql, 10_000, None).unwrap())
         .collect();
     (snapshot.report, snapshot.references, tables)
 }
@@ -386,7 +387,9 @@ fn large_task(letter: char, bytes: usize) -> String {
 fn prunes(view: &View) -> i64 {
     let sql =
         "SELECT CAST(coalesce(max(value), 0) AS INTEGER) FROM main.state WHERE key = 'prunes'";
-    view.query(sql, 1).unwrap().rows[0][0].as_i64().unwrap()
+    view.query(sql, 1, None).unwrap().rows[0][0]
+        .as_i64()
+        .unwrap()
 }
 
 /// Decides a board holding a large task, then again after the task is
@@ -413,7 +416,9 @@ fn replaced_by(replacement: &str) -> (usize, i64, i64) {
     let cold = Index::open(None, &root).unwrap();
     let cold = filled(&open(&scenario), cold);
     let blobs = |view: &View| {
-        let rows = view.query("SELECT count(*) FROM main.blobs", 1).unwrap();
+        let rows = view
+            .query("SELECT count(*) FROM main.blobs", 1, None)
+            .unwrap();
         rows.rows[0][0].as_i64().unwrap()
     };
     (

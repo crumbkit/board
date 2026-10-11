@@ -15,7 +15,7 @@ mod timing;
 pub use crate::database::{DatabaseError, PluginDatabase};
 pub use crate::extract::Unhandled;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
-pub use crate::query::Rows;
+pub use crate::query::{Budget, Rows};
 pub use crate::schema::INDEX_VERSION;
 pub use crate::store::{
     BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,

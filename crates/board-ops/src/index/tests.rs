@@ -182,7 +182,7 @@ fn read(scenario: &Scenario, cache: &std::path::Path, sql: &str) -> Vec<Value> {
     let view = board
         .view(board.snapshot(index, None).unwrap().decided)
         .unwrap();
-    let rows = view.query(sql, 10_000).unwrap().rows;
+    let rows = view.query(sql, 10_000, None).unwrap().rows;
     rows.into_iter().map(Value::from).collect()
 }
 

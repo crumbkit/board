@@ -30,7 +30,7 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Interfaces
 
-17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes a document tagged `board/<command>-report/v1`, and `board/error/v1` on failure. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. `board refs` and `board get` exit 1 when any path they were asked is refused, and still print their report; a path left past the run's byte budget is refused in its place. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
+17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes a document tagged `board/<command>-report/v1`, and `board/error/v1` on failure. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. `board refs` and `board get` exit 1 when any path they were asked is refused, and still print their report; a path left past the run's byte budget is refused in its place. `board query` cut at the byte budget exits 0, because it was asked for no path that it refused. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
 18. **No async runtime.** Board is a local, synchronous CLI, and gix and rusqlite are synchronous. A dependency that brings in an async runtime states why in the change that adds it.
 
 ## Tests
@@ -72,17 +72,19 @@ AGENTS.md 9 sets the goal: the CLI serves agents and people equally. These rules
 make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
 
 23. **Output is bounded and says what it left out.** A command that lists entries
-    (`check`, `ls`, `refs`, `plugin list`, `plugin find`) shows at most 100 by
-    default. `--limit <n>` (1 to 10,000) or `--all` changes that. `query` takes
-    `--limit` with the same default and range, but no `--all`, because it cannot
-    count the rows it did not fetch. When entries are left out, text output ends
-    with a note on stderr that gives the count shown, the total and the flag that
-    shows more. JSON carries `total` and `truncated`. `check` lists degraded
+    (`check`, `ls`, `refs`, `plugin list`, `plugin find`, `query`) shows at most
+    100 by default. `--limit <n>` (1 to 10,000) or `--all` changes that. When
+    entries are left out, text output ends with a note on stderr that gives the
+    count shown, the total and the flag that shows more. JSON carries `total` and
+    `truncated`. `query` gives no total, because it does not fetch the rows it
+    leaves out. `check` lists degraded
     entries first, so a cut never hides a problem behind healthy entries. `refs`
     limits each path's answer on its own, so the caller bounds a run by how many
     paths it asks. `get` and `refs` stop answering once their output reaches
     64 MiB and refuse each later path as `get::over_budget` or
-    `refs::over_budget`, to ask for in another run.
+    `refs::over_budget`, to ask for in another run. `query` stops before the
+    row that would take its rows past 64 MiB, even with `--all`, and marks the
+    cut `query::over_budget`; it refuses a single value longer than that.
     An empty listing says so on stderr instead of printing nothing. Gate: a test
     walks the clap command tree and requires every listing command to take these
     flags.

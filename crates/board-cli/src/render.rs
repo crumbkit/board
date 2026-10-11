@@ -7,8 +7,8 @@ use std::fmt::Write as _;
 
 use board_model::{Code, Fields, Location, LogicalPath, Refusal, RefusalCode};
 use board_ops::{
-    CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport, MAX_LIMIT,
-    MountUpdateReport, PutReport, QueryReport, source_name,
+    Budget, CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport,
+    MAX_LIMIT, MountUpdateReport, PutReport, QueryReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
@@ -292,7 +292,59 @@ fn detail_fields(detail: &Detail) -> Map<String, Value> {
     fields
 }
 
+/// Counts the bytes and newlines written to it, and keeps none.
+#[derive(Default)]
+struct Counted {
+    bytes: usize,
+    lines: usize,
+}
+
+impl std::io::Write for Counted {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.bytes += buf.len();
+        self.lines += buf
+            .iter()
+            .map(|&byte| usize::from(byte == b'\n'))
+            .sum::<usize>();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The budget for a query's rows, `bytes` as `format` prints them: as
+/// text, each row's line; as JSON, everything `rows` adds to `[]`. That is
+/// each row indented by 4 more spaces after `,\n    `, and 2 bytes more,
+/// as the first row has no comma and the list closes with `\n  ]`.
+pub(crate) fn rows_budget(format: Format, bytes: usize) -> Budget {
+    let (size, framing): (fn(&[Value]) -> usize, usize) = match format {
+        Format::Text => (
+            |row| {
+                let mut counted = Counted::default();
+                let _ = serde_json::to_writer(&mut counted, row);
+                counted.bytes + 1
+            },
+            0,
+        ),
+        Format::Json => (
+            |row| {
+                let mut counted = Counted::default();
+                let _ = serde_json::to_writer_pretty(&mut counted, row);
+                counted.bytes + 4 * counted.lines + ",\n    ".len()
+            },
+            2,
+        ),
+    };
+    Budget {
+        bytes: bytes.saturating_sub(framing),
+        size,
+    }
+}
+
 /// `query`'s rows: as text, one JSON array per line, the columns first.
+/// Rows left out at the budget are noted with `query::over_budget`.
 pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
     let output = match format {
         Format::Text => {
@@ -317,21 +369,31 @@ pub(crate) fn query(format: Format, report: &QueryReport) -> Output {
                     })
                 })
                 .collect();
-            document(
-                &json!({
-                    "$type": "board/query-report/v1",
-                    "columns": report.columns,
-                    "rows": report.rows,
-                    "truncated": report.truncated,
-                    "plugins": plugins,
-                }),
-                0,
-            )
+            let mut value = json!({
+                "$type": "board/query-report/v1",
+                "columns": report.columns,
+                "rows": report.rows,
+                "truncated": report.truncated,
+                "plugins": plugins,
+            });
+            if report.over_budget {
+                value["code"] = json!(Code::QueryOverBudget.as_str());
+            }
+            document(&value, 0)
         }
     };
-    let rows = (report.truncated && format == Format::Text).then_some(report.rows.len());
-    let mut output = noted(output, report.memory, rows);
+    let cut = report.truncated && !report.over_budget && format == Format::Text;
+    let mut output = noted(output, report.memory, cut.then_some(report.rows.len()));
     if format == Format::Text {
+        if report.over_budget {
+            let note = format!(
+                "note: showing the first {} rows, and more matched, but the next would take the output past its budget ({}); {}\n",
+                report.rows.len(),
+                Code::QueryOverBudget,
+                Code::QueryOverBudget.hint(&Fields::default())
+            );
+            output.stderr.extend_from_slice(note.as_bytes());
+        }
         for failed in &report.plugins {
             output.stderr.extend_from_slice(
                 format!(
@@ -361,7 +423,7 @@ fn noted(output: Output, memory: Option<Fallback>, rows: Option<usize>) -> Outpu
     if let Some(shown) = rows {
         let _ = writeln!(
             stderr,
-            "note: showing the first {shown} rows, and more matched; --limit <n> (at most {MAX_LIMIT}) shows more"
+            "note: showing the first {shown} rows, and more matched; --limit <n> (at most {MAX_LIMIT}) or --all shows more"
         );
     }
     let mut stderr = stderr.into_bytes();

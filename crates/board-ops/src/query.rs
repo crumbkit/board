@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use board_index::{Fallback, IndexError, View};
+use board_index::{Budget, Fallback, IndexError, View};
 use board_model::{Code, Fields, Known, Refusal};
 use board_plugin::{Installed, PluginName};
 use serde_json::Value;
@@ -27,8 +27,11 @@ pub struct QueryReport {
     pub columns: Vec<String>,
     /// Each row's values, in column order.
     pub rows: Vec<Vec<Value>>,
-    /// Whether rows were left out to keep within the limit.
+    /// Whether rows were left out to keep within the limit or the budget.
     pub truncated: bool,
+    /// Whether the rows left out start with one that would have taken the
+    /// rows past their budget.
+    pub over_budget: bool,
     pub memory: Option<Fallback>,
     /// Each enabled plugin that could not extract.
     pub plugins: Vec<PluginFailed>,
@@ -50,19 +53,20 @@ impl Board {
     /// Refreshes the index kept under `cache` and decides every entry, as an
     /// unscoped check does, extracts for each enabled plugin and attaches its
     /// database as `p_<name>`, then runs `sql`, returning at most `limit`
-    /// rows. A plugin that fails is reported and the query still runs. When
+    /// rows, within `budget` when there is one. A plugin that fails is reported and the query still runs. When
     /// another process prunes what the views show before `sql` runs, it all
     /// runs again, three times in all.
     pub fn query(
         &self,
         sql: &str,
         limit: usize,
+        budget: Option<Budget>,
         cache: Option<&Path>,
         plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
         let mut tries = 1;
         loop {
-            match self.query_once(sql, limit, cache, plugins) {
+            match self.query_once(sql, limit, budget, cache, plugins) {
                 Err(QueryError::Index {
                     source: IndexError::Pruned,
                 }) if tries < TRIES => tries += 1,
@@ -75,6 +79,7 @@ impl Board {
         &self,
         sql: &str,
         limit: usize,
+        budget: Option<Budget>,
         cache: Option<&Path>,
         plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
@@ -85,6 +90,7 @@ impl Board {
             columns: Vec::new(),
             rows: Vec::new(),
             truncated: false,
+            over_budget: false,
             memory: snapshot.report.memory,
             plugins: Vec::new(),
             fallbacks: Vec::new(),
@@ -159,13 +165,14 @@ impl Board {
         }
         let timed = self.timed("query.sql");
         let rows = view
-            .query(sql, limit)
+            .query(sql, limit, budget)
             .map_err(|error| unknown(view, sql, error))?;
         drop(timed);
         self.trace.borrow_mut().count("rows", rows.rows.len());
         report.columns = rows.columns;
         report.rows = rows.rows;
         report.truncated = rows.truncated;
+        report.over_budget = rows.over_budget;
         Ok(report)
     }
 }
@@ -233,7 +240,7 @@ const TABLES: &str = "\
 fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
     let message = error.to_string();
     let names = |sql: &str| -> Vec<String> {
-        view.query(sql, MAX_LIMIT).map_or_else(
+        view.query(sql, MAX_LIMIT, None).map_or_else(
             |_| Vec::new(),
             |rows| {
                 rows.rows

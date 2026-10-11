@@ -74,8 +74,11 @@ record whose file changed after its refresh; the next query sends it.
 
 `board query '<sql>'` runs one read-only statement against the index. Each
 enabled plugin's database is attached read-only as `p_<name>`. Rows return as
-JSON, at most 100 unless `--limit` (at most 10,000) says otherwise, with
-`truncated` set when rows were left out. The report is `columns` and `rows`,
+JSON, at most 100 unless `--limit` (at most 10,000) or `--all` says
+otherwise, with `truncated` set when rows were left out. Rows also stop
+before one that would take them past 64 MiB as printed, even with `--all`;
+the first row is always returned. That cut adds the code
+`board::query::over_budget` to the report and still exits 0. The report is `columns` and `rows`,
 each row an array in column order; `plugins` lists any plugin whose extraction
 failed. SQL that does not parse, would write, or holds more than one statement
 is `board::query::invalid`; ATTACH, DETACH and PRAGMA statements count as

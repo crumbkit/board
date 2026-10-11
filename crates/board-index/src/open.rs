@@ -320,6 +320,9 @@ pub enum IndexError {
     },
     #[error("the query ran longer than {:?}", crate::query::QUERY_TIME)]
     Timeout,
+    /// One value was longer than the query's whole budget.
+    #[error("the query made a value longer than one run prints")]
+    TooBig,
     /// Another process pruned facts this run's views show, so the run must
     /// build them again.
     #[error("another process pruned the index after this run built its views")]
@@ -334,6 +337,7 @@ impl IndexError {
             }
             Self::Query { .. } => Code::QueryInvalid,
             Self::Timeout => Code::QueryTimeout,
+            Self::TooBig => Code::QueryOverBudget,
         }
     }
 }
