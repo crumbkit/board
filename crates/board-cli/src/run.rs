@@ -161,8 +161,9 @@ makes, then `to <path> <pointer>` for each record that reaches it.
 
 With several paths, each is answered as it would be alone, in the order
 given. The limit applies to each path, so a run prints at most the number of
-paths times the limit lines. Every line, notes and errors included, names its
-path. A path that is refused does not stop the others; the exit code is 1.
+paths times the limit reference lines, plus a note or error for each path.
+Every line about a path names it, notes and errors included. A path that is
+refused does not stop the others; the exit code is 1.
 --json prints one board/refs-report/v1, for one path too, whose `answers`
 hold each path's references or its board/error/v1, in order. One run takes
 at most 10000 paths. A path that is not a logical path, such as tasks/a,

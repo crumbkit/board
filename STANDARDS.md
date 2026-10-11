@@ -80,8 +80,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     shows more. JSON carries `total` and `truncated`. `check` lists degraded
     entries first, so a cut never hides a problem behind healthy entries. `refs`
     limits each path's answer on its own, so the caller bounds a run by how many
-    paths it asks. An empty listing says so on stderr instead of printing nothing. Gate: a test walks the
-    clap command tree and requires every listing command to take these flags.
+    paths it asks. An empty listing says so on stderr instead of printing
+    nothing. Gate: a test walks the clap command tree and requires every listing
+    command to take these flags.
 24. **Help is a tree that ends in examples.** `board --help` gives one line per
     command and the commands a newcomer runs first. `board <command> --help`
     describes every argument and option, and ends with at least one example.

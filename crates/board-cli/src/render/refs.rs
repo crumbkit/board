@@ -126,8 +126,9 @@ impl<'a> Cut<'a> {
 /// `refs` of one path or several, each answered as it would be alone and
 /// limited on its own. As text, a `from` line per reference the record
 /// makes, with its status, and a `to` line per record whose references
-/// reach it; with several paths, every line names the path asked. As JSON, one `board/refs-report/v1` whose `answers` hold,
-/// in the order asked, each path's references or its `board/error/v1`.
+/// reach it; with several paths, every line about a path names it. As
+/// JSON, one `board/refs-report/v1` whose `answers` hold, in the order
+/// asked, each path's references or its `board/error/v1`.
 /// Exit 1 when any path is refused.
 pub(crate) fn refs(
     format: Format,
