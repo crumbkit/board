@@ -119,8 +119,10 @@ impl Board {
     }
 
     /// Walks the working tree, hashing only files whose metadata the index
-    /// does not hold, and records what it saw. Each JSON file it reads in
-    /// full is indexed into `kept` as it is read.
+    /// does not hold, and records what it saw. Each JSON file the walk reads
+    /// in full is indexed into `kept` once the walk is done, in the order
+    /// the threads finished reading them; the index keys each fact by blob,
+    /// so that order does not show.
     fn walk(
         &self,
         writer: &Writer,
@@ -128,20 +130,18 @@ impl Board {
         kept: &mut Kept,
     ) -> Result<Vec<Entry>, RefreshError> {
         let mut worktree = writer.worktree()?;
-        let mut parsed = 0;
-        let mut failed = None;
+        let (read, hashed) = std::sync::mpsc::channel::<(String, Contents)>();
         let entries = self.repository().walk_working_tree(
             &mut |path, stat| worktree.known(path, stat),
-            &mut |path, contents| {
-                if failed.is_none()
-                    && let Err(error) = keep(writer, kept, path, &contents, &mut parsed)
-                {
-                    failed = Some(error);
-                }
+            &|path, contents| {
+                // The receiver outlives the walk, so a send cannot fail.
+                let _ = read.send((path.to_owned(), contents));
             },
         )?;
-        if let Some(error) = failed {
-            return Err(error.into());
+        drop(read);
+        let mut parsed = 0;
+        for (path, contents) in hashed {
+            keep(writer, kept, &path, &contents, &mut parsed)?;
         }
         work.parsed += parsed;
         work.hashed += writer.sync_worktree(worktree, &entries)?;

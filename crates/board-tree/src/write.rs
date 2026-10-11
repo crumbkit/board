@@ -240,14 +240,8 @@ impl Repository {
     }
 
     /// The id git gives a blob holding `bytes`.
-    ///
-    /// # Panics
-    ///
-    /// Never: hashing bytes in memory reads no stream.
     pub fn blob_id(&self, bytes: &[u8]) -> ObjectId {
-        let id = gix::objs::compute_hash(self.git().object_hash(), gix::objs::Kind::Blob, bytes)
-            .expect("hashing bytes in memory reads no stream, so it cannot fail");
-        model_id(&id)
+        blob_id(self.git().object_hash(), bytes)
     }
 
     /// Writes `bytes` to the working-tree file at the `/`-separated `path`
@@ -295,6 +289,17 @@ pub struct Staged {
     parent: Option<ObjectId>,
     index: gix::index::File,
     index_lock: gix::lock::File,
+}
+
+/// The id git gives a blob holding `bytes` under the object hash `kind`.
+///
+/// # Panics
+///
+/// Never: hashing bytes in memory reads no stream.
+pub(crate) fn blob_id(kind: gix::hash::Kind, bytes: &[u8]) -> ObjectId {
+    let id = gix::objs::compute_hash(kind, gix::objs::Kind::Blob, bytes)
+        .expect("hashing bytes in memory reads no stream, so it cannot fail");
+    model_id(&id)
 }
 
 impl Staged {

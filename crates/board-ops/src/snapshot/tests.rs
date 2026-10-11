@@ -1,7 +1,7 @@
 //! Deciding through the index: a warm index decides as a cold one, its views
 //! show exactly what was decided, and it prunes what the tree left.
 
-use board_index::{BlobFact, Index, View};
+use board_index::{BlobFact, Index, Rows, View};
 use board_model::{
     Change, Code, Kind, Location, Object, ObjectId, POINTER_TYPE, Role, Source, Stat,
 };
@@ -300,6 +300,46 @@ proptest! {
     ) {
         warm_decides_as_cold(&before, &after, committed)?;
     }
+}
+
+/// Decides `scenario` through a cold index, hashing on `threads` threads:
+/// what it reported, its references, and every table.
+fn built_on(scenario: &Scenario, threads: usize) -> (CheckReport, Vec<Referenced>, Vec<Rows>) {
+    let board = open(scenario);
+    board
+        .repository()
+        .set_threads(std::num::NonZeroUsize::new(threads).unwrap());
+    let cold = Index::open(None, board.repository().path()).unwrap();
+    let snapshot = board.snapshot(cold, None).unwrap();
+    let view = board.view(snapshot.decided).unwrap();
+    let tables = EVERY_TABLE
+        .iter()
+        .map(|sql| view.query(sql, 10_000).unwrap())
+        .collect();
+    (snapshot.report, snapshot.references, tables)
+}
+
+#[test]
+fn a_cold_index_built_on_one_thread_is_the_cold_index_built_on_four() {
+    let scenario = board();
+    for n in 0..30 {
+        let text = task(&format!(r#", "n": {n}, "see": "/projects/p""#));
+        scenario.write(&format!("tasks/t{}/n{n}.json", n % 3), Item::File(&text));
+    }
+    scenario
+        .write("tasks/twin.json", Item::File(&task("")))
+        .write("tasks/twin2.json", Item::File(&task("")))
+        .write("tasks/bad.json", Item::File("{bad"))
+        .write("tasks/locked.json", Item::Unreadable("{}"))
+        .write("notes.md", Item::File("not a record"));
+    let one = built_on(&scenario, 1);
+    let four = built_on(&scenario, 4);
+    assert_eq!(one.0.work, four.0.work, "the same work is counted");
+    assert_eq!(one, four);
+    assert_eq!(
+        one.0.work.hashed, 39,
+        "every file, the unreadable one included"
+    );
 }
 
 #[test]

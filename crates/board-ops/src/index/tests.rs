@@ -465,7 +465,7 @@ fn a_transaction_no_other_process_wrote_under_runs_once_and_writes_to_the_file()
 fn unkept(board: &crate::Board) -> Result<Vec<board_tree::Entry>, board_tree::GitError> {
     board
         .repository()
-        .walk_working_tree(&mut |_, _| None, &mut |_, _| {})
+        .walk_working_tree(&mut |_, _| None, &|_, _| {})
 }
 
 #[test]

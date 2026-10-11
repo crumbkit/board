@@ -1,6 +1,8 @@
 //! The one module that reads the working tree: every file git sees, which is
 //! tracked files and untracked files that are not ignored.
 
+mod settle;
+
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -8,24 +10,25 @@ use std::fs::{self, FileType, Metadata};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::atomic::AtomicBool;
 use std::time::UNIX_EPOCH;
 
-use board_model::{MAX_RECORD_BYTES, ObjectId, Role, Source, Stat};
+use board_model::{MAX_RECORD_BYTES, ObjectId, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
 
 use crate::address::{self, Named, Pointers};
-use crate::git::{Contents, GitError, Repository, model_id};
-use crate::tree::{Kind, RawEntry, Tree};
+use crate::git::{Contents, GitError, Repository};
+use crate::tree::{Kind, RawEntry, Settled, Tree, Unhashed};
+use crate::worktree::settle::hash_stream;
 
 /// Given a file's `/`-separated path and metadata, its blob if already known.
 pub type Known<'k> = &'k mut dyn FnMut(&str, &Stat) -> Option<ObjectId>;
 
 /// Takes the contents of a file the walk read in full to hash it, given its
-/// `/`-separated path.
-pub type Kept<'k> = &'k mut dyn FnMut(&str, Contents);
+/// `/`-separated path. A walk hashes on several threads, so it is called
+/// from any of them, and from more than one at once.
+pub type Kept<'k> = &'k (dyn Fn(&str, Contents) + Sync);
 
 /// The working tree of a repository, with its index and ignore rules. Each
 /// directory is listed once, so the tree is one snapshot however often it is
@@ -46,6 +49,14 @@ pub(crate) struct WorkingTree<'r, 'k> {
     listed: HashMap<PathBuf, Listing>,
     /// Each file settled, by path, so it keeps one blob in this snapshot.
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
+}
+
+/// How far a file's metadata settles it: its known blob, or `Unreadable`
+/// when it cannot be seen; otherwise the metadata it was seen with, so that
+/// hashing it can tell whether it changed since.
+enum Seen {
+    Settled(Kind<PathBuf>, Option<Stat>),
+    ToHash(Stat),
 }
 
 /// One directory's entries, with the lookup made from them the first time a
@@ -215,30 +226,26 @@ impl<'k> WorkingTree<'_, 'k> {
     /// The file at `relative`, whose `/`-separated path is `path`: its blob
     /// and metadata, or `Unreadable`.
     fn file(&mut self, relative: &Path, path: &str) -> (Kind<PathBuf>, Option<Stat>) {
+        match self.seen(relative, path) {
+            Seen::Settled(kind, stat) => (kind, stat),
+            Seen::ToHash(seen) => {
+                self.repository.opened_one();
+                self.hasher().hash(relative, path, seen)
+            }
+        }
+    }
+
+    /// The file at `relative`, whose `/`-separated path is `path`, as far as
+    /// its metadata settles it.
+    fn seen(&mut self, relative: &Path, path: &str) -> Seen {
         let absolute = self.repository.path().join(relative);
         let Ok(seen) = fs::metadata(&absolute).map(|metadata| stat(&metadata)) else {
-            return (Kind::Unreadable, None);
+            return Seen::Settled(Kind::Unreadable, None);
         };
-        if let Some(blob) = self.known(path, &seen) {
-            return (Kind::File(blob), Some(seen));
+        match self.known(path, &seen) {
+            Some(blob) => Seen::Settled(Kind::File(blob), Some(seen)),
+            None => Seen::ToHash(seen),
         }
-        // The file hashed is the one opened, so its own metadata is kept. A
-        // file it cannot open keeps the stat it was seen with, so a walk that
-        // again cannot open it records no change.
-        self.repository.opened_one();
-        let Ok((stat, file)) =
-            fs::File::open(&absolute).and_then(|file| Ok((stat(&file.metadata()?), file)))
-        else {
-            return (Kind::Unreadable, Some(seen));
-        };
-        // Only a walk that keeps bytes reads a file in full.
-        let blob = match self.kept.as_mut() {
-            Some(kept) if Role::of(path).is_some() && stat.size <= MAX_RECORD_BYTES as u64 => {
-                hash_kept(self.repository, kept, path, file, stat.size)
-            }
-            _ => self.repository.hash(&mut BufReader::new(file), stat.size),
-        };
-        (blob.map_or(Kind::Unreadable, Kind::File), Some(stat))
     }
 
     /// The listing of `directory`, read from disk the first time.
@@ -288,22 +295,6 @@ impl<'k> WorkingTree<'_, 'k> {
     fn known(&mut self, path: &str, stat: &Stat) -> Option<ObjectId> {
         self.known.as_mut().and_then(|known| known(path, stat))
     }
-}
-
-/// The id of the `length` bytes of `file`, read in full and handed to `kept`,
-/// so the blob is the blob of the bytes kept; `None` if the file cannot be
-/// read or does not hold `length` bytes.
-fn hash_kept(
-    repository: &Repository,
-    kept: &mut Kept<'_>,
-    path: &str,
-    file: fs::File,
-    length: u64,
-) -> Option<ObjectId> {
-    let bytes = read_exactly(file, length)?;
-    let blob = repository.blob_id(&bytes);
-    kept(path, Contents { blob, bytes });
-    Some(blob)
 }
 
 /// The bytes of `stream`, or `None` if it fails or yields fewer or more than
@@ -398,6 +389,10 @@ impl Tree for WorkingTree<'_, '_> {
             stat,
             size: stat.map(|stat| stat.size),
         }
+    }
+
+    fn settle_all(&mut self, unhashed: Vec<Unhashed<PathBuf>>) -> Vec<Settled<PathBuf>> {
+        self.settle_each(unhashed)
     }
 
     fn read(
@@ -635,17 +630,7 @@ impl Repository {
     /// constant memory; `None` if the stream fails, or yields fewer or more
     /// bytes than `length` because the file changed while it was read.
     fn hash(&self, stream: &mut dyn Read, length: u64) -> Option<ObjectId> {
-        let id = gix::objs::compute_stream_hash(
-            self.git().object_hash(),
-            gix::objs::Kind::Blob,
-            stream,
-            length,
-            &mut gix::features::progress::Discard,
-            &AtomicBool::new(false),
-        )
-        .ok()?;
-        let mut more = [0; 1];
-        (stream.read(&mut more).ok()? == 0).then(|| model_id(&id))
+        hash_stream(self.git().object_hash(), stream, length)
     }
 
     /// The contents of a working-tree file that was walked, or `None` when it
@@ -708,6 +693,7 @@ fn lists(directory: &Path, name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::model_id;
 
     #[test]
     fn a_stream_longer_or_shorter_than_its_length_has_no_id() {

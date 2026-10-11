@@ -1,14 +1,34 @@
 //! The one module that reads git objects and references.
 
 use std::error::Error;
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use board_model::{Code, MAX_RECORD_BYTES, ObjectId, Source};
 use gix::object::tree::EntryKind;
 
 use crate::tree::{Kind, RawEntry, Tree};
+
+/// The most threads a walk hashes files on unless the repository is set to
+/// another number. Measured on an M4 Max: hashing a 10,000-record board of
+/// 7 KB files took 398 ms on one thread, 150 ms on four and 125 ms on six,
+/// while a board of 90-byte files took 83 ms on three threads, 110 ms on four
+/// and 260 ms on eight, because opening small files contends in the kernel.
+const MAX_THREADS: usize = 4;
+
+/// The cores available, up to [`MAX_THREADS`], asked of the system once:
+/// on Linux the question reads cgroup files.
+fn default_threads() -> usize {
+    static THREADS: OnceLock<usize> = OnceLock::new();
+    *THREADS.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map_or(1, NonZeroUsize::get)
+            .min(MAX_THREADS)
+    })
+}
 
 /// A git repository opened for reading.
 #[derive(Debug)]
@@ -19,6 +39,8 @@ pub struct Repository {
     listed: AtomicUsize,
     /// How many working-tree files it opened to hash or read.
     opened: AtomicUsize,
+    /// How many threads a walk hashes files on.
+    threads: AtomicUsize,
 }
 
 /// A commit's tree, read from the object database.
@@ -51,7 +73,21 @@ impl Repository {
             git,
             listed: AtomicUsize::new(0),
             opened: AtomicUsize::new(0),
+            threads: AtomicUsize::new(default_threads()),
         }
+    }
+
+    /// How many threads a walk of the working tree hashes files on: the
+    /// cores available, up to four, unless [`Repository::set_threads`] said
+    /// otherwise.
+    pub(crate) fn threads(&self) -> usize {
+        self.threads.load(Ordering::Relaxed)
+    }
+
+    /// Makes each walk of the working tree hash files on `threads` threads.
+    /// Determinism tests walk with one thread and with several.
+    pub fn set_threads(&self, threads: NonZeroUsize) {
+        self.threads.store(threads.get(), Ordering::Relaxed);
     }
 
     /// The repository's canonical working directory, or its git directory
@@ -83,7 +119,12 @@ impl Repository {
 
     /// Counts one working-tree file opened.
     pub(crate) fn opened_one(&self) {
-        self.opened.fetch_add(1, Ordering::Relaxed);
+        self.opened_many(1);
+    }
+
+    /// Counts `count` working-tree files opened.
+    pub(crate) fn opened_many(&self, count: usize) {
+        self.opened.fetch_add(count, Ordering::Relaxed);
     }
 
     /// The commit `HEAD` names, or `None` before the first commit.

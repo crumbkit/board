@@ -65,6 +65,15 @@ pub(crate) trait Tree {
         entry.clone()
     }
 
+    /// The blob and metadata of each file a walk listed `Unhashed`, in any
+    /// order. A source that hashes every file it lists has none.
+    fn settle_all(
+        &mut self,
+        _unhashed: Vec<Unhashed<Self::Directory>>,
+    ) -> Vec<Settled<Self::Directory>> {
+        vec![]
+    }
+
     /// What `segment` names among `entries`, the listing of `directory`. A
     /// record beside its directory is read through `pointers` to tell
     /// whether it shadows the directory.
@@ -107,6 +116,19 @@ pub(crate) enum Kind<D> {
     /// A working-tree file not hashed yet, which [`Tree::settle`] hashes.
     Unhashed,
 }
+
+/// A file a walk listed without hashing: which of the walk's entries it is,
+/// and the directory and name that find it.
+#[derive(Debug)]
+pub(crate) struct Unhashed<D> {
+    pub(crate) at: usize,
+    pub(crate) directory: D,
+    pub(crate) name: Vec<u8>,
+}
+
+/// What hashing an [`Unhashed`] file found: which entry it is, its kind and
+/// its metadata.
+pub(crate) type Settled<D> = (usize, Kind<D>, Option<Stat>);
 
 /// One entry of a directory.
 #[derive(Clone, Debug, PartialEq, Eq)]

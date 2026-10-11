@@ -51,9 +51,7 @@ fn restage(board: &Board, cache: &std::path::Path, path: &str, change: impl Fn(&
     crate::index::transact(index, |writer| {
         let mut worktree = writer.worktree()?;
         let known = &mut |path: &str, stat: &_| worktree.known(path, stat);
-        let mut entries = board
-            .repository()
-            .walk_working_tree(known, &mut |_, _| {})?;
+        let mut entries = board.repository().walk_working_tree(known, &|_, _| {})?;
         change(entries.iter_mut().find(|entry| entry.path == path).unwrap());
         assert_eq!(writer.sync_worktree(worktree, &entries)?, 0);
         Ok(((), Vec::new()))

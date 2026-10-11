@@ -7,7 +7,7 @@ use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
 use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
-use crate::tree::{Kind, RawEntry, Tree};
+use crate::tree::{Kind, RawEntry, Tree, Unhashed};
 use crate::worktree::{Kept, Known};
 
 /// One file in a tree. Directories are not entries.
@@ -90,16 +90,21 @@ impl Repository {
 
     /// Walks the working tree as [`Repository::walk`] does, but hashes a
     /// file only when `known`, given its `/`-separated path and metadata,
-    /// does not already know its blob. Each JSON file it hashes within
-    /// [`MAX_RECORD_BYTES`](board_model::MAX_RECORD_BYTES) is read in full, and `kept` takes its path and
-    /// contents as soon as it is read, so that the caller holds no more of
-    /// the tree than it chooses to.
+    /// does not already know its blob. The files are hashed on the
+    /// repository's threads ([`Repository::set_threads`]) once every
+    /// directory is listed. Each
+    /// JSON file hashed within
+    /// [`MAX_RECORD_BYTES`](board_model::MAX_RECORD_BYTES) is read in full,
+    /// and `kept` takes its path and contents as soon as it is read, on the
+    /// thread that read it, so that the caller holds no more of the tree
+    /// than it chooses to. The entries are the same however many threads
+    /// hash; only the order `kept` sees differs.
     pub fn walk_working_tree(
         &self,
         known: Known<'_>,
         kept: Kept<'_>,
     ) -> Result<Vec<Entry>, GitError> {
-        walk_in(&mut self.working_tree(Some(known))?.keeping(kept))
+        walk_in(&mut self.working_tree(Some(known))?.keeping(kept).on_demand())
     }
 }
 
@@ -377,6 +382,7 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
     let start_path = start.path.clone();
     let mut pending = vec![start];
     let mut entries = Vec::new();
+    let mut unhashed = Vec::new();
     while let Some(directory) = pending.pop() {
         let listed = match tree.list(&directory.directory) {
             Ok(listed) => listed,
@@ -414,7 +420,14 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
                 }
                 Kind::File(id) | Kind::Symlink(id) => Some(*id),
                 Kind::Submodule | Kind::Unreadable => None,
-                Kind::Unhashed => unreachable!("a walk's working tree hashes every file it lists"),
+                Kind::Unhashed => {
+                    unhashed.push(Unhashed {
+                        at: entries.len(),
+                        directory: directory.directory.clone(),
+                        name: entry.name.clone(),
+                    });
+                    None
+                }
             };
             entries.push(Entry {
                 path,
@@ -425,6 +438,16 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
                 size: blob.and(entry.size),
             });
         }
+    }
+    for (at, kind, stat) in tree.settle_all(unhashed) {
+        // `at` is where the walk pushed the entry it listed `Unhashed`.
+        let entry = &mut entries[at];
+        entry.blob = match kind {
+            Kind::File(id) | Kind::Symlink(id) => Some(id),
+            Kind::Directory(_) | Kind::Submodule | Kind::Unreadable | Kind::Unhashed => None,
+        };
+        entry.stat = stat;
+        entry.size = entry.blob.and(stat.map(|stat| stat.size));
     }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(entries)

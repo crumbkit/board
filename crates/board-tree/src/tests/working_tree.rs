@@ -255,7 +255,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         .write("notes.md", Item::File("[]"));
     let stand_in = scenario.blob("not what the file holds");
     let mut asked = Vec::new();
-    let mut kept = Vec::new();
+    let kept = std::sync::Mutex::new(Vec::new());
     let entries = scenario
         .open()
         .walk_working_tree(
@@ -263,9 +263,10 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
                 asked.push((path.to_owned(), stat.size));
                 (path == "known.json").then_some(stand_in)
             },
-            &mut |path, contents| kept.push((path.to_owned(), contents)),
+            &|path, contents| kept.lock().unwrap().push((path.to_owned(), contents)),
         )
         .unwrap();
+    let kept = kept.into_inner().unwrap();
     asked.sort();
     assert_eq!(
         asked,
@@ -297,6 +298,86 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         [("dir/unknown.json".to_owned(), contents)],
         "only the JSON file hashed is kept, with the blob of its bytes"
     );
+}
+
+/// Walks `scenario`'s working tree hashing on `threads` threads, with no
+/// blob known: the entries, the files kept in path order, and how many files
+/// were opened.
+fn walked_on(scenario: &Scenario, threads: usize) -> (Vec<Entry>, Vec<(String, Contents)>, usize) {
+    let repository = scenario.open();
+    repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
+    let kept = std::sync::Mutex::new(Vec::new());
+    let entries = repository
+        .walk_working_tree(&mut |_, _| None, &|path, contents| {
+            kept.lock().unwrap().push((path.to_owned(), contents));
+        })
+        .unwrap();
+    let mut kept = kept.into_inner().unwrap();
+    kept.sort_by(|a, b| a.0.cmp(&b.0));
+    (entries, kept, repository.files_opened())
+}
+
+#[test]
+fn a_walk_on_one_thread_and_on_four_give_the_same_entries_keep_the_same_files_and_open_each_once() {
+    let scenario = Scenario::new();
+    for n in 0..40 {
+        let text = format!("{{\"n\": {n}}}");
+        scenario.write(&format!("d{}/r{n}.json", n % 5), Item::File(&text));
+    }
+    scenario
+        .write("notes.md", Item::File("not kept"))
+        .write("locked.json", Item::Unreadable("{}"))
+        .write("link.json", Item::Symlink("d0/r0.json"));
+    let one = walked_on(&scenario, 1);
+    let four = walked_on(&scenario, 4);
+    assert_eq!(one, four);
+    let (entries, kept, opened) = one;
+    assert_eq!(entries.len(), 43);
+    assert_eq!(kept.len(), 40, "every readable JSON file is kept");
+    assert_eq!(opened, 42, "every file but the symlink is opened once");
+    let locked = entries
+        .iter()
+        .find(|entry| entry.path == "locked.json")
+        .unwrap();
+    assert_eq!((locked.blob, locked.stat.is_some()), (None, true));
+    assert_eq!(
+        entries.iter().filter(|entry| entry.blob.is_some()).count(),
+        42
+    );
+}
+
+#[test]
+fn a_repository_opens_with_as_many_threads_as_the_machine_has_cores_up_to_four() {
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    assert_eq!(Scenario::new().open().threads(), cores.min(4));
+}
+
+#[test]
+fn a_record_beside_its_directory_is_hashed_once_while_addressing_and_the_rest_on_the_threads() {
+    let scenario = Scenario::new();
+    scenario
+        .write("tasks/a.json", Item::File("{\"beside\": true}"))
+        .write("tasks/a/b.json", Item::File("{\"under\": true}"))
+        .write("tasks/c.json", Item::File("{\"beside\": false}"));
+    let one = walked_on(&scenario, 1);
+    let four = walked_on(&scenario, 4);
+    assert_eq!(one, four);
+    let (entries, kept, opened) = one;
+    assert_eq!(entries.len(), 3);
+    let paths: Vec<_> = kept.iter().map(|(path, _)| path.as_str()).collect();
+    assert_eq!(paths, ["tasks/a.json", "tasks/a/b.json", "tasks/c.json"]);
+    // Addressing tasks/ hashes a.json on this thread to read whether it
+    // shadows a/, and reads it once more; settling finds it hashed already.
+    assert_eq!(opened, 4, "three files hashed once each, and one read once");
+}
+
+#[test]
+fn a_repository_hashes_on_up_to_four_threads_unless_it_is_set_to_another_number() {
+    let scenario = Scenario::new();
+    let repository = scenario.open();
+    assert!((1..=4).contains(&repository.threads()));
+    repository.set_threads(std::num::NonZeroUsize::new(7).unwrap());
+    assert_eq!(repository.threads(), 7);
 }
 
 #[test]
