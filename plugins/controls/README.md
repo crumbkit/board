@@ -54,8 +54,8 @@ to `.board/types/controls/control/v1.schema.json`.
   `controls::file::unreadable` when a control reaches something Board cannot
   read as a file, such as a directory or a shadowed file. CI can run it as a gate. A file reached
   by both a reference and a pattern counts once, and a link's own file counts
-  nothing. `check` resolves each control's references with one `board refs`
-  and reads each file once with `board get`, several at a time, however many
+  nothing. `check` resolves the references of every budget control that has
+  `applies_to` with one `board refs` for each 10,000 controls. It reads each file once with `board get`, several at a time, however many
   controls reach it. Board has no command that reads many files at once, so
   the time grows with the number of files, and a check over a few thousand
   files can reach Board's 30-second limit on a call (`board::plugin::timeout`).

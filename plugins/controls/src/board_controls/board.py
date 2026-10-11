@@ -42,21 +42,24 @@ def degraded(board: Board) -> list[list[str]]:
     )
 
 
-def referenced(board: Board, control: str) -> set[str]:
-    """The display path of each entry the control's `applies_to` reaches, with every link replaced by its target.
+def referenced(board: Board, controls: list[str]) -> dict[str, set[str]]:
+    """For each control, the display path of each entry its `applies_to` reaches.
 
-    One `board refs` of the control resolves every reference it makes.
+    Every link is replaced by its target. One `board refs` resolves every
+    reference the controls make, and no controls start no run.
     """
-    [report] = board.refs([control])
-    if report is None:
-        raise PluginError("controls::board::failed", f"nothing is at {control}")
-    reached: set[str] = set()
-    for outgoing in report["from"]:
-        if outgoing["pointer"].startswith("/applies_to/"):
-            if outgoing["location"] is None:
-                raise PluginError("controls::board::failed", f"{control} reaches nothing at {outgoing['target']}")
-            reached.add(outgoing["location"]["display"])
-    return reached
+    found: dict[str, set[str]] = {}
+    for control, report in zip(controls, board.refs(controls), strict=True):
+        if report is None:
+            raise PluginError("controls::board::failed", f"nothing is at {control}")
+        reached: set[str] = set()
+        for outgoing in report["from"]:
+            if outgoing["pointer"].startswith("/applies_to/"):
+                if outgoing["location"] is None:
+                    raise PluginError("controls::board::failed", f"{control} reaches nothing at {outgoing['target']}")
+                reached.add(outgoing["location"]["display"])
+        found[control] = reached
+    return found
 
 
 def referencing(report: dict[str, Any]) -> set[str]:

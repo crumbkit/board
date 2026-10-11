@@ -150,6 +150,42 @@ def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it
     assert runs == [("--json", "refs", "--all", "--missing", "--", "-a")]
 
 
+def answering_each_path(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
+    """Make `board refs` answer each path after `--` with its display path, and return the runs it records."""
+    runs: list[tuple[str, ...]] = []
+
+    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        runs.append(arguments)
+        asked = arguments[arguments.index("--") + 1 :]
+        answers = [{"location": {"display": path}} for path in asked]
+        report = json.dumps({"$type": "board/refs-report/v1", "answers": answers}).encode()
+        return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
+
+    monkeypatch.setattr(Board, "_run", run)
+    return runs
+
+
+def test_refs_asks_as_many_paths_as_one_run_answers_in_one_run_and_one_more_in_a_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs = answering_each_path(monkeypatch)
+    three = Board("/b", "demo", paths_per_run=3)
+    assert [answer and answer["location"]["display"] for answer in three.refs(["/a", "/b", "/c"])] == ["/a", "/b", "/c"]
+    assert [run[4:] for run in runs] == [("/a", "/b", "/c")]
+    runs.clear()
+    answers = three.refs(["/a", "/b", "/c", "/d"])
+    assert [answer and answer["location"]["display"] for answer in answers] == ["/a", "/b", "/c", "/d"]
+    assert [run[4:] for run in runs] == [("/a", "/b", "/c"), ("/d",)]
+
+
+def test_refs_of_one_str_is_refused_and_of_a_list_holding_it_is_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = answering_each_path(monkeypatch)
+    with pytest.raises(TypeError, match=r"not the one str '/ab'; pass \['/ab'\]"):
+        DEMO.refs("/ab")
+    assert runs == []
+    assert DEMO.refs(["/ab"]) == [{"location": {"display": "/ab"}}]
+
+
 def test_a_literal_doubles_its_quotes() -> None:
     assert board.literal("it's") == "'it''s'"
 
@@ -167,6 +203,13 @@ def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Board:
     (root / "docs").mkdir()
     (root / "docs" / "a.md").write_text("one two")
     return Board(str(root), "demo")
+
+
+def test_one_run_asks_at_most_as_many_paths_as_the_built_board_says_one_run_takes(real: Board) -> None:
+    for command in ("refs",):
+        ran = subprocess.run(["board", command, "--help"], cwd=real.root, capture_output=True, check=True, text=True)
+        assert f"One run takes at most {board.PATHS_PER_RUN} paths" in " ".join(ran.stdout.split())
+    assert DEMO.paths_per_run == board.PATHS_PER_RUN
 
 
 def test_the_real_board_gives_a_files_bytes_and_refuses_a_directory_with_its_code(real: Board) -> None:

@@ -5,6 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
 from conftest import Board, board_binary, control
 
 
@@ -159,9 +160,38 @@ def test_check_reads_each_file_once_and_each_controls_references_in_one_call(boa
         "get /docs/b.md",
         "get /docs/c.md",
     ]
-    assert sorted(call for call in calls if " refs " in call) == [
-        "--json refs --all -- /controls/bytes",
-        "--json refs --all -- /controls/words",
+    assert [call for call in calls if " refs " in call] == ["--json refs --all -- /controls/bytes /controls/words"]
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_check_resolves_every_controls_references_in_one_refs_run(board: Board, tmp_path: Path, count: int) -> None:
+    board.write("docs/a.md", "one two")
+    names = [f"c{index}" for index in range(count)]
+    for name in names:
+        board.write(
+            f"controls/{name}.json", control("Short.", applies_to=["/docs/a.md"], rule={"budget": "words", "max": 2})
+        )
+    board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 2}))
+    watched, log = counted(board, tmp_path)
+    report = watched.call("check", {})
+    assert [item["used"] for item in report["output"]["controls"]] == [2] * (count + 1), report
+    paths = " ".join(f"/controls/{name}" for name in names)
+    assert [call for call in log.read_text().splitlines() if " refs " in call] == [f"--json refs --all -- {paths}"]
+
+
+def test_check_starts_no_refs_run_when_no_control_has_references_and_one_when_a_control_has(
+    board: Board, tmp_path: Path
+) -> None:
+    board.write("docs/a.md", "one two")
+    board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 2}))
+    watched, log = counted(board, tmp_path)
+    assert watched.call("check", {})["output"]["controls"][0]["used"] == len(["one", "two"])
+    assert [call for call in log.read_text().splitlines() if " refs " in call] == []
+    board.write("controls/named.json", control("Short.", applies_to=["/docs/a.md"], rule={"budget": "words", "max": 2}))
+    log.unlink()
+    assert [item["used"] for item in watched.call("check", {})["output"]["controls"]] == [2, 2]
+    assert [call for call in log.read_text().splitlines() if " refs " in call] == [
+        "--json refs --all -- /controls/named"
     ]
 
 

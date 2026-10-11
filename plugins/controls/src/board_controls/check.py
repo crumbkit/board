@@ -62,10 +62,8 @@ def check(request: CallRequest) -> CheckOutput:
         f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
         " AND e.source = 'worktree' AND e.kind != 'pointer' AND e.path GLOB p.value",
     )
-    files: dict[str, set[str]] = {
-        logical: board.referenced(reading, logical) if record.applies_to else set()
-        for logical, record in budgets.items()
-    }
+    files = board.referenced(reading, sorted(logical for logical, record in budgets.items() if record.applies_to))
+    files.update({logical: set() for logical in budgets if logical not in files})
     for control, path, status, code in matched:
         if control in files:
             if status != "ok":
