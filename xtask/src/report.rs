@@ -3,7 +3,7 @@
 use std::error::Error;
 use std::fmt::Write as _;
 
-use crate::bench::Timed;
+use crate::bench::{Timed, Took};
 use crate::controls::Divergence;
 
 /// How many parts a report line names before summarising the rest.
@@ -168,18 +168,26 @@ pub(crate) fn emit(output: &Output<'_>) {
     }
 }
 
-/// One line per operation: its median, its budget and their ratio.
+/// One line per operation: its median, its budget and their ratio, or why
+/// it was skipped.
 pub(crate) fn render_bench(timed: &[Timed]) -> String {
     let mut text = String::new();
     for operation in timed {
+        let median = match &operation.took {
+            Took::Median(median) => median,
+            Took::Skipped(reason) => {
+                let _ = writeln!(text, "skip  {reason}  {}", operation.operation);
+                continue;
+            }
+        };
         let status = if operation.passed() { "pass" } else { "FAIL" };
         let budget = operation.budget;
         let _ = writeln!(
             text,
             "{status}  {median:>8.1} ms  budget {millis:>6} ms  {ratio:>4.1}x  {name}",
-            median = operation.median.as_secs_f64() * 1_000.0,
+            median = median.as_secs_f64() * 1_000.0,
             millis = budget.as_millis(),
-            ratio = operation.median.as_secs_f64() / budget.as_secs_f64(),
+            ratio = median.as_secs_f64() / budget.as_secs_f64(),
             name = operation.operation,
         );
     }

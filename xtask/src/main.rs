@@ -99,16 +99,35 @@ fn lint(root: &Path) -> Result<Report, LintError> {
 
 /// Times the budgeted operations on the board `options` names, or on one
 /// generated for the run.
+/// The plugin call gets this machine's `PATH` and `HOME`, the `board` beside
+/// this binary, and a data directory that installs the repository's tasks
+/// plugin.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "bench reads PATH and HOME, and installs the plugin it calls"
+)]
 fn bench(root: &Path, options: &bench::Options) -> Result<Vec<bench::Timed>, bench::BenchError> {
     let docs = std::fs::read_to_string(root.join("docs/architecture.md"))
         .map_err(bench::BenchError::Write)?;
     let budgets = bench::budgets(&docs)?;
+    let data = tempfile::tempdir().map_err(bench::BenchError::Write)?;
+    let plugins = data.path().join("board/plugins");
+    std::fs::create_dir_all(&plugins).map_err(bench::BenchError::Write)?;
+    std::os::unix::fs::symlink(root.join("plugins/tasks"), plugins.join("tasks"))
+        .map_err(bench::BenchError::Write)?;
+    let exe = std::env::current_exe().map_err(bench::BenchError::Write)?;
+    let host = bench::Host {
+        path: std::env::var_os("PATH").unwrap_or_default(),
+        home: std::env::var_os("HOME"),
+        board: exe.parent().map(Path::to_path_buf).unwrap_or_default(),
+        data: data.path().to_owned(),
+    };
     if let Some(board) = &options.board {
-        return bench::run(board, &budgets);
+        return bench::run(board, &budgets, &host);
     }
     let generated = tempfile::tempdir().map_err(bench::BenchError::Write)?;
     bench::generate(generated.path(), options.records).map_err(bench::BenchError::Write)?;
-    bench::run(generated.path(), &budgets)
+    bench::run(generated.path(), &budgets, &host)
 }
 
 #[derive(Debug, thiserror::Error)]

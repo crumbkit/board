@@ -2570,6 +2570,7 @@ version = "0.0.0"
 dependencies = [
  "board-model",
  "board-ops",
+ "board-plugin",
  "board-tree",
  "serde",
  "serde_json",
