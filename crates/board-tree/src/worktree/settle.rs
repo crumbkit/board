@@ -11,7 +11,7 @@ use gix::bstr::ByteSlice;
 
 use crate::git::{Contents, model_id};
 use crate::tree::{Kind, Settled, Unhashed};
-use crate::worktree::{Kept, Seen, WorkingTree, read_exactly, stat};
+use crate::worktree::{Kept, WorkingTree, read_exactly, stat};
 use crate::write::blob_id;
 
 /// One file to hash: which entry it is, its path relative to the root, its
@@ -41,11 +41,10 @@ impl WorkingTree<'_, '_> {
         }
     }
 
-    /// Settles each file in `unhashed`. One already settled, one whose blob
-    /// is known, and one that cannot be seen are answered on this thread;
-    /// the rest are opened and hashed on the repository's threads, no more
-    /// than there are files, each file on one of them. The answer is the
-    /// same however many threads hash.
+    /// Settles each file in `unhashed`. One already settled is answered on
+    /// this thread; the rest are opened and hashed on the repository's
+    /// threads, no more than there are files, each file on one of them. The
+    /// answer is the same however many threads hash.
     pub(super) fn settle_each(
         &mut self,
         unhashed: Vec<Unhashed<PathBuf>>,
@@ -56,6 +55,7 @@ impl WorkingTree<'_, '_> {
             at,
             directory,
             name,
+            seen,
         } in unhashed
         {
             let relative = directory.join(gix::path::from_bstr(name.as_bstr()));
@@ -64,15 +64,12 @@ impl WorkingTree<'_, '_> {
                 continue;
             }
             let path = gix::path::into_bstr(&relative).to_str_lossy().into_owned();
-            match self.seen(&relative, &path) {
-                Seen::Settled(kind, stat) => settled.push((at, kind, stat)),
-                Seen::ToHash(seen) => jobs.push(Job {
-                    at,
-                    relative,
-                    path,
-                    seen,
-                }),
-            }
+            jobs.push(Job {
+                at,
+                relative,
+                path,
+                seen,
+            });
         }
         self.repository.opened_many(jobs.len());
         let threads = self.repository.threads().min(jobs.len());

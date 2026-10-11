@@ -218,7 +218,7 @@ impl Repositories {
                 Kind::Unreadable => {
                     return Err(ResolveError::Unreadable { path: path.clone() });
                 }
-                Kind::Unhashed => unreachable!("resolution settles each entry it picks"),
+                Kind::Unhashed(_) => unreachable!("resolution settles each entry it picks"),
             }
         }
         Ok(Location {

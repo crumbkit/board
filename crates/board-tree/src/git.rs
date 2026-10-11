@@ -12,8 +12,10 @@ use gix::object::tree::EntryKind;
 
 use crate::tree::{Kind, RawEntry, Tree};
 
-/// The most threads a walk hashes files on unless the repository is set to
-/// another number. Measured on an M4 Max: hashing a 10,000-record board of
+/// The most threads a walk lists directories and hashes files on unless the
+/// repository is set to another number. Measured on an M4 Max: listing a
+/// 10,000-record board took 45 ms on one thread, 20 on three and 17 on
+/// four; hashing a 10,000-record board of
 /// 7 KB files took 398 ms on one thread, 150 ms on four and 125 ms on six,
 /// while a board of 90-byte files took 83 ms on three threads, 110 ms on four
 /// and 260 ms on eight, because opening small files contends in the kernel.
@@ -39,7 +41,7 @@ pub struct Repository {
     listed: AtomicUsize,
     /// How many working-tree files it opened to hash or read.
     opened: AtomicUsize,
-    /// How many threads a walk hashes files on.
+    /// How many threads a walk lists directories and hashes files on.
     threads: AtomicUsize,
 }
 
@@ -77,15 +79,15 @@ impl Repository {
         }
     }
 
-    /// How many threads a walk of the working tree hashes files on: the
-    /// cores available, up to four, unless [`Repository::set_threads`] said
-    /// otherwise.
+    /// How many threads a walk of the working tree lists directories and
+    /// hashes files on: the cores available, up to four, unless
+    /// [`Repository::set_threads`] said otherwise.
     pub(crate) fn threads(&self) -> usize {
         self.threads.load(Ordering::Relaxed)
     }
 
-    /// Makes each walk of the working tree hash files on `threads` threads.
-    /// Determinism tests walk with one thread and with several.
+    /// Makes each walk of the working tree list and hash on `threads`
+    /// threads. Determinism tests walk with one thread and with several.
     pub fn set_threads(&self, threads: NonZeroUsize) {
         self.threads.store(threads.get(), Ordering::Relaxed);
     }
@@ -106,9 +108,9 @@ impl Repository {
         self.listed.load(Ordering::Relaxed)
     }
 
-    /// Counts one directory read from disk.
-    pub(crate) fn listed_one(&self) {
-        self.listed.fetch_add(1, Ordering::Relaxed);
+    /// The count of directories read from disk, for a listing to add to.
+    pub(crate) fn listings(&self) -> &AtomicUsize {
+        &self.listed
     }
 
     /// How many working-tree files this repository opened to hash or read.

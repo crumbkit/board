@@ -51,9 +51,10 @@ writes nothing, so it neither waits for nor blocks another process. If another
 process holds the lock or wrote first, the refresh runs again, waiting up to 5
 seconds for the lock. If the wait runs out, it runs in an index in memory. A
 JSON file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
-opens each file once. The walk lists every directory first, then hashes the
-files whose stat the index does not hold on up to four threads, as many as
-there are cores; the entries and the index are the same whatever the count.
+opens each file once. The walk lists directories and reads each entry's stat
+on up to four threads, as many as there are cores, never listing an ignored
+directory, then hashes the files whose stat the index does not hold on as
+many new threads; the entries and the index are the same whatever the count.
 A cold refresh compiles each schema once: the compilation that judges the
 schema also validates the records of its type.
 A file that is read again, such as a larger one, and that changed after hashing

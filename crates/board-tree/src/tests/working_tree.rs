@@ -1,8 +1,12 @@
 //! The working-tree source: every file git sees (docs/architecture.md,
 //! Boards and entries).
 
+use std::path::{Path, PathBuf};
+
 use super::*;
-use crate::{Contents, Entry};
+use crate::tree::{Kind, Listed, RawEntry, Visit};
+use crate::worktree::WorkingTree as WorkingTreeView;
+use crate::{Contents, Entry, GitError};
 
 #[test]
 fn a_file_in_the_working_tree_resolves_to_the_blob_git_would_store() {
@@ -31,6 +35,16 @@ fn the_git_directory_is_never_an_entry() {
         resolve(&scenario, WorkingTree, "/.git").unwrap_err(),
         Code::PathNotFound
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_socket_is_never_an_entry_while_the_file_beside_it_is() {
+    let scenario = Scenario::new();
+    scenario.write("x.json", Item::File("{}"));
+    let socket = scenario.workdir().join("x.sock");
+    let _listening = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    assert_eq!(walk(&scenario, WorkingTree), [ok("x.json", "/x")]);
 }
 
 #[test]
@@ -346,6 +360,47 @@ fn a_walk_on_one_thread_and_on_four_give_the_same_entries_keep_the_same_files_an
     );
 }
 
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(16))]
+
+    #[test]
+    fn a_walk_gives_the_same_entries_however_many_threads_list_and_hash(files in checkout()) {
+        prop_assume!(files.iter().all(|file| !files.iter().any(|other| other.starts_with(&format!("{file}/")))));
+        let scenario = Scenario::new();
+        for file in &files {
+            scenario.write(file, Item::File("{}"));
+        }
+        let one = walked_on(&scenario, 1);
+        for threads in 2..=4 {
+            prop_assert_eq!(&walked_on(&scenario, threads), &one, "{} threads", threads);
+        }
+    }
+}
+
+#[test]
+fn an_ignored_directory_is_never_listed_however_many_threads_list() {
+    let scenario = Scenario::new();
+    scenario
+        .write(".gitignore", Item::File("build/\n"))
+        .write("src/a.json", Item::File("{}"))
+        .write("build/x/y.json", Item::File("{}"))
+        .write("build/z.json", Item::File("{}"));
+    for threads in [1, 4] {
+        let repository = scenario.open();
+        repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
+        let entries = repository
+            .walk_working_tree(&mut |_, _| None, &|_, _| {})
+            .unwrap();
+        let paths: Vec<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
+        assert_eq!(paths, [".gitignore", "src/a.json"], "{threads} threads");
+        assert_eq!(
+            repository.directories_listed(),
+            2,
+            "the root and src on {threads} threads"
+        );
+    }
+}
+
 #[test]
 fn a_repository_opens_with_as_many_threads_as_the_machine_has_cores_up_to_four() {
     let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
@@ -369,6 +424,201 @@ fn a_record_beside_its_directory_is_hashed_once_while_addressing_and_the_rest_on
     // Addressing tasks/ hashes a.json on this thread to read whether it
     // shadows a/, and reads it once more; settling finds it hashed already.
     assert_eq!(opened, 4, "three files hashed once each, and one read once");
+}
+
+/// Every directory a visit lists, by name: its entries, or the code of
+/// the error listing it gave.
+type Listings = Vec<(PathBuf, Result<Vec<RawEntry<PathBuf>>, Code>)>;
+
+/// Lists `board` on a fresh working tree, `ahead` on four threads or else
+/// on this one, and returns what was listed with how many directories were
+/// read from disk.
+fn listed_by(board: &Scenario, ahead: bool) -> (Listings, usize) {
+    let repository = board.open();
+    repository.set_threads(std::num::NonZeroUsize::new(4).unwrap());
+    let mut tree = repository.working_tree(None).unwrap();
+    let mut listings = Listings::new();
+    let start = (PathBuf::new(), ());
+    let visit: Visit<'_, WorkingTreeView<'_, '_>, ()> = &mut |_, (directory, ()), listed| {
+        let entries = match listed {
+            Ok(entries) => entries,
+            Err(error) => {
+                listings.push((directory, Err(error.code())));
+                return Ok(Vec::new());
+            }
+        };
+        let children = entries
+            .iter()
+            .filter_map(|entry| match &entry.kind {
+                Kind::Directory(child) => Some((child.clone(), ())),
+                _ => None,
+            })
+            .collect();
+        listings.push((directory, Ok(entries.to_vec())));
+        Ok(children)
+    };
+    if ahead {
+        tree.visit_ahead(start, visit).unwrap();
+    } else {
+        crate::tree::visit_each(&mut tree, start, visit).unwrap();
+    }
+    listings.sort_by(|a, b| a.0.cmp(&b.0));
+    (listings, repository.directories_listed())
+}
+
+#[test]
+fn listing_the_seed_board_ahead_on_four_threads_gives_what_listing_it_on_this_thread_gives() {
+    let seed = board_scenario::seed::Seed::new();
+    seed.board
+        .write(
+            ".gitignore",
+            Item::File(
+                "ignored/
+",
+            ),
+        )
+        .write("ignored/skipped.json", Item::File("{}"))
+        .write("locked", Item::Locked);
+    let each = listed_by(&seed.board, false);
+    let ahead = listed_by(&seed.board, true);
+    assert_eq!(each, ahead);
+    let (listings, _) = each;
+    let directories: Vec<&Path> = listings
+        .iter()
+        .map(|(directory, _)| directory.as_path())
+        .collect();
+    assert!(
+        !directories.contains(&Path::new("ignored")),
+        "an ignored directory is never listed"
+    );
+    assert!(
+        !directories.contains(&Path::new("repo/nested")),
+        "a nested repository is never listed"
+    );
+    let locked = listings
+        .iter()
+        .find(|(directory, _)| directory == Path::new("locked"));
+    assert!(
+        matches!(locked, Some((_, Err(Code::RepoUnreadable)))),
+        "a locked directory is listed as unreadable: {locked:?}"
+    );
+    assert!(directories.contains(&Path::new("mount")));
+}
+
+/// What a walk's visit of one directory answers in a test.
+type Visited = Result<Vec<(PathBuf, ())>, GitError>;
+
+/// Runs `visit` over a small board on another thread, with four listing
+/// threads, and returns how that thread ended; it fails if the walk does
+/// not end soon.
+fn visited_on_another_thread(
+    visit: fn(&mut WorkingTreeView<'_, '_>, (PathBuf, ()), Listed<PathBuf>) -> Visited,
+) -> std::thread::Result<Result<(), GitError>> {
+    let (done, finished) = std::sync::mpsc::channel::<()>();
+    let walker = std::thread::spawn(move || {
+        let _done = done;
+        let scenario = Scenario::new();
+        scenario
+            .write("a/x.json", Item::File("{}"))
+            .write("b/y.json", Item::File("{}"));
+        let repository = scenario.open();
+        repository.set_threads(std::num::NonZeroUsize::new(4).unwrap());
+        let mut tree = repository.working_tree(None).unwrap();
+        let mut visit = visit;
+        tree.visit_ahead((PathBuf::new(), ()), &mut visit)
+    });
+    assert_eq!(
+        finished.recv_timeout(std::time::Duration::from_secs(10)),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected),
+        "the walk ends while the listing threads wait for directories"
+    );
+    walker.join()
+}
+
+#[test]
+fn a_visit_that_returns_ends_the_walk_and_one_that_panics_ends_it_with_its_panic() {
+    let returned = visited_on_another_thread(|_, _, listed| {
+        Ok(listed?
+            .iter()
+            .filter_map(|entry| match &entry.kind {
+                Kind::Directory(child) => Some((child.clone(), ())),
+                _ => None,
+            })
+            .collect())
+    });
+    assert!(matches!(returned, Ok(Ok(()))));
+    let panicked = visited_on_another_thread(|_, _, _| panic!("the visit stops"));
+    let payload = panicked.unwrap_err();
+    assert_eq!(payload.downcast_ref::<&str>(), Some(&"the visit stops"));
+}
+
+/// A directory listed by a stand-in listing thread: the listing, or the
+/// payload of the panic that listing it raised.
+type StoodIn<R> = (PathBuf, (), std::thread::Result<std::io::Result<Vec<R>>>);
+
+/// Answers each directory sent to `take` with an empty listing, except
+/// `boom`, which it answers with a caught panic's payload, as a listing
+/// thread whose `read` panicked would.
+fn list_or_panic<R>(
+    take: &std::sync::Mutex<std::sync::mpsc::Receiver<(PathBuf, ())>>,
+    send: &std::sync::mpsc::Sender<StoodIn<R>>,
+) {
+    loop {
+        let received = take.lock().unwrap().recv();
+        let Ok((directory, payload)) = received else {
+            return;
+        };
+        let listed = if directory == Path::new("boom") {
+            Err(Box::new("the listing panics") as Box<dyn std::any::Any + Send>)
+        } else {
+            Ok(Ok(Vec::new()))
+        };
+        if send.send((directory, payload, listed)).is_err() {
+            return;
+        }
+    }
+}
+
+#[test]
+fn a_listing_that_arrives_as_a_panic_ends_the_walk_with_that_panic_while_another_thread_lists() {
+    let (done, finished) = std::sync::mpsc::channel::<()>();
+    let walker = std::thread::spawn(move || {
+        let _done = done;
+        let scenario = Scenario::new();
+        scenario.write("a/x.json", Item::File("{}"));
+        let repository = scenario.open();
+        let mut tree = repository.working_tree(None).unwrap();
+        let (to_list, take) = std::sync::mpsc::channel();
+        let (send, listed) = std::sync::mpsc::channel();
+        let take = &std::sync::Mutex::new(take);
+        let mut visit = |_: &mut WorkingTreeView<'_, '_>,
+                         (directory, ()): (PathBuf, ()),
+                         listed: Listed<PathBuf>| {
+            listed?;
+            Ok(if directory.as_os_str().is_empty() {
+                vec![(PathBuf::from("a"), ()), (PathBuf::from("boom"), ())]
+            } else {
+                vec![]
+            })
+        };
+        std::thread::scope(|scope| {
+            let to_list = to_list;
+            let send = send;
+            for _ in 0..2 {
+                let send = send.clone();
+                scope.spawn(move || list_or_panic(take, &send));
+            }
+            drop(send);
+            tree.visit_received((PathBuf::new(), ()), &mut visit, &to_list, &listed)
+        })
+    });
+    assert_eq!(
+        finished.recv_timeout(std::time::Duration::from_secs(10)),
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected),
+        "the walk ends while the other listing thread waits for directories"
+    );
+    let payload = walker.join().unwrap_err();
+    assert_eq!(payload.downcast_ref::<&str>(), Some(&"the listing panics"));
 }
 
 #[test]

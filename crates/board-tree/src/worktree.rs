@@ -1,12 +1,13 @@
 //! The one module that reads the working tree: every file git sees, which is
 //! tracked files and untracked files that are not ignored.
 
+mod list;
 mod settle;
 
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fs::{self, FileType, Metadata};
+use std::fs::{self, Metadata};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -19,7 +20,8 @@ use gix::worktree::stack::state::ignore;
 
 use crate::address::{self, Named, Pointers};
 use crate::git::{Contents, GitError, Repository};
-use crate::tree::{Kind, RawEntry, Settled, Tree, Unhashed};
+use crate::tree::{Kind, RawEntry, Settled, Tree, Unhashed, Visit};
+use crate::worktree::list::{Raw, RawKind};
 use crate::worktree::settle::hash_stream;
 
 /// Given a file's `/`-separated path and metadata, its blob if already known.
@@ -49,14 +51,6 @@ pub(crate) struct WorkingTree<'r, 'k> {
     listed: HashMap<PathBuf, Listing>,
     /// Each file settled, by path, so it keeps one blob in this snapshot.
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
-}
-
-/// How far a file's metadata settles it: its known blob, or `Unreadable`
-/// when it cannot be seen; otherwise the metadata it was seen with, so that
-/// hashing it can tell whether it changed since.
-enum Seen {
-    Settled(Kind<PathBuf>, Option<Stat>),
-    ToHash(Stat),
 }
 
 /// One directory's entries, with the lookup made from them the first time a
@@ -174,121 +168,84 @@ impl<'k> WorkingTree<'_, 'k> {
         self
     }
 
-    /// What git sees at `relative`, with a file's or symlink's metadata, or
-    /// `None` when git does not see it: an untracked path that is ignored,
-    /// or something other than a file, directory or symlink. A path whose
-    /// ignore rules or contents cannot be read is `Unreadable`.
-    fn kind(
-        &mut self,
-        relative: &Path,
-        file_type: FileType,
-    ) -> Option<(Kind<PathBuf>, Option<Stat>)> {
-        match ignored(
-            &self.index,
-            &mut self.excludes,
-            relative,
-            file_type.is_dir(),
-        ) {
+    /// What git sees at `relative`, listed as `raw`, with a file's or
+    /// symlink's metadata, or `None` when git does not see it: an untracked
+    /// path that is ignored. A path whose ignore rules or contents cannot be
+    /// read is `Unreadable`.
+    fn kind(&mut self, relative: &Path, raw: &Raw) -> Option<(Kind<PathBuf>, Option<Stat>)> {
+        let is_dir = matches!(raw.kind, RawKind::Directory { .. });
+        match ignored(&self.index, &mut self.excludes, relative, is_dir) {
             Ok(true) => return None,
             Ok(false) => {}
             Err(_) => return Some((Kind::Unreadable, None)),
         }
-        let absolute = self.repository.path().join(relative);
-        if file_type.is_dir() {
-            let kind = if submodule(&self.index, relative, &absolute) {
-                Kind::Submodule
-            } else {
-                Kind::Directory(relative.to_path_buf())
-            };
-            return Some((kind, None));
-        }
         let path = gix::path::into_bstr(relative).to_str_lossy().into_owned();
-        if file_type.is_symlink() {
-            let Ok(stat) = fs::symlink_metadata(&absolute).map(|metadata| stat(&metadata)) else {
-                return Some((Kind::Unreadable, None));
-            };
-            let blob = self.known(&path, &stat).or_else(|| {
-                let target = gix::path::into_bstr(fs::read_link(&absolute).ok()?);
-                self.repository
-                    .hash(&mut target.as_bytes(), target.len() as u64)
-            });
-            return Some((blob.map_or(Kind::Unreadable, Kind::Symlink), Some(stat)));
-        }
-        if !file_type.is_file() {
-            return None;
-        }
-        if self.on_demand {
-            return Some((Kind::Unhashed, None));
-        }
-        Some(self.file(relative, &path))
-    }
-
-    /// The file at `relative`, whose `/`-separated path is `path`: its blob
-    /// and metadata, or `Unreadable`.
-    fn file(&mut self, relative: &Path, path: &str) -> (Kind<PathBuf>, Option<Stat>) {
-        match self.seen(relative, path) {
-            Seen::Settled(kind, stat) => (kind, stat),
-            Seen::ToHash(seen) => {
-                self.repository.opened_one();
-                self.hasher().hash(relative, path, seen)
+        Some(match &raw.kind {
+            RawKind::Directory { has_git } => {
+                let kind = if submodule(&self.index, relative, *has_git) {
+                    Kind::Submodule
+                } else {
+                    Kind::Directory(relative.to_path_buf())
+                };
+                (kind, None)
             }
-        }
-    }
-
-    /// The file at `relative`, whose `/`-separated path is `path`, as far as
-    /// its metadata settles it.
-    fn seen(&mut self, relative: &Path, path: &str) -> Seen {
-        let absolute = self.repository.path().join(relative);
-        let Ok(seen) = fs::metadata(&absolute).map(|metadata| stat(&metadata)) else {
-            return Seen::Settled(Kind::Unreadable, None);
-        };
-        match self.known(path, &seen) {
-            Some(blob) => Seen::Settled(Kind::File(blob), Some(seen)),
-            None => Seen::ToHash(seen),
-        }
+            RawKind::Symlink { stat, target } => {
+                let blob = self.known(&path, stat).or_else(|| {
+                    let target = target.as_deref()?;
+                    self.repository.hash(&mut &target[..], target.len() as u64)
+                });
+                (blob.map_or(Kind::Unreadable, Kind::Symlink), Some(*stat))
+            }
+            RawKind::File(seen) => match self.known(&path, seen) {
+                Some(blob) => (Kind::File(blob), Some(*seen)),
+                None if self.on_demand => (Kind::Unhashed(*seen), Some(*seen)),
+                None => {
+                    self.repository.opened_one();
+                    self.hasher().hash(relative, &path, *seen)
+                }
+            },
+            RawKind::Unreadable => (Kind::Unreadable, None),
+        })
     }
 
     /// The listing of `directory`, read from disk the first time.
     fn listing(&mut self, directory: &Path) -> Result<&Listing, GitError> {
         if !self.listed.contains_key(directory) {
-            let listing = Listing {
-                entries: self.read_directory(directory)?,
-                lookup: OnceCell::new(),
-            };
-            self.listed.insert(directory.to_path_buf(), listing);
+            let root = self.repository.path();
+            let raw =
+                list::read(root, self.repository.listings(), directory).map_err(|source| {
+                    GitError::File {
+                        path: root.join(directory),
+                        source,
+                    }
+                })?;
+            self.classify(directory, raw);
         }
         Ok(&self.listed[directory])
     }
 
-    /// Reads the entries of `directory` from disk.
-    fn read_directory(&mut self, directory: &Path) -> Result<Rc<[RawEntry<PathBuf>]>, GitError> {
-        self.repository.listed_one();
-        let absolute = self.repository.path().join(directory);
-        let unreadable = |source| GitError::File {
-            path: absolute.clone(),
-            source,
-        };
-        let mut entries = Vec::new();
-        for item in fs::read_dir(&absolute).map_err(unreadable)? {
-            let item = item.map_err(unreadable)?;
-            let name = item.file_name();
-            if directory.as_os_str().is_empty() && name == ".git" {
-                continue;
-            }
-            let kind = match item.file_type() {
-                Ok(file_type) => self.kind(&directory.join(&name), file_type),
-                Err(_) => Some((Kind::Unreadable, None)),
-            };
-            if let Some((kind, stat)) = kind {
+    /// The entries of `directory`, listed as `raw`, as git sees them, kept
+    /// so that the directory is listed once.
+    fn classify(&mut self, directory: &Path, raw: Vec<Raw>) -> Rc<[RawEntry<PathBuf>]> {
+        let mut entries = Vec::with_capacity(raw.len());
+        for item in raw {
+            let relative = directory.join(gix::path::from_bstr(item.name.as_bstr()));
+            if let Some((kind, stat)) = self.kind(&relative, &item) {
                 entries.push(RawEntry {
-                    name: gix::path::into_bstr(Path::new(&name)).to_vec(),
+                    name: item.name,
                     kind,
                     stat,
                     size: stat.map(|stat| stat.size),
                 });
             }
         }
-        Ok(entries.into())
+        let entries: Rc<[RawEntry<PathBuf>]> = entries.into();
+        let listing = Listing {
+            entries: Rc::clone(&entries),
+            lookup: OnceCell::new(),
+        };
+        self.listed.insert(directory.to_path_buf(), listing);
+        entries
     }
 
     /// The blob of the file at `path` with `stat`, if already known.
@@ -371,15 +328,16 @@ impl Tree for WorkingTree<'_, '_> {
 
     /// Hashes an `Unhashed` file once; later calls give the same answer.
     fn settle(&mut self, directory: &PathBuf, entry: &RawEntry<PathBuf>) -> RawEntry<PathBuf> {
-        if entry.kind != Kind::Unhashed {
+        let Kind::Unhashed(seen) = &entry.kind else {
             return entry.clone();
-        }
+        };
         let relative = directory.join(gix::path::from_bstr(entry.name.as_bstr()));
         let (kind, stat) = if let Some(settled) = self.settled.get(&relative) {
             settled.clone()
         } else {
             let path = gix::path::into_bstr(&relative).to_str_lossy().into_owned();
-            let settled = self.file(&relative, &path);
+            self.repository.opened_one();
+            let settled = self.hasher().hash(&relative, &path, *seen);
             self.settled.insert(relative, settled.clone());
             settled
         };
@@ -393,6 +351,15 @@ impl Tree for WorkingTree<'_, '_> {
 
     fn settle_all(&mut self, unhashed: Vec<Unhashed<PathBuf>>) -> Vec<Settled<PathBuf>> {
         self.settle_each(unhashed)
+    }
+
+    /// Lists ahead on the repository's threads.
+    fn visit_all<P: Send>(
+        &mut self,
+        start: (PathBuf, P),
+        visit: Visit<'_, Self, P>,
+    ) -> Result<(), GitError> {
+        self.visit_ahead(start, visit)
     }
 
     fn read(
@@ -475,11 +442,11 @@ fn ignored(
     Ok(excludes.at_path(relative, mode)?.is_excluded())
 }
 
-/// Whether the directory `relative`, at `absolute`, is a submodule: the
-/// index holds a gitlink at its path, or it holds `.git`.
-fn submodule(index: &gix::worktree::Index, relative: &Path, absolute: &Path) -> bool {
+/// Whether the directory `relative` is a submodule: the index holds a
+/// gitlink at its path, or it `has_git`, holding `.git`.
+fn submodule(index: &gix::worktree::Index, relative: &Path, has_git: bool) -> bool {
     let indexed = index.entry_by_path(key(relative).as_ref());
-    indexed.is_some_and(|entry| entry.mode == Mode::COMMIT) || absolute.join(".git").exists()
+    indexed.is_some_and(|entry| entry.mode == Mode::COMMIT) || has_git
 }
 
 /// The names in `directory`, spelled as the walk lists them.
@@ -606,7 +573,7 @@ impl Repository {
                     metadata.is_file() || metadata.is_symlink() && components.peek().is_none();
                 return Ok((!listed).then_some(Directory::Entries));
             }
-            if submodule(&index, &at, &absolute) {
+            if submodule(&index, &at, absolute.join(".git").exists()) {
                 return Ok(Some(Directory::Submodule));
             }
             listed = names(&absolute).map_err(unreadable)?;

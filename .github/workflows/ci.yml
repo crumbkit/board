@@ -110,7 +110,13 @@ jobs:
   # runs its baseline on the mutated crates only, so it is not mutated.
   # cargo-mutants sets each mutant's test timeout to five times that baseline,
   # which can be shorter than one run of the whole workspace (50 to 66 s here),
-  # so the timeout is at least 180 s.
+  # so the timeout is at least 180 s. Nextest's mutants profile fails a test
+  # that runs past a minute and stops at the first failure, so a mutant that
+  # makes a walk wait forever fails its run and counts as caught. The
+  # baseline runs only the mutated crates' tests, so it does not check that
+  # every test finishes within that minute. Once a correct test approaches
+  # 60 s here, every mutant fails it and counts as caught, which would hide
+  # missed mutants.
   mutants:
     if: github.event_name == 'pull_request'
     continue-on-error: true
@@ -134,3 +140,4 @@ jobs:
       - run: cargo mutants --in-diff pr.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/4"
         env:
           SHARD: ${{ matrix.shard }}
+          NEXTEST_PROFILE: mutants

@@ -90,9 +90,9 @@ impl Repository {
 
     /// Walks the working tree as [`Repository::walk`] does, but hashes a
     /// file only when `known`, given its `/`-separated path and metadata,
-    /// does not already know its blob. The files are hashed on the
-    /// repository's threads ([`Repository::set_threads`]) once every
-    /// directory is listed. Each
+    /// does not already know its blob. The directories are listed on the
+    /// repository's threads ([`Repository::set_threads`]), and the files
+    /// are hashed on as many once every directory is listed. Each
     /// JSON file hashed within
     /// [`MAX_RECORD_BYTES`](board_model::MAX_RECORD_BYTES) is read in full,
     /// and `kept` takes its path and contents as soon as it is read, on the
@@ -380,51 +380,57 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
         return Ok(Vec::new());
     }
     let start_path = start.path.clone();
-    let mut pending = vec![start];
     let mut entries = Vec::new();
     let mut unhashed = Vec::new();
-    while let Some(directory) = pending.pop() {
-        let listed = match tree.list(&directory.directory) {
+    let start = (start.directory.clone(), start);
+    tree.visit_all(start, &mut |tree, (directory, pending), listed| {
+        let listed = match listed {
             Ok(listed) => listed,
-            Err(error) if directory.path == start_path => return Err(error),
+            Err(error) if pending.path == start_path => return Err(error),
             Err(error) => {
-                let code = directory.inherited.unwrap_or(error.code());
+                let code = pending.inherited.unwrap_or(error.code());
                 entries.push(Entry {
-                    path: directory.path,
-                    logical: directory.logical,
+                    path: pending.path,
+                    logical: pending.logical,
                     blob: None,
                     status: Status::Degraded(code),
                     stat: None,
                     size: None,
                 });
-                continue;
+                return Ok(Vec::new());
             }
         };
-        let addressed = match &directory.logical {
-            Some(parent) => tree.address(&directory.directory, parent, &listed),
+        let addressed = match &pending.logical {
+            Some(parent) => tree.address(&directory, parent, &listed),
             None => vec![(None, None); listed.len()],
         };
+        let mut children = Vec::new();
         for (entry, (logical, own)) in listed.iter().zip(addressed) {
             let name = String::from_utf8_lossy(&entry.name);
-            let path = join(&directory.path, &name);
-            let code = directory.inherited.or(own);
+            let path = join(&pending.path, &name);
+            let code = pending.inherited.or(own);
             let blob = match &entry.kind {
                 Kind::Directory(child) => {
-                    pending.push(Pending {
-                        directory: child.clone(),
-                        path,
-                        logical,
-                        inherited: code,
-                    });
+                    let child = child.clone();
+                    children.push((
+                        child.clone(),
+                        Pending {
+                            directory: child,
+                            path,
+                            logical,
+                            inherited: code,
+                        },
+                    ));
                     continue;
                 }
                 Kind::File(id) | Kind::Symlink(id) => Some(*id),
                 Kind::Submodule | Kind::Unreadable => None,
-                Kind::Unhashed => {
+                Kind::Unhashed(seen) => {
                     unhashed.push(Unhashed {
                         at: entries.len(),
-                        directory: directory.directory.clone(),
+                        directory: directory.clone(),
                         name: entry.name.clone(),
+                        seen: *seen,
                     });
                     None
                 }
@@ -438,13 +444,14 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
                 size: blob.and(entry.size),
             });
         }
-    }
+        Ok(children)
+    })?;
     for (at, kind, stat) in tree.settle_all(unhashed) {
         // `at` is where the walk pushed the entry it listed `Unhashed`.
         let entry = &mut entries[at];
         entry.blob = match kind {
             Kind::File(id) | Kind::Symlink(id) => Some(id),
-            Kind::Directory(_) | Kind::Submodule | Kind::Unreadable | Kind::Unhashed => None,
+            Kind::Directory(_) | Kind::Submodule | Kind::Unreadable | Kind::Unhashed(_) => None,
         };
         entry.stat = stat;
         entry.size = entry.blob.and(stat.map(|stat| stat.size));

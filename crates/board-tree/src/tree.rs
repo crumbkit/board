@@ -11,7 +11,7 @@ use crate::git::GitError;
 /// One source's directory tree: a commit's, or the working tree.
 pub(crate) trait Tree {
     /// How the source names a directory it can list.
-    type Directory: Clone;
+    type Directory: Clone + Send;
 
     /// The path of the repository the source is in, as
     /// [`crate::Repository::path`] gives it.
@@ -74,6 +74,21 @@ pub(crate) trait Tree {
         vec![]
     }
 
+    /// Gives `visit` the listing of `start`, then of each directory `visit`
+    /// returns, each with the payload it was returned with, in any order.
+    /// A commit's tree lists one directory at a time; the working tree
+    /// lists ahead of `visit` on the repository's threads.
+    fn visit_all<P: Send>(
+        &mut self,
+        start: (Self::Directory, P),
+        visit: Visit<'_, Self, P>,
+    ) -> Result<(), GitError>
+    where
+        Self: Sized,
+    {
+        visit_each(self, start, visit)
+    }
+
     /// What `segment` names among `entries`, the listing of `directory`. A
     /// record beside its directory is read through `pointers` to tell
     /// whether it shadows the directory.
@@ -104,6 +119,33 @@ pub(crate) trait Tree {
     }
 }
 
+/// The listing of a directory, or why it could not be listed.
+pub(crate) type Listed<D> = Result<Rc<[RawEntry<D>]>, GitError>;
+
+/// What [`Tree::visit_all`] calls with each directory, its payload and its
+/// listing: it returns the directories to list next, each with a payload.
+pub(crate) type Visit<'v, T, P> =
+    &'v mut dyn FnMut(
+        &mut T,
+        (<T as Tree>::Directory, P),
+        Listed<<T as Tree>::Directory>,
+    ) -> Result<Vec<(<T as Tree>::Directory, P)>, GitError>;
+
+/// Lists `start` and what `visit` returns one directory at a time, on this
+/// thread, deepest first.
+pub(crate) fn visit_each<T: Tree, P>(
+    tree: &mut T,
+    start: (T::Directory, P),
+    visit: Visit<'_, T, P>,
+) -> Result<(), GitError> {
+    let mut pending = vec![start];
+    while let Some((directory, payload)) = pending.pop() {
+        let listed = tree.list(&directory);
+        pending.extend(visit(tree, (directory, payload), listed)?);
+    }
+    Ok(())
+}
+
 /// What an entry is, as git records it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Kind<D> {
@@ -113,17 +155,19 @@ pub(crate) enum Kind<D> {
     Submodule,
     /// A file or symlink whose contents could not be read.
     Unreadable,
-    /// A working-tree file not hashed yet, which [`Tree::settle`] hashes.
-    Unhashed,
+    /// A working-tree file not hashed yet, with the metadata it was seen
+    /// with, which [`Tree::settle`] hashes.
+    Unhashed(Stat),
 }
 
 /// A file a walk listed without hashing: which of the walk's entries it is,
-/// and the directory and name that find it.
+/// the directory and name that find it, and the metadata it was seen with.
 #[derive(Debug)]
 pub(crate) struct Unhashed<D> {
     pub(crate) at: usize,
     pub(crate) directory: D,
     pub(crate) name: Vec<u8>,
+    pub(crate) seen: Stat,
 }
 
 /// What hashing an [`Unhashed`] file found: which entry it is, its kind and
