@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's no-dead-ends property cannot provoke through the `board`
 /// command line, why, and where each is tested instead. The property
 /// provokes every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 4] = [
+pub const NOT_REPRODUCED: [(Code, &str); 5] = [
     (
         Code::IndexFailed,
         "the index fails only when SQLite does, even in memory; \
@@ -39,6 +39,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 4] = [
          board-tree/src/tests/commits.rs moves it between staging and commit",
     ),
     (
+        Code::GetOverBudget,
+        "the CLI's 64 MiB get budget needs files near the 16 MiB file limit; \
+         board-cli/src/tests/get.rs passes render::get budgets of a few bytes",
+    ),
+    (
         Code::PluginTimeout,
         "the CLI's 30-second plugin limit is too slow for a test; \
          board-ops/src/call/tests.rs uses a 500 ms limit",
@@ -51,10 +56,14 @@ const QUERY: &str = "query gives it; check runs no query";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 29] = [
+pub const NOT_CHECKED: [(Code, &str); 30] = [
+    (
+        Code::GetOverBudget,
+        "only get gives it, to a path it leaves unread once a run has printed its budget",
+    ),
     (
         Code::RecordNotARecord,
-        "get and put give it to a path that is not a record file",
+        "get gives it to a directory, and put to a path that is not a record file",
     ),
     (
         Code::ConfigNotFound,

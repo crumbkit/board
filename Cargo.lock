@@ -105,6 +105,7 @@ dependencies = [
  "board-tree",
  "clap",
  "clap_complete",
+ "data-encoding",
  "proptest",
  "serde_json",
  "tempfile",

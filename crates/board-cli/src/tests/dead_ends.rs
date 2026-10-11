@@ -179,6 +179,20 @@ fn failures(output: &Output) -> (Vec<(String, Option<String>)>, bool) {
             let hint = document["hint"].as_str().map(str::to_owned);
             return (vec![(code.to_owned(), unless_board(code, hint))], false);
         }
+        // A report of several answers fails with each refused one.
+        let answers = document["answers"].as_array().into_iter().flatten();
+        let refused: Vec<_> = answers
+            .filter_map(|answer| {
+                let hint = answer["hint"].as_str().map(str::to_owned);
+                let code = answer["code"]
+                    .as_str()
+                    .filter(|_| answer["$type"] == "board/error/v1")?;
+                Some((code.to_owned(), unless_board(code, hint)))
+            })
+            .collect();
+        if !refused.is_empty() {
+            return (refused, false);
+        }
         let entries = document["entries"].as_array().into_iter().flatten();
         let entries = entries.filter_map(|entry| {
             let hint = entry["hint"].as_str().map(str::to_owned);

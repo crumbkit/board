@@ -16,6 +16,7 @@ board-plugin.workspace = true
 board-tree.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
+data-encoding.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]

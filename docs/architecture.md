@@ -192,7 +192,7 @@ new commit and whether it wrote.
 | --- | --- |
 | `board init` | write a minimal `.board/board.json` at this git repository's root unless one exists; commit nothing |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>` | resolve and print a file's stored bytes, up to 16 MiB; `--json` prints a record with its Location, whose source is `worktree` or a commit id, and its blob, and refuses other files with the code saying why; a directory is `board::record::not_a_record` |
+| `board get <path>...` | resolve and print each file's stored bytes, up to 16 MiB each, all from one run; see below |
 | `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
 | `board refs <path>...` | references to and from each object, all from one check of the board |
 | `board put <path>` | validate and write a record |
@@ -201,6 +201,30 @@ new commit and whether it wrote.
 | `board plugin list` / `find` | installed plugins and their capabilities |
 | `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
 | `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
+
+`board get` serves an agent that reads several records: it names them all in
+one run instead of starting one run each. With one path, text output is the
+file's bytes. With several, each file follows a `==> <path> <==` line, as
+`head` prints them, and a blank line separates files. That text cannot always
+be split back into each file's exact bytes, for example when a file lacks a
+final newline; `--json` is the exact form. It is always one
+`board/get-report/v1`, for one path too. Its `answers` hold, in the order
+asked, each file's Location, whose source is `worktree` or a commit id, its
+blob, its bytes, and either its `record` or the `code` saying why it is not
+one. On an answer, `code: board::record::not_a_record` means a readable file
+that holds no record, such as markdown. The bytes are a JSON string under
+`text` when they are UTF-8, and `base64` otherwise. A path that names a
+directory or nothing is refused as a `board/error/v1` in its place, told apart
+from a file by its `$type`; the other paths are still answered, and the run
+exits 1. One run takes at most 10,000 paths; more is `usage::invalid`. Like
+every command, `get` collects its output in memory and writes it at exit. It
+reads each file only once the answers before it are rendered, and only while
+the output, counted in the format being printed, is under 64 MiB; the first
+path is always read. Each later path is answered with
+`board::get::over_budget`, to ask for in another run. So a run holds at most
+64 MiB, one more answer, and the short errors of the paths it left. The plugin
+library's `Board.get` does that. `controls.check` reads every
+file its controls reach this way.
 
 Each command returns one typed report. `--json` prints it as a document tagged
 `board/<command>-report/v1`, or `board/error/v1` on failure. Exit codes: 0 done,

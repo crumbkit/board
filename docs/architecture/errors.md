@@ -21,6 +21,7 @@ The v0 set:
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `query` | `timeout`: the statement ran longer than 1 s |
+| `get` | `over_budget`: the run's output already reached 64 MiB, so it left this path unread |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
 | `usage` | `invalid`: the command line was refused, exit 2 |
@@ -34,7 +35,7 @@ plugin's own code carries.
 
 | Key | JSON type | Codes that carry it | Meaning |
 | --- | --- | --- | --- |
-| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get`, writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, a mount for a mount's code or for `put::through_mount`, or the file that a refused `put` reaches for `record::not_a_record` |
+| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get` or leaving it unread (`get::over_budget`), writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, a mount for a mount's code or for `put::through_mount`, or the file that a refused `put` reaches for `record::not_a_record` |
 | `ancestor` | string | `path::not_found` | the deepest ancestor of the missing path that exists. The hint lists it, unless the path ends `.json` and the path without `.json` resolves; then the hint names that path |
 | `blob` | string | a code `get` gives for a file whose bytes it read (`json`, `record`, and `schema::invalid` for a schema in the reserved `board` namespace); `put::stale` | the blob the path holds |
 | `pointer` | string | `record::invalid`, `ref::malformed`, `plugin::bad_input`; `schema::invalid` from `put`, as `/$type` | a JSON pointer into the record or the call's input |

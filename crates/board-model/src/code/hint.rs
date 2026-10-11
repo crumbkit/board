@@ -70,6 +70,10 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         .filter(|pointer| !pointer.is_empty());
     let capability = fields.capability.as_ref();
     Some(match code {
+        Code::GetOverBudget => format!(
+            "one run prints up to 64 MiB; ask for {} and the paths after it in another `board get` run",
+            path?
+        ),
         Code::JsonMergeConflict => format!(
             "resolve the git merge conflict in the file, then run `board check {}`",
             path?
@@ -90,12 +94,8 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "change the value at `{}` so the record satisfies its schema in `.board/types/`",
             pointer?
         ),
-        Code::RecordNotARecord if fields.blob.is_some() => format!(
-            "only a record has a JSON report or can be put; `board get {}` without `--json` prints the file's bytes",
-            path?
-        ),
         Code::RecordNotARecord => format!(
-            "only a record has a JSON report or can be put; `board ls {}` shows what is there",
+            "only a file can be read, and only a record can be put; `board ls {}` shows what is there",
             path?
         ),
         Code::RefMalformed => format!(
@@ -228,7 +228,7 @@ fn generic(code: Code) -> &'static str {
             "change the record to satisfy its schema in `.board/types/`; a refused `board put` names the field that fails"
         }
         Code::RecordNotARecord => {
-            "only a record has a JSON report or can be put; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
+            "only a file can be read, and only a record can be put; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
         }
         Code::ConfigNotFound => {
             "a board needs `.board/board.json` at its repository root, spelled exactly so; in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
@@ -319,6 +319,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
+        }
+        Code::GetOverBudget => {
+            "one run prints up to 64 MiB; ask for <path> and the paths after it in another `board get` run"
         }
         Code::PluginNotInstalled => {
             "run `board plugin list` to see the installed plugins and their capabilities"

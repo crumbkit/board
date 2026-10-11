@@ -190,7 +190,7 @@ pub(crate) fn refs(
 
 /// Each line of `text` with `path` after its label, such as `error: ` or
 /// `line 3: `, or before it when it has none.
-fn named_lines(text: &str, path: &LogicalPath) -> String {
+pub(super) fn named_lines(text: &str, path: &LogicalPath) -> String {
     let mut named = String::new();
     for line in text.lines() {
         let _ = match line.split_once(": ") {

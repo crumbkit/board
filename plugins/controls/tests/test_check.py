@@ -119,7 +119,7 @@ def test_a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes(boa
 def counted(board: Board, tmp_path: Path, crash: str = "") -> tuple[Board, Path]:
     """`board`, with every `board` the plugin runs written as one line of its arguments to the returned log.
 
-    A `board get` of `crash` exits 1 printing nothing, as a `board` that crashed would.
+    A `board get` that names `crash` exits 1 printing nothing, as a `board` that crashed would.
     """
     log = tmp_path / "calls.log"
     wrapper = tmp_path / "wrapper"
@@ -127,7 +127,8 @@ def counted(board: Board, tmp_path: Path, crash: str = "") -> tuple[Board, Path]
     script = wrapper / "board"
     script.write_text(
         f'#!/bin/sh\necho "$*" >> {shlex.quote(str(log))}\n'
-        f'[ "$*" = {shlex.quote(f"get {crash}")} ] && exit 1\n'
+        f'case "$*" in *" get -- "*) case " $* " in *{shlex.quote(f" {crash} ")}*)\n'
+        f"  [ -n {shlex.quote(crash)} ] && exit 1;; esac;; esac\n"
         f'exec {shlex.quote(str(board_binary()))} "$@"\n'
     )
     script.chmod(0o755)
@@ -155,11 +156,7 @@ def test_check_reads_each_file_once_and_each_controls_references_in_one_call(boa
     report = watched.call("check", {})
     assert [item["used"] for item in report["output"]["controls"]] == [14, 6], report
     calls = log.read_text().splitlines()
-    assert sorted(call for call in calls if call.startswith("get ")) == [
-        "get /docs/a.md",
-        "get /docs/b.md",
-        "get /docs/c.md",
-    ]
+    assert [call for call in calls if " get " in call] == ["--json get -- /docs/a.md /docs/b.md /docs/c.md"]
     assert [call for call in calls if " refs " in call] == ["--json refs --all -- /controls/bytes /controls/words"]
 
 
@@ -195,17 +192,33 @@ def test_check_starts_no_refs_run_when_no_control_has_references_and_one_when_a_
     ]
 
 
-def test_an_earlier_controls_unreadable_file_is_reported_before_a_later_controls_failed_read(
+def test_a_crashed_read_fails_the_check_and_without_the_crash_a_controls_unreadable_file_is_named(
     board: Board, tmp_path: Path
 ) -> None:
     board.write("adir/a.md", "one")
     board.write("zdir/z.md", "one")
     board.write("controls/a.json", control("Small.", applies_to=["/zdir"], rule={"budget": "words", "max": WORDS}))
     board.write("controls/b.json", control("Small.", applies_to=["/adir/a.md"], rule={"budget": "words", "max": WORDS}))
-    crashing, _ = counted(board, tmp_path, crash="/adir/a.md")
-    refused = crashing.call("check", {})
-    assert refused["code"] == "controls::file::unreadable", refused
-    assert (refused["fields"]["control"], refused["fields"]["file"]) == ("/controls/a", "/zdir")
-    board.write("controls/a.json", control("Small.", applies_to=["/zdir/z.md"], rule={"budget": "words", "max": WORDS}))
+    crashing, log = counted(board, tmp_path, crash="/adir/a.md")
     failed = crashing.call("check", {})
     assert failed["code"] == "controls::board::failed", failed
+    assert [call for call in log.read_text().splitlines() if " get " in call] == ["--json get -- /adir/a.md /zdir"]
+    refused = board.call("check", {})
+    assert refused["code"] == "controls::file::unreadable", refused
+    assert (refused["fields"]["control"], refused["fields"]["file"], refused["fields"]["code"]) == (
+        "/controls/a",
+        "/zdir",
+        "board::record::not_a_record",
+    )
+
+
+@pytest.mark.parametrize("count", [1, 3])
+def test_check_reads_every_file_in_one_get_run(board: Board, tmp_path: Path, count: int) -> None:
+    names = [f"docs/f{index}.md" for index in range(count)]
+    for name in names:
+        board.write(name, "one two")
+    board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 99}))
+    watched, log = counted(board, tmp_path)
+    assert watched.call("check", {})["output"]["controls"][0]["used"] == len(names) * len(["one", "two"])
+    paths = " ".join(f"/{name}" for name in names)
+    assert [call for call in log.read_text().splitlines() if " get " in call] == [f"--json get -- {paths}"]

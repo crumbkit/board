@@ -28,7 +28,7 @@ fn a_missing_path_hints_ls_of_its_parent_and_that_listing_runs() {
         hint_of(&missing),
         "run `board ls /tasks` to see what is there; paths leave out `.json`"
     );
-    let error = json(&board_in(
+    let error = super::get::got(&board_in(
         scenario.workdir(),
         &["get", "/tasks/t9", "--json"],
     ));
@@ -235,7 +235,7 @@ fn a_mount_of_a_missing_commit_hints_updating_that_mount_and_its_path_parses() {
         hint_of(&refused),
         "fetch the commit into the mounted repository, or run `board mount update /vendor/m`"
     );
-    let error = json(&board_in(
+    let error = super::get::got(&board_in(
         scenario.workdir(),
         &["get", "/vendor/m/x", "--json"],
     ));
@@ -248,10 +248,10 @@ fn a_mount_of_a_missing_commit_hints_updating_that_mount_and_its_path_parses() {
 }
 
 #[test]
-fn get_json_gives_the_blob_to_expect_and_a_file_that_is_not_a_record_names_its_blob() {
+fn get_json_gives_the_blob_to_expect_and_a_file_that_is_not_a_record_its_blob_and_why() {
     let scenario = uncommitted();
     let stored = r#"{"$type": "lr/project/v1"}"#;
-    let report = json(&board_in(
+    let report = super::get::got(&board_in(
         scenario.workdir(),
         &["get", "/projects/p", "--json"],
     ));
@@ -260,19 +260,11 @@ fn get_json_gives_the_blob_to_expect_and_a_file_that_is_not_a_record_names_its_b
     let hinted = ["put", "/projects/p", "--expect", &blob];
     assert_eq!(put(&scenario, &hinted, stored).code, 0);
     scenario.write("notes.md", Item::File("# n\n"));
-    let refused = board_in(scenario.workdir(), &["get", "/notes.md", "--json"]);
-    let error = json(&refused);
-    assert_eq!(error["code"], "board::record::not_a_record");
-    assert_eq!(
-        error["fields"],
-        json!({"path": "/notes.md", "blob": scenario.blob("# n\n").to_string()})
-    );
-    assert_eq!(
-        error["hint"],
-        "only a record has a JSON report or can be put; \
-         `board get /notes.md` without `--json` prints the file's bytes"
-    );
-    assert_eq!(board_in(scenario.workdir(), &["get", "/notes.md"]).code, 0);
+    let read = board_in(scenario.workdir(), &["get", "/notes.md", "--json"]);
+    assert_eq!(read.code, 0);
+    let answer = super::get::got(&read);
+    assert_eq!(answer["code"], "board::record::not_a_record");
+    assert_eq!(answer["blob"], scenario.blob("# n\n").to_string());
 }
 
 #[test]
@@ -309,9 +301,9 @@ fn a_directory_asked_for_as_a_record_hints_listing_it_and_a_record_is_read() {
     let refused = board_in(scenario.workdir(), &["get", "/projects"]);
     assert_eq!(
         hint_of(&refused),
-        "only a record has a JSON report or can be put; `board ls /projects` shows what is there"
+        "only a file can be read, and only a record can be put; `board ls /projects` shows what is there"
     );
-    let error = json(&board_in(
+    let error = super::get::got(&board_in(
         scenario.workdir(),
         &["get", "/projects", "--json"],
     ));
@@ -644,7 +636,7 @@ fn a_dangling_link_hints_at_the_link_and_a_link_to_a_record_is_followed() {
         "create the file the link at /links/gone names, or change the link's `path`; \
          `board ls /links` shows the link"
     );
-    let error = json(&board_in(
+    let error = super::get::got(&board_in(
         scenario.workdir(),
         &["get", "/links/gone", "--json"],
     ));

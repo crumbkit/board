@@ -48,6 +48,7 @@ pub enum Code {
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
+    GetOverBudget,
     PluginNotInstalled,
     PluginBadManifest,
     PluginNotEnabled,
@@ -67,7 +68,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 55] = [
+    pub const ALL: [Code; 56] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -108,6 +109,7 @@ impl Code {
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
+        Self::GetOverBudget,
         Self::PluginNotInstalled,
         Self::PluginBadManifest,
         Self::PluginNotEnabled,
@@ -172,6 +174,7 @@ impl Code {
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
+            Self::GetOverBudget => "board::get::over_budget",
             Self::PluginNotInstalled => "board::plugin::not_installed",
             Self::PluginBadManifest => "board::plugin::bad_manifest",
             Self::PluginNotEnabled => "board::plugin::not_enabled",
@@ -246,6 +249,7 @@ mod tests {
             | Code::PutNoIdentity
             | Code::PutHeadMoved
             | Code::PutFailed
+            | Code::GetOverBudget
             | Code::PluginNotInstalled
             | Code::PluginBadManifest
             | Code::PluginNotEnabled

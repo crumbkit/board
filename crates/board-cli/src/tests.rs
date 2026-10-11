@@ -128,21 +128,6 @@ fn code_named(name: &str) -> Code {
         .unwrap_or_else(|| panic!("{name} is not a code"))
 }
 
-/// Every code in a JSON report: an error's, or each degraded entry's or
-/// plugin's.
-fn codes(output: &Output) -> Vec<Code> {
-    let document = json(output);
-    if let Some(code) = document.get("code").and_then(Value::as_str) {
-        return vec![code_named(code)];
-    }
-    let listed = |key: &str| document[key].as_array().into_iter().flatten();
-    listed("entries")
-        .chain(listed("plugins"))
-        .filter_map(|entry| entry.get("code")?.as_str())
-        .map(code_named)
-        .collect()
-}
-
 #[test]
 fn help_prints_to_stdout_and_succeeds() {
     let output = board_in(Path::new("."), &["--help"]);
@@ -292,8 +277,7 @@ fn get_prints_the_stored_bytes_and_json_adds_where_they_are() {
     );
     let plain = board_in(scenario.workdir(), &["get", "/l"]);
     assert_eq!((plain.code, text(&plain.stdout)), (0, stored.to_owned()));
-    let report = json(&board_in(scenario.workdir(), &["get", "/l", "--json"]));
-    assert_eq!(report["$type"], "board/get-report/v1");
+    let report = get::got(&board_in(scenario.workdir(), &["get", "/l", "--json"]));
     assert_eq!(report["record"]["name"], "q");
     assert_eq!(report["location"]["display"], "/projects/q");
     assert_eq!(report["location"]["path"], "projects/q.json");
@@ -302,46 +286,45 @@ fn get_prints_the_stored_bytes_and_json_adds_where_they_are() {
 }
 
 #[test]
-fn get_json_refuses_bytes_that_do_not_parse_with_a_parse_error_and_admits_its_parsed_twin() {
+fn get_json_names_why_bytes_that_do_not_parse_are_not_a_record_and_gives_its_parsed_twin_its_record()
+ {
     let scenario = board();
     scenario
         .write("torn.json", Item::File(r#"{"$type": "lr/project/v1", "#))
         .write("whole.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
-    let refused = board_in(scenario.workdir(), &["get", "/torn", "--json"]);
-    assert_eq!(refused.code, 1);
-    let error = json(&refused);
-    assert_eq!(error["$type"], "board/error/v1");
-    assert_eq!(error["code"], "board::json::parse");
-    assert!(
-        error["message"]
-            .as_str()
-            .is_some_and(|message| !message.is_empty())
-    );
-    assert!(error["hint"].is_string());
-    assert_eq!(error["fields"]["path"], "/torn");
-    assert!(error["fields"]["blob"].is_string());
-    let admitted = board_in(scenario.workdir(), &["get", "/whole", "--json"]);
-    assert_eq!(admitted.code, 0);
-    assert_eq!(json(&admitted)["$type"], "board/get-report/v1");
+    let torn = board_in(scenario.workdir(), &["get", "/torn", "--json"]);
+    assert_eq!(torn.code, 0);
+    let answer = get::got(&torn);
+    assert_eq!(answer["code"], "board::json::parse");
+    assert_eq!(answer["record"], Value::Null);
+    assert_eq!(answer["text"], r#"{"$type": "lr/project/v1", "#);
+    assert!(answer["blob"].is_string());
+    let whole = board_in(scenario.workdir(), &["get", "/whole", "--json"]);
+    assert_eq!(whole.code, 0);
+    let answer = get::got(&whole);
+    assert_eq!(answer["record"]["$type"], "lr/project/v1");
+    assert_eq!(answer["code"], Value::Null);
 }
 
 #[test]
-fn get_prints_a_files_bytes_and_json_refuses_it_with_why_it_is_not_a_record() {
+fn get_prints_a_files_bytes_and_json_gives_them_with_why_it_is_not_a_record() {
     let scenario = board();
     scenario.write("notes.md", Item::File("# n\n"));
     let plain = board_in(scenario.workdir(), &["get", "/notes.md"]);
     assert_eq!((plain.code, text(&plain.stdout)), (0, "# n\n".to_owned()));
     let document = board_in(scenario.workdir(), &["get", "/notes.md", "--json"]);
-    assert_eq!(document.code, 1);
-    assert_eq!(json(&document)["code"], "board::record::not_a_record");
+    assert_eq!(document.code, 0);
+    let answer = get::got(&document);
+    assert_eq!(answer["code"], "board::record::not_a_record");
+    assert_eq!(answer["text"], "# n\n");
     scenario.write("bad.json", Item::File(r#"{"$type": "task"}"#));
     let broken = board_in(scenario.workdir(), &["get", "/bad"]);
     assert_eq!(broken.code, 0);
     let broken = board_in(scenario.workdir(), &["get", "/bad", "--json"]);
-    assert_eq!(json(&broken)["code"], "board::record::bad_type");
+    assert_eq!(get::got(&broken)["code"], "board::record::bad_type");
     let record = board_in(scenario.workdir(), &["get", "/projects/p", "--json"]);
     assert_eq!(record.code, 0);
-    assert_eq!(json(&record)["$type"], "board/get-report/v1");
+    assert_eq!(get::got(&record)["record"]["$type"], "lr/project/v1");
 }
 
 #[test]
@@ -358,7 +341,7 @@ fn get_refuses_a_path_beside_an_invalid_pointer_with_the_code_check_gives_it() {
         Item::File(r#"{"$type": "board/mount/v1", "path": "/a", "repo": "r"}"#),
     );
     let get = board_in(scenario.workdir(), &["get", "/x/c", "--json"]);
-    assert_eq!(codes(&get), [Code::PathShadowed]);
+    assert_eq!(get::got(&get)["code"], Code::PathShadowed.as_str());
     let check = text(&board_in(scenario.workdir(), &["check"]).stdout);
     assert!(
         check.contains("degraded board::path::shadowed x/c.json\n"),
@@ -437,7 +420,7 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     );
     let document = board_in(scenario.workdir(), &["get", "/missing", "--json"]);
     assert_eq!(document.code, 1);
-    let error = json(&document);
+    let error = get::got(&document);
     assert_eq!(error["$type"], "board/error/v1");
     assert_eq!(error["code"], "board::path::not_found");
     assert_eq!(
@@ -1207,6 +1190,7 @@ mod complete;
 mod consistency;
 mod dead_ends;
 mod directory;
+mod get;
 mod hints;
 mod plugins;
 mod refused;

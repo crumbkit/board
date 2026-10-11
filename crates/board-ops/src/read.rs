@@ -9,7 +9,9 @@ use board_model::{
     BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
     Source, classify, parse_json,
 };
-use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Status, latest};
+use board_tree::{
+    Contents, GitError, Repositories, Repository, ResolveError, Resolver, Status, latest,
+};
 use serde_json::Value;
 
 use crate::board::Board;
@@ -60,6 +62,23 @@ impl Board {
     /// `json::too_large`.
     pub fn get(&self, path: &LogicalPath) -> Result<GetReport, ReadError> {
         read_at(self.repositories(), self.locate(path)?, path)
+    }
+
+    /// Each of `paths` as [`Board::get`] gives it, in order, read as the
+    /// iterator is advanced. All resolve in one snapshot of the working
+    /// tree, so each directory is listed once. A snapshot that cannot be
+    /// taken is the one error, for every path.
+    pub fn get_each<'a>(
+        &'a self,
+        paths: &'a [LogicalPath],
+    ) -> Result<impl Iterator<Item = Result<GetReport, ReadError>> + 'a, ReadError> {
+        let snapshot = self.repositories().snapshot();
+        let mut view = snapshot.map_err(|source| ReadError::Resolve {
+            source: ResolveError::Git(source),
+        })?;
+        Ok(paths
+            .iter()
+            .map(move |path| read_at(self.repositories(), self.locate_in(&mut view, path)?, path)))
     }
 
     /// Resolves `path`, following pointers, and lists the directory there
@@ -229,6 +248,20 @@ impl Board {
     pub(crate) fn locate(&self, path: &LogicalPath) -> Result<Location, ReadError> {
         let _timed = self.timed("resolve");
         let resolve = |path: &LogicalPath| self.repositories().resolve(&Source::WorkingTree, path);
+        Self::located(path, resolve)
+    }
+
+    /// Where `path` leads in `view`, as [`Board::locate`] says.
+    fn locate_in(&self, view: &mut Resolver, path: &LogicalPath) -> Result<Location, ReadError> {
+        let _timed = self.timed("resolve");
+        Self::located(path, |path| view.resolve(path))
+    }
+
+    /// Where `path` leads by `resolve`, as [`Board::locate`] says.
+    fn located(
+        path: &LogicalPath,
+        mut resolve: impl FnMut(&LogicalPath) -> Result<Location, ResolveError>,
+    ) -> Result<Location, ReadError> {
         resolve(path).map_err(|source| {
             let stem = path.as_str().strip_suffix(".json");
             match stem.and_then(|stem| stem.parse::<LogicalPath>().ok()) {

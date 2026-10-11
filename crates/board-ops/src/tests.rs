@@ -1266,6 +1266,95 @@ fn ls_reads_the_tree_once_and_hashes_each_file_once_cold_none_warm_and_only_a_ch
 }
 
 #[test]
+fn get_each_lists_each_directory_once_and_gives_each_path_what_get_gives_it_alone() {
+    let scenario = board();
+    for at in 0..40 {
+        scenario.write(&format!("tasks/t{at}.json"), Item::File(&task("")));
+    }
+    let board = open(&scenario);
+    let mut paths: Vec<LogicalPath> = (0..40).map(|at| path(&format!("/tasks/t{at}"))).collect();
+    paths.extend([path("/tasks"), path("/tasks/none")]);
+    // Each answer's bytes or code, and the directories listed to answer.
+    let answered = |get: &dyn Fn() -> Vec<Result<crate::GetReport, crate::ReadError>>| {
+        let before = board.repository().directories_listed();
+        let answers: Vec<_> = (get().into_iter())
+            .map(|got| got.map(|report| report.bytes).map_err(|error| error.code()))
+            .collect();
+        (answers, board.repository().directories_listed() - before)
+    };
+    let (each, listed_once) = answered(&|| each(&board, &paths));
+    let (alone, listed_per_path) = answered(&|| paths.iter().map(|at| board.get(at)).collect());
+    assert_eq!(each, alone);
+    assert_eq!(
+        each[40..],
+        [Err(Code::RecordNotARecord), Err(Code::PathNotFound)]
+    );
+    assert_eq!(listed_once, 2, "the root and tasks, once each");
+    // Alone, every path lists the root, and each but /tasks lists tasks too.
+    assert_eq!(listed_per_path, 2 * 42 - 1);
+}
+
+/// Every answer `get_each` gives `paths`.
+fn each(
+    board: &crate::Board,
+    paths: &[LogicalPath],
+) -> Vec<Result<crate::GetReport, crate::ReadError>> {
+    board.get_each(paths).unwrap().collect()
+}
+
+/// Each answer's display path and bytes, or its code.
+fn shapes(
+    answers: Vec<Result<crate::GetReport, crate::ReadError>>,
+) -> Vec<Result<(String, Vec<u8>), Code>> {
+    (answers.into_iter())
+        .map(|got| {
+            got.map(|report| (report.display.to_string(), report.bytes))
+                .map_err(|error| error.code())
+        })
+        .collect()
+}
+
+#[test]
+fn get_each_answers_through_links_and_mounts_as_each_path_alone() {
+    let mounted = Scenario::new();
+    let commit = mounted.commit(&[("x.md", "mounted")]);
+    let link = |path: &str| format!(r#"{{"$type": "board/mount/v1", "path": "{path}"}}"#);
+    let scenario = board();
+    scenario
+        .write("shared.json", Item::File(&mount_of(&mounted, commit)))
+        .write("links/p.json", Item::File(&link("/projects/p")))
+        .write("links/in.json", Item::File(&link("/shared/x.md")))
+        .write("links/a.json", Item::File(&link("/links/b")))
+        .write("links/b.json", Item::File(&link("/links/a")));
+    let board = open(&scenario);
+    let asked = [
+        "/links/p",
+        "/links/in",
+        "/links/a",
+        "/shared",
+        "/shared/x.md",
+        "/nothing",
+        "/projects",
+    ];
+    let paths: Vec<LogicalPath> = asked.iter().map(|at| path(at)).collect();
+    let alone = shapes(paths.iter().map(|at| board.get(at)).collect());
+    assert_eq!(shapes(each(&board, &paths)), alone);
+    let project = r#"{"$type": "lr/project/v1"}"#.as_bytes().to_vec();
+    assert_eq!(
+        alone,
+        [
+            Ok(("/projects/p".to_owned(), project)),
+            Ok(("/shared/x.md".to_owned(), b"mounted".to_vec())),
+            Err(Code::ResolveCycle),
+            Err(Code::RecordNotARecord),
+            Ok(("/shared/x.md".to_owned(), b"mounted".to_vec())),
+            Err(Code::PathNotFound),
+            Err(Code::RecordNotARecord),
+        ]
+    );
+}
+
+#[test]
 fn ls_follows_a_link_to_the_directory_it_lists_and_names_it_by_display_path() {
     let scenario = board();
     scenario.write(

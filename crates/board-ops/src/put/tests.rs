@@ -699,7 +699,7 @@ fn a_path_that_names_a_file_that_is_not_a_record_is_refused() {
     );
     assert_eq!(
         error.code().hint(&error.fields()),
-        "only a record has a JSON report or can be put; `board ls /notes.md` shows what is there"
+        "only a file can be read, and only a record can be put; `board ls /notes.md` shows what is there"
     );
     assert!(put(&scenario, "/notes", Expect::Any, &task("")).is_ok());
     assert!(put(&scenario, "/notes/a", Expect::Any, &task("")).is_ok());

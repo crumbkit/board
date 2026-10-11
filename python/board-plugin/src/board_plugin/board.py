@@ -4,6 +4,8 @@ A plugin reads Board's `entries` only through `board query`, and calls other
 plugins only through `board call`, so the same checks, limits and logs apply.
 """
 
+import base64
+import binascii
 import json
 import subprocess
 from collections.abc import Sequence
@@ -14,10 +16,12 @@ from board_plugin.protocol import PluginError
 
 # The most rows one query returns.
 LIMIT = 10_000
-# The most paths one `board refs` answers: Board's MAX_LIMIT.
+# The most paths one `board refs` or `board get` answers: Board's MAX_LIMIT.
 PATHS_PER_RUN = 10_000
 # What a query report lists for a plugin whose database it could not attach.
 NO_DATABASE = "board::plugin::no_database"
+# What `board get` answers for a path it left unread once its run printed its byte budget.
+OVER_BUDGET = "board::get::over_budget"
 
 
 def literal(text: str) -> str:
@@ -130,19 +134,47 @@ class Board:
         step = self.paths_per_run
         return [paths[start : start + step] for start in range(0, len(paths), step)]
 
-    def get(self, path: str) -> bytes:
-        """The stored bytes of the file at `path`."""
-        ran = self._run("get", path)
-        if ran.returncode != 0:
-            # Without `--json`, Board prints its error as `error: <code>: <message>` and `hint: <hint>` lines.
-            lines = dict(
-                line.split(": ", 1) for line in ran.stderr.decode(errors="replace").splitlines() if ": " in line
-            )
-            code, _, message = lines.get("error", "").partition(": ")
-            if code.startswith("board::"):
-                raise self._refused(("get",), code, message, lines.get("hint"))
-            raise self._failed(("get",), ran, f"cannot read {path}")
-        return ran.stdout
+    def get(self, paths: Sequence[str]) -> list[bytes | PluginError]:
+        """The stored bytes of the file at each of `paths`, from as few `board get` runs as Board allows.
+
+        Each answer, in order, is the file's bytes, or the refusal of that path
+        as a `<plugin>::board::refused` error, returned rather than raised so
+        the caller decides what one refused path means. A run takes at most
+        `paths_per_run` paths and leaves the paths after its byte budget
+        unread, so those are asked again in the next run. No paths start no run.
+        """
+        read: list[bytes | PluginError] = []
+        for run in self._runs(paths):
+            left = list(run)
+            while left:
+                answered = self._get_run(left)
+                read.extend(answered)
+                left = left[len(answered) :]
+        return read
+
+    def _get_run(self, paths: list[str]) -> list[bytes | PluginError]:
+        """The answers of one `board get` run, up to the first path it left over its budget.
+
+        A run that answers none of its paths would be asked again forever, so
+        it is `<plugin>::board::failed`.
+        """
+        report, ran = self._read("get", "--", *paths, partial="board/get-report/v1")
+        answers = report.get("answers")
+        found = [_file(answer) for answer in cast("list[Any]", answers)] if isinstance(answers, list) else []
+        if len(found) != len(paths) or any(answer is None for answer in found):
+            raise self._failed(("get",), ran, "printed a report without one file or refusal per path")
+        read: list[bytes | PluginError] = []
+        for answer in found:
+            if isinstance(answer, dict) and answer.get("code") == OVER_BUDGET:
+                break
+            if isinstance(answer, dict):
+                why, hint = str(answer.get("message", "")), answer.get("hint")
+                read.append(self._refused(("get",), str(answer.get("code")), why, hint))
+            elif answer is not None:
+                read.append(answer)
+        if not read:
+            raise self._failed(("get",), ran, f"left every path unread as {OVER_BUDGET}")
+        return read
 
     def _run(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         try:
@@ -172,3 +204,19 @@ class Board:
             f"`board {arguments[0]}` refused with {code}: {message}{then}",
             {"code": code},
         )
+
+
+def _file(answer: object) -> bytes | dict[str, Any] | None:
+    """A `board get` answer's bytes, the refusal it is, or `None` when it is neither."""
+    if not isinstance(answer, dict):
+        return None
+    answer = cast("dict[str, Any]", answer)
+    text, encoded = answer.get("text"), answer.get("base64")
+    if answer.get("$type") == "board/error/v1":
+        return answer
+    if isinstance(text, str):
+        return text.encode()
+    try:
+        return base64.b64decode(encoded, validate=True) if isinstance(encoded, str) else None
+    except binascii.Error:
+        return None

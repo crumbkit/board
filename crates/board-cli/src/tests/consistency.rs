@@ -149,13 +149,14 @@ fn agree(run: &impl Fn(&[&str]) -> Output) -> Result<(), TestCaseError> {
             continue;
         };
         let output = run(&["get", logical, "--json"]);
-        let report = json(&output);
+        let answer = &json(&output)["answers"][0];
         if output.code == 0 {
-            prop_assert_eq!(&report["location"]["source"], source.as_str());
-            prop_assert_eq!(&report["location"]["path"], path.as_str());
-        } else {
+            prop_assert_eq!(&answer["location"]["source"], source.as_str());
+            prop_assert_eq!(&answer["location"]["path"], path.as_str());
+        }
+        if !answer["code"].is_null() {
             prop_assert_eq!(&said.status, "degraded", "get of {}", logical);
-            prop_assert_eq!(&report["code"], &said.code, "get of {}", logical);
+            prop_assert_eq!(&answer["code"], &said.code, "get of {}", logical);
         }
     }
     Ok(())

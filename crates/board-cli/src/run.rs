@@ -133,15 +133,12 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
-    /// Print the file at a path, following pointers; with --json, only a record.
-    #[command(after_help = "\
-Examples:
-  board get /projects/p
-  board get /projects/p --json
-  board get /README.md")]
+    /// Print the file at each path, following pointers; several are read in one run.
+    #[command(after_help = render::GET_HELP)]
     Get {
-        /// The file's logical path: it starts with /, and a JSON file's leaves out .json, such as /projects/p.
-        path: LogicalPath,
+        /// Each file's logical path: it starts with /, and a JSON file's leaves out .json, such as /projects/p.
+        #[arg(required = true, value_name = "PATH")]
+        paths: Vec<LogicalPath>,
     },
     /// List the directory at a path, without following pointers inside it.
     #[command(after_help = "\
@@ -380,10 +377,10 @@ fn command(
             Ok(report) => render::check(format, &report, page.limit()),
             Err(error) => render::refused(format, &error.refusal()),
         },
-        Command::Get { path } => match board.get(&path) {
-            Ok(report) => render::get(format, &report),
-            Err(error) => render::refused(format, &error.refusal("get")),
-        },
+        Command::Get { paths } => (render::too_many(format, "get", paths.len(), MAX_LIMIT))
+            .unwrap_or_else(|| {
+                render::get(format, &paths, board.get_each(&paths), render::GET_BUDGET)
+            }),
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
                 Ok(report) => render::put(format, &report),
@@ -487,16 +484,8 @@ fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Outpu
         Absent::Refuse
     };
     let limit = asked.page.limit();
-    if asked.paths.len() > MAX_LIMIT {
-        let message = format!(
-            "refs was given {} paths, and one run answers at most {MAX_LIMIT}",
-            asked.paths.len()
-        );
-        let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
-        return render::refused(
-            format,
-            &Refusal::new(Code::UsageInvalid, message, &Fields::default()).with_hint(hint),
-        );
+    if let Some(refused) = render::too_many(format, "refs", asked.paths.len(), MAX_LIMIT) {
+        return refused;
     }
     match board.refs(&asked.paths, absent, context.cache.as_deref()) {
         Err(error) => render::refused(format, &error.refusal()),

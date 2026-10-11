@@ -328,7 +328,7 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
     assert_eq!(error["code"], "board::usage::invalid");
     assert_eq!(
         error["message"],
-        "the following required arguments were not provided: <PATH>"
+        "the following required arguments were not provided: <PATH>..."
     );
     assert_eq!(
         error["hint"],
@@ -379,7 +379,7 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         ),
         (
             &["get", "projects/p"],
-            "invalid value 'projects/p' for '<PATH>': ",
+            "invalid value 'projects/p' for '<PATH>...': ",
             "a logical path starts with / and leaves out .json: try `board --json get /projects/p`",
             &["get", "/projects/p"],
         ),
@@ -741,7 +741,7 @@ fn a_record_whose_logical_path_ends_in_json_round_trips_through_get_and_put() {
     assert_eq!(put.code, 0, "{}", text(&put.stderr));
     assert!(!scenario.workdir().join("tasks/a.json").exists());
     let again = board_in(scenario.workdir(), &["get", "/tasks/a.json", "--json"]);
-    assert_eq!(json(&again)["record"]["title"], "b");
+    assert_eq!(super::get::got(&again)["record"]["title"], "b");
 }
 
 #[test]

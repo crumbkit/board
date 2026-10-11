@@ -186,6 +186,110 @@ def test_refs_of_one_str_is_refused_and_of_a_list_holding_it_is_read(monkeypatch
     assert DEMO.refs(["/ab"]) == [{"location": {"display": "/ab"}}]
 
 
+def test_a_get_report_without_one_readable_answer_per_path_is_a_failure_keeping_stderr_and_one_with_it_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text, raw = {"text": "one two"}, {"base64": "/wBh"}
+    for paths, answers in (
+        (["/a", "/b"], {"a": text}),
+        (["/a", "/b"], [text]),
+        (["/a"], [text, text]),
+        (["/a", "/b"], [text, "/b"]),
+        (["/a"], [{"location": {"display": "/a"}}]),
+        (["/a"], [{"base64": "not base64!"}]),
+    ):
+        printing(monkeypatch, json.dumps({"$type": "board/get-report/v1", "answers": answers}).encode())
+        with pytest.raises(PluginError) as refused:
+            DEMO.get(paths)
+        assert refused.value.code == "demo::board::failed"
+        assert "printed a report without one file or refusal per path" in refused.value.message
+        assert refused.value.fields == {"stderr": "logs"}
+    printing(monkeypatch, json.dumps({"$type": "board/get-report/v1", "answers": [text, raw]}).encode())
+    assert DEMO.get(["/a", "/b"]) == [b"one two", b"\xff\x00a"]
+
+
+def test_get_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_after_dashes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs: list[tuple[str, ...]] = []
+    report = json.dumps({"$type": "board/get-report/v1", "answers": [{"text": "x"}]}).encode()
+
+    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        runs.append(arguments)
+        return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
+
+    monkeypatch.setattr(Board, "_run", run)
+    assert DEMO.get([]) == []
+    assert runs == []
+    assert DEMO.get(["-a"]) == [b"x"]
+    assert runs == [("--json", "get", "--", "-a")]
+
+
+def getting_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple[str, ...]]:
+    """Make `board get` answer each path with its own name as text until `budget` paths, then over budget.
+
+    It returns the paths each run was asked.
+    """
+    runs: list[tuple[str, ...]] = []
+
+    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        asked = arguments[arguments.index("--") + 1 :]
+        runs.append(asked)
+        over = {"$type": "board/error/v1", "code": board.OVER_BUDGET, "message": "not read"}
+        answers = [{"text": path} if at < budget else over for at, path in enumerate(asked)]
+        report = json.dumps({"$type": "board/get-report/v1", "answers": answers}).encode()
+        return subprocess.CompletedProcess(["board", *arguments], 1 if budget < len(asked) else 0, report, b"")
+
+    monkeypatch.setattr(Board, "_run", run)
+    return runs
+
+
+def test_get_asks_again_for_the_paths_a_run_left_over_its_budget_and_keeps_their_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = ["/a", "/b", "/c", "/d"]
+    runs = getting_within(monkeypatch, 4)
+    assert DEMO.get(paths) == [b"/a", b"/b", b"/c", b"/d"]
+    assert runs == [("/a", "/b", "/c", "/d")]
+    runs = getting_within(monkeypatch, 2)
+    assert DEMO.get(paths) == [b"/a", b"/b", b"/c", b"/d"]
+    assert runs == [("/a", "/b", "/c", "/d"), ("/c", "/d")]
+
+
+def test_get_fails_on_a_run_that_answers_none_of_its_paths_and_reads_one_that_answers_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runs = getting_within(monkeypatch, 0)
+    with pytest.raises(PluginError) as failed:
+        DEMO.get(["/a", "/b"])
+    assert failed.value.code == "demo::board::failed"
+    assert f"left every path unread as {board.OVER_BUDGET}" in failed.value.message
+    assert runs == [("/a", "/b")]
+    runs = getting_within(monkeypatch, 1)
+    assert DEMO.get(["/a", "/b"]) == [b"/a", b"/b"]
+    assert runs == [("/a", "/b"), ("/b",)]
+
+
+def test_get_asks_as_many_paths_as_one_run_answers_in_one_run_and_one_more_in_a_second(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    three = Board("/b", "demo", paths_per_run=3)
+    runs = getting_within(monkeypatch, 10)
+    assert three.get(["/a", "/b", "/c"]) == [b"/a", b"/b", b"/c"]
+    assert runs == [("/a", "/b", "/c")]
+    runs.clear()
+    assert three.get(["/a", "/b", "/c", "/d"]) == [b"/a", b"/b", b"/c", b"/d"]
+    assert runs == [("/a", "/b", "/c"), ("/d",)]
+
+
+def test_get_of_one_str_is_refused_and_of_a_list_holding_it_is_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = getting_within(monkeypatch, 10)
+    with pytest.raises(TypeError, match=r"not the one str '/ab'; pass \['/ab'\]"):
+        DEMO.get("/ab")
+    assert runs == []
+    assert DEMO.get(["/ab"]) == [b"/ab"]
+
+
 def test_a_literal_doubles_its_quotes() -> None:
     assert board.literal("it's") == "'it''s'"
 
@@ -206,18 +310,21 @@ def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Board:
 
 
 def test_one_run_asks_at_most_as_many_paths_as_the_built_board_says_one_run_takes(real: Board) -> None:
-    for command in ("refs",):
+    for command in ("refs", "get"):
         ran = subprocess.run(["board", command, "--help"], cwd=real.root, capture_output=True, check=True, text=True)
         assert f"One run takes at most {board.PATHS_PER_RUN} paths" in " ".join(ran.stdout.split())
     assert DEMO.paths_per_run == board.PATHS_PER_RUN
 
 
-def test_the_real_board_gives_a_files_bytes_and_refuses_a_directory_with_its_code(real: Board) -> None:
-    assert real.get("/docs/a.md") == b"one two"
-    with pytest.raises(PluginError) as refused:
-        real.get("/docs")
-    assert refused.value.code == "demo::board::refused"
-    assert refused.value.fields["code"] == "board::record::not_a_record"
+def test_the_real_board_gives_each_files_bytes_in_order_and_a_refused_path_its_code(real: Board) -> None:
+    (Path(real.root) / "docs" / "raw.bin").write_bytes(b"\xff\x00a")
+    answers = real.get(["/docs/a.md", "/docs", "/docs/raw.bin"])
+    assert answers[0] == b"one two"
+    assert answers[2] == b"\xff\x00a"
+    refused = answers[1]
+    assert isinstance(refused, PluginError)
+    assert (refused.code, refused.fields) == ("demo::board::refused", {"code": "board::record::not_a_record"})
+    assert real.get(["/docs/a.md", "/docs/raw.bin"]) == [b"one two", b"\xff\x00a"]
 
 
 def test_the_real_board_resolves_a_path_and_a_missing_one_is_none(real: Board) -> None:

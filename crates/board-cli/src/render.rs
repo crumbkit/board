@@ -5,20 +5,22 @@
 use std::fmt::Display;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Object, Refusal, RefusalCode};
+use board_model::{Code, Fields, Location, LogicalPath, Refusal, RefusalCode};
 use board_ops::{
-    CheckReport, Checked, Detail, EnableReport, Fallback, GetReport, InitReport, Listed, LsReport,
-    MAX_LIMIT, MountUpdateReport, PutReport, QueryReport, source_name,
+    CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport, MAX_LIMIT,
+    MountUpdateReport, PutReport, QueryReport, source_name,
 };
 use board_tree::Status;
 use serde_json::{Map, Value, json};
 
 use crate::report::Output;
 
+mod get;
 mod page;
 mod plugins;
 mod refs;
 
+pub(crate) use get::{GET_BUDGET, GET_HELP, get};
 use page::Shown;
 pub(crate) use plugins::{call, plugin_find, plugin_list, temporary};
 pub(crate) use refs::refs;
@@ -319,35 +321,6 @@ pub(crate) fn init(format: Format, report: &InitReport) -> Output {
     }
 }
 
-pub(crate) fn get(format: Format, report: &GetReport) -> Output {
-    match format {
-        Format::Text => Output {
-            stdout: report.bytes.clone(),
-            ..Output::default()
-        },
-        // The report carries the parsed record, so a file that is not one
-        // has no report, and is refused as the report says.
-        Format::Json => match &report.record {
-            Ok(record) => {
-                let blob = match report.location.object {
-                    Object::Blob(blob) => Some(blob),
-                    Object::Directory => None,
-                };
-                document(
-                    &json!({
-                        "$type": "board/get-report/v1",
-                        "location": location(&report.location, &report.display.to_string()),
-                        "blob": blob.map(|blob| blob.to_string()),
-                        "record": record,
-                    }),
-                    0,
-                )
-            }
-            Err(refusal) => refused(format, refusal),
-        },
-    }
-}
-
 pub(crate) fn ls(format: Format, report: &LsReport, limit: Option<usize>) -> Output {
     let shown = Shown::of(report.listed.len(), limit);
     let listed = &report.listed[..shown.shown];
@@ -440,6 +413,17 @@ pub(crate) fn mount_update(format: Format, report: &MountUpdateReport) -> Output
             0,
         ),
     }
+}
+
+/// The refusal of a run of `command` given `count` paths, when that is more
+/// than the `most` one run answers.
+pub(crate) fn too_many(format: Format, command: &str, count: usize, most: usize) -> Option<Output> {
+    let message = format!("{command} was given {count} paths, and one run answers at most {most}");
+    let hint = format!("split the paths over several runs of at most {most} each");
+    (count > most).then(|| {
+        let refusal = Refusal::new(Code::UsageInvalid, message, &Fields::default());
+        refused(format, &refusal.with_hint(hint))
+    })
 }
 
 /// A failure with the hint for its code, filled in from `fields`, which
