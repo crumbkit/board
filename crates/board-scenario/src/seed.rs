@@ -22,16 +22,11 @@ pub struct Exhibit {
 /// Codes the CLI's no-dead-ends property cannot provoke through the `board`
 /// command line, why, and where each is tested instead. The property
 /// provokes every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 8] = [
+pub const NOT_REPRODUCED: [(Code, &str); 7] = [
     (
         Code::IndexFailed,
         "the index fails only when SQLite does, even in memory; \
          board-index/src/tests.rs maps SQLite's failures to it",
-    ),
-    (
-        Code::QueryOverBudget,
-        "the CLI's 64 MiB query budget needs rows that large; \
-         board-cli/src/tests/query.rs passes render::rows_budget a few bytes",
     ),
     (
         Code::PutNoIdentity,

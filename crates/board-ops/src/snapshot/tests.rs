@@ -102,12 +102,9 @@ fn decided(scenario: &Scenario, index: Index) -> CheckReport {
 
 /// What `entries` shows, as check reports it.
 fn viewed(view: &View) -> Vec<Checked> {
-    let rows = view
-        .query(
-            "SELECT path, logical, kind, code, change, status, source FROM entries ORDER BY source, path",
-            10_000,
-         None,)
-        .unwrap();
+    let sql = "SELECT path, logical, kind, code, change, status, source FROM entries \
+               ORDER BY source, path";
+    let rows = view.query(sql, 10_000, None).unwrap();
     let text = |value: &Value| value.as_str().map(str::to_owned);
     rows.rows
         .iter()

@@ -102,8 +102,10 @@ class Board:
     def rows(self, sql: str) -> list[list[Any]]:
         """Every row of one `board query`.
 
-        More than `LIMIT` rows is `<plugin>::board::truncated`, and more than
-        Board's byte budget is `<plugin>::board::over_budget`.
+        More than `LIMIT` rows is `<plugin>::board::truncated`, and rows past
+        Board's byte budget are `<plugin>::board::over_budget`. A first row or
+        a single value past the budget is `<plugin>::board::refused`, with
+        Board's code `board::query::over_budget`.
         """
         rows, truncated, over_budget = self._query(sql, LIMIT)
         if over_budget:

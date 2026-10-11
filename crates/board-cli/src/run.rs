@@ -57,7 +57,7 @@ Tables and views:
 
 Rows stop before one that would take them past 64 MiB as printed, even
 with --all; the report then carries board::query::over_budget, and text
-output notes it.
+output notes it. A first row past 64 MiB is refused with that code.
 
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"

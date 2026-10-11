@@ -292,20 +292,15 @@ fn detail_fields(detail: &Detail) -> Map<String, Value> {
     fields
 }
 
-/// Counts the bytes and newlines written to it, and keeps none.
+/// Counts the bytes written to it, and keeps none.
 #[derive(Default)]
 struct Counted {
     bytes: usize,
-    lines: usize,
 }
 
 impl std::io::Write for Counted {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.bytes += buf.len();
-        self.lines += buf
-            .iter()
-            .map(|&byte| usize::from(byte == b'\n'))
-            .sum::<usize>();
         Ok(buf.len())
     }
 
@@ -315,32 +310,29 @@ impl std::io::Write for Counted {
 }
 
 /// The budget for a query's rows, `bytes` as `format` prints them: as
-/// text, each row's line; as JSON, everything `rows` adds to `[]`. That is
-/// each row indented by 4 more spaces after `,\n    `, and 2 bytes more,
-/// as the first row has no comma and the list closes with `\n  ]`.
+/// text, each row's line, `[` and a newline, and each value and the `,` or
+/// `]` after it; as JSON, everything `rows` adds to `[]`. That is
+/// `,\n    [\n` and `\n    ]` for each row, each value indented by 6
+/// spaces with the `,\n` or `\n` after it, and 2 bytes more, as the first
+/// row has no comma and the list closes with `\n  ]`.
 pub(crate) fn rows_budget(format: Format, bytes: usize) -> Budget {
-    let (size, framing): (fn(&[Value]) -> usize, usize) = match format {
-        Format::Text => (
-            |row| {
-                let mut counted = Counted::default();
-                let _ = serde_json::to_writer(&mut counted, row);
-                counted.bytes + 1
-            },
-            0,
-        ),
-        Format::Json => (
-            |row| {
-                let mut counted = Counted::default();
-                let _ = serde_json::to_writer_pretty(&mut counted, row);
-                counted.bytes + 4 * counted.lines + ",\n    ".len()
-            },
-            2,
-        ),
+    let (row, framing, value): (usize, usize, fn(&Value) -> usize) = match format {
+        Format::Text => (2, 0, |value| printed(value) + 1),
+        Format::Json => (12, 2, |value| printed(value) + 8),
     };
     Budget {
         bytes: bytes.saturating_sub(framing),
-        size,
+        row,
+        value,
     }
+}
+
+/// The bytes `value` takes as compact JSON. A value from `SQLite` is never
+/// an array or an object, so pretty JSON prints it the same.
+fn printed(value: &Value) -> usize {
+    let mut counted = Counted::default();
+    let _ = serde_json::to_writer(&mut counted, value);
+    counted.bytes
 }
 
 /// `query`'s rows: as text, one JSON array per line, the columns first.

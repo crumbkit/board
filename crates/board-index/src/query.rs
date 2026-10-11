@@ -31,20 +31,21 @@ pub struct Rows {
     pub over_budget: bool,
 }
 
-/// The bytes a query's rows may take, by `size`, the bytes one row takes
-/// as it is printed. The first row is kept whatever its size.
+/// The bytes a query's rows may take as they are printed: `row` for each
+/// row, and `value` for each value in it.
 #[derive(Clone, Copy, Debug)]
 pub struct Budget {
     pub bytes: usize,
-    pub size: fn(&[Value]) -> usize,
+    pub row: usize,
+    pub value: fn(&Value) -> usize,
 }
 
 impl View {
     /// Runs one statement that cannot write, returning at most `limit` rows,
-    /// within `budget` when there is one. No value may be longer than the
-    /// budget, so one cell cannot take more memory than the rows may print.
-    /// It refuses with [`IndexError::Pruned`] when another process has pruned
-    /// since the views were built.
+    /// within `budget` when there is one. It refuses with
+    /// [`IndexError::TooBig`] when the first row alone, or any one value, is
+    /// past the budget, and with [`IndexError::Pruned`] when another process
+    /// has pruned since the views were built.
     pub fn query(
         &self,
         sql: &str,
@@ -128,17 +129,30 @@ impl View {
                 truncated = true;
                 break;
             }
-            let row = (0..width)
-                .map(|at| Ok(value(row.get_ref(at)?)))
-                .collect::<Result<Vec<Value>, rusqlite::Error>>()?;
-            if let Some(Budget { bytes, size }) = budget {
-                spent += size(&row);
-                if spent > bytes && !rows.is_empty() {
-                    (truncated, over_budget) = (true, true);
-                    break;
-                }
+            let mut values = Vec::with_capacity(width);
+            let mut fits = true;
+            if let Some(Budget { row, .. }) = budget {
+                spent += row;
             }
-            rows.push(row);
+            for at in 0..width {
+                let value = value(row.get_ref(at)?);
+                if let Some(budget) = budget {
+                    spent += (budget.value)(&value);
+                    if spent > budget.bytes {
+                        fits = false;
+                        break;
+                    }
+                }
+                values.push(value);
+            }
+            if !fits {
+                if rows.is_empty() {
+                    return Err(too_big());
+                }
+                (truncated, over_budget) = (true, true);
+                break;
+            }
+            rows.push(values);
         }
         Ok(Rows {
             columns,
@@ -147,6 +161,14 @@ impl View {
             over_budget,
         })
     }
+}
+
+/// The error `SQLite` gives a value past its length limit.
+fn too_big() -> rusqlite::Error {
+    rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_TOOBIG),
+        None,
+    )
 }
 
 /// Refuses ATTACH, DETACH and the PRAGMA statement.

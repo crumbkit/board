@@ -84,7 +84,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     64 MiB and refuse each later path as `get::over_budget` or
     `refs::over_budget`, to ask for in another run. `query` stops before the
     row that would take its rows past 64 MiB, even with `--all`, and marks the
-    cut `query::over_budget`; it refuses a single value longer than that.
+    cut `query::over_budget`; it refuses a first row or a single value longer than
+    that, where `get` and `refs` always answer their first path, because a
+    query can ask for fewer or smaller columns and a file has no smaller form.
     An empty listing says so on stderr instead of printing nothing. Gate: a test
     walks the clap command tree and requires every listing command to take these
     flags.

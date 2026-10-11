@@ -320,8 +320,8 @@ pub enum IndexError {
     },
     #[error("the query ran longer than {:?}", crate::query::QUERY_TIME)]
     Timeout,
-    /// One value was longer than the query's whole budget.
-    #[error("the query made a value longer than one run prints")]
+    /// The first row, or one value, was longer than the query's whole budget.
+    #[error("the query made a row longer than one run prints")]
     TooBig,
     /// Another process pruned facts this run's views show, so the run must
     /// build them again.

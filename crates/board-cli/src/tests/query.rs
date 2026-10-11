@@ -58,12 +58,11 @@ fn query_prints_each_row_within_its_budget_and_notes_the_rows_left_at_it() {
     );
     let two = "[\"column1\"]\n[\"a\"]\n[\"b\"]\n";
     assert_eq!(ran(17), (0, two.to_owned(), note), "17 bytes fit 2");
-    let first = ran(0);
-    assert_eq!(
-        first.1, "[\"column1\"]\n[\"a\"]\n",
-        "the first row is always printed"
-    );
+    let first = ran(6);
+    assert_eq!(first.1, "[\"column1\"]\n[\"a\"]\n", "6 bytes fit 1");
     assert!(first.2.contains("showing the first 1 rows"), "{}", first.2);
+    let refused = answered(&scenario, SQL, Format::Text, 10, 5).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryOverBudget, "5 bytes fit none");
 }
 
 #[test]
@@ -100,7 +99,10 @@ fn the_query_budget_counts_every_byte_its_rows_add_to_the_printed_output() {
         let (empty, _) = printed(0);
         for count in [1, 3] {
             let (bytes, rows) = printed(count);
-            let counted: usize = rows.iter().map(|row| (budget.size)(row)).sum();
+            let counted: usize = rows
+                .iter()
+                .map(|row| budget.row + row.iter().map(budget.value).sum::<usize>())
+                .sum();
             assert_eq!(bytes - empty, framing + counted, "{format:?} {count}");
         }
     }
@@ -109,13 +111,28 @@ fn the_query_budget_counts_every_byte_its_rows_add_to_the_printed_output() {
 #[test]
 fn a_query_refuses_a_value_longer_than_its_budget_and_admits_one_as_long() {
     let scenario = board();
-    // `zeroblob(40)` is 40 bytes long. SQLite limits no value to less than
-    // 30 bytes, so a smaller value could not show the limit.
-    let sql = "SELECT zeroblob(40)";
+    // `zeroblob(40)` is 40 bytes long, though it prints as `[40]`. SQLite
+    // limits no value to less than 30 bytes, so a smaller value could not
+    // show the limit.
+    let sql = "SELECT length(zeroblob(40))";
     let refused = answered(&scenario, sql, Format::Text, 10, 39).unwrap_err();
     assert_eq!(refused.code(), Code::QueryOverBudget);
     let admitted = answered(&scenario, sql, Format::Text, 10, 40).unwrap();
-    assert_eq!(admitted.rows, [vec![serde_json::json!("00".repeat(40))]]);
+    assert_eq!(admitted.rows, [vec![serde_json::json!(40)]]);
+}
+
+#[test]
+fn a_query_refuses_a_first_row_that_prints_past_its_budget_and_admits_one_that_fits() {
+    let scenario = board();
+    // Each value is 30 bytes, within the budget, and prints as 60 hex
+    // digits in quotes, so the row prints as 128 bytes with `[`, `,`, `]`
+    // and the newline.
+    let sql = "SELECT zeroblob(30), zeroblob(30)";
+    let refused = answered(&scenario, sql, Format::Text, 10, 127).unwrap_err();
+    assert_eq!(refused.code(), Code::QueryOverBudget);
+    let admitted = answered(&scenario, sql, Format::Text, 10, 128).unwrap();
+    let hex = serde_json::json!("00".repeat(30));
+    assert_eq!(admitted.rows, [vec![hex.clone(), hex]]);
 }
 
 /// `board query --json` of [`SQL`] when the budget leaves its last row out.

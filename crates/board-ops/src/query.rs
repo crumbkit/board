@@ -53,9 +53,10 @@ impl Board {
     /// Refreshes the index kept under `cache` and decides every entry, as an
     /// unscoped check does, extracts for each enabled plugin and attaches its
     /// database as `p_<name>`, then runs `sql`, returning at most `limit`
-    /// rows, within `budget` when there is one. A plugin that fails is reported and the query still runs. When
-    /// another process prunes what the views show before `sql` runs, it all
-    /// runs again, three times in all.
+    /// rows, within `budget` when there is one. A plugin that fails is
+    /// reported and the query still runs. When another process prunes what
+    /// the views show before `sql` runs, it all runs again, three times in
+    /// all.
     pub fn query(
         &self,
         sql: &str,

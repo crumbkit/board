@@ -351,7 +351,7 @@ fn on_the_fixture(codes: &mut BTreeSet<String>, dead: &mut Vec<Vec<String>>) {
     }
     let unbounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) \
                      SELECT count(*) FROM c";
-    let starts: [Start<'_>; 22] = [
+    let starts: [Start<'_>; 23] = [
         (Code::PathNotFound, &["get", "/nowhere"]),
         (Code::PathNotFound, &["get", "/nowhere.json"]),
         (Code::PathNotFound, &["get", "/taks/t1"]),
@@ -368,6 +368,10 @@ fn on_the_fixture(codes: &mut BTreeSet<String>, dead: &mut Vec<Vec<String>>) {
         (Code::QueryInvalid, &["query", "SELECT * FROM entires"]),
         (Code::QueryInvalid, &["query", "SELECT logcal"]),
         (Code::QueryTimeout, &["query", unbounded]),
+        (
+            Code::QueryOverBudget,
+            &["query", "SELECT zeroblob(100000000)"],
+        ),
         (Code::UsageInvalid, &["chek"]),
         (Code::UsageInvalid, &["get", "projects/p"]),
         (Code::UsageInvalid, &["ls", "--limit", "0"]),

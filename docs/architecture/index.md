@@ -76,11 +76,13 @@ record whose file changed after its refresh; the next query sends it.
 enabled plugin's database is attached read-only as `p_<name>`. Rows return as
 JSON, at most 100 unless `--limit` (at most 10,000) or `--all` says
 otherwise, with `truncated` set when rows were left out. Rows also stop
-before one that would take them past 64 MiB as printed, even with `--all`;
-the first row is always returned. That cut adds the code
-`board::query::over_budget` to the report and still exits 0. The report is `columns` and `rows`,
-each row an array in column order; `plugins` lists any plugin whose extraction
-failed. SQL that does not parse, would write, or holds more than one statement
+before one that would take them past 64 MiB as printed, even with `--all`.
+That cut adds the code `board::query::over_budget` to the report and still
+exits 0. A first row or a single value past 64 MiB is refused with the same
+code and exits 1. Each value is counted as the row is read, so a wide row
+stops at the value that passes the budget. The report is `columns` and
+`rows`, each row an array in column order; `plugins` lists any plugin whose
+extraction failed. SQL that does not parse, would write, or holds more than one statement
 is `board::query::invalid`; ATTACH, DETACH and PRAGMA statements count as
 writes, while table-valued pragma functions such as `pragma_table_info` are
 admitted. A query still running after 1 s is `board::query::timeout`. A query

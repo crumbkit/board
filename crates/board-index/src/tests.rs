@@ -484,19 +484,51 @@ fn a_query_cannot_write_and_leaves_the_index_writable() {
 }
 
 #[test]
-fn a_query_keeps_the_rows_within_its_budget_and_always_the_first() {
+fn a_query_keeps_the_rows_within_its_budget() {
     let cache = tempfile::tempdir().unwrap();
     let view = filled(cache.path());
     let kept = |bytes| {
-        let budget = crate::Budget { bytes, size: |_| 1 };
+        let budget = crate::Budget {
+            bytes,
+            row: 1,
+            value: |_| 1,
+        };
         let rows = view
             .query("SELECT * FROM (VALUES (1), (2), (3))", 10, Some(budget))
             .unwrap();
         (rows.rows.len(), rows.truncated, rows.over_budget)
     };
-    assert_eq!(kept(3), (3, false, false), "3 bytes fit 3 rows of 1");
-    assert_eq!(kept(2), (2, true, true), "2 bytes fit 2");
-    assert_eq!(kept(0), (1, true, true), "the first row is kept");
+    assert_eq!(kept(6), (3, false, false), "6 bytes fit 3 rows of 2");
+    assert_eq!(kept(5), (2, true, true), "5 bytes fit 2");
+}
+
+thread_local! {
+    /// How many values the budget below has counted on this thread.
+    static COUNTED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[test]
+fn a_query_refuses_a_first_row_past_its_budget_as_soon_as_it_is_counted() {
+    let cache = tempfile::tempdir().unwrap();
+    let view = filled(cache.path());
+    let budget = |bytes| crate::Budget {
+        bytes,
+        row: 0,
+        value: |_| {
+            COUNTED.set(COUNTED.get() + 1);
+            1
+        },
+    };
+    COUNTED.set(0);
+    let refused = view
+        .query("SELECT 1, 2, 3", 10, Some(budget(1)))
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::QueryOverBudget);
+    assert_eq!(COUNTED.get(), 2, "it stops at the value past the budget");
+    COUNTED.set(0);
+    let admitted = view.query("SELECT 1, 2, 3", 10, Some(budget(3))).unwrap();
+    assert_eq!(admitted.rows.len(), 1);
+    assert_eq!(COUNTED.get(), 3);
 }
 
 #[test]
