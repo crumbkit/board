@@ -1,22 +1,22 @@
 """`board_controls.board`, through the real `board`."""
 
+import json
 import os
 import shlex
+import subprocess
+from pathlib import Path
+from typing import Any
 
 import pytest
 from board_plugin import board as plugin_board
+from board_plugin.protocol import PluginError
 from conftest import Board, board_binary, control
 
-from board_controls.board import referenced
+from board_controls.board import matched, referenced
 
 
-def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_runs(
-    board: Board, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    names = ["a", "b", "c", "d"]
-    for name in names:
-        board.write(f"docs/{name}.md", name)
-        board.write(f"controls/{name}.json", control("Small.", applies_to=[f"/docs/{name}.md"]))
+def logged(board: Board, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Make every `board` this process runs write its arguments as one line to the returned log, then run."""
     log = board.root.parent / "calls.log"
     wrapper = board.root.parent / "bin"
     wrapper.mkdir()
@@ -27,6 +27,17 @@ def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_ru
     monkeypatch.setenv("PATH", f"{wrapper}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("XDG_DATA_HOME", str(board.data))
     monkeypatch.setenv("XDG_CACHE_HOME", str(board.cache))
+    return log
+
+
+def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_runs(
+    board: Board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    names = ["a", "b", "c", "d"]
+    for name in names:
+        board.write(f"docs/{name}.md", name)
+        board.write(f"controls/{name}.json", control("Small.", applies_to=[f"/docs/{name}.md"]))
+    log = logged(board, monkeypatch)
 
     def runs() -> list[str]:
         """The paths asked by each `board refs` since the last call."""
@@ -40,3 +51,65 @@ def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_ru
     assert runs() == ["/controls/a /controls/b /controls/c /controls/d"]
     assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=3), controls) == expected
     assert runs() == ["/controls/a /controls/b /controls/c", "/controls/d"]
+
+
+def queries(log: Path) -> int:
+    """How many `board query` runs the log holds."""
+    return sum(" query " in f" {line} " for line in log.read_text().splitlines())
+
+
+FIVE = [
+    ["/controls/a", "/docs/1.md", "ok", None],
+    ["/controls/a", "/docs/2.md", "ok", None],
+    ["/controls/a", "/docs/3.md", "ok", None],
+    ["/controls/b", "/notes/1.md", "ok", None],
+    ["/controls/b", "/notes/2.md", "ok", None],
+]
+
+
+@pytest.mark.parametrize(("page", "runs"), [(2, 3), (5, 1)])
+def test_matched_lists_every_pair_once_over_as_many_pages_as_it_needs(
+    board: Board, monkeypatch: pytest.MonkeyPatch, page: int, runs: int
+) -> None:
+    for name in ["1", "2", "3"]:
+        board.write(f"docs/{name}.md", name)
+    for name in ["1", "2"]:
+        board.write(f"notes/{name}.md", name)
+    board.write("controls/a.json", control("Small.", paths=["docs/*.md"]))
+    board.write("controls/b.json", control("Small.", paths=["notes/*", "notes/1.md"]))
+    log = logged(board, monkeypatch)
+    assert matched(plugin_board.Board(str(board.root), "controls"), page=page) == FIVE
+    assert queries(log) == runs
+
+
+def test_matched_pages_past_paths_and_patterns_that_hold_quotes_and_backslashes(
+    board: Board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = ["it's.md", 'say "hi".md', "back\\slash.md", "café [1].md"]
+    for name in files:
+        board.write(f"docs/{name}", name)
+    board.write("controls/o'brien.json", control("Small.", paths=["docs/it's*", 'docs/*"*', "docs/*\\*", "docs/caf*"]))
+    log = logged(board, monkeypatch)
+    rows = matched(plugin_board.Board(str(board.root), "controls"), page=1)
+    assert rows == [["/controls/o'brien", f"/docs/{name}", "ok", None] for name in sorted(files)]
+    assert queries(log) == len(files)
+
+
+@pytest.mark.parametrize("rows", [[], [["/controls/a", "/docs/1.md", "ok", None, "controls/a.json", "docs/1.md"]]])
+def test_a_truncated_page_that_ends_no_later_than_the_last_fails_and_one_that_is_complete_is_read(
+    monkeypatch: pytest.MonkeyPatch, rows: list[list[Any]]
+) -> None:
+    def printing(*, truncated: bool) -> None:
+        document = {"$type": "board/query-report/v1", "rows": rows, "truncated": truncated, "plugins": []}
+
+        def run(_self: plugin_board.Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.CompletedProcess(["board", *arguments], 0, json.dumps(document).encode(), b"")
+
+        monkeypatch.setattr(plugin_board.Board, "_run", run)
+
+    printing(truncated=True)
+    with pytest.raises(PluginError) as refused:
+        matched(plugin_board.Board("/b", "controls"))
+    assert refused.value.code == "controls::board::failed"
+    printing(truncated=False)
+    assert matched(plugin_board.Board("/b", "controls")) == [row[:4] for row in rows]

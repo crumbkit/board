@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from board_plugin.board import Board, literal
+from board_plugin.board import LIMIT, Board, literal
 from board_plugin.protocol import PluginError
 from pydantic import ValidationError
 
@@ -40,6 +40,40 @@ def degraded(board: Board) -> list[list[str]]:
         "SELECT logical, code FROM records"  # noqa: S608 - the one value is a constant
         f" WHERE type = {literal(CONTROL_TYPE)} AND status != 'ok' AND source = 'worktree' ORDER BY logical",
     )
+
+
+def matched(board: Board, page: int = LIMIT) -> list[list[Any]]:
+    """Each control and each file one of its patterns matches, with the file's status and code.
+
+    A pointer's file holds where it leads, never what a budget counts, so no
+    pattern matches one. The rows come in pages of at most `page`, ordered by
+    the control's path and then the file's; each page asks for the rows after
+    the last pair the page before it ended on. A file with no logical path
+    is named by its path in the tree.
+    """
+    # Pages are keyed by path: unique in the working tree and, unlike logical, never null.
+    after = ("", "")
+    found: list[list[Any]] = []
+    while True:
+        rows, truncated = board.query(
+            "SELECT DISTINCT r.logical, COALESCE(e.logical, e.path), e.status, e.code, r.path, e.path"  # noqa: S608 - values are quoted by literal()
+            " FROM records r, json_each(r.body, '$.paths') p, entries e"
+            f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
+            " AND e.source = 'worktree' AND e.kind != 'pointer' AND e.path GLOB p.value"
+            f" AND (r.path, e.path) > ({literal(after[0])}, {literal(after[1])})"
+            " ORDER BY r.path, e.path",
+            page,
+        )
+        found.extend(row[:4] for row in rows)
+        if not truncated:
+            return found
+        if not rows or (rows[-1][4], rows[-1][5]) <= after:
+            raise PluginError(
+                "controls::board::failed",
+                f"`board query` left rows out but returned none after ({after[0]}, {after[1]});"
+                " check that the `board` first on PATH is this Board",
+            )
+        after = (rows[-1][4], rows[-1][5])
 
 
 def referenced(board: Board, controls: list[str]) -> dict[str, set[str]]:

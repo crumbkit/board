@@ -57,7 +57,11 @@ to `.board/types/controls/control/v1.schema.json`.
   nothing. `check` resolves the references of every budget control that has
   `applies_to` with one `board refs` for each 10,000 controls. It reads every
   file the controls reach with `board get`, each file once however many
-  controls reach it, in as few runs as Board's limits allow.
+  controls reach it, in as few runs as Board's limits allow. It finds the
+  files each control's patterns match with `board query` pages of up to
+  10,000 pairs of control and file, so a board may match more than that.
+  Each page is a separate run; a file added or removed between pages may or
+  may not be counted, but no pair is skipped or counted twice.
 
 Both fail with `controls::control::unreadable` when a control is valid in the
 board but holds fields this plugin does not read, because the board's copy of

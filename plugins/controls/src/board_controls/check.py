@@ -2,11 +2,11 @@
 
 from typing import TYPE_CHECKING, Literal
 
-from board_plugin.board import Board, literal
+from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_controls import board
-from board_controls.models import CONTROL_TYPE, Checked, CheckInput, CheckOutput, ControlRecord
+from board_controls.models import Checked, CheckInput, CheckOutput, ControlRecord
 
 if TYPE_CHECKING:
     from pydantic import JsonValue
@@ -29,7 +29,8 @@ def check(request: CallRequest) -> CheckOutput:
     A file reached by a reference and a pattern, or through a link, counts once.
     Each file is read once, however many controls reach it, with `board get`
     runs of up to 10,000 paths, and another run for paths left over a run's
-    64 MiB output budget.
+    64 MiB output budget. The files each control's patterns match come from
+    `board query` pages of up to 10,000 rows.
     """
     CheckInput.model_validate(request.input)
     reading = Board(request.board.root, "controls")
@@ -42,16 +43,9 @@ def check(request: CallRequest) -> CheckOutput:
             {"controls": [{"control": logical, "code": code} for logical, code in broken]},
         )
     budgets = {logical: record for logical, record in board.controls(reading).items() if record.rule is not None}
-    # A pointer's file holds where it leads, never what a budget counts.
-    matched = reading.rows(
-        "SELECT DISTINCT r.logical, e.logical, e.status, e.code"  # noqa: S608 - the one value is quoted by literal()
-        " FROM records r, json_each(r.body, '$.paths') p, entries e"
-        f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
-        " AND e.source = 'worktree' AND e.kind != 'pointer' AND e.path GLOB p.value",
-    )
     files = board.referenced(reading, sorted(logical for logical, record in budgets.items() if record.applies_to))
     files.update({logical: set() for logical in budgets if logical not in files})
-    for control, path, status, code in matched:
+    for control, path, status, code in board.matched(reading):
         if control in files:
             if status != "ok":
                 raise _unreadable(control, path, code)

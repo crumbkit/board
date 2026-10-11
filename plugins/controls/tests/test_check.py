@@ -103,6 +103,19 @@ def test_a_pattern_matching_a_degraded_file_fails_the_check_and_one_matching_a_w
     assert board.call("check", {})["output"]["controls"][0]["used"] == 1
 
 
+def test_a_pattern_matching_a_file_with_no_logical_path_fails_naming_its_path_and_one_with_a_logical_path_passes(
+    board: Board,
+) -> None:
+    board.write("docs/\x01.md", "one")
+    board.write("controls/docs.json", control("Small.", paths=["docs/*"], rule={"budget": "words", "max": WORDS}))
+    refused = board.call("check", {})
+    assert refused["code"] == "controls::file::unreadable", refused
+    assert refused["fields"]["file"] == "docs/\x01.md"
+    assert refused["fields"]["code"] == "board::path::malformed"
+    (board.root / "docs/\x01.md").rename(board.root / "docs/a.md")
+    assert board.call("check", {})["output"]["controls"][0]["files"] == ["/docs/a.md"]
+
+
 def test_a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes(board: Board) -> None:
     board.write("docs/a.md", "one")
     board.write("controls/docs.json", control("Small.", applies_to=["/docs"], rule={"budget": "words", "max": WORDS}))
