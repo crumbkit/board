@@ -4,6 +4,7 @@ use std::fs;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, SyncSender};
 use std::thread;
 
 use board_model::{MAX_RECORD_BYTES, ObjectId, Role, Stat};
@@ -11,7 +12,7 @@ use gix::bstr::ByteSlice;
 
 use crate::git::{Contents, model_id};
 use crate::tree::{Kind, Settled, Unhashed};
-use crate::worktree::{Kept, WorkingTree, read_exactly, stat};
+use crate::worktree::{KEPT_AHEAD, Prepare, WorkingTree, read_exactly, stat};
 use crate::write::blob_id;
 
 /// One file to hash: which entry it is, its path relative to the root, its
@@ -25,22 +26,23 @@ struct Job {
 
 /// What hashing a file needs, which every thread can share: the root, the
 /// object hash and the callback, and nothing of the repository's own.
-#[derive(Clone, Copy)]
-pub(super) struct Hasher<'h> {
+pub(super) struct Hasher<'h, T> {
     root: &'h Path,
     kind: gix::hash::Kind,
-    kept: Option<Kept<'h>>,
+    prepare: Option<Prepare<'h, T>>,
 }
 
-impl WorkingTree<'_, '_> {
-    pub(super) fn hasher(&self) -> Hasher<'_> {
+impl<T> WorkingTree<'_, '_, T> {
+    pub(super) fn hasher(&self) -> Hasher<'_, T> {
         Hasher {
             root: self.repository.path(),
             kind: self.repository.git().object_hash(),
-            kept: self.kept,
+            prepare: self.kept.as_ref().map(|kept| kept.prepare),
         }
     }
+}
 
+impl<T: Send> WorkingTree<'_, '_, T> {
     /// Settles each file in `unhashed`. One already settled is answered on
     /// this thread; the rest are opened and hashed on the repository's
     /// threads, no more than there are files, each file on one of them. The
@@ -73,30 +75,71 @@ impl WorkingTree<'_, '_> {
         }
         self.repository.opened_many(jobs.len());
         let threads = self.repository.threads().min(jobs.len());
-        settled.extend(self.hasher().all(&jobs, threads));
+        let hasher = Hasher {
+            root: self.repository.path(),
+            kind: self.repository.git().object_hash(),
+            prepare: self.kept.as_ref().map(|kept| kept.prepare),
+        };
+        match &mut self.kept {
+            None => settled.extend(hasher.all(&jobs, threads, &mut |_| true)),
+            // A walk that `keep` ended is discarded, so it hashes no more.
+            Some(kept) if kept.stopped => {}
+            Some(kept) => settled.extend(hasher.all(&jobs, threads, &mut |prepared| {
+                kept.stopped = !(kept.keep)(prepared);
+                !kept.stopped
+            })),
+        }
         settled
     }
 }
 
-impl Hasher<'_> {
+impl<T: Send> Hasher<'_, T> {
     /// Hashes `jobs` on `threads` threads, each taking the next job as it
-    /// finishes one; no thread is started for no jobs.
+    /// finishes one, and hands what they prepare to `keep` on this thread
+    /// as they prepare it; no thread is started for no jobs. When `keep`
+    /// answers `false`, each thread stops once it next prepares a file.
     ///
     /// # Panics
     ///
     /// When a thread panics, with its payload, as if the panic were here.
-    fn all(self, jobs: &[Job], threads: usize) -> Vec<Settled<PathBuf>> {
+    fn all(
+        &self,
+        jobs: &[Job],
+        threads: usize,
+        keep: &mut dyn FnMut(T) -> bool,
+    ) -> Vec<Settled<PathBuf>> {
         let next = AtomicUsize::new(0);
-        let work = || {
+        let work = |send: SyncSender<T>| {
             let mut mine = Vec::new();
             while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
-                let (kind, stat) = self.hash(&job.relative, &job.path, job.seen);
+                let (kind, stat, prepared) = self.hash(&job.relative, &job.path, job.seen);
                 mine.push((job.at, kind, stat));
+                if let Some(prepared) = prepared
+                    && send.send(prepared).is_err()
+                {
+                    break;
+                }
             }
             mine
         };
+        let (send, prepared) = mpsc::sync_channel(KEPT_AHEAD);
         thread::scope(|scope| {
-            let workers: Vec<_> = (0..threads).map(|_| scope.spawn(work)).collect();
+            let workers: Vec<_> = (0..threads)
+                .map(|_| {
+                    let send = send.clone();
+                    scope.spawn(|| work(send))
+                })
+                .collect();
+            drop(send);
+            // The loop ends once every thread has ended and dropped its
+            // sender, or when `keep` ends the walk. Either way, or when
+            // `keep` panics, the receiver is dropped here, so a thread
+            // waiting to send stops instead of waiting forever.
+            for prepared in prepared {
+                if !keep(prepared) {
+                    break;
+                }
+            }
             workers
                 .into_iter()
                 .flat_map(|worker| {
@@ -110,12 +153,14 @@ impl Hasher<'_> {
 
     /// Opens and hashes the file at `relative`, whose `/`-separated path is
     /// `path`, that was `seen` with its metadata.
+    /// What `prepare` made of the file, if it was read in full, comes back
+    /// with its blob.
     pub(super) fn hash(
-        self,
+        &self,
         relative: &Path,
         path: &str,
         seen: Stat,
-    ) -> (Kind<PathBuf>, Option<Stat>) {
+    ) -> (Kind<PathBuf>, Option<Stat>, Option<T>) {
         // The file hashed is the one opened, so its own metadata is kept. A
         // file it cannot open keeps the stat it was seen with, so a walk that
         // again cannot open it records no change.
@@ -123,33 +168,42 @@ impl Hasher<'_> {
         let Ok((stat, file)) =
             fs::File::open(&absolute).and_then(|file| Ok((stat(&file.metadata()?), file)))
         else {
-            return (Kind::Unreadable, Some(seen));
+            return (Kind::Unreadable, Some(seen), None);
         };
         // Only a walk that keeps bytes reads a file in full.
-        let blob = match self.kept {
-            Some(kept) if Role::of(path).is_some() && stat.size <= MAX_RECORD_BYTES as u64 => {
-                hash_kept(self.kind, kept, path, file, stat.size)
+        let (blob, prepared) = match self.prepare {
+            Some(prepare) if Role::of(path).is_some() && stat.size <= MAX_RECORD_BYTES as u64 => {
+                hash_kept(self.kind, prepare, path, file, stat.size)
+                    .map_or((None, None), |(blob, prepared)| {
+                        (Some(blob), Some(prepared))
+                    })
             }
-            _ => hash_stream(self.kind, &mut BufReader::new(file), stat.size),
+            _ => (
+                hash_stream(self.kind, &mut BufReader::new(file), stat.size),
+                None,
+            ),
         };
-        (blob.map_or(Kind::Unreadable, Kind::File), Some(stat))
+        (
+            blob.map_or(Kind::Unreadable, Kind::File),
+            Some(stat),
+            prepared,
+        )
     }
 }
 
-/// The id of the `length` bytes of `file`, read in full and handed to `kept`,
-/// so the blob is the blob of the bytes kept; `None` if the file cannot be
-/// read or does not hold `length` bytes.
-fn hash_kept(
+/// The id of the `length` bytes of `file`, read in full, and what `prepare`
+/// made of them, so the blob is the blob of the bytes prepared; `None` if
+/// the file cannot be read or does not hold `length` bytes.
+fn hash_kept<T>(
     kind: gix::hash::Kind,
-    kept: Kept<'_>,
+    prepare: Prepare<'_, T>,
     path: &str,
     file: fs::File,
     length: u64,
-) -> Option<ObjectId> {
+) -> Option<(ObjectId, T)> {
     let bytes = read_exactly(file, length)?;
     let blob = blob_id(kind, &bytes);
-    kept(path, Contents { blob, bytes });
-    Some(blob)
+    Some((blob, prepare(path, Contents { blob, bytes })))
 }
 
 /// The id git gives a blob of `length` bytes read from `stream`, in constant

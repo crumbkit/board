@@ -108,7 +108,7 @@ fn list_from<P>(
     }
 }
 
-impl WorkingTree<'_, '_> {
+impl<T: Send> WorkingTree<'_, '_, T> {
     /// Visits as [`crate::tree::Tree::visit_all`] does, listing directories
     /// on the repository's threads ahead of `visit`, which runs on this
     /// thread: a directory is listed as soon as `visit` returns it.

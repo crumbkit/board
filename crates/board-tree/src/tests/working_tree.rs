@@ -269,7 +269,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         .write("notes.md", Item::File("[]"));
     let stand_in = scenario.blob("not what the file holds");
     let mut asked = Vec::new();
-    let kept = std::sync::Mutex::new(Vec::new());
+    let mut kept = Vec::new();
     let entries = scenario
         .open()
         .walk_working_tree(
@@ -277,10 +277,13 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
                 asked.push((path.to_owned(), stat.size));
                 (path == "known.json").then_some(stand_in)
             },
-            &|path, contents| kept.lock().unwrap().push((path.to_owned(), contents)),
+            &|path, contents| (path.to_owned(), contents),
+            &mut |kept_one| {
+                kept.push(kept_one);
+                Ok::<(), GitError>(())
+            },
         )
         .unwrap();
-    let kept = kept.into_inner().unwrap();
     asked.sort();
     assert_eq!(
         asked,
@@ -320,13 +323,17 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
 fn walked_on(scenario: &Scenario, threads: usize) -> (Vec<Entry>, Vec<(String, Contents)>, usize) {
     let repository = scenario.open();
     repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
-    let kept = std::sync::Mutex::new(Vec::new());
+    let mut kept = Vec::new();
     let entries = repository
-        .walk_working_tree(&mut |_, _| None, &|path, contents| {
-            kept.lock().unwrap().push((path.to_owned(), contents));
-        })
+        .walk_working_tree(
+            &mut |_, _| None,
+            &|path, contents| (path.to_owned(), contents),
+            &mut |kept_one| {
+                kept.push(kept_one);
+                Ok::<(), GitError>(())
+            },
+        )
         .unwrap();
-    let mut kept = kept.into_inner().unwrap();
     kept.sort_by(|a, b| a.0.cmp(&b.0));
     (entries, kept, repository.files_opened())
 }
@@ -389,7 +396,9 @@ fn an_ignored_directory_is_never_listed_however_many_threads_list() {
         let repository = scenario.open();
         repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
         let entries = repository
-            .walk_working_tree(&mut |_, _| None, &|_, _| {})
+            .walk_working_tree(&mut |_, _| None, &|_, _| {}, &mut |()| {
+                Ok::<(), GitError>(())
+            })
             .unwrap();
         let paths: Vec<&str> = entries.iter().map(|entry| entry.path.as_str()).collect();
         assert_eq!(paths, [".gitignore", "src/a.json"], "{threads} threads");

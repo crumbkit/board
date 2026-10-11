@@ -27,24 +27,44 @@ use crate::worktree::settle::hash_stream;
 /// Given a file's `/`-separated path and metadata, its blob if already known.
 pub type Known<'k> = &'k mut dyn FnMut(&str, &Stat) -> Option<ObjectId>;
 
-/// Takes the contents of a file the walk read in full to hash it, given its
-/// `/`-separated path. A walk hashes on several threads, so it is called
-/// from any of them, and from more than one at once.
-pub type Kept<'k> = &'k (dyn Fn(&str, Contents) + Sync);
+/// Makes what a walk hands to its `keep` from the contents of a file it
+/// read in full to hash it, given its `/`-separated path. A walk hashes on
+/// several threads, so it is called from any of them, and from more than
+/// one at once.
+pub type Prepare<'k, T> = &'k (dyn Fn(&str, Contents) -> T + Sync);
+
+/// How many prepared files a walk holds for `keep` beyond one per hashing
+/// thread, so the threads read ahead of a slow `keep` without holding the
+/// whole tree. On synthetic-10k every bound from 4 to 1024 gave the same peak
+/// memory (200 to 206 MB, against 279 to 283 MB unbounded) and the same time. 64 is
+/// a middle value: it leaves room for a burst of small files, and it caps
+/// what waits at 64 records even when each is near `MAX_RECORD_BYTES`.
+pub(crate) const KEPT_AHEAD: usize = 64;
+
+/// What a walk does with each file it reads in full.
+struct Keeping<'k, T> {
+    prepare: Prepare<'k, T>,
+    /// Takes what `prepare` made, on the walking thread; `false` ends the
+    /// walk.
+    keep: &'k mut dyn FnMut(T) -> bool,
+    /// Whether `keep` ended the walk, so its entries are incomplete.
+    stopped: bool,
+}
 
 /// The working tree of a repository, with its index and ignore rules. Each
 /// directory is listed once, so the tree is one snapshot however often it is
 /// read.
-pub(crate) struct WorkingTree<'r, 'k> {
+pub(crate) struct WorkingTree<'r, 'k, T = ()> {
     repository: &'r Repository,
     index: gix::worktree::Index,
     excludes: gix::AttributeStack<'r>,
     /// Gives the blobs of files already known; without it, every file
     /// listed is hashed.
     known: Option<Known<'k>>,
-    /// Takes the contents of each JSON file hashed, so the caller need not
-    /// open it again; without it, they are dropped.
-    kept: Option<Kept<'k>>,
+    /// Prepares each JSON file hashed on the hashing threads and keeps it on
+    /// the walking thread, so the caller need not open it again, and records
+    /// whether `keep` ended the walk; without it, the contents are dropped.
+    kept: Option<Keeping<'k, T>>,
     /// Whether a file is listed [`Kind::Unhashed`] and hashed only when
     /// [`Tree::settle`] is given it.
     on_demand: bool,
@@ -155,17 +175,55 @@ impl Repository {
     }
 }
 
-impl<'k> WorkingTree<'_, 'k> {
-    /// This tree, handing the contents of each JSON file it hashes to `kept`.
-    pub(crate) fn keeping(mut self, kept: Kept<'k>) -> Self {
-        self.kept = Some(kept);
-        self
+impl<'r, 'k> WorkingTree<'r, 'k> {
+    /// This tree, handing what `prepare` makes of each JSON file it hashes
+    /// to `keep`, until `keep` answers `false`.
+    pub(crate) fn keeping<T>(
+        self,
+        prepare: Prepare<'k, T>,
+        keep: &'k mut dyn FnMut(T) -> bool,
+    ) -> WorkingTree<'r, 'k, T> {
+        WorkingTree {
+            repository: self.repository,
+            index: self.index,
+            excludes: self.excludes,
+            known: self.known,
+            kept: Some(Keeping {
+                prepare,
+                keep,
+                stopped: false,
+            }),
+            on_demand: self.on_demand,
+            listed: self.listed,
+            settled: self.settled,
+        }
     }
+}
 
+impl<T: Send> WorkingTree<'_, '_, T> {
     /// This tree, hashing a file only when resolution picks or reads it.
     pub(crate) fn on_demand(mut self) -> Self {
         self.on_demand = true;
         self
+    }
+
+    /// Hashes the file at `relative` on this thread, handing what is
+    /// prepared of it to `keep` unless `keep` has ended the walk.
+    fn hash_one(
+        &mut self,
+        relative: &Path,
+        path: &str,
+        seen: Stat,
+    ) -> (Kind<PathBuf>, Option<Stat>) {
+        self.repository.opened_one();
+        let (kind, stat, prepared) = self.hasher().hash(relative, path, seen);
+        if let Some(keeping) = &mut self.kept
+            && let Some(prepared) = prepared
+            && !keeping.stopped
+        {
+            keeping.stopped = !(keeping.keep)(prepared);
+        }
+        (kind, stat)
     }
 
     /// What git sees at `relative`, listed as `raw`, with a file's or
@@ -199,10 +257,7 @@ impl<'k> WorkingTree<'_, 'k> {
             RawKind::File(seen) => match self.known(&path, seen) {
                 Some(blob) => (Kind::File(blob), Some(*seen)),
                 None if self.on_demand => (Kind::Unhashed(*seen), Some(*seen)),
-                None => {
-                    self.repository.opened_one();
-                    self.hasher().hash(relative, &path, *seen)
-                }
+                None => self.hash_one(relative, &path, *seen),
             },
             RawKind::Unreadable => (Kind::Unreadable, None),
         })
@@ -262,7 +317,7 @@ fn read_exactly(stream: impl Read, length: u64) -> Option<Vec<u8>> {
     (bytes.len() as u64 == length).then_some(bytes)
 }
 
-impl Tree for WorkingTree<'_, '_> {
+impl<T: Send> Tree for WorkingTree<'_, '_, T> {
     /// A directory's path relative to the working directory.
     type Directory = PathBuf;
 
@@ -336,8 +391,7 @@ impl Tree for WorkingTree<'_, '_> {
             settled.clone()
         } else {
             let path = gix::path::into_bstr(&relative).to_str_lossy().into_owned();
-            self.repository.opened_one();
-            let settled = self.hasher().hash(&relative, &path, *seen);
+            let settled = self.hash_one(&relative, &path, *seen);
             self.settled.insert(relative, settled.clone());
             settled
         };

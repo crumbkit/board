@@ -124,10 +124,10 @@ impl Board {
 
     /// Walks the working tree, hashing only files whose metadata the index
     /// does not hold, and records what it saw. Each JSON file the walk reads
-    /// in full is parsed on the thread that read it, and what the index
-    /// does not hold yet is judged and stored into `kept` once the walk is
-    /// done, in the order the threads finished reading them; the index keys
-    /// each fact by blob, so that order does not show.
+    /// in full is parsed on the thread that read it, and what the index does
+    /// not hold yet is judged and stored into `kept` on this thread while
+    /// the walk goes on, in the order the threads finish reading them; the
+    /// index keys each fact by blob, so that order does not show.
     fn walk(
         &self,
         writer: &Writer,
@@ -135,22 +135,19 @@ impl Board {
         kept: &mut Kept,
     ) -> Result<Vec<Entry>, RefreshError> {
         let mut worktree = writer.worktree()?;
-        let (send, parsed) = std::sync::mpsc::channel::<(String, Parsed)>();
         let entries = self.repository().walk_working_tree(
             &mut |path, stat| worktree.known(path, stat),
             &|path, contents| {
-                if let Some(role) = Role::of(path) {
-                    let parsed = parse(contents.blob, role, Some(&contents.bytes));
-                    // The receiver outlives the walk, so a send cannot fail.
-                    let _ = send.send((path.to_owned(), parsed));
+                Role::of(path).map(|role| parse(contents.blob, role, Some(&contents.bytes)))
+            },
+            &mut |parsed| {
+                if let Some(parsed) = parsed {
+                    work.parsed += 1;
+                    kept.keep(writer, parsed)?;
                 }
+                Ok::<(), RefreshError>(())
             },
         )?;
-        drop(send);
-        for (_, parsed) in parsed {
-            work.parsed += 1;
-            kept.keep(writer, parsed)?;
-        }
         work.hashed += writer.sync_worktree(worktree, &entries)?;
         Ok(entries)
     }

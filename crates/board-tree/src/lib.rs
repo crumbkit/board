@@ -23,6 +23,6 @@ pub use crate::resolve::{Ancestor, MAX_HOPS, ResolveError, Resolver};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Beneath, Entry, Name, Status};
 pub use crate::worktree::{
-    Directory, Kept, Known, Working, discover, is_repository_root, repository_root,
+    Directory, Known, Prepare, Working, discover, is_repository_root, repository_root,
 };
 pub use crate::write::{LOCK_WAIT, Lock, Staged, Target, WriteError};

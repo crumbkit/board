@@ -8,7 +8,7 @@ use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
 use crate::tree::{Kind, RawEntry, Tree, Unhashed};
-use crate::worktree::{Kept, Known};
+use crate::worktree::{Known, Prepare};
 
 /// One file in a tree. Directories are not entries.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,17 +94,35 @@ impl Repository {
     /// repository's threads ([`Repository::set_threads`]), and the files
     /// are hashed on as many once every directory is listed. Each
     /// JSON file hashed within
-    /// [`MAX_RECORD_BYTES`](board_model::MAX_RECORD_BYTES) is read in full,
-    /// and `kept` takes its path and contents as soon as it is read, on the
-    /// thread that read it, so that the caller holds no more of the tree
-    /// than it chooses to. The entries are the same however many threads
-    /// hash; only the order `kept` sees differs.
-    pub fn walk_working_tree(
+    /// [`MAX_RECORD_BYTES`](board_model::MAX_RECORD_BYTES) is read in full;
+    /// `prepare` takes its path and contents on the thread that read it, and
+    /// `keep` takes what `prepare` made on this thread while the other
+    /// threads go on hashing. No more than 64 files plus one per hashing
+    /// thread are prepared and not yet kept, so a slow `keep` holds the
+    /// threads back instead of the walk holding the whole tree. The entries
+    /// are the same however many threads hash; only the order `keep` sees
+    /// differs. The first error `keep` returns ends the walk, as its answer;
+    /// each thread stops at the next file it prepares. If a hashing thread
+    /// panics after `keep` has failed, the walk ends with that panic instead.
+    pub fn walk_working_tree<T: Send, E: From<GitError>>(
         &self,
         known: Known<'_>,
-        kept: Kept<'_>,
-    ) -> Result<Vec<Entry>, GitError> {
-        walk_in(&mut self.working_tree(Some(known))?.keeping(kept).on_demand())
+        prepare: Prepare<'_, T>,
+        keep: &mut dyn FnMut(T) -> Result<(), E>,
+    ) -> Result<Vec<Entry>, E> {
+        let mut failed = None;
+        let mut keep = |prepared| keep(prepared).map_err(|error| failed = Some(error)).is_ok();
+        let walked = walk_in(
+            &mut self
+                .working_tree(Some(known))?
+                .keeping(prepare, &mut keep)
+                .on_demand(),
+        );
+        // A walk that `keep` ended has incomplete entries.
+        match failed {
+            Some(error) => Err(error),
+            None => Ok(walked?),
+        }
     }
 }
 
