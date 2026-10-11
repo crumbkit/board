@@ -87,6 +87,7 @@ impl Board {
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
         let entries = self.walk(writer, &mut work, &mut kept)?;
+        let timed = self.timed("index.refresh.facts");
         let facts = facts(
             writer,
             self.repository(),
@@ -95,7 +96,10 @@ impl Board {
             &mut work,
             kept,
         )?;
+        drop(timed);
+        let timed = self.timed("index.refresh.head");
         let head = self.head(writer, &mut work.trees)?;
+        drop(timed);
         Ok(Refresh {
             entries,
             facts,
@@ -134,7 +138,10 @@ impl Board {
         work: &mut Refreshed,
         kept: &mut Kept,
     ) -> Result<Vec<Entry>, RefreshError> {
+        let timed = self.timed("index.refresh.load");
         let mut worktree = writer.worktree()?;
+        drop(timed);
+        let timed = self.timed("index.refresh.walk");
         let entries = self.repository().walk_working_tree(
             &mut |path, stat| worktree.known(path, stat),
             &|path, contents| {
@@ -148,6 +155,8 @@ impl Board {
                 Ok::<(), RefreshError>(())
             },
         )?;
+        drop(timed);
+        let _timed = self.timed("index.refresh.sync");
         work.hashed += writer.sync_worktree(worktree, &entries)?;
         Ok(entries)
     }

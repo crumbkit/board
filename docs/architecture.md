@@ -364,6 +364,11 @@ its run entered:
 | `index.open` | opening the index |
 | `snapshot` | refreshing the index and deciding every entry, for `check`, `ls`, `query` and `refs` |
 | `index.refresh` | the refresh, within `snapshot` |
+| `index.refresh.load` | loading the working-tree rows the last refresh stored |
+| `index.refresh.walk` | walking the working tree |
+| `index.refresh.sync` | storing what the walk found that differs from those rows |
+| `index.refresh.facts` | loading or adding each entry's facts |
+| `index.refresh.head` | listing `HEAD`'s trees |
 | `view` | filling the views with what the snapshot decided, for `query` |
 | `query.sql` | running the SQL statement |
 | `plugin.extract` | extracting records for one plugin, in `query` |

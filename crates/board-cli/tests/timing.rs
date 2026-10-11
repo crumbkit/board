@@ -118,6 +118,21 @@ fn a_check_records_the_work_it_did_and_the_entries_it_decided() {
     assert_eq!(warm["parsed"], 0, "a warm check parses nothing again");
 }
 
+#[test]
+fn a_check_records_each_step_of_its_refresh() {
+    let scenario = board();
+    let home = tempfile::tempdir().unwrap();
+    run(&scenario, home.path(), None, &["check"]);
+    let records = records(home.path());
+    let named: Vec<&str> = (records[0]["phases"].as_array().unwrap().iter())
+        .map(|phase| phase["name"].as_str().unwrap())
+        .collect();
+    for step in ["load", "walk", "sync", "facts", "head"] {
+        let name = format!("index.refresh.{step}");
+        assert!(named.contains(&name.as_str()), "{name} in {named:?}");
+    }
+}
+
 /// When the phase `name` of `record` started and ended, in microseconds
 /// after the run started.
 fn span(record: &Value, name: &str) -> (u64, u64) {

@@ -132,7 +132,19 @@ mod tests {
         let trace = board.take_trace();
         let mut names: Vec<&str> = trace.phases.iter().map(|phase| phase.name).collect();
         names.sort_unstable();
-        assert_eq!(names, ["index.open", "index.refresh", "snapshot"]);
+        assert_eq!(
+            names,
+            [
+                "index.open",
+                "index.refresh",
+                "index.refresh.facts",
+                "index.refresh.head",
+                "index.refresh.load",
+                "index.refresh.sync",
+                "index.refresh.walk",
+                "snapshot",
+            ]
+        );
         let work = report.work;
         assert_eq!(
             trace.work,
