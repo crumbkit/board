@@ -876,6 +876,7 @@ fn lazily_listed() -> Scenario {
         .write("d/ignored.json", Item::File("{}"))
         .write("d/link", Item::Symlink("x.json"))
         .write("d/s.json", Item::Symlink("x.json"))
+        .write("d/sub.json", Item::File(r#"{"sub": 1}"#))
         .write("d/sub/z.json", Item::File("{}"));
     scenario
 }
@@ -943,6 +944,14 @@ fn a_resolver_answers_the_same_through_a_lazy_listing_as_through_a_full_one() {
         ("/d/link", Ok(("d/link".to_owned(), symlink))),
         ("/d/s.json", Ok(("d/s.json".to_owned(), symlink))),
         ("/d/s", Err(Code::PathNotFound)),
+        // A record beside its directory: the segment names both.
+        (
+            "/d/sub",
+            Ok((
+                "d/sub.json".to_owned(),
+                Object::Blob(scenario.blob(r#"{"sub": 1}"#)),
+            )),
+        ),
         (
             "/d/sub/z",
             Ok(("d/sub/z.json".to_owned(), Object::Blob(scenario.blob("{}")))),
@@ -952,12 +961,21 @@ fn a_resolver_answers_the_same_through_a_lazy_listing_as_through_a_full_one() {
         assert_eq!(resolve(false, text), answer, "{text}, lazily");
         assert_eq!(resolve(true, text), answer, "{text}, fully listed");
     }
-    let planned = |full: bool, file: &str| planned_code(&mut tree(full), file, false).unwrap();
-    for (file, code) in [
-        ("d/X.json", Some(Planned::File(Code::PathCaseCollision))),
-        ("d/new.json", None),
+    let planned = |full: bool, file: &str, pointer: bool| {
+        planned_code(&mut tree(full), file, pointer).unwrap()
+    };
+    for (file, pointer, code) in [
+        (
+            "d/X.json",
+            false,
+            Some(Planned::File(Code::PathCaseCollision)),
+        ),
+        ("d/new.json", false, None),
+        // Beside a directory, a pointer is shadowed and a record is not.
+        ("d/sub.json", true, Some(Planned::File(Code::PathShadowed))),
+        ("d/sub.json", false, None),
     ] {
-        assert_eq!(planned(false, file), code, "{file}, lazily");
-        assert_eq!(planned(true, file), code, "{file}, fully listed");
+        assert_eq!(planned(false, file, pointer), code, "{file}, lazily");
+        assert_eq!(planned(true, file, pointer), code, "{file}, fully listed");
     }
 }
