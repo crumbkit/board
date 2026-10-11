@@ -139,11 +139,33 @@ def test_a_call_whose_own_extraction_fails_is_refused_with_its_code_and_one_whos
     assert (error["code"], error["fields"]["code"]) == ("tasks::board::refused", "board::plugin::failed"), error
 
 
+def logged(board: Board) -> list[dict[str, Any]]:
+    """The records of the timing log, nested runs included."""
+    log = board.cache / "board" / "timings.jsonl"
+    return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
 def refs_runs(board: Board) -> int:
     """How many `board refs` runs the timing log holds, nested ones included."""
-    log = board.cache / "board" / "timings.jsonl"
-    records = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
-    return sum(1 for record in records if record["command"] == "refs")
+    return sum(1 for record in logged(board) if record["command"] == "refs")
+
+
+def nested_runs(board: Board) -> list[str]:
+    """The commands of the `board` runs that one `tasks.next` call starts, in order."""
+    before = len(logged(board))
+    call_next(board)
+    return [record["command"] for record in logged(board)[before:] if record["depth"] > 0]
+
+
+def test_next_runs_one_query_and_one_refs_when_a_shown_task_waits_and_only_the_query_when_none_does(
+    board: Board,
+) -> None:
+    board.write("tasks/first.json", task("First"))
+    board.write("tasks/finished.json", task("Finished", status="done"))
+    assert nested_runs(board) == ["query"]
+    board.write("tasks/after.json", task("After", after=["/tasks/first", "/tasks/finished", "/tasks/missing"]))
+    assert nested_runs(board) == ["query", "refs"]
+    assert blocking(board)["/tasks/after"] == (True, ["/tasks/first", "/tasks/missing"])
 
 
 def test_next_runs_one_board_refs_however_many_shown_tasks_wait_and_none_when_none_wait(board: Board) -> None:

@@ -1,5 +1,6 @@
 """The `next` capability: unfinished tasks in the order to do them, and what blocks each."""
 
+import json
 from typing import Any
 
 from board_plugin.board import Board, literal
@@ -24,17 +25,25 @@ def listed(values: tuple[str, ...]) -> str:
 def next_tasks(request: CallRequest) -> NextOutput:
     """Ask Board for the unfinished tasks and what blocks them.
 
-    It runs at most two `board query` runs and one `board refs`.
+    It runs one `board query`, and one `board refs` when a shown task waits.
     """
     limit = NextInput.model_validate(request.input).limit
     board = Board(request.board.root, "tasks")
-    rows = board.rows(
-        "SELECT logical, body FROM records"  # noqa: S608 - every value is quoted by literal()
-        f" WHERE type = {literal(TASK_TYPE)} AND logical IS NOT NULL"
-        f" AND (code IS NULL OR code IN {listed(TREE_CODES)})"
-        f" AND json_extract(body, '$.status') IN {listed(UNFINISHED)}"
-        " ORDER BY json_extract(body, '$.due') IS NULL, json_extract(body, '$.due'), logical",
+    readable = f"type = {literal(TASK_TYPE)} AND (code IS NULL OR code IN {listed(TREE_CODES)})"
+    status = "json_extract(body, '$.status')"
+    # The first row holds the source and physical path of every `done` task, as one JSON array, so done
+    # tasks do not count against the query's row limit. `records` gives a commit mounted at two paths only
+    # one display path, so a task is matched by its source and physical path, which every route shares.
+    # Every other row is an unfinished task.
+    first, *rows = board.rows(
+        "SELECT logical, body FROM ("  # noqa: S608 - every value is quoted by literal()
+        "SELECT 0 AS kind, NULL AS logical, json_group_array(json_array(source, path)) AS body"
+        f" FROM records WHERE {readable} AND {status} = 'done'"
+        " UNION ALL SELECT 1, logical, body FROM records"
+        f" WHERE {readable} AND logical IS NOT NULL AND {status} IN {listed(UNFINISHED)}"
+        ") ORDER BY kind, json_extract(body, '$.due') IS NULL, json_extract(body, '$.due'), logical",
     )
+    done: set[Place] = {(source, path) for source, path in json.loads(first[1])}
     tasks: list[tuple[str, TaskRecord]] = []
     for path, body in rows:
         try:
@@ -45,7 +54,6 @@ def next_tasks(request: CallRequest) -> NextOutput:
     shown = tasks[:limit]
     waiting = [path for path, task in shown if task.after]
     waits = {path: waiting_on(report) for path, report in zip(waiting, board.refs(waiting), strict=True)}
-    done = finished(board, {place for targets in waits.values() for place in targets.values() if place is not None})
     blocking = {
         path: [display for display, place in targets.items() if place is None or place not in done]
         for path, targets in waits.items()
@@ -85,20 +93,3 @@ def waiting_on(report: dict[str, Any] | None) -> dict[str, Place | None]:
             place = (location["source"], location["path"])
             targets.setdefault(location["display"], place)
     return targets
-
-
-def finished(board: Board, places: set[Place]) -> set[Place]:
-    """Which of `places` hold `done` tasks.
-
-    `records` gives a commit mounted at two paths only one display path, so a
-    task is matched by its source and physical path, which every route shares.
-    """
-    if not places:
-        return set()
-    pairs = ", ".join(f"({literal(source)}, {literal(path)})" for source, path in sorted(places))
-    rows = board.rows(
-        "SELECT source, path FROM records"  # noqa: S608 - every value is quoted by literal()
-        f" WHERE type = {literal(TASK_TYPE)} AND (source, path) IN (VALUES {pairs})"
-        f" AND (code IS NULL OR code IN {listed(TREE_CODES)}) AND json_extract(body, '$.status') = 'done'",
-    )
-    return {(source, path) for source, path in rows}
