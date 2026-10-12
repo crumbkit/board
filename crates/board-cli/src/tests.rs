@@ -357,8 +357,12 @@ fn init_makes_a_repository_a_board_and_says_what_to_run_next() {
     let created = board_in(scenario.workdir(), &["init"]);
     assert_eq!(created.code, 0);
     assert!(text(&created.stdout).starts_with("created .board/board.json in "));
-    assert!(text(&created.stdout).contains("next: run `board check`"));
+    assert!(!text(&created.stdout).contains("next:"));
+    assert!(text(&created.stderr).starts_with("next: run `board check`"));
     assert_eq!(board_in(scenario.workdir(), &["check"]).code, 0);
+    let again = board_in(scenario.workdir(), &["init"]);
+    assert!(text(&again.stdout).ends_with(" is already a board\n"));
+    assert_eq!(text(&again.stderr), "");
     let again = json(&board_in(scenario.workdir(), &["init", "--json"]));
     assert_eq!(again["$type"], "board/init-report/v1");
     assert_eq!(again["created"], false);

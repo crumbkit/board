@@ -423,23 +423,19 @@ fn noted(output: Output, memory: Option<Fallback>, rows: Option<usize>) -> Outpu
     Output { stderr, ..output }
 }
 
-/// `init`: as text, what was written and what to run next.
+/// `init`: as text, what was written, and on stderr what to run next.
 pub(crate) fn init(format: Format, report: &InitReport) -> Output {
     let root = report.root.display();
     match format {
-        Format::Text => {
-            let text = if report.created {
-                format!(
-                    "created .board/board.json in {root}\nnext: run `board check`; it lists every file and says how to fix any it cannot read. Then commit .board/board.json\n"
-                )
-            } else {
-                format!("{root} is already a board\n")
-            };
-            Output {
-                stdout: text.into_bytes(),
-                ..Output::default()
-            }
-        }
+        Format::Text if report.created => Output {
+            stdout: format!("created .board/board.json in {root}\n").into_bytes(),
+            stderr: b"next: run `board check`; it lists every file and says how to fix any it cannot read. Then commit .board/board.json\n".to_vec(),
+            ..Output::default()
+        },
+        Format::Text => Output {
+            stdout: format!("{root} is already a board\n").into_bytes(),
+            ..Output::default()
+        },
         Format::Json => document(
             &json!({
                 "$type": "board/init-report/v1",
