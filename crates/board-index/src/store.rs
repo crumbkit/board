@@ -303,51 +303,50 @@ impl Writer {
         record: ObjectId,
         schema: ObjectId,
     ) -> Result<Option<ValidationFact>, IndexError> {
-        type Row = (Option<String>, Option<String>, Option<String>, Option<i64>);
+        type Outcome = (Option<String>, Option<String>, Option<String>, Option<i64>);
+        type Row = (Outcome, Option<(String, String, Option<String>)>);
         self.validations_read.set(self.validations_read.get() + 1);
-        let keys = params![record.to_string(), schema.to_string()];
-        let row: Option<Row> = self
+        let rows = self
             .connection()
             .prepare_cached(
-                "SELECT code, pointer, reason, failures FROM main.validations
-                 WHERE record = ?1 AND schema = ?2",
+                "SELECT v.code, v.pointer, v.reason, v.failures, r.pointer, r.target, r.accepts
+                 FROM main.validations AS v LEFT JOIN main.refs AS r
+                 ON r.record = v.record AND r.schema = v.schema
+                 WHERE v.record = ?1 AND v.schema = ?2 ORDER BY r.ordinal",
             )?
-            .query_row(keys, |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-            })
-            .optional()?;
-        let Some((code, pointer, reason, failures)) = row else {
+            .query_map(params![record.to_string(), schema.to_string()], |row| {
+                let reference = match row.get::<_, Option<String>>(4)? {
+                    Some(pointer) => Some((pointer, row.get(5)?, row.get(6)?)),
+                    None => None,
+                };
+                Ok((
+                    (row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?),
+                    reference,
+                ))
+            })?
+            .collect::<Result<Vec<Row>, _>>()?;
+        let Some(((code, pointer, reason, failures), _)) = rows.first() else {
             return Ok(None);
         };
         if let Some(code) = code {
-            return Ok(Code::parse(&code).map(|code| ValidationFact::Invalid {
+            return Ok(Code::parse(code).map(|code| ValidationFact::Invalid {
                 code,
-                pointer: pointer.unwrap_or_default(),
-                reason: reason.unwrap_or_default(),
+                pointer: pointer.clone().unwrap_or_default(),
+                reason: reason.clone().unwrap_or_default(),
                 failures: failures.unwrap_or_default().cast_unsigned(),
             }));
         }
-        let mut statement = self.connection().prepare_cached(
-            "SELECT pointer, target, accepts FROM main.refs
-             WHERE record = ?1 AND schema = ?2 ORDER BY ordinal",
-        )?;
-        let references = statement
-            .query_map(keys, |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                ))
-            })?
-            .map(|row| {
-                let (pointer, target, accepts) = row?;
-                Ok(target.parse().ok().map(|target| RefFact {
+        let references = rows
+            .into_iter()
+            .filter_map(|(_, reference)| reference)
+            .map(|(pointer, target, accepts)| {
+                target.parse().ok().map(|target| RefFact {
                     pointer,
                     target,
                     accepts: accepts.and_then(|text| serde_json::from_str(&text).ok()),
-                }))
+                })
             })
-            .collect::<Result<Option<Vec<RefFact>>, IndexError>>()?;
+            .collect::<Option<Vec<RefFact>>>();
         Ok(references.map(ValidationFact::Valid))
     }
 

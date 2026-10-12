@@ -642,3 +642,30 @@ fn a_query_cannot_vacuum_into_a_file() {
         .unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(1)]]);
 }
+
+#[test]
+fn a_validation_reads_back_with_none_one_or_many_references_in_order_and_only_its_own() {
+    let reference = |n: usize| RefFact {
+        pointer: format!("/blocks/{n}"),
+        target: format!("/tasks/{n}").parse().unwrap(),
+        accepts: None,
+    };
+    let none = ValidationFact::Valid(Vec::new());
+    let one = ValidationFact::Valid(vec![reference(0)]);
+    let many = ValidationFact::Valid((0..3).map(reference).collect());
+    let cache = tempfile::tempdir().unwrap();
+    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    let writer = index.write().unwrap();
+    writer.put_validation(blob(1), blob(9), &none).unwrap();
+    writer.put_validation(blob(1), blob(8), &many).unwrap();
+    writer.put_validation(blob(2), blob(9), &one).unwrap();
+    writer.put_validation(blob(3), blob(9), &many).unwrap();
+    assert_eq!(writer.validation(blob(1), blob(9)).unwrap(), Some(none));
+    assert_eq!(writer.validation(blob(2), blob(9)).unwrap(), Some(one));
+    assert_eq!(
+        writer.validation(blob(3), blob(9)).unwrap(),
+        Some(many.clone())
+    );
+    assert_eq!(writer.validation(blob(1), blob(8)).unwrap(), Some(many));
+    assert_eq!(writer.validation(blob(2), blob(8)).unwrap(), None);
+}
