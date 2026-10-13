@@ -11,24 +11,20 @@ use crate::report::Output;
 
 /// `board get --help` after its options.
 pub(crate) const GET_HELP: &str = "\
-One path prints the file's stored bytes and nothing else. Several print each
-file after a `==> <path> <==` line, as `head` does, in the order given, so
-the bytes of a file that ends without a newline, or holds such a line, cannot
-always be split back out; --json is the exact form. A path that is refused
-does not stop the others; its error lines name it, and the exit code is 1.
+One path prints the file's stored bytes alone. Several print each file after
+a `==> <path> <==` line, as `head` does, in the order given; --json is the
+exact form. A refused path does not stop the others; its error lines name
+it, and the exit code is 1.
 
---json prints one board/get-report/v1, for one path too, whose `answers`
-hold, in order, each file or its board/error/v1, told apart by `$type`. A
-file has its location, its blob, its bytes as `text`, or as `base64` when
-they are not UTF-8, and its `record`, or the `code` that says why it is not
-a record. There, board::record::not_a_record means a readable file that
-holds no record, such as a markdown file.
+--json always prints one board/get-report/v1, whose `answers` hold, in
+order, each file or its board/error/v1, told apart by `$type`. A file has
+its location, its blob, its bytes as `text` (`base64` if not UTF-8), and
+its `record` or a `code` saying why not, such as board::record::not_a_record
+for a markdown file.
 
-To read many records, name them all in one run. One run takes at most 10000
-paths. It stops reading once its output, as text or JSON, reaches 64 MiB, and
-refuses each path after that as board::get::over_budget, to ask for in
-another run. A path that is not a logical path, such as tasks/a, refuses the
-whole run as board::usage::invalid with exit code 2.
+One run takes at most 10000 paths; more is board::usage::invalid. It stops
+reading at 64 MiB of output and refuses each later path as
+board::get::over_budget; ask for those in another run.
 
 Examples:
   board get /projects/p

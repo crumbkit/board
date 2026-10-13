@@ -35,7 +35,6 @@ Start here:
   board get /projects/p             print the record in projects/p.json
   board put /tasks/a < task.json    write the record and commit it
   board query 'SELECT logical, status FROM entries LIMIT 5'
-  board -C ~/notes check            check the board at ~/notes from anywhere
 
 A path is logical: it starts with / and leaves out .json.
 A record is a JSON object whose `$type`, such as tasks/task/v1, names its
@@ -72,8 +71,7 @@ Examples:
     after_help = ROOT_EXAMPLES,
 )]
 pub(crate) struct Cli {
-    /// Run as if Board were started in this directory, as `git -C` does; a
-    /// relative one is taken from the one before it.
+    /// Run as if Board were started in this directory, as `git -C` does.
     #[arg(short = 'C', value_name = "DIR", value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
     directories: Vec<OsString>,
     /// Print one JSON document instead of text.
@@ -118,9 +116,10 @@ struct Refs {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Make the git repository here a board by writing a minimal .board/board.json.
+    /// Make this git repository a board.
     #[command(after_help = "\
-An existing .board/board.json is left as it is. Nothing is committed.
+It writes a minimal .board/board.json, or leaves an existing one as it is.
+Nothing is committed.
 
 Examples:
   board init
@@ -140,7 +139,7 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
-    /// Print the file at each path, following pointers; several are read in one run.
+    /// Print the file at each path, following pointers.
     #[command(after_help = render::GET_HELP)]
     Get {
         /// Each file's logical path: it starts with /, and a JSON file's leaves out .json, such as /projects/p.

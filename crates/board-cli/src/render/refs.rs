@@ -16,31 +16,23 @@ use crate::report::Output;
 /// `board refs --help` after its options.
 pub(crate) const REFS_HELP: &str = "\
 Lines are `from <pointer> <target> <status>` for each reference the record
-makes, then `to <path> <pointer>` for each record that reaches it.
+makes, then `to <path> <pointer>` for each record that reaches it. With
+several paths, every line names its path and --limit applies to each path.
+A refused path does not stop the others; the exit code is 1.
 
-With --field, each `from` line whose reference resolves adds
-` target=<code>`, or ` target=-` for a healthy record, then
-` <pointer>=<value>` for each field: the pointer as a JSON string, and the
-target's value there as compact JSON, or `absent`. A target that is not a
-record has no values, and neither has a target whose file changed after
-the check: its code is board::refs::target_changed, and running refs again
-reads it. A reference that resolves to nothing adds nothing.
-A pointer is empty or starts with /, with ~0 for ~ and ~1 for / in a token.
+--field adds ` target=<code>`, or ` target=-` when healthy, then
+` <pointer>=<value>` to each `from` line that resolves: the pointer as a
+JSON string, the value as compact JSON or `absent`. A target that is not a
+readable record has its code and no values; for board::refs::target_changed,
+run refs again.
 
-With several paths, each is answered as it would be alone, in the order
-given. The limit applies to each path, so a run prints at most the number of
-paths times the limit reference lines, plus a note or error for each path.
-Every line about a path names it, notes and errors included. A path that is
-refused does not stop the others; the exit code is 1.
---json prints one board/refs-report/v1, for one path too, whose `answers`
-hold each path's references or its board/error/v1, in order; with --field,
-each `from` whose reference resolves has `values`, each a `pointer` with
-its `value` or `absent`, and `target_code` when the target has a code.
-One run takes at most 10000 paths. It stops answering once its output, as
-text or JSON, reaches 64 MiB, and refuses each path after that as
-board::refs::over_budget, to ask for in another run. A path that is not a
-logical path, such as tasks/a, refuses the whole run as
-board::usage::invalid with exit code 2.
+--json always prints one board/refs-report/v1, whose `answers` hold each
+path's references or its board/error/v1, in order; --field adds `values`
+and `target_code`.
+
+One run takes at most 10000 paths; more is board::usage::invalid. It stops
+at 64 MiB of output and refuses each later path as board::refs::over_budget;
+ask for those in another run.
 
 Examples:
   board refs /projects/p
