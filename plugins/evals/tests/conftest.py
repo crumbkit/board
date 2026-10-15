@@ -1,0 +1,141 @@
+"""Fixture boards that run the real `board` binary with this plugin installed and enabled."""
+
+import json
+import os
+import shutil
+import subprocess
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+PLUGIN = Path(__file__).resolve().parents[1]
+REPOSITORY = PLUGIN.parents[1]
+SCHEMAS = PLUGIN / "types" / "evals"
+EVAL_TYPE = "evals/eval/v1"
+RUN_TYPE = "evals/run/v1"
+
+
+def board_binary() -> Path:
+    """The `board` under test: `$BOARD_BIN`, or the workspace's debug build."""
+    return Path(os.environ.get("BOARD_BIN", REPOSITORY / "target" / "debug" / "board")).resolve()
+
+
+@dataclass(frozen=True)
+class Board:
+    """A git repository holding a board, with this plugin installed for it alone."""
+
+    root: Path
+    data: Path
+    cache: Path
+
+    def write(self, path: str, text: str) -> None:
+        """Write a fixture file at `path`, relative to the board's root. Every test writes through here."""
+        target = self.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+
+    def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
+        """Run `board` in the board's root, with only the variables a user's shell would pass it."""
+        uv = shutil.which("uv")
+        assert uv is not None, "uv is on PATH"
+        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        environment = {
+            "PATH": path,
+            "HOME": os.environ.get("HOME", str(self.root)),
+            "XDG_DATA_HOME": str(self.data),
+            "XDG_CACHE_HOME": str(self.cache),
+        }
+        return subprocess.run(
+            [str(board_binary()), *arguments],
+            cwd=self.root,
+            env=environment,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def json(self, *arguments: str, stdin: str = "") -> dict[str, Any]:
+        """Run `board --json` and read its one document."""
+        ran = self.run("--json", *arguments, stdin=stdin)
+        document: dict[str, Any] = json.loads(ran.stdout)
+        return document
+
+    def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
+        """The output of `board call evals.<capability>`."""
+        report = self.json("call", f"evals.{capability}", stdin=json.dumps(given))
+        assert report["$type"] == "board/call-report/v1", report
+        output: dict[str, Any] = report["output"]
+        return output
+
+    def paths(self, capability: str, given: dict[str, Any]) -> list[str]:
+        """The paths of the evals a capability lists, in its order."""
+        return [item["path"] for item in self.call(capability, given)["evals"]]
+
+
+@pytest.fixture
+def board(tmp_path: Path) -> Board:
+    """A board that does not commit, with evals installed and enabled through `board plugin enable`."""
+    fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
+    fixture.root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
+    fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
+    plugins = fixture.data / "board" / "plugins"
+    plugins.mkdir(parents=True)
+    (plugins / "evals").symlink_to(PLUGIN)
+    enabled = fixture.run("plugin", "enable", "evals")
+    assert enabled.returncode == 0, enabled.stderr
+    return fixture
+
+
+def experiment(question: str, subjects: list[str] | None = None, status: str = "planned", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
+    """An `evals/eval/v1` record."""
+    record: dict[str, Any] = {
+        "$type": EVAL_TYPE,
+        "question": question,
+        "subjects": ["gix"] if subjects is None else subjects,
+        "method": "Run it.",
+        "status": status,
+        **fields,
+    }
+    return json.dumps(record)
+
+
+def trial(eval_path: str, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
+    """An `evals/run/v1` record with one passing result."""
+    record: dict[str, Any] = {
+        "$type": RUN_TYPE,
+        "eval": eval_path,
+        "by": "claude",
+        "started": "2026-10-01T09:00:00Z",
+        "results": [{"case": "one", "outcome": "pass"}],
+        **fields,
+    }
+    return json.dumps(record)
+
+
+def repository(parent: Path, name: str, records: dict[str, str]) -> tuple[Path, str]:
+    """A board in a git repository that enables evals, holding `records` by path, and its one commit."""
+    root = parent / name
+    for schema in SCHEMAS.rglob("*.schema.json"):
+        target = root / ".board" / "types" / schema.relative_to(PLUGIN / "types")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(schema.read_text())
+    config = {"$type": "board/config/v1", "plugins": ["evals"]}
+    (root / ".board" / "board.json").write_text(json.dumps(config))
+    for path, text in records.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text)
+    identity = ["-c", "user.name=t", "-c", "user.email=t@t"]
+    for command in (["init", "-q"], ["add", "."], [*identity, "commit", "-qm", "t"]):
+        subprocess.run(["git", *command], cwd=root, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=True)
+    return root, head.stdout.strip()
+
+
+def mount(board: Board, path: str, repo: Path, commit: str) -> None:
+    """Mount `repo` at `commit` at `path` in `board`, read-only, following `HEAD`."""
+    pointer = {"$type": "board/mount/v1", "repo": str(repo), "follow": "HEAD", "commit": commit}
+    board.write(path, json.dumps(pointer))

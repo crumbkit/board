@@ -48,7 +48,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
-        project: [python/board-plugin, plugins/tasks, plugins/controls]
+        project: [python/board-plugin, plugins/tasks, plugins/controls, plugins/evals]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:

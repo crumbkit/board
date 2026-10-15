@@ -1,0 +1,143 @@
+{
+  "$defs": {
+    "Case": {
+      "additionalProperties": false,
+      "description": "One case of an eval. A run's result names it by `id`.",
+      "properties": {
+        "expected": {
+          "title": "Expected"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Case",
+      "type": "object"
+    },
+    "Measure": {
+      "additionalProperties": false,
+      "description": "A quantity the eval takes. Each result and each run gives its value under `name`.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Measure",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, and what was concluded.\n\n`subjects` are the unversioned names of what is tested, such as `gix` or\na model's family; versions go in a run's `versions`. `cases` lists the\ncases inline, or `cases_file` references a file that does. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.",
+  "if": {
+    "properties": {
+      "status": {
+        "const": "concluded"
+      }
+    },
+    "required": [
+      "status"
+    ]
+  },
+  "properties": {
+    "$type": {
+      "const": "evals/eval/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/Case"
+      },
+      "title": "Cases",
+      "type": "array"
+    },
+    "cases_file": {
+      "format": "board-ref",
+      "title": "Cases File",
+      "type": "string"
+    },
+    "conclusion": {
+      "title": "Conclusion",
+      "type": "string"
+    },
+    "decision": {
+      "title": "Decision",
+      "type": "string"
+    },
+    "measures": {
+      "items": {
+        "$ref": "#/$defs/Measure"
+      },
+      "title": "Measures",
+      "type": "array"
+    },
+    "method": {
+      "title": "Method",
+      "type": "string"
+    },
+    "question": {
+      "title": "Question",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "running",
+        "concluded",
+        "abandoned"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "subjects": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Subjects",
+      "type": "array"
+    },
+    "verdict": {
+      "enum": [
+        "supported",
+        "refuted",
+        "inconclusive"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "question",
+    "subjects",
+    "method",
+    "status"
+  ],
+  "then": {
+    "required": [
+      "verdict"
+    ]
+  },
+  "title": "EvalRecord",
+  "type": "object"
+}

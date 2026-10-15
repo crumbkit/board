@@ -1,0 +1,274 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The evals that name a subject, whatever their status, here and in mounted boards.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The evals that name this subject, at most `limit` of them. Case is ignored for ASCII letters.",
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "subject": {
+            "minLength": 1,
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "subject"
+        ],
+        "title": "AboutInput",
+        "type": "object"
+      },
+      "name": "about",
+      "outputSchema": {
+        "$defs": {
+          "Listed": {
+            "additionalProperties": false,
+            "description": "An eval, by its path in the board holding it, which may be a mounted one.",
+            "properties": {
+              "decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Decision"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "question": {
+                "title": "Question",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "planned",
+                  "running",
+                  "concluded",
+                  "abandoned"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "subjects": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Subjects",
+                "type": "array"
+              },
+              "verdict": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "supported",
+                      "refuted",
+                      "inconclusive"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Verdict"
+              }
+            },
+            "required": [
+              "path",
+              "question",
+              "subjects",
+              "status",
+              "verdict",
+              "decision"
+            ],
+            "title": "Listed",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Evals by path. `total` counts every match, and `truncated` says whether the limit left some out.",
+        "properties": {
+          "evals": {
+            "items": {
+              "$ref": "#/$defs/Listed"
+            },
+            "title": "Evals",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evals",
+          "total",
+          "truncated"
+        ],
+        "title": "ListOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The evals still planned or running, here and in mounted boards.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The evals still to do or being done, at most `limit` of them.",
+        "properties": {
+          "limit": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "OpenInput",
+        "type": "object"
+      },
+      "name": "open",
+      "outputSchema": {
+        "$defs": {
+          "Listed": {
+            "additionalProperties": false,
+            "description": "An eval, by its path in the board holding it, which may be a mounted one.",
+            "properties": {
+              "decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Decision"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "question": {
+                "title": "Question",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "planned",
+                  "running",
+                  "concluded",
+                  "abandoned"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "subjects": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Subjects",
+                "type": "array"
+              },
+              "verdict": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "supported",
+                      "refuted",
+                      "inconclusive"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Verdict"
+              }
+            },
+            "required": [
+              "path",
+              "question",
+              "subjects",
+              "status",
+              "verdict",
+              "decision"
+            ],
+            "title": "Listed",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Evals by path. `total` counts every match, and `truncated` says whether the limit left some out.",
+        "properties": {
+          "evals": {
+            "items": {
+              "$ref": "#/$defs/Listed"
+            },
+            "title": "Evals",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "evals",
+          "total",
+          "truncated"
+        ],
+        "title": "ListOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Tests of libraries, tools, models and agents, as evals and the runs that answer them.",
+  "metadata": {
+    "area": "testing"
+  },
+  "name": "evals",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_evals"
+  ],
+  "types": [
+    "evals/eval/v1",
+    "evals/run/v1"
+  ],
+  "version": "0.1.0"
+}
