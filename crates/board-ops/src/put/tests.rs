@@ -16,6 +16,7 @@ use crate::tests::{MANIFEST, open, task};
 
 mod batch;
 mod parity;
+mod through;
 mod waiting;
 
 /// The test board, set not to commit: committing is tested on its own,
@@ -846,6 +847,26 @@ fn committing() -> Scenario {
         )
         .write("notes.md", Item::File("not committed"));
     scenario
+}
+
+#[test]
+fn a_put_that_matches_head_makes_no_commit_and_one_that_matches_only_an_uncommitted_edit_commits_it()
+ {
+    let scenario = committing();
+    let first = put(&scenario, "/tasks/a", Expect::Absent, &task("")).unwrap();
+    let again = put(&scenario, "/tasks/a", Expect::Any, &task("")).unwrap();
+    assert_eq!(again.commit, None);
+    assert_eq!(scenario.head().unwrap().id, first.commit.unwrap());
+    let edited = task(r#", "see": "/x""#);
+    let bytes = canonical(&edited);
+    scenario.write(
+        "tasks/a.json",
+        Item::File(std::str::from_utf8(&bytes).unwrap()),
+    );
+    let report = put(&scenario, "/tasks/a", Expect::Any, &edited).unwrap();
+    let head = scenario.head().unwrap();
+    assert_eq!(report.commit, Some(head.id));
+    assert_eq!(head.files["tasks/a.json"], canonical(&edited));
 }
 
 #[test]

@@ -146,11 +146,11 @@ mod tests {
     fn a_put_through_a_named_mount_hints_updating_it_and_one_naming_none_has_the_generic_hint() {
         assert_eq!(
             Code::PutThroughMount.hint(&Fields::at(&"/vendor/m".parse().unwrap())),
-            "a mounted board is read-only here; write in the mounted repository, then run `board mount update /vendor/m`"
+            "write in the mounted repository and run `board mount update /vendor/m`; a put writes through one mount whose board commits its puts and whose HEAD is on the branch the mount follows"
         );
         assert_eq!(
             Code::PutThroughMount.hint(&Fields::default()),
-            "a mounted board is read-only here; write in the mounted repository, then run `board mount update <path>`"
+            "write in the mounted repository and run `board mount update <path>`; a put writes through one mount whose board commits its puts and whose HEAD is on the branch the mount follows"
         );
     }
 

@@ -20,6 +20,7 @@ fn head_moved_since_staging_leaves_the_commit_unmade_and_the_index_alone() {
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .unwrap()
         .unwrap();
     let moved = scenario.commit(&[("a.json", "{}"), ("c.json", "{}")]);
     assert!(matches!(
@@ -42,6 +43,7 @@ fn head_unmoved_since_staging_takes_the_commit_and_the_index_follows() {
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .unwrap()
         .unwrap();
     let commit = repository.finish_commit(&lock, staged).unwrap();
     let head = scenario.head().unwrap();
@@ -60,6 +62,7 @@ fn a_detached_head_takes_the_commit_on_itself() {
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .unwrap()
         .unwrap();
     let commit = repository.finish_commit(&lock, staged).unwrap();
     assert_eq!(
@@ -86,6 +89,7 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .unwrap()
         .unwrap();
     let error = repository.finish_commit(&lock, staged).unwrap_err();
     assert!(matches!(error, WriteError::Uncommitted { .. }), "{error}");
@@ -96,6 +100,7 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     scenario.write(&lock_file, Item::Deleted);
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .unwrap()
         .unwrap();
     assert!(repository.finish_commit(&lock, staged).is_ok());
 }
@@ -107,6 +112,7 @@ fn an_index_that_cannot_be_written_after_head_moved_names_the_commit() {
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
         .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .unwrap()
         .unwrap();
     // The index is written into the held lock file, so with it gone the
     // write fails after HEAD has moved.

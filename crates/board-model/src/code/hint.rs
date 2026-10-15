@@ -19,6 +19,25 @@ impl Code {
     }
 }
 
+/// The hint for a mount at `path` that `board mount update` can mend.
+fn updating(code: Code, path: &LogicalPath) -> String {
+    let update = format!("`board mount update {path}`");
+    match code {
+        Code::MountCommitMissing => {
+            format!("fetch the commit into the mounted repository, or run {update}")
+        }
+        Code::MountNotAncestor => {
+            format!("run {update} to pin the mount to the mounted HEAD, then put again")
+        }
+        Code::MountStale => format!(
+            "commit or discard the change in the mounted repository, run {update}, then read the record again and reapply your change"
+        ),
+        _ => format!(
+            "write in the mounted repository and run {update}; a put writes through one mount whose board commits its puts and whose HEAD is on the branch the mount follows"
+        ),
+    }
+}
+
 /// The hint for `code` with the values in `fields` when the file at fault
 /// is in the board mounted at `mount`, if it differs from the root board's.
 fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
@@ -125,14 +144,10 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             fields.ancestor.as_ref()?
         ),
         Code::RefDangling => dangling(fields)?,
-        Code::MountCommitMissing => format!(
-            "fetch the commit into the mounted repository, or run `board mount update {}`",
-            path?
-        ),
-        Code::PutThroughMount => format!(
-            "a mounted board is read-only here; write in the mounted repository, then run `board mount update {}`",
-            path?
-        ),
+        Code::MountCommitMissing
+        | Code::PutThroughMount
+        | Code::MountNotAncestor
+        | Code::MountStale => updating(code, path?),
         Code::PutInvalid | Code::PutStale if !fields.refusals.is_empty() => BATCH.to_owned(),
         Code::PutStale => match (path?, fields.found?) {
             (path, Found::Blob(blob)) => format!(
@@ -284,6 +299,12 @@ fn generic(code: Code) -> &'static str {
         Code::MountFollowMissing => {
             "create the ref that `follow` names in the mounted repository, or change `follow`"
         }
+        Code::MountNotAncestor => {
+            "run `board mount update <path>` to pin the mount to the mounted HEAD, then put again"
+        }
+        Code::MountStale => {
+            "commit or discard the change in the mounted repository, run `board mount update <path>`, then read the record again and reapply your change"
+        }
         Code::ResolveCycle => {
             "change one of the pointers so that they no longer lead back to each other"
         }
@@ -315,7 +336,7 @@ fn generic(code: Code) -> &'static str {
             "wait for the other write to finish, or finish the merge, rebase, revert or cherry-pick in progress, then try again"
         }
         Code::PutThroughMount => {
-            "a mounted board is read-only here; write in the mounted repository, then run `board mount update <path>`"
+            "write in the mounted repository and run `board mount update <path>`; a put writes through one mount whose board commits its puts and whose HEAD is on the branch the mount follows"
         }
         Code::PutSymlink => {
             "Board never writes through or over a symlink; replace the symlink the message names with a directory or file, or put to another path"

@@ -17,6 +17,7 @@ use gix::lock::acquire::Fail;
 use crate::git::{GitError, Repository, model_id};
 use crate::repositories::Repositories;
 use crate::resolve::{ResolveError, Resolver};
+use crate::through::{Inside, Through};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
 
@@ -75,7 +76,7 @@ impl Resolver<'_, '_> {
             Err(source) => return Err(unresolved(path, source)),
         };
         if location.board.source != Source::WorkingTree {
-            return Err(through_mount(path, &location));
+            return Err(through_mount(path, &location, physical.as_deref()));
         }
         // The walk lists a symlink as a file, but on disk it can lead to a
         // directory that a write beneath it would go into.
@@ -95,7 +96,7 @@ impl Resolver<'_, '_> {
             .resolve_pointer(path)
             .map_err(|source| unresolved(path, source))?;
         if location.board.source != Source::WorkingTree {
-            return Err(through_mount(path, &location));
+            return Err(through_mount(path, &location, None));
         }
         let physical = match location.object {
             Object::Blob(_) => {
@@ -168,19 +169,44 @@ fn said(path: &LogicalPath, source: &ResolveError) -> String {
 
 /// A write to `path` refused because `location`, where it leads, is in a
 /// mounted board, naming the last pointer in the working tree: the mount
-/// that leads out of it.
-fn through_mount(path: &LogicalPath, location: &Location) -> WriteError {
+/// that leads out of it. Through one mount to the record file `physical`,
+/// it says where that file is in the mounted board, for a put to write.
+fn through_mount(path: &LogicalPath, location: &Location, physical: Option<&str>) -> WriteError {
     let pointers = location.pointers.iter();
     let mount = pointers
+        .clone()
         .take_while(|pointer| pointer.board.source == Source::WorkingTree)
         .last()
         .and_then(Location::display_path);
+    let mut mounted = pointers.filter(|pointer| pointer.board.source != Source::WorkingTree);
+    let one = mounted.all(|pointer| pointer.board == location.board);
+    let why = if one {
+        Through::Mounted
+    } else {
+        Through::Nested
+    };
+    let inside = match (&location.board.source, physical) {
+        (Source::Commit(commit), Some(file)) if one => file
+            .strip_suffix(".json")
+            .and_then(|logical| format!("/{logical}").parse().ok())
+            .map(|inside| {
+                Box::new(Inside {
+                    repository: location.board.repository.clone(),
+                    commit: *commit,
+                    file: file.to_owned(),
+                    path: inside,
+                })
+            }),
+        _ => None,
+    };
     // A mount file with no logical path, such as one reached through a
     // symlink by a path longer than a logical path may be, has no
     // `display_path`; the error then names `path`.
     WriteError::ThroughMount {
         path: path.clone(),
         mount: mount.unwrap_or_else(|| path.clone()),
+        why: Box::new(why),
+        inside,
     }
 }
 
@@ -314,12 +340,13 @@ impl Repository {
     /// HEAD: checks there is an identity to commit as, takes git's
     /// `index.lock` without waiting, and writes the blobs, trees and commit
     /// object. The board lock must be held, so HEAD is read under it.
+    /// `None` when HEAD already holds every write, as git commits nothing.
     pub fn stage_commit(
         &self,
         _lock: &Lock,
         writes: &[(&str, &[u8])],
         message: &str,
-    ) -> Result<Staged, WriteError> {
+    ) -> Result<Option<Staged>, WriteError> {
         use gix::state::InProgress as Op;
         let git = self.git();
         if !matches!(git.committer(), Some(Ok(_))) || !matches!(git.author(), Some(Ok(_))) {
@@ -371,6 +398,9 @@ impl Repository {
             .write()
             .map_err(|error| failed(error.into()))?
             .detach();
+        if tree == base {
+            return Ok(None);
+        }
         let parents: Vec<gix::ObjectId> = staged
             .parent
             .iter()
@@ -380,7 +410,7 @@ impl Repository {
             .new_commit(message, tree, parents)
             .map_err(|error| failed(error.into()))?;
         staged.commit = model_id(&commit.id);
-        Ok(staged)
+        Ok(Some(staged))
     }
 
     /// Finishes `staged` once its files are in place: moves HEAD to the
@@ -550,11 +580,14 @@ pub enum WriteError {
         #[source]
         source: ResolveError,
     },
-    /// `mount` is the mount in the working tree that `path` passes through.
-    #[error("{path} cannot be written: it is in the board mounted at {mount}")]
+    /// `mount` is the mount in the working tree that `path` passes through;
+    /// `inside` is where one mount leads, for a put to write there.
+    #[error("{path} cannot be written: it is in the board mounted at {mount}{why}")]
     ThroughMount {
         path: LogicalPath,
         mount: LogicalPath,
+        why: Box<Through>,
+        inside: Option<Box<Inside>>,
     },
     /// `file` is what the path reaches: itself, or its deepest ancestor.
     #[error("{path} cannot be written: {file} is not a record")]
@@ -621,7 +654,7 @@ impl WriteError {
     pub fn code(&self) -> Code {
         match self {
             Self::Unresolved { source, .. } => source.code(),
-            Self::ThroughMount { .. } => Code::PutThroughMount,
+            Self::ThroughMount { why, .. } => why.code(),
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::InGit { .. } => Code::PathMalformed,
             Self::Degraded { code, .. } => *code,

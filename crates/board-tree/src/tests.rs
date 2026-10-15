@@ -19,7 +19,8 @@ use proptest::prelude::*;
 
 use board_scenario::{Item, Scenario};
 
-use crate::{Entry, Repositories, Repository, Status};
+use crate::through::ANCESTRY;
+use crate::{Entry, Inside, Repositories, Repository, Status, Through, WriteError};
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()

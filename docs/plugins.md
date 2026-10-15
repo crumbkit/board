@@ -231,15 +231,5 @@ a committed `plugin.json` that a test compares with the one its pydantic models
 generate. Its pytest suite drives the real `board` binary against fixture
 boards. CI runs each plugin's gates in its own job.
 
-There are two plugins. `controls` checks requirements on a board's files, as
-plugins/controls/README.md describes. `tasks` ships the schema of
-`tasks/task/v1`: a `title`, a `status` of `open`, `waiting`, `done` or `dropped`,
-an optional `due` date, an optional `notes` reference to a file, and an
-`after` list of references to the tasks it waits on. It extracts each task's
-title, status and due date into a `tasks` table keyed by blob. Its `due`
-capability finds `open` and `waiting` tasks due before a date by joining that
-table with `entries` in `board query`. Its `next` capability lists the `open`
-and `waiting` tasks by due date, undated ones last, reading the `records` view;
-a task is blocked while a task in its `after`, resolved through one `board refs`
-of every shown task that has one, is not `done`. `next` shows at most 100
-tasks, fewer if its `limit` says so, with `total` and `truncated`.
+There are three plugins: `controls`, `tasks` and `evals`. The README in each
+`plugins/<name>/` describes its records and capabilities.

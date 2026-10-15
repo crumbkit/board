@@ -100,7 +100,15 @@ impl Default for Scenario {
 
 impl Scenario {
     pub fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        Self::init(tempfile::tempdir().unwrap())
+    }
+
+    /// A repository in a directory inside `parent`'s working tree.
+    pub fn within(parent: &Self) -> Self {
+        Self::init(tempfile::tempdir_in(parent.workdir()).unwrap())
+    }
+
+    fn init(directory: TempDir) -> Self {
         let git = gix::init(directory.path()).unwrap();
         Self {
             _directory: directory,

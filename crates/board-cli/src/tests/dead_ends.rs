@@ -283,6 +283,7 @@ fn every_hint_leads_within_three_hops_to_success_or_a_hint_that_names_no_command
     calling_plugins(&mut codes, &mut dead);
     enabling_plugins(&mut codes, &mut dead);
     apart(&mut codes, &mut dead);
+    through_mounts(&mut codes, &mut dead);
     assert!(dead.is_empty(), "dead ends: {dead:#?}");
     let unprovokable = NOT_REPRODUCED.map(|(code, _)| code.as_str());
     assert_eq!(unprovoked(&codes), unprovokable, "provoked: {codes:?}");
@@ -598,4 +599,45 @@ fn apart(codes: &mut BTreeSet<String>, dead: &mut Vec<Vec<String>>) {
         (Code::PutLocked, &["put", "/projects/l"]),
     ];
     walk(&place, &starts, codes, dead);
+}
+
+/// Puts through a mount of a board that the mounted repository refuses;
+/// following their hints runs `mount update`.
+fn through_mounts(codes: &mut BTreeSet<String>, dead: &mut Vec<Vec<String>>) {
+    let files = [
+        (".board/board.json", CONFIG),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            r#"{"type": "object"}"#,
+        ),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ];
+    // A pin ahead of the mounted HEAD, or a record changed since the pin.
+    for code in [Code::MountNotAncestor, Code::MountStale] {
+        let mounted = Scenario::new();
+        let first = mounted.commit(&files[..2]);
+        for (at, text) in files {
+            mounted.write(at, Item::File(text));
+        }
+        let pinned = mounted.commit(&files);
+        identified(mounted.track(pinned));
+        let root = board();
+        identified(&root).write(
+            "vendor.json",
+            Item::File(&mount_of(&mounted.path(), pinned)),
+        );
+        if code == Code::MountNotAncestor {
+            mounted.write(".git/refs/heads/main", Item::File(&format!("{first}\n")));
+        } else {
+            let changed = r#"{"$type": "lr/project/v1", "x": 1}"#;
+            mounted.write("projects/p.json", Item::File(changed));
+        }
+        let place = Place::new(root.workdir()).with(br#"{"$type": "lr/project/v1"}"#);
+        walk(
+            &place,
+            &[(code, &["put", "/vendor/projects/p"])],
+            codes,
+            dead,
+        );
+    }
 }

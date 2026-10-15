@@ -432,6 +432,33 @@ fn a_write_through_a_mount_is_refused_naming_the_mount_and_a_write_beside_it_is_
     }
     let admitted = repository.target(&path("/new"), false).unwrap();
     assert_eq!(admitted.path, "new.json");
+    // A put may write through one mount, so the error says where it leads.
+    let inside = |asked: &str| match repository.target(&path(asked), false) {
+        Err(WriteError::ThroughMount { why, inside, .. }) => (*why, inside.map(|inside| *inside)),
+        other => panic!("{asked} gave {other:?}"),
+    };
+    let one = Some(Inside {
+        repository: middle.open().path().to_path_buf(),
+        commit: middle_commit,
+        file: "new.json".to_owned(),
+        path: path("/new"),
+    });
+    assert_eq!(inside("/m/new"), (Through::Mounted, one.clone()));
+    assert_eq!(inside("/l/new"), (Through::Mounted, one));
+    assert_eq!(inside("/m/n/x"), (Through::Nested, None));
+    assert_eq!(inside("/l/n/new"), (Through::Nested, None));
+}
+
+#[test]
+fn a_commit_descends_from_an_ancestor_found_within_the_limit_and_not_beyond_it() {
+    let scenario = Scenario::new();
+    let first = scenario.commit(&[("x.json", "1")]);
+    scenario.commit(&[("x.json", "2")]);
+    let third = scenario.commit(&[("x.json", "3")]);
+    let repository = scenario.open();
+    assert!(repository.descends(third, first, 2).unwrap());
+    assert!(!repository.descends(third, first, 1).unwrap());
+    assert!(!repository.descends(first, third, ANCESTRY).unwrap());
 }
 
 #[test]

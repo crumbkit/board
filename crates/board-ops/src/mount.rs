@@ -2,10 +2,10 @@
 //! names (docs/architecture.md, Writes).
 
 use board_model::{BINARY_NAME, Code, LogicalPath, ObjectId, Refusal};
-use board_tree::{LOCK_WAIT, Pin, PinError};
+use board_tree::{LOCK_WAIT, Lock, Pin, PinError, Target};
 
 use crate::board::Board;
-use crate::put::{Expect, Failure, Prepared, PutError, Schemas};
+use crate::put::{Expect, Failure, Prepared, PutError, PutReport, Schemas};
 
 /// What `mount update` found and whether it wrote.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +32,7 @@ impl Board {
             old,
             new,
             canonical,
+            ..
         } = self.repositories().pin(path)?;
         let mut report = MountUpdateReport {
             path: path.clone(),
@@ -42,31 +43,42 @@ impl Board {
         if new == old {
             return Ok(report);
         }
+        let message = format!("{BINARY_NAME} mount update {path}");
+        self.repin(lock, path, target, blob, &canonical, &message)?;
+        report.wrote = true;
+        Ok(report)
+    }
+
+    /// Rewrites the mount pointer at `path`, found at `target` holding
+    /// `blob` under `lock`, to `canonical`, through put with that blob as
+    /// the expect.
+    pub(crate) fn repin(
+        &self,
+        lock: Lock,
+        path: &LogicalPath,
+        target: Target,
+        blob: ObjectId,
+        canonical: &[u8],
+        message: &str,
+    ) -> Result<PutReport, PutError> {
         let admitted = self
-            .check_record(&mut Schemas::default(), &canonical)
-            .map_err(|refused| {
-                MountError::Put(PutError::Record {
-                    path: path.clone(),
-                    refused,
-                })
+            .check_record(&mut Schemas::default(), canonical)
+            .map_err(|refused| PutError::Record {
+                path: path.clone(),
+                refused,
             })?;
         let prepared = Prepared {
             path: path.clone(),
             expect: Expect::Blob(blob),
-            canonical,
+            canonical: canonical.to_vec(),
             target,
             admitted,
         };
-        let message = format!("{BINARY_NAME} mount update {path}");
-        self.write_all(lock, &[prepared], &message)
-            .map_err(|failure| {
-                MountError::Put(match failure {
-                    Failure::Stale(mut stale) => stale.remove(0).1,
-                    Failure::Error(error) => error,
-                })
-            })?;
-        report.wrote = true;
-        Ok(report)
+        self.write_all(lock, &[prepared], message)
+            .map_err(|failure| match failure {
+                Failure::Stale(mut stale) => stale.remove(0).1,
+                Failure::Error(error) => error,
+            })
     }
 }
 

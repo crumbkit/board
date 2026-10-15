@@ -97,7 +97,7 @@ name it. Only `board-tree` reads pointers.
 
 `board put` resolves the path, following pointers, so a write through a link
 lands at its target; put does not create a missing target, and refuses with its
-resolution code. A path through a mount is `board::put::through_mount`. A
+resolution code. A path through a mount writes as architecture/writes.md says. A
 segment git keeps, `.git` under any spelling HFS+ or NTFS opens as it, is
 `board::path::malformed`, in `mount update` too. Missing directories are
 created. A write that would leave its own path degraded is refused with the

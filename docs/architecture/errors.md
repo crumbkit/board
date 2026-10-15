@@ -16,7 +16,7 @@ The v0 set:
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
 | `repo` | `unreadable`, `submodule` |
-| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing` |
+| `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing`, `not_ancestor`, `stale` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |

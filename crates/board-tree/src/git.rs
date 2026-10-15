@@ -247,11 +247,15 @@ impl Repository {
         Ok(Some(blob.data.clone()))
     }
 
-    fn gix_id(&self, id: ObjectId) -> Result<gix::ObjectId, GitError> {
+    pub(crate) fn gix_id(&self, id: ObjectId) -> Result<gix::ObjectId, GitError> {
         gix::ObjectId::try_from(id.as_bytes()).map_err(|error| self.missing(id, error))
     }
 
-    fn missing(&self, id: ObjectId, source: impl Into<Box<dyn Error + Send + Sync>>) -> GitError {
+    pub(crate) fn missing(
+        &self,
+        id: ObjectId,
+        source: impl Into<Box<dyn Error + Send + Sync>>,
+    ) -> GitError {
         GitError::Object {
             repository: self.path.clone(),
             id,

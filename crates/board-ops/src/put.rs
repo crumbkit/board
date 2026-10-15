@@ -10,7 +10,9 @@ use board_model::{
     BINARY_NAME, Code, Fields, Found, JsonError, Lined, Location, LogicalPath, MAX_RECORD_BYTES,
     Object, ObjectId, RecordType, Refusal, Role, canonical_json, classify, parse_json,
 };
-use board_tree::{Directory, LOCK_WAIT, Lock, ResolveError, Resolver, Working, WriteError};
+use board_tree::{
+    Directory, LOCK_WAIT, Lock, PinError, ResolveError, Resolver, Working, WriteError,
+};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -104,6 +106,17 @@ impl Board {
         expect: Expect,
         bytes: &[u8],
     ) -> Result<PutReport, PutError> {
+        self.put_waiting(path, expect, bytes, LOCK_WAIT)
+    }
+
+    /// [`Board::put`], waiting up to `wait` for a mounted board's lock.
+    pub(crate) fn put_waiting(
+        &self,
+        path: &LogicalPath,
+        expect: Expect,
+        bytes: &[u8],
+        wait: std::time::Duration,
+    ) -> Result<PutReport, PutError> {
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let prepared = self.prepare(
@@ -113,7 +126,18 @@ impl Board {
             path,
             expect,
             bytes,
-        )?;
+        );
+        let prepared = match prepared {
+            // `inside` is only set for one mount, so this is `Through::Mounted`.
+            Err(PutError::Write(WriteError::ThroughMount {
+                mount,
+                inside: Some(inside),
+                ..
+            })) => {
+                return self.put_through(lock, path, (&mount, &inside), expect, bytes, wait);
+            }
+            prepared => prepared?,
+        };
         let message = format!("{BINARY_NAME} put {path}");
         self.write_all(lock, &[prepared], &message)
             .map_err(|failure| match failure {
@@ -305,13 +329,19 @@ impl Board {
         bytes: &[u8],
     ) -> Result<Prepared, PutError> {
         let _timed = self.timed("put.validate");
-        let admitted = self
-            .check_record(schemas, bytes)
-            .map_err(|refused| PutError::Record {
-                path: path.clone(),
-                refused,
-            })?;
-        let target = view.target(path, admitted.pointer)?;
+        let admitted = self.check_record(schemas, bytes);
+        let pointer = admitted.as_ref().is_ok_and(|admitted| admitted.pointer);
+        // A record through a mount is checked against the mounted board's
+        // schemas, so the mount is named before this board's verdict.
+        let target = match view.target(path, pointer) {
+            Err(error @ WriteError::ThroughMount { .. }) => return Err(error.into()),
+            target => target,
+        };
+        let admitted = admitted.map_err(|refused| PutError::Record {
+            path: path.clone(),
+            refused,
+        })?;
+        let target = target?;
         Ok(Prepared {
             path: path.clone(),
             expect,
@@ -386,11 +416,9 @@ impl Board {
                 .iter()
                 .map(|item| (item.target.path.as_str(), item.canonical.as_slice()))
                 .collect();
-            Some(
-                repository
-                    .stage_commit(&lock, &files, message)
-                    .map_err(|error| Failure::Error(error.into()))?,
-            )
+            repository
+                .stage_commit(&lock, &files, message)
+                .map_err(|error| Failure::Error(error.into()))?
         } else {
             None
         };
@@ -589,6 +617,8 @@ pub enum PutError {
     Input { source: std::io::Error },
     #[error(transparent)]
     Write(#[from] WriteError),
+    #[error(transparent)]
+    Mount(#[from] PinError),
 }
 
 impl PutError {
@@ -601,6 +631,7 @@ impl PutError {
             Self::TooManyLines => Code::PutInvalid,
             Self::Input { .. } => Code::RepoUnreadable,
             Self::Write(error) => error.code(),
+            Self::Mount(error) => error.code(),
         }
     }
 
@@ -622,6 +653,7 @@ impl PutError {
                 ..Fields::default()
             },
             Self::Write(error) => error.fields(),
+            Self::Mount(error) => error.fields(),
             Self::HeadMoved { .. }
             | Self::Line { .. }
             | Self::TooManyLines
@@ -633,6 +665,8 @@ impl PutError {
         Refusal::new(self.code(), self, &self.fields())
     }
 }
+
+mod through;
 
 #[cfg(test)]
 mod tests;

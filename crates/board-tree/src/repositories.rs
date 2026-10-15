@@ -77,6 +77,11 @@ impl Repositories {
         &self.root
     }
 
+    /// What a mount's `~/` means.
+    pub fn home(&self) -> Option<&Path> {
+        self.home.as_deref()
+    }
+
     /// How many repositories have been opened from disk since this was
     /// made, not counting the board's own. Work-count tests assert it.
     pub fn opened(&self) -> usize {

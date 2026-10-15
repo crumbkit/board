@@ -35,6 +35,8 @@ fn a_refused_write_names_its_path_and_a_failed_one_names_nothing() {
     let refused = WriteError::ThroughMount {
         path,
         mount: mount.clone(),
+        why: Box::new(crate::Through::Mounted),
+        inside: None,
     };
     assert_eq!(refused.code(), Code::PutThroughMount);
     assert_eq!(

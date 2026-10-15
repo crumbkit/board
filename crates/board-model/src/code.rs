@@ -33,6 +33,8 @@ pub enum Code {
     MountCommitMissing,
     MountRemoteUnsupported,
     MountFollowMissing,
+    MountNotAncestor,
+    MountStale,
     ResolveCycle,
     ResolveTooManyHops,
     RepoUnreadable,
@@ -71,7 +73,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 59] = [
+    pub const ALL: [Code; 61] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -97,6 +99,8 @@ impl Code {
         Self::MountCommitMissing,
         Self::MountRemoteUnsupported,
         Self::MountFollowMissing,
+        Self::MountNotAncestor,
+        Self::MountStale,
         Self::ResolveCycle,
         Self::ResolveTooManyHops,
         Self::RepoUnreadable,
@@ -165,6 +169,8 @@ impl Code {
             Self::MountCommitMissing => "board::mount::commit_missing",
             Self::MountRemoteUnsupported => "board::mount::remote_unsupported",
             Self::MountFollowMissing => "board::mount::follow_missing",
+            Self::MountNotAncestor => "board::mount::not_ancestor",
+            Self::MountStale => "board::mount::stale",
             Self::ResolveCycle => "board::resolve::cycle",
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
@@ -214,6 +220,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+    use crate::{Fields, LogicalPath};
 
     /// Fails to compile when a variant is added, so `ALL` stays complete.
     fn listed(code: Code) {
@@ -243,6 +250,8 @@ mod tests {
             | Code::MountCommitMissing
             | Code::MountRemoteUnsupported
             | Code::MountFollowMissing
+            | Code::MountNotAncestor
+            | Code::MountStale
             | Code::ResolveCycle
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable
@@ -318,5 +327,26 @@ mod tests {
             Code::ResolveTooManyHops.to_string(),
             "board::resolve::too_many_hops"
         );
+    }
+
+    #[test]
+    fn a_mount_hint_names_its_own_remedy_with_the_mount_path_and_without_one_the_generic_hint() {
+        let mount: LogicalPath = "/vendor".parse().unwrap();
+        let named = Fields::at(&mount);
+        let cases = [
+            (
+                Code::MountNotAncestor,
+                "to pin the mount to the mounted HEAD",
+            ),
+            (Code::MountStale, "reapply your change"),
+        ];
+        for (code, remedy) in cases {
+            let hint = code.hint(&named);
+            assert!(hint.contains("`board mount update /vendor`"), "{hint}");
+            assert!(hint.contains(remedy), "{hint}");
+            assert!(code.hint(&Fields::default()).contains("<path>"));
+        }
+        let other = Code::PutThroughMount.hint(&named);
+        assert!(!other.contains("reapply your change"), "{other}");
     }
 }

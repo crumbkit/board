@@ -171,6 +171,7 @@ impl Repositories {
             target,
             blob,
             old: mount.commit,
+            follow: mount.follow,
             new,
             canonical,
         })
@@ -184,6 +185,8 @@ pub struct Pin {
     /// The pointer's blob now.
     pub blob: ObjectId,
     pub old: ObjectId,
+    /// The ref `new` was read from, as the pointer names it.
+    pub follow: String,
     pub new: ObjectId,
     /// The pointer with its commit set to `new`, in canonical form.
     pub canonical: Vec<u8>,

@@ -101,8 +101,10 @@ lists `/repos/<name>/evals/<eval>`. A mounted board's own schemas govern its
 records, so each repository must run `board plugin enable evals` and commit
 the result; an eval it cannot validate is not listed. A mount is pinned to a
 commit, so run `board mount update /repos/<name>` to see new commits. The
-personal board cannot write an eval into a mount: `board put` refuses a path
-through one with `board::put::through_mount`, so write in the repository.
+personal board can put an eval at `/repos/<name>/evals/...` when the
+repository's board sets `commit_on_put`, the mount's `follow` is a local
+branch, and the repository's HEAD is on that branch and descends from the pin.
+The put commits in the repository and moves the pin.
 
 ## Installing
 

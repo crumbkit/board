@@ -186,6 +186,9 @@ changed, rewrites `commit` through `put` with `--expect` set to the pointer's
 blob. The report, `board/mount-update-report/v1`, gives the path, the old and
 new commit and whether it wrote.
 
+A put of one record through a mount writes it in the mounted repository and
+moves the pin, as [architecture/writes.md](architecture/writes.md) says.
+
 ## Commands
 
 | Command | Does |

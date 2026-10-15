@@ -658,13 +658,15 @@ fn a_put_through_a_mount_hints_updating_that_mount_and_a_put_beside_it_is_writte
     assert_eq!(error["code"], "board::put::through_mount");
     assert_eq!(
         error["message"],
-        "/vendor/m/new cannot be written: it is in the board mounted at /vendor/m"
+        "/vendor/m/new cannot be written: it is in the board mounted at /vendor/m, \
+         whose repository has no working tree with a .board/board.json"
     );
     assert_eq!(error["fields"], json!({"path": "/vendor/m"}));
     assert_eq!(
         error["hint"],
-        "a mounted board is read-only here; write in the mounted repository, \
-         then run `board mount update /vendor/m`"
+        "write in the mounted repository and run `board mount update /vendor/m`; \
+         a put writes through one mount whose board commits its puts and whose HEAD \
+         is on the branch the mount follows"
     );
     let hinted = board_in(scenario.workdir(), &["mount", "update", "/vendor/m"]);
     assert_eq!(hinted.code, 0);
