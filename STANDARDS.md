@@ -128,7 +128,8 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     Board.
 26. **Output does not depend on the terminal.** Board prints the same bytes to a
     terminal as to a pipe. It does not use colour, wrap lines or detect a
-    terminal. The report goes to stdout. Notes, hints and text errors go to
+    terminal on stdout or stderr. `board call` takes a terminal on stdin as no
+    input, so it does not wait for input nobody will type. The report goes to stdout. Notes, hints and text errors go to
     stderr.
 
 ## Call order

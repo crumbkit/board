@@ -19,6 +19,7 @@ fn with_shell(
         plugins: None,
         environment: board_plugin::Environment::default(),
         complete: Some(shell.into()),
+        terminal: false,
         cursor: None,
     };
     let arguments = std::iter::once(BINARY_NAME)

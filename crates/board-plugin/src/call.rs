@@ -249,6 +249,7 @@ pub fn invoke(
     let depth = context.environment.depth()?;
     let capability = chosen.capability();
     let input = parse_json(input).map_err(|source| CallError::InputJson {
+        plugin: chosen.manifest.name.clone(),
         capability: capability.name.clone(),
         source,
     })?;
@@ -256,6 +257,7 @@ pub fn invoke(
         .input
         .validate(&input)
         .map_err(|source| CallError::Input {
+            plugin: chosen.manifest.name.clone(),
             capability: capability.name.clone(),
             source,
         })?;
@@ -454,11 +456,13 @@ pub enum CallError {
     },
     #[error("the input is not one strict JSON document: {source}")]
     InputJson {
+        plugin: PluginName,
         capability: CapabilityName,
         source: JsonError,
     },
     #[error("the input to capability {capability} {source}")]
     Input {
+        plugin: PluginName,
         capability: CapabilityName,
         source: RecordError,
     },
@@ -567,15 +571,18 @@ impl CallError {
                 first = plugins.first();
                 (Code::PluginAmbiguous, None, Some(capability))
             }
-            Self::InputJson { capability, .. } => (Code::PluginBadInput, None, Some(capability)),
+            Self::InputJson {
+                plugin, capability, ..
+            } => (Code::PluginBadInput, Some(plugin), Some(capability)),
             Self::Input {
+                plugin,
                 capability,
                 source:
                     RecordError::Invalid { pointer, .. }
                     | RecordError::MalformedReference { pointer, .. },
             } => {
                 at = Some(pointer.clone());
-                (Code::PluginBadInput, None, Some(capability))
+                (Code::PluginBadInput, Some(plugin), Some(capability))
             }
             Self::Database { plugin, .. } | Self::NoTemporaryDirectory { plugin, .. } => {
                 (Code::PluginNoDatabase, Some(plugin), None)

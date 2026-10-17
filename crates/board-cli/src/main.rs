@@ -4,6 +4,7 @@
 
 mod complete;
 mod config;
+mod graft;
 mod render;
 mod report;
 mod run;

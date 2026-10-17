@@ -1,6 +1,7 @@
 //! The one module that reads the environment, once.
 
 use std::ffi::OsString;
+use std::io::IsTerminal as _;
 use std::path::PathBuf;
 
 use board_plugin::Environment;
@@ -21,6 +22,8 @@ pub(crate) struct Context {
     pub(crate) environment: Environment,
     /// `BOARD_COMPLETE`, which names a shell to ask for completion.
     pub(crate) complete: Option<OsString>,
+    /// Whether stdin is a terminal, which `call` does not wait to read.
+    pub(crate) terminal: bool,
     /// `_CLAP_COMPLETE_INDEX`: which word the bash or zsh cursor is on.
     /// `clap_complete` reads it, `_CLAP_IFS` and its other `_CLAP_*`
     /// variables from the environment itself, the one exception to this
@@ -59,6 +62,7 @@ impl Context {
                 timings: std::env::var_os("BOARD_TIMINGS"),
             },
             complete: std::env::var_os("BOARD_COMPLETE"),
+            terminal: std::io::stdin().is_terminal(),
             cursor: std::env::var("_CLAP_COMPLETE_INDEX")
                 .ok()
                 .and_then(|index| index.parse().ok()),

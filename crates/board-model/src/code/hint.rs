@@ -159,7 +159,9 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             capability?
         ),
         Code::PluginBadInput => format!(
-            "send JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {} --json` shows it",
+            "give the input as the flags that `board call {}.{} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {} --json` shows the schema",
+            fields.plugin.as_ref()?,
+            capability?,
             capability?
         ),
         Code::QueryInvalid => match fields.known.as_ref()? {
@@ -366,7 +368,7 @@ fn generic(code: Code) -> &'static str {
             "name the plugin as well, as in `board call <plugin>.<capability>`; `board plugin find --capability <name>` lists the plugins that offer it"
         }
         Code::PluginBadInput => {
-            "send JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability <name> --json` shows it"
+            "give the input as the flags that `board call <plugin>.<capability> -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability <name> --json` shows the schema"
         }
         Code::PluginBadOutput => {
             "the plugin answered outside its contract; report it to the plugin's author"

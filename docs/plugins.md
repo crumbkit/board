@@ -56,7 +56,7 @@ writes nothing.
 A plugin that ships a `SKILL.md` gives its frontmatter `description` the same
 text as the manifest's `description`, the first thing an agent reads about the
 plugin. That text says what the plugin does, when to use it, the first command
-to run with its input on stdin, and where to learn more.
+to run with its input, and where to learn more.
 
 Plugin and capability names are lowercase ASCII letters, digits and hyphens.
 The plugin's `metadata` is any JSON object, which `board plugin find` can
@@ -109,7 +109,16 @@ offers, or the nearest offered name, and so do its `fields`
 ## Calling a capability
 
 `board call <plugin>.<capability>` (or `--capability <name>`) reads input JSON
-on stdin and:
+on stdin. `board call <plugin>.<capability>` also takes each top-level string,
+integer, number or boolean property of the capability's `inputSchema` as a flag
+of the same name, such as `--path /docs` or `--open true`, and `board call <plugin>.<capability> -h`
+lists them. Board reads stdin only when no flag is given.
+No flags and nothing on stdin, or a terminal on stdin, is the input `{}`. An
+input property named like one of `board call`'s own flags (`--json`, `--fields`,
+`--long`, `--full`, `--capability` or `--help`), or not made of lowercase
+letters, digits, `-` and `_`, is not a flag and goes on stdin. Whitespace alone
+on stdin is no input.
+Then Board:
 
 1. checks that the board holds each schema the plugin ships, as `plugin list`
    does (`schema_missing`, `schema_differs`), so a record Board admits is one

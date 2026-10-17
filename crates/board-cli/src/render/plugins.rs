@@ -303,7 +303,7 @@ pub(crate) fn call(printer: &mut Printer, called: &Called) -> Output {
     printer.noted(CALL_REPORT, answer, notes.collect())
 }
 
-const CALL_REPORT: Document<Prose<Said, Refused>> = Document::new(
+pub(crate) const CALL_REPORT: Document<Prose<Said, Refused>> = Document::new(
     "board",
     "call-report",
     2,

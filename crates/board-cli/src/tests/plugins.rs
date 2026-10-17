@@ -901,15 +901,14 @@ fn input_the_capability_refuses_hints_how_to_see_its_schema_and_valid_input_runs
     let refused = call(&board, &data, &["call", "tasks.due"], "[]");
     assert_eq!(
         hint_of(&refused),
-        "send JSON on stdin that matches the capability's `inputSchema`; \
-         `board plugin find --capability due --json` shows it"
+        "give the input as the flags that `board call tasks.due -h` lists, or as JSON \
+         on stdin that matches the capability's `inputSchema`; `board \
+         plugin find --capability due --json` shows the schema"
     );
-    let shown = plugin(
-        &board,
-        &data,
-        &["plugin", "find", "--capability", "due", "--json"],
-    );
+    let shown = call(&board, &data, &["call", "tasks.due", "-h"], "");
     assert_eq!(shown.code, 0);
+    let schema = ["plugin", "find", "--capability", "due", "--json"];
+    assert_eq!(call(&board, &data, &schema, "").code, 0);
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
 

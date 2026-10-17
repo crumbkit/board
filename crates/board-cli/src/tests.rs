@@ -87,6 +87,7 @@ fn board_environment(
         plugins: plugins.map(Path::to_path_buf),
         environment,
         complete: None,
+        terminal: false,
         cursor: None,
     };
     let arguments = std::iter::once(BINARY_NAME)
@@ -1208,6 +1209,7 @@ mod cli;
 mod complete;
 mod consistency;
 mod directory;
+mod flags;
 mod get;
 mod help;
 mod hints;

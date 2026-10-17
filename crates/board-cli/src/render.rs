@@ -27,7 +27,7 @@ mod refs;
 
 pub(crate) use get::{GET_HELP, get};
 use page::Shown;
-pub(crate) use plugins::{call, plugin_find, plugin_list};
+pub(crate) use plugins::{CALL_REPORT, call, plugin_find, plugin_list};
 pub(crate) use refs::{REFS_HELP, refs};
 
 /// The leaf of each command, with the document it prints.

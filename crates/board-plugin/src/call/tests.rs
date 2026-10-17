@@ -319,7 +319,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
             Board(Code::PluginBadInput),
             r#"the input to capability due fails its schema at its root: [] is not of type "object""#
                 .to_owned(),
-            json!({"capability": "due", "pointer": ""}),
+            json!({"plugin": "tasks", "capability": "due", "pointer": ""}),
         )
     );
     assert_eq!(
@@ -328,7 +328,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
             Board(Code::PluginBadInput),
             r#"the input to capability due fails its schema at "/before": 5 is not of type "string""#
                 .to_owned(),
-            json!({"capability": "due", "pointer": "/before"}),
+            json!({"plugin": "tasks", "capability": "due", "pointer": "/before"}),
         )
     );
     assert_eq!(
@@ -337,7 +337,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
             Board(Code::PluginBadInput),
             r#"the input to capability due holds a reference at "/task": "/a//b" is not a logical path"#
                 .to_owned(),
-            json!({"capability": "due", "pointer": "/task"}),
+            json!({"plugin": "tasks", "capability": "due", "pointer": "/task"}),
         )
     );
     let (code, message, fields) = input_refusal(&schema, "{");
@@ -346,7 +346,7 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         message.starts_with("the input is not one strict JSON document: "),
         "{message}"
     );
-    assert_eq!(fields, json!({"capability": "due"}));
+    assert_eq!(fields, json!({"plugin": "tasks", "capability": "due"}));
     let admitted = input_refusal(&schema, r#"{"before": "2026-10-05", "task": "/a/b"}"#);
     assert_eq!(admitted.0, Board(Code::PluginNotStarted), "{}", admitted.1);
 }
@@ -446,23 +446,25 @@ fn a_call_board_refuses_before_choosing_a_capability_has_its_code_and_the_names_
 #[test]
 fn a_call_board_refuses_before_the_plugin_runs_has_its_code_and_the_values_at_fault() {
     let torn = CallError::InputJson {
+        plugin: tasks(),
         capability: due(),
         source: parse_json(b"{").unwrap_err(),
     };
     assert_refused(
         &torn,
         Code::PluginBadInput,
-        &json!({"capability": "due"}),
+        &json!({"plugin": "tasks", "capability": "due"}),
         b"",
     );
     let malformed = CallError::Input {
+        plugin: tasks(),
         capability: due(),
         source: RecordError::MalformedReference {
             pointer: "/task".to_owned(),
             value: json!("/a//b"),
         },
     };
-    let at = json!({"capability": "due", "pointer": "/task"});
+    let at = json!({"plugin": "tasks", "capability": "due", "pointer": "/task"});
     assert_refused(&malformed, Code::PluginBadInput, &at, b"");
     let database = CallError::Database {
         plugin: tasks(),

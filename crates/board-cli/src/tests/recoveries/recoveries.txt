@@ -595,6 +595,8 @@ board call broken.due
 
 board call tasks.due
   fails with board::plugin::bad_input
+  run board call tasks.due -h
+    exits 0
   run board plugin find --capability due --json
     exits 0
 

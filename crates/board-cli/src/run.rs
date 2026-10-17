@@ -10,6 +10,7 @@ use board_model::{
 };
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
+use serde_json::{Map, Value};
 
 /// What a plugin run gets from this command line's context.
 fn plugins(context: &Context) -> Plugins<'_> {
@@ -24,6 +25,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use crumbkit::{Sink, Spelling};
 
 use crate::config::Context;
+use crate::graft;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::timing::Ran;
@@ -190,13 +192,16 @@ Examples:
   board plugin enable tasks"
     )]
     Plugin(PluginCommand),
-    /// Call a plugin's capability with the input JSON on stdin.
+    /// Call a plugin's capability with flags, or else JSON on stdin.
     #[command(
         group = clap::ArgGroup::new("callee").required(true).args(["target", "capability"]),
         after_help = "\
+Board reads stdin only when no flag is given.
+
 Examples:
   board call tasks.due < input.json
-  board call --capability due < input.json")]
+  board call --capability due < input.json
+  board call tasks.due -h")]
     Call {
         /// `<plugin>.<capability>`, such as tasks.due.
         target: Option<Target>,
@@ -302,16 +307,17 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
+    let grafted = graft::find(&arguments, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    let parsed = crumbkit::parse_to::<Cli, _, _, _, _>(
+    let parsed = crumbkit::parse_to::<graft::Parsed, _, _, _, _>(
         &mut Sink::new(&mut stdout, &mut stderr),
-        Cli::command(),
-        &GUIDE,
+        graft::command(grafted.as_ref()),
+        &graft::guide(grafted.as_ref()),
         Spelling::COLONS,
         arguments.clone(),
     );
     ran.trace.add("parse", parsing);
-    let (cli, view) = match parsed {
+    let (graft::Parsed { cli, grafted }, view) = match parsed {
         Ok(parsed) => parsed,
         Err(stop) => {
             let code = stop.number();
@@ -354,7 +360,10 @@ pub(crate) fn run(
         }
     };
     ran.root = Some(board.repository().path().to_path_buf());
-    let output = command(cli.command, &board, context, printer, stdin);
+    let output = match grafted {
+        Some((target, flags)) => call(&board, context, printer, &target, Some(flags), stdin),
+        None => command(cli.command, &board, context, printer, stdin),
+    };
     ran.trace.extend(board.take_trace());
     output
 }
@@ -421,7 +430,12 @@ fn command(
             Err(error) => render::refused(printer, plain(error.code(), &error)),
         },
         Command::Call { target, capability } => {
-            call(board, context, printer, target, capability, stdin)
+            let target = match (target, capability) {
+                (Some(target), _) => target,
+                (None, Some(capability)) => Target::Capability(capability),
+                (None, None) => unreachable!("clap requires a target or a capability"),
+            };
+            call(board, context, printer, &target, None, stdin)
         }
         Command::Ls { path, page } => {
             let path = path.unwrap_or_else(LogicalPath::root);
@@ -560,28 +574,31 @@ fn put(
     }
 }
 
-/// `call`: the target, or the capability alone, with the input on stdin.
+/// `call`: the target, or the capability alone, with the input as flags or,
+/// when no flag is given, on stdin. A terminal on stdin, or nothing read
+/// from it, is no input.
 fn call(
     board: &Board,
     context: &Context,
     printer: &mut Printer,
-    target: Option<Target>,
-    capability: Option<CapabilityName>,
+    target: &Target,
+    flags: Option<Map<String, Value>>,
     stdin: &mut dyn Read,
 ) -> Output {
-    let target = match (target, capability) {
-        (Some(target), _) => target,
-        (None, Some(capability)) => Target::Capability(capability),
-        (None, None) => unreachable!("clap requires a target or a capability"),
+    let read = match flags.filter(|flags| !flags.is_empty()) {
+        Some(flags) => Ok(Value::Object(flags).to_string().into_bytes()),
+        None if context.terminal => Ok(Vec::new()),
+        None => bounded(stdin),
     };
-    let input = match bounded(stdin) {
+    let input = match read {
+        Ok(input) if input.trim_ascii().is_empty() => b"{}".to_vec(),
         Ok(input) => input,
         Err(error) => {
             let message = format!("stdin cannot be read: {error}");
             return render::refused(printer, plain(Code::PluginBadInput, &message));
         }
     };
-    match board.call(&target, &input, &plugins(context), context.cache.as_deref()) {
+    match board.call(target, &input, &plugins(context), context.cache.as_deref()) {
         Ok(report) => render::call(printer, &report),
         Err(error) => render::refused(printer, error.refusal()),
     }
