@@ -1,10 +1,9 @@
 """`for-path`, through the real `board`."""
 
 import json
-import subprocess
 from pathlib import Path
 
-from conftest import Board, control
+from conftest import Board, control, library
 
 
 def applying(board: Board, path: str) -> list[str]:
@@ -81,24 +80,52 @@ def test_a_new_file_asked_through_a_link_is_matched_where_it_would_be_written(bo
     assert applying(board, "/alias/a.md/new.md") == [], "nothing can be beneath a file"
 
 
-def test_a_new_file_under_a_mount_matches_no_pattern_and_one_beside_the_mount_does(
+def test_a_pattern_reaching_into_a_mount_matches_files_there_and_one_that_does_not_matches_none(
     board: Board, tmp_path: Path
 ) -> None:
-    library = tmp_path / "library"
-    (library / "docs").mkdir(parents=True)
-    (library / "docs" / "a.md").write_text("A.\n")
-    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
-    subprocess.run(["git", "init", "-q"], cwd=library, check=True)
-    subprocess.run([*git, "add", "."], cwd=library, check=True)
-    subprocess.run([*git, "commit", "-qm", "library"], cwd=library, check=True)
-    commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=library, check=True, capture_output=True, text=True
-    ).stdout.strip()
-    mount = {"$type": "board/mount/v1", "repo": str(library), "follow": "main", "commit": commit}
-    board.write("vendor/lib.json", json.dumps(mount))
-    board.write("controls/vendor.json", control("R.", paths=["vendor/*", "docs/*"]))
-    assert applying(board, "/vendor/lib/docs/new.md") == [], "patterns match only the board's own tree"
-    assert applying(board, "/vendor/new.md") == ["/controls/vendor"]
+    board.write("vendor/lib.json", library(tmp_path / "library", {"docs/a.md": "A.\n", "tasks/a.json": "{}"}))
+    board.write("controls/vendor.json", control("R.", paths=["vendor/*.md", "vendor/*/tasks/*.json"]))
+    board.write("controls/own.json", control("R.", paths=["docs/*", "tasks/*"]))
+    assert applying(board, "/vendor/lib/docs/a.md") == ["/controls/vendor"]
+    assert applying(board, "/vendor/lib/docs/new.md") == ["/controls/vendor"], "matched where it would be"
+    assert applying(board, "/vendor/lib/tasks/a") == ["/controls/vendor"], "a record is matched by its file"
+    assert applying(board, "/vendor/lib/docs/a.txt") == []
+    board.write("controls/beside.json", control("R.", paths=["vendor/*.md"]))
+    board.write("controls/vendor.json", control("R.", paths=["vendor/lib/*"]))
+    assert applying(board, "/vendor/new.md") == ["/controls/beside"], "an own file beside the mount"
+
+
+def test_a_file_in_a_commit_mounted_twice_is_matched_by_the_path_check_counts_it_under(
+    board: Board, tmp_path: Path
+) -> None:
+    pointer = library(tmp_path / "library", {"docs/a.md": "one"})
+    board.write("aa/lib.json", pointer)
+    board.write("zz/long/lib.json", pointer)
+    rule = {"budget": "words", "max": 9}
+    board.write("controls/short.json", control("R.", paths=["aa/*"], rule=rule))
+    board.write("controls/long.json", control("R.", paths=["zz/*"], rule=rule))
+    checked = board.call("check", {})["output"]["controls"]
+    assert [(item["control"], item["files"]) for item in checked] == [
+        ("/controls/long", []),
+        ("/controls/short", ["/aa/lib/docs/a.md"]),
+    ]
+    assert applying(board, "/zz/long/lib/docs/a.md") == ["/controls/short"]
+    assert applying(board, "/aa/lib/docs/a.md") == ["/controls/short"]
+    assert applying(board, "/zz/long/lib/docs/new.md") == ["/controls/long"], "a missing path is matched as asked"
+
+
+def test_a_symlink_or_directory_named_json_is_matched_by_its_name_and_a_json_file_by_its_file_name(
+    board: Board,
+) -> None:
+    board.write("docs/t.md", "T.\n")
+    board.write("docs/a.json", "{}")
+    (board.root / "docs/l.json").symlink_to("t.md")
+    board.write("box.json/f.md", "F.\n")
+    board.write("controls/names.json", control("R.", paths=["docs/l.json", "docs/a.json", "box.json"]))
+    board.write("controls/doubled.json", control("R.", paths=["*.json.json"]))
+    assert applying(board, "/docs/l.json") == ["/controls/names"]
+    assert applying(board, "/docs/a") == ["/controls/names"]
+    assert applying(board, "/box.json") == ["/controls/names"]
 
 
 def test_board_refuses_the_call_when_its_control_schema_is_wider_and_answers_with_the_shipped_one(board: Board) -> None:

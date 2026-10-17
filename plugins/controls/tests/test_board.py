@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from board_plugin import board as plugin_board
 from board_plugin.protocol import PluginError
-from conftest import Board, board_binary, control
+from conftest import Board, board_binary, control, library
 
 from board_controls.board import matched, referenced
 
@@ -95,7 +95,41 @@ def test_matched_pages_past_paths_and_patterns_that_hold_quotes_and_backslashes(
     assert queries(log) == len(files)
 
 
-@pytest.mark.parametrize("rows", [[], [["/controls/a", "/docs/1.md", "ok", None, "controls/a.json", "docs/1.md"]]])
+def test_matched_pages_across_mounts_and_a_pattern_anchored_in_the_own_tree_stays_there(
+    board: Board, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inner = library(tmp_path / "inner", {"docs/1.md": "1"})
+    board.write("vendor/lib.json", library(tmp_path / "outer", {"docs/1.md": "1", "inner.json": inner}))
+    board.write("docs/1.md", "1")
+    board.write("controls/a.json", control("Small.", paths=["*1.md"]))
+    board.write("controls/b.json", control("Small.", paths=["docs/*"]))
+    log = logged(board, monkeypatch)
+    rows = matched(plugin_board.Board(str(board.root), "controls"), page=1)
+    assert [row[:2] for row in rows] == [
+        ["/controls/a", "/docs/1.md"],
+        ["/controls/a", "/vendor/lib/docs/1.md"],
+        ["/controls/a", "/vendor/lib/inner/docs/1.md"],
+        ["/controls/b", "/docs/1.md"],
+    ]
+    assert queries(log) == len(rows)
+
+
+def test_matched_names_a_symlink_named_json_by_its_name_and_a_json_file_by_its_file_name(
+    board: Board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    board.write("docs/t.md", "T.\n")
+    board.write("docs/a.json", "{}")
+    (board.root / "docs/l.json").symlink_to("t.md")
+    board.write("controls/names.json", control("R.", paths=["docs/l.json", "docs/a.json"]))
+    board.write("controls/doubled.json", control("R.", paths=["*.json.json"]))
+    logged(board, monkeypatch)
+    rows = matched(plugin_board.Board(str(board.root), "controls"))
+    assert [row[:2] for row in rows] == [["/controls/names", "/docs/a"], ["/controls/names", "/docs/l.json"]]
+
+
+@pytest.mark.parametrize(
+    "rows", [[], [["/controls/a", "/docs/1.md", "ok", None, "controls/a.json", "docs/1.md", "worktree"]]]
+)
 def test_a_truncated_page_that_ends_no_later_than_the_last_fails_and_one_that_is_complete_is_read(
     monkeypatch: pytest.MonkeyPatch, rows: list[list[Any]]
 ) -> None:

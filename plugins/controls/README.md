@@ -23,7 +23,15 @@ files it governs.
   `board check`.
 - `paths` holds SQLite `GLOB` patterns, matched against each entry's path
   from the board's root, such as `docs/*.md`. In a `GLOB` pattern `*` also
-  matches `/`.
+  matches `/`. Patterns reach files in mounted boards, by their path through
+  the mount: `*.md` covers a mount's Markdown files, and `docs/*.md` does not
+  reach a board mounted at `vendor/lib`. Both capabilities match a file by
+  the one display path Board's index gives it: through the shortest mount
+  when a commit is mounted more than once, whichever path `for-path` was
+  asked. A file with a malformed path has no such name. In the
+  board's own tree it is matched by its path, so `check` fails with
+  `controls::file::unreadable`; in a mounted board it matches nothing, and
+  that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
   With a budget, it limits the sum of the `words` (separated by any
   whitespace) or `bytes` of every file the control applies to.
@@ -37,14 +45,13 @@ to `.board/types/controls/control/v1.schema.json`.
   each control that applies to that path, by reference or by pattern, with
   its requirement, purpose and rule. A control with a dangling reference
   still applies to the paths it does reach; an invalid control applies to
-  nothing. An agent can ask before it edits a
-  file. Patterns match the file the path resolves to, through any link. A
-  path with nothing there yet is matched where a file there would be, as
+  nothing. An agent can ask before it edits a file. Patterns match the file
+  the path resolves to, through any link or mount. A path with nothing there
+  yet is matched where a file there would be, as
   `board refs --missing` reports it, so a control on a link's target applies
   to a new file under the link. Ask about a new record by its file name, such
   as `/tasks/new.json`. A path beneath a file, where nothing can be, matches
-  no pattern, and neither does a new file under a mount, since patterns match
-  only the board's own working tree.
+  no pattern.
 - `board call controls.check` takes `{}` and measures every budget control.
   It returns each control's usage and its files. It fails, so `board call`
   exits 1, with `controls::budget::exceeded` when a control is over its
@@ -54,7 +61,8 @@ to `.board/types/controls/control/v1.schema.json`.
   `controls::file::unreadable` when a control reaches something Board cannot
   read as a file, such as a directory or a shadowed file. CI can run it as a gate. A file reached
   by both a reference and a pattern counts once, and a link's own file counts
-  nothing. `check` resolves the references of every budget control that has
+  nothing. A mounted file counts once, under the path Board names it by.
+  `check` resolves the references of every budget control that has
   `applies_to` with one `board refs` for each 10,000 controls. It reads every
   file the controls reach with `board get`, each file once however many
   controls reach it, in as few runs as Board's limits allow. It finds the
@@ -69,8 +77,9 @@ a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
 
 Both capabilities read the board through `board query`, `board refs` and
-`board get`, and only consider controls in the board's own working tree,
-not in mounted boards. The plugin extracts nothing and writes nothing to the
+`board get`. They consider only the controls in the board's own working tree,
+never those in mounted boards, though those controls' patterns reach mounted
+files. The plugin extracts nothing and writes nothing to the
 database Board gives it.
 
 ## Installing

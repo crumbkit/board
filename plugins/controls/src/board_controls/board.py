@@ -8,6 +8,16 @@ from board_plugin.protocol import PluginError
 
 from board_controls.shapes import CONTROL_TYPE, ControlRecord
 
+# Each file a pattern can match, with `full`: its display path without the
+# leading `/`, with `.json` put back when the display path dropped it. A file
+# in the own tree whose path is malformed has no display path and keeps its
+# path, so a budget never leaves it out silently.
+FILES = (
+    "files AS (SELECT *, COALESCE(substr(logical, 2)"
+    " || CASE WHEN substr(logical, -length(path) - 1) = '/' || path THEN '' ELSE '.json' END,"
+    " CASE source WHEN 'worktree' THEN path END) AS full FROM entries WHERE kind != 'pointer')"
+)
+
 
 def controls(board: Board) -> dict[str, ControlRecord]:
     """Every valid control in the board's own tree, by its logical path.
@@ -35,35 +45,38 @@ def degraded(board: Board) -> list[list[str]]:
 def matched(board: Board, page: int = LIMIT) -> list[list[Any]]:
     """Each control and each file one of its patterns matches, with the file's status and code.
 
-    A pointer's file holds where it leads, never what a budget counts, so no
-    pattern matches one. The rows come in pages of at most `page`, ordered by
-    the control's path and then the file's; each page asks for the rows after
-    the last pair the page before it ended on. A file with no logical path
-    is named by its path in the tree.
+    A pattern matches a file's `full` path (see FILES), so files in mounted
+    boards match by their display path through the mount. A pointer's file
+    holds where it leads, never what a budget counts, so no pattern matches
+    one. The rows come in
+    pages of at most `page`, ordered by the control's path and then the
+    file's; each page asks for the rows after the last pair the page before
+    it ended on.
     """
-    # Pages are keyed by path: unique in the working tree and, unlike logical, never null.
-    after = ("", "")
+    # Pages are keyed by the matched path and the file's source, which together are unique.
+    after = ("", "", "")
     found: list[list[Any]] = []
     while True:
         rows, truncated = board.query(
-            "SELECT DISTINCT r.logical, COALESCE(e.logical, e.path), e.status, e.code, r.path, e.path"  # noqa: S608 - values are quoted by literal()
-            " FROM records r, json_each(r.body, '$.paths') p, entries e"
+            f"WITH {FILES} SELECT DISTINCT"  # noqa: S608 - values are quoted by literal()
+            " r.logical, COALESCE(e.logical, e.full), e.status, e.code, r.path, e.full, e.source"
+            " FROM records r, json_each(r.body, '$.paths') p, files e"
             f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
-            " AND e.source = 'worktree' AND e.kind != 'pointer' AND e.path GLOB p.value"
-            f" AND (r.path, e.path) > ({literal(after[0])}, {literal(after[1])})"
-            " ORDER BY r.path, e.path",
+            " AND e.full GLOB p.value"
+            f" AND (r.path, e.full, e.source) > ({', '.join(literal(value) for value in after)})"
+            " ORDER BY r.path, e.full, e.source",
             page,
         )
         found.extend(row[:4] for row in rows)
         if not truncated:
             return found
-        if not rows or (rows[-1][4], rows[-1][5]) <= after:
+        if not rows or tuple(rows[-1][4:]) <= after:
             raise PluginError(
                 "controls::board::failed",
-                f"`board query` left rows out but returned none after ({after[0]}, {after[1]});"
+                f"`board query` left rows out but returned none after ({', '.join(after)});"
                 " check that the `board` first on PATH is this Board",
             )
-        after = (rows[-1][4], rows[-1][5])
+        after = (rows[-1][4], rows[-1][5], rows[-1][6])
 
 
 def referenced(board: Board, controls: list[str]) -> dict[str, set[str]]:

@@ -84,3 +84,18 @@ def board(tmp_path: Path) -> Board:
 def control(requirement: str, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """A `controls/control/v1` record."""
     return json.dumps({"$type": "controls/control/v1", "requirement": requirement, "purpose": "A test.", **fields})
+
+
+def library(root: Path, files: dict[str, str]) -> str:
+    """Commit `files` to a new repository at `root`, and return a mount pointer to that commit."""
+    for path, text in files.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text)
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+    subprocess.run([*git, "add", "."], cwd=root, check=True)
+    subprocess.run([*git, "commit", "-qm", "library"], cwd=root, check=True)
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    return json.dumps({"$type": "board/mount/v1", "repo": str(root), "follow": "main", "commit": commit})
