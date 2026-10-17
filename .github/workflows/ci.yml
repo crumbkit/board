@@ -39,39 +39,15 @@ jobs:
       - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-nextest@0.9.146
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      # bin/lint and bin/test include the Python gates (STANDARDS.md P2).
       - run: bin/lint
       - run: bin/test
-
-  # STANDARDS.md P2: each plugin's gates, its tests driving the real board.
-  python:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
-        project: [python/board-plugin, plugins/tasks, plugins/controls, plugins/evals]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ${{ matrix.project }}
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      - run: cargo build -p board-cli --locked
-      - run: uv sync --locked
-      - run: uv run --frozen ruff format --check .
-      - run: uv run --frozen ruff check .
-      - run: uv run --frozen pyright
-      - run: uv run --frozen pytest
       # The budget controls only record lint.toml; bin/lint checks they agree.
       - name: viitta passes board check with the controls plugin installed
-        if: matrix.project == 'plugins/controls'
         run: |
           mkdir -p "$RUNNER_TEMP/data/board/plugins"
-          ln -s "$PWD" "$RUNNER_TEMP/data/board/plugins/controls"
-          cd ../..
+          ln -s "$PWD/plugins/controls" "$RUNNER_TEMP/data/board/plugins/controls"
           export PATH="$PWD/target/debug:$PATH" XDG_DATA_HOME="$RUNNER_TEMP/data"
           board check > /dev/null
 

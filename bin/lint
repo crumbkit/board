@@ -7,3 +7,13 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 cargo xtask lint
+
+# The Python gates, STANDARDS.md P2. uv syncs each project from its lockfile.
+for project in python/board-plugin plugins/tasks plugins/controls plugins/evals; do
+  (
+    cd "$project"
+    uv run --locked ruff format --check .
+    uv run --locked ruff check .
+    uv run --locked pyright
+  )
+done

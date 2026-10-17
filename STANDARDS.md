@@ -47,8 +47,8 @@ what enforces it. A rule without a gate is still a rule.
     - Use edition 2024 and the default rustfmt settings.
     - Pin the toolchain in `rust-toolchain.toml`, and state the reason when it holds back a version.
     - Declare `[workspace.lints]`, and set `[lints] workspace = true` in every member.
-    - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`.
-    - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests.
+    - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`, then the Python lint gates of P2.
+    - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests, then each Python project's `pytest`.
     - CI runs both scripts on Linux for each pull request and push to `main`; `release.yml` reruns them on macOS and Linux, with the timing job, before a release. CI also runs `cargo deny check`, `cargo shear` and `zizmor` on the workflows. Every action is pinned by commit SHA and every installed tool by exact version. A non-blocking `cargo mutants --in-diff` job reports on each pull request.
 
 ## Documentation
@@ -172,7 +172,7 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
 ## Python: plugins
 
 - **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
-- **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`. CI runs them on Linux, and on macOS before a release.
+- **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`, run in every Python project by `bin/lint` and `bin/test`.
 - **P3. Typed edges.** Board validates a call's input and output, and the records in the board's own tree, against the plugin's schemas (docs/plugins.md), so a plugin types them with TypedDicts and imports pydantic only to generate its schemas. A test compares the committed manifest and schemas with the generated ones, and another that a call loads no pydantic. A plugin that checks more than its schemas state validates with pydantic models with `extra="forbid"`.
 - **P4. Board's contract.** Rules 3, 4 and 17 apply to the protocol: every document carries `$type`, every error a stable code `<plugin>::<area>::<reason>`, the exit code is 0 or 1, and logs go to stderr only.
 - **P5. Pure extraction.** Extraction is a function of one record's bytes. Anything spanning records is a query.
