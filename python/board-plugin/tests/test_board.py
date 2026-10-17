@@ -48,7 +48,7 @@ def test_a_board_that_prints_no_json_is_a_failure_and_one_that_does_is_read(monk
 
 def test_a_board_error_is_a_refusal_carrying_boards_code_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
     error = {
-        "schema": "crumbkit/failure/v1",
+        "schema": "board/failure/v1",
         "code": "board::query::invalid",
         "message": "no such table",
         "recovery": {"kind": "hint", "text": "fix it"},

@@ -230,7 +230,7 @@ library's `Board.get` does that. `controls.check` reads every
 file its measured controls reach this way.
 
 Each command returns one typed report. `--json` prints it as crumbkit's
-`board/<command>-report/v2`, or `crumbkit/failure/v1` on failure;
+`board/<command>-report/v2`, or `board/failure/v1` on failure;
 [architecture/errors.md](architecture/errors.md) gives both shapes. Exit codes: 0 done,
 1 failed, 2 a refused command line (`board::usage::invalid`).
 
@@ -289,7 +289,7 @@ changes plugins such as `tasks`.
 
 Codes are `board::<area>::<reason>`, spelled once in code and never changed
 after release. [architecture/errors.md](architecture/errors.md) lists the v0
-set and the values an error names in text and in `crumbkit/failure/v1`.
+set and the values an error names in text and in `board/failure/v1`.
 
 ## Testing
 

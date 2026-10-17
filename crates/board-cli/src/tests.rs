@@ -1117,7 +1117,7 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
         &["put", "--batch", "--json"],
         format!("{good}\n{bad}\n").as_bytes(),
     ));
-    assert_eq!(document["schema"], "crumbkit/failure/v1");
+    assert_eq!(document["schema"], "board/failure/v1");
     assert_eq!(
         document["recovery"]["text"],
         "fix each line listed, then send the whole batch again; nothing was written"

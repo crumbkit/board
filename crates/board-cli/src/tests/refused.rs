@@ -42,7 +42,7 @@ fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_j
     assert_eq!(
         serde_json::from_slice::<Value>(&document.stdout).unwrap(),
         json!({
-            "schema": "crumbkit/failure/v1",
+            "schema": "board/failure/v1",
             "code": "board::plugin::failed",
             "message": "plugin tasks exited 1",
             "fields": {"plugin": "tasks"},

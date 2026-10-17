@@ -114,7 +114,7 @@ fn a_refused_directory_is_an_error_document_with_json_and_an_admitted_one_is_a_r
     assert_eq!(refused.code, 2);
     assert!(refused.stderr.is_empty());
     let error = json(&refused);
-    assert_eq!(error["schema"], "crumbkit/failure/v1");
+    assert_eq!(error["schema"], "board/failure/v1");
     assert_eq!(error["code"], "board::usage::invalid");
     assert_eq!(
         error["message"],

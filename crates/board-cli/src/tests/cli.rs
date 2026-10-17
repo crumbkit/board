@@ -312,7 +312,7 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
     assert_eq!(refused.code, 2);
     assert!(refused.stderr.is_empty());
     let error = json(&refused);
-    assert_eq!(error["schema"], "crumbkit/failure/v1");
+    assert_eq!(error["schema"], "board/failure/v1");
     assert_eq!(error["code"], "board::usage::invalid");
     assert_eq!(
         error["message"],

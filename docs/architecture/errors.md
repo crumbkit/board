@@ -27,6 +27,7 @@ The v0 set:
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
+| `output` | `over_budget`: another command's result is larger than 64 MiB, or than `BOARD_OUTPUT_BUDGET` bytes when that variable is smaller, and is not a listing that can be cut to fit |
 | `usage` | `invalid`: the command line was refused, exit 2 |
 
 ## Reports and failures
@@ -38,7 +39,7 @@ document for each path refused. A listing adds `total`, `truncated` and
 `columns`. The envelope has no field for notes, so they go to stderr. Text
 prints a note before any failure.
 
-Board prints an error in crumbkit's `crumbkit/failure/v1` shape: `code`,
+Board prints an error in crumbkit's `board/failure/v1` shape: `code`,
 `message`, `fields` and `recovery`. A failure inside a report's `failures` also
 has `key`, the path asked for, and `index`, its position among the paths asked.
 A command that fails as a whole prints the document alone and exits 1, or 2
@@ -67,7 +68,7 @@ filled in, on stderr.
 
 ## What an error names
 
-A `crumbkit/failure/v1` document carries `fields` when the error knows any value at
+A `board/failure/v1` document carries `fields` when the error knows any value at
 fault. Each key appears only when Board knows its value. The table lists the
 keys of Board's own codes; [docs/plugins.md](../plugins.md) says what a
 plugin's own code carries.

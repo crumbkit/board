@@ -322,7 +322,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
         None,
     );
     let refused = json(&refused);
-    assert_eq!(refused["schema"], "crumbkit/failure/v1");
+    assert_eq!(refused["schema"], "board/failure/v1");
     assert_eq!(refused["code"], failed().code().as_str());
     let admitted = render::refs(
         &mut Printer::of(true, 1 << 20, &[]),

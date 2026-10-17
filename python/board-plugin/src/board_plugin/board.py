@@ -29,7 +29,7 @@ REFS_OVER_BUDGET = "board::refs::over_budget"
 # What a query report carries when it left rows out because they would pass its byte budget.
 QUERY_OVER_BUDGET = "board::query::over_budget"
 # The schema of the document Board prints when a command fails.
-FAILURE = "crumbkit/failure/v1"
+FAILURE = "board/failure/v1"
 
 
 def literal(text: str) -> str:

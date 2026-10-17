@@ -1,5 +1,5 @@
 //! Hints that name the values an error knows, and the typed `fields` of
-//! `crumbkit/failure/v1` (STANDARDS.md 25).
+//! `board/failure/v1` (STANDARDS.md 25).
 
 use serde_json::json;
 

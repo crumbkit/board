@@ -449,7 +449,7 @@ fn a_plugins_error_prints_as_its_own_code_with_its_stderr() {
          code:  tasks::date::bad\na log line\n"
     );
     let report = json(&call(&board, &data, &["--json", "call", "tasks.due"], "{}"));
-    assert_eq!(report["schema"], "crumbkit/failure/v1");
+    assert_eq!(report["schema"], "board/failure/v1");
     assert_eq!(report["code"], "tasks::date::bad");
     assert_eq!(
         report["fields"],
