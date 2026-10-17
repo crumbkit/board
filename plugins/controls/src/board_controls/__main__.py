@@ -14,7 +14,7 @@ def call(request: CallRequest) -> ForPathOutput | CheckOutput:
     if request.capability == "for-path":
         return {"controls": for_path(request)}
     if request.capability == "check":
-        return {"controls": check(request)}
+        return check(request)
     raise PluginError(
         "controls::call::unknown_capability",
         f"controls offers no capability {request.capability}; it offers for-path and check",

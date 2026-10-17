@@ -48,7 +48,8 @@ def manifest() -> dict[str, JsonValue]:
             },
             {
                 "name": "check",
-                "description": "Check every budget control. Fails naming each control over its budget or degraded.",
+                "description": "Check the controls under a path, `/` when left out."
+                " Fails naming each control over budget or degraded.",
                 "inputSchema": _schema(CheckInput),
                 "outputSchema": _schema(CheckOutput),
                 "annotations": {"readOnlyHint": True},

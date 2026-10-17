@@ -227,7 +227,7 @@ path is always read. One `board::get::over_budget` failure names the later
 paths in `left_out`, to ask for in another run. So a run holds at most
 64 MiB, one more answer, and the short errors of the paths it left. The plugin
 library's `Board.get` does that. `controls.check` reads every
-file its controls reach this way.
+file its measured controls reach this way.
 
 Each command returns one typed report. `--json` prints it as crumbkit's
 `board/<command>-report/v2`, or `crumbkit/failure/v1` on failure;

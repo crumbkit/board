@@ -52,24 +52,24 @@ to `.board/types/controls/control/v1.schema.json`.
   to a new file under the link. Ask about a new record by its file name, such
   as `/tasks/new.json`. A path beneath a file, where nothing can be, matches
   no pattern.
-- `board call controls.check` takes `{}` and measures every budget control.
-  It returns each control's usage and its files. It fails, so `board call`
-  exits 1, with `controls::budget::exceeded` when a control is over its
-  budget, and with `controls::control::degraded` when Board marks a control
-  degraded, for example because a file it references is missing. Each error
-  names every control it applies to. It fails with
-  `controls::file::unreadable` when a control reaches something Board cannot
-  read as a file, such as a directory or a shadowed file. CI can run it as a gate. A file reached
-  by both a reference and a pattern counts once, and a link's own file counts
-  nothing. A mounted file counts once, under the path Board names it by.
-  `check` resolves the references of every budget control that has
-  `applies_to` with one `board refs` for each 10,000 controls. It reads every
-  file the controls reach with `board get`, each file once however many
-  controls reach it, in as few runs as Board's limits allow. It finds the
-  files each control's patterns match with `board query` pages of up to
-  10,000 pairs of control and file, so a board may match more than that.
-  Each page is a separate run; a file added or removed between pages may or
-  may not be counted, but no pair is skipped or counted twice.
+- `board call controls.check` takes an optional path, such as
+  `{"path": "/repos/crumbkit"}`, `/` when left out, and checks it where any
+  link or mount leads. A path with nothing there fails with
+  `controls::board::refused`. Under `/` it lists every control, so one whose
+  pattern matches nothing shows with no files; under another path, only
+  those reaching a file there. `measured` holds the budget controls, with
+  usage and `files`: every file the budget counts, inside the path or not.
+  `stated` holds the rest, with `files` under the path only, and never fails
+  the call. It fails, exiting 1, with `controls::budget::exceeded` when a
+  measured control is over budget; `controls::control::degraded` when Board
+  marks any control degraded, under any path; and
+  `controls::file::unreadable` when a measured control reaches something
+  that is not a readable file, such as a directory. Each error names every
+  control it applies to. A file counts once, however many references,
+  patterns, links or mounts reach it, and a link's own file counts nothing.
+  Reads are batched: one `board refs` per 10,000 controls, `board get` once
+  per file, and `board query` pages of 10,000 control–file pairs, so a file
+  changed between pages may or may not be counted.
 
 Board refuses both calls with `board::plugin::schema_differs` when the board's
 copy of the control schema differs from the one the plugin ships. When Board refuses a request the plugin makes, such as

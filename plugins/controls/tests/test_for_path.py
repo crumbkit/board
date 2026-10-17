@@ -104,7 +104,7 @@ def test_a_file_in_a_commit_mounted_twice_is_matched_by_the_path_check_counts_it
     rule = {"budget": "words", "max": 9}
     board.write("controls/short.json", control("R.", paths=["aa/*"], rule=rule))
     board.write("controls/long.json", control("R.", paths=["zz/*"], rule=rule))
-    checked = board.call("check", {})["data"]["output"]["controls"]
+    checked = board.call("check", {})["data"]["output"]["measured"]
     assert [(item["control"], item["files"]) for item in checked] == [
         ("/controls/long", []),
         ("/controls/short", ["/aa/lib/docs/a.md"]),

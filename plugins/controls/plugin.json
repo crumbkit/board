@@ -111,11 +111,17 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "Check every budget control. Fails naming each control over its budget or degraded.",
+      "description": "Check the controls under a path, `/` when left out. Fails naming each control over budget or degraded.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "Check every budget control in the board.",
-        "properties": {},
+        "description": "Check the controls that apply to a file at or under `path`, `/` when left out.",
+        "properties": {
+          "path": {
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
         "title": "CheckInput",
         "type": "object"
       },
@@ -124,7 +130,7 @@
         "$defs": {
           "Checked": {
             "additionalProperties": false,
-            "description": "A budget control and what its files use.",
+            "description": "A budget control and what all its files use.",
             "properties": {
               "budget": {
                 "enum": [
@@ -168,21 +174,62 @@
             ],
             "title": "Checked",
             "type": "object"
+          },
+          "Stated": {
+            "additionalProperties": false,
+            "description": "A control without a rule and its files at or under the path.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "files": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Files",
+                "type": "array"
+              },
+              "purpose": {
+                "title": "Purpose",
+                "type": "string"
+              },
+              "requirement": {
+                "title": "Requirement",
+                "type": "string"
+              }
+            },
+            "required": [
+              "control",
+              "requirement",
+              "purpose",
+              "files"
+            ],
+            "title": "Stated",
+            "type": "object"
           }
         },
         "additionalProperties": false,
-        "description": "Every budget control, by the control's path; each is within its budget.",
+        "description": "The controls that apply under the path, by the control's path; each budget is met.",
         "properties": {
-          "controls": {
+          "measured": {
             "items": {
               "$ref": "#/$defs/Checked"
             },
-            "title": "Controls",
+            "title": "Measured",
+            "type": "array"
+          },
+          "stated": {
+            "items": {
+              "$ref": "#/$defs/Stated"
+            },
+            "title": "Stated",
             "type": "array"
           }
         },
         "required": [
-          "controls"
+          "measured",
+          "stated"
         ],
         "title": "CheckOutput",
         "type": "object"

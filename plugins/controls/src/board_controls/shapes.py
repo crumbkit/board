@@ -82,11 +82,13 @@ class ForPathOutput(TypedDict):
 
 
 class CheckInput(TypedDict):
-    """Check every budget control in the board."""
+    """Check the controls that apply to a file at or under `path`, `/` when left out."""
+
+    path: NotRequired[Annotated[str, Extra(pattern="^/")]]
 
 
 class Checked(TypedDict):
-    """A budget control and what its files use."""
+    """A budget control and what all its files use."""
 
     control: str
     requirement: str
@@ -96,7 +98,17 @@ class Checked(TypedDict):
     files: list[str]
 
 
-class CheckOutput(TypedDict):
-    """Every budget control, by the control's path; each is within its budget."""
+class Stated(TypedDict):
+    """A control without a rule and its files at or under the path."""
 
-    controls: list[Checked]
+    control: str
+    requirement: str
+    purpose: str
+    files: list[str]
+
+
+class CheckOutput(TypedDict):
+    """The controls that apply under the path, by the control's path; each budget is met."""
+
+    measured: list[Checked]
+    stated: list[Stated]
