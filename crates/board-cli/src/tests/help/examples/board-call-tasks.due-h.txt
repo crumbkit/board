@@ -3,7 +3,7 @@ Unfinished tasks, open or waiting, due before a date.
 Usage: board call tasks.due [OPTIONS]
 
 Options:
-      --before <before>  string
+      --before <before>  The date, as YYYY-MM-DD, that the listed tasks are due before.
   -h, --help             Print help (see more with '--help')
 
 Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.

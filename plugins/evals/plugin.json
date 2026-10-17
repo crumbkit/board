@@ -25,6 +25,7 @@
         "properties": {
           "limit": {
             "default": 100,
+            "description": "The most evals to list, 1 to 100; 100 when left out.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -32,12 +33,14 @@
           },
           "repo": {
             "default": null,
+            "description": "A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it; give subject or repo, not both.",
             "minLength": 1,
             "title": "Repo",
             "type": "string"
           },
           "subject": {
             "default": null,
+            "description": "The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case; give subject or repo, not both.",
             "minLength": 1,
             "title": "Subject",
             "type": "string"
@@ -158,6 +161,7 @@
         "properties": {
           "limit": {
             "default": 100,
+            "description": "The most evals to list, 1 to 100; 100 when left out.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",
@@ -268,7 +272,7 @@
       }
     }
   ],
-  "description": "Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about` with `{\"subject\": \"<name>\"}` on stdin, which lists the evals of what you will test. `board -C <board> call evals.open` with `{}` on stdin lists those still planned or running. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which lists the evals of what you will test. `board -C <board> call evals.open` lists those still planned or running. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "testing"
   },

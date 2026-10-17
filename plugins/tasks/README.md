@@ -43,11 +43,11 @@ earlier states, so a task has no id, timestamp or revision.
 
 ## Capabilities
 
-`board call tasks.due` takes `{"before": "YYYY-MM-DD"}` and returns the `open`
-and `waiting` tasks due before that date, by due date then path.
+`board call tasks.due --before YYYY-MM-DD` returns the `open` and `waiting`
+tasks due before that date, by due date then path.
 
-`board call tasks.next` takes `{"limit": n}`, where `n` is 1 to 100 and
-defaults to 100. It returns the `open` and `waiting` tasks by due date, with
+`board call tasks.next` returns at most 100 tasks; `--limit n` lists at most
+`n`, from 1 to 100. It returns the `open` and `waiting` tasks by due date, with
 undated tasks last, then by path. A task is `blocked` while any task in its
 `after` is not `done`; `blocked_by` names each one once, by its display path,
 or as written when it reaches nothing. A task waiting on a `dropped` task stays

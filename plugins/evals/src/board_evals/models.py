@@ -177,15 +177,35 @@ class AboutInput(Strict):
 
     model_config = ConfigDict(json_schema_extra=SUBJECT_OR_REPO)
 
-    subject: str | SkipJsonSchema[None] = Field(default=None, min_length=1)
-    repo: str | SkipJsonSchema[None] = Field(default=None, min_length=1)
-    limit: int = Field(default=LIST_LIMIT, ge=1, le=LIST_LIMIT)
+    subject: str | SkipJsonSchema[None] = Field(
+        default=None,
+        min_length=1,
+        description="The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case;"
+        " give subject or repo, not both.",
+    )
+    repo: str | SkipJsonSchema[None] = Field(
+        default=None,
+        min_length=1,
+        description="A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it;"
+        " give subject or repo, not both.",
+    )
+    limit: int = Field(
+        default=LIST_LIMIT,
+        ge=1,
+        le=LIST_LIMIT,
+        description=f"The most evals to list, 1 to {LIST_LIMIT}; {LIST_LIMIT} when left out.",
+    )
 
 
 class OpenInput(Strict):
     """The evals still to do or being done, at most `limit` of them."""
 
-    limit: int = Field(default=LIST_LIMIT, ge=1, le=LIST_LIMIT)
+    limit: int = Field(
+        default=LIST_LIMIT,
+        ge=1,
+        le=LIST_LIMIT,
+        description=f"The most evals to list, 1 to {LIST_LIMIT}; {LIST_LIMIT} when left out.",
+    )
 
 
 class Listed(Strict):

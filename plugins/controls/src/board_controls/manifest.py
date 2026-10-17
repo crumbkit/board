@@ -37,10 +37,10 @@ def manifest() -> dict[str, JsonValue]:
         "description": (
             "The controls plugin keeps requirements on files as records in the board that holds the files. "
             "Use it when you start work in a board or a repository it mounts, and before you edit a file a "
-            'control may govern. Start with `board -C <board> call controls.check` with `{"path": '
-            '"/<directory>"}` on stdin, which lists the budgets it measures and the written requirements '
-            'under that path. `board -C <board> call controls.for-path` with `{"path": "/<file>"}` on stdin '
-            "lists the controls on one file. SKILL.md and README.md in the plugin's directory say more."
+            "control may govern. Start with `board -C <board> call controls.check --path /<directory>`, "
+            "which lists the budgets it measures and the written requirements under that path. "
+            "`board -C <board> call controls.for-path --path /<file>` lists the controls on one file. "
+            "SKILL.md and README.md in the plugin's directory say more."
         ),
         "run": [".venv/bin/python", "-m", "board_controls"],
         "metadata": {"area": "governance"},

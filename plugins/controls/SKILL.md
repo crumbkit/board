@@ -1,6 +1,6 @@
 ---
 name: controls
-description: 'The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board -C <board> call controls.check` with `{"path": "/<directory>"}` on stdin, which lists the budgets it measures and the written requirements under that path. `board -C <board> call controls.for-path` with `{"path": "/<file>"}` on stdin lists the controls on one file. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board -C <board> call controls.check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # controls
@@ -20,7 +20,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 
 1. When you start work, check the directory you will work in:
 
-       echo '{"path": "/<directory>"}' | board -C <board> call controls.check
+       board -C <board> call controls.check --path /<directory>
 
    `measured` lists the controls with a budget, with `used`, `max` and every
    file the budget counts. `stated` lists the written requirements, with
@@ -30,7 +30,7 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    each control.
 2. Before you edit a file, ask which controls apply to it:
 
-       echo '{"path": "/<file>"}' | board -C <board> call controls.for-path
+       board -C <board> call controls.for-path --path /<file>
 
    Follow each requirement it returns. A new file is asked about by the
    path it will have.

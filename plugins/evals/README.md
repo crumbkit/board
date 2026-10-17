@@ -77,12 +77,12 @@ The run has no counts of passes and failures. Count the results.
 
 ## Capabilities
 
-`board call evals.about` takes `{"subject": "gix"}` and returns the evals that
-name that subject, whatever their status. It takes `{"repo": "/repos/viitta"}`
-instead and returns the evals whose `repos` include that exact path, and the
+`board call evals.about --subject gix` returns the evals that name that
+subject, whatever their status. `board call evals.about --repo /repos/viitta`
+returns the evals whose `repos` include that exact path, and the
 evals stored in that mounted board, whose paths start with `/repos/viitta/`.
 Board refuses input with both or neither as `board::plugin::bad_input`.
-`board call evals.open` takes `{}` and returns the evals whose status is
+`board call evals.open` returns the evals whose status is
 `planned` or `running`. A `concluded` eval without a verdict is not valid, so
 neither lists it.
 

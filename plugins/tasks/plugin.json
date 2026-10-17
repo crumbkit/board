@@ -9,6 +9,7 @@
         "description": "Unfinished tasks due before this date.",
         "properties": {
           "before": {
+            "description": "The date, as YYYY-MM-DD, that the listed tasks are due before.",
             "format": "date",
             "title": "Before",
             "type": "string"
@@ -85,6 +86,7 @@
         "properties": {
           "limit": {
             "default": 100,
+            "description": "The most tasks to list, 1 to 100; 100 when left out.",
             "maximum": 100,
             "minimum": 1,
             "title": "Limit",

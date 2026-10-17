@@ -58,7 +58,7 @@ class TaskRecord(BaseModel):
 class DueInput(Strict):
     """Unfinished tasks due before this date."""
 
-    before: datetime.date
+    before: datetime.date = Field(description="The date, as YYYY-MM-DD, that the listed tasks are due before.")
 
 
 class DueTask(Strict):
@@ -79,7 +79,12 @@ class DueOutput(Strict):
 class NextInput(Strict):
     """The unfinished tasks to work on next, at most `limit` of them."""
 
-    limit: int = Field(default=NEXT_LIMIT, ge=1, le=NEXT_LIMIT)
+    limit: int = Field(
+        default=NEXT_LIMIT,
+        ge=1,
+        le=NEXT_LIMIT,
+        description=f"The most tasks to list, 1 to {NEXT_LIMIT}; {NEXT_LIMIT} when left out.",
+    )
 
 
 class NextTask(Strict):

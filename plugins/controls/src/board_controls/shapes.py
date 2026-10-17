@@ -63,7 +63,14 @@ the board whose path matches one of `paths`, SQLite GLOB patterns such as
 class ForPathInput(TypedDict):
     """The controls that apply to this logical path."""
 
-    path: Annotated[str, Extra(pattern="^/")]
+    path: Annotated[
+        str,
+        Extra(
+            pattern="^/",
+            description="The file to list the controls of, by its logical path, such as /docs/README.md;"
+            " ask about a new file by the path it will have.",
+        ),
+    ]
 
 
 class Applying(TypedDict):
@@ -84,7 +91,16 @@ class ForPathOutput(TypedDict):
 class CheckInput(TypedDict):
     """Check the controls that apply to a file at or under `path`, `/` when left out."""
 
-    path: NotRequired[Annotated[str, Extra(pattern="^/")]]
+    path: NotRequired[
+        Annotated[
+            str,
+            Extra(
+                pattern="^/",
+                description="The directory or file whose controls to check, by its logical path,"
+                " such as /docs; / when left out.",
+            ),
+        ]
+    ]
 
 
 class Checked(TypedDict):

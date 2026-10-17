@@ -1,6 +1,6 @@
 ---
 name: evals
-description: 'Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about` with `{"subject": "<name>"}` on stdin, which lists the evals of what you will test. `board -C <board> call evals.open` with `{}` on stdin lists those still planned or running. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record every test of a library, tool, model or agent as an eval and its runs in the board, and check what was already tested before testing. Use it before you start a test and when you conclude one. Start with `board -C <board> call evals.about --subject <name>`, which lists the evals of what you will test. `board -C <board> call evals.open` lists those still planned or running. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # evals
@@ -51,9 +51,9 @@ of the repository you are in before you test.
 ## Steps
 
 1. Before testing anything, look for earlier evals. Run
-   `echo '{"repo": "/repos/<name>"}' | board call evals.about` with the
-   repository's mount, and `echo '{"subject": "<name>"}' | board call evals.about`
-   with each thing you will test. The `repo` lookup finds the evals that
+   `board call evals.about --repo /repos/<name>` with the repository's
+   mount, and `board call evals.about --subject <name>` with each thing you
+   will test. The `repo` lookup finds the evals that
    name the mount in `repos` and the evals stored in the repository's own
    board. It reads that board through the mount at the mount's `commit`, so
    it misses evals the repository added after that commit. To see them, run
@@ -62,7 +62,7 @@ of the repository you are in before you test.
    `origin/main`, such as ones on your branch, are not seen this way.
 
    Ask the personal board and any board the owner named for sharing.
-   `echo '{}' | board call evals.open` lists the evals still planned or
+   `board call evals.open` lists the evals still planned or
    running.
 2. Run the remaining steps in the board you chose. Before gathering
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.

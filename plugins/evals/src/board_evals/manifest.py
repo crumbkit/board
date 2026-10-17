@@ -16,10 +16,9 @@ def manifest() -> dict[str, JsonValue]:
         "description": (
             "Record every test of a library, tool, model or agent as an eval and its runs in the board, and "
             "check what was already tested before testing. Use it before you start a test and when you "
-            'conclude one. Start with `board -C <board> call evals.about` with `{"subject": "<name>"}` on '
-            "stdin, which lists the evals of what you will test. `board -C <board> call evals.open` with "
-            "`{}` on stdin lists those still planned or running. SKILL.md and README.md in the plugin's "
-            "directory say more."
+            "conclude one. Start with `board -C <board> call evals.about --subject <name>`, which lists the "
+            "evals of what you will test. `board -C <board> call evals.open` lists those still planned or "
+            "running. SKILL.md and README.md in the plugin's directory say more."
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_evals"],
         "metadata": {"area": "testing"},

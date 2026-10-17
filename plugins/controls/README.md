@@ -41,7 +41,7 @@ to `.board/types/controls/control/v1.schema.json`.
 
 ## Capabilities
 
-- `board call controls.for-path` takes `{"path": "/AGENTS.md"}` and returns
+- `board call controls.for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
   its requirement, purpose and rule. A control with a dangling reference
   still applies to the paths it does reach; an invalid control applies to
@@ -52,9 +52,9 @@ to `.board/types/controls/control/v1.schema.json`.
   to a new file under the link. Ask about a new record by its file name, such
   as `/tasks/new.json`. A path beneath a file, where nothing can be, matches
   no pattern.
-- `board call controls.check` takes an optional path, such as
-  `{"path": "/repos/crumbkit"}`, `/` when left out, and checks it where any
-  link or mount leads. A path with nothing there fails with
+- `board call controls.check --path /repos/crumbkit` checks the controls
+  under that path, following any link or mount on the way. Without `--path`
+  it checks `/`. A path with nothing there fails with
   `controls::board::refused`. Under `/` it lists every control, so one whose
   pattern matches nothing shows with `files: []` if measured and `files: 0` if
   stated; under another path, only those reaching a file there. `measured`
