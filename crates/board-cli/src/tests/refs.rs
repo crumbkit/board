@@ -249,14 +249,14 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
         (refused.code, refused.error.as_deref()),
         (1, Some("board::refs::over_budget"))
     );
-    // The index is in memory, as no cache is given, which a note says after
-    // crumbkit's text.
+    // The index is in memory, as no cache is given, which crumbkit prints as
+    // the batch's note, before the failure.
     assert_eq!(
         text(&refused.stderr),
-        "error: 2 more answers did not fit in the output budget of 27 bytes\n\
+        "note: the index is in memory for this run: there is no cache directory\n\
+         error: 2 more answers did not fit in the output budget of 27 bytes\n\
          \x20 help:  run `board refs /hub /projects/p`\n\
-         \x20 code:  board::refs::over_budget\n\
-         note: the index is in memory for this run: there is no cache directory\n"
+         \x20 code:  board::refs::over_budget\n"
     );
     // Room for the first answer and the failure that leaves the other two
     // out, but not for /hub's references.

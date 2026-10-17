@@ -381,6 +381,14 @@ fn init_makes_a_repository_a_board_and_says_what_to_run_next() {
     assert!(!text(&created.stdout).contains("next:"));
     assert!(text(&created.stderr).starts_with("next: run `board check`"));
     assert_eq!(board_in(scenario.workdir(), &["check"]).code, 0);
+    let fresh = Scenario::new();
+    let created = board_in(fresh.workdir(), &["init", "--json"]);
+    assert_eq!(json(&created)["data"]["created"], true);
+    assert_eq!(
+        text(&created.stderr),
+        "",
+        "the JSON document leaves the note out"
+    );
     let again = board_in(scenario.workdir(), &["init"]);
     assert!(text(&again.stdout).ends_with(" is already a board\n"));
     assert_eq!(text(&again.stderr), "");

@@ -508,8 +508,9 @@ fn exit_text(exit: Option<i32>) -> String {
 
 impl CallError {
     /// This error as Board reports it, with the end of the
-    /// plugin's stderr when it ran. The plugin's own refusal keeps its code
-    /// and fields, with `plugin` added, and has no hint from Board.
+    /// plugin's stderr when it ran, also under `stderr` in its fields. The
+    /// plugin's own refusal keeps its code and fields, with `plugin` and
+    /// `stderr` added, and has no hint from Board.
     pub fn refusal(&self) -> Refusal {
         let stderr = match self {
             Self::Timeout { stderr, .. }
@@ -520,12 +521,16 @@ impl CallError {
             _ => None,
         };
         let (mut extra, mut first, mut at) = (Map::new(), None, None);
+        if let Some(stderr) = stderr {
+            extra.insert("stderr".to_owned(), json!(String::from_utf8_lossy(stderr)));
+        }
         let (code, plugin, capability) = match self {
             Self::Plugin {
                 plugin, failure, ..
             } => {
                 let mut fields = failure.fields.clone();
                 fields.insert("plugin".to_owned(), json!(plugin));
+                fields.extend(extra);
                 let (code, message) = (failure.code.as_str(), failure.message.clone());
                 return Refusal {
                     stderr: stderr.cloned().unwrap_or_default(),
@@ -581,9 +586,6 @@ impl CallError {
             Self::TooLarge { plugin, .. } => (Code::PluginTooLarge, Some(plugin), None),
             Self::BadOutput { plugin, .. } => (Code::PluginBadOutput, Some(plugin), None),
         };
-        if let Some(stderr) = stderr {
-            extra.insert("stderr".to_owned(), json!(String::from_utf8_lossy(stderr)));
-        }
         let fields = Fields {
             plugin: plugin.map(ToString::to_string),
             capability: capability.map(ToString::to_string),

@@ -123,8 +123,8 @@ on stdin and:
 
 A plugin exits 0 with a result, or 1 with an error whose code is
 `<plugin>::<area>::<reason>`, starting with its own name. Board reports that
-code as its own, with the plugin's fields and `plugin` added; Board adds no
-other key, and shows the plugin's stderr only in text output. Any other answer
+code as its own, with the plugin's fields plus `plugin` and `stderr`, the end
+of the plugin's stderr; Board adds no other key. Any other answer
 on stdout is `board::plugin::bad_output`; a non-zero exit without an error
 document, or a signal, is `board::plugin::failed`. A `run` program that
 cannot be started is `board::plugin::not_started`. Stderr is for logs; Board

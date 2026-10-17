@@ -471,7 +471,7 @@ fn a_plugins_own_error_is_reported_with_its_code_and_fields() {
     assert_eq!(refused.to_string(), "the date 2026-13-01 is not a date");
     assert_eq!(
         Value::Object(refused.refusal().fields),
-        json!({"date": "2026-13-01", "plugin": "tasks"})
+        json!({"date": "2026-13-01", "plugin": "tasks", "stderr": ""})
     );
 }
 

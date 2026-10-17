@@ -314,7 +314,7 @@ pub(crate) fn run(
         Ok(parsed) => parsed,
         Err(stop) => {
             let code = stop.number();
-            if let Some(output) = (code == 2).then(|| corrected(&arguments)).flatten() {
+            if let Some(output) = (code == 2).then(|| split(&arguments)).flatten() {
                 return output;
             }
             let error = (code == 2).then(|| Code::UsageInvalid.as_str().to_owned());
@@ -437,11 +437,9 @@ fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
     Refusal::new(code, message, &Fields::default())
 }
 
-/// Glue for two usage failures crumbkit words alike for every tool: a run
-/// given too many paths says to split them, and a logical path without its
-/// leading `/` or with `.json` names the corrected line when that line
-/// parses.
-fn corrected(arguments: &[OsString]) -> Option<Output> {
+/// Glue for a usage failure crumbkit words alike for every tool: a run
+/// given too many paths says to split them.
+fn split(arguments: &[OsString]) -> Option<Output> {
     let error = Cli::try_parse_from(arguments).err()?;
     let (Some(ContextValue::String(argument)), Some(ContextValue::String(value))) = (
         error.get(ContextKind::InvalidArg),
@@ -449,6 +447,9 @@ fn corrected(arguments: &[OsString]) -> Option<Output> {
     ) else {
         return None;
     };
+    if error.kind() != ErrorKind::TooManyValues {
+        return None;
+    }
     let (mut command, mut names) = (Cli::command(), vec![BINARY_NAME.to_owned()]);
     for word in arguments.iter().skip(1) {
         if let Some(sub) = command.find_subcommand(word).cloned() {
@@ -456,22 +457,12 @@ fn corrected(arguments: &[OsString]) -> Option<Output> {
             command = sub;
         }
     }
-    let (message, run) = if error.kind() == ErrorKind::TooManyValues {
-        let message = format!(
-            "{} was given more than {MAX_LIMIT} paths, and one run answers at most {MAX_LIMIT}",
-            names[1..].join(" ")
-        );
-        let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
-        (message, Err(hint))
-    } else {
-        let source = std::error::Error::source(&error).map(ToString::to_string);
-        let message = format!(
-            "invalid value '{value}' for '{argument}': {}",
-            source.unwrap_or_default()
-        );
-        (message, Ok(path_fixed(arguments, argument, value)?))
-    };
-    let mut refusal = plain(Code::UsageInvalid, &message);
+    let message = format!(
+        "{} was given more than {MAX_LIMIT} paths, and one run answers at most {MAX_LIMIT}",
+        names[1..].join(" ")
+    );
+    let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
+    let mut refusal = plain(Code::UsageInvalid, &message).with_hint(hint);
     let name = argument.split(' ').next().unwrap_or(argument);
     refusal.fields.insert("argument".to_owned(), name.into());
     refusal
@@ -484,29 +475,7 @@ fn corrected(arguments: &[OsString]) -> Option<Output> {
     let printer = &mut Printer {
         view: crumbkit::Output::new(flags, Cli::command(), &GUIDE, arguments.iter()),
     };
-    Some(match run {
-        Ok(words) => render::refused_running(printer, refusal, words),
-        Err(hint) => render::refused(printer, refusal.with_hint(hint)),
-    })
-}
-
-/// The words after `board` of the line to run for a path `value` refused as
-/// `argument`: the line with the path given its leading `/` and without
-/// `.json`, when that parses.
-fn path_fixed(arguments: &[OsString], argument: &str, value: &str) -> Option<Vec<String>> {
-    let at = 1 + arguments.iter().skip(1).position(|word| word == value)?;
-    let stem = value.strip_suffix(".json").unwrap_or(value);
-    let mut fixed = arguments.to_vec();
-    fixed[at] = format!("/{}", stem.trim_start_matches('/')).into();
-    if !argument.starts_with('<') || Cli::try_parse_from(&fixed).is_err() {
-        return None;
-    }
-    Some(
-        fixed[1..]
-            .iter()
-            .map(|word| word.to_string_lossy().into_owned())
-            .collect(),
-    )
+    Some(render::refused(printer, refusal))
 }
 
 /// `start` after entering each of `directories` in turn, as `git -C` does,

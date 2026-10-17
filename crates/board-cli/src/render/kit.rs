@@ -4,9 +4,10 @@ use std::fmt;
 use std::fmt::Write as _;
 
 use board_model::Refusal;
-use crumbkit::help::{Guide, Rename};
+use crumbkit::help::{Guide, RefusalContext, Rename};
 use crumbkit::{
-    Call, Code, Document, Failure, Field, FieldValue, Recovery, Row, Rows, Sink, Spelling, codes,
+    Batch, Call, Code, Document, Failure, Field, FieldValue, Listing, Prose, Recovery, Row, Rows,
+    Sink, Spelling, codes,
 };
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -32,17 +33,35 @@ const fn guide(budget: usize) -> Guide {
             "a reader asks again for the paths and rows a run leaves out",
         )
         .without_terminal_detection("Board's tests read its text from a pipe")
+        .refusal_alternatives(path_fixed)
         .leaves(super::LEAVES)
 }
 
-/// A Board refusal, as crumbkit prints a failure, and the words after
-/// `board` of a command line to run instead, when there is one.
+/// For a path refused only for its form, the refused line with the path
+/// given its leading `/` and without `.json`. crumbkit offers it when that
+/// line parses.
+fn path_fixed(context: &RefusalContext<'_>) -> Vec<Call> {
+    let (Some("path" | "paths"), Some(value)) = (context.argument(), context.value()) else {
+        return Vec::new();
+    };
+    let stem = value.strip_suffix(".json").unwrap_or(value);
+    let mut words: Vec<String> = (context.words().iter())
+        .map(|word| word.to_string_lossy().into_owned())
+        .collect();
+    let Some(at) = words.iter().position(|word| word == value) else {
+        return Vec::new();
+    };
+    words[at] = format!("/{}", stem.trim_start_matches('/'));
+    vec![Call::typed(words)]
+}
+
+/// A Board refusal, as crumbkit prints a failure.
 #[derive(Debug)]
-pub(crate) struct Refused(pub(crate) Refusal, Option<Vec<String>>);
+pub(crate) struct Refused(pub(crate) Refusal);
 
 impl Refused {
     pub(crate) const fn new(refusal: Refusal) -> Self {
-        Self(refusal, None)
+        Self(refusal)
     }
 }
 
@@ -69,12 +88,8 @@ impl Failure for Refused {
             .unwrap_or(&UNHELD)
     }
 
-    /// A line typed with a path corrected is a call to that line; a
-    /// refusal otherwise keeps its hint as text.
+    /// A refusal keeps its hint as text.
     fn recovery(&self) -> Recovery {
-        if let Some(words) = &self.1 {
-            return Recovery::Run(Call::typed(words.clone()));
-        }
         self.0.hint.clone().map_or_else(
             || Recovery::None {
                 reason: "the plugin gave no hint".to_owned(),
@@ -162,6 +177,38 @@ impl Row for Flagged {
     }
 }
 
+/// One line of a note on stderr beside a result.
+pub(crate) enum Note {
+    /// Says only what the JSON document holds, so it prints only as text.
+    Text(String),
+    /// Says what the document does not hold, such as that the index was in
+    /// memory, so it prints in either format.
+    Always(String),
+}
+
+/// A result that carries crumbkit's note.
+pub(crate) trait Noted: Rows {
+    fn noted(self, text: String) -> Self;
+}
+
+impl<R: Row> Noted for Listing<R, Said> {
+    fn noted(self, text: String) -> Self {
+        self.note(text)
+    }
+}
+
+impl Noted for Prose<Said, Refused> {
+    fn noted(self, text: String) -> Self {
+        self.note(text)
+    }
+}
+
+impl<R: Row> Noted for Batch<R, Refused> {
+    fn noted(self, text: String) -> Self {
+        self.note(text)
+    }
+}
+
 /// One run's printer: crumbkit's view of the command line it parsed.
 pub(crate) struct Printer {
     pub(crate) view: crumbkit::Output,
@@ -198,15 +245,35 @@ impl Printer {
         self.finish(document, result.map_err(Refused::new))
     }
 
-    /// `refusal` printed as `document`, whose recovery is to run `words`,
-    /// the command line after `board`.
-    pub(crate) fn refuse_running<T: Rows>(
+    /// `value` printed as `document`, with `notes`, in order, as crumbkit's
+    /// note on stderr in text.
+    ///
+    /// Glue: crumbkit's JSON document has no place for a note, so with
+    /// `--json` Board prints each [`Note::Always`] on stderr itself.
+    pub(crate) fn noted<T: Noted>(
         &mut self,
         document: Document<T>,
-        refusal: Refusal,
-        words: Vec<String>,
+        value: T,
+        notes: Vec<Note>,
     ) -> Output {
-        self.finish(document, Err(Refused(refusal, Some(words))))
+        if self.json() {
+            let mut output = self.print(document, Ok(value));
+            for note in notes {
+                if let Note::Always(line) = note {
+                    output.stderr.extend(format!("{line}\n").into_bytes());
+                }
+            }
+            return output;
+        }
+        let lines: Vec<String> = (notes.into_iter())
+            .map(|(Note::Text(line) | Note::Always(line))| line)
+            .collect();
+        let value = if lines.is_empty() {
+            value
+        } else {
+            value.noted(lines.join("\n"))
+        };
+        self.print(document, Ok(value))
     }
 
     fn finish<T: Rows>(&mut self, document: Document<T>, result: Result<T, Refused>) -> Output {

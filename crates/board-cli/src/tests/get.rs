@@ -236,6 +236,47 @@ fn a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_f
     assert_eq!(over["recovery"]["call"], "board get <PATH>...");
 }
 
+/// crumbkit reruns the caller's own words with the paths left out, so the
+/// recovery keeps `-C` and `--json`, and the line text prints runs. Words
+/// that do not hold the paths fall back to the command alone.
+#[test]
+fn an_over_budget_get_recovers_with_the_callers_flags_and_without_its_words_names_the_command() {
+    let scenario = three_files();
+    scenario.write("sub/keep.md", Item::File("k"));
+    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let paths = ["/a.md", "/b.md", "/c.md"];
+    let asked: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
+    let ran = |json: bool, budget: usize, words: &[&str]| {
+        let printer = &mut Printer::of(json, budget, words);
+        render::get(printer, &asked, board.get_each(&asked))
+    };
+    let budget = rendered(&scenario, &paths[..1], true, usize::MAX)
+        .stdout
+        .len()
+        + 300;
+    let typed = ["-C", "sub", "get", "/a.md", "/b.md", "/c.md", "--json"];
+    assert_eq!(
+        json(&ran(true, budget, &typed))["failures"][0]["recovery"],
+        serde_json::json!({
+            "kind": "run",
+            "call": "board -C sub get <PATH>... --json",
+            "all": "left_out",
+        })
+    );
+    let bare = json(&ran(true, budget, &["get"]));
+    assert_eq!(
+        bare["failures"][0]["recovery"]["call"],
+        "board get <PATH>..."
+    );
+    let typed = ["-C", "sub", "get", "/a.md", "/b.md", "/c.md"];
+    assert_eq!(
+        super::hint_of(&ran(false, 2429, &typed)),
+        "run `board -C sub get /c.md`"
+    );
+    let rerun = super::board_in(scenario.workdir(), &["-C", "sub", "get", "/c.md"]);
+    assert_eq!((rerun.code, rerun.stdout), (0, file().into_bytes()));
+}
+
 #[test]
 fn the_budget_counts_the_json_a_file_prints_so_escaped_bytes_spend_more_of_it() {
     let scenario = board();

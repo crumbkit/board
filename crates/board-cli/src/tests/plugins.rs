@@ -302,7 +302,7 @@ fn a_plugins_error_prints_as_its_own_code_with_its_stderr() {
     assert_eq!(report["code"], "tasks::date::bad");
     assert_eq!(
         report["fields"],
-        serde_json::json!({"date": "x", "plugin": "tasks"})
+        serde_json::json!({"date": "x", "plugin": "tasks", "stderr": "a log line\n"})
     );
 }
 

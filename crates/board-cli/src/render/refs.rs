@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::kit::{Printer, Refused};
+use super::kit::{Note, Printer, Refused};
 use super::{Shown, location, named, status_fields, status_text};
 use crate::report::Output;
 
@@ -171,7 +171,7 @@ pub(crate) fn refs(
 ) -> Output {
     let mut room = printer.view.room(REFS);
     let mut batch = Batch::new(&["refs"], "paths", paths);
-    let (mut memory, mut notes) = (None, String::new());
+    let (mut memory, mut notes) = (None, Vec::new());
     for path in paths {
         if !room.has_room(&batch) {
             break;
@@ -187,11 +187,13 @@ pub(crate) fn refs(
             memory = memory.or(report.memory);
             let cut = Cut::of(&report, limit);
             let note = cut.note(&report);
+            let note = note.trim_end_matches('\n');
             match note.strip_prefix("note: ") {
                 Some(rest) if paths.len() > 1 => {
-                    let _ = write!(notes, "note: {path}: {rest}");
+                    notes.push(Note::Text(format!("note: {path}: {rest}")));
                 }
-                _ => notes.push_str(&note),
+                _ if !note.is_empty() => notes.push(Note::Text(note.to_owned())),
+                _ => {}
             }
             Answered {
                 value: cut.value(&report),
@@ -199,20 +201,10 @@ pub(crate) fn refs(
             }
         }));
     }
-    let mut output = printer.print(REFS, Ok(batch));
+    notes.extend(memory.map(|fallback| Note::Always(super::memory_note(fallback))));
+    let mut output = printer.noted(REFS, batch, notes);
     if output.code != 0 && output.error.is_none() {
         output.error = Some(Code::RefsOverBudget.as_str().to_owned());
-    }
-    // The JSON document holds what each path's note says, but not the
-    // index's note, which still prints on stderr with `--json`.
-    if !printer.json() {
-        output.stderr.extend(notes.into_bytes());
-    }
-    if let Some(fallback) = memory {
-        output
-            .stderr
-            .extend(super::memory_note(fallback).into_bytes());
-        output.stderr.push(b'\n');
     }
     output
 }

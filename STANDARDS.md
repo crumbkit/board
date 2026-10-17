@@ -74,7 +74,7 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
 23. **Output is bounded and says what it left out.** A command that lists entries
     (`check`, `ls`, `refs`, `plugin list`, `plugin find`, `query`) shows at most
     100 by default. `--limit <n>` (1 to 10,000) or `--all` changes that. When
-    entries are left out, text output ends with a note on stderr that gives the
+    entries are left out, text output prints a note on stderr that gives the
     count shown, the total and the flag that shows more. JSON carries `total` and
     `truncated`. `query` gives no total, because it does not fetch the rows it
     leaves out. `check` lists degraded

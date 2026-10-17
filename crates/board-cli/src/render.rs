@@ -16,7 +16,7 @@ use crumbkit::{Document, Listing, Prose};
 use serde_json::{Map, Value, json};
 
 use crate::report::Output;
-use kit::{Flagged, Refused, Said, Whole};
+use kit::{Flagged, Note, Refused, Said, Whole};
 pub(crate) use kit::{GUIDE, Printer};
 
 mod get;
@@ -126,7 +126,7 @@ pub(crate) fn check(
         ),
     );
     let listing = listing.summary(summary);
-    noted(printer, CHECK, listing, report.memory, hints, &[])
+    printer.noted(CHECK, listing, notes(report.memory, hints, &[]))
 }
 
 /// `check`'s document: each entry, degraded first, with the count of
@@ -143,15 +143,14 @@ const CHECK: Document<Listing<Flagged, Said>> = Document::new(
 /// blob, and the commit when one was made. A write left degraded gets a
 /// note on stderr in either format.
 pub(crate) fn put(printer: &mut Printer, report: &PutReport) -> Output {
-    let mut output = printer.print(PUT, Ok(said(put_json(report), put_text(report))));
-    for written in &report.writes {
-        if let Some((code, detail)) = &written.degraded {
-            let (display, why) = (&written.display, detail_text(detail));
-            let note = format!("note: {display} is written but degraded: {code} {display}{why}\n");
-            output.stderr.extend_from_slice(note.as_bytes());
-        }
-    }
-    output
+    let notes = (report.writes.iter()).filter_map(|written| {
+        let (code, detail) = written.degraded.as_ref()?;
+        let (display, why) = (&written.display, detail_text(detail));
+        let note = format!("note: {display} is written but degraded: {code} {display}{why}");
+        Some(Note::Always(note))
+    });
+    let answer = said(put_json(report), put_text(report));
+    printer.noted(PUT, answer, notes.collect())
 }
 
 fn put_text(report: &PutReport) -> String {
@@ -256,15 +255,15 @@ pub(crate) fn query(printer: &mut Printer, report: &QueryReport) -> Output {
     // Glue: crumbkit cannot tell a cut at the budget, which the index made,
     // from one at the limit, so Board names the budget's code itself.
     let over = Code::QueryOverBudget;
-    let mut notes = Vec::new();
+    let mut lines = Vec::new();
     if report.over_budget {
         summary["code"] = json!(over.as_str());
         let hint = over.hint(&Fields::default());
-        notes.push(format!(
+        lines.push(format!(
             "note: the next row would take the output past its budget ({over}); {hint}"
         ));
     }
-    notes.extend((report.plugins.iter()).map(|failed| {
+    lines.extend((report.plugins.iter()).map(|failed| {
         let (plugin, code) = (&failed.plugin, &failed.code);
         format!(
             "note: plugin {plugin} did not extract: {code}: {}",
@@ -273,7 +272,7 @@ pub(crate) fn query(printer: &mut Printer, report: &QueryReport) -> Output {
     }));
     let listing = listing.summary(Said::new(summary, columns.to_string()));
     let fallbacks = &report.fallbacks;
-    noted(printer, QUERY, listing, report.memory, notes, fallbacks)
+    printer.noted(QUERY, listing, notes(report.memory, lines, fallbacks))
 }
 
 /// `query`'s document: the rows, with the columns and any plugin that did
@@ -281,38 +280,16 @@ pub(crate) fn query(printer: &mut Printer, report: &QueryReport) -> Output {
 const QUERY: Document<Listing<Whole, Said>> =
     Document::new("board", "query-report", 2, "The rows a query returned.");
 
-/// `listing` printed as `document`, with a note on stderr for each thing a
-/// reader should know: that the index was in memory, each of `notes`, then
-/// each plugin in `fallbacks` whose database was a temporary file.
-///
-/// Glue: crumbkit's JSON document has no place for a note, so with `--json`
-/// the notes on the index and the plugin databases still print on stderr,
-/// as they did before Board printed through crumbkit. `notes` say only what
-/// the document holds, so they print only as text.
-fn noted<R: crumbkit::Row>(
-    printer: &mut Printer,
-    document: Document<Listing<R, Said>>,
-    listing: Listing<R, Said>,
-    memory: Option<Fallback>,
-    notes: Vec<String>,
-    fallbacks: &[PluginName],
-) -> Output {
-    let memory = memory.map(memory_note);
-    let temporary = plugins::temporary(fallbacks);
-    if printer.json() {
-        let mut output = printer.print(document, Ok(listing));
-        for line in memory.into_iter().chain(temporary) {
-            output.stderr.extend(format!("{line}\n").into_bytes());
-        }
-        return output;
-    }
-    let lines: Vec<String> = memory.into_iter().chain(notes).chain(temporary).collect();
-    let listing = if lines.is_empty() {
-        listing
-    } else {
-        listing.note(lines.join("\n"))
-    };
-    printer.print(document, Ok(listing))
+/// The notes for a reader beside a listing: that the index was in memory,
+/// each of `notes`, which say only what the document holds, then each
+/// plugin in `fallbacks` whose database was a temporary file.
+fn notes(memory: Option<Fallback>, notes: Vec<String>, fallbacks: &[PluginName]) -> Vec<Note> {
+    let memory = memory.map(|fallback| Note::Always(memory_note(fallback)));
+    let temporary = plugins::temporary(fallbacks).into_iter().map(Note::Always);
+    (memory.into_iter())
+        .chain(notes.into_iter().map(Note::Text))
+        .chain(temporary)
+        .collect()
 }
 
 /// The note that the index was in memory for this run, and why.
@@ -334,11 +311,13 @@ pub(crate) fn init(printer: &mut Printer, report: &InitReport) -> Output {
         format!("{root} is already a board\n")
     };
     let value = json!({"root": report.root.to_string_lossy(), "created": report.created});
-    let mut output = printer.print(INIT, Ok(said(value, text)));
-    if report.created && !printer.json() {
-        output.stderr.extend_from_slice(b"next: run `board check`; it lists every file and says how to fix any it cannot read. Then commit .board/board.json\n");
-    }
-    output
+    let answer = said(value, text);
+    let answer = if report.created {
+        answer.note("next: run `board check`; it lists every file and says how to fix any it cannot read. Then commit .board/board.json")
+    } else {
+        answer
+    };
+    printer.print(INIT, Ok(answer))
 }
 
 pub(crate) fn ls(printer: &mut Printer, report: &LsReport, page: &crate::run::Page) -> Output {
@@ -371,7 +350,7 @@ pub(crate) fn ls(printer: &mut Printer, report: &LsReport, page: &crate::run::Pa
     let summary = Said::new(json!({"location": at}), format!("{display}:"));
     let listing = page.first_of(rows.collect()).described("entries");
     let listing = listing.summary(summary);
-    noted(printer, LS, listing, report.memory, Vec::new(), &[])
+    printer.noted(LS, listing, notes(report.memory, Vec::new(), &[]))
 }
 
 /// `ls`'s document: the entries, with the directory's `location` under
@@ -400,16 +379,6 @@ pub(crate) fn mount_update(printer: &mut Printer, report: &MountUpdateReport) ->
 /// A refusal of a run that has no answer of its own to print.
 pub(crate) fn refused(printer: &mut Printer, refusal: Refusal) -> Output {
     printer.print(INIT, Err(refusal))
-}
-
-/// A refusal whose recovery is to run `words`, the command line after
-/// `board`.
-pub(crate) fn refused_running(
-    printer: &mut Printer,
-    refusal: Refusal,
-    words: Vec<String>,
-) -> Output {
-    printer.refuse_running(INIT, refusal, words)
 }
 
 fn location(location: &Location, display: &str) -> Value {

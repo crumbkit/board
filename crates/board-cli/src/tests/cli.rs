@@ -791,7 +791,8 @@ fn a_path_refused_by_its_form_offers_the_corrected_line_and_that_line_runs() {
         );
         assert!(
             stderr.ends_with(
-                "  help:  run `board get /projects/p`\n  code:  board::usage::invalid\n"
+                "  help:  run `board get /projects/p`\n  help:  run `board get -h`\n  \
+                 code:  board::usage::invalid\n"
             ),
             "{stderr}"
         );
@@ -802,10 +803,13 @@ fn a_path_refused_by_its_form_offers_the_corrected_line_and_that_line_runs() {
     ));
     assert_eq!(refused["code"], "board::usage::invalid");
     assert_eq!(refused["fields"]["value"], "projects/p.json");
-    assert_eq!(refused["recovery"]["kind"], "run");
     assert_eq!(
-        refused["recovery"]["call"],
-        "board refs /projects/p --limit 5 --json"
+        refused["recovery"],
+        serde_json::json!({"kind": "run", "call": "board refs /projects/p --limit 5 --json"})
+    );
+    assert_eq!(
+        refused["alternatives"],
+        serde_json::json!([{"kind": "run", "call": "board refs -h"}])
     );
     assert_eq!(
         board_in(scenario.workdir(), &["get", "/projects/p"]).code,
@@ -849,7 +853,7 @@ fn a_corrected_line_is_a_call_with_a_word_that_needs_quoting_and_without_one() {
     assert_eq!(ran.code, 0);
 }
 
-/// A path whose corrected form still does not parse keeps crumbkit's
+/// A path whose corrected form still does not parse offers only crumbkit's
 /// recovery, and a path that parses runs.
 #[test]
 fn a_path_that_stays_malformed_once_corrected_hints_the_help_and_a_well_formed_one_runs() {
@@ -857,10 +861,76 @@ fn a_path_that_stays_malformed_once_corrected_hints_the_help_and_a_well_formed_o
     let refused = board_in(scenario.workdir(), &["get", "projects//p"]);
     assert_eq!(refused.code, 2);
     assert_eq!(hint_of(&refused), "run `board get -h`");
+    assert_eq!(text(&refused.stderr).matches("help:").count(), 1);
+    let refused = json(&board_in(
+        scenario.workdir(),
+        &["get", "projects//p", "--json"],
+    ));
+    assert_eq!(refused["code"], "board::usage::invalid");
+    assert!(refused.get("alternatives").is_none(), "{refused}");
     assert_eq!(
         board_in(scenario.workdir(), &["get", "/projects/p"]).code,
         0
     );
+}
+
+/// Only a path is corrected. A path refused for its form recovers first
+/// with the corrected line and offers help after it. A refused `--field`
+/// pointer that would parse with a leading `/` gets no corrected line, so
+/// help is its recovery and it has no alternatives. The corrected line runs.
+#[test]
+fn a_path_refused_for_its_form_recovers_first_with_its_corrected_line_and_a_refused_pointer_with_help()
+ {
+    let scenario = board();
+    let path = json(&board_in(
+        scenario.workdir(),
+        &["refs", "projects/p", "--field", "/status", "--json"],
+    ));
+    assert_eq!(path["code"], "board::usage::invalid");
+    assert_eq!(
+        path["recovery"],
+        json!({"kind": "run", "call": "board refs /projects/p --field /status --json"})
+    );
+    assert_eq!(
+        path["alternatives"],
+        json!([{"kind": "run", "call": "board refs -h"}])
+    );
+    let path = board_in(
+        scenario.workdir(),
+        &["refs", "projects/p", "--field", "/status"],
+    );
+    assert_eq!(path.code, 2);
+    assert_eq!(
+        hint_of(&path),
+        "run `board refs /projects/p --field /status`"
+    );
+    let pointer = json(&board_in(
+        scenario.workdir(),
+        &["refs", "/projects/p", "--field", "status", "--json"],
+    ));
+    assert_eq!(pointer["code"], "board::usage::invalid");
+    assert_eq!(
+        pointer["recovery"],
+        json!({"kind": "run", "call": "board refs -h"})
+    );
+    assert!(pointer.get("alternatives").is_none(), "{pointer}");
+    let pointer = board_in(
+        scenario.workdir(),
+        &["refs", "/projects/p", "--field", "status"],
+    );
+    assert_eq!(pointer.code, 2);
+    assert_eq!(hint_of(&pointer), "run `board refs -h`");
+    let corrected = board_in(
+        scenario.workdir(),
+        &["refs", "/projects/p", "--field", "/status"],
+    );
+    assert_eq!(corrected.code, 0, "{}", text(&corrected.stderr));
+    // An optional path, such as `check`'s, is corrected as a required one is.
+    let optional = board_in(scenario.workdir(), &["check", "projects"]);
+    assert_eq!(optional.code, 2);
+    assert_eq!(hint_of(&optional), "run `board check /projects`");
+    let corrected = board_in(scenario.workdir(), &["check", "/projects"]);
+    assert_eq!(corrected.code, 0, "{}", text(&corrected.stderr));
 }
 
 #[test]

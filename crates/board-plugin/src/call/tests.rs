@@ -563,30 +563,33 @@ fn an_ambiguous_capabilitys_hint_names_the_first_plugin_and_its_fields_name_them
 fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_from_board() {
     let tasks: PluginName = "tasks".parse().unwrap();
     let error = br#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date", "fields": {"date": "x"}}"#;
-    let Ok(Reply::Error(failure)) = protocol::reply::<Value>(&tasks, error, CALL_RESULT_TYPE)
-    else {
-        panic!("the fixture is a plugin's error document");
-    };
-    let own = CallError::Plugin {
-        plugin: tasks.clone(),
-        failure,
-        stderr: b"a log line".to_vec(),
-    }
-    .refusal();
-    assert_eq!(
-        own,
-        Refusal {
-            stderr: b"a log line".to_vec(),
-            ..Refusal::plugin(
-                "tasks::date::bad".to_owned(),
-                "no such date".to_owned(),
-                json!({"date": "x", "plugin": "tasks"})
-                    .as_object()
-                    .unwrap()
-                    .clone(),
-            )
+    let own = |stderr: &[u8]| {
+        let Ok(Reply::Error(failure)) = protocol::reply::<Value>(&tasks, error, CALL_RESULT_TYPE)
+        else {
+            panic!("the fixture is a plugin's error document");
+        };
+        CallError::Plugin {
+            plugin: tasks.clone(),
+            failure,
+            stderr: stderr.to_vec(),
         }
-    );
+        .refusal()
+    };
+    let expected = |stderr: &str| Refusal {
+        stderr: stderr.as_bytes().to_vec(),
+        ..Refusal::plugin(
+            "tasks::date::bad".to_owned(),
+            "no such date".to_owned(),
+            json!({"date": "x", "plugin": "tasks", "stderr": stderr})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+    };
+    assert_eq!(own(b"a log line"), expected("a log line"));
+    // A plugin that wrote nothing to stderr still names it, as Board's own
+    // codes do.
+    assert_eq!(own(b""), expected(""));
     // Board's refusal of the same run has Board's code and hint, and names
     // its stderr in its fields as well.
     let board = CallError::Failed {

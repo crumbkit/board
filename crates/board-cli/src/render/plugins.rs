@@ -7,7 +7,7 @@ use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose};
 use serde_json::{Value, json};
 
-use super::kit::{Flagged, Printer, Refused, Said, Whole};
+use super::kit::{Flagged, Note, Printer, Refused, Said, Whole};
 use crate::report::Output;
 use crate::run::Page;
 
@@ -192,13 +192,13 @@ pub(crate) fn call(printer: &mut Printer, called: &Called) -> Output {
         value,
         canonical_json(&report.output).as_str().to_owned(),
     ));
-    let mut output = printer.print(CALL_REPORT, Ok(answer));
-    if called.fallback {
-        for note in temporary(std::slice::from_ref(&report.plugin)) {
-            output.stderr.extend(format!("{note}\n").into_bytes());
-        }
-    }
-    output
+    let fallbacks = if called.fallback {
+        std::slice::from_ref(&report.plugin)
+    } else {
+        &[]
+    };
+    let notes = temporary(fallbacks).into_iter().map(Note::Always);
+    printer.noted(CALL_REPORT, answer, notes.collect())
 }
 
 const CALL_REPORT: Document<Prose<Said, Refused>> = Document::new(

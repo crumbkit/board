@@ -35,7 +35,8 @@ The v0 set:
 `board/<command>-report/v2`, the report as `data`, and `failures`, one failure
 document for each path refused. A listing adds `total`, `truncated` and
 `summary`, which holds what describes the whole listing, such as `query`'s
-`columns`. The envelope has no field for notes, so they go to stderr.
+`columns`. The envelope has no field for notes, so they go to stderr. Text
+prints a note before any failure.
 
 Board prints an error in crumbkit's `crumbkit/failure/v1` shape: `code`,
 `message`, `fields` and `recovery`. A failure inside a report's `failures` also
@@ -49,17 +50,20 @@ when the next step needs a value only the reader has; or `none`, with
 `reason`, such as `the plugin gave no hint` for a plugin's own code. A path
 refused only for its form, such as one without its leading `/`, gets a `run`
 recovery holding the corrected line, with any word quoted that a shell would
-split.
+split, and an `alternatives` array holding one `{kind: run, call}` for
+`board <command> -h`. This holds for an optional path, such as `check`'s, too.
+A path whose corrected line still does not parse, and a refused `--field`
+pointer, get the recovery `board <command> -h` and no `alternatives`.
 
 Text prints the same failure as `error: <message>`, then a `key:` line when it
-has one, a `help:` line holding the call or the hint text, and a `code:` line.
+has one, a `help:` line holding the call or the hint text, a `help:` line for
+each alternative, and a `code:` line.
 A `get` or `refs` run past its byte budget gives one failure, without a `key`,
 whose `fields` hold `left_out` (each path not answered), `left_out_from` and
-`budget`. Its recovery is `run` with `call` `board get <PATH>...` and `all`
-`left_out`: run that command with every path in `left_out`. The call carries
-none of the run's flags, such as `--json`, `--field` or `-C`, so add them
-again. Text prints that
-command with the paths filled in, on stderr.
+`budget`. Its recovery is `run` with `all` `left_out` and a `call` that
+repeats the run's own words, such as `board -C sub get <PATH>... --json`: run
+it with every path in `left_out`. Text prints that command with the paths
+filled in, on stderr.
 
 ## What an error names
 
@@ -82,16 +86,16 @@ plugin's own code carries.
 | `offered` | array of strings | `plugin::not_installed` when the named plugin lacks the capability | each capability that plugin offers |
 | `nearest` | string | `plugin::not_installed` when no plugin offers the capability and one offered name is near | the nearest offered name |
 | `plugins` | array of strings | `plugin::ambiguous` | each enabled plugin that offers the capability |
-| `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output` | the end of the plugin's stderr, with bytes that are not UTF-8 replaced |
+| `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output`; every plugin's own code | the end of the plugin's stderr, with bytes that are not UTF-8 replaced |
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view, and each attached plugin database |
 | `columns` | object of string arrays | `query::invalid` for a missing column | each table or view the statement names, mapped to its columns; `{}` when it names none |
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |
 | `refusals` | array of objects | `put::invalid` and `put::stale` for a batch | each refused line, in order, with its `line` (from 1), `code`, `message` and, when it names any, its own `fields` |
 
 A stale put's hint gives the `--expect` that matches. When `columns` is `{}`,
-the hint points at `sqlite_master`. Text output prints one
-`line <n>: <code>: <message>` line for each of a batch's `refusals` between the
-error and the hint, and the plugin's stderr after the hint.
+the hint points at `sqlite_master`. Text output prints, after the `code:` line,
+one `line <n>: <code>: <message>` line for each of a batch's `refusals`, then
+the plugin's stderr.
 
 The check and put reports name a degraded entry's first failing pointer, why,
 and how many more (`pointer`, `reason`, `failures`). `reason` is a predicate
