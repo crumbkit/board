@@ -46,7 +46,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, and what was concluded.\n\n`subjects` are the unversioned names of what is tested, such as `gix` or\na model's family; versions go in a run's `versions`. `cases` lists the\ncases inline, or `cases_file` references a file that does. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.",
+  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `repos` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `cases` lists the\ncases inline, or `cases_file` references a file that does. `decision` is\nthe decision this eval informs. A `concluded` eval has a `verdict`.",
   "if": {
     "properties": {
       "status": {
@@ -98,6 +98,14 @@
       "title": "Question",
       "type": "string"
     },
+    "repos": {
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "title": "Repos",
+      "type": "array"
+    },
     "status": {
       "enum": [
         "planned",
@@ -109,6 +117,7 @@
       "type": "string"
     },
     "subjects": {
+      "description": "The names of what is tested, such as `crumbkit` or `clap`, without versions. Name a repository in `repos`, by its mount.",
       "items": {
         "type": "string"
       },

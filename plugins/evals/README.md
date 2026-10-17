@@ -15,6 +15,7 @@ in the directory beside it, `/evals/<name>/`.
   "$type": "evals/eval/v1",
   "question": "Can gix resolve a ref faster than git2?",
   "subjects": ["gix", "git2"],
+  "repos": ["/repos/viitta"],
   "method": "Resolve 1,000 refs in a clone of this repository and compare wall time.",
   "cases": [{"id": "cold", "input": {"refs": 1000}}],
   "measures": [{"name": "wall_ms", "unit": "ms"}],
@@ -25,8 +26,13 @@ in the directory beside it, `/evals/<name>/`.
 
 - `question`, `subjects`, `method` and `status` are required.
 - `subjects` are the names of what is tested, without versions, such as `gix`
-  or a model family. `evals.about` matches them without regard to case. Put the
-  versions used in a run.
+  or a model family. A repository the eval concerns goes in `repos`, by its
+  mount, and never as `owner/name` here. `evals.about` matches subjects
+  without regard to case. Put the versions used in a run.
+- `repos` references the mount of each repository the eval concerns, such as
+  `/repos/viitta`, a `board/mount/v1` record at `/repos/viitta.json`. `check`
+  reports `board::ref::dangling` for a path the board does not have, and
+  `board refs /repos/viitta` lists the evals that name it.
 - `cases` lists the cases inline; each has an `id`, which a run's results
   name, and optional `input` and `expected`. `cases_file` references a file
   that lists them instead, such as `/evals/<name>/cases.jsonl`.
@@ -72,9 +78,12 @@ The run has no counts of passes and failures. Count the results.
 ## Capabilities
 
 `board call evals.about` takes `{"subject": "gix"}` and returns the evals that
-name that subject, whatever their status. `board call evals.open` takes `{}`
-and returns the evals whose status is `planned` or `running`. A `concluded`
-eval without a verdict is not valid, so neither lists it.
+name that subject, whatever their status. It takes `{"repo": "/repos/viitta"}`
+instead and returns the evals whose `repos` include that exact path. Board
+refuses input with both or neither as `board::plugin::bad_input`.
+`board call evals.open` takes `{}` and returns the evals whose status is
+`planned` or `running`. A `concluded` eval without a verdict is not valid, so
+neither lists it.
 
 Both take an optional `limit`, 1 to 100 (default 100), and return
 `{"evals": [...], "total": n, "truncated": bool}`. Each eval is its `path`,
@@ -97,10 +106,11 @@ record that references the eval.
 The query reads the `records` view, which includes every mounted board, so
 the capabilities answer across repositories without knowing about mounts. A
 personal board mounts each repository at `/repos/<name>`, and `about` then
-lists `/repos/<name>/evals/<eval>`. A mounted board's own schemas govern its
-records, so a repository that holds evals must run `board plugin enable evals`
-and commit the result; an eval it cannot validate is not listed. A mount is pinned to a
-commit, so run `board mount update /repos/<name>` to see new commits. The
+lists `/repos/<name>/evals/<eval>`. `board ls /repos` lists the mounts. A
+mounted board's own schemas govern its records, so a repository that holds
+evals must run `board plugin enable evals` and commit the result; an eval it
+cannot validate is not listed. A mount is pinned to a commit, so run
+`board mount update /repos/<name>` to see new commits. The
 personal board can put an eval at `/repos/<name>/evals/...` when the
 repository's board sets `commit_on_put`, the mount's `follow` is a local
 branch, and the repository's HEAD is on that branch and descends from the pin.
@@ -114,6 +124,15 @@ The put commits in the repository and moves the pin.
 
 `board plugin enable evals` writes the two schemas to `.board/types/evals/`
 and names the plugin in `.board/board.json`.
+
+The plugin's types stay at v1 and change in place while it has one user. After
+an update that changes a schema, Board refuses `board call evals.*` and
+`board plugin enable evals` with `board::plugin::schema_differs` until the
+board holds the new schema. Copy the plugin's `types/evals/` over the board's
+`.board/types/evals/` and commit the result:
+
+    cp -R types/evals/. <board>/.board/types/evals/
+    git -C <board> commit -m "Update the evals schemas" .board/types/evals
 
 The directory also holds `SKILL.md`, the instructions an agent follows when it
 tests something. Link the directory into the agent's skills to install it:

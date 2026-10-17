@@ -39,6 +39,8 @@ CONCLUDED_NEEDS_VERDICT: JsonDict = {
     "if": {"properties": {"status": {"const": "concluded"}}, "required": ["status"]},
     "then": {"required": ["verdict"]},
 }
+# `about` asks about a subject or a repository, never both. Board checks this before the plugin runs.
+SUBJECT_OR_REPO: JsonDict = {"oneOf": [{"required": ["subject"]}, {"required": ["repo"]}]}
 # A result has an outcome, measures, or both.
 OUTCOME_OR_MEASURES: JsonDict = {"anyOf": [{"required": ["outcome"]}, {"required": ["measures"]}]}
 
@@ -88,19 +90,25 @@ class Measure(Record):
 class EvalRecord(Record):
     """`evals/eval/v1`: a question about some subjects, how it is tested, and what was concluded.
 
-    `subjects` are the unversioned names of what is tested, such as `gix` or
-    a model's family; versions go in a run's `versions`. `cases` lists the
-    cases inline, or `cases_file` references a file that does. `decision` is the
-    decision this eval informs. A `concluded` eval has a `verdict`.
+    `subjects` are the names of what is tested, such as `crumbkit` or `clap`;
+    versions go in a run's `versions`. `repos` references the mount of each
+    repository the eval concerns, such as `/repos/crumbkit`. `cases` lists the
+    cases inline, or `cases_file` references a file that does. `decision` is
+    the decision this eval informs. A `concluded` eval has a `verdict`.
     """
 
     model_config = ConfigDict(json_schema_extra=shipped(CONCLUDED_NEEDS_VERDICT))
 
     tag: Literal["evals/eval/v1"] = Field(alias="$type")
     question: str
-    subjects: list[str] = Field(min_length=1)
+    subjects: list[str] = Field(
+        min_length=1,
+        description="The names of what is tested, such as `crumbkit` or `clap`, without versions. "
+        "Name a repository in `repos`, by its mount.",
+    )
     method: str
     status: Literal["planned", "running", "concluded", "abandoned"]
+    repos: list[FileRef] | SkipJsonSchema[None] = None
     cases: list[Case] | SkipJsonSchema[None] = None
     cases_file: FileRef | SkipJsonSchema[None] = None
     measures: list[Measure] | SkipJsonSchema[None] = None
@@ -161,9 +169,16 @@ class RunRecord(Record):
 
 
 class AboutInput(Strict):
-    """The evals that name this subject, at most `limit` of them. Case is ignored for ASCII letters."""
+    """The evals that name this `subject` or this `repo`, at most `limit` of them.
 
-    subject: str = Field(min_length=1)
+    A subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`, matched
+    exactly.
+    """
+
+    model_config = ConfigDict(json_schema_extra=SUBJECT_OR_REPO)
+
+    subject: str | SkipJsonSchema[None] = Field(default=None, min_length=1)
+    repo: str | SkipJsonSchema[None] = Field(default=None, min_length=1)
     limit: int = Field(default=LIST_LIMIT, ge=1, le=LIST_LIMIT)
 
 

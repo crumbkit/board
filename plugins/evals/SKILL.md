@@ -26,25 +26,51 @@ board.
 To run a command in a board other than the one you are in, add `-C <path>`,
 as in `board -C ~/Code/personal-board put ...`.
 
+## Find the repository's mount
+
+The personal board mounts each repository at `/repos/<name>`: a
+`board/mount/v1` record whose `repo` is the repository's path. Find the mount
+of the repository you are in before you test.
+
+1. Take the repository's path from
+   `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`. It
+   gives the main checkout even from a worktree.
+2. `board -C <personal board> ls /repos` lists the mounts, and fails with
+   `board::path::not_found` when there are none. Each is a file
+   `repos/<name>.json` in the personal board's directory; read them. The one
+   whose `repo` is that path (after expanding a leading `~/`) is the mount.
+3. If none matches, add one named after the repository's directory, with
+   `commit` set to the output of `git -C <path> rev-parse origin/main`:
+
+       echo '{"$type": "board/mount/v1", "repo": "<path>", "follow": "origin/main", "commit": "<commit>"}' \
+         | board -C <personal board> put /repos/<name>
+
+   `board mount update /repos/<name>` later moves `commit` to the current
+   `origin/main`. It cannot create a mount.
+
 ## Steps
 
 1. Before testing anything, look for earlier evals. Run
-   `echo '{"subject": "<name>"}' | board call evals.about` with each of
-   these subjects:
-   - each thing you will test;
-   - the repository you are in, as `owner/name`. Take it from
-     `git remote get-url origin`: `git@github.com:crumbkit/crumbkit.git`
-     gives `crumbkit/crumbkit`.
+   `echo '{"repo": "/repos/<name>"}' | board call evals.about` with the
+   repository's mount, and `echo '{"subject": "<name>"}' | board call evals.about`
+   with each thing you will test.
 
    Ask each of these boards: the personal board, any board the owner named
-   for sharing, and the repository's board if it enables the plugin.
+   for sharing, and the repository's board if it enables the plugin. Evals in
+   the repository's own board leave `repos` out, so ask that board with the
+   subjects only.
    `echo '{}' | board call evals.open` lists the evals still planned or
    running.
 2. Run the remaining steps in the board you chose. Before gathering
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.
    Give the question, the subjects, the method, the cases and the measures,
-   and `status: planned`. The subjects include each repository the eval
-   concerns, as `owner/name`, so an agent working there finds it.
+   and `status: planned`. The subjects are the names of what is tested, such
+   as `crumbkit` or `clap`. Put `repos: ["/repos/<name>"]` with the mount of
+   each repository the eval concerns, so an agent working there finds it.
+   A `repos` path is read in the board that holds the eval, and `board check`
+   reports `board::ref::dangling` when that board has no such mount. In the
+   repository's own board, or a shared board without the mount, leave
+   `repos` out.
 3. Write one `evals/run/v1` at `/evals/<name>/runs/<id>` per run, with each
    case's outcome or measures and the versions used. Save raw files, such as
    logs, under `evals/<name>/evidence/` in that board's git repository,
@@ -52,6 +78,6 @@ as in `board -C ~/Code/personal-board put ...`.
 4. Set `status: running` at the first run.
 5. Conclude with `verdict` and `conclusion`, and set `status: concluded`.
 
-A personal board that mounts a repository at `/repos/<repo>` lists that
+A personal board that mounts a repository at `/repos/<name>` lists that
 repository's evals in `about` and `open`. The plugin's README says how to
 write through such a mount.

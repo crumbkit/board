@@ -19,7 +19,10 @@ def manifest() -> dict[str, JsonValue]:
         "capabilities": [
             {
                 "name": "about",
-                "description": "The evals that name a subject, whatever their status, here and in mounted boards.",
+                "description": (
+                    "The evals that name a subject or a repository's mount, whatever their status,"
+                    " here and in mounted boards."
+                ),
                 "inputSchema": AboutInput.model_json_schema(),
                 "outputSchema": ListOutput.model_json_schema(),
                 "annotations": {"readOnlyHint": True},

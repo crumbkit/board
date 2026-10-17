@@ -6,10 +6,22 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "The evals that name a subject, whatever their status, here and in mounted boards.",
+      "description": "The evals that name a subject or a repository's mount, whatever their status, here and in mounted boards.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "The evals that name this subject, at most `limit` of them. Case is ignored for ASCII letters.",
+        "description": "The evals that name this `subject` or this `repo`, at most `limit` of them.\n\nA subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`, matched\nexactly.",
+        "oneOf": [
+          {
+            "required": [
+              "subject"
+            ]
+          },
+          {
+            "required": [
+              "repo"
+            ]
+          }
+        ],
         "properties": {
           "limit": {
             "default": 100,
@@ -18,15 +30,19 @@
             "title": "Limit",
             "type": "integer"
           },
+          "repo": {
+            "default": null,
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          },
           "subject": {
+            "default": null,
             "minLength": 1,
             "title": "Subject",
             "type": "string"
           }
         },
-        "required": [
-          "subject"
-        ],
         "title": "AboutInput",
         "type": "object"
       },
