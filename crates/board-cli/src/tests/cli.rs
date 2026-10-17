@@ -285,7 +285,7 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
         text(&refused.stderr),
         "error: unrecognized subcommand 'chek'; a similar subcommand exists: 'check'\n\
          \x20 help:  run `board -h`\n\
-         \x20 code:  board::usage::invalid\n"
+         \x20 code:  board::cli::usage\n"
     );
     assert_eq!(board_in(scenario.workdir(), &["check"]).code, 0);
 }
@@ -300,7 +300,7 @@ fn a_group_without_its_command_is_a_coded_error_with_its_help_and_with_one_runs(
         stderr,
         "error: the command `board plugin` needs a subcommand\n\
          \x20 help:  run `board plugin -h`\n\
-         \x20 code:  board::usage::invalid\n"
+         \x20 code:  board::cli::usage\n"
     );
     assert_eq!(board_in(scenario.workdir(), &["plugin", "list"]).code, 0);
 }
@@ -313,7 +313,7 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
     assert!(refused.stderr.is_empty());
     let error = json(&refused);
     assert_eq!(error["schema"], "board/failure/v1");
-    assert_eq!(error["code"], "board::usage::invalid");
+    assert_eq!(error["code"], "board::cli::usage");
     assert_eq!(
         error["message"],
         "the following required arguments were not provided: <PATH>..."
@@ -330,7 +330,7 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
     let refused = board_in(scenario.workdir(), &["--json", "chek"]);
     assert_eq!(refused.code, 2);
     let refused = json(&refused);
-    assert_eq!(refused["code"], "board::usage::invalid");
+    assert_eq!(refused["code"], "board::cli::usage");
     assert_eq!(
         refused["message"],
         "unrecognized subcommand 'chek'; a similar subcommand exists: 'check'"
@@ -382,7 +382,7 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         let output = board_in(scenario.workdir(), &[&["--json"], refused].concat());
         assert_eq!(output.code, 2, "{refused:?}");
         let error = json(&output);
-        assert_eq!(error["code"], "board::usage::invalid", "{refused:?}");
+        assert_eq!(error["code"], "board::cli::usage", "{refused:?}");
         let said = error["message"].as_str().unwrap();
         assert!(said.starts_with(message), "{refused:?}: {said}");
         let call = format!("board {} -h", refused[0]);
@@ -390,7 +390,7 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         let text_form = text(&board_in(scenario.workdir(), refused).stderr);
         assert_eq!(
             text_form,
-            format!("error: {said}\n  help:  run `{call}`\n  code:  board::usage::invalid\n")
+            format!("error: {said}\n  help:  run `{call}`\n  code:  board::cli::usage\n")
         );
         assert_eq!(
             board_in(scenario.workdir(), admitted).code,
@@ -463,7 +463,7 @@ fn limit_and_all_together_are_refused_and_each_alone_is_admitted() {
         scenario.workdir(),
         &["ls", "--limit", "5", "--all", "--json"],
     ));
-    assert_eq!(refused["code"], "board::usage::invalid");
+    assert_eq!(refused["code"], "board::cli::usage");
     assert_eq!(run(&["ls", "--limit", "5"]), 0);
     assert_eq!(run(&["ls", "--all"]), 0);
 }
@@ -792,7 +792,7 @@ fn a_path_refused_by_its_form_offers_the_corrected_line_and_that_line_runs() {
         assert!(
             stderr.ends_with(
                 "  help:  run `board get /projects/p`\n  help:  run `board get -h`\n  \
-                 code:  board::usage::invalid\n"
+                 code:  board::cli::usage\n"
             ),
             "{stderr}"
         );
@@ -801,7 +801,7 @@ fn a_path_refused_by_its_form_offers_the_corrected_line_and_that_line_runs() {
         scenario.workdir(),
         &["refs", "projects/p.json", "--limit", "5", "--json"],
     ));
-    assert_eq!(refused["code"], "board::usage::invalid");
+    assert_eq!(refused["code"], "board::cli::usage");
     assert_eq!(refused["fields"]["value"], "projects/p.json");
     assert_eq!(
         refused["recovery"],
@@ -829,7 +829,7 @@ fn a_corrected_line_is_a_call_with_a_word_that_needs_quoting_and_without_one() {
         );
         assert_eq!(refused.code, 2);
         let refused = json(&refused);
-        assert_eq!(refused["code"], "board::usage::invalid");
+        assert_eq!(refused["code"], "board::cli::usage");
         refused["recovery"].clone()
     };
     assert_eq!(
@@ -866,7 +866,7 @@ fn a_path_that_stays_malformed_once_corrected_hints_the_help_and_a_well_formed_o
         scenario.workdir(),
         &["get", "projects//p", "--json"],
     ));
-    assert_eq!(refused["code"], "board::usage::invalid");
+    assert_eq!(refused["code"], "board::cli::usage");
     assert!(refused.get("alternatives").is_none(), "{refused}");
     assert_eq!(
         board_in(scenario.workdir(), &["get", "/projects/p"]).code,
@@ -886,7 +886,7 @@ fn a_path_refused_for_its_form_recovers_first_with_its_corrected_line_and_a_refu
         scenario.workdir(),
         &["refs", "projects/p", "--field", "/status", "--json"],
     ));
-    assert_eq!(path["code"], "board::usage::invalid");
+    assert_eq!(path["code"], "board::cli::usage");
     assert_eq!(
         path["recovery"],
         json!({"kind": "run", "call": "board refs /projects/p --field /status --json"})
@@ -908,7 +908,7 @@ fn a_path_refused_for_its_form_recovers_first_with_its_corrected_line_and_a_refu
         scenario.workdir(),
         &["refs", "/projects/p", "--field", "status", "--json"],
     ));
-    assert_eq!(pointer["code"], "board::usage::invalid");
+    assert_eq!(pointer["code"], "board::cli::usage");
     assert_eq!(
         pointer["recovery"],
         json!({"kind": "run", "call": "board refs -h"})

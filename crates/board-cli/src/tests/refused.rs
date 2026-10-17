@@ -69,7 +69,7 @@ fn a_plugins_refusal_says_it_has_no_hint_and_a_refused_command_line_exits_2() {
             1
         )
     );
-    let usage = Refusal::new(Code::UsageInvalid, "no such command", &Fields::default());
+    let usage = Refusal::new(Code::CliUsage, "no such command", &Fields::default());
     assert_eq!(refused(false, &usage).code, 2);
     assert_eq!(refused(true, &usage).code, 2);
 }

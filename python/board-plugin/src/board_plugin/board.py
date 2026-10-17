@@ -22,12 +22,9 @@ LIMIT = 10_000
 PATHS_PER_RUN = 10_000
 # What a query report lists for a plugin whose database it could not attach.
 NO_DATABASE = "board::plugin::no_database"
-# What `board get` answers for a path it left unread once its run printed its byte budget.
-OVER_BUDGET = "board::get::over_budget"
-# What `board refs` answers for a path it left unanswered once its run printed its byte budget.
-REFS_OVER_BUDGET = "board::refs::over_budget"
-# What a query report carries when it left rows out because they would pass its byte budget.
-QUERY_OVER_BUDGET = "board::query::over_budget"
+# What `board get` and `board refs` answer for the paths they left out once a run printed its
+# byte budget, and what a query report carries when it left rows out that would pass it.
+OVER_BUDGET = "board::output::over_budget"
 # The schema of the document Board prints when a command fails.
 FAILURE = "board/failure/v1"
 
@@ -108,13 +105,13 @@ class Board:
         With `--all`, Board leaves rows out only at its byte budget, so rows
         left out are `<plugin>::board::over_budget`. A first row or a single
         value past the budget is `<plugin>::board::refused`, with Board's code
-        `board::query::over_budget`.
+        `board::output::over_budget`.
         """
         rows, truncated = self._query(sql, "--all")
         if truncated:
             raise PluginError(
                 f"{self.plugin}::board::over_budget",
-                f"a query's rows passed the 64 MiB one board run prints ({QUERY_OVER_BUDGET}); select fewer "
+                f"a query's rows passed the 64 MiB one board run prints ({OVER_BUDGET}); select fewer "
                 "or smaller columns, or add ORDER BY and page by key, as in WHERE (a, b) > (last a, last b)",
             )
         return rows
@@ -154,7 +151,7 @@ class Board:
             else:
                 raise self._refused(("refs",), str(code), str(answer.get("message", "")), _hint(answer))
         if not found:
-            raise self._failed(("refs",), ran, f"left every path unanswered as {REFS_OVER_BUDGET}")
+            raise self._failed(("refs",), ran, f"left every path unanswered as {OVER_BUDGET}")
         return found
 
     def _each(self, paths: Sequence[str], ask: Callable[[list[str]], list[T]]) -> list[T]:
@@ -273,7 +270,7 @@ def _answers(report: dict[str, Any], asked: int) -> list[tuple[bool, dict[str, A
         left_out_from = cast("dict[str, Any]", fields).get("left_out_from") if isinstance(fields, dict) else None
         if isinstance(index, int):
             refused[index] = failure
-        elif failure.get("code") in (OVER_BUDGET, REFS_OVER_BUDGET) and isinstance(left_out_from, int):
+        elif failure.get("code") == OVER_BUDGET and isinstance(left_out_from, int):
             answered = left_out_from
         else:
             return None

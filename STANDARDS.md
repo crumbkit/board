@@ -7,11 +7,14 @@ what enforces it. A rule without a gate is still a rule.
 
 1. **Parse once at the boundary.** Convert input to its canonical type where it enters, and pass that type inward. A `.to_string()` that is parsed again further in is a defect. Use enums, not `bool`, `Option<Option<T>>` or `String`. Keep malformed, absent and unsupported values distinct.
 2. **A newtype holds an invariant.** Add one only to hold an invariant, to tell apart values that are easy to confuse, or to own a shared rule. Keep the field private. Implement `FromStr` and `TryFrom<String>`, with `#[serde(try_from = "String", into = "String")]`. Constructors and deserializers enforce the same invariant. Wire-only structs are named `Raw*`.
-3. **Board's own documents refuse what they do not understand.** Every `board/*` document (configuration, pointers, manifests, plugin messages) uses `#[serde(deny_unknown_fields)]`, refuses duplicate keys and carries `"$type": "board/<kind>/v<n>"`. A command's report and its failures are crumbkit documents named by `schema` instead (rule 17). Never change a released schema; add a version. User records are different: their own schema decides, `put` refuses an invalid one, and the index marks it degraded instead of refusing it. serde's derived structs refuse duplicate fields, but `serde_json::Value` and maps keep the last one silently, so every untyped JSON read goes through `board-model`'s duplicate-refusing parse.
+3. **Board's own documents refuse what they do not understand.** Every `board/*` document (configuration, pointers, manifests, plugin messages) uses `#[serde(deny_unknown_fields)]`, refuses duplicate keys and carries `"$type": "board/<kind>/v<n>"`. A command's report and its failures are crumbkit documents named by `schema` instead (rule 17). User records are different: their own schema decides, `put` refuses an invalid one, and the index marks it degraded instead of refusing it. serde's derived structs refuse duplicate fields, but `serde_json::Value` and maps keep the last one silently, so every untyped JSON read goes through `board-model`'s duplicate-refusing parse.
 
 ## Errors
 
-4. **Every refusal carries a stable code.** Each owning module has one `thiserror` enum. Each variant has a code `<app>::<area>::<reason>`, spelled once, which never changes after release. The area is a stable domain noun (`mount`, `record`, `put`), never a module path, so moving code never changes a code. Reasons are snake_case. The message is one lower-case sentence that names the value at fault. Store typed fields, never a preformatted `String` or `Debug` output. A blanket `#[from] io::Error` is a fault. A degraded entry is a path and one of these codes.
+4. **Every refusal carries a stable code.** Each owning module has one `thiserror` enum. Each variant has a code `<app>::<area>::<reason>`, spelled once. The area is a stable domain noun (`mount`, `record`, `put`), never a module path, so moving code never changes a code. Reasons are snake_case. The message is one lower-case sentence that names the value at fault. Store typed fields, never a preformatted `String` or `Debug` output. A blanket `#[from] io::Error` is a fault. A degraded entry is a path and one of these codes.
+
+Rules 3 and 4 on change: after a release, a changed type is a new version and a code is never renamed; until a release or a second user, both change in place and every reader on the machine moves in the same step.
+
 5. **`anyhow` only in a binary's `main`, if at all.** Library crates return typed errors.
 6. **Production code does not panic.** No `unwrap`, `dbg!`, `todo!`, `unimplemented!` or `panic!`. Use `expect` only for a proven invariant, and state the invariant in its message. Recover a poisoned lock through a helper, never `.lock().unwrap()`. Tests may unwrap, expect and panic on a broken fixture. Gate: `unwrap_used`, `dbg_macro`, `todo`, `unimplemented` and `panic` deny; `clippy.toml` sets `allow-unwrap-in-tests`, `allow-expect-in-tests` and `allow-panic-in-tests`.
 
@@ -82,10 +85,10 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     limits each path's answer on its own, so the caller bounds a run by how many
     paths it asks. `get` and `refs` stop answering once their output reaches
     64 MiB and name every later path in the `left_out` of one
-    `get::over_budget` or `refs::over_budget` failure, to ask for in another
+    `board::output::over_budget` failure, to ask for in another
     run. `query` stops before the
     row that would take its rows past 64 MiB, even with `--all`, and marks the
-    cut `query::over_budget`; it refuses a first row or a single value longer than
+    cut with the same code; it refuses a first row or a single value longer than
     that, where `get` and `refs` always answer their first path, because a
     query can ask for fewer or smaller columns and a file has no smaller form.
     An empty listing says so on stderr instead of printing nothing. Gate: a test
@@ -99,7 +102,7 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     Every example in help must parse as a real command line.
 25. **Every error says what failed, for which value, and what to try next.** A
     refused command line is an error like any other: it has the code
-    `board::usage::invalid`, exit code 2, and a `board/failure/v1` document
+    `board::cli::usage`, exit code 2, and a `board/failure/v1` document
     when `--json` is on the command line. clap suggests the nearest command or
     flag for a misspelling. Text errors are `error: <message>`, then `help:`
     and `code:` lines. JSON errors carry `recovery` beside `code` and

@@ -118,7 +118,7 @@ fn get_answers_at_most_max_limit_paths_and_refuses_one_more() {
     let refused = run(board_ops::MAX_LIMIT + 1);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
-        (2, Some("board::usage::invalid"))
+        (2, Some("board::cli::usage"))
     );
     assert!(refused.stdout.is_empty());
     let stderr = String::from_utf8(refused.stderr).unwrap();
@@ -178,7 +178,7 @@ fn get_prints_each_file_that_fits_in_its_budget_and_always_the_first() {
     let first = headed("a")[1..].to_owned();
     let two = first.clone() + &headed("b");
     let three = two.clone() + &headed("c");
-    let over = Some("board::get::over_budget".to_owned());
+    let over = Some("board::output::over_budget".to_owned());
     assert_eq!(
         codes(3644),
         (three.into_bytes(), None),
@@ -208,13 +208,13 @@ fn a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_f
     let refused = rendered(&scenario, &paths, false, 2429);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
-        (1, Some("board::get::over_budget"))
+        (1, Some("board::output::over_budget"))
     );
     assert_eq!(
         text(&refused.stderr),
         "error: 1 more answer did not fit in the output budget of 2429 bytes\n\
          \x20 help:  run `board get /c.md`\n\
-         \x20 code:  board::get::over_budget\n"
+         \x20 code:  board::output::over_budget\n"
     );
     // Room for the first answer and the failure that leaves the other two
     // out, but not for /b.md's file.
@@ -226,7 +226,7 @@ fn a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_f
     assert_eq!(report["data"].as_array().map(Vec::len), Some(1));
     assert_eq!(report["data"][0]["text"], file());
     let over = &report["failures"][0];
-    assert_eq!(over["code"], "board::get::over_budget");
+    assert_eq!(over["code"], "board::output::over_budget");
     assert_eq!(over["fields"]["budget"], budget);
     assert_eq!(
         over["fields"]["left_out"],
@@ -295,7 +295,7 @@ fn the_budget_counts_the_json_a_file_prints_so_escaped_bytes_spend_more_of_it() 
     let escaped = rendered(&scenario, &["/c.md", "/z.md"], true, budget);
     assert_eq!(
         (escaped.code, escaped.error.as_deref()),
-        (1, Some("board::get::over_budget"))
+        (1, Some("board::output::over_budget"))
     );
     assert_eq!(answers(&escaped)[0]["text"], "\u{1}".repeat(800));
 }

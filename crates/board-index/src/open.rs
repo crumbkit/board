@@ -332,7 +332,7 @@ impl IndexError {
             }
             Self::Query { .. } => Code::QueryInvalid,
             Self::Timeout => Code::QueryTimeout,
-            Self::TooBig => Code::QueryOverBudget,
+            Self::TooBig => Code::OutputOverBudget,
         }
     }
 }

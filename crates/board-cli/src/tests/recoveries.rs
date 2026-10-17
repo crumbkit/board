@@ -311,11 +311,11 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
         (Code::QueryInvalid, "query 'SELECT * FROM entires'"),
         (Code::QueryInvalid, "query 'SELECT logcal'"),
         (Code::QueryTimeout, unbounded),
-        (Code::QueryOverBudget, zeroes),
-        (Code::UsageInvalid, "chek"),
-        (Code::UsageInvalid, "get projects/p"),
-        (Code::UsageInvalid, "ls --limit 0"),
-        (Code::UsageInvalid, "plugin"),
+        (Code::OutputOverBudget, zeroes),
+        (Code::CliUsage, "chek"),
+        (Code::CliUsage, "get projects/p"),
+        (Code::CliUsage, "ls --limit 0"),
+        (Code::CliUsage, "plugin"),
         (Code::MountFollowMissing, "mount update /mount/unfollowed"),
         (Code::PathNotFound, "mount update /projects/zz"),
     ];
@@ -323,12 +323,12 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
         starts.add(fixture, code, line);
     }
     let pairs: [(Code, &str, &str); 6] = [
-        (Code::UsageInvalid, "ls --limit 0", "ls --limit 1"),
+        (Code::CliUsage, "ls --limit 0", "ls --limit 1"),
         (Code::PathNotFound, "get /nowhere", "get /projects/p"),
         (Code::RecordNotARecord, "get /projects", "get /projects/p"),
         (Code::QueryInvalid, "query 'SELEC 1'", "query 'SELECT 1'"),
         (Code::QueryTimeout, unbounded, "query 'SELECT 1'"),
-        (Code::QueryOverBudget, zeroes, "query 'SELECT 1'"),
+        (Code::OutputOverBudget, zeroes, "query 'SELECT 1'"),
     ];
     for (code, line, admitted) in pairs {
         starts.pair(fixture, code, line, admitted);

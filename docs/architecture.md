@@ -56,8 +56,8 @@ letters, digits and hyphens; `n` is a positive integer. The `board` namespace is
 reserved for Board's own documents. A record's schema is
 `.board/types/<namespace>/<kind>/v<n>.schema.json` in the same board as the
 record, so a mounted board's records are checked against its own schemas.
-Schemas are JSON Schema 2020-12. A released type never changes; a change is a
-new version.
+Schemas are JSON Schema 2020-12. After a release, a changed type is a new
+version; until a release or a second user, it changes in place.
 
 Parsing is strict, and the first failure is the entry's code: over 16 MiB
 (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not JSON
@@ -219,11 +219,11 @@ that holds no record, such as markdown. The bytes are a JSON string under
 `text` when they are UTF-8, and `base64` otherwise. A path that names a
 directory or nothing is refused in `failures`, with the `index` of its
 path; the other paths are still answered, and the run
-exits 1. One run takes at most 10,000 paths; more is `usage::invalid`. Like
+exits 1. One run takes at most 10,000 paths; more is `board::cli::usage`. Like
 every command, `get` collects its output in memory and writes it at exit. It
 reads each file only once the answers before it are rendered, and only while
 the output, counted in the format being printed, is under 64 MiB; the first
-path is always read. One `board::get::over_budget` failure names the later
+path is always read. One `board::output::over_budget` failure names the later
 paths in `left_out`, to ask for in another run. So a run holds at most
 64 MiB, one more answer, and the short errors of the paths it left. The plugin
 library's `Board.get` does that. `controls.check` reads every
@@ -232,11 +232,11 @@ file its measured controls reach this way.
 Each command returns one typed report. `--json` prints it as crumbkit's
 `board/<command>-report/v2`, or `board/failure/v1` on failure;
 [architecture/errors.md](architecture/errors.md) gives both shapes. Exit codes: 0 done,
-1 failed, 2 a refused command line (`board::usage::invalid`).
+1 failed, 2 a refused command line (`board::cli::usage`).
 
 `-C <dir>` before the command runs it as if Board started in `<dir>`. Several
 combine as in git: a relative one is taken from the one before. A `<dir>` naming
-no directory is `board::usage::invalid`.
+no directory is `board::cli::usage`.
 
 Tab completion covers commands, flags and logical paths, through
 `clap_complete`'s dynamic engine. `BOARD_COMPLETE=<shell> board`, with no other
@@ -287,9 +287,10 @@ changes plugins such as `tasks`.
 
 ## Codes
 
-Codes are `board::<area>::<reason>`, spelled once in code and never changed
-after release. [architecture/errors.md](architecture/errors.md) lists the v0
-set and the values an error names in text and in `board/failure/v1`.
+Codes are `board::<area>::<reason>`, spelled once in code, and change as
+STANDARDS.md 3 and 4 say. [architecture/errors.md](architecture/errors.md)
+lists the codes and the values an error names in text and in
+`board/failure/v1`.
 
 ## Testing
 

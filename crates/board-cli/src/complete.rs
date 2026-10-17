@@ -73,7 +73,7 @@ fn unknown(shell: &OsStr) -> Output {
         "set {VARIABLE} to one of {}, as in `{VARIABLE}=fish {BINARY_NAME} | source`",
         SHELLS.join(", ")
     );
-    let refusal = Refusal::new(Code::UsageInvalid, message, &Fields::default()).with_hint(hint);
+    let refusal = Refusal::new(Code::CliUsage, message, &Fields::default()).with_hint(hint);
     let view = crumbkit::Output::new(
         crumbkit::ViewFlags::new(),
         Cli::command(),

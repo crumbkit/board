@@ -56,7 +56,7 @@ Tables and views:
   p_<name>  each enabled plugin's database
 
 Rows stop at 64 MiB of output, even with --all; --json then marks the
-listing `truncated` and its `cut` carries board::query::over_budget, and the
+listing `truncated` and its `cut` carries board::output::over_budget, and the
 text notes it. A first row past 64 MiB is refused with that code.
 
 Examples:
@@ -318,7 +318,7 @@ pub(crate) fn run(
             if let Some(output) = (code == 2).then(|| split(&arguments)).flatten() {
                 return output;
             }
-            let error = (code == 2).then(|| Code::UsageInvalid.as_str().to_owned());
+            let error = (code == 2).then(|| Code::CliUsage.as_str().to_owned());
             return Output {
                 stdout,
                 stderr,
@@ -463,7 +463,7 @@ fn split(arguments: &[OsString]) -> Option<Output> {
         names[1..].join(" ")
     );
     let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
-    let mut refusal = plain(Code::UsageInvalid, &message).with_hint(hint);
+    let mut refusal = plain(Code::CliUsage, &message).with_hint(hint);
     let name = argument.split(' ').next().unwrap_or(argument);
     refusal.fields.insert("argument".to_owned(), name.into());
     refusal
@@ -506,9 +506,7 @@ pub(crate) fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf,
         );
         let hint = "give -C a directory that exists, such as the board's root or a directory \
                     inside it; a relative -C is taken from the one before it";
-        return Err(Box::new(
-            plain(Code::UsageInvalid, &message).with_hint(hint),
-        ));
+        return Err(Box::new(plain(Code::CliUsage, &message).with_hint(hint)));
     }
     Ok(start)
 }

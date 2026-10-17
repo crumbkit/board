@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 7] = [
+pub const NOT_REPRODUCED: [(Code, &str); 5] = [
     (
         Code::IndexFailed,
         "the index fails only when SQLite does, even in memory; \
@@ -37,18 +37,6 @@ pub const NOT_REPRODUCED: [(Code, &str); 7] = [
         Code::PutHeadMoved,
         "HEAD must move in the middle of a put; \
          board-tree/src/tests/commits.rs moves it between staging and commit",
-    ),
-    (
-        Code::GetOverBudget,
-        "a run that prints the CLI's 64 MiB get budget is too costly for a gate; \
-         a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_fails_the_run \
-         in board-cli/src/tests/get.rs passes render::get a budget of a few kilobytes",
-    ),
-    (
-        Code::RefsOverBudget,
-        "a run that prints the CLI's 64 MiB refs budget is too costly for a gate; \
-         a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slot \
-         in board-cli/src/tests/refs.rs passes render::refs budgets of a few bytes as text and a few kilobytes as JSON",
     ),
     (
         Code::RefsTargetChanged,
@@ -68,15 +56,10 @@ const QUERY: &str = "query gives it; check runs no query";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 35] = [
+pub const NOT_CHECKED: [(Code, &str); 33] = [
     (
-        Code::GetOverBudget,
-        "only get gives it, to a path it leaves unread once a run has printed its budget",
-    ),
-    (Code::QueryOverBudget, QUERY),
-    (
-        Code::RefsOverBudget,
-        "only refs gives it, to a path it leaves unanswered once a run has printed its budget",
+        Code::OutputOverBudget,
+        "a run gives it once its output reaches the budget; check's listing is cut to fit instead",
     ),
     (
         Code::RefsTargetChanged,
@@ -128,7 +111,7 @@ pub const NOT_CHECKED: [(Code, &str); 35] = [
     (Code::PluginTooLarge, PLUGIN),
     (Code::PluginTooDeep, PLUGIN),
     (
-        Code::UsageInvalid,
+        Code::CliUsage,
         "the command line is refused before any board is read",
     ),
 ];

@@ -94,7 +94,7 @@ def test_rows_asks_board_for_every_row_and_query_for_at_most_its_limit(monkeypat
 def test_rows_refuses_a_query_cut_at_boards_byte_budget_and_query_returns_it_as_truncated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    summary: dict[str, Any] = {"plugins": [], "code": board.QUERY_OVER_BUDGET}
+    summary: dict[str, Any] = {"plugins": [], "code": board.OVER_BUDGET}
     over = {"schema": "board/query-report/v2", "data": [[1]], "truncated": True, "summary": summary}
     printing(monkeypatch, json.dumps(over).encode())
     assert DEMO.query("SELECT 1") == ([[1]], True)
@@ -117,7 +117,7 @@ def batch(command: str, asked: tuple[str, ...] | list[str], answers: list[Any]) 
     failures: list[dict[str, Any]] = []
     for index, answer in enumerate(answers):
         code = cast("dict[str, Any]", answer).get("code") if isinstance(answer, dict) else None
-        if code in (board.OVER_BUDGET, board.REFS_OVER_BUDGET):
+        if code == board.OVER_BUDGET:
             fields = {"left_out": list(asked[index:]), "left_out_from": index, "budget": 64}
             failures.append({"code": code, "message": "not answered", "fields": fields})
             break
@@ -253,7 +253,7 @@ def answering_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple
     def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
-        over = {"code": board.REFS_OVER_BUDGET}
+        over = {"code": board.OVER_BUDGET}
         answers = [{"location": {"display": path}} if at < budget else over for at, path in enumerate(asked)]
         report = batch("refs", asked, answers)
         return subprocess.CompletedProcess(["board", *arguments], 1 if budget < len(asked) else 0, report, b"")
@@ -283,7 +283,7 @@ def test_refs_fails_on_a_run_that_answers_none_of_its_paths_and_reads_one_that_a
     with pytest.raises(PluginError) as failed:
         DEMO.refs(["/a", "/b"])
     assert failed.value.code == "demo::board::failed"
-    assert f"left every path unanswered as {board.REFS_OVER_BUDGET}" in failed.value.message
+    assert f"left every path unanswered as {board.OVER_BUDGET}" in failed.value.message
     assert [run[-2:] for run in runs] == [("/a", "/b")]
     runs = answering_within(monkeypatch, 1)
     assert [answer and answer["location"]["display"] for answer in DEMO.refs(["/a", "/b"])] == ["/a", "/b"]
@@ -430,6 +430,19 @@ def test_the_real_board_gives_each_files_bytes_in_order_and_a_refused_path_its_c
     assert isinstance(refused, PluginError)
     assert (refused.code, refused.fields) == ("demo::board::refused", {"code": "board::record::not_a_record"})
     assert real.get(["/docs/a.md", "/docs/raw.bin"]) == [b"one two", b"\xff\x00a"]
+
+
+def test_the_real_board_cuts_a_run_at_its_byte_budget_with_the_code_the_library_asks_again_for(
+    real: Board, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in "bcd":
+        (Path(real.root) / "docs" / f"{name}.md").write_text(name)
+    paths = [f"/docs/{name}.md" for name in "abcd"]
+    monkeypatch.setenv("BOARD_OUTPUT_BUDGET", "300")
+    ran = subprocess.run(["board", "--json", "get", *paths], cwd=real.root, capture_output=True, check=False)
+    assert json.loads(ran.stdout)["failures"][-1]["code"] == board.OVER_BUDGET
+    assert real.get(paths) == [b"one two", b"b", b"c", b"d"]
+    assert [answer and answer["location"]["display"] for answer in real.refs(paths)] == paths
 
 
 def test_the_real_board_resolves_a_path_and_a_missing_one_is_none(real: Board) -> None:

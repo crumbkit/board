@@ -79,7 +79,7 @@ fn a_directory_that_does_not_exist_is_refused_and_one_that_exists_is_admitted() 
         text(&refused.stderr),
         format!(
             "error: cannot change to 'nowhere': {} does not exist\n  help:  {HINT}\n\
-             \x20 code:  board::usage::invalid\n",
+             \x20 code:  board::cli::usage\n",
             scenario.workdir().join("nowhere").display()
         )
     );
@@ -99,7 +99,7 @@ fn a_file_named_as_the_directory_is_refused_and_its_directory_is_admitted() {
     );
     assert!(
         stderr.ends_with(&format!(
-            "p.json is not a directory\n  help:  {HINT}\n  code:  board::usage::invalid\n"
+            "p.json is not a directory\n  help:  {HINT}\n  code:  board::cli::usage\n"
         )),
         "{stderr}"
     );
@@ -115,7 +115,7 @@ fn a_refused_directory_is_an_error_document_with_json_and_an_admitted_one_is_a_r
     assert!(refused.stderr.is_empty());
     let error = json(&refused);
     assert_eq!(error["schema"], "board/failure/v1");
-    assert_eq!(error["code"], "board::usage::invalid");
+    assert_eq!(error["code"], "board::cli::usage");
     assert_eq!(
         error["message"],
         format!(
@@ -176,7 +176,7 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
         text(&through.stderr),
         format!(
             "error: cannot change to 'projects/p.json/sub': {} is not a \
-             directory\n  help:  {HINT}\n  code:  board::usage::invalid\n",
+             directory\n  help:  {HINT}\n  code:  board::cli::usage\n",
             scenario.workdir().join("projects/p.json/sub").display()
         )
     );

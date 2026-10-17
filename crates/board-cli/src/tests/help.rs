@@ -3,7 +3,7 @@
 //! byte budget (STANDARDS.md 24).
 
 use clap::CommandFactory;
-use crumbkit::help::{Guide, Rename, RuntimeLeaf};
+use crumbkit::help::{Guide, RuntimeLeaf};
 use crumbkit_test::{Allow, Budget, Budgets, Examples, Pages, Rule};
 
 use super::cli::{examples, words};
@@ -18,11 +18,6 @@ pub(super) fn binary() -> String {
     let path = test.parent().unwrap().parent().unwrap().join("board");
     path.to_str().unwrap().to_owned()
 }
-
-/// Board's code for a command line it refuses, which crumbkit's checks
-/// read where they look for crumbkit's.
-const USAGE: crumbkit::Code = crumbkit::Code::new("board", "usage", "invalid");
-const CODES: &[Rename] = &[Rename::new(&crumbkit::codes::CLI_USAGE, &USAGE)];
 
 /// A guide whose leaves hold the examples each command's own help ends
 /// with. crumbkit runs no shell: an example's `< file` becomes its golden's
@@ -53,7 +48,7 @@ pub(super) fn guide() -> Guide {
     }
     let mut leaves = Vec::new();
     walk(&[], &Cli::command(), &mut leaves);
-    Guide::new().codes(CODES).with_runtime_leaves(leaves)
+    Guide::new().with_runtime_leaves(leaves)
 }
 
 /// The tasks plugin runs through `uv` from its checkout, which its README
@@ -134,16 +129,15 @@ const BUDGETS: Budgets = Budgets::new()
         "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output.",
     )]);
 
-/// Why each document's rows print whole: Board's readers, among them
-/// python/board-plugin, parse each row as one object, so `--json` keeps
-/// every field without `--full`.
-const WHOLE: &str = "existing readers parse each row whole, with its optional fields left out";
+/// Why each document's rows print whole: `--json` gives every field without
+/// `--full`.
+const WHOLE: &str = "an agent that asks for --json gets every field without needing a second flag";
 
 /// Each document Board prints has its id, and each rule it breaks has an
 /// opt-out with a reason.
 #[test]
 fn each_document_declares_its_id_and_its_opt_outs() {
-    let guide = Guide::new().codes(CODES).leaves(crate::render::LEAVES);
+    let guide = Guide::new().leaves(crate::render::LEAVES);
     let allow = [
         Allow::new(Rule::RowsWhole, "ls", WHOLE),
         Allow::new(Rule::RowsWhole, "check", WHOLE),

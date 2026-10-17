@@ -4,8 +4,8 @@ use std::fmt;
 
 mod hint;
 
-/// A stable code, `board::<area>::<reason>`. A code never changes after
-/// release; docs/architecture/errors.md lists the v0 set.
+/// A code, `board::<area>::<reason>`, which changes as STANDARDS.md 3 and 4
+/// say. docs/architecture/errors.md lists the codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Code {
     JsonParse,
@@ -42,7 +42,7 @@ pub enum Code {
     IndexFailed,
     QueryInvalid,
     QueryTimeout,
-    QueryOverBudget,
+    OutputOverBudget,
     PutStale,
     PutLocked,
     PutThroughMount,
@@ -51,8 +51,6 @@ pub enum Code {
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
-    GetOverBudget,
-    RefsOverBudget,
     RefsTargetChanged,
     PluginNotInstalled,
     PluginBadManifest,
@@ -68,12 +66,12 @@ pub enum Code {
     PluginTimeout,
     PluginTooLarge,
     PluginTooDeep,
-    UsageInvalid,
+    CliUsage,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 61] = [
+    pub const ALL: [Code; 59] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -108,7 +106,7 @@ impl Code {
         Self::IndexFailed,
         Self::QueryInvalid,
         Self::QueryTimeout,
-        Self::QueryOverBudget,
+        Self::OutputOverBudget,
         Self::PutStale,
         Self::PutLocked,
         Self::PutThroughMount,
@@ -117,8 +115,6 @@ impl Code {
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
-        Self::GetOverBudget,
-        Self::RefsOverBudget,
         Self::RefsTargetChanged,
         Self::PluginNotInstalled,
         Self::PluginBadManifest,
@@ -134,7 +130,7 @@ impl Code {
         Self::PluginTimeout,
         Self::PluginTooLarge,
         Self::PluginTooDeep,
-        Self::UsageInvalid,
+        Self::CliUsage,
     ];
 
     /// The code spelled `text`.
@@ -178,7 +174,7 @@ impl Code {
             Self::IndexFailed => "board::index::failed",
             Self::QueryInvalid => "board::query::invalid",
             Self::QueryTimeout => "board::query::timeout",
-            Self::QueryOverBudget => "board::query::over_budget",
+            Self::OutputOverBudget => "board::output::over_budget",
             Self::PutStale => "board::put::stale",
             Self::PutLocked => "board::put::locked",
             Self::PutThroughMount => "board::put::through_mount",
@@ -187,8 +183,6 @@ impl Code {
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
-            Self::GetOverBudget => "board::get::over_budget",
-            Self::RefsOverBudget => "board::refs::over_budget",
             Self::RefsTargetChanged => "board::refs::target_changed",
             Self::PluginNotInstalled => "board::plugin::not_installed",
             Self::PluginBadManifest => "board::plugin::bad_manifest",
@@ -204,7 +198,7 @@ impl Code {
             Self::PluginTimeout => "board::plugin::timeout",
             Self::PluginTooLarge => "board::plugin::too_large",
             Self::PluginTooDeep => "board::plugin::too_deep",
-            Self::UsageInvalid => "board::usage::invalid",
+            Self::CliUsage => "board::cli::usage",
         }
     }
 }
@@ -259,7 +253,7 @@ mod tests {
             | Code::IndexFailed
             | Code::QueryInvalid
             | Code::QueryTimeout
-            | Code::QueryOverBudget
+            | Code::OutputOverBudget
             | Code::PutStale
             | Code::PutLocked
             | Code::PutThroughMount
@@ -268,8 +262,6 @@ mod tests {
             | Code::PutNoIdentity
             | Code::PutHeadMoved
             | Code::PutFailed
-            | Code::GetOverBudget
-            | Code::RefsOverBudget
             | Code::RefsTargetChanged
             | Code::PluginNotInstalled
             | Code::PluginBadManifest
@@ -285,7 +277,7 @@ mod tests {
             | Code::PluginTimeout
             | Code::PluginTooLarge
             | Code::PluginTooDeep
-            | Code::UsageInvalid => {}
+            | Code::CliUsage => {}
         }
     }
 

@@ -99,7 +99,7 @@ fn plugin_list_fields_admits_description_and_refuses_an_unknown_field() {
         text(&output.stderr),
         "error: --fields names an unknown field 'summary'\n  \
          help:  use the valid fields: capabilities, code, description, enabled, extract, message, metadata, name, offers, run, schemas, status, version\n  \
-         code:  board::usage::invalid\n"
+         code:  board::cli::usage\n"
     );
 }
 
@@ -402,7 +402,7 @@ fn plugin_find_fields_admits_its_fields_and_refuses_an_unknown_field() {
         text(&output.stderr),
         "error: --fields names an unknown field 'summary'\n  \
          help:  use the valid fields: _meta, annotations, capability, description, enabled, inputSchema, outputSchema, plugin, title, version\n  \
-         code:  board::usage::invalid\n"
+         code:  board::cli::usage\n"
     );
 }
 

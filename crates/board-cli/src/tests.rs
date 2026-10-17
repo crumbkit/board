@@ -826,7 +826,7 @@ fn refs_answers_at_most_max_limit_paths_and_refuses_one_more() {
     let refused = run(board_ops::MAX_LIMIT + 1);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
-        (2, Some("board::usage::invalid"))
+        (2, Some("board::cli::usage"))
     );
     assert_eq!(text(&refused.stdout), "");
     assert!(

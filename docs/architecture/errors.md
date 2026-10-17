@@ -5,7 +5,7 @@ of a report and an error, and the values an error names.
 
 ## Codes
 
-The v0 set:
+The codes, which change as STANDARDS.md 3 and 4 say:
 
 | Area | Reasons |
 | --- | --- |
@@ -21,14 +21,11 @@ The v0 set:
 | `index` | `failed`: the disposable index could not be used, even in memory |
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `query` | `timeout`: the statement ran longer than 1 s |
-| `query` | `over_budget`: the next row would take the rows past 64 MiB, so the report carries this code beside its rows and exits 0; or the first row, or one value, is longer than 64 MiB, which is refused and exits 1 |
-| `get` | `over_budget`: the run's output already reached 64 MiB, so it left the paths in `left_out` unread |
-| `refs` | `over_budget`: the run's output already reached 64 MiB, so it left the paths in `left_out` unanswered |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
-| `output` | `over_budget`: another command's result is larger than 64 MiB, or than `BOARD_OUTPUT_BUDGET` bytes when that variable is smaller, and is not a listing that can be cut to fit |
-| `usage` | `invalid`: the command line was refused, exit 2 |
+| `output` | `over_budget`: the output reached 64 MiB, or `BOARD_OUTPUT_BUDGET` bytes when that variable is smaller. `get` and `refs` leave the paths in `left_out` unanswered and exit 1. `query` stops before the next row, carries this code beside its rows and exits 0; it refuses a first row or one value longer than the budget and exits 1. Any other result that is not a listing that can be cut to fit is refused and exits 1 |
+| `cli` | `usage`: the command line was refused, exit 2 |
 
 ## Reports and failures
 
@@ -43,7 +40,7 @@ Board prints an error in crumbkit's `board/failure/v1` shape: `code`,
 `message`, `fields` and `recovery`. A failure inside a report's `failures` also
 has `key`, the path asked for, and `index`, its position among the paths asked.
 A command that fails as a whole prints the document alone and exits 1, or 2
-for `board::usage::invalid`.
+for `board::cli::usage`.
 
 `recovery` says what to try next. Its `kind` is `run`, with `call`, a command
 line that runs as written; `hint`, with `text`, a sentence for a reader, used

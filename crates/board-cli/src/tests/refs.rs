@@ -90,7 +90,7 @@ fn a_field_that_is_not_a_json_pointer_refuses_the_run_and_its_twin_that_is_one_i
         let ran = run(refused);
         assert_eq!(
             (ran.code, ran.error.as_deref()),
-            (2, Some("board::usage::invalid")),
+            (2, Some("board::cli::usage")),
             "{refused}"
         );
         assert_eq!(
@@ -100,7 +100,7 @@ fn a_field_that_is_not_a_json_pointer_refuses_the_run_and_its_twin_that_is_one_i
                  must be a JSON pointer, such as /status, or /a~1b for the key a/b: empty or \
                  starting with /, with ~ only as ~0 or ~1\n\
                  \x20 help:  run `board refs -h`\n\
-                 \x20 code:  board::usage::invalid\n"
+                 \x20 code:  board::cli::usage\n"
             )
         );
         let ran = run(admitted);
@@ -217,7 +217,7 @@ fn refs_answers_a_path_while_the_run_has_printed_less_than_its_budget_and_always
     let first = "==> /projects/p <==\nto /hub /see/0\n";
     assert_eq!(first.len(), 35);
     let next = format!("\n{first}");
-    let over = Some("board::refs::over_budget".to_owned());
+    let over = Some("board::output::over_budget".to_owned());
     let three = format!("{first}{next}{next}");
     assert_eq!(ran(107), (three, None), "107 bytes fit in 107");
     let two = format!("{first}{next}");
@@ -247,7 +247,7 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
     assert_eq!(pulled, 1, "a path left over budget is never resolved");
     assert_eq!(
         (refused.code, refused.error.as_deref()),
-        (1, Some("board::refs::over_budget"))
+        (1, Some("board::output::over_budget"))
     );
     // The index is in memory, as no cache is given, which crumbkit prints as
     // the batch's note, before the failure.
@@ -256,7 +256,7 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
         "note: the index is in memory for this run: there is no cache directory\n\
          error: 2 more answers did not fit in the output budget of 27 bytes\n\
          \x20 help:  run `board refs /hub /projects/p`\n\
-         \x20 code:  board::refs::over_budget\n"
+         \x20 code:  board::output::over_budget\n"
     );
     // Room for the first answer and the failure that leaves the other two
     // out, but not for /hub's references.
@@ -268,7 +268,7 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
     assert_eq!(report["data"].as_array().map(Vec::len), Some(1));
     assert_eq!(report["data"][0]["to"][0]["path"], "hub.json");
     let over = &report["failures"][0];
-    assert_eq!(over["code"], "board::refs::over_budget");
+    assert_eq!(over["code"], "board::output::over_budget");
     assert_eq!(over["fields"]["budget"], budget);
     assert_eq!(
         over["fields"]["left_out"],
@@ -294,7 +294,7 @@ fn the_refs_budget_counts_the_bytes_of_the_format_printed() {
     let as_text = rendered(&scenario, &asked, false, budget);
     assert_eq!((as_text.code, as_text.error), (0, None));
     let as_json = rendered(&scenario, &asked, true, budget);
-    assert_eq!(as_json.error.as_deref(), Some("board::refs::over_budget"));
+    assert_eq!(as_json.error.as_deref(), Some("board::output::over_budget"));
 }
 
 #[test]

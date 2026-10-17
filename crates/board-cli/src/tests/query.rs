@@ -47,9 +47,9 @@ fn query_prints_each_row_within_its_budget_and_notes_the_rows_left_at_it() {
     assert!(!three.2.contains("over_budget"), "{}", three.2);
     let two = ran(20);
     assert_eq!(two.1, "[\"column1\"]\n[\"a\"]\n[\"b\"]\n", "20 bytes fit 2");
-    assert!(two.2.contains("(board::query::over_budget)"), "{}", two.2);
+    assert!(two.2.contains("(board::output::over_budget)"), "{}", two.2);
     let refused = answered(&scenario, SQL, 10, 6).unwrap_err();
-    assert_eq!(refused.code(), Code::QueryOverBudget, "6 bytes fit none");
+    assert_eq!(refused.code(), Code::OutputOverBudget, "6 bytes fit none");
     assert!(answered(&scenario, SQL, 10, 7).is_ok(), "7 bytes fit one");
 }
 
@@ -60,7 +60,7 @@ fn a_query_report_names_its_code_when_the_budget_left_rows_out_and_not_when_the_
     let over = report(10, 20);
     assert_eq!(over["data"], json!([["a"], ["b"]]));
     assert_eq!(over["truncated"], true);
-    assert_eq!(over["summary"]["code"], "board::query::over_budget");
+    assert_eq!(over["summary"]["code"], "board::output::over_budget");
     let whole = report(10, 21);
     assert_eq!(whole["data"].as_array().unwrap().len(), 3);
     assert_eq!(whole["truncated"], false);
@@ -79,7 +79,7 @@ fn a_query_refuses_a_value_longer_than_its_budget_and_admits_one_as_long() {
     // show the limit.
     let sql = "SELECT length(zeroblob(40))";
     let refused = answered(&scenario, sql, 10, 39).unwrap_err();
-    assert_eq!(refused.code(), Code::QueryOverBudget);
+    assert_eq!(refused.code(), Code::OutputOverBudget);
     let admitted = answered(&scenario, sql, 10, 40).unwrap();
     assert_eq!(admitted.rows, [vec![json!(40)]]);
 }
@@ -91,7 +91,7 @@ fn a_query_refuses_a_first_row_that_prints_past_its_budget_and_admits_one_that_f
     // digits in quotes and a comma, so the row counts as 129 bytes.
     let sql = "SELECT zeroblob(30), zeroblob(30)";
     let refused = answered(&scenario, sql, 10, 128).unwrap_err();
-    assert_eq!(refused.code(), Code::QueryOverBudget);
+    assert_eq!(refused.code(), Code::OutputOverBudget);
     let admitted = answered(&scenario, sql, 10, 129).unwrap();
     let hex = json!("00".repeat(30));
     assert_eq!(admitted.rows, [vec![hex.clone(), hex]]);
@@ -100,7 +100,7 @@ fn a_query_refuses_a_first_row_that_prints_past_its_budget_and_admits_one_that_f
 /// `board query --json` of [`SQL`] when the budget leaves its last row out.
 const GOLDEN: &str = concat!(
     r#"{"schema":"board/query-report/v2","data":[["a"],["b"]],"truncated":true,"#,
-    r#""summary":{"code":"board::query::over_budget","columns":["column1"],"plugins":[]}}"#,
+    r#""summary":{"code":"board::output::over_budget","columns":["column1"],"plugins":[]}}"#,
     "\n"
 );
 
@@ -138,7 +138,7 @@ fn query_all_is_still_cut_at_its_budget_with_the_code_and_not_within_it() {
         (over["data"].as_array().unwrap().len(), &over["truncated"]),
         (2, &json!(true))
     );
-    assert_eq!(over["summary"]["code"], "board::query::over_budget");
+    assert_eq!(over["summary"]["code"], "board::output::over_budget");
     let whole = report(21);
     assert_eq!(
         (whole["data"].as_array().unwrap().len(), &whole["truncated"]),

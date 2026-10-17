@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport, source_name};
 use board_tree::Status;
-use crumbkit::help::{Leaf, Rename};
+use crumbkit::help::Leaf;
 use crumbkit::{Batch, Bytes, Document, Headed, Row};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -31,7 +31,7 @@ board::refs::target_changed, run refs again.
 `failures` each path refused, by `index`; --field adds `values` and
 `target_code`.
 
-At most 10000 paths. Past 64 MiB of output, one board::refs::over_budget
+At most 10000 paths. Past 64 MiB of output, one board::output::over_budget
 names the paths `left_out`.
 
 Examples:
@@ -158,7 +158,7 @@ impl<'a> Cut<'a> {
 /// `refs` of `paths`, each answered as it would be alone and limited on its
 /// own, in order. Each path is answered only while the run has room for it
 /// in its budget of stdout, and the first always; crumbkit answers the paths
-/// after it with one `refs::over_budget`. A check that could not run
+/// after it with one `board::output::over_budget`. A check that could not run
 /// refuses the whole run. As text, a `from` line per reference the record
 /// makes, with its status and any fields, and a `to` line per record whose
 /// references reach it, after a header when there are several paths. Exit
@@ -204,7 +204,7 @@ pub(crate) fn refs(
     notes.extend(memory.map(|fallback| Note::Always(super::memory_note(fallback))));
     let mut output = printer.noted(REFS, batch, notes);
     if output.code != 0 && output.error.is_none() {
-        output.error = Some(Code::RefsOverBudget.as_str().to_owned());
+        output.error = Some(Code::OutputOverBudget.as_str().to_owned());
     }
     output
 }
@@ -238,14 +238,7 @@ const REFS: Document<Batch<Answered, Refused>> = Document::new(
 .always_print_first()
 .headed();
 
-const OVER_BUDGET: crumbkit::Code = crumbkit::Code::new("board", "refs", "over_budget");
-
-/// `refs`'s leaf, which prints Board's code for the paths the budget left
-/// out.
-pub(super) const LEAF: Leaf = Leaf::new(&["refs"]).document(REFS).codes(&[Rename::new(
-    &crumbkit::codes::OUTPUT_OVER_BUDGET,
-    &OVER_BUDGET,
-)]);
+pub(super) const LEAF: Leaf = Leaf::new(&["refs"]).document(REFS);
 
 /// What a `from` line adds for the fields a run asked for, when its
 /// reference resolves: ` target=<code>`, or ` target=-` for a healthy

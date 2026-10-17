@@ -508,7 +508,7 @@ fn a_query_refuses_a_first_row_past_its_budget_as_soon_as_it_is_counted() {
     let refused = view
         .query("SELECT 1, 2, 3", 10, Some(budget(1)))
         .unwrap_err();
-    assert_eq!(refused.code(), Code::QueryOverBudget);
+    assert_eq!(refused.code(), Code::OutputOverBudget);
     assert_eq!(COUNTED.get(), 2, "it stops at the value past the budget");
     COUNTED.set(0);
     let admitted = view.query("SELECT 1, 2, 3", 10, Some(budget(3))).unwrap();

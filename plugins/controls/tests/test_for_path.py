@@ -146,7 +146,7 @@ def test_board_refuses_the_call_when_its_control_schema_is_wider_and_answers_wit
 def test_a_malformed_path_is_refused_with_boards_code_and_a_well_formed_one_is_answered(board: Board) -> None:
     refused = board.call("for-path", {"path": "/docs/../x"})
     assert refused["code"] == "controls::board::refused", refused
-    assert refused["fields"]["code"] == "board::usage::invalid"
+    assert refused["fields"]["code"] == "board::cli::usage"
     assert "first on PATH" not in refused["message"]
     assert applying(board, "/docs/x") == []
 

@@ -2,7 +2,7 @@
 
 use board_model::{Code, LogicalPath, Object};
 use board_ops::{GetReport, ReadError};
-use crumbkit::help::{Leaf, Rename};
+use crumbkit::help::Leaf;
 use crumbkit::{Batch, Bytes, Document, Headed, Row};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -21,8 +21,8 @@ line, in order. A refused path does not stop the others; the exit code is 1.
 each path refused, by `index`. A file has its location, blob, `text` (or
 `base64`), and its `record` or a `code` saying why not.
 
-At most 10000 paths. Past 64 MiB of output, one board::get::over_budget names
-the paths `left_out`.
+At most 10000 paths. Past 64 MiB of output, one board::output::over_budget
+names the paths `left_out`.
 
 Examples:
   board get /projects/p
@@ -32,9 +32,9 @@ Examples:
 
 /// `get` of `paths`. Each file is read only while crumbkit has room for it
 /// in the run's budget of stdout, and the first always; crumbkit answers
-/// the paths after it with one `get::over_budget`. When the board could not
-/// be read at all, every path is answered with that one error. Exit 1 when
-/// any path is refused.
+/// the paths after it with one `board::output::over_budget`. When the board
+/// could not be read at all, every path is answered with that one error.
+/// Exit 1 when any path is refused.
 pub(crate) fn get(
     printer: &mut Printer,
     paths: &[LogicalPath],
@@ -62,7 +62,7 @@ pub(crate) fn get(
     }
     let mut output = printer.print(GET, Ok(batch));
     if output.code != 0 && output.error.is_none() {
-        output.error = Some(Code::GetOverBudget.as_str().to_owned());
+        output.error = Some(Code::OutputOverBudget.as_str().to_owned());
     }
     output
 }
@@ -74,14 +74,7 @@ const GET: Document<Batch<FileAnswer, Refused>> =
         .always_print_first()
         .headed();
 
-const OVER_BUDGET: crumbkit::Code = crumbkit::Code::new("board", "get", "over_budget");
-
-/// `get`'s leaf, which prints Board's code for the paths the budget left
-/// out.
-pub(super) const LEAF: Leaf = Leaf::new(&["get"]).document(GET).codes(&[Rename::new(
-    &crumbkit::codes::OUTPUT_OVER_BUDGET,
-    &OVER_BUDGET,
-)]);
+pub(super) const LEAF: Leaf = Leaf::new(&["get"]).document(GET);
 
 /// One file in a `board/get-report/v2`: where it is, its blob, its stored
 /// bytes as `text` when they are UTF-8 and as `base64` when they are not,

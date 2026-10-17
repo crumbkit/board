@@ -43,12 +43,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     plugins::FIND,
     Leaf::new(&["plugin", "enable"]).document(ENABLE),
     plugins::CALL,
-    Leaf::new(&["query"])
-        .document(QUERY)
-        .codes(&[crumbkit::help::Rename::new(
-            &crumbkit::codes::OUTPUT_OVER_BUDGET,
-            &crumbkit::Code::new("board", "query", "over_budget"),
-        )]),
+    Leaf::new(&["query"]).document(QUERY),
 ];
 
 /// The bytes of stdout one run prints before crumbkit cuts a listing or
@@ -260,7 +255,7 @@ pub(crate) fn query(printer: &mut Printer, report: &QueryReport) -> Output {
     let mut summary = json!({"columns": columns, "plugins": plugins});
     // Glue: crumbkit cannot tell a cut at the budget, which the index made,
     // from one at the limit, so Board names the budget's code itself.
-    let over = Code::QueryOverBudget;
+    let over = Code::OutputOverBudget;
     let mut lines = Vec::new();
     if report.over_budget {
         summary["code"] = json!(over.as_str());

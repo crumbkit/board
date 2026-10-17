@@ -317,7 +317,9 @@ fn generic(code: Code) -> &'static str {
         Code::QueryTimeout => {
             "narrow the query with a WHERE clause or a join on a key; a query may run for 1 second"
         }
-        Code::QueryOverBudget => {
+        // Only board-index raises it as a refusal, for a query's first row
+        // or value; crumbkit gives get, refs and other output its own hint.
+        Code::OutputOverBudget => {
             "one run prints up to 64 MiB of rows; select fewer or smaller columns, or add ORDER BY and page by key, as in WHERE (a, b) > (last a, last b)"
         }
         Code::PutStale => {
@@ -344,9 +346,6 @@ fn generic(code: Code) -> &'static str {
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
         }
-        // crumbkit prints the recovery for a path a run left out: the
-        // command that asks for it.
-        Code::GetOverBudget | Code::RefsOverBudget => "ask for the paths left out in another run",
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
         }
@@ -390,7 +389,7 @@ fn generic(code: Code) -> &'static str {
         Code::PluginTooDeep => {
             "plugins called each other too deeply; look for a plugin that calls itself"
         }
-        Code::UsageInvalid => {
+        Code::CliUsage => {
             "run `board --help` for the commands, or `board <command> --help` for one command's arguments"
         }
     }

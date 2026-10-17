@@ -79,7 +79,7 @@ enabled plugin's database is attached read-only as `p_<name>`. Rows return as
 JSON, at most 100 unless `--limit` (at most 10,000) or `--all` says
 otherwise, with `truncated` set when rows were left out. Rows also stop
 before one that would take them past 64 MiB as printed, even with `--all`.
-That cut adds the code `board::query::over_budget` to the report's `summary`
+That cut adds the code `board::output::over_budget` to the report's `summary`
 and still exits 0. A first row or a single value past 64 MiB is refused with the same
 code and exits 1. Each value is counted as the row is read, so a wide row
 stops at the value that passes the budget. The report is `rows`, each
@@ -111,11 +111,11 @@ prints each path's lines under a `==> <path> <==` header, as `get` does, and
 an error names its path on a `key:` line. JSON is always one `board/refs-report/v2`,
 for one path too. `data` holds each path's references in the order asked, and
 `failures` each refusal with the `index` of its path. One run takes at most 10,000
-paths; more is `usage::invalid`. A path that does not parse as a logical
-path, such as `tasks/a`, refuses the whole run as `usage::invalid`. As `get`
+paths; more is `board::cli::usage`. A path that does not parse as a logical
+path, such as `tasks/a`, refuses the whole run as `board::cli::usage`. As `get`
 does, `refs` answers each path only while its output, counted in the format
 printed, is under 64 MiB, always the first, and names every later path in the
-`left_out` of one `refs::over_budget` failure; the library's `Board.refs` asks
+`left_out` of one `board::output::over_budget` failure; the library's `Board.refs` asks
 for those again.
 
 `--field <pointer>`, repeated, reads the target of each reference shown,
@@ -134,5 +134,5 @@ decided for. A target that resolved to another blob, or whose file changed
 after the check, has `refs::target_changed` and no `values`, and the run counts it as `target_changed` in the timing log; run
 `refs` again. `get` instead reads a file that changed during its run as it
 is now, with the blob of the bytes it read. A pointer that is not RFC
-6901 refuses the run as `usage::invalid`. `tasks.next` asks for `/status`
+6901 refuses the run as `board::cli::usage`. `tasks.next` asks for `/status`
 and `/$type` this way to tell which waits are over.

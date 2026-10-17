@@ -91,7 +91,7 @@ fn an_unknown_shell_asking_for_a_script_is_refused_with_the_shells_it_could_be()
         "error: BOARD_COMPLETE names the shell 'tcsh', which completion does not support\n\
          \x20 help:  set BOARD_COMPLETE to one of bash, elvish, fish, powershell, zsh, \
          as in `BOARD_COMPLETE=fish board | source`\n\
-         \x20 code:  board::usage::invalid\n"
+         \x20 code:  board::cli::usage\n"
     );
     let admitted = completing(scenario.workdir(), "fish", &[]);
     assert_eq!(admitted.code, 0);

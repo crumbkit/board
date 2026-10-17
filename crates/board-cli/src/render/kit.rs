@@ -4,7 +4,7 @@ use std::fmt;
 use std::fmt::Write as _;
 
 use board_model::Refusal;
-use crumbkit::help::{Guide, RefusalContext, Rename};
+use crumbkit::help::{Guide, RefusalContext};
 use crumbkit::{
     Batch, Call, Code, Document, Failure, Field, FieldValue, Listing, Prose, Recovery, Row, Rows,
     Sink, Spelling, codes,
@@ -15,19 +15,12 @@ use serde_json::Value;
 
 use crate::report::Output;
 
-/// Board's code for a command line it refuses.
-pub(crate) const USAGE: Code = Code::new("board", "usage", "invalid");
-
-/// How Board prints: its own usage code, its budget, and the same text on a
-/// terminal as in a pipe.
+/// How Board prints: its budget, and the same text on a terminal as in a
+/// pipe.
 pub(crate) const GUIDE: Guide = guide(super::BUDGET);
-
-/// Board's name for crumbkit's usage code.
-const RENAMES: &[Rename] = &[Rename::new(&codes::CLI_USAGE, &USAGE)];
 
 const fn guide(budget: usize) -> Guide {
     Guide::new()
-        .codes(RENAMES)
         .output_budget(
             budget,
             "a reader asks again for the paths and rows a run leaves out",
@@ -79,8 +72,9 @@ const UNHELD: Code = Code::new("board", "output", "unheld");
 impl Failure for Refused {
     fn code(&self) -> &'static Code {
         let code = self.0.code.as_str();
-        if code == board_model::Code::UsageInvalid.as_str() {
-            return &USAGE;
+        // crumbkit exits 2 only for its own usage code.
+        if code == board_model::Code::CliUsage.as_str() {
+            return &codes::CLI_USAGE;
         }
         Spelling::COLONS
             .split(code)
