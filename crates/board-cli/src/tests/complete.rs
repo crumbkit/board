@@ -86,12 +86,13 @@ fn an_unknown_shell_asking_for_a_script_is_refused_with_the_shells_it_could_be()
     let refused = completing(scenario.workdir(), "tcsh", &[]);
     assert_eq!(refused.code, 2);
     assert!(refused.stdout.is_empty());
-    assert!(
-        text(&refused.stderr).starts_with("error: board::usage::invalid: "),
-        "{}",
-        text(&refused.stderr)
+    assert_eq!(
+        text(&refused.stderr),
+        "error: BOARD_COMPLETE names the shell 'tcsh', which completion does not support\n\
+         \x20 help:  set BOARD_COMPLETE to one of bash, elvish, fish, powershell, zsh, \
+         as in `BOARD_COMPLETE=fish board | source`\n\
+         \x20 code:  board::usage::invalid\n"
     );
-    assert!(hint_of(&refused).contains("BOARD_COMPLETE=fish board | source"));
     let admitted = completing(scenario.workdir(), "fish", &[]);
     assert_eq!(admitted.code, 0);
     assert!(!admitted.stdout.is_empty());
@@ -128,7 +129,7 @@ fn a_real_command_runs_whatever_board_complete_holds() {
         );
         let listed = with_shell(scenario.workdir(), None, shell, &["ls", "--json"], b"");
         assert_eq!(listed.code, 0, "{shell:?}");
-        assert_eq!(json(&listed)["$type"], "board/ls-report/v1", "{shell:?}");
+        assert_eq!(json(&listed)["schema"], "board/ls-report/v2", "{shell:?}");
     }
 }
 
@@ -139,7 +140,7 @@ fn board_complete_empty_or_zero_asks_for_no_script() {
         let output = completing(scenario.workdir(), shell, &[]);
         assert_eq!(output.code, 2, "{shell:?}");
         assert!(
-            text(&output.stderr).starts_with("error: board::usage::invalid: board needs a command"),
+            text(&output.stderr).starts_with("error: the command `board` needs a subcommand\n"),
             "{shell:?}: {}",
             text(&output.stderr)
         );

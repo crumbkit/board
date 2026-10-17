@@ -1,21 +1,21 @@
 //! `board get` of one path or several.
 
-use board_model::{Code, Fields, LogicalPath};
+use board_model::LogicalPath;
 use board_ops::ReadError;
 use board_scenario::{Item, Scenario};
 use board_tree::GitError;
 use serde_json::Value;
 
-use super::{board, board_cached, json, text};
-use crate::render::{self, Format};
+use super::{answers, board, board_cached, json, text};
+use crate::render::{self, Printer};
 use crate::report::Output;
 
 /// The one answer in a `board get --json` run of one path.
 pub(super) fn got(output: &Output) -> Value {
-    let report = json(output);
-    assert_eq!(report["$type"], "board/get-report/v1");
-    assert_eq!(report["answers"].as_array().map(Vec::len), Some(1));
-    report["answers"][0].clone()
+    assert_eq!(json(output)["schema"], "board/get-report/v2");
+    let answers = answers(output);
+    assert_eq!(answers.len(), 1);
+    answers[0].clone()
 }
 
 /// A board holding a record, a text file, a file that is not UTF-8 and a
@@ -56,71 +56,7 @@ fn get_json_is_one_report_whose_answers_match_their_golden_bytes() {
 
 /// `board get /projects/p /notes.md /raw.bin /bad /zz --json`, with the
 /// board's root as `<root>`.
-const GOLDEN_GET: &str = r##"{
-  "$type": "board/get-report/v1",
-  "answers": [
-    {
-      "blob": "350ab0b8b289baeaf217fc2914e660f59ee25faf",
-      "location": {
-        "display": "/projects/p",
-        "path": "projects/p.json",
-        "pointers": [],
-        "repository": "<root>",
-        "source": "worktree"
-      },
-      "record": {
-        "$type": "lr/project/v1"
-      },
-      "text": "{\"$type\": \"lr/project/v1\"}"
-    },
-    {
-      "blob": "fa736015ccf0a4d977752508b6e716d8bbaa028b",
-      "code": "board::record::not_a_record",
-      "location": {
-        "display": "/notes.md",
-        "path": "notes.md",
-        "pointers": [],
-        "repository": "<root>",
-        "source": "worktree"
-      },
-      "text": "# n\n"
-    },
-    {
-      "base64": "/wBh",
-      "blob": "0a853c868c31f8e9991aa72662ad9eab6eabbc6b",
-      "code": "board::record::not_a_record",
-      "location": {
-        "display": "/raw.bin",
-        "path": "raw.bin",
-        "pointers": [],
-        "repository": "<root>",
-        "source": "worktree"
-      }
-    },
-    {
-      "blob": "49da92e55c925be83ecfab7287828b6eb13dddf2",
-      "code": "board::record::bad_type",
-      "location": {
-        "display": "/bad",
-        "path": "bad.json",
-        "pointers": [],
-        "repository": "<root>",
-        "source": "worktree"
-      },
-      "text": "{\"$type\": \"task\"}"
-    },
-    {
-      "$type": "board/error/v1",
-      "code": "board::path::not_found",
-      "fields": {
-        "ancestor": "/",
-        "path": "/zz"
-      },
-      "hint": "run `board ls /` to see what is there; paths leave out `.json`",
-      "message": "nothing is at /zz"
-    }
-  ]
-}
+const GOLDEN_GET: &str = r##"{"schema":"board/get-report/v2","data":[{"location":{"display":"/projects/p","path":"projects/p.json","pointers":[],"repository":"<root>","source":"worktree"},"blob":"350ab0b8b289baeaf217fc2914e660f59ee25faf","text":"{\"$type\": \"lr/project/v1\"}","record":{"$type":"lr/project/v1"}},{"location":{"display":"/notes.md","path":"notes.md","pointers":[],"repository":"<root>","source":"worktree"},"blob":"fa736015ccf0a4d977752508b6e716d8bbaa028b","text":"# n\n","code":"board::record::not_a_record"},{"location":{"display":"/raw.bin","path":"raw.bin","pointers":[],"repository":"<root>","source":"worktree"},"blob":"0a853c868c31f8e9991aa72662ad9eab6eabbc6b","base64":"/wBh","code":"board::record::not_a_record"},{"location":{"display":"/bad","path":"bad.json","pointers":[],"repository":"<root>","source":"worktree"},"blob":"49da92e55c925be83ecfab7287828b6eb13dddf2","text":"{\"$type\": \"task\"}","code":"board::record::bad_type"}],"failures":[{"key":"/zz","index":4,"code":"board::path::not_found","message":"nothing is at /zz","fields":{"ancestor":"/","path":"/zz"},"recovery":{"kind":"hint","text":"run `board ls /` to see what is there; paths leave out `.json`"}}]}
 "##;
 
 #[test]
@@ -142,17 +78,12 @@ fn get_of_several_paths_answers_each_as_alone_and_one_that_names_nothing_fails_t
     );
     assert_eq!(refused.stdout, admitted.stdout);
     let alone = text(&run(&["get", "/zz"]).stderr);
-    assert!(
-        alone.starts_with("error: board::path::not_found: "),
-        "{alone}"
-    );
-    assert!(alone.contains("\nhint: "), "{alone}");
+    assert!(alone.starts_with("error: nothing is at /zz\n"), "{alone}");
+    assert!(alone.contains("\n  help:  "), "{alone}");
     assert_eq!(
         text(&refused.stderr),
-        alone
-            .replacen("error: ", "error: /zz: ", 1)
-            .replacen("hint: ", "hint: /zz: ", 1),
-        "the refusal is printed as it is alone, each line naming the path asked"
+        alone.replacen("(index 0)", "(index 1)", 1),
+        "the refusal is printed as it is alone, but for the index of its path"
     );
     let paths = ["/notes.md", "/zz", "/raw.bin", "/bad", "/projects/p"];
     let mut arguments = vec!["get"];
@@ -163,132 +94,169 @@ fn get_of_several_paths_answers_each_as_alone_and_one_that_names_nothing_fails_t
         (several.code, several.error.as_deref()),
         (1, Some("board::path::not_found"))
     );
-    let report = json(&several);
-    assert_eq!(report["$type"], "board/get-report/v1");
+    assert_eq!(json(&several)["schema"], "board/get-report/v2");
     let alone: Vec<Value> = paths
         .iter()
         .map(|path| got(&run(&["get", path, "--json"])))
         .collect();
-    assert_eq!(report["answers"], Value::Array(alone));
+    let mut merged = answers(&several);
+    // A failure names its key's index in the run, which alone is 0.
+    merged[1]["index"] = 0.into();
+    assert_eq!(merged, alone);
 }
 
 #[test]
-fn too_many_admits_as_many_paths_as_the_most_and_refuses_one_more() {
-    assert!(render::too_many(Format::Json, "get", 3, 3).is_none());
-    let refused = render::too_many(Format::Json, "get", 4, 3).unwrap();
+fn get_answers_at_most_max_limit_paths_and_refuses_one_more() {
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    let run = |count: usize| {
+        let mut arguments = vec!["get"];
+        arguments.extend(std::iter::repeat_n("/projects/p", count));
+        board_cached(scenario.workdir(), Some(cache.path()), &arguments)
+    };
+    assert_eq!(run(board_ops::MAX_LIMIT).code, 0);
+    let refused = run(board_ops::MAX_LIMIT + 1);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
         (2, Some("board::usage::invalid"))
     );
-    let error = json(&refused);
-    assert_eq!(error["$type"], "board/error/v1");
-    assert_eq!(
-        error["message"],
-        "get was given 4 paths, and one run answers at most 3"
+    assert!(refused.stdout.is_empty());
+    let stderr = String::from_utf8(refused.stderr).unwrap();
+    let split = format!(
+        "help:  split the paths over several runs of at most {} each",
+        board_ops::MAX_LIMIT
     );
-    assert_eq!(
-        error["hint"],
-        "split the paths over several runs of at most 3 each"
-    );
+    assert!(stderr.contains(&split), "{stderr}");
 }
 
 #[test]
-fn get_help_and_the_over_budget_hint_name_the_budget_and_the_path_limit_the_cli_uses() {
+fn get_help_names_the_budget_and_the_path_limit_the_cli_uses() {
     let budget = format!("{} MiB", render::BUDGET >> 20);
     assert_eq!(render::BUDGET % (1 << 20), 0);
     assert!(render::GET_HELP.contains(&budget), "{budget}");
-    let paths = format!("takes at most {}", board_ops::MAX_LIMIT);
+    let paths = format!("At most {} paths", board_ops::MAX_LIMIT);
     assert!(render::GET_HELP.contains(&paths), "{paths}");
-    let hint = Code::GetOverBudget.hint(&Fields::at(&"/a".parse().unwrap()));
-    assert!(hint.contains(&format!("up to {budget}")), "{hint}");
 }
 
 /// `paths`, each read from `scenario` and rendered as `board get` renders
 /// them, within `budget` bytes of output.
-fn rendered(scenario: &Scenario, paths: &[&str], format: Format, budget: usize) -> Output {
+fn rendered(scenario: &Scenario, paths: &[&str], format: bool, budget: usize) -> Output {
     let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
     let paths: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
-    render::get(format, &paths, board.get_each(&paths), budget)
+    render::get(
+        &mut Printer::of(format, budget, &["get"]),
+        &paths,
+        board.get_each(&paths),
+    )
 }
 
-/// A board holding /a.md, /b.md and /c.md, each the 6 bytes `12345\n`.
+/// The 1,200 bytes of each file `three_files` writes: crumbkit refuses a
+/// budget under 1,024 bytes, so each file takes more than that.
+fn file() -> String {
+    format!("{}\n", "x".repeat(1199))
+}
+
+/// A board holding /a.md, /b.md and /c.md, each [`file`].
 fn three_files() -> Scenario {
     let scenario = board();
     for name in ["a", "b", "c"] {
-        scenario.write(&format!("{name}.md"), Item::File("12345\n"));
+        scenario.write(&format!("{name}.md"), Item::File(&file()));
     }
     scenario
 }
 
 #[test]
-fn get_reads_a_path_while_the_run_has_printed_less_than_its_budget_and_always_the_first() {
+fn get_prints_each_file_that_fits_in_its_budget_and_always_the_first() {
     let scenario = three_files();
     let codes = |budget: usize| -> (Vec<u8>, Option<String>) {
-        let ran = rendered(
-            &scenario,
-            &["/a.md", "/b.md", "/c.md"],
-            Format::Text,
-            budget,
-        );
+        let ran = rendered(&scenario, &["/a.md", "/b.md", "/c.md"], false, budget);
         (ran.stdout, ran.error)
     };
-    // `==> /a.md <==\n12345\n` is 20 bytes, and each later file 21 more.
-    let two = b"==> /a.md <==\n12345\n\n==> /b.md <==\n12345\n".to_vec();
-    let three = [two.as_slice(), b"\n==> /c.md <==\n12345\n"].concat();
-    assert_eq!(codes(42), (three, None), "41 bytes are under 42");
+    // `==> /a.md <==\n` and the file are 1,214 bytes, and each later file
+    // 1,215 more, with the blank line before its header.
+    let headed = |name: &str| format!("\n==> /{name}.md <==\n{}", file());
+    let first = headed("a")[1..].to_owned();
+    let two = first.clone() + &headed("b");
+    let three = two.clone() + &headed("c");
     let over = Some("board::get::over_budget".to_owned());
-    assert_eq!(codes(41), (two, over.clone()), "41 bytes reach 41");
-    let first = b"==> /a.md <==\n12345\n".to_vec();
-    assert_eq!(codes(0), (first, over), "the first path is always read");
+    assert_eq!(
+        codes(3644),
+        (three.into_bytes(), None),
+        "3,644 bytes fit in 3,644"
+    );
+    assert_eq!(
+        codes(3643),
+        (two.clone().into_bytes(), over.clone()),
+        "the third file passes 3,643 by one byte"
+    );
+    assert_eq!(
+        codes(2429),
+        (two.into_bytes(), over.clone()),
+        "two files reach 2,429, so the third is not read"
+    );
+    assert_eq!(
+        codes(1024),
+        (first.into_bytes(), over),
+        "the first path is always read, even past the budget"
+    );
 }
 
 #[test]
 fn a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_fails_the_run() {
     let scenario = three_files();
     let paths = ["/a.md", "/b.md", "/c.md"];
-    let refused = rendered(&scenario, &paths, Format::Text, 41);
+    let refused = rendered(&scenario, &paths, false, 2429);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
         (1, Some("board::get::over_budget"))
     );
     assert_eq!(
         text(&refused.stderr),
-        "error: /c.md: board::get::over_budget: /c.md was not read: this run already \
-         printed its budget of 41 bytes\n\
-         hint: /c.md: one run prints up to 64 MiB; ask for /c.md and the paths \
-         after it in another `board get` run\n"
+        "error: 1 more answer did not fit in the output budget of 2429 bytes\n\
+         \x20 help:  run `board get /c.md`\n\
+         \x20 code:  board::get::over_budget\n"
     );
-    let report = json(&rendered(&scenario, &paths, Format::Json, 1));
-    let answers = report["answers"].as_array().unwrap();
-    assert_eq!(answers.len(), 3);
-    assert_eq!(answers[0]["text"], "12345\n");
-    assert_eq!(answers[1]["$type"], "board/error/v1");
-    assert_eq!(answers[1]["code"], "board::get::over_budget");
-    assert_eq!(answers[1]["fields"]["path"], "/b.md");
-    assert_eq!(answers[2]["code"], "board::get::over_budget");
+    // Room for the first answer and the failure that leaves the other two
+    // out, but not for /b.md's file.
+    let budget = rendered(&scenario, &paths[..1], true, usize::MAX)
+        .stdout
+        .len()
+        + 300;
+    let report = json(&rendered(&scenario, &paths, true, budget));
+    assert_eq!(report["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(report["data"][0]["text"], file());
+    let over = &report["failures"][0];
+    assert_eq!(over["code"], "board::get::over_budget");
+    assert_eq!(over["fields"]["budget"], budget);
+    assert_eq!(
+        over["fields"]["left_out"],
+        serde_json::json!(["/b.md", "/c.md"])
+    );
+    assert_eq!(over["fields"]["left_out_from"], 1);
+    assert_eq!(over["recovery"]["call"], "board get <PATH>...");
 }
 
 #[test]
 fn the_budget_counts_the_json_a_file_prints_so_escaped_bytes_spend_more_of_it() {
     let scenario = board();
     scenario
-        .write("p.md", Item::File("abcdef"))
-        .write("c.md", Item::Bytes(b"\x01\x01\x01\x01\x01\x01"))
+        .write("p.md", Item::File(&"a".repeat(800)))
+        .write("c.md", Item::Bytes(&[1; 800]))
         .write("z.md", Item::File("z"));
-    // The plain file alone, as JSON, is the budget: it printed less than
-    // that before /z.md, so /z.md is read. The control bytes are as many,
-    // but each prints as the six bytes `\u0001`, which spend the budget.
-    let budget = rendered(&scenario, &["/p.md"], Format::Json, usize::MAX)
+    // The plain file and /z.md, as JSON, are the budget, so both print. The
+    // control bytes are as many, but each prints as the six bytes
+    // `\u0001`, which spend the budget.
+    let budget = rendered(&scenario, &["/p.md", "/z.md"], true, usize::MAX)
         .stdout
         .len();
-    let plain = rendered(&scenario, &["/p.md", "/z.md"], Format::Json, budget);
+    let plain = rendered(&scenario, &["/p.md", "/z.md"], true, budget);
     assert_eq!((plain.code, plain.error), (0, None));
-    let escaped = rendered(&scenario, &["/c.md", "/z.md"], Format::Json, budget);
+    let escaped = rendered(&scenario, &["/c.md", "/z.md"], true, budget);
     assert_eq!(
         (escaped.code, escaped.error.as_deref()),
         (1, Some("board::get::over_budget"))
     );
-    assert_eq!(json(&escaped)["answers"][0]["text"], "\u{1}".repeat(6));
+    assert_eq!(answers(&escaped)[0]["text"], "\u{1}".repeat(800));
 }
 
 #[test]
@@ -303,16 +271,19 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         };
         Err(ReadError::Git { source })
     };
-    let report = json(&render::get(Format::Json, &paths, failed(), usize::MAX));
-    let answers = report["answers"].as_array().unwrap();
-    assert_eq!(answers.len(), 2);
-    assert_eq!(answers[0]["$type"], "board/error/v1");
-    assert_eq!(answers[0], answers[1]);
-    let ran = render::get(Format::Text, &paths, failed(), usize::MAX);
+    let ran = render::get(&mut Printer::of(true, 1 << 20, &["get"]), &paths, failed());
+    let failures = json(&ran)["failures"].as_array().cloned().unwrap();
+    assert_eq!(failures.len(), 2);
+    assert_eq!(
+        (&failures[0]["key"], &failures[1]["key"]),
+        (&"/a".into(), &"/b".into())
+    );
+    assert_eq!(failures[0]["code"], failures[1]["code"]);
+    let ran = render::get(&mut Printer::of(false, 1 << 20, &["get"]), &paths, failed());
     assert_eq!(ran.code, 1);
     let lines = text(&ran.stderr);
-    assert!(lines.starts_with("error: /a: "), "{lines}");
-    assert!(lines.contains("\nerror: /b: "), "{lines}");
+    assert!(lines.contains("  key:   /a (index 0)\n"), "{lines}");
+    assert!(lines.contains("  key:   /b (index 1)\n"), "{lines}");
 }
 
 #[test]

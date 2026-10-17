@@ -1,5 +1,5 @@
 //! Hints that name the values an error knows, and the typed `fields` of
-//! `board/error/v1` (STANDARDS.md 25).
+//! `crumbkit/failure/v1` (STANDARDS.md 25).
 
 use serde_json::json;
 
@@ -56,7 +56,7 @@ fn a_path_missing_several_levels_deep_hints_ls_of_its_deepest_ancestor_that_exis
         let refused = board_in(scenario.workdir(), &["get", missing]);
         let stderr = text(&refused.stderr);
         assert!(
-            stderr.starts_with("error: board::path::not_found: "),
+            stderr.ends_with("  code:  board::path::not_found\n"),
             "{stderr}"
         );
         assert_eq!(
@@ -179,7 +179,7 @@ fn check_names_the_schema_an_unknown_type_needs_and_a_known_type_checks_clean() 
         "{refused:?}"
     );
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
-    let entry = report["entries"]
+    let entry = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -189,9 +189,9 @@ fn check_names_the_schema_an_unknown_type_needs_and_a_known_type_checks_clean() 
     assert_eq!(entry["schema"], ".board/types/lr/note/v1.schema.json");
     scenario.write("notes/a.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
     let admitted = json(&board_in(scenario.workdir(), &["check", "--json"]));
-    assert_eq!(admitted["degraded"], false);
+    assert_eq!(admitted["summary"]["degraded"], 0);
     assert!(
-        admitted["entries"]
+        admitted["data"]
             .as_array()
             .unwrap()
             .iter()
@@ -374,7 +374,7 @@ fn check_hints_how_to_fix_each_degraded_entry_and_gives_a_healthy_one_no_hint() 
     );
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
     let hint = |path: &str| {
-        report["entries"]
+        report["data"]
             .as_array()
             .unwrap()
             .iter()
@@ -469,7 +469,7 @@ fn a_record_whose_schema_is_degraded_hints_at_the_schema_and_is_ok_once_it_is_fi
     let hints = check_hints(&scenario);
     assert!(hints.iter().any(|line| line == hint), "{hints:#?}");
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
-    let entry = report["entries"]
+    let entry = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -566,7 +566,7 @@ fn check_hints_for_a_mounted_board_send_its_fixes_to_that_boards_repository() {
         text(&types.stdout)
     );
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
-    let entry = report["entries"]
+    let entry = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -663,7 +663,7 @@ fn a_put_through_a_mount_hints_updating_that_mount_and_a_put_beside_it_is_writte
     );
     assert_eq!(error["fields"], json!({"path": "/vendor/m"}));
     assert_eq!(
-        error["hint"],
+        error["recovery"]["text"],
         "write in the mounted repository and run `board mount update /vendor/m`; \
          a put writes through one mount whose board commits its puts and whose HEAD \
          is on the branch the mount follows"
@@ -686,7 +686,7 @@ fn updating_a_mount_that_names_nothing_hints_ls_of_its_deepest_ancestor_and_that
         json!({"path": "/projects/zz", "ancestor": "/projects"})
     );
     assert_eq!(
-        error["hint"],
+        error["recovery"]["text"],
         "run `board ls /projects` to see what is there; paths leave out `.json`"
     );
     assert_eq!(board_in(scenario.workdir(), &["ls", "/projects"]).code, 0);
@@ -705,4 +705,46 @@ fn a_put_beneath_a_dangling_link_names_the_link_and_a_put_beside_it_is_written()
     assert_eq!(error["fields"], json!({"path": "/l"}));
     assert_eq!(board_in(scenario.workdir(), &["ls", "/"]).code, 0);
     assert_eq!(put(&scenario, &["put", "/projects/new"], record).code, 0);
+}
+
+/// A limited check prints a hint for each degraded entry it shows and none
+/// for the entries the limit left out.
+#[test]
+fn a_limited_check_hints_only_the_entries_it_shows() {
+    let scenario = board();
+    scenario
+        .write("notes/m.json", Item::File(r#"{"$type": "lr/note/v1"}"#))
+        .write("notes/n.json", Item::File(r#"{"$type": "lr/note/v1"}"#));
+    let hinted = |limit: &str| {
+        let checked = board_in(scenario.workdir(), &["check", "--limit", limit]);
+        assert_eq!(checked.code, 1);
+        let stderr = text(&checked.stderr);
+        let hinted: Vec<String> = (stderr.lines())
+            .filter_map(|line| line.strip_prefix("hint: "))
+            .filter_map(|line| line.split(':').next().map(str::to_owned))
+            .collect();
+        hinted
+    };
+    assert_eq!(hinted("1"), ["/notes/m"]);
+    assert_eq!(hinted("2"), ["/notes/m", "/notes/n"]);
+}
+
+/// A limited check's note counts every degraded entry, those the limit left
+/// out included, and the run exits 1 either way.
+#[test]
+fn a_limited_check_counts_every_degraded_entry_as_an_unlimited_one_does() {
+    let scenario = board();
+    scenario
+        .write("notes/m.json", Item::File(r#"{"$type": "lr/note/v1"}"#))
+        .write("notes/n.json", Item::File(r#"{"$type": "lr/note/v1"}"#));
+    let note = "note: 2 of the entries report a problem, so the command exits with 1.";
+    for limit in ["1", "10"] {
+        let checked = board_in(scenario.workdir(), &["check", "--limit", limit]);
+        assert_eq!(checked.code, 1, "--limit {limit}");
+        let stderr = text(&checked.stderr);
+        assert!(
+            stderr.lines().any(|line| line == note),
+            "--limit {limit}: {stderr}"
+        );
+    }
 }

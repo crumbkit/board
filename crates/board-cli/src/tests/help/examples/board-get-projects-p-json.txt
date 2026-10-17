@@ -1,0 +1,1 @@
+{"schema":"board/get-report/v2","data":[{"location":{"display":"/projects/p","path":"projects/p.json","pointers":[],"repository":"[ROOT]","source":"worktree"},"blob":"350ab0b8b289baeaf217fc2914e660f59ee25faf","text":"{\"$type\": \"lr/project/v1\"}","record":{"$type":"lr/project/v1"}}],"failures":[]}

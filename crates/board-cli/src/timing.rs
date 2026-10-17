@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use board_ops::Trace;
-use clap::ArgMatches;
 use serde_json::{Value, json};
 
 use crate::config::Context;
@@ -16,16 +15,6 @@ pub(crate) struct Ran {
     pub(crate) command: Option<String>,
     pub(crate) trace: Trace,
     pub(crate) root: Option<PathBuf>,
-}
-
-/// The subcommands `matches` names, such as `plugin find`.
-pub(crate) fn command(mut matches: &ArgMatches) -> String {
-    let mut names = Vec::new();
-    while let Some((name, subcommand)) = matches.subcommand() {
-        names.push(name);
-        matches = subcommand;
-    }
-    names.join(" ")
 }
 
 /// The `board/timing/v1` record of a run that started at `started`, nested

@@ -14,8 +14,8 @@ from conftest import SCHEMA, Board, task
 def call_next(board: Board, given: dict[str, Any] | None = None) -> dict[str, Any]:
     """The output of `board call tasks.next`."""
     report = board.json("call", "tasks.next", stdin=json.dumps(given or {}))
-    assert report["$type"] == "board/call-report/v1", report
-    output: dict[str, Any] = report["output"]
+    assert report["schema"] == "board/call-report/v2", report
+    output: dict[str, Any] = report["data"]["output"]
     return output
 
 
@@ -68,11 +68,11 @@ def test_a_task_is_blocked_while_a_task_in_its_after_is_not_done(board: Board) -
 def test_a_done_task_check_refuses_still_blocks_and_one_degraded_only_by_the_tree_does_not(board: Board) -> None:
     board.write("tasks/finished.json", task("Finished", status="done", extra=1))
     board.write("tasks/after.json", task("After", after=["/tasks/finished"]))
-    [reference] = board.json("refs", "/tasks/after", "--field", "/status")["answers"][0]["from"]
+    [reference] = board.json("refs", "/tasks/after", "--field", "/status")["data"][0]["from"]
     assert reference["target_code"] == "board::record::invalid"
     assert blocking(board)["/tasks/after"] == (True, ["/tasks/finished"])
     board.write("tasks/finished.json", task("Finished", status="done", notes="/nowhere"))
-    [reference] = board.json("refs", "/tasks/after", "--field", "/status")["answers"][0]["from"]
+    [reference] = board.json("refs", "/tasks/after", "--field", "/status")["data"][0]["from"]
     assert reference["target_code"] == "board::ref::dangling"
     assert blocking(board)["/tasks/after"] == (False, [])
 

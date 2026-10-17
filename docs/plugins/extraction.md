@@ -40,7 +40,7 @@ extracted from the tree that query refreshed. A plugin that opens its database
 directly sees what the last `query` extracted, which can be older. When the
 index is in memory, or opening it fell back, each run's database is a new
 temporary file, so such a plugin sees no rows at all. When a
-plugin fails, `query` still answers and lists it under `plugins` in its report,
+plugin fails, `query` still answers and lists it under `plugins` in its report's `summary`,
 with its code.
 
 Extraction must be a pure function of one record's bytes. Anything that spans

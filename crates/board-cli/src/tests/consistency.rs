@@ -38,7 +38,7 @@ fn key(source: &Value, path: &str) -> Key {
 
 fn checked(run: &impl Fn(&[&str]) -> Output) -> BTreeMap<Key, Said> {
     let report = json(&run(&["check", "--all", "--json"]));
-    report["entries"]
+    report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -55,7 +55,7 @@ fn queried(run: &impl Fn(&[&str]) -> Output) -> BTreeMap<Key, Said> {
     let sql = "SELECT source, path, logical, kind, status, code FROM entries";
     let output = run(&["query", sql, "--limit", "10000", "--json"]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
-    json(&output)["rows"]
+    json(&output)["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -89,12 +89,12 @@ fn listed(run: &impl Fn(&[&str]) -> Output) -> Listing {
             listing.failed.push((path, through, report["code"].clone()));
             continue;
         }
-        let location = &report["location"];
+        let location = &report["summary"]["location"];
         let (source, at) = (&location["source"], location["path"].as_str().unwrap());
         if !seen.insert(key(source, at)) {
             continue;
         }
-        for entry in report["entries"].as_array().unwrap() {
+        for entry in report["data"].as_array().unwrap() {
             let logical = entry["logical"].as_str().map(str::to_owned);
             if entry["kind"] == "directory" {
                 pending.extend(logical.map(|logical| (logical, None)));
@@ -149,7 +149,7 @@ fn agree(run: &impl Fn(&[&str]) -> Output) -> Result<(), TestCaseError> {
             continue;
         };
         let output = run(&["get", logical, "--json"]);
-        let answer = &json(&output)["answers"][0];
+        let answer = &super::answers(&output)[0];
         if output.code == 0 {
             prop_assert_eq!(&answer["location"]["source"], source.as_str());
             prop_assert_eq!(&answer["location"]["path"], path.as_str());

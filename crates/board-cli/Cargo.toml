@@ -16,11 +16,14 @@ board-plugin.workspace = true
 board-tree.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
-data-encoding.workspace = true
+crumbkit = { workspace = true, features = ["complete"] }
+schemars.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true
+crumbkit-test.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 

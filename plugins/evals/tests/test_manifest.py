@@ -21,7 +21,7 @@ def test_the_committed_manifest_and_schemas_are_the_ones_the_models_generate() -
 
 def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships(board: Board) -> None:
     report = board.json("plugin", "list")
-    plugin = next(plugin for plugin in report["plugins"] if plugin["name"] == "evals")
+    plugin = next(plugin for plugin in report["data"] if plugin["name"] == "evals")
     assert plugin["status"] == "ok"
     assert plugin["enabled"] is True
     types = board.root / ".board" / "types" / "evals"

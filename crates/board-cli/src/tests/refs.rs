@@ -5,8 +5,8 @@ use board_ops::{Absent, CheckError, RefsError, RefsReport};
 use board_scenario::{Item, Scenario};
 use board_tree::{GitError, ResolveError};
 
-use super::{board, board_in, json, text};
-use crate::render::{self, Format};
+use super::{answers, board, board_in, json, text};
+use crate::render::{self, Printer};
 use crate::report::Output;
 
 /// A board whose /hub refers to a project through a link, a markdown file,
@@ -76,97 +76,7 @@ fn refs_fields_json_matches_its_golden_bytes() {
 
 /// `board refs /hub --field /status --field /$type --limit 4 --json`, with
 /// the board's root as `<root>`.
-const GOLDEN_FIELDS: &str = r#"{
-  "$type": "board/refs-report/v1",
-  "answers": [
-    {
-      "from": [
-        {
-          "location": {
-            "display": "/projects/p",
-            "path": "projects/p.json",
-            "pointers": [
-              {
-                "path": "links/l.json",
-                "repository": "<root>",
-                "source": "worktree"
-              }
-            ],
-            "repository": "<root>",
-            "source": "worktree"
-          },
-          "pointer": "/see/0",
-          "status": "ok",
-          "target": "/links/l",
-          "values": [
-            {
-              "absent": true,
-              "pointer": "/status"
-            },
-            {
-              "pointer": "/$type",
-              "value": "lr/project/v1"
-            }
-          ]
-        },
-        {
-          "location": {
-            "display": "/notes.md",
-            "path": "notes.md",
-            "pointers": [],
-            "repository": "<root>",
-            "source": "worktree"
-          },
-          "pointer": "/see/1",
-          "status": "ok",
-          "target": "/notes.md",
-          "target_code": "board::record::not_a_record"
-        },
-        {
-          "code": "board::ref::dangling",
-          "location": null,
-          "pointer": "/see/2",
-          "status": "degraded",
-          "target": "/zz"
-        },
-        {
-          "location": {
-            "display": "/tasks/bad",
-            "path": "tasks/bad.json",
-            "pointers": [],
-            "repository": "<root>",
-            "source": "worktree"
-          },
-          "pointer": "/see/3",
-          "status": "ok",
-          "target": "/tasks/bad",
-          "target_code": "board::record::invalid",
-          "values": [
-            {
-              "pointer": "/status",
-              "value": "done"
-            },
-            {
-              "pointer": "/$type",
-              "value": "lr/task/v1"
-            }
-          ]
-        }
-      ],
-      "location": {
-        "display": "/hub",
-        "path": "hub.json",
-        "pointers": [],
-        "repository": "<root>",
-        "source": "worktree"
-      },
-      "missing": null,
-      "to": [],
-      "total": 4,
-      "truncated": false
-    }
-  ]
-}
+const GOLDEN_FIELDS: &str = r#"{"schema":"board/refs-report/v2","data":[{"from":[{"location":{"display":"/projects/p","path":"projects/p.json","pointers":[{"path":"links/l.json","repository":"<root>","source":"worktree"}],"repository":"<root>","source":"worktree"},"pointer":"/see/0","status":"ok","target":"/links/l","values":[{"absent":true,"pointer":"/status"},{"pointer":"/$type","value":"lr/project/v1"}]},{"location":{"display":"/notes.md","path":"notes.md","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/see/1","status":"ok","target":"/notes.md","target_code":"board::record::not_a_record"},{"code":"board::ref::dangling","location":null,"pointer":"/see/2","status":"degraded","target":"/zz"},{"location":{"display":"/tasks/bad","path":"tasks/bad.json","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/see/3","status":"ok","target":"/tasks/bad","target_code":"board::record::invalid","values":[{"pointer":"/status","value":"done"},{"pointer":"/$type","value":"lr/task/v1"}]}],"location":{"display":"/hub","path":"hub.json","pointers":[],"repository":"<root>","source":"worktree"},"missing":null,"to":[],"total":4,"truncated":false}],"failures":[]}
 "#;
 
 #[test]
@@ -186,10 +96,11 @@ fn a_field_that_is_not_a_json_pointer_refuses_the_run_and_its_twin_that_is_one_i
         assert_eq!(
             text(&ran.stderr),
             format!(
-                "error: board::usage::invalid: invalid value '{refused}' for '--field <POINTER>': \
+                "error: invalid value '{refused}' for '--field <POINTER>': \
                  must be a JSON pointer, such as /status, or /a~1b for the key a/b: empty or \
                  starting with /, with ~ only as ~0 or ~1\n\
-                 hint: run `board refs --help` for its usage and examples\n"
+                 \x20 help:  run `board refs -h`\n\
+                 \x20 code:  board::usage::invalid\n"
             )
         );
         let ran = run(admitted);
@@ -268,14 +179,11 @@ fn a_from_line_reads_back_when_a_pointer_holds_a_space_and_an_equals_and_a_value
 }
 
 #[test]
-fn refs_help_and_the_over_budget_hint_name_the_budget_and_the_path_limit_the_cli_uses() {
+fn refs_help_names_the_budget_and_the_path_limit_the_cli_uses() {
     let budget = format!("{} MiB", render::BUDGET >> 20);
     assert!(render::REFS_HELP.contains(&budget), "{budget}");
-    let paths = format!("takes at most {}", board_ops::MAX_LIMIT);
+    let paths = format!("At most {} paths", board_ops::MAX_LIMIT);
     assert!(render::REFS_HELP.contains(&paths), "{paths}");
-    let hint = Code::RefsOverBudget.hint(&Fields::at(&"/a".parse().unwrap()));
-    assert!(hint.contains(&format!("up to {budget}")), "{hint}");
-    assert!(hint.ends_with("in another `board refs` run"), "{hint}");
 }
 
 fn paths(texts: &[&str]) -> Vec<LogicalPath> {
@@ -284,11 +192,16 @@ fn paths(texts: &[&str]) -> Vec<LogicalPath> {
 
 /// `paths`, answered from `scenario` and rendered as `board refs` renders
 /// them, within `budget` bytes of output.
-fn rendered(scenario: &Scenario, texts: &[&str], format: Format, budget: usize) -> Output {
+fn rendered(scenario: &Scenario, texts: &[&str], format: bool, budget: usize) -> Output {
     let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
     let paths = paths(texts);
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
-    render::refs(format, &paths, answers, None, budget)
+    render::refs(
+        &mut Printer::of(format, budget, &["refs"]),
+        &paths,
+        answers,
+        None,
+    )
 }
 
 #[test]
@@ -296,18 +209,22 @@ fn refs_answers_a_path_while_the_run_has_printed_less_than_its_budget_and_always
     let scenario = hub();
     let asked = ["/projects/p", "/projects/p", "/projects/p"];
     let ran = |budget: usize| {
-        let ran = rendered(&scenario, &asked, Format::Text, budget);
+        let ran = rendered(&scenario, &asked, false, budget);
         (text(&ran.stdout), ran.error)
     };
-    // Each answer is one line of 27 bytes, and no note.
-    let line = "/projects/p to /hub /see/0\n";
-    assert_eq!(line.len(), 27);
+    // The first answer is a header and one line, 35 bytes, and each after
+    // it 36, with the blank line before its header.
+    let first = "==> /projects/p <==\nto /hub /see/0\n";
+    assert_eq!(first.len(), 35);
+    let next = format!("\n{first}");
     let over = Some("board::refs::over_budget".to_owned());
-    assert_eq!(ran(55), (line.repeat(3), None), "54 bytes are under 55");
-    assert_eq!(ran(54), (line.repeat(2), over.clone()), "54 bytes reach 54");
+    let three = format!("{first}{next}{next}");
+    assert_eq!(ran(107), (three, None), "107 bytes fit in 107");
+    let two = format!("{first}{next}");
+    assert_eq!(ran(106), (two, over.clone()), "the third passes 106 by one");
     assert_eq!(
-        ran(0),
-        (line.to_owned(), over),
+        ran(1),
+        (first.to_owned(), over),
         "the first path is always answered"
     );
 }
@@ -321,34 +238,44 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
     let mut pulled = 0;
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
     let answers = answers.inspect(|_| pulled += 1);
-    let refused = render::refs(Format::Text, &paths, answers, None, 27);
+    let refused = render::refs(
+        &mut Printer::of(false, 27, &["refs"]),
+        &paths,
+        answers,
+        None,
+    );
     assert_eq!(pulled, 1, "a path left over budget is never resolved");
     assert_eq!(
         (refused.code, refused.error.as_deref()),
         (1, Some("board::refs::over_budget"))
     );
-    // The index is in memory, as no cache is given, which a note says first.
+    // The index is in memory, as no cache is given, which a note says after
+    // crumbkit's text.
     assert_eq!(
         text(&refused.stderr),
-        "note: the index is in memory for this run: there is no cache directory\n\
-         error: /hub: board::refs::over_budget: /hub was not answered: this run already \
-         printed its budget of 27 bytes\n\
-         hint: /hub: one run prints up to 64 MiB; ask for /hub and the paths \
-         after it in another `board refs` run\n\
-         error: /projects/p: board::refs::over_budget: /projects/p was not answered: this run \
-         already printed its budget of 27 bytes\n\
-         hint: /projects/p: one run prints up to 64 MiB; ask for /projects/p and the paths \
-         after it in another `board refs` run\n"
+        "error: 2 more answers did not fit in the output budget of 27 bytes\n\
+         \x20 help:  run `board refs /hub /projects/p`\n\
+         \x20 code:  board::refs::over_budget\n\
+         note: the index is in memory for this run: there is no cache directory\n"
     );
-    let report = json(&rendered(&scenario, &asked, Format::Json, 1));
-    let answers = report["answers"].as_array().unwrap();
-    assert_eq!(answers.len(), 3);
-    assert_eq!(answers[0]["to"][0]["path"], "hub.json");
-    assert_eq!(answers[1]["$type"], "board/error/v1");
-    assert_eq!(answers[1]["code"], "board::refs::over_budget");
-    assert_eq!(answers[1]["fields"]["path"], "/hub");
-    assert_eq!(answers[2]["code"], "board::refs::over_budget");
-    let admitted = rendered(&scenario, &asked, Format::Json, usize::MAX);
+    // Room for the first answer and the failure that leaves the other two
+    // out, but not for /hub's references.
+    let budget = rendered(&scenario, &asked[..1], true, usize::MAX)
+        .stdout
+        .len()
+        + 300;
+    let report = json(&rendered(&scenario, &asked, true, budget));
+    assert_eq!(report["data"].as_array().map(Vec::len), Some(1));
+    assert_eq!(report["data"][0]["to"][0]["path"], "hub.json");
+    let over = &report["failures"][0];
+    assert_eq!(over["code"], "board::refs::over_budget");
+    assert_eq!(over["fields"]["budget"], budget);
+    assert_eq!(
+        over["fields"]["left_out"],
+        serde_json::json!(["/hub", "/projects/p"])
+    );
+    assert_eq!(over["fields"]["left_out_from"], 1);
+    let admitted = rendered(&scenario, &asked, true, usize::MAX);
     assert_eq!((admitted.code, admitted.error), (0, None));
 }
 
@@ -356,14 +283,17 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
 fn the_refs_budget_counts_the_bytes_of_the_format_printed() {
     let scenario = hub();
     let asked = ["/projects/p", "/projects/p"];
-    // The first answer as text is 27 bytes; as JSON it is many more, so a
-    // budget between the two answers both paths as text and one as JSON.
-    let one = rendered(&scenario, &asked[..1], Format::Json, usize::MAX);
-    let budget = one.stdout.len() - 10;
-    assert!(budget > 27);
-    let as_text = rendered(&scenario, &asked, Format::Text, budget);
+    // Both answers as text are shorter than the first as JSON, which names
+    // the board's directory, so a budget of the text's length answers both
+    // paths as text and one as JSON. Each is measured, because the
+    // directory's length differs by platform.
+    let text_both = rendered(&scenario, &asked, false, usize::MAX);
+    let json_one = rendered(&scenario, &asked[..1], true, usize::MAX);
+    let budget = text_both.stdout.len();
+    assert!(budget < json_one.stdout.len());
+    let as_text = rendered(&scenario, &asked, false, budget);
     assert_eq!((as_text.code, as_text.error), (0, None));
-    let as_json = rendered(&scenario, &asked, Format::Json, budget);
+    let as_json = rendered(&scenario, &asked, true, budget);
     assert_eq!(as_json.error.as_deref(), Some("board::refs::over_budget"));
 }
 
@@ -386,26 +316,23 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
     let answers =
         |second: RefsError| -> [Result<RefsReport, RefsError>; 2] { [Err(alone()), Err(second)] };
     let refused = render::refs(
-        Format::Json,
+        &mut Printer::of(true, 1 << 20, &[]),
         &paths,
         answers(failed()).into_iter(),
         None,
-        1 << 20,
     );
     let refused = json(&refused);
-    assert_eq!(refused["$type"], "board/error/v1");
+    assert_eq!(refused["schema"], "crumbkit/failure/v1");
     assert_eq!(refused["code"], failed().code().as_str());
     let admitted = render::refs(
-        Format::Json,
+        &mut Printer::of(true, 1 << 20, &[]),
         &paths,
         answers(alone()).into_iter(),
         None,
-        1 << 20,
     );
-    let admitted = json(&admitted);
-    assert_eq!(admitted["$type"], "board/refs-report/v1");
+    assert_eq!(json(&admitted)["schema"], "board/refs-report/v2");
     assert_eq!(
-        admitted["answers"][1]["code"],
+        super::answers(&admitted)[1]["code"],
         "board::record::not_a_record"
     );
 }
@@ -414,7 +341,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
 /// `change`, when set, changes /projects/p, the target of /hub's first
 /// reference, after the first answer and so after the check. With the timing
 /// record the run would append.
-fn changed_between(change: bool, format: Format) -> (Output, serde_json::Value) {
+fn changed_between(change: bool, format: bool) -> (Output, serde_json::Value) {
     let scenario = hub();
     let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
     let paths = paths(&["/projects/p", "/hub"]);
@@ -432,7 +359,12 @@ fn changed_between(change: bool, format: Format) -> (Output, serde_json::Value) 
                 );
             }
         });
-    let output = render::refs(format, &paths, answers, Some(1), usize::MAX);
+    let output = render::refs(
+        &mut Printer::of(format, usize::MAX, &["refs"]),
+        &paths,
+        answers,
+        Some(1),
+    );
     let ran = crate::timing::Ran {
         command: Some("refs".to_owned()),
         trace: board.take_trace(),
@@ -444,26 +376,26 @@ fn changed_between(change: bool, format: Format) -> (Output, serde_json::Value) 
 
 #[test]
 fn a_target_changed_after_the_check_prints_target_changed_without_values_and_its_twin_its_values() {
-    let from = |fields: &str| format!("/hub from /see/0 /links/l ok {fields}\n");
-    let (changed, record) = changed_between(true, Format::Text);
+    let from = |fields: &str| format!("\n==> /hub <==\nfrom /see/0 /links/l ok {fields}\n");
+    let (changed, record) = changed_between(true, false);
     assert_eq!(
         (changed.code, text(&changed.stdout)),
         (
             0,
             format!(
-                "/projects/p to /hub /see/0\n{}",
+                "==> /projects/p <==\nto /hub /see/0\n{}",
                 from("target=board::refs::target_changed")
             )
         )
     );
     assert_eq!(record["work"]["target_changed"], 1);
-    let (unchanged, record) = changed_between(false, Format::Text);
+    let (unchanged, record) = changed_between(false, false);
     assert_eq!(
         (unchanged.code, text(&unchanged.stdout)),
         (
             0,
             format!(
-                "/projects/p to /hub /see/0\n{}",
+                "==> /projects/p <==\nto /hub /see/0\n{}",
                 from("target=- \"/status\"=absent")
             )
         )
@@ -481,7 +413,7 @@ fn a_target_changed_after_the_check_prints_target_changed_without_values_and_its
 #[test]
 fn a_target_changed_after_the_check_has_its_code_and_no_values_in_json_and_its_twin_has_values() {
     let first = |change| {
-        let answers = json(&changed_between(change, Format::Json).0)["answers"].clone();
+        let answers = answers(&changed_between(change, true).0);
         answers[1]["from"][0].clone()
     };
     let changed = first(true);

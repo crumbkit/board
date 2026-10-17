@@ -134,7 +134,12 @@ def test_a_truncated_page_that_ends_no_later_than_the_last_fails_and_one_that_is
     monkeypatch: pytest.MonkeyPatch, rows: list[list[Any]]
 ) -> None:
     def printing(*, truncated: bool) -> None:
-        document = {"$type": "board/query-report/v1", "rows": rows, "truncated": truncated, "plugins": []}
+        document: dict[str, Any] = {
+            "schema": "board/query-report/v2",
+            "data": rows,
+            "truncated": truncated,
+            "summary": {"plugins": []},
+        }
 
         def run(_self: plugin_board.Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(["board", *arguments], 0, json.dumps(document).encode(), b"")

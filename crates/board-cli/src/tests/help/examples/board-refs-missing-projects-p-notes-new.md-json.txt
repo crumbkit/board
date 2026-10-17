@@ -1,0 +1,1 @@
+{"schema":"board/refs-report/v2","data":[{"from":[],"location":{"display":"/projects/p","path":"projects/p.json","pointers":[],"repository":"[ROOT]","source":"worktree"},"missing":{"display":"/projects/p/notes/new.md","path":"projects/p/notes/new.md","segments":["notes","new.md"]},"to":[],"total":0,"truncated":false}],"failures":[]}

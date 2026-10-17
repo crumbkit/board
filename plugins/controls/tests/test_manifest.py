@@ -35,7 +35,7 @@ def test_enabling_writes_the_schema_so_a_control_checks_clean_and_a_broken_one_d
     board.write("controls/ok.json", control("R."))
     board.write("controls/bad.json", '{"$type": "controls/control/v1", "requirement": "R."}')
     report = json.loads(board.run("--json", "check").stdout)
-    status = {entry["logical"]: entry for entry in report["entries"]}
+    status = {entry["logical"]: entry for entry in report["data"]}
     assert status["/controls/ok"]["status"] == "ok"
     assert status["/.board/types/controls/control/v1.schema"]["status"] == "ok"
     assert status["/controls/bad"]["status"] != "ok"

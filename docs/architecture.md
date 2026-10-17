@@ -174,7 +174,7 @@ whole batch, listing each failing line with its code, as
 [architecture/errors.md](architecture/errors.md) describes. Writes go in input
 order, then one commit.
 
-The report is `board/put-report/v1`: `writes`, each with its Location, display
+The report is `board/put-report/v2`, whose `data` holds `writes`, each with its Location, display
 path, `previous` blob (null for a new file), `blob` and `degraded` (as `check`
 reports it, or null); and `commit` (null when none was made).
 
@@ -183,7 +183,7 @@ reports it, or null); and `commit` (null when none was made).
 `board::mount::invalid`. It reads the pointer's `follow` ref in the mounted
 repository (missing: `board::mount::follow_missing`) and, if the commit
 changed, rewrites `commit` through `put` with `--expect` set to the pointer's
-blob. The report, `board/mount-update-report/v1`, gives the path, the old and
+blob. The report, `board/mount-update-report/v2`, gives the path, the old and
 new commit and whether it wrote.
 
 A put of one record through a mount writes it in the mounted repository and
@@ -211,26 +211,27 @@ file's bytes. With several, each file follows a `==> <path> <==` line, as
 `head` prints them, and a blank line separates files. That text cannot always
 be split back into each file's exact bytes, for example when a file lacks a
 final newline; `--json` is the exact form. It is always one
-`board/get-report/v1`, for one path too. Its `answers` hold, in the order
+`board/get-report/v2`, for one path too. `data` holds, in the order
 asked, each file's Location, whose source is `worktree` or a commit id, its
 blob, its bytes, and either its `record` or the `code` saying why it is not
 one. On an answer, `code: board::record::not_a_record` means a readable file
 that holds no record, such as markdown. The bytes are a JSON string under
 `text` when they are UTF-8, and `base64` otherwise. A path that names a
-directory or nothing is refused as a `board/error/v1` in its place, told apart
-from a file by its `$type`; the other paths are still answered, and the run
+directory or nothing is refused in `failures`, with the `index` of its
+path; the other paths are still answered, and the run
 exits 1. One run takes at most 10,000 paths; more is `usage::invalid`. Like
 every command, `get` collects its output in memory and writes it at exit. It
 reads each file only once the answers before it are rendered, and only while
 the output, counted in the format being printed, is under 64 MiB; the first
-path is always read. Each later path is answered with
-`board::get::over_budget`, to ask for in another run. So a run holds at most
+path is always read. One `board::get::over_budget` failure names the later
+paths in `left_out`, to ask for in another run. So a run holds at most
 64 MiB, one more answer, and the short errors of the paths it left. The plugin
 library's `Board.get` does that. `controls.check` reads every
 file its controls reach this way.
 
-Each command returns one typed report. `--json` prints it as a document tagged
-`board/<command>-report/v1`, or `board/error/v1` on failure. Exit codes: 0 done,
+Each command returns one typed report. `--json` prints it as crumbkit's
+`board/<command>-report/v2`, or `crumbkit/failure/v1` on failure;
+[architecture/errors.md](architecture/errors.md) gives both shapes. Exit codes: 0 done,
 1 failed, 2 a refused command line (`board::usage::invalid`).
 
 `-C <dir>` before the command runs it as if Board started in `<dir>`. Several
@@ -261,7 +262,7 @@ nothing and prints no error into the shell.
 
 `check`, `ls`, `refs`, `plugin list` and `plugin find` show 100 entries unless
 `--limit` or `--all` says otherwise; an entry is a printed line: a `refs`
-pointer, a `plugin list` capability. Text names an entry by its logical path,
+pointer, a `plugin list` plugin. Text names an entry by its logical path,
 or its file when it has none or is shadowed; JSON gives both.
 STANDARDS.md 23 to 26 hold the rules.
 
@@ -288,7 +289,7 @@ changes plugins such as `tasks`.
 
 Codes are `board::<area>::<reason>`, spelled once in code and never changed
 after release. [architecture/errors.md](architecture/errors.md) lists the v0
-set and the values an error names in text and in `board/error/v1`.
+set and the values an error names in text and in `crumbkit/failure/v1`.
 
 ## Testing
 

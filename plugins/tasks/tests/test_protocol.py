@@ -73,7 +73,7 @@ def test_a_board_that_cannot_run_or_refuses_is_reported_and_a_working_one_answer
     assert document["fields"] == {"code": "board::config::not_found"}
     board.write("tasks/a.json", task("A", due="2026-10-01"))
     called = board.json("call", "tasks.due", stdin='{"before": "2026-10-02"}')
-    assert called["$type"] == "board/call-report/v1"
+    assert called["schema"] == "board/call-report/v2"
 
 
 def test_a_capability_the_plugin_does_not_offer_is_refused(tmp_path: Path) -> None:

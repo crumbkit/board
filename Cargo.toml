@@ -32,8 +32,11 @@ board-validate = { path = "crates/board-validate", version = "0.0.0" }
 # board. The API may change in any release, so the version is exact and an
 # upgrade is deliberate; only board-cli/src/complete.rs uses it.
 clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
-# Already in the tree through gix. get --json prints bytes that are not UTF-8 as base64.
-data-encoding = "2.11.1"
+# crumbkit prints every command's reports, failures and help; crumbkit-test's convention
+# checks run against the built binary. Unreleased, so pinned by rev; the
+# version satisfies deny.toml's wildcards.
+crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "a955001891fbc21e33aa38c160c96eb66ce79d3c", version = "0.0.0", default-features = false }
+crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "a955001891fbc21e33aa38c160c96eb66ce79d3c", version = "0.0.0", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
@@ -46,6 +49,8 @@ rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"
 # process: ask a plugin to stop with SIGTERM without unsafe code.
 rustix = { version = "1.1.5", default-features = false, features = ["process", "std"] }
 serde = { version = "1.0.228", features = ["derive"] }
+# derive: the rows crumbkit prints describe their own JSON Schema.
+schemars = { version = "1.2.2", default-features = false, features = ["derive", "std"] }
 # iterator: forward Ctrl-C to a plugin's process group from a thread, with no
 # async runtime and no unsafe code.
 signal-hook = { version = "0.4.4", default-features = false, features = ["iterator"] }

@@ -507,7 +507,7 @@ fn exit_text(exit: Option<i32>) -> String {
 }
 
 impl CallError {
-    /// This error as `board/error/v1` reports it, with the end of the
+    /// This error as Board reports it, with the end of the
     /// plugin's stderr when it ran. The plugin's own refusal keeps its code
     /// and fields, with `plugin` added, and has no hint from Board.
     pub fn refusal(&self) -> Refusal {

@@ -1,0 +1,2 @@
+/projects:
+record ok /projects/p

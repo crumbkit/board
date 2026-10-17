@@ -5,34 +5,34 @@ use std::fmt::Write as _;
 use board_model::{Code, Location, LogicalPath, Source};
 use board_ops::{Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport, source_name};
 use board_tree::Status;
+use crumbkit::help::{Leaf, Rename};
+use crumbkit::{Batch, Bytes, Document, Headed, Row};
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::{
-    Answers, Format, Shown, error_value, location, named, noted, refused, status_fields,
-    status_text,
-};
+use super::kit::{Printer, Refused};
+use super::{Shown, location, named, status_fields, status_text};
 use crate::report::Output;
 
 /// `board refs --help` after its options.
 pub(crate) const REFS_HELP: &str = "\
 Lines are `from <pointer> <target> <status>` for each reference the record
-makes, then `to <path> <pointer>` for each record that reaches it. With
-several paths, every line names its path and --limit applies to each path.
-A refused path does not stop the others; the exit code is 1.
+makes, then `to <path> <pointer>` for each record that reaches it. Several
+paths print each after a `==> <path> <==` line; --limit applies to each. A
+refused path does not stop the others; the exit code is 1.
 
 --field adds ` target=<code>`, or ` target=-` when healthy, then
 ` <pointer>=<value>` to each `from` line that resolves: the pointer as a
-JSON string, the value as compact JSON or `absent`. A target that is not a
-readable record has its code and no values; for board::refs::target_changed,
-run refs again.
+JSON string, the value as compact JSON or `absent`. For
+board::refs::target_changed, run refs again.
 
---json always prints one board/refs-report/v1, whose `answers` hold each
-path's references or its board/error/v1, in order; --field adds `values`
-and `target_code`.
+--json prints board/refs-report/v2: `data` holds each path's references and
+`failures` each path refused, by `index`; --field adds `values` and
+`target_code`.
 
-One run takes at most 10000 paths; more is board::usage::invalid. It stops
-at 64 MiB of output and refuses each later path as board::refs::over_budget;
-ask for those in another run.
+At most 10000 paths. Past 64 MiB of output, one board::refs::over_budget
+names the paths `left_out`.
 
 Examples:
   board refs /projects/p
@@ -73,13 +73,13 @@ impl<'a> Cut<'a> {
     }
 
     /// A `from` line per reference shown, with its status, then a `to` line
-    /// per pointer shown that reaches the record, each after `prefix`.
-    fn lines(&self, prefix: &str) -> String {
+    /// per pointer shown that reaches the record.
+    fn lines(&self) -> String {
         let mut text = String::new();
         for reference in self.from {
             let _ = writeln!(
                 text,
-                "{prefix}from {} {} {}{}",
+                "from {} {} {}{}",
                 reference.pointer,
                 reference.target,
                 status_text(reference.status),
@@ -89,7 +89,7 @@ impl<'a> Cut<'a> {
         for (incoming, pointers) in &self.to {
             let name = named(&incoming.path, incoming.logical.as_ref(), Status::Ok);
             for pointer in *pointers {
-                let _ = writeln!(text, "{prefix}to {name} {pointer}");
+                let _ = writeln!(text, "to {name} {pointer}");
             }
         }
         text
@@ -107,7 +107,7 @@ impl<'a> Cut<'a> {
         )
     }
 
-    /// One path's answer in a `board/refs-report/v1`.
+    /// One path's answer in a `board/refs-report/v2`.
     fn value(&self, report: &RefsReport) -> Value {
         let from: Vec<Value> = self
             .from
@@ -156,74 +156,104 @@ impl<'a> Cut<'a> {
 }
 
 /// `refs` of `paths`, each answered as it would be alone and limited on its
-/// own, in order. Each path is answered only once the answers before it are
-/// rendered, and only while the run has printed fewer than `budget` bytes;
-/// every later path is `refs::over_budget`, and the first is always
-/// answered. A check that could not run refuses the whole run. As text, a `from` line per reference
-/// the record makes, with its status and any fields, and a `to` line per
-/// record whose references reach it; with several paths, every line about
-/// a path names it. As JSON, one `board/refs-report/v1` whose `answers`
-/// hold, in the order asked, each path's references or its
-/// `board/error/v1`. Exit 1 when any path is refused.
+/// own, in order. Each path is answered only while the run has room for it
+/// in its budget of stdout, and the first always; crumbkit answers the paths
+/// after it with one `refs::over_budget`. A check that could not run
+/// refuses the whole run. As text, a `from` line per reference the record
+/// makes, with its status and any fields, and a `to` line per record whose
+/// references reach it, after a header when there are several paths. Exit
+/// 1 when any path is refused.
 pub(crate) fn refs(
-    format: Format,
+    printer: &mut Printer,
     paths: &[LogicalPath],
     mut answers: impl Iterator<Item = Result<RefsReport, RefsError>>,
     limit: Option<usize>,
-    budget: usize,
 ) -> Output {
-    let several = paths.len() > 1;
-    let mut run = Answers::open(format, "board/refs-report/v1", budget);
-    let mut memory = None;
-    for (at, path) in paths.iter().enumerate() {
-        let answer = if run.fits(at) {
-            match answers.next() {
-                Some(Err(error @ RefsError::Check { .. })) => {
-                    return refused(format, &error.refusal());
+    let mut room = printer.view.room(REFS);
+    let mut batch = Batch::new(&["refs"], "paths", paths);
+    let (mut memory, mut notes) = (None, String::new());
+    for path in paths {
+        if !room.has_room(&batch) {
+            break;
+        }
+        let answer = match answers.next() {
+            Some(Err(error @ RefsError::Check { .. })) => {
+                return printer.print(REFS, Err(error.refusal()));
+            }
+            Some(answer) => answer.map_err(|error| Refused::new(error.refusal())),
+            None => break,
+        };
+        batch.push(answer.map(|report| {
+            memory = memory.or(report.memory);
+            let cut = Cut::of(&report, limit);
+            let note = cut.note(&report);
+            match note.strip_prefix("note: ") {
+                Some(rest) if paths.len() > 1 => {
+                    let _ = write!(notes, "note: {path}: {rest}");
                 }
-                Some(answer) => answer.map_err(|error| error.refusal()),
-                None => break,
+                _ => notes.push_str(&note),
             }
-        } else {
-            Err(run.over_budget(Code::RefsOverBudget, "answered", path))
-        };
-        let name = |text: &str| {
-            if several {
-                named_lines(text, path)
-            } else {
-                text.to_owned()
+            Answered {
+                value: cut.value(&report),
+                text: Bytes::new(cut.lines().into_bytes()),
             }
-        };
-        match &answer {
-            Ok(report) => memory = memory.or(report.memory),
-            Err(refusal) => run.refused(refusal),
-        }
-        match (format, &answer) {
-            (Format::Json, answer) => run.json(
-                &answer
-                    .as_ref()
-                    .map_or_else(error_value, |report| Cut::of(report, limit).value(report)),
-            ),
-            (Format::Text, Ok(report)) => {
-                let cut = Cut::of(report, limit);
-                let line = if several {
-                    format!("{path} ")
-                } else {
-                    String::new()
-                };
-                run.output.stdout.extend(cut.lines(&line).bytes());
-                run.output.stderr.extend(name(&cut.note(report)).bytes());
-            }
-            (Format::Text, Err(refusal)) => {
-                let alone = refused(Format::Text, refusal).stderr;
-                run.output
-                    .stderr
-                    .extend(name(&String::from_utf8_lossy(&alone)).bytes());
-            }
-        }
+        }));
     }
-    noted(run.close(), memory, None)
+    let mut output = printer.print(REFS, Ok(batch));
+    if output.code != 0 && output.error.is_none() {
+        output.error = Some(Code::RefsOverBudget.as_str().to_owned());
+    }
+    // The JSON document holds what each path's note says, but not the
+    // index's note, which still prints on stderr with `--json`.
+    if !printer.json() {
+        output.stderr.extend(notes.into_bytes());
+    }
+    if let Some(fallback) = memory {
+        output
+            .stderr
+            .extend(super::memory_note(fallback).into_bytes());
+        output.stderr.push(b'\n');
+    }
+    output
 }
+
+/// One path's answer: its references as JSON, and as text lines.
+#[derive(Serialize, JsonSchema)]
+#[serde(transparent)]
+struct Answered {
+    value: Value,
+    #[serde(skip)]
+    text: Bytes,
+}
+
+impl Row for Answered {
+    const COLUMNS: &'static [&'static str] = &[];
+}
+
+impl Headed for Answered {
+    fn bytes(&self) -> Option<&Bytes> {
+        Some(&self.text)
+    }
+}
+
+/// `refs`'s document: each path's references, and each path refused.
+const REFS: Document<Batch<Answered, Refused>> = Document::new(
+    "board",
+    "refs-report",
+    2,
+    "The references of each path asked for.",
+)
+.always_print_first()
+.headed();
+
+const OVER_BUDGET: crumbkit::Code = crumbkit::Code::new("board", "refs", "over_budget");
+
+/// `refs`'s leaf, which prints Board's code for the paths the budget left
+/// out.
+pub(super) const LEAF: Leaf = Leaf::new(&["refs"]).document(REFS).codes(&[Rename::new(
+    &crumbkit::codes::OUTPUT_OVER_BUDGET,
+    &OVER_BUDGET,
+)]);
 
 /// What a `from` line adds for the fields a run asked for, when its
 /// reference resolves: ` target=<code>`, or ` target=-` for a healthy
@@ -265,19 +295,6 @@ fn fields_value(value: &mut Value, fielded: &Fielded) {
     }
 }
 
-/// Each line of `text` with `path` after its label, such as `error: ` or
-/// `line 3: `, or before it when it has none.
-pub(super) fn named_lines(text: &str, path: &LogicalPath) -> String {
-    let mut named = String::new();
-    for line in text.lines() {
-        let _ = match line.split_once(": ") {
-            Some((label, rest)) => writeln!(named, "{label}: {path}: {rest}"),
-            None => writeln!(named, "{path}: {line}"),
-        };
-    }
-    named
-}
-
 /// Where a file at a path that names nothing would be, naming the mounted
 /// board when it is in one.
 fn missing_note(location: &Location, missing: &Missing) -> String {
@@ -292,19 +309,4 @@ fn missing_note(location: &Location, missing: &Missing) -> String {
         "nothing is there yet; a file there would be {}, at {}{mounted}",
         missing.display, missing.path
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn each_line_names_the_path_after_its_label_or_before_a_line_without_one() {
-        let path: LogicalPath = "/tasks/a".parse().unwrap();
-        assert_eq!(
-            named_lines("error: code: why\nline 3: code: what\nplain\n", &path),
-            "error: /tasks/a: code: why\nline 3: /tasks/a: code: what\n/tasks/a: plain\n"
-        );
-        assert_eq!(named_lines("", &path), "");
-    }
 }

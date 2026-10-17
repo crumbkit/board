@@ -36,7 +36,7 @@ The mounted put commits only the record, with the message
 pointer is rewritten with `--expect` set to its own blob, and committed when
 the root sets `commit_on_put`, with the message `board put <path>`.
 
-The report is `board/put-report/v1`. The write's Location is in the new pinned
+The report is `board/put-report/v2`. The write's Location is in the new pinned
 commit, `previous` is the blob at the old pin, and `degraded` resolves the
 record's references in the mounted board at the new pin, as the root now sees
 it. A reference to a file only in the mounted working tree is dangling.

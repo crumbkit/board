@@ -2,10 +2,8 @@ use std::time::Instant;
 
 use board_model::{Code, Fields, Refusal};
 
-use clap::CommandFactory as _;
-
 use super::*;
-use crate::render::{self, Format};
+use crate::render::{self, Printer};
 
 fn ran(command: &str) -> Ran {
     Ran {
@@ -13,21 +11,6 @@ fn ran(command: &str) -> Ran {
         root: Some(PathBuf::from("/boards/one")),
         ..Ran::default()
     }
-}
-
-#[test]
-fn the_command_is_the_subcommands_named_without_any_value() {
-    let matches = crate::run::Cli::command()
-        .try_get_matches_from([
-            "board",
-            "--json",
-            "plugin",
-            "find",
-            "--capability",
-            "secret",
-        ])
-        .unwrap();
-    assert_eq!(command(&matches), "plugin find");
 }
 
 #[test]
@@ -123,10 +106,11 @@ fn a_refusal_names_its_code_for_the_record_in_text_and_json() {
         "bad date".to_owned(),
         serde_json::Map::new(),
     );
-    for format in [Format::Text, Format::Json] {
-        let refused = render::refused(format, &boards);
+    for json in [false, true] {
+        let printer = &mut Printer::of(json, 1 << 20, &[]);
+        let refused = render::refused(printer, boards.clone());
         assert_eq!(refused.error.as_deref(), Some("board::put::invalid"));
-        let refused = render::refused(format, &plugins);
+        let refused = render::refused(printer, plugins.clone());
         assert_eq!(refused.error.as_deref(), Some("tasks::date::bad"));
     }
 }

@@ -1,0 +1,667 @@
+board check /.board/types/lr/broken/v1.schema
+  fails with board::schema::invalid
+  hint
+
+board check /.board/types/lr/sealed/v1.schema
+  fails with board::repo::unreadable
+  hint
+
+board get /.board/types/lr/sealed/v1.schema
+  fails with board::repo::unreadable
+  hint
+
+board ls /.board/types/lr/sealed/v1.schema
+  fails with board::repo::unreadable
+  hint
+
+board refs /.board/types/lr/sealed/v1.schema
+  fails with board::repo::unreadable
+  hint
+
+board check /config/stray
+  fails with board::config::invalid
+  hint
+
+board check /cycle/a
+  fails with board::resolve::cycle
+  hint
+
+board get /cycle/a
+  fails with board::resolve::cycle
+  hint
+
+board ls /cycle/a
+  fails with board::resolve::cycle
+  hint
+
+board refs /cycle/a
+  fails with board::resolve::cycle
+  hint
+
+board check /cycle/b
+  fails with board::resolve::cycle
+  hint
+
+board get /cycle/b
+  fails with board::resolve::cycle
+  hint
+
+board ls /cycle/b
+  fails with board::resolve::cycle
+  hint
+
+board refs /cycle/b
+  fails with board::resolve::cycle
+  hint
+
+board check /hops/h0
+  fails with board::resolve::too_many_hops
+  hint
+
+board get /hops/h0
+  fails with board::resolve::too_many_hops
+  hint
+
+board ls /hops/h0
+  fails with board::resolve::too_many_hops
+  hint
+
+board refs /hops/h0
+  fails with board::resolve::too_many_hops
+  hint
+
+board check /json/conflict
+  fails with board::json::merge_conflict
+  run board check /json/conflict
+    not run, because the chain ran it already
+
+board check /json/duplicate
+  fails with board::json::duplicate_key
+  hint
+
+board check /json/latin1
+  fails with board::json::not_utf8
+  hint
+
+board check /json/lossy
+  fails with board::json::lossy_number
+  hint
+
+board check /json/parse
+  fails with board::json::parse
+  hint
+
+board check /link/broken
+  fails with board::ref::dangling
+  run board ls /link
+    exits 0
+
+board get /link/broken
+  fails with board::ref::dangling
+  run board ls /link
+    exits 0
+
+board ls /link/broken
+  fails with board::ref::dangling
+  run board ls /link
+    exits 0
+
+board refs /link/broken
+  fails with board::ref::dangling
+  run board ls /link
+    exits 0
+
+board check /links/gone
+  fails with board::ref::dangling
+  run board ls /links
+    exits 0
+
+board get /links/gone
+  fails with board::ref::dangling
+  run board ls /links
+    exits 0
+
+board ls /links/gone
+  fails with board::ref::dangling
+  run board ls /links
+    exits 0
+
+board refs /links/gone
+  fails with board::ref::dangling
+  run board ls /links
+    exits 0
+
+board check /mount/commit
+  fails with board::mount::commit_missing
+  run board mount update /mount/commit
+    exits 0
+
+board get /mount/commit
+  fails with board::mount::commit_missing
+  run board mount update /mount/commit
+    exits 0
+
+board ls /mount/commit
+  fails with board::mount::commit_missing
+  run board mount update /mount/commit
+    exits 0
+
+board refs /mount/commit
+  fails with board::mount::commit_missing
+  run board mount update /mount/commit
+    exits 0
+
+board check /mount/escape
+  fails with board::mount::invalid
+  hint
+
+board get /mount/escape
+  fails with board::mount::invalid
+  hint
+
+board ls /mount/escape
+  fails with board::mount::invalid
+  hint
+
+board refs /mount/escape
+  fails with board::mount::invalid
+  hint
+
+board check /mount/invalid
+  fails with board::mount::invalid
+  hint
+
+board get /mount/invalid
+  fails with board::mount::invalid
+  hint
+
+board ls /mount/invalid
+  fails with board::mount::invalid
+  hint
+
+board refs /mount/invalid
+  fails with board::mount::invalid
+  hint
+
+board check /mount/remote
+  fails with board::mount::remote_unsupported
+  hint
+
+board get /mount/remote
+  fails with board::mount::remote_unsupported
+  hint
+
+board ls /mount/remote
+  fails with board::mount::remote_unsupported
+  hint
+
+board refs /mount/remote
+  fails with board::mount::remote_unsupported
+  hint
+
+board check /mount/repo
+  fails with board::mount::repo_missing
+  hint
+
+board get /mount/repo
+  fails with board::mount::repo_missing
+  hint
+
+board ls /mount/repo
+  fails with board::mount::repo_missing
+  hint
+
+board refs /mount/repo
+  fails with board::mount::repo_missing
+  hint
+
+board check /mount/unfollowed
+  fails with board::mount::commit_missing
+  run board mount update /mount/unfollowed
+    fails with board::mount::follow_missing
+    hint
+
+board get /mount/unfollowed
+  fails with board::mount::commit_missing
+  run board mount update /mount/unfollowed
+    fails with board::mount::follow_missing
+    hint
+
+board ls /mount/unfollowed
+  fails with board::mount::commit_missing
+  run board mount update /mount/unfollowed
+    fails with board::mount::follow_missing
+    hint
+
+board refs /mount/unfollowed
+  fails with board::mount::commit_missing
+  run board mount update /mount/unfollowed
+    fails with board::mount::follow_missing
+    hint
+
+board check /path/x
+  fails with board::path::shadowed
+  hint
+
+board get /path/x
+  fails with board::path::shadowed
+  hint
+
+board ls /path/x
+  fails with board::path::shadowed
+  hint
+
+board refs /path/x
+  fails with board::path::shadowed
+  hint
+
+board check /path/x
+  fails with board::path::shadowed
+  hint
+
+board get /path/x
+  fails with board::path::shadowed
+  hint
+
+board ls /path/x
+  fails with board::path::shadowed
+  hint
+
+board refs /path/x
+  fails with board::path::shadowed
+  hint
+
+board check /plugins/broken/plugin
+  fails with board::plugin::bad_manifest
+  hint
+
+board check /record/bad-type
+  fails with board::record::bad_type
+  hint
+
+board check /record/broken
+  fails with board::schema::invalid
+  run board check /.board/types
+    fails with board::schema::invalid
+    hint
+    fails with board::repo::unreadable
+    hint
+
+board check /record/invalid
+  fails with board::record::invalid
+  hint
+
+board check /record/sealed
+  fails with board::repo::unreadable
+  hint
+
+board check /record/unknown
+  fails with board::record::unknown_type
+  hint
+
+board check /ref/dangling
+  fails with board::ref::dangling
+  run board refs /ref/dangling
+    exits 0
+
+board check /ref/malformed
+  fails with board::ref::malformed
+  hint
+
+board check /ref/wrong
+  fails with board::ref::wrong_type
+  hint
+
+board check /repo/nested
+  fails with board::repo::submodule
+  hint
+
+board get /repo/nested
+  fails with board::repo::submodule
+  hint
+
+board ls /repo/nested
+  fails with board::repo::submodule
+  hint
+
+board refs /repo/nested
+  fails with board::repo::submodule
+  hint
+
+board check /symlinked.json
+  fails with board::json::parse
+  hint
+
+board ls /symlinked.json
+  fails with board::path::not_found
+  run board ls /
+    exits 0
+
+board check /mount/m/A
+  fails with board::path::case_collision
+  hint
+
+board check /mount/m/a
+  fails with board::path::case_collision
+  hint
+
+board check /mount/m/gone
+  fails with board::repo::unreadable
+  hint
+
+board get /mount/m/gone
+  fails with board::repo::unreadable
+  hint
+
+board ls /mount/m/gone
+  fails with board::repo::unreadable
+  hint
+
+board refs /mount/m/gone
+  fails with board::repo::unreadable
+  hint
+
+board get /nowhere
+  fails with board::path::not_found
+  run board ls /
+    exits 0
+
+board get /nowhere.json
+  fails with board::path::not_found
+  run board ls /
+    exits 0
+
+board get /taks/t1
+  fails with board::path::not_found
+  run board ls /
+    exits 0
+
+board get /a/b/c/d
+  fails with board::path::not_found
+  run board ls /
+    exits 0
+
+board ls /projects/p/x/y
+  fails with board::path::not_found
+  run board ls /projects/p
+    exits 0
+
+board refs /taks/t1
+  fails with board::path::not_found
+  run board ls /
+    exits 0
+
+board get /projects/p.json
+  fails with board::path::not_found
+  run board get /projects/p
+    exits 0
+
+board get /projects
+  fails with board::record::not_a_record
+  run board ls /projects
+    exits 0
+
+board get /links/gone
+  fails with board::ref::dangling
+  run board ls /links
+    exits 0
+
+board get /mount/m/gone
+  fails with board::repo::unreadable
+  hint
+
+board get /cycle/a
+  fails with board::resolve::cycle
+  hint
+
+board get /hops/h0
+  fails with board::resolve::too_many_hops
+  hint
+
+board query 'SELEC 1'
+  fails with board::query::invalid
+  run board query --help
+    exits 0
+
+board query 'SELECT * FROM entires'
+  fails with board::query::invalid
+  run board query --help
+    exits 0
+
+board query 'SELECT logcal'
+  fails with board::query::invalid
+  run board query "SELECT name, sql FROM sqlite_master" as board query 'SELECT name, sql FROM sqlite_master'
+    exits 0
+
+board query 'WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c) SELECT count(*) FROM c'
+  fails with board::query::timeout
+  hint
+
+board query 'SELECT zeroblob(100000000)'
+  fails with board::query::over_budget
+  hint
+
+board chek
+  fails with board::usage::invalid
+  run board -h
+    exits 0
+
+board get projects/p
+  fails with board::usage::invalid
+  run board get /projects/p --json
+    exits 0
+
+board ls --limit 0
+  fails with board::usage::invalid
+  run board ls -h
+    exits 0
+
+board plugin
+  fails with board::usage::invalid
+  run board plugin -h
+    exits 0
+
+board mount update /mount/unfollowed
+  fails with board::mount::follow_missing
+  hint
+
+board mount update /projects/zz
+  fails with board::path::not_found
+  run board ls /projects
+    exits 0
+
+board put /projects/P
+  fails with board::path::case_collision
+  hint
+
+board put /cycle/a/new
+  fails with board::resolve::cycle
+  hint
+
+board put /links/gone/new
+  fails with board::ref::dangling
+  run board ls /links
+    exits 0
+
+board put /projects/new
+  fails with board::put::invalid
+  hint
+
+board put /projects/new
+  fails with board::json::parse
+  hint
+
+board put /projects/new
+  fails with board::json::parse
+  hint
+
+board put /projects/new
+  fails with board::record::unknown_type
+  hint
+
+board put /projects/new
+  fails with board::schema::invalid
+  run board check /.board/types
+    fails with board::schema::invalid
+    hint
+    fails with board::repo::unreadable
+    hint
+
+board put /.git/x
+  fails with board::path::malformed
+  hint
+
+board put /symlinked
+  fails with board::put::symlink
+  hint
+
+board put /tasks/t
+  fails with board::record::invalid
+  hint
+
+board put /tasks/t
+  fails with board::ref::malformed
+  hint
+
+board put --batch
+  fails with board::put::invalid
+  hint
+
+board get /mount/commit/x
+  fails with board::mount::commit_missing
+  run board mount update /mount/commit
+    exits 0
+
+board put /mount/m/new
+  fails with board::put::through_mount
+  run board mount update /mount/m
+    exits 0
+
+board put /projects/p --expect none
+  fails with board::put::stale
+  run board get /projects/p
+    exits 0
+  run board put /projects/p --expect 350ab0b8b289baeaf217fc2914e660f59ee25faf
+    exits 0
+
+board put /projects/q --expect 1111111111111111111111111111111111111111
+  fails with board::put::stale
+  run board put /projects/q --expect none
+    exits 0
+
+board check
+  fails with board::config::not_found
+  run board init
+    exits 0
+
+board check
+  fails with board::config::invalid
+  hint
+
+board init
+  fails with board::config::invalid
+  hint
+
+board check
+  fails with board::config::not_found
+  run board init
+    fails with board::put::failed
+    hint
+
+board init
+  fails with board::put::failed
+  hint
+
+board check
+  fails with board::config::not_found
+  hint
+
+board init
+  fails with board::config::not_found
+  hint
+
+board call notes.due
+  fails with board::plugin::not_enabled
+  hint
+
+board call nowhere.due
+  fails with board::plugin::not_installed
+  run board plugin list
+    fails with board::plugin::bad_manifest
+
+board call broken.due
+  fails with board::plugin::bad_manifest
+  hint
+
+board call tasks.due
+  fails with board::plugin::bad_input
+  run board plugin find --capability due --json
+    exits 0
+
+board call tasks.due (with BOARD_CALL_DEPTH=8)
+  fails with board::plugin::too_deep
+  hint
+
+board call --capability due
+  fails with board::plugin::ambiguous
+  run board call bad.due
+    fails with board::plugin::bad_output
+    hint
+  run board plugin find --capability due
+    exits 0
+
+board call bad.due
+  fails with board::plugin::bad_output
+  hint
+
+board call fails.due
+  fails with board::plugin::failed
+  hint
+
+board call huge.due
+  fails with board::plugin::too_large
+  hint
+
+board call missing.due
+  fails with board::plugin::not_started
+  hint
+
+board call notes.due (with TMPDIR=/nonexistent)
+  fails with board::plugin::no_database
+  hint
+
+board plugin enable notes
+  fails with board::plugin::schema_differs
+  hint
+
+board plugin list
+  fails with board::plugin::schema_missing
+
+board get /large --json
+  fails with board::json::too_large
+  hint
+
+board put /projects/l
+  fails with board::put::locked
+  hint
+
+board put /vendor/projects/p
+  fails with board::mount::not_ancestor
+  run board mount update /vendor
+    exits 0
+
+board put /vendor/projects/p
+  fails with board::mount::stale
+  run board mount update /vendor
+    exits 0
+
+codes that no start provokes:
+  board::index::failed: the index fails only when SQLite does, even in memory; board-index/src/tests.rs maps SQLite's failures to it
+  board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME
+  board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit
+  board::get::over_budget: a run that prints the CLI's 64 MiB get budget is too costly for a gate; a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_fails_the_run in board-cli/src/tests/get.rs passes render::get a budget of a few kilobytes
+  board::refs::over_budget: a run that prints the CLI's 64 MiB refs budget is too costly for a gate; a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slot in board-cli/src/tests/refs.rs passes render::refs budgets of a few bytes as text and a few kilobytes as JSON
+  board::refs::target_changed: a target must change between the check and the read of its fields; board-cli/src/tests/refs.rs changes one between two answers
+  board::plugin::timeout: the CLI's 30-second plugin limit is too slow for a test; board-ops/src/call/tests.rs uses a 500 ms limit
+
+codes whose recoveries the check did not follow, because no declared code spells them: 0

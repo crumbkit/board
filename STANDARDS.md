@@ -7,7 +7,7 @@ what enforces it. A rule without a gate is still a rule.
 
 1. **Parse once at the boundary.** Convert input to its canonical type where it enters, and pass that type inward. A `.to_string()` that is parsed again further in is a defect. Use enums, not `bool`, `Option<Option<T>>` or `String`. Keep malformed, absent and unsupported values distinct.
 2. **A newtype holds an invariant.** Add one only to hold an invariant, to tell apart values that are easy to confuse, or to own a shared rule. Keep the field private. Implement `FromStr` and `TryFrom<String>`, with `#[serde(try_from = "String", into = "String")]`. Constructors and deserializers enforce the same invariant. Wire-only structs are named `Raw*`.
-3. **Board's own documents refuse what they do not understand.** Every `board/*` document (configuration, pointers, manifests, plugin messages, reports) uses `#[serde(deny_unknown_fields)]`, refuses duplicate keys and carries `"$type": "board/<kind>/v<n>"`. Never change a released schema; add a version. User records are different: their own schema decides, `put` refuses an invalid one, and the index marks it degraded instead of refusing it. serde's derived structs refuse duplicate fields, but `serde_json::Value` and maps keep the last one silently, so every untyped JSON read goes through `board-model`'s duplicate-refusing parse.
+3. **Board's own documents refuse what they do not understand.** Every `board/*` document (configuration, pointers, manifests, plugin messages) uses `#[serde(deny_unknown_fields)]`, refuses duplicate keys and carries `"$type": "board/<kind>/v<n>"`. A command's report is a crumbkit document named by `schema` instead (rule 17). Never change a released schema; add a version. User records are different: their own schema decides, `put` refuses an invalid one, and the index marks it degraded instead of refusing it. serde's derived structs refuse duplicate fields, but `serde_json::Value` and maps keep the last one silently, so every untyped JSON read goes through `board-model`'s duplicate-refusing parse.
 
 ## Errors
 
@@ -30,7 +30,7 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Interfaces
 
-17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes a document tagged `board/<command>-report/v1`, and `board/error/v1` on failure. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. `board refs` and `board get` exit 1 when any path they were asked is refused, and still print their report; a path left past the run's byte budget is refused in its place. `board query` cut at the byte budget exits 0, because it was asked for no path that it refused. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
+17. **A command returns one typed report.** A handler returns one `Serialize` report, and one module prints it. Exit codes are 0, 1 and 2 (2: the command line was refused). `--json` writes crumbkit's envelope: `schema` `board/<command>-report/v2`, the report as `data`, and a `crumbkit/failure/v1` document in `failures` for each refused path, with its `key` and `index`. A listing adds `total`, `truncated` and `summary`. A failed command prints one `crumbkit/failure/v1` document. Notes, such as an index held in memory, go to stderr in both formats. A command has no aliases. A read or check reports every entry even after one fails; a write changes everything it was asked to or nothing. `board check` exits 1 when any entry is degraded, so it works as a gate. `board refs` and `board get` exit 1 when any path they were asked is refused, and still print their report; a path left past the run's byte budget is refused in its place. `board query` cut at the byte budget exits 0, because it was asked for no path that it refused. Repository tooling follows this rule except `--json`, which it gains when something reads it. Gate: `print_stdout` and `print_stderr` deny.
 18. **No async runtime.** Board is a local, synchronous CLI, and gix and rusqlite are synchronous. A dependency that brings in an async runtime states why in the change that adds it.
 
 ## Tests
@@ -81,8 +81,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     entries first, so a cut never hides a problem behind healthy entries. `refs`
     limits each path's answer on its own, so the caller bounds a run by how many
     paths it asks. `get` and `refs` stop answering once their output reaches
-    64 MiB and refuse each later path as `get::over_budget` or
-    `refs::over_budget`, to ask for in another run. `query` stops before the
+    64 MiB and name every later path in the `left_out` of one
+    `get::over_budget` or `refs::over_budget` failure, to ask for in another
+    run. `query` stops before the
     row that would take its rows past 64 MiB, even with `--all`, and marks the
     cut `query::over_budget`; it refuses a first row or a single value longer than
     that, where `get` and `refs` always answer their first path, because a
@@ -98,22 +99,29 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     Every example in help must parse as a real command line.
 25. **Every error says what failed, for which value, and what to try next.** A
     refused command line is an error like any other: it has the code
-    `board::usage::invalid`, exit code 2, and a `board/error/v1` document when
-    `--json` is on the command line. clap suggests the nearest command or flag
-    for a misspelling. Text errors are `error: <code>: <message>`, then a
-    `hint:` line. JSON errors carry `hint` beside `code` and `message`. A record
+    `board::usage::invalid`, exit code 2, and a `crumbkit/failure/v1` document
+    when `--json` is on the command line. clap suggests the nearest command or
+    flag for a misspelling. Text errors are `error: <message>`, then `help:`
+    and `code:` lines. JSON errors carry `recovery` beside `code` and
+    `message`. A record
     refused by its schema names the JSON pointer that failed and why. Gate: the
     hint for each code is chosen by an exhaustive `match` on `Code`, so a new
     code does not compile until it has a hint, and a test requires every command
-    a hint names to parse. A property provokes every code it can through the
-    command line and runs each command a hint names, up to three hops; a
-    command that fails again with the code that named it is a dead end, except
-    `check`, which reports what is still degraded. A `check` hint that says to
-    fix something, then run that same `check`, ends its chain. The property
-    accepts the placeholders `<dir>` and `<command>`, which only the reader can
-    fill in. Any other placeholder, such as `<path>`, belongs to a generic
-    hint for an error that lacks the value, and the property counts it as a
-    dead end. A plugin's own codes carry the plugin's message and no hint from
+    a hint names to parse. crumbkit-test's recovery check provokes every code
+    it can through the command line and runs each command a hint names, up to
+    three hops. A command that fails again with a code earlier in its chain
+    fails the check, except `check`, which reports what is still degraded. No
+    chain runs a command line twice. A chain may come back only to a `check`
+    that a hint says to run after a fix ("then run `board check ...`"), and it
+    ends there. The check accepts
+    the placeholders `<dir>` and `<command>`, which only the reader can fill
+    in. Any other placeholder, such as `<path>`, belongs to a generic hint for
+    an error that lacks the value, and fails the check. crumbkit-test's twin
+    check runs, for each code, a refused line beside a line of the same
+    command one word apart, or without one variable, that succeeds. A code
+    that no word or variable causes is listed with its reason and the test
+    that pairs it. A listing's entries, such as `plugin list`'s, report each
+    one's problem as its status and carry no hint. A plugin's own codes carry the plugin's message and no hint from
     Board.
 26. **Output does not depend on the terminal.** Board prints the same bytes to a
     terminal as to a pipe. It does not use colour, wrap lines or detect a

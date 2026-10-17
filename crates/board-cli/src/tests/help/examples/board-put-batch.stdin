@@ -1,0 +1,2 @@
+{"path": "/tasks/d", "expect": "none", "record": {"$type": "lr/task/v1", "title": "d", "project": "/projects/p"}}
+{"path": "/tasks/e", "expect": "none", "record": {"$type": "lr/task/v1", "title": "e", "project": "/projects/p"}}

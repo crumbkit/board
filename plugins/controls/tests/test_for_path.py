@@ -9,8 +9,8 @@ from conftest import Board, control, library
 def applying(board: Board, path: str) -> list[str]:
     """The paths of the controls `board call controls.for-path` returns for `path`."""
     report = board.call("for-path", {"path": path})
-    assert report["$type"] == "board/call-report/v1", report
-    return [item["control"] for item in report["output"]["controls"]]
+    assert report["schema"] == "board/call-report/v2", report
+    return [item["control"] for item in report["data"]["output"]["controls"]]
 
 
 def test_a_control_applies_to_what_it_references_and_to_what_its_patterns_match(board: Board) -> None:
@@ -31,7 +31,7 @@ def test_the_output_carries_the_requirement_purpose_and_rule(board: Board) -> No
         control("Stay short.", applies_to=["/AGENTS.md"], rule={"budget": "words", "max": 10}),
     )
     report = board.call("for-path", {"path": "/AGENTS.md"})
-    assert report["output"]["controls"] == [
+    assert report["data"]["output"]["controls"] == [
         {
             "control": "/controls/agents",
             "requirement": "Stay short.",
@@ -104,7 +104,7 @@ def test_a_file_in_a_commit_mounted_twice_is_matched_by_the_path_check_counts_it
     rule = {"budget": "words", "max": 9}
     board.write("controls/short.json", control("R.", paths=["aa/*"], rule=rule))
     board.write("controls/long.json", control("R.", paths=["zz/*"], rule=rule))
-    checked = board.call("check", {})["output"]["controls"]
+    checked = board.call("check", {})["data"]["output"]["controls"]
     assert [(item["control"], item["files"]) for item in checked] == [
         ("/controls/long", []),
         ("/controls/short", ["/aa/lib/docs/a.md"]),
@@ -132,7 +132,7 @@ def test_board_refuses_the_call_when_its_control_schema_is_wider_and_answers_wit
     board.write("AGENTS.md", "Rules.\n")
     board.write("controls/kept.json", control("R.", applies_to=["/AGENTS.md"]))
     assert applying(board, "/AGENTS.md") == ["/controls/kept"]
-    assert board.call("check", {})["$type"] == "board/call-report/v1"
+    assert board.call("check", {})["schema"] == "board/call-report/v2"
     schema = board.root / ".board/types/controls/control/v1.schema.json"
     widened = json.loads(schema.read_text())
     widened["additionalProperties"] = True

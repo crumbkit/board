@@ -71,7 +71,7 @@ fn parses(line: &str) -> Result<(), ErrorKind> {
 
 /// Each `board` command an example line shows, without a redirect, a pipe
 /// or the description after two spaces.
-fn examples(help: &str) -> Vec<String> {
+pub(super) fn examples(help: &str) -> Vec<String> {
     help.lines()
         .filter_map(|line| line.strip_prefix("  "))
         .filter(|line| line.starts_with("board "))
@@ -283,9 +283,9 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
     assert!(refused.stdout.is_empty());
     assert_eq!(
         text(&refused.stderr),
-        "error: board::usage::invalid: unrecognized subcommand 'chek'\n\
-         hint: a similar subcommand exists: 'check'; run `board --help` for the commands, \
-         or `board <command> --help` for one command's arguments\n"
+        "error: unrecognized subcommand 'chek'; a similar subcommand exists: 'check'\n\
+         \x20 help:  run `board -h`\n\
+         \x20 code:  board::usage::invalid\n"
     );
     assert_eq!(board_in(scenario.workdir(), &["check"]).code, 0);
 }
@@ -296,16 +296,11 @@ fn a_group_without_its_command_is_a_coded_error_with_its_help_and_with_one_runs(
     let refused = board_in(scenario.workdir(), &["plugin"]);
     assert_eq!(refused.code, 2);
     let stderr = text(&refused.stderr);
-    assert!(
-        stderr.starts_with(
-            "error: board::usage::invalid: board plugin needs a command\n\nWork with plugins\n"
-        ),
-        "{stderr}"
-    );
-    assert!(stderr.contains("  list  "), "{stderr}");
-    assert!(
-        stderr.ends_with("\nhint: run `board plugin --help` for its usage and examples\n"),
-        "{stderr}"
+    assert_eq!(
+        stderr,
+        "error: the command `board plugin` needs a subcommand\n\
+         \x20 help:  run `board plugin -h`\n\
+         \x20 code:  board::usage::invalid\n"
     );
     assert_eq!(board_in(scenario.workdir(), &["plugin", "list"]).code, 0);
 }
@@ -317,19 +312,16 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
     assert_eq!(refused.code, 2);
     assert!(refused.stderr.is_empty());
     let error = json(&refused);
-    assert_eq!(error["$type"], "board/error/v1");
+    assert_eq!(error["schema"], "crumbkit/failure/v1");
     assert_eq!(error["code"], "board::usage::invalid");
     assert_eq!(
         error["message"],
         "the following required arguments were not provided: <PATH>..."
     );
-    assert_eq!(
-        error["hint"],
-        "run `board get --help` for its usage and examples"
-    );
+    assert_eq!(error["recovery"]["call"], "board get -h");
     let admitted = board_in(scenario.workdir(), &["get", "/projects/p", "--json"]);
     assert_eq!(admitted.code, 0);
-    assert_eq!(json(&admitted)["$type"], "board/get-report/v1");
+    assert_eq!(json(&admitted)["schema"], "board/get-report/v2");
 }
 
 #[test]
@@ -339,17 +331,14 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
     assert_eq!(refused.code, 2);
     let refused = json(&refused);
     assert_eq!(refused["code"], "board::usage::invalid");
-    assert_eq!(refused["message"], "unrecognized subcommand 'chek'");
-    assert!(
-        refused["hint"]
-            .as_str()
-            .unwrap()
-            .starts_with("a similar subcommand exists: 'check'; "),
-        "{refused}"
+    assert_eq!(
+        refused["message"],
+        "unrecognized subcommand 'chek'; a similar subcommand exists: 'check'"
     );
+    assert_eq!(refused["recovery"]["call"], "board -h");
     let admitted = board_in(scenario.workdir(), &["--json", "check"]);
     assert_eq!(admitted.code, 0);
-    assert_eq!(json(&admitted)["$type"], "board/check-report/v1");
+    assert_eq!(json(&admitted)["schema"], "board/check-report/v2");
 }
 
 /// Each refused command line names the value at fault, and a corrected
@@ -357,60 +346,51 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
 #[test]
 fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs() {
     let scenario = board();
-    let cases: [(&[&str], &str, &str, &[&str]); 6] = [
+    let cases: [(&[&str], &str, &[&str]); 6] = [
         (
             &["ls", "--limt", "5"],
-            "unexpected argument '--limt' found",
-            "a similar argument exists: '--limit'; run `board ls --help` for its usage and examples",
+            "unexpected argument '--limt' found; a similar argument exists: '--limit'",
             &["ls", "--limit", "5"],
         ),
         (
             &["ls", "--limit", "0"],
-            "invalid value '0' for '--limit <LIMIT>': must be a whole number from 1 to 10000",
-            "run `board ls --help` for its usage and examples",
+            "invalid value '0' for '--limit <N>': --limit takes a whole number from 1 to 10000",
             &["ls", "--limit", "1"],
         ),
         (
-            &["get", "projects/p"],
-            "invalid value 'projects/p' for '<PATH>...': ",
-            "a logical path starts with / and leaves out .json: try `board --json get /projects/p`",
+            &["get", "/projects//p"],
+            "invalid value '/projects//p' for '<PATH>...': ",
             &["get", "/projects/p"],
         ),
         (
             &["ls", "--limit", "5", "--all"],
-            "the argument '--limit <LIMIT>' cannot be used with '--all'",
-            "run `board ls --help` for its usage and examples",
+            "the argument '--limit <N>' cannot be used with '--all'",
             &["ls", "--all"],
         ),
         (
             &["ls", "--limit"],
-            "a value is required for '--limit <LIMIT>' but none was supplied",
-            "run `board ls --help` for its usage and examples",
+            "a value is required for '--limit <N>' but none was supplied",
             &["ls", "--limit", "1"],
         ),
         (
             &["ls", "-x"],
-            "unexpected argument '-x' found",
-            "to pass '-x' as a value, use '-- -x'; run `board ls --help` for its usage and examples",
+            "unexpected argument '-x' found; to pass '-x' as a value, use '-- -x'",
             &["ls"],
         ),
     ];
-    for (refused, message, hint, admitted) in cases {
+    for (refused, message, admitted) in cases {
         let output = board_in(scenario.workdir(), &[&["--json"], refused].concat());
         assert_eq!(output.code, 2, "{refused:?}");
         let error = json(&output);
         assert_eq!(error["code"], "board::usage::invalid", "{refused:?}");
         let said = error["message"].as_str().unwrap();
         assert!(said.starts_with(message), "{refused:?}: {said}");
-        assert_eq!(error["hint"], hint, "{refused:?}");
-        // The corrected command line repeats the arguments, so it drops --json.
+        let call = format!("board {} -h", refused[0]);
+        assert_eq!(error["recovery"]["call"], call.as_str(), "{refused:?}");
         let text_form = text(&board_in(scenario.workdir(), refused).stderr);
         assert_eq!(
             text_form,
-            format!(
-                "error: board::usage::invalid: {said}\nhint: {}\n",
-                hint.replace("board --json ", "board ")
-            )
+            format!("error: {said}\n  help:  run `{call}`\n  code:  board::usage::invalid\n")
         );
         assert_eq!(
             board_in(scenario.workdir(), admitted).code,
@@ -440,19 +420,20 @@ fn a_listing_past_its_limit_says_what_it_left_out_and_one_within_it_says_nothing
         |directory, arguments: &[&str]| board_cached(directory, Some(cache.path()), arguments);
     let cut = board_in(scenario.workdir(), &["ls", "/notes", "--limit", "2"]);
     assert_eq!(cut.code, 0);
-    assert_eq!(text(&cut.stdout).lines().count(), 2);
+    // The first line names the directory.
+    assert_eq!(text(&cut.stdout).lines().count(), 3);
     assert_eq!(
         text(&cut.stderr),
-        "note: showing 2 of 3 entries; --limit <n> (at most 10000) or --all shows more\n"
+        "Showing 2 of 3 entries. --limit takes up to 10000, and --all shows every one.\n"
     );
     let whole = board_in(scenario.workdir(), &["ls", "/notes", "--limit", "3"]);
-    assert_eq!(text(&whole.stdout).lines().count(), 3);
+    assert_eq!(text(&whole.stdout).lines().count(), 4);
     assert_eq!(text(&whole.stderr), "");
     let report = json(&board_in(
         scenario.workdir(),
         &["ls", "/notes", "--limit", "2", "--json"],
     ));
-    assert_eq!(report["entries"].as_array().unwrap().len(), 2);
+    assert_eq!(report["data"].as_array().unwrap().len(), 2);
     assert_eq!(
         (report["total"].clone(), report["truncated"].clone()),
         (3.into(), true.into())
@@ -466,9 +447,10 @@ fn a_listing_shows_one_hundred_entries_unless_asked_for_all() {
     let board_in =
         |directory, arguments: &[&str]| board_cached(directory, Some(cache.path()), arguments);
     let limited = board_in(scenario.workdir(), &["ls", "/notes"]);
-    assert_eq!(text(&limited.stdout).lines().count(), 100);
+    // The first line names the directory.
+    assert_eq!(text(&limited.stdout).lines().count(), 101);
     let all = board_in(scenario.workdir(), &["ls", "/notes", "--all"]);
-    assert_eq!(text(&all.stdout).lines().count(), 101);
+    assert_eq!(text(&all.stdout).lines().count(), 102);
     assert_eq!(text(&all.stderr), "");
 }
 
@@ -494,24 +476,20 @@ fn check_lists_degraded_entries_first_so_a_limit_never_hides_one() {
     assert_eq!(output.code, 1);
     assert_eq!(
         text(&output.stdout),
-        "degraded board::json::parse /zz/bad \
+        "8 entries, 1 degraded\ndegraded board::json::parse /zz/bad \
          is invalid: json does not parse: EOF while parsing an object at line 1 column 1\n"
     );
     let stderr = text(&output.stderr);
-    let note = stderr.lines().last().unwrap();
-    assert!(
-        note.starts_with("note: showing 1 of 8 entries, 1 of them degraded; "),
-        "{stderr}"
-    );
+    assert!(stderr.starts_with("Showing 1 of 8 entries. "), "{stderr}");
     let report = json(&board_in(
         scenario.workdir(),
         &["check", "--limit", "1", "--json"],
     ));
-    assert_eq!(report["degraded_total"], 1);
+    assert_eq!(report["summary"]["degraded"], 1);
     assert_eq!(report["total"], 8);
-    assert_eq!(report["entries"].as_array().unwrap().len(), 1);
-    assert_eq!(report["entries"][0]["path"], "zz/bad.json");
-    assert_eq!(report["entries"][0]["status"], "degraded");
+    assert_eq!(report["data"].as_array().unwrap().len(), 1);
+    assert_eq!(report["data"][0]["path"], "zz/bad.json");
+    assert_eq!(report["data"][0]["status"], "degraded");
 }
 
 #[test]
@@ -665,8 +643,7 @@ fn a_query_cut_short_notes_it_on_stderr_only_in_text_and_a_whole_one_does_not() 
     };
     assert_eq!(
         text(&query(&["--limit", "2"]).stderr),
-        "note: showing the first 2 rows, and more matched; \
-         --limit <n> (at most 10000) or --all shows more\n"
+        "Showing 2 rows, and more match. --limit takes up to 10000, and --all shows every one.\n"
     );
     assert_eq!(text(&query(&["--limit", "2", "--json"]).stderr), "");
     assert_eq!(text(&query(&["--limit", "3"]).stderr), "");
@@ -683,11 +660,11 @@ fn a_json_path_gets_the_hint_without_json_only_when_that_path_names_an_entry() {
     assert_eq!(directory.code, 1);
     assert_eq!(
         text(&directory.stderr).lines().next().unwrap(),
-        "error: board::record::not_a_record: /notes.json is not a record"
+        "error: /notes.json is not a record"
     );
     assert!(!text(&directory.stderr).contains("leaves out .json"));
     let named = board_in(scenario.workdir(), &["get", "/projects/p.json"]);
-    assert!(text(&named.stderr).contains("hint: a logical path leaves out .json"));
+    assert!(text(&named.stderr).contains("help:  a logical path leaves out .json"));
     let missing = board_in(scenario.workdir(), &["get", "/other.json"]);
     assert_eq!(
         hint_of(&missing),
@@ -702,8 +679,10 @@ fn a_path_given_with_json_is_not_found_with_a_hint_and_without_it_is_found() {
     assert_eq!(refused.code, 1);
     assert_eq!(
         text(&refused.stderr),
-        "error: board::path::not_found: nothing is at /projects/p.json\n\
-         hint: a logical path leaves out .json: try `board get /projects/p`\n"
+        "error: nothing is at /projects/p.json\n\
+         \x20 key:   /projects/p.json (index 0)\n\
+         \x20 help:  a logical path leaves out .json: try `board get /projects/p`\n\
+         \x20 code:  board::path::not_found\n"
     );
     assert_eq!(
         board_in(scenario.workdir(), &["get", "/projects/p"]).code,
@@ -756,8 +735,8 @@ fn a_record_its_schema_refuses_names_the_field_and_why_and_a_valid_one_is_writte
     assert_eq!(refused.code, 1);
     assert!(
         text(&refused.stderr).starts_with(
-            "error: board::record::invalid: the record for /tasks/a \
-             fails its schema at \"/title\": 5 is not of type \"string\"\nhint: "
+            "error: the record for /tasks/a \
+             fails its schema at \"/title\": 5 is not of type \"string\"\n  help:  "
         ),
         "{}",
         text(&refused.stderr)
@@ -790,7 +769,7 @@ fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its
         );
     }
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
-    let bad = report["entries"]
+    let bad = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -800,20 +779,19 @@ fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its
 }
 
 #[test]
-fn a_path_refused_by_its_form_hints_the_logical_path_and_that_command_runs() {
+fn a_path_refused_by_its_form_offers_the_corrected_line_and_that_line_runs() {
     let scenario = board();
     for given in ["projects/p.json", "projects/p"] {
         let refused = board_in(scenario.workdir(), &["get", given]);
         assert_eq!(refused.code, 2);
         let stderr = text(&refused.stderr);
         assert!(
-            stderr.starts_with("error: board::usage::invalid: "),
+            stderr.starts_with(&format!("error: invalid value '{given}' for '<PATH>...': ")),
             "{stderr}"
         );
         assert!(
             stderr.ends_with(
-                "hint: a logical path starts with / and leaves out .json: \
-                 try `board get /projects/p`\n"
+                "  help:  run `board get /projects/p`\n  code:  board::usage::invalid\n"
             ),
             "{stderr}"
         );
@@ -823,13 +801,62 @@ fn a_path_refused_by_its_form_hints_the_logical_path_and_that_command_runs() {
         &["refs", "projects/p.json", "--limit", "5", "--json"],
     ));
     assert_eq!(refused["code"], "board::usage::invalid");
-    assert!(
-        refused["hint"]
-            .as_str()
-            .unwrap()
-            .ends_with("try `board refs /projects/p --limit 5 --json`"),
-        "{refused}"
+    assert_eq!(refused["fields"]["value"], "projects/p.json");
+    assert_eq!(refused["recovery"]["kind"], "run");
+    assert_eq!(
+        refused["recovery"]["call"],
+        "board refs /projects/p --limit 5 --json"
     );
+    assert_eq!(
+        board_in(scenario.workdir(), &["get", "/projects/p"]).code,
+        0
+    );
+}
+
+/// The corrected line is a call to run whether or not a word in it needs
+/// shell quoting: crumbkit quotes the word when it prints the call.
+#[test]
+fn a_corrected_line_is_a_call_with_a_word_that_needs_quoting_and_without_one() {
+    let scenario = board();
+    let recovery = |pointer: &str| {
+        let refused = board_in(
+            scenario.workdir(),
+            &["refs", "projects/p", "--field", pointer, "--json"],
+        );
+        assert_eq!(refused.code, 2);
+        let refused = json(&refused);
+        assert_eq!(refused["code"], "board::usage::invalid");
+        refused["recovery"].clone()
+    };
+    assert_eq!(
+        recovery("/a b"),
+        serde_json::json!({
+            "kind": "run",
+            "call": "board refs /projects/p --field '/a b' --json",
+        })
+    );
+    assert_eq!(
+        recovery("/ab"),
+        serde_json::json!({
+            "kind": "run",
+            "call": "board refs /projects/p --field /ab --json",
+        })
+    );
+    let ran = board_in(
+        scenario.workdir(),
+        &["refs", "/projects/p", "--field", "/a b", "--json"],
+    );
+    assert_eq!(ran.code, 0);
+}
+
+/// A path whose corrected form still does not parse keeps crumbkit's
+/// recovery, and a path that parses runs.
+#[test]
+fn a_path_that_stays_malformed_once_corrected_hints_the_help_and_a_well_formed_one_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["get", "projects//p"]);
+    assert_eq!(refused.code, 2);
+    assert_eq!(hint_of(&refused), "run `board get -h`");
     assert_eq!(
         board_in(scenario.workdir(), &["get", "/projects/p"]).code,
         0
@@ -841,11 +868,7 @@ fn a_refused_value_that_is_not_a_path_keeps_the_help_hint_and_a_valid_one_runs()
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["ls", "--limit", "0"]);
     assert_eq!(refused.code, 2);
-    assert!(
-        text(&refused.stderr).ends_with("hint: run `board ls --help` for its usage and examples\n"),
-        "{}",
-        text(&refused.stderr)
-    );
+    assert_eq!(hint_of(&refused), "run `board ls -h`");
     assert_eq!(
         board_in(scenario.workdir(), &["ls", "--limit", "1"]).code,
         0
@@ -860,8 +883,8 @@ fn a_query_naming_a_missing_table_hints_the_tables_there_are_and_a_real_one_runs
     let stderr = text(&refused.stderr);
     assert!(
         stderr.starts_with(
-            "error: board::query::invalid: the query cannot run: no such table: entires\n\
-             hint: the tables and views are "
+            "error: the query cannot run: no such table: entires\n\
+             \x20 help:  the tables and views are "
         ),
         "{stderr}"
     );
@@ -888,7 +911,7 @@ fn a_query_naming_a_missing_column_hints_the_columns_of_its_tables_and_a_real_on
     ));
     assert_eq!(refused["code"], "board::query::invalid");
     assert!(refused["fields"]["columns"]["entries"].is_array());
-    let hint = refused["hint"].as_str().unwrap();
+    let hint = refused["recovery"]["text"].as_str().unwrap();
     assert!(
         hint.starts_with("the columns are entries: source, path, logical, "),
         "{hint}"
@@ -899,7 +922,7 @@ fn a_query_naming_a_missing_column_hints_the_columns_of_its_tables_and_a_real_on
     ));
     assert_eq!(unnamed["fields"], json!({ "columns": {} }));
     assert_eq!(
-        unnamed["hint"],
+        unnamed["recovery"]["text"],
         "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns"
     );
     let admitted = board_in(
@@ -918,7 +941,7 @@ fn a_query_with_a_syntax_error_has_a_hint_that_says_to_fix_it_and_a_valid_one_ru
     ));
     assert_eq!(refused["code"], "board::query::invalid");
     let hint = Code::QueryInvalid.hint(&Fields::default());
-    assert_eq!(refused["hint"], hint);
+    assert_eq!(refused["recovery"]["text"], hint);
     assert!(hint.starts_with("fix the statement"), "{hint}");
     assert_eq!(board_in(scenario.workdir(), &["query", "SELECT 1"]).code, 0);
 }

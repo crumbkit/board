@@ -28,6 +28,8 @@ OVER_BUDGET = "board::get::over_budget"
 REFS_OVER_BUDGET = "board::refs::over_budget"
 # What a query report carries when it left rows out because they would pass its byte budget.
 QUERY_OVER_BUDGET = "board::query::over_budget"
+# The schema of the document Board prints when a command fails.
+FAILURE = "crumbkit/failure/v1"
 
 
 def literal(text: str) -> str:
@@ -49,7 +51,7 @@ class Board:
 
         Board's own error is `<plugin>::board::refused`, with Board's code and
         hint. Anything else that is not a document is `<plugin>::board::failed`.
-        A document whose `$type` is `partial` is the answer even when Board
+        A document whose `schema` is `partial` is the answer even when Board
         exits 1, as `refs` does when a path it was asked for is refused.
         """
         return self._read(*arguments, partial=partial)[0]
@@ -66,10 +68,10 @@ class Board:
         if not isinstance(parsed, dict):
             raise self._failed(arguments, ran, "printed no JSON document")
         document = cast("dict[str, Any]", parsed)
-        if ran.returncode != 0 and (partial is None or document.get("$type") != partial):
+        if ran.returncode != 0 and (partial is None or document.get("schema") != partial):
             code = document.get("code")
-            if document.get("$type") == "board/error/v1" and isinstance(code, str):
-                raise self._refused(arguments, code, str(document.get("message", "")), document.get("hint"))
+            if document.get("schema") == FAILURE and isinstance(code, str):
+                raise self._refused(arguments, code, str(document.get("message", "")), _hint(document))
             raise self._failed(arguments, ran, "failed without an error document")
         return document, ran
 
@@ -88,7 +90,9 @@ class Board:
     def _query(self, sql: str, *page: str) -> tuple[list[list[Any]], bool]:
         """`query`'s answer, with `page` the flags that say how many rows to return."""
         report = self.document("query", *page, sql)
-        rows, truncated, plugins = report.get("rows"), report.get("truncated"), report.get("plugins")
+        summary = report.get("summary")
+        plugins = cast("dict[str, Any]", summary).get("plugins") if isinstance(summary, dict) else None
+        rows, truncated = report.get("data"), report.get("truncated")
         if not isinstance(rows, list) or not isinstance(truncated, bool) or not isinstance(plugins, list):
             raise self._failed(("query",), None, "printed a report without rows")
         for failed in cast("list[dict[str, Any]]", plugins):
@@ -136,25 +140,19 @@ class Board:
 
     def _refs_run(self, paths: list[str], flags: list[str]) -> list[dict[str, Any] | None]:
         """The answers of one `board refs` run, up to the first path it left over its budget."""
-        report, ran = self._read("refs", "--all", *flags, "--", *paths, partial="board/refs-report/v1")
-        answers = report.get("answers")
-        if (
-            not isinstance(answers, list)
-            or len(cast("list[Any]", answers)) != len(paths)
-            or not all(isinstance(answer, dict) for answer in cast("list[Any]", answers))
-        ):
+        report, ran = self._read("refs", "--all", *flags, "--", *paths, partial="board/refs-report/v2")
+        answers = _answers(report, len(paths))
+        if answers is None:
             raise self._failed(("refs",), ran, "printed a report without one answer per path")
         found: list[dict[str, Any] | None] = []
-        for answer in cast("list[dict[str, Any]]", answers):
+        for refused, answer in answers:
             code = answer.get("code")
-            if answer.get("$type") != "board/error/v1":
+            if not refused:
                 found.append(answer)
-            elif code == REFS_OVER_BUDGET:
-                break
             elif code == "board::path::not_found":
                 found.append(None)
             else:
-                raise self._refused(("refs",), str(code), str(answer.get("message", "")), answer.get("hint"))
+                raise self._refused(("refs",), str(code), str(answer.get("message", "")), _hint(answer))
         if not found:
             raise self._failed(("refs",), ran, f"left every path unanswered as {REFS_OVER_BUDGET}")
         return found
@@ -195,19 +193,17 @@ class Board:
         A run that answers none of its paths would be asked again forever, so
         it is `<plugin>::board::failed`.
         """
-        report, ran = self._read("get", "--", *paths, partial="board/get-report/v1")
-        answers = report.get("answers")
-        found = [_file(answer) for answer in cast("list[Any]", answers)] if isinstance(answers, list) else []
-        if len(found) != len(paths) or any(answer is None for answer in found):
+        report, ran = self._read("get", "--", *paths, partial="board/get-report/v2")
+        answers = _answers(report, len(paths))
+        found = [(refused, answer if refused else _file(answer)) for refused, answer in answers or []]
+        if answers is None or any(answer is None for _, answer in found):
             raise self._failed(("get",), ran, "printed a report without one file or refusal per path")
         read: list[bytes | PluginError] = []
-        for answer in found:
-            if isinstance(answer, dict) and answer.get("code") == OVER_BUDGET:
-                break
-            if isinstance(answer, dict):
-                why, hint = str(answer.get("message", "")), answer.get("hint")
+        for refused, answer in found:
+            if refused and isinstance(answer, dict):
+                why, hint = str(answer.get("message", "")), _hint(answer)
                 read.append(self._refused(("get",), str(answer.get("code")), why, hint))
-            elif answer is not None:
+            elif isinstance(answer, bytes):
                 read.append(answer)
         if not read:
             raise self._failed(("get",), ran, f"left every path unread as {OVER_BUDGET}")
@@ -243,14 +239,60 @@ class Board:
         )
 
 
-def _file(answer: object) -> bytes | dict[str, Any] | None:
-    """A `board get` answer's bytes, the refusal it is, or `None` when it is neither."""
-    if not isinstance(answer, dict):
+def _hint(failure: dict[str, Any]) -> str | None:
+    """What a crumbkit failure says to do next: its hint, or the command it says to run."""
+    recovery = failure.get("recovery")
+    if not isinstance(recovery, dict):
         return None
-    answer = cast("dict[str, Any]", answer)
+    recovery = cast("dict[str, Any]", recovery)
+    text, call = recovery.get("text"), recovery.get("call")
+    if isinstance(text, str):
+        return text
+    return f"run `{call}`" if isinstance(call, str) else None
+
+
+def _answers(report: dict[str, Any], asked: int) -> list[tuple[bool, dict[str, Any]]] | None:
+    """Each answer of a batch report, in the order its paths were asked, up to the first left over its budget.
+
+    Board prints the files or references it found in `data` and each refused
+    path in `failures` with the `index` of its path. The one failure without
+    an index left the paths from `left_out_from` on unanswered. Each answer
+    is whether it is a refusal, and the answer. `None` when the report does
+    not hold one answer per path.
+    """
+    data, failures = report.get("data"), report.get("failures")
+    if not isinstance(data, list) or not isinstance(failures, list):
+        return None
+    refused: dict[int, dict[str, Any]] = {}
+    answered = asked
+    for failure in cast("list[Any]", failures):
+        if not isinstance(failure, dict):
+            return None
+        failure = cast("dict[str, Any]", failure)
+        index, fields = failure.get("index"), failure.get("fields")
+        left_out_from = cast("dict[str, Any]", fields).get("left_out_from") if isinstance(fields, dict) else None
+        if isinstance(index, int):
+            refused[index] = failure
+        elif failure.get("code") in (OVER_BUDGET, REFS_OVER_BUDGET) and isinstance(left_out_from, int):
+            answered = left_out_from
+        else:
+            return None
+    data = cast("list[Any]", data)
+    found = iter(data)
+    if len(data) + len(refused) != answered or any(index >= answered for index in refused):
+        return None
+    answers: list[tuple[bool, dict[str, Any]]] = []
+    for index in range(answered):
+        answer = refused.get(index) or next(found)
+        if not isinstance(answer, dict):
+            return None
+        answers.append((index in refused, cast("dict[str, Any]", answer)))
+    return answers
+
+
+def _file(answer: dict[str, Any]) -> bytes | None:
+    """A `board get` file's bytes, or `None` when it holds none."""
     text, encoded = answer.get("text"), answer.get("base64")
-    if answer.get("$type") == "board/error/v1":
-        return answer
     if isinstance(text, str):
         return text.encode()
     try:

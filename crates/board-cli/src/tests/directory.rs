@@ -22,7 +22,7 @@ fn a_command_runs_in_the_directory_named_and_without_it_finds_no_board() {
     let lost = board_in(outside.workdir(), &["get", "/projects/p"]);
     assert_eq!(lost.code, 1);
     assert!(
-        text(&lost.stderr).starts_with("error: board::config::not_found: "),
+        text(&lost.stderr).ends_with("  code:  board::config::not_found\n"),
         "{}",
         text(&lost.stderr)
     );
@@ -78,8 +78,8 @@ fn a_directory_that_does_not_exist_is_refused_and_one_that_exists_is_admitted() 
     assert_eq!(
         text(&refused.stderr),
         format!(
-            "error: board::usage::invalid: cannot change to 'nowhere': {} does not exist\n\
-             hint: {HINT}\n",
+            "error: cannot change to 'nowhere': {} does not exist\n  help:  {HINT}\n\
+             \x20 code:  board::usage::invalid\n",
             scenario.workdir().join("nowhere").display()
         )
     );
@@ -94,11 +94,13 @@ fn a_file_named_as_the_directory_is_refused_and_its_directory_is_admitted() {
     assert_eq!(refused.code, 2);
     let stderr = text(&refused.stderr);
     assert!(
-        stderr.starts_with("error: board::usage::invalid: cannot change to 'projects/p.json': "),
+        stderr.starts_with("error: cannot change to 'projects/p.json': "),
         "{stderr}"
     );
     assert!(
-        stderr.ends_with(&format!("p.json is not a directory\nhint: {HINT}\n")),
+        stderr.ends_with(&format!(
+            "p.json is not a directory\n  help:  {HINT}\n  code:  board::usage::invalid\n"
+        )),
         "{stderr}"
     );
     let admitted = board_in(scenario.workdir(), &["-C", "projects", "check"]);
@@ -112,7 +114,7 @@ fn a_refused_directory_is_an_error_document_with_json_and_an_admitted_one_is_a_r
     assert_eq!(refused.code, 2);
     assert!(refused.stderr.is_empty());
     let error = json(&refused);
-    assert_eq!(error["$type"], "board/error/v1");
+    assert_eq!(error["schema"], "crumbkit/failure/v1");
     assert_eq!(error["code"], "board::usage::invalid");
     assert_eq!(
         error["message"],
@@ -121,10 +123,10 @@ fn a_refused_directory_is_an_error_document_with_json_and_an_admitted_one_is_a_r
             scenario.workdir().join("nowhere").display()
         )
     );
-    assert_eq!(error["hint"], HINT);
+    assert_eq!(error["recovery"]["text"], HINT);
     let admitted = board_in(scenario.workdir(), &["-C", "projects", "--json", "check"]);
     assert_eq!(admitted.code, 0);
-    assert_eq!(json(&admitted)["$type"], "board/check-report/v1");
+    assert_eq!(json(&admitted)["schema"], "board/check-report/v2");
 }
 
 #[test]
@@ -143,8 +145,7 @@ fn a_directory_after_the_command_is_refused_and_before_it_is_admitted() {
     let refused = board_in(scenario.workdir(), &["check", "-C", "projects"]);
     assert_eq!(refused.code, 2);
     assert!(
-        text(&refused.stderr)
-            .starts_with("error: board::usage::invalid: unexpected argument '-C' found\n"),
+        text(&refused.stderr).starts_with("error: unexpected argument '-C' found"),
         "{}",
         text(&refused.stderr)
     );
@@ -158,8 +159,7 @@ fn a_group_without_its_command_after_a_directory_points_at_the_groups_help() {
     let refused = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
     assert_eq!(refused.code, 2);
     assert!(
-        text(&refused.stderr)
-            .ends_with("\nhint: run `board plugin --help` for its usage and examples\n"),
+        text(&refused.stderr).contains("\n  help:  run `board plugin -h`\n"),
         "{}",
         text(&refused.stderr)
     );
@@ -175,8 +175,8 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
     assert_eq!(
         text(&through.stderr),
         format!(
-            "error: board::usage::invalid: cannot change to 'projects/p.json/sub': {} is not a \
-             directory\nhint: {HINT}\n",
+            "error: cannot change to 'projects/p.json/sub': {} is not a \
+             directory\n  help:  {HINT}\n  code:  board::usage::invalid\n",
             scenario.workdir().join("projects/p.json/sub").display()
         )
     );
@@ -186,7 +186,7 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
     let stderr = text(&looped.stderr);
     assert!(
         stderr.starts_with(&format!(
-            "error: board::usage::invalid: cannot change to 'loop': {} cannot be read: ",
+            "error: cannot change to 'loop': {} cannot be read: ",
             scenario.workdir().join("loop").display()
         )),
         "{stderr}"
@@ -217,11 +217,10 @@ fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
     let refused = run(arguments, &context, &mut &b""[..], &mut Ran::default());
     assert_eq!(refused.code, 2);
     assert!(
-        text(&refused.stderr)
-            .ends_with("\nhint: run `board plugin --help` for its usage and examples\n"),
+        text(&refused.stderr).contains("\n  help:  run `board plugin -h`\n"),
         "{}",
         text(&refused.stderr)
     );
     let utf8 = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
-    assert!(text(&utf8.stderr).ends_with("`board plugin --help` for its usage and examples\n"));
+    assert!(text(&utf8.stderr).contains("\n  help:  run `board plugin -h`\n"));
 }

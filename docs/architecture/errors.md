@@ -1,7 +1,7 @@
 # Errors
 
-This file holds detail for docs/architecture.md. It lists the codes and the
-values an error names.
+This file holds detail for docs/architecture.md. It lists the codes, the shape
+of a report and an error, and the values an error names.
 
 ## Codes
 
@@ -22,23 +22,55 @@ The v0 set:
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `query` | `timeout`: the statement ran longer than 1 s |
 | `query` | `over_budget`: the next row would take the rows past 64 MiB, so the report carries this code beside its rows and exits 0; or the first row, or one value, is longer than 64 MiB, which is refused and exits 1 |
-| `get` | `over_budget`: the run's output already reached 64 MiB, so it left this path unread |
-| `refs` | `over_budget`: the run's output already reached 64 MiB, so it left this path unanswered |
+| `get` | `over_budget`: the run's output already reached 64 MiB, so it left the paths in `left_out` unread |
+| `refs` | `over_budget`: the run's output already reached 64 MiB, so it left the paths in `left_out` unanswered |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `plugin` | see docs/plugins.md |
 | `usage` | `invalid`: the command line was refused, exit 2 |
 
+## Reports and failures
+
+`--json` prints a command's report in crumbkit's envelope: `schema`
+`board/<command>-report/v2`, the report as `data`, and `failures`, one failure
+document for each path refused. A listing adds `total`, `truncated` and
+`summary`, which holds what describes the whole listing, such as `query`'s
+`columns`. The envelope has no field for notes, so they go to stderr.
+
+Board prints an error in crumbkit's `crumbkit/failure/v1` shape: `code`,
+`message`, `fields` and `recovery`. A failure inside a report's `failures` also
+has `key`, the path asked for, and `index`, its position among the paths asked.
+A command that fails as a whole prints the document alone and exits 1, or 2
+for `board::usage::invalid`.
+
+`recovery` says what to try next. Its `kind` is `run`, with `call`, a command
+line that runs as written; `hint`, with `text`, a sentence for a reader, used
+when the next step needs a value only the reader has; or `none`, with
+`reason`, such as `the plugin gave no hint` for a plugin's own code. A path
+refused only for its form, such as one without its leading `/`, gets a `run`
+recovery holding the corrected line, with any word quoted that a shell would
+split.
+
+Text prints the same failure as `error: <message>`, then a `key:` line when it
+has one, a `help:` line holding the call or the hint text, and a `code:` line.
+A `get` or `refs` run past its byte budget gives one failure, without a `key`,
+whose `fields` hold `left_out` (each path not answered), `left_out_from` and
+`budget`. Its recovery is `run` with `call` `board get <PATH>...` and `all`
+`left_out`: run that command with every path in `left_out`. The call carries
+none of the run's flags, such as `--json`, `--field` or `-C`, so add them
+again. Text prints that
+command with the paths filled in, on stderr.
+
 ## What an error names
 
-A `board/error/v1` document carries `fields` when the error knows any value at
+A `crumbkit/failure/v1` document carries `fields` when the error knows any value at
 fault. Each key appears only when Board knows its value. The table lists the
 keys of Board's own codes; [docs/plugins.md](../plugins.md) says what a
 plugin's own code carries.
 
 | Key | JSON type | Codes that carry it | Meaning |
 | --- | --- | --- | --- |
-| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get` or leaving it unread (`get::over_budget`, `refs::over_budget`), writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, a mount for a mount's code or for `put::through_mount`, or the file that a refused `put` reaches for `record::not_a_record` |
+| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get`, writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, a mount for a mount's code or for `put::through_mount`, or the file that a refused `put` reaches for `record::not_a_record` |
 | `ancestor` | string | `path::not_found` | the deepest ancestor of the missing path that exists. The hint lists it, unless the path ends `.json` and the path without `.json` resolves; then the hint names that path |
 | `blob` | string | a code `get` gives for a file whose bytes it read (`json`, `record`, and `schema::invalid` for a schema in the reserved `board` namespace); `put::stale` | the blob the path holds |
 | `pointer` | string | `record::invalid`, `ref::malformed`, `plugin::bad_input`; `schema::invalid` from `put`, as `/$type` | a JSON pointer into the record or the call's input |

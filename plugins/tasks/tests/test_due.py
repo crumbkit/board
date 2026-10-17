@@ -14,8 +14,8 @@ def due(board: Board, before: str) -> list[tuple[str, str, str]]:
     ran = board.run("--json", "call", "tasks.due", stdin=json.dumps({"before": before}))
     assert "in memory" not in ran.stderr, ran.stderr
     report = json.loads(ran.stdout)
-    assert report["$type"] == "board/call-report/v1", report
-    output = report["output"]
+    assert report["schema"] == "board/call-report/v2", report
+    output = report["data"]["output"]
     assert output["truncated"] is False
     return [(item["path"], item["title"], item["due"]) for item in output["tasks"]]
 
@@ -58,8 +58,8 @@ def test_board_query_joins_the_tasks_table_with_entries(board: Board) -> None:
         "SELECT e.logical, t.status, t.due FROM p_tasks.tasks AS t"
         " JOIN entries AS e ON e.blob = t.blob ORDER BY e.logical",
     )
-    assert report["plugins"] == []
-    assert report["rows"] == [["/tasks/a", "open", "2026-10-01"], ["/tasks/b", "done", None]]
+    assert report["summary"]["plugins"] == []
+    assert report["data"] == [["/tasks/a", "open", "2026-10-01"], ["/tasks/b", "done", None]]
 
 
 def test_a_date_that_is_not_a_date_is_refused_by_board_before_the_plugin_runs(board: Board) -> None:
@@ -67,14 +67,14 @@ def test_a_date_that_is_not_a_date_is_refused_by_board_before_the_plugin_runs(bo
     refused = board.json("call", "tasks.due", stdin='{"before": "2026-13-01"}')
     assert refused["code"] == "board::plugin::bad_input"
     admitted = board.json("call", "tasks.due", stdin='{"before": "2026-12-01"}')
-    assert admitted["$type"] == "board/call-report/v1"
+    assert admitted["schema"] == "board/call-report/v2"
 
 
 def test_a_second_plugin_calls_due_by_capability(board: Board) -> None:
     board.write("tasks/a.json", task("A", due="2026-10-01"))
     report = board.json("call", "digest.overdue", stdin='{"before": "2026-10-02"}')
-    assert report["$type"] == "board/call-report/v1", report
-    assert report["output"] == {
+    assert report["schema"] == "board/call-report/v2", report
+    assert report["data"]["output"] == {
         "overdue": {"tasks": [{"path": "/tasks/a", "title": "A", "due": "2026-10-01"}], "truncated": False},
     }
 
@@ -82,7 +82,7 @@ def test_a_second_plugin_calls_due_by_capability(board: Board) -> None:
 def tasks_table(board: Board) -> tuple[list[list[object]], list[object]]:
     """The tasks table's titles through `board query`, and the plugins it reports."""
     report = board.json("query", "SELECT title FROM p_tasks.tasks ORDER BY title")
-    return report["rows"], report["plugins"]
+    return report["data"], report["summary"]["plugins"]
 
 
 def test_a_record_the_boards_schema_admits_but_the_plugin_cannot_read_gets_no_row(board: Board) -> None:

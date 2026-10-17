@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{Code, LogicalPath, ObjectId, RecordType};
 
-/// What an error knows about the values at fault, for `board/error/v1`
+/// What an error knows about the values at fault, for a failure's
 /// `fields` and for filling in its hint. Each is `None` when unknown.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Fields {
@@ -82,7 +82,7 @@ impl Fields {
         }
     }
 
-    /// The values that are known, by their `board/error/v1` names.
+    /// The values that are known, by their names in a failure's `fields`.
     pub fn json(&self) -> Map<String, Value> {
         let strings = [
             ("path", self.path.as_ref().map(ToString::to_string)),

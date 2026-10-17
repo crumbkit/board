@@ -150,7 +150,7 @@ pub enum CallFailed {
 }
 
 impl CallFailed {
-    /// This failure as `board/error/v1` reports it: Board's code or the
+    /// This failure as Board reports it: Board's code or the
     /// plugin's own, with the end of the plugin's stderr when it ran.
     pub fn refusal(&self) -> Refusal {
         match self {

@@ -1,0 +1,11 @@
+10 entries, 0 degraded
+ok /.board/board
+ok /.board/types/lr/project/v1.schema
+ok /.board/types/lr/task/v1.schema
+ok /README.md
+ok /projects/p
+ok /tasks/a
+ok /tasks/b
+ok /tasks/c
+ok /vendor/lib
+ok /vendor/lib/a.md

@@ -4,7 +4,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -26,8 +26,13 @@ def printing(monkeypatch: pytest.MonkeyPatch, stdout: bytes, code: int = 0, stde
 
 
 def report(rows: list[list[Any]], *, truncated: bool, plugins: list[dict[str, str]] | None = None) -> bytes:
-    """A `board/query-report/v1` holding `rows`, and `plugins` that failed."""
-    document = {"$type": "board/query-report/v1", "rows": rows, "truncated": truncated, "plugins": plugins or []}
+    """A `board/query-report/v2` holding `rows`, and `plugins` that failed."""
+    document = {
+        "schema": "board/query-report/v2",
+        "data": rows,
+        "truncated": truncated,
+        "summary": {"plugins": plugins or []},
+    }
     return json.dumps(document).encode()
 
 
@@ -42,17 +47,27 @@ def test_a_board_that_prints_no_json_is_a_failure_and_one_that_does_is_read(monk
 
 
 def test_a_board_error_is_a_refusal_carrying_boards_code_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
-    error = {"$type": "board/error/v1", "code": "board::query::invalid", "message": "no such table", "hint": "fix it"}
+    error = {
+        "schema": "crumbkit/failure/v1",
+        "code": "board::query::invalid",
+        "message": "no such table",
+        "recovery": {"kind": "hint", "text": "fix it"},
+    }
     printing(monkeypatch, json.dumps(error).encode(), code=1)
     with pytest.raises(PluginError) as refused:
         DEMO.rows("SELECT 1")
     assert refused.value.code == "demo::board::refused"
     assert refused.value.fields == {"code": "board::query::invalid"}
     assert refused.value.message == "`board query` refused with board::query::invalid: no such table; fix it"
+    error["recovery"] = {"kind": "run", "call": "board query -h"}
+    printing(monkeypatch, json.dumps(error).encode(), code=1)
+    with pytest.raises(PluginError) as refused:
+        DEMO.rows("SELECT 1")
+    assert refused.value.message.endswith("no such table; run `board query -h`")
 
 
 def test_a_failed_board_without_an_error_document_is_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    printing(monkeypatch, json.dumps({"$type": "board/query-report/v1"}).encode(), code=1)
+    printing(monkeypatch, json.dumps({"schema": "board/query-report/v2"}).encode(), code=1)
     with pytest.raises(PluginError) as refused:
         DEMO.rows("SELECT 1")
     assert refused.value.code == "demo::board::failed"
@@ -79,8 +94,9 @@ def test_rows_asks_board_for_every_row_and_query_for_at_most_its_limit(monkeypat
 def test_rows_refuses_a_query_cut_at_boards_byte_budget_and_query_returns_it_as_truncated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    over = {"$type": "board/query-report/v1", "rows": [[1]], "truncated": True, "plugins": []}
-    printing(monkeypatch, json.dumps({**over, "code": board.QUERY_OVER_BUDGET}).encode())
+    summary: dict[str, Any] = {"plugins": [], "code": board.QUERY_OVER_BUDGET}
+    over = {"schema": "board/query-report/v2", "data": [[1]], "truncated": True, "summary": summary}
+    printing(monkeypatch, json.dumps(over).encode())
     assert DEMO.query("SELECT 1") == ([[1]], True)
     with pytest.raises(PluginError) as refused:
         DEMO.rows("SELECT 1")
@@ -88,6 +104,28 @@ def test_rows_refuses_a_query_cut_at_boards_byte_budget_and_query_returns_it_as_
     assert "ORDER BY" in refused.value.message
     printing(monkeypatch, json.dumps({**over, "truncated": False}).encode())
     assert DEMO.rows("SELECT 1") == [[1]]
+
+
+def batch(command: str, asked: tuple[str, ...] | list[str], answers: list[Any]) -> bytes:
+    """A `board/<command>-report/v2` answering each of `asked` as crumbkit prints a batch.
+
+    An answer with a `code` is a refused path, in `failures` with its index.
+    The first answer whose code is an over-budget code leaves that path and
+    every one after it out, as one failure without an index.
+    """
+    data: list[Any] = []
+    failures: list[dict[str, Any]] = []
+    for index, answer in enumerate(answers):
+        code = cast("dict[str, Any]", answer).get("code") if isinstance(answer, dict) else None
+        if code in (board.OVER_BUDGET, board.REFS_OVER_BUDGET):
+            fields = {"left_out": list(asked[index:]), "left_out_from": index, "budget": 64}
+            failures.append({"code": code, "message": "not answered", "fields": fields})
+            break
+        if code is None:
+            data.append(answer)
+        else:
+            failures.append({**answer, "key": asked[index], "index": index})
+    return json.dumps({"schema": f"board/{command}-report/v2", "data": data, "failures": failures}).encode()
 
 
 def failed(plugin: str, code: str) -> bytes:
@@ -125,12 +163,12 @@ def test_a_query_that_could_not_attach_this_plugins_database_is_read_and_its_ext
 def test_a_query_report_without_a_list_of_plugins_is_a_failure_and_one_with_it_is_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    without = {"$type": "board/query-report/v1", "rows": [[1]], "truncated": False}
+    without = {"schema": "board/query-report/v2", "data": [[1]], "truncated": False}
     printing(monkeypatch, json.dumps(without).encode())
     with pytest.raises(PluginError) as refused:
         DEMO.rows("SELECT 1")
     assert refused.value.code == "demo::board::failed"
-    printing(monkeypatch, json.dumps({**without, "plugins": []}).encode())
+    printing(monkeypatch, json.dumps({**without, "summary": {"plugins": []}}).encode())
     assert DEMO.rows("SELECT 1") == [[1]]
 
 
@@ -144,13 +182,14 @@ def test_a_refs_report_without_one_dict_answer_per_path_is_a_failure_keeping_std
         (["/a"], [answer, answer]),
         (["/a", "/b"], [answer, "/b"]),
     ):
-        printing(monkeypatch, json.dumps({"$type": "board/refs-report/v1", "answers": answers}).encode())
+        document = {"schema": "board/refs-report/v2", "data": answers, "failures": []}
+        printing(monkeypatch, json.dumps(document).encode())
         with pytest.raises(PluginError) as refused:
             DEMO.refs(paths)
         assert refused.value.code == "demo::board::failed"
         assert "printed a report without one answer per path" in refused.value.message
         assert refused.value.fields == {"stderr": "logs"}
-    printing(monkeypatch, json.dumps({"$type": "board/refs-report/v1", "answers": [answer, answer]}).encode())
+    printing(monkeypatch, batch("refs", ["/a", "/b"], [answer, answer]))
     assert DEMO.refs(["/a", "/b"]) == [answer, answer]
 
 
@@ -159,7 +198,7 @@ def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it
 ) -> None:
     runs: list[tuple[str, ...]] = []
     answer = {"location": {"display": "/-a"}}
-    report = json.dumps({"$type": "board/refs-report/v1", "answers": [answer]}).encode()
+    report = batch("refs", ["-a"], [answer])
 
     def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
@@ -179,8 +218,7 @@ def answering_each_path(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]
     def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
-        answers = [{"location": {"display": path}} for path in asked]
-        report = json.dumps({"$type": "board/refs-report/v1", "answers": answers}).encode()
+        report = batch("refs", asked, [{"location": {"display": path}} for path in asked])
         return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
 
     monkeypatch.setattr(Board, "_run", run)
@@ -215,9 +253,9 @@ def answering_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple
     def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
-        over = {"$type": "board/error/v1", "code": board.REFS_OVER_BUDGET, "message": "not answered"}
+        over = {"code": board.REFS_OVER_BUDGET}
         answers = [{"location": {"display": path}} if at < budget else over for at, path in enumerate(asked)]
-        report = json.dumps({"$type": "board/refs-report/v1", "answers": answers}).encode()
+        report = batch("refs", asked, answers)
         return subprocess.CompletedProcess(["board", *arguments], 1 if budget < len(asked) else 0, report, b"")
 
     monkeypatch.setattr(Board, "_run", run)
@@ -264,13 +302,14 @@ def test_a_get_report_without_one_readable_answer_per_path_is_a_failure_keeping_
         (["/a"], [{"location": {"display": "/a"}}]),
         (["/a"], [{"base64": "not base64!"}]),
     ):
-        printing(monkeypatch, json.dumps({"$type": "board/get-report/v1", "answers": answers}).encode())
+        document = {"schema": "board/get-report/v2", "data": answers, "failures": []}
+        printing(monkeypatch, json.dumps(document).encode())
         with pytest.raises(PluginError) as refused:
             DEMO.get(paths)
         assert refused.value.code == "demo::board::failed"
         assert "printed a report without one file or refusal per path" in refused.value.message
         assert refused.value.fields == {"stderr": "logs"}
-    printing(monkeypatch, json.dumps({"$type": "board/get-report/v1", "answers": [text, raw]}).encode())
+    printing(monkeypatch, batch("get", ["/a", "/b"], [text, raw]))
     assert DEMO.get(["/a", "/b"]) == [b"one two", b"\xff\x00a"]
 
 
@@ -278,7 +317,7 @@ def test_get_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runs: list[tuple[str, ...]] = []
-    report = json.dumps({"$type": "board/get-report/v1", "answers": [{"text": "x"}]}).encode()
+    report = batch("get", ["-a"], [{"text": "x"}])
 
     def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
@@ -301,9 +340,9 @@ def getting_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple[s
     def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
         asked = arguments[arguments.index("--") + 1 :]
         runs.append(asked)
-        over = {"$type": "board/error/v1", "code": board.OVER_BUDGET, "message": "not read"}
+        over = {"code": board.OVER_BUDGET}
         answers = [{"text": path} if at < budget else over for at, path in enumerate(asked)]
-        report = json.dumps({"$type": "board/get-report/v1", "answers": answers}).encode()
+        report = batch("get", asked, answers)
         return subprocess.CompletedProcess(["board", *arguments], 1 if budget < len(asked) else 0, report, b"")
 
     monkeypatch.setattr(Board, "_run", run)
@@ -378,7 +417,7 @@ def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Board:
 def test_one_run_asks_at_most_as_many_paths_as_the_built_board_says_one_run_takes(real: Board) -> None:
     for command in ("refs", "get"):
         ran = subprocess.run(["board", command, "--help"], cwd=real.root, capture_output=True, check=True, text=True)
-        assert f"One run takes at most {board.PATHS_PER_RUN} paths" in " ".join(ran.stdout.split())
+        assert f"At most {board.PATHS_PER_RUN} paths" in " ".join(ran.stdout.split())
     assert DEMO.paths_per_run == board.PATHS_PER_RUN
 
 

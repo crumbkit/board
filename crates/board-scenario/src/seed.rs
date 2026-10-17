@@ -19,9 +19,9 @@ pub struct Exhibit {
     pub code: Option<Code>,
 }
 
-/// Codes the CLI's no-dead-ends property cannot provoke through the `board`
-/// command line, why, and where each is tested instead. The property
-/// provokes every other code, from the seed board or another small fixture.
+/// Codes the CLI's recovery and twin checks cannot provoke through the
+/// `board` command line, why, and where each is tested instead. The checks
+/// provoke every other code, from the seed board or another small fixture.
 pub const NOT_REPRODUCED: [(Code, &str); 7] = [
     (
         Code::IndexFailed,
@@ -40,13 +40,15 @@ pub const NOT_REPRODUCED: [(Code, &str); 7] = [
     ),
     (
         Code::GetOverBudget,
-        "the CLI's 64 MiB get budget needs files near the 16 MiB file limit; \
-         board-cli/src/tests/get.rs passes render::get budgets of a few bytes",
+        "a run that prints the CLI's 64 MiB get budget is too costly for a gate; \
+         a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_fails_the_run \
+         in board-cli/src/tests/get.rs passes render::get a budget of a few kilobytes",
     ),
     (
         Code::RefsOverBudget,
-        "the CLI's 64 MiB refs budget needs a board of millions of references; \
-         board-cli/src/tests/refs.rs passes render::refs budgets of a few bytes",
+        "a run that prints the CLI's 64 MiB refs budget is too costly for a gate; \
+         a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slot \
+         in board-cli/src/tests/refs.rs passes render::refs budgets of a few bytes as text and a few kilobytes as JSON",
     ),
     (
         Code::RefsTargetChanged,

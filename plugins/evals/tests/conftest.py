@@ -66,8 +66,8 @@ class Board:
     def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
         """The output of `board call evals.<capability>`."""
         report = self.json("call", f"evals.{capability}", stdin=json.dumps(given))
-        assert report["$type"] == "board/call-report/v1", report
-        output: dict[str, Any] = report["output"]
+        assert report["schema"] == "board/call-report/v2", report
+        output: dict[str, Any] = report["data"]["output"]
         return output
 
     def paths(self, capability: str, given: dict[str, Any]) -> list[str]:

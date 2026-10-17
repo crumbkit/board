@@ -118,8 +118,8 @@ on stdin and:
    holding `output`, or `board/error/v1` holding `code`, `message` and typed
    `fields`;
 6. validates `output` against `outputSchema` and prints it: as JSON in text
-   mode, and wrapped in `board/call-report/v1` `{plugin, capability, output}`
-   with `--json`.
+   mode, and with `--json` as `data` `{plugin, capability, output}` of a
+   `board/call-report/v2`.
 
 A plugin exits 0 with a result, or 1 with an error whose code is
 `<plugin>::<area>::<reason>`, starting with its own name. Board reports that

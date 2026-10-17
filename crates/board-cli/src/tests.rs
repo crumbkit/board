@@ -99,12 +99,34 @@ fn json(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+/// Each answer of a batch document in the order of its keys: crumbkit
+/// prints the successes in `data` and the failures in `failures`, each
+/// failure with the index of its key.
+fn answers(output: &Output) -> Vec<Value> {
+    let report = json(output);
+    let mut data = report["data"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter();
+    let failures = report["failures"].as_array().cloned().unwrap_or_default();
+    let count = data.len() + failures.len();
+    (0..count)
+        .map(|index| {
+            (failures.iter())
+                .find(|failure| failure["index"] == index)
+                .cloned()
+                .unwrap_or_else(|| data.next().unwrap_or_default())
+        })
+        .collect()
+}
+
 /// The one answer in a `board refs --json` run of one path.
 fn answer(output: &Output) -> Value {
-    let report = json(output);
-    assert_eq!(report["$type"], "board/refs-report/v1");
-    assert_eq!(report["answers"].as_array().map(Vec::len), Some(1));
-    report["answers"][0].clone()
+    assert_eq!(json(output)["schema"], "board/refs-report/v2");
+    let answers = answers(output);
+    assert_eq!(answers.len(), 1);
+    answers[0].clone()
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -116,7 +138,7 @@ fn hint_of(output: &Output) -> String {
     let stderr = text(&output.stderr);
     stderr
         .lines()
-        .find_map(|line| line.strip_prefix("hint: "))
+        .find_map(|line| line.strip_prefix("  help:  "))
         .unwrap_or_default()
         .to_owned()
 }
@@ -171,11 +193,10 @@ fn check_prints_one_line_per_entry_and_fails_when_any_is_degraded() {
     let scenario = board();
     let clean = board_in(scenario.workdir(), &["check"]);
     assert_eq!(clean.code, 0);
-    assert!(
-        text(&clean.stdout)
-            .lines()
-            .all(|line| line.starts_with("ok "))
-    );
+    let printed = text(&clean.stdout);
+    let mut lines = printed.lines();
+    assert_eq!(lines.next(), Some("4 entries, 0 degraded"));
+    assert!(lines.all(|line| line.starts_with("ok ")), "{printed}");
     scenario.write("bad.json", Item::File("{"));
     let degraded = board_in(scenario.workdir(), &["check"]);
     assert_eq!(degraded.code, 1);
@@ -191,9 +212,9 @@ fn check_json_is_a_check_report() {
     scenario.write("bad.json", Item::File("{"));
     let output = board_in(scenario.workdir(), &["check", "--json"]);
     let report = json(&output);
-    assert_eq!(report["$type"], "board/check-report/v1");
-    assert_eq!(report["degraded"], true);
-    let bad = report["entries"]
+    assert_eq!(report["schema"], "board/check-report/v2");
+    assert_eq!(report["summary"]["degraded"], 1);
+    let bad = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -247,7 +268,7 @@ fn check_says_where_and_why_an_entry_is_degraded_and_how_many_failures_it_has() 
     }
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
     let entry = |path: &str| {
-        report["entries"]
+        report["data"]
             .as_array()
             .unwrap()
             .iter()
@@ -364,8 +385,8 @@ fn init_makes_a_repository_a_board_and_says_what_to_run_next() {
     assert!(text(&again.stdout).ends_with(" is already a board\n"));
     assert_eq!(text(&again.stderr), "");
     let again = json(&board_in(scenario.workdir(), &["init", "--json"]));
-    assert_eq!(again["$type"], "board/init-report/v1");
-    assert_eq!(again["created"], false);
+    assert_eq!(again["schema"], "board/init-report/v2");
+    assert_eq!(again["data"]["created"], false);
 }
 
 #[test]
@@ -383,13 +404,13 @@ fn check_outside_a_repository_hints_git_init_and_in_a_repository_without_a_board
     let outside = tempfile::tempdir().unwrap();
     let refused = json(&board_in(outside.path(), &["check", "--json"]));
     assert_eq!(refused["code"], "board::config::not_found");
-    let hint = refused["hint"].as_str().unwrap();
+    let hint = refused["recovery"]["text"].as_str().unwrap();
     assert!(hint.starts_with("run `git init` first"), "{hint}");
     assert!(!hint.contains("board init"), "{hint}");
     let repository = Scenario::new();
     let refused = json(&board_in(repository.workdir(), &["check", "--json"]));
     assert_eq!(refused["code"], "board::config::not_found");
-    let hint = refused["hint"].as_str().unwrap();
+    let hint = refused["recovery"]["text"].as_str().unwrap();
     assert!(hint.contains("`board init` makes it a board"), "{hint}");
 }
 
@@ -401,14 +422,14 @@ fn ls_lists_directories_and_entries() {
     assert_eq!(output.code, 0);
     assert_eq!(
         text(&output.stdout),
-        "record ok /projects/p\ndirectory /projects/sub/\n"
+        "/projects:\nrecord ok /projects/p\ndirectory /projects/sub/\n"
     );
     let report = json(&board_in(
         scenario.workdir(),
         &["ls", "/projects", "--json"],
     ));
-    assert_eq!(report["$type"], "board/ls-report/v1");
-    assert_eq!(report["entries"][1]["kind"], "directory");
+    assert_eq!(report["schema"], "board/ls-report/v2");
+    assert_eq!(report["data"][1]["kind"], "directory");
 }
 
 #[test]
@@ -419,16 +440,18 @@ fn a_failure_is_an_error_line_or_an_error_document() {
     assert!(plain.stdout.is_empty());
     assert_eq!(
         text(&plain.stderr),
-        "error: board::path::not_found: nothing is at /missing\n\
-         hint: run `board ls /` to see what is there; paths leave out `.json`\n"
+        "error: nothing is at /missing\n\
+         \x20 key:   /missing (index 0)\n\
+         \x20 help:  run `board ls /` to see what is there; paths leave out `.json`\n\
+         \x20 code:  board::path::not_found\n"
     );
     let document = board_in(scenario.workdir(), &["get", "/missing", "--json"]);
     assert_eq!(document.code, 1);
     let error = get::got(&document);
-    assert_eq!(error["$type"], "board/error/v1");
+    assert_eq!(error["key"], "/missing");
     assert_eq!(error["code"], "board::path::not_found");
     assert_eq!(
-        error["hint"],
+        error["recovery"]["text"],
         Code::PathNotFound.hint(&Fields {
             ancestor: Some(LogicalPath::root()),
             ..Fields::at(&"/missing".parse().unwrap())
@@ -439,7 +462,7 @@ fn a_failure_is_an_error_line_or_an_error_document() {
 /// Every entry `check --json` reports, as an exhibit, sorted by path.
 fn exhibits(report: &Value) -> Vec<Exhibit> {
     let text = |value: &Value| value.as_str().map(str::to_owned);
-    let reported = report["entries"]
+    let reported = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -501,8 +524,8 @@ fn check_gives_each_seed_exhibit_its_code_from_a_warm_index_and_a_cold_one() {
     );
     let warm = json(&board_cached(dir, Some(cache.path()), &arguments));
     let memory = json(&board_cached(dir, None, &arguments));
-    assert_eq!(warm["entries"], cold["entries"]);
-    assert_eq!(memory["entries"], cold["entries"]);
+    assert_eq!(warm["data"], cold["data"]);
+    assert_eq!(memory["data"], cold["data"]);
     let reported = exhibits(&cold);
     let described = by_path(seed.exhibits);
     let degraded = |exhibits: &[Exhibit]| -> Vec<Exhibit> {
@@ -553,6 +576,31 @@ fn ls_says_on_stderr_when_the_index_is_in_memory() {
     );
 }
 
+/// crumbkit's JSON document has no place for a note, so Board prints the
+/// index's note on stderr after it, as it does in text.
+#[test]
+fn a_json_report_says_on_stderr_when_the_index_is_in_memory_and_nothing_when_it_is_kept() {
+    let scenario = board();
+    let cache = tempfile::tempdir().unwrap();
+    let lines: [&[&str]; 4] = [
+        &["check", "--json"],
+        &["ls", "--json"],
+        &["query", "SELECT 1", "--json"],
+        &["refs", "/projects/p", "--json"],
+    ];
+    for words in lines {
+        let kept = board_cached(scenario.workdir(), Some(cache.path()), words);
+        assert_eq!(text(&kept.stderr), "", "{words:?}");
+        let memory = board_cached(scenario.workdir(), None, words);
+        assert_eq!(memory.stdout, kept.stdout, "{words:?}");
+        assert_eq!(
+            text(&memory.stderr),
+            "note: the index is in memory for this run: there is no cache directory\n",
+            "{words:?}"
+        );
+    }
+}
+
 #[test]
 fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
     let library = Scenario::new();
@@ -566,7 +614,7 @@ fn check_names_a_mounted_entry_by_its_logical_path_and_its_source() {
     assert!(text(&output.stdout).contains("ok /vendor/lib/notes/a.md\n"));
     assert!(text(&output.stdout).contains("ok /vendor/lib\n"));
     let report = json(&board_in(scenario.workdir(), &["check", "--json"]));
-    let entry = report["entries"]
+    let entry = report["data"]
         .as_array()
         .unwrap()
         .iter()
@@ -601,8 +649,8 @@ fn query_prints_its_columns_then_one_json_row_per_line() {
             "--json",
         ],
     ));
-    assert_eq!(report["$type"], "board/query-report/v1");
-    assert_eq!(report["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(report["schema"], "board/query-report/v2");
+    assert_eq!(report["data"].as_array().unwrap().len(), 1);
     assert_eq!(report["truncated"], true);
 }
 
@@ -668,48 +716,7 @@ fn refs_json_is_one_report_whose_answers_match_their_golden_bytes() {
 }
 
 /// `board refs /tasks/a /tasks/zz --json`, with the board's root as `<root>`.
-const GOLDEN_REFS: &str = r#"{
-  "$type": "board/refs-report/v1",
-  "answers": [
-    {
-      "from": [
-        {
-          "location": {
-            "display": "/projects/p",
-            "path": "projects/p.json",
-            "pointers": [],
-            "repository": "<root>",
-            "source": "worktree"
-          },
-          "pointer": "/project",
-          "status": "ok",
-          "target": "/projects/p"
-        }
-      ],
-      "location": {
-        "display": "/tasks/a",
-        "path": "tasks/a.json",
-        "pointers": [],
-        "repository": "<root>",
-        "source": "worktree"
-      },
-      "missing": null,
-      "to": [],
-      "total": 1,
-      "truncated": false
-    },
-    {
-      "$type": "board/error/v1",
-      "code": "board::path::not_found",
-      "fields": {
-        "ancestor": "/tasks",
-        "path": "/tasks/zz"
-      },
-      "hint": "run `board ls /tasks` to see what is there; paths leave out `.json`",
-      "message": "nothing is at /tasks/zz"
-    }
-  ]
-}
+const GOLDEN_REFS: &str = r#"{"schema":"board/refs-report/v2","data":[{"from":[{"location":{"display":"/projects/p","path":"projects/p.json","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/project","status":"ok","target":"/projects/p"}],"location":{"display":"/tasks/a","path":"tasks/a.json","pointers":[],"repository":"<root>","source":"worktree"},"missing":null,"to":[],"total":1,"truncated":false}],"failures":[{"key":"/tasks/zz","index":1,"code":"board::path::not_found","message":"nothing is at /tasks/zz","fields":{"ancestor":"/tasks","path":"/tasks/zz"},"recovery":{"kind":"hint","text":"run `board ls /tasks` to see what is there; paths leave out `.json`"}}]}
 "#;
 
 #[test]
@@ -725,7 +732,7 @@ fn refs_of_several_paths_answers_each_as_alone_and_one_that_names_nothing_fails_
     assert_eq!(admitted.code, 0);
     assert_eq!(
         text(&admitted.stdout),
-        "/tasks/a from /project /projects/p ok\n/projects/p to /tasks/a /project\n"
+        "==> /tasks/a <==\nfrom /project /projects/p ok\n\n==> /projects/p <==\nto /tasks/a /project\n"
     );
     assert_eq!(text(&admitted.stderr), "");
     let refused = run(&["refs", "/tasks/a", "/tasks/zz", "/projects/p"]);
@@ -735,15 +742,11 @@ fn refs_of_several_paths_answers_each_as_alone_and_one_that_names_nothing_fails_
     let alone = text(&run(&["refs", "/tasks/zz"]).stderr);
     assert_eq!(
         text(&refused.stderr),
-        alone.replacen("error: ", "error: /tasks/zz: ", 1).replacen(
-            "hint: ",
-            "hint: /tasks/zz: ",
-            1
-        ),
-        "the refusal is printed as it is alone, each line naming the path asked"
+        alone.replacen("(index 0)", "(index 1)", 1),
+        "the refusal is printed as it is alone, but for the index of its path"
     );
     assert!(
-        alone.starts_with("error: board::path::not_found: "),
+        alone.starts_with("error: nothing is at /tasks/zz\n"),
         "{alone}"
     );
     let ran = run(&[
@@ -759,29 +762,31 @@ fn refs_of_several_paths_answers_each_as_alone_and_one_that_names_nothing_fails_
         (ran.code, ran.error.as_deref()),
         (1, Some("board::path::not_found"))
     );
-    let report = json(&ran);
-    assert_eq!(report["$type"], "board/refs-report/v1");
+    assert_eq!(json(&ran)["schema"], "board/refs-report/v2");
     let alone: Vec<Value> = ["/tasks/a", "/tasks/zz", "/projects/p"]
         .iter()
         .map(|path| answer(&run(&["refs", path, "--limit", "1", "--json"])))
         .collect();
-    assert_eq!(report["answers"], Value::Array(alone));
-    assert_eq!(report["answers"][1]["code"], "board::path::not_found");
+    let mut merged = answers(&ran);
+    assert_eq!(merged[1]["code"], "board::path::not_found");
+    // A failure names its key's index in the run, which alone is 0.
+    merged[1]["index"] = 0.into();
+    assert_eq!(merged, alone);
 }
 
 #[test]
-fn refs_of_several_refused_paths_names_its_path_on_every_line_of_each_refusal() {
+fn refs_of_several_refused_paths_names_each_path_and_its_index_in_its_refusal() {
     let scenario = board();
     let cache = tempfile::tempdir().unwrap();
     let run = |arguments: &[&str]| board_cached(scenario.workdir(), Some(cache.path()), arguments);
     let mut expected = String::new();
-    for path in ["/tasks/zz", "/projects/p.json"] {
+    for (index, path) in ["/tasks/zz", "/projects/p.json"].iter().enumerate() {
         let alone = text(&run(&["refs", path]).stderr);
-        assert!(alone.contains("\nhint: "), "{alone}");
-        expected.extend(alone.lines().map(|line| {
-            let (label, rest) = line.split_once(": ").unwrap();
-            format!("{label}: {path}: {rest}\n")
-        }));
+        assert!(
+            alone.contains(&format!("\n  key:   {path} (index 0)\n")),
+            "{alone}"
+        );
+        expected += &alone.replacen("(index 0)", &format!("(index {index})"), 1);
     }
     let refused = run(&["refs", "/tasks/zz", "/projects/p.json"]);
     assert_eq!(
@@ -808,7 +813,8 @@ fn refs_answers_at_most_max_limit_paths_and_refuses_one_more() {
     };
     let admitted = run(board_ops::MAX_LIMIT);
     assert_eq!((admitted.code, admitted.error.as_deref()), (0, None));
-    assert_eq!(text(&admitted.stdout).lines().count(), board_ops::MAX_LIMIT);
+    let headers = text(&admitted.stdout).matches("==> /tasks/a <==").count();
+    assert_eq!(headers, board_ops::MAX_LIMIT);
     let refused = run(board_ops::MAX_LIMIT + 1);
     assert_eq!(
         (refused.code, refused.error.as_deref()),
@@ -817,7 +823,7 @@ fn refs_answers_at_most_max_limit_paths_and_refuses_one_more() {
     assert_eq!(text(&refused.stdout), "");
     assert!(
         text(&refused.stderr).starts_with(
-            "error: board::usage::invalid: refs was given 10001 paths, and one run answers at most 10000\n"
+            "error: refs was given more than 10000 paths, and one run answers at most 10000\n"
         ),
         "{}",
         text(&refused.stderr)
@@ -856,7 +862,8 @@ fn refs_of_several_paths_names_each_path_in_its_note_and_limits_each_on_its_own(
     assert_eq!(output.code, 0);
     assert_eq!(
         text(&output.stdout),
-        "/projects/p to /tasks/a /project\n/tasks/a from /project /projects/p ok\n"
+        "==> /projects/p <==\nto /tasks/a /project\n\n==> /tasks/a <==\nfrom /project /projects/p ok\n\n\
+         ==> /tasks/new.md <==\n"
     );
     assert_eq!(
         text(&output.stderr),
@@ -943,7 +950,7 @@ fn refs_missing_refuses_an_existing_record_named_by_its_file_with_a_hint_and_adm
     ));
     assert_eq!(refused["code"], "board::path::not_found");
     assert_eq!(
-        refused["hint"],
+        refused["recovery"]["text"],
         "a logical path leaves out .json: try `board refs /projects/p`"
     );
     let admitted = answer(&board_in(
@@ -971,10 +978,10 @@ fn put_writes_the_record_on_stdin_and_reports_where() {
         &["put", "/tasks/a", "--expect", &blob.to_string(), "--json"],
         record,
     ));
-    assert_eq!(again["$type"], "board/put-report/v1");
-    assert_eq!(again["writes"][0]["previous"], blob.to_string());
-    assert_eq!(again["writes"][0]["display"], "/tasks/a");
-    assert_eq!(again["commit"], Value::Null);
+    assert_eq!(again["schema"], "board/put-report/v2");
+    assert_eq!(again["data"]["writes"][0]["previous"], blob.to_string());
+    assert_eq!(again["data"]["writes"][0]["display"], "/tasks/a");
+    assert_eq!(again["data"]["commit"], Value::Null);
 }
 
 #[test]
@@ -1000,7 +1007,7 @@ fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
     );
     let report = json(&run(&["put", "/tasks/b", "--json"], "/nowhere"));
     assert_eq!(
-        report["writes"][0]["degraded"],
+        report["data"]["writes"][0]["degraded"],
         json!({
             "code": "board::ref::dangling",
             "pointer": "/project",
@@ -1009,7 +1016,7 @@ fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
         })
     );
     let report = json(&run(&["put", "/tasks/a", "--json"], "/projects/p"));
-    assert_eq!(report["writes"][0]["degraded"], Value::Null);
+    assert_eq!(report["data"]["writes"][0]["degraded"], Value::Null);
 }
 
 #[test]
@@ -1030,7 +1037,7 @@ fn put_refuses_a_stale_expect_with_exit_one_and_a_malformed_one_with_exit_two() 
     };
     let stale = run("none");
     assert_eq!(stale.code, 1);
-    assert!(text(&stale.stderr).starts_with("error: board::put::stale"));
+    assert!(text(&stale.stderr).contains("\n  code:  board::put::stale\n"));
     assert_eq!(run("not-a-blob").code, 2);
     let current = scenario.blob(r#"{"$type": "lr/project/v1"}"#);
     assert_eq!(run(&current.to_string()).code, 0);
@@ -1055,12 +1062,13 @@ fn a_batch_refused_for_several_reasons_prints_each_line_as_golden_text_and_its_f
     assert!(refused.stdout.is_empty());
     assert_eq!(
         text(&refused.stderr),
-        "error: board::put::invalid: the batch is refused\n\
-         line 2: board::json::parse: json does not parse: EOF while parsing an object at line 1 column 1\n\
-         line 3: board::put::invalid: it writes tasks/a.json as line 1 writes tasks/a.json\n\
-         line 4: board::record::unknown_type: the record for /tasks/c is refused: \
-         no schema for lr/nope/v1 at .board/types/lr/nope/v1.schema.json\n\
-         hint: fix each line listed, then send the whole batch again; nothing was written\n"
+        "error: the batch is refused\n\
+         \x20 help:  fix each line listed, then send the whole batch again; nothing was written\n\
+         \x20 code:  board::put::invalid\n\
+         \x20 line 2: board::json::parse: json does not parse: EOF while parsing an object at line 1 column 1\n\
+         \x20 line 3: board::put::invalid: it writes tasks/a.json as line 1 writes tasks/a.json\n\
+         \x20 line 4: board::record::unknown_type: the record for /tasks/c is refused: \
+         no schema for lr/nope/v1 at .board/types/lr/nope/v1.schema.json\n"
     );
     let admitted = board_with(
         scenario.workdir(),
@@ -1089,10 +1097,11 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
     assert_eq!(refused.code, 1);
     assert_eq!(
         text(&refused.stderr),
-        "error: board::put::invalid: the batch is refused\n\
-         line 2: board::record::invalid: the record for /tasks/b \
-         fails its schema at its root: \"title\" is a required property\n\
-         hint: fix each line listed, then send the whole batch again; nothing was written\n"
+        "error: the batch is refused\n\
+         \x20 help:  fix each line listed, then send the whole batch again; nothing was written\n\
+         \x20 code:  board::put::invalid\n\
+         \x20 line 2: board::record::invalid: the record for /tasks/b \
+         fails its schema at its root: \"title\" is a required property\n"
     );
     let document = json(&board_with(
         scenario.workdir(),
@@ -1100,9 +1109,9 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
         &["put", "--batch", "--json"],
         format!("{good}\n{bad}\n").as_bytes(),
     ));
-    assert_eq!(document["$type"], "board/error/v1");
+    assert_eq!(document["schema"], "crumbkit/failure/v1");
     assert_eq!(
-        document["hint"],
+        document["recovery"]["text"],
         "fix each line listed, then send the whole batch again; nothing was written"
     );
     assert_eq!(document["fields"]["refusals"][0]["line"], 2);
@@ -1122,7 +1131,7 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
         format!("{good}\n").as_bytes(),
     );
     assert_eq!(written.code, 0, "{}", text(&written.stderr));
-    assert_eq!(json(&written)["writes"][0]["display"], "/tasks/a");
+    assert_eq!(json(&written)["data"]["writes"][0]["display"], "/tasks/a");
 }
 
 #[test]
@@ -1164,10 +1173,10 @@ fn mount_update_reports_the_move_and_then_that_it_is_there() {
         scenario.workdir(),
         &["mount", "update", "/lib", "--json"],
     ));
-    assert_eq!(again["$type"], "board/mount-update-report/v1");
-    assert_eq!(again["old"], new.to_string());
-    assert_eq!(again["new"], new.to_string());
-    assert_eq!(again["wrote"], false);
+    assert_eq!(again["schema"], "board/mount-update-report/v2");
+    assert_eq!(again["data"]["old"], new.to_string());
+    assert_eq!(again["data"]["new"], new.to_string());
+    assert_eq!(again["data"]["wrote"], false);
 }
 
 #[test]
@@ -1179,9 +1188,7 @@ fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
     let missing = board_in(scenario.workdir(), &["mount", "update", "/nope"]);
     assert_eq!(missing.code, 1);
     assert!(
-        text(&missing.stderr).starts_with(
-            "error: board::path::not_found: /nope cannot be written: nothing is at /nope\n"
-        ),
+        text(&missing.stderr).starts_with("error: /nope cannot be written: nothing is at /nope\n"),
         "{}",
         text(&missing.stderr)
     );
@@ -1192,11 +1199,12 @@ fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
 mod cli;
 mod complete;
 mod consistency;
-mod dead_ends;
 mod directory;
 mod get;
+mod help;
 mod hints;
 mod plugins;
 mod query;
+mod recoveries;
 mod refs;
 mod refused;

@@ -79,12 +79,12 @@ enabled plugin's database is attached read-only as `p_<name>`. Rows return as
 JSON, at most 100 unless `--limit` (at most 10,000) or `--all` says
 otherwise, with `truncated` set when rows were left out. Rows also stop
 before one that would take them past 64 MiB as printed, even with `--all`.
-That cut adds the code `board::query::over_budget` to the report and still
-exits 0. A first row or a single value past 64 MiB is refused with the same
+That cut adds the code `board::query::over_budget` to the report's `summary`
+and still exits 0. A first row or a single value past 64 MiB is refused with the same
 code and exits 1. Each value is counted as the row is read, so a wide row
-stops at the value that passes the budget. The report is `columns` and
-`rows`, each row an array in column order; `plugins` lists any plugin whose
-extraction failed. SQL that does not parse, would write, or holds more than one statement
+stops at the value that passes the budget. The report is `rows`, each
+row an array in column order, and a `summary` holding `columns` and
+`plugins`, which lists any plugin whose extraction failed. SQL that does not parse, would write, or holds more than one statement
 is `board::query::invalid`; ATTACH, DETACH and PRAGMA statements count as
 writes, while table-valued pragma functions such as `pragma_table_info` are
 admitted. A query still running after 1 s is `board::query::timeout`. A query
@@ -106,16 +106,17 @@ resolves, so a plugin needs one run for many records.
 Each answer is what the path alone gives, with the limit applied to each, so
 a run prints at most the number of paths times the limit reference lines,
 plus a note or error for each path, and the caller chooses how many paths to
-ask. A refused path does not stop the others and makes the run exit 1. With
-several paths, every text line about a path names it, notes and errors
-included. JSON is always one `board/refs-report/v1`,
-for one path too. Its `answers` hold, in the order asked, each path's
-references or its refusal as a `board/error/v1`. One run takes at most 10,000
+ask. A refused path does not stop the others and makes the run exit 1. Text
+prints each path's lines under a `==> <path> <==` header, as `get` does, and
+an error names its path on a `key:` line. JSON is always one `board/refs-report/v2`,
+for one path too. `data` holds each path's references in the order asked, and
+`failures` each refusal with the `index` of its path. One run takes at most 10,000
 paths; more is `usage::invalid`. A path that does not parse as a logical
 path, such as `tasks/a`, refuses the whole run as `usage::invalid`. As `get`
 does, `refs` answers each path only while its output, counted in the format
-printed, is under 64 MiB, always the first, and refuses each later path as
-`refs::over_budget`; the library's `Board.refs` asks for those again.
+printed, is under 64 MiB, always the first, and names every later path in the
+`left_out` of one `refs::over_budget` failure; the library's `Board.refs` asks
+for those again.
 
 `--field <pointer>`, repeated, reads the target of each reference shown,
 within the limit, where refs resolved it, through links and mounts. A

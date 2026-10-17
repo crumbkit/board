@@ -20,12 +20,13 @@ fn plugins(context: &Context) -> Plugins<'_> {
     }
 }
 use clap::error::{ContextKind, ContextValue, ErrorKind};
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use crumbkit::{Sink, Spelling};
 
 use crate::config::Context;
-use crate::render::{self, Format};
+use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
-use crate::timing::{self, Ran};
+use crate::timing::Ran;
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -54,9 +55,9 @@ Tables and views:
   refs, validations, blobs, trees, worktree, mounts, sources, extracted, state
   p_<name>  each enabled plugin's database
 
-Rows stop before one that would take them past 64 MiB as printed, even
-with --all; the report then carries board::query::over_budget, and text
-output notes it. A first row past 64 MiB is refused with that code.
+Rows stop at 64 MiB of output, even with --all; --json then marks the
+listing `truncated` and its `cut` carries board::query::over_budget, and the
+text notes it. A first row past 64 MiB is refused with that code.
 
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
@@ -74,35 +75,20 @@ pub(crate) struct Cli {
     /// Run as if Board were started in this directory, as `git -C` does.
     #[arg(short = 'C', value_name = "DIR", value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
     directories: Vec<OsString>,
-    /// Print one JSON document instead of text.
-    #[arg(long, global = true)]
-    json: bool,
+    #[command(flatten)]
+    view: crumbkit::ViewFlags,
     #[command(subcommand)]
     command: Command,
 }
 
 /// How many entries a listing shows (STANDARDS.md 23).
-#[derive(Debug, Clone, Copy, clap::Args)]
-struct Page {
-    /// The most entries to show, from 1 to 10000.
-    #[arg(long, default_value_t = DEFAULT_LIMIT, value_parser = limit, conflicts_with = "all")]
-    limit: usize,
-    /// Show every entry.
-    #[arg(long)]
-    all: bool,
-}
-
-impl Page {
-    fn limit(self) -> Option<usize> {
-        (!self.all).then_some(self.limit)
-    }
-}
+pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
 /// `refs`'s arguments.
 #[derive(Debug, clap::Args)]
 struct Refs {
     /// Each record's logical path, such as /projects/p; several are answered from one check of the board.
-    #[arg(required = true, value_name = "PATH")]
+    #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
     paths: Vec<LogicalPath>,
     /// When nothing is at a path yet, report where a file there would be instead of refusing.
     #[arg(long)]
@@ -143,7 +129,7 @@ Examples:
     #[command(after_help = render::GET_HELP)]
     Get {
         /// Each file's logical path: it starts with /, and a JSON file's leaves out .json, such as /projects/p.
-        #[arg(required = true, value_name = "PATH")]
+        #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
         paths: Vec<LogicalPath>,
     },
     /// List the directory at a path, without following pointers inside it.
@@ -302,14 +288,6 @@ fn pointer(text: &str) -> Result<String, String> {
     }
 }
 
-/// A row limit from 1 to [`MAX_LIMIT`].
-fn limit(text: &str) -> Result<usize, String> {
-    match text.parse::<usize>() {
-        Ok(limit) if (1..=MAX_LIMIT).contains(&limit) => Ok(limit),
-        _ => Err(format!("must be a whole number from 1 to {MAX_LIMIT}")),
-    }
-}
-
 /// Runs one command line against the board found from `context`, reading a
 /// record from `stdin` when the command takes one, and traces it in `ran`.
 pub(crate) fn run(
@@ -323,26 +301,44 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
-    let parsed = Cli::command()
-        .try_get_matches_from(&arguments)
-        .and_then(|matches| Ok((Cli::from_arg_matches(&matches)?, timing::command(&matches))));
+    let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+    let parsed = crumbkit::parse_to::<Cli, _, _, _, _>(
+        &mut Sink::new(&mut stdout, &mut stderr),
+        Cli::command(),
+        &GUIDE,
+        Spelling::COLONS,
+        arguments.clone(),
+    );
     ran.trace.add("parse", parsing);
-    let (cli, invoked) = match parsed {
+    let (cli, view) = match parsed {
         Ok(parsed) => parsed,
-        Err(error) => return clap_refused(&error, &arguments),
+        Err(stop) => {
+            let code = stop.number();
+            if let Some(output) = (code == 2).then(|| corrected(&arguments)).flatten() {
+                return output;
+            }
+            let error = (code == 2).then(|| Code::UsageInvalid.as_str().to_owned());
+            return Output {
+                stdout,
+                stderr,
+                code,
+                error,
+            };
+        }
     };
-    ran.command = Some(invoked);
-    let format = if cli.json { Format::Json } else { Format::Text };
-    let start = match entered(&context.start, &cli.directories, format) {
+    let words = arguments.get(1..).unwrap_or_default();
+    ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
+    let printer = &mut Printer { view };
+    let start = match entered(&context.start, &cli.directories) {
         Ok(start) => start,
-        Err(refused) => return refused,
+        Err(refusal) => return render::refused(printer, *refusal),
     };
     if let Command::Init = cli.command {
         return match board_ops::init(&start) {
-            Ok(report) => render::init(format, &report),
+            Ok(report) => render::init(printer, &report),
             Err(error) => {
                 let outside = matches!(error, board_ops::InitError::NotARepository { .. });
-                render::refused(format, &unopened(error.code(), &error, outside))
+                render::refused(printer, unopened(error.code(), &error, outside))
             }
         };
     }
@@ -353,11 +349,11 @@ pub(crate) fn run(
         Ok(board) => board,
         Err(error) => {
             let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
-            return render::refused(format, &unopened(error.code(), &error, outside));
+            return render::refused(printer, unopened(error.code(), &error, outside));
         }
     };
     ran.root = Some(board.repository().path().to_path_buf());
-    let output = command(cli.command, &board, context, format, stdin);
+    let output = command(cli.command, &board, context, printer, stdin);
     ran.trace.extend(board.take_trace());
     output
 }
@@ -367,58 +363,52 @@ fn command(
     command: Command,
     board: &Board,
     context: &Context,
-    format: Format,
+    printer: &mut Printer,
     stdin: &mut dyn Read,
 ) -> Output {
+    let cache = context.cache.as_deref();
     match command {
         Command::Init => unreachable!("init runs before a board is opened"),
-        Command::Check { path, page } => match board.check(path.as_ref(), context.cache.as_deref())
-        {
-            Ok(report) => render::check(format, &report, page.limit()),
-            Err(error) => render::refused(format, &error.refusal()),
+        Command::Check { path, page } => match board.check(path.as_ref(), cache) {
+            Ok(report) => render::check(printer, &report, &page),
+            Err(error) => render::refused(printer, error.refusal()),
         },
-        Command::Get { paths } => (render::too_many(format, "get", paths.len(), MAX_LIMIT))
-            .unwrap_or_else(|| render::get(format, &paths, board.get_each(&paths), render::BUDGET)),
+        Command::Get { paths } => render::get(printer, &paths, board.get_each(&paths)),
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
-                Ok(report) => render::put(format, &report),
-                Err(error) => render::refused(format, &error.refusal()),
+                Ok(report) => render::put(printer, &report),
+                Err(error) => render::refused(printer, error.refusal()),
             }
         }
         Command::Put {
             path: Some(path),
             expect,
             ..
-        } => put(board, format, &path, expect, stdin),
+        } => put(board, printer, &path, expect, stdin),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
-            Ok(report) => render::mount_update(format, &report),
-            Err(error) => render::refused(format, &error.refusal()),
+            Ok(report) => render::mount_update(printer, &report),
+            Err(error) => render::refused(printer, error.refusal()),
         },
-        Command::Refs(asked) => refs(format, board, context, &asked),
+        Command::Refs(asked) => refs(printer, board, context, &asked),
         Command::Query { sql, page } => {
-            let budget = Some(render::rows_budget(format, render::BUDGET));
-            match board.query(
-                &sql,
-                page.limit().unwrap_or(usize::MAX),
-                budget,
-                context.cache.as_deref(),
-                &plugins(context),
-            ) {
-                Ok(report) => render::query(format, &report),
-                Err(error) => render::refused(format, &error.refusal()),
+            let budget = Some(render::rows_budget(printer.view.budget()));
+            let limit = page.limit().unwrap_or(usize::MAX);
+            match board.query(&sql, limit, budget, cache, &plugins(context)) {
+                Ok(report) => render::query(printer, &report),
+                Err(error) => render::refused(printer, error.refusal()),
             }
         }
         Command::Plugin(PluginCommand::Enable { name }) => {
             match board.plugin_enable(context.plugins.as_deref(), &name) {
-                Ok(report) => render::plugin_enable(format, &report),
-                Err(error) => render::error(format, error.code(), &error, &Fields::default()),
+                Ok(report) => render::plugin_enable(printer, &report),
+                Err(error) => render::refused(printer, plain(error.code(), &error)),
             }
         }
         Command::Plugin(PluginCommand::List { page }) => {
             match board.plugin_list(context.plugins.as_deref()) {
-                Ok(report) => render::plugin_list(format, &report, page.limit()),
-                Err(error) => render::error(format, error.code(), &error, &Fields::default()),
+                Ok(report) => render::plugin_list(printer, &report, &page),
+                Err(error) => render::refused(printer, plain(error.code(), &error)),
             }
         }
         Command::Plugin(PluginCommand::Find {
@@ -426,29 +416,102 @@ fn command(
             filters,
             page,
         }) => match board.plugin_find(context.plugins.as_deref(), capability.as_ref(), &filters) {
-            Ok(report) => render::plugin_find(format, &report, page.limit()),
-            Err(error) => render::error(format, error.code(), &error, &Fields::default()),
+            Ok(report) => render::plugin_find(printer, &report, &page),
+            Err(error) => render::refused(printer, plain(error.code(), &error)),
         },
         Command::Call { target, capability } => {
-            call(board, context, format, target, capability, stdin)
+            call(board, context, printer, target, capability, stdin)
         }
         Command::Ls { path, page } => {
             let path = path.unwrap_or_else(LogicalPath::root);
-            match board.ls(&path, context.cache.as_deref()) {
-                Ok(report) => render::ls(format, &report, page.limit()),
-                Err(error) => render::refused(format, &error.refusal("ls")),
+            match board.ls(&path, cache) {
+                Ok(report) => render::ls(printer, &report, &page),
+                Err(error) => render::refused(printer, error.refusal("ls")),
             }
         }
     }
 }
 
+/// A refusal with the hint for its code.
+fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
+    Refusal::new(code, message, &Fields::default())
+}
+
+/// Glue for two usage failures crumbkit words alike for every tool: a run
+/// given too many paths says to split them, and a logical path without its
+/// leading `/` or with `.json` names the corrected line when that line
+/// parses.
+fn corrected(arguments: &[OsString]) -> Option<Output> {
+    let error = Cli::try_parse_from(arguments).err()?;
+    let (Some(ContextValue::String(argument)), Some(ContextValue::String(value))) = (
+        error.get(ContextKind::InvalidArg),
+        error.get(ContextKind::InvalidValue),
+    ) else {
+        return None;
+    };
+    let (mut command, mut names) = (Cli::command(), vec![BINARY_NAME.to_owned()]);
+    for word in arguments.iter().skip(1) {
+        if let Some(sub) = command.find_subcommand(word).cloned() {
+            names.push(sub.get_name().to_owned());
+            command = sub;
+        }
+    }
+    let (message, run) = if error.kind() == ErrorKind::TooManyValues {
+        let message = format!(
+            "{} was given more than {MAX_LIMIT} paths, and one run answers at most {MAX_LIMIT}",
+            names[1..].join(" ")
+        );
+        let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
+        (message, Err(hint))
+    } else {
+        let source = std::error::Error::source(&error).map(ToString::to_string);
+        let message = format!(
+            "invalid value '{value}' for '{argument}': {}",
+            source.unwrap_or_default()
+        );
+        (message, Ok(path_fixed(arguments, argument, value)?))
+    };
+    let mut refusal = plain(Code::UsageInvalid, &message);
+    let name = argument.split(' ').next().unwrap_or(argument);
+    refusal.fields.insert("argument".to_owned(), name.into());
+    refusal
+        .fields
+        .insert("value".to_owned(), value.as_str().into());
+    let json = (arguments.iter().skip(1))
+        .take_while(|word| *word != "--")
+        .any(|word| word == "--json");
+    let flags = crumbkit::ViewFlags::new().json(json);
+    let printer = &mut Printer {
+        view: crumbkit::Output::new(flags, Cli::command(), &GUIDE, arguments.iter()),
+    };
+    Some(match run {
+        Ok(words) => render::refused_running(printer, refusal, words),
+        Err(hint) => render::refused(printer, refusal.with_hint(hint)),
+    })
+}
+
+/// The words after `board` of the line to run for a path `value` refused as
+/// `argument`: the line with the path given its leading `/` and without
+/// `.json`, when that parses.
+fn path_fixed(arguments: &[OsString], argument: &str, value: &str) -> Option<Vec<String>> {
+    let at = 1 + arguments.iter().skip(1).position(|word| word == value)?;
+    let stem = value.strip_suffix(".json").unwrap_or(value);
+    let mut fixed = arguments.to_vec();
+    fixed[at] = format!("/{}", stem.trim_start_matches('/')).into();
+    if !argument.starts_with('<') || Cli::try_parse_from(&fixed).is_err() {
+        return None;
+    }
+    Some(
+        fixed[1..]
+            .iter()
+            .map(|word| word.to_string_lossy().into_owned())
+            .collect(),
+    )
+}
+
 /// `start` after entering each of `directories` in turn, as `git -C` does,
 /// or the refusal of the first that is not a directory.
-pub(crate) fn entered(
-    start: &Path,
-    directories: &[OsString],
-    format: Format,
-) -> Result<PathBuf, Output> {
+pub(crate) fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Refusal>> {
     let mut start = start.to_path_buf();
     for directory in directories {
         let joined = start.join(directory);
@@ -473,29 +536,25 @@ pub(crate) fn entered(
         );
         let hint = "give -C a directory that exists, such as the board's root or a directory \
                     inside it; a relative -C is taken from the one before it";
-        return Err(render::refused(
-            format,
-            &Refusal::new(Code::UsageInvalid, message, &Fields::default()).with_hint(hint),
+        return Err(Box::new(
+            plain(Code::UsageInvalid, &message).with_hint(hint),
         ));
     }
     Ok(start)
 }
 
 /// `refs` of one path or several, with `--missing` or without.
-fn refs(format: Format, board: &Board, context: &Context, asked: &Refs) -> Output {
+fn refs(printer: &mut Printer, board: &Board, context: &Context, asked: &Refs) -> Output {
     let absent = if asked.missing {
         Absent::Locate
     } else {
         Absent::Refuse
     };
     let limit = asked.page.limit();
-    if let Some(refused) = render::too_many(format, "refs", asked.paths.len(), MAX_LIMIT) {
-        return refused;
-    }
     let cache = context.cache.as_deref();
     match board.refs(&asked.paths, absent, &asked.fields, limit, cache) {
-        Err(error) => render::refused(format, &error.refusal()),
-        Ok(answers) => render::refs(format, &asked.paths, answers, limit, render::BUDGET),
+        Err(error) => render::refused(printer, error.refusal()),
+        Ok(answers) => render::refs(printer, &asked.paths, answers, limit),
     }
 }
 
@@ -512,217 +571,10 @@ fn unopened(code: Code, error: &dyn std::fmt::Display, outside: bool) -> Refusal
     }
 }
 
-/// A command line clap refused, as an error with code `usage::invalid` and
-/// exit code 2; help, asked for, is printed to stdout with exit code 0. The
-/// message and hint come from clap's error context, never its rendered text.
-fn clap_refused(error: &clap::Error, arguments: &[OsString]) -> Output {
-    if matches!(
-        error.kind(),
-        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
-    ) {
-        return Output {
-            stdout: error.render().to_string().into_bytes(),
-            ..Output::default()
-        };
-    }
-    let command = command_path(arguments);
-    let named = if command.is_empty() {
-        BINARY_NAME.to_owned()
-    } else {
-        format!("{BINARY_NAME} {command}")
-    };
-    let help = if let Some(corrected) = corrected(error, arguments) {
-        format!("a logical path starts with / and leaves out .json: try `{corrected}`")
-    } else if command.is_empty() {
-        Code::UsageInvalid.hint(&Fields::default())
-    } else {
-        format!("run `{named} --help` for its usage and examples")
-    };
-    let mut hints = tips(error);
-    hints.push(help);
-    let hint = hints.join("; ");
-    let wants_json = arguments
-        .iter()
-        .skip(1)
-        .take_while(|argument| *argument != "--")
-        .any(|argument| argument == "--json");
-    let format = if wants_json {
-        Format::Json
-    } else {
-        Format::Text
-    };
-    let mut output = render::refused(
-        format,
-        &Refusal::new(
-            Code::UsageInvalid,
-            message(error, &named),
-            &Fields::default(),
-        )
-        .with_hint(hint.clone()),
-    );
-    // A group named without its command prints its help before the hint.
-    if format == Format::Text && error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
-    {
-        output.stderr = format!(
-            "error: {}: {}\n\n{}\nhint: {hint}\n",
-            Code::UsageInvalid,
-            message(error, &named),
-            error.render().to_string().trim_end()
-        )
-        .into_bytes();
-    }
-    output
-}
-
-/// One piece of clap's context for `error`, as text.
-fn context(error: &clap::Error, kind: ContextKind) -> Option<String> {
-    Some(match error.get(kind)? {
-        ContextValue::String(text) => text.clone(),
-        ContextValue::Strings(texts) => texts.join("', '"),
-        ContextValue::StyledStrs(texts) => texts
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("; "),
-        _ => return None,
-    })
-}
-
-/// What clap refused, naming the value at fault; `named` is the command
-/// that was run, such as `board plugin`.
-fn message(error: &clap::Error, named: &str) -> String {
-    let get = |kind| context(error, kind).unwrap_or_default();
-    let argument = get(ContextKind::InvalidArg);
-    let value = get(ContextKind::InvalidValue);
-    match error.kind() {
-        ErrorKind::InvalidSubcommand => {
-            format!(
-                "unrecognized subcommand '{}'",
-                get(ContextKind::InvalidSubcommand)
-            )
-        }
-        ErrorKind::UnknownArgument => format!("unexpected argument '{argument}' found"),
-        // Board offers no fixed set of values, so clap refuses a value it
-        // was given only through the parser, as `ValueValidation`.
-        ErrorKind::InvalidValue => {
-            format!("a value is required for '{argument}' but none was supplied")
-        }
-        ErrorKind::ValueValidation => {
-            let why = std::error::Error::source(error)
-                .map_or_else(String::new, |source| format!(": {source}"));
-            format!("invalid value '{value}' for '{argument}'{why}")
-        }
-        ErrorKind::ArgumentConflict => format!(
-            "the argument '{argument}' cannot be used with '{}'",
-            get(ContextKind::PriorArg)
-        ),
-        ErrorKind::MissingRequiredArgument => format!(
-            "the following required arguments were not provided: {}",
-            argument.replace("', '", ", ")
-        ),
-        ErrorKind::MissingSubcommand | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand => {
-            format!("{named} needs a command")
-        }
-        kind => kind.as_str().map_or_else(
-            || "the command line is refused".to_owned(),
-            str::to_lowercase,
-        ),
-    }
-}
-
-/// clap's suggestions for `error`: a similar command, argument or value, or
-/// the values it accepts.
-fn tips(error: &clap::Error) -> Vec<String> {
-    [
-        (
-            ContextKind::SuggestedSubcommand,
-            "a similar subcommand exists: '",
-        ),
-        (ContextKind::SuggestedArg, "a similar argument exists: '"),
-        (ContextKind::SuggestedValue, "a similar value exists: '"),
-        (ContextKind::ValidValue, "possible values: '"),
-    ]
-    .into_iter()
-    .filter_map(|(kind, lead)| {
-        context(error, kind)
-            .filter(|found| !found.is_empty())
-            .map(|found| format!("{lead}{found}'"))
-    })
-    .chain(context(error, ContextKind::Suggested).filter(|tip| !tip.is_empty()))
-    .collect()
-}
-
-/// The command line with the value clap refused written as a logical path,
-/// such as `/tasks/a` for `tasks/a.json`, when clap admits it that way.
-/// Every logical path is a positional argument, such as `<PATH>`.
-fn corrected(error: &clap::Error, arguments: &[OsString]) -> Option<String> {
-    let (Some(ContextValue::String(arg)), Some(ContextValue::String(value))) = (
-        error.get(ContextKind::InvalidArg),
-        error.get(ContextKind::InvalidValue),
-    ) else {
-        return None;
-    };
-    if !arg.starts_with('<') {
-        return None;
-    }
-    let stem = value.strip_suffix(".json").unwrap_or(value);
-    let path = format!("/{}", stem.trim_start_matches('/'));
-    let at = arguments
-        .iter()
-        .skip(1)
-        .position(|given| given == value.as_str())?
-        + 1;
-    let mut fixed = arguments.to_vec();
-    fixed[at] = path.into();
-    Cli::try_parse_from(&fixed).ok()?;
-    let words: Vec<String> = fixed[1..]
-        .iter()
-        .map(|word| {
-            let word = word.to_string_lossy();
-            if word
-                .chars()
-                .all(|c| c.is_alphanumeric() || "/._-=".contains(c))
-            {
-                word.into_owned()
-            } else {
-                format!("'{}'", word.replace('\'', r"'\''"))
-            }
-        })
-        .collect();
-    Some(format!("{BINARY_NAME} {}", words.join(" ")))
-}
-
-/// The subcommands named at the start of `arguments`, such as `plugin find`,
-/// so a refusal can point at that command's help.
-fn command_path(arguments: &[OsString]) -> String {
-    let mut command = Cli::command();
-    let mut path = Vec::new();
-    let mut words = arguments.iter().skip(1);
-    while let Some(argument) = words.next() {
-        if argument == "-C" {
-            words.next();
-        }
-        let Some(argument) = argument.to_str() else {
-            continue;
-        };
-        if argument.starts_with('-') {
-            continue;
-        }
-        match command.find_subcommand(argument) {
-            Some(found) => {
-                path.push(argument.to_owned());
-                command = found.clone();
-            }
-            None => break,
-        }
-    }
-    path.join(" ")
-}
-
 /// `put` of one record, read from stdin.
 fn put(
     board: &Board,
-    format: Format,
+    printer: &mut Printer,
     path: &LogicalPath,
     expect: Option<Expect>,
     stdin: &mut dyn Read,
@@ -730,17 +582,13 @@ fn put(
     let record = match bounded(stdin) {
         Ok(record) => record,
         Err(error) => {
-            return render::error(
-                format,
-                Code::RepoUnreadable,
-                &format!("stdin cannot be read: {error}"),
-                &Fields::default(),
-            );
+            let message = format!("stdin cannot be read: {error}");
+            return render::refused(printer, plain(Code::RepoUnreadable, &message));
         }
     };
     match board.put(path, expect.unwrap_or(Expect::Any), &record) {
-        Ok(report) => render::put(format, &report),
-        Err(error) => render::refused(format, &error.refusal()),
+        Ok(report) => render::put(printer, &report),
+        Err(error) => render::refused(printer, error.refusal()),
     }
 }
 
@@ -748,7 +596,7 @@ fn put(
 fn call(
     board: &Board,
     context: &Context,
-    format: Format,
+    printer: &mut Printer,
     target: Option<Target>,
     capability: Option<CapabilityName>,
     stdin: &mut dyn Read,
@@ -761,17 +609,13 @@ fn call(
     let input = match bounded(stdin) {
         Ok(input) => input,
         Err(error) => {
-            return render::error(
-                format,
-                Code::PluginBadInput,
-                &format!("stdin cannot be read: {error}"),
-                &Fields::default(),
-            );
+            let message = format!("stdin cannot be read: {error}");
+            return render::refused(printer, plain(Code::PluginBadInput, &message));
         }
     };
     match board.call(&target, &input, &plugins(context), context.cache.as_deref()) {
-        Ok(report) => render::call(format, &report),
-        Err(error) => render::refused(format, &error.refusal()),
+        Ok(report) => render::call(printer, &report),
+        Err(error) => render::refused(printer, error.refusal()),
     }
 }
 

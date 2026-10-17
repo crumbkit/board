@@ -22,8 +22,8 @@ def test_check_measures_each_budget_control_over_its_files(board: Board) -> None
     )
     board.write("controls/plain.json", control("No budget.", paths=["*"]))
     report = board.call("check", {})
-    assert report["$type"] == "board/call-report/v1", report
-    assert report["output"]["controls"] == [
+    assert report["schema"] == "board/call-report/v2", report
+    assert report["data"]["output"]["controls"] == [
         {
             "control": "/controls/context",
             "requirement": "Short.",
@@ -62,7 +62,7 @@ def test_a_control_over_its_budget_fails_the_check_and_one_at_it_passes(board: B
     assert "/controls/context (3 of 2 words)" in refused["message"]
     assert refused["fields"]["controls"][0]["used"] == WORDS
     admitted = over(board, WORDS)
-    assert admitted["output"]["controls"][0]["used"] == WORDS
+    assert admitted["data"]["output"]["controls"][0]["used"] == WORDS
 
 
 def test_a_control_whose_file_is_missing_fails_the_check_and_one_whose_file_exists_passes(board: Board) -> None:
@@ -73,7 +73,7 @@ def test_a_control_whose_file_is_missing_fails_the_check_and_one_whose_file_exis
     assert refused["code"] == "controls::control::degraded", refused
     assert refused["fields"]["controls"] == [{"control": "/controls/context", "code": "board::ref::dangling"}]
     board.write("AGENTS.md", "x")
-    assert board.call("check", {})["output"]["controls"][0]["used"] == 1
+    assert board.call("check", {})["data"]["output"]["controls"][0]["used"] == 1
 
 
 def test_a_file_reached_through_a_link_and_by_pattern_counts_once_and_a_link_counts_nothing(board: Board) -> None:
@@ -86,9 +86,9 @@ def test_a_file_reached_through_a_link_and_by_pattern_counts_once_and_a_link_cou
         ),
     )
     report = board.call("check", {})
-    assert report["$type"] == "board/call-report/v1", report
-    assert report["output"]["controls"][0]["files"] == ["/docs/a.md"]
-    assert report["output"]["controls"][0]["used"] == WORDS
+    assert report["schema"] == "board/call-report/v2", report
+    assert report["data"]["output"]["controls"][0]["files"] == ["/docs/a.md"]
+    assert report["data"]["output"]["controls"][0]["used"] == WORDS
 
 
 def test_a_pattern_reaching_into_a_mount_counts_files_there_and_one_that_does_not_counts_none(
@@ -99,8 +99,8 @@ def test_a_pattern_reaching_into_a_mount_counts_files_there_and_one_that_does_no
     board.write("controls/vendor.json", control("Small.", paths=["vendor/*.md"], rule=rule))
     board.write("controls/own.json", control("Small.", paths=["docs/*.md"], rule=rule))
     report = board.call("check", {})
-    assert report["$type"] == "board/call-report/v1", report
-    assert [(item["control"], item["files"], item["used"]) for item in report["output"]["controls"]] == [
+    assert report["schema"] == "board/call-report/v2", report
+    assert [(item["control"], item["files"], item["used"]) for item in report["data"]["output"]["controls"]] == [
         ("/controls/own", [], 0),
         ("/controls/vendor", ["/vendor/lib/docs/a.md"], WORDS),
     ]
@@ -112,8 +112,8 @@ def test_a_malformed_path_in_a_mount_matches_nothing_and_a_well_formed_one_besid
     board.write("vendor/lib.json", library(tmp_path / "library", {"docs/\x01.md": "one", "docs/a.md": "two"}))
     board.write("controls/vendor.json", control("Small.", paths=["vendor/*"], rule={"budget": "words", "max": WORDS}))
     report = board.call("check", {})
-    assert report["$type"] == "board/call-report/v1", report
-    assert report["output"]["controls"][0]["files"] == ["/vendor/lib/docs/a.md"]
+    assert report["schema"] == "board/call-report/v2", report
+    assert report["data"]["output"]["controls"][0]["files"] == ["/vendor/lib/docs/a.md"]
 
 
 def test_a_pattern_matching_a_degraded_file_fails_the_check_and_one_matching_a_whole_file_passes(board: Board) -> None:
@@ -125,7 +125,7 @@ def test_a_pattern_matching_a_degraded_file_fails_the_check_and_one_matching_a_w
     assert refused["fields"]["control"] == "/controls/docs"
     assert refused["fields"]["code"] == "board::path::shadowed"
     (board.root / "docs/a.json").unlink()
-    assert board.call("check", {})["output"]["controls"][0]["used"] == 1
+    assert board.call("check", {})["data"]["output"]["controls"][0]["used"] == 1
 
 
 def test_a_pattern_matching_a_file_with_no_logical_path_fails_naming_its_path_and_one_with_a_logical_path_passes(
@@ -138,7 +138,7 @@ def test_a_pattern_matching_a_file_with_no_logical_path_fails_naming_its_path_an
     assert refused["fields"]["file"] == "docs/\x01.md"
     assert refused["fields"]["code"] == "board::path::malformed"
     (board.root / "docs/\x01.md").rename(board.root / "docs/a.md")
-    assert board.call("check", {})["output"]["controls"][0]["files"] == ["/docs/a.md"]
+    assert board.call("check", {})["data"]["output"]["controls"][0]["files"] == ["/docs/a.md"]
 
 
 def test_a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes(board: Board) -> None:
@@ -151,7 +151,7 @@ def test_a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes(boa
     board.write(
         "controls/docs.json", control("Small.", applies_to=["/docs/a.md"], rule={"budget": "words", "max": WORDS})
     )
-    assert board.call("check", {})["output"]["controls"][0]["used"] == 1
+    assert board.call("check", {})["data"]["output"]["controls"][0]["used"] == 1
 
 
 def counted(board: Board, tmp_path: Path, crash: str = "") -> tuple[Board, Path]:
@@ -192,7 +192,7 @@ def test_check_reads_each_file_once_and_each_controls_references_in_one_call(boa
     )
     watched, log = counted(board, tmp_path)
     report = watched.call("check", {})
-    assert [item["used"] for item in report["output"]["controls"]] == [14, 6], report
+    assert [item["used"] for item in report["data"]["output"]["controls"]] == [14, 6], report
     calls = log.read_text().splitlines()
     assert [call for call in calls if " get " in call] == ["--json get -- /docs/a.md /docs/b.md /docs/c.md"]
     assert [call for call in calls if " refs " in call] == ["--json refs --all -- /controls/bytes /controls/words"]
@@ -209,7 +209,7 @@ def test_check_resolves_every_controls_references_in_one_refs_run(board: Board, 
     board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 2}))
     watched, log = counted(board, tmp_path)
     report = watched.call("check", {})
-    assert [item["used"] for item in report["output"]["controls"]] == [2] * (count + 1), report
+    assert [item["used"] for item in report["data"]["output"]["controls"]] == [2] * (count + 1), report
     paths = " ".join(f"/controls/{name}" for name in names)
     assert [call for call in log.read_text().splitlines() if " refs " in call] == [f"--json refs --all -- {paths}"]
 
@@ -220,11 +220,11 @@ def test_check_starts_no_refs_run_when_no_control_has_references_and_one_when_a_
     board.write("docs/a.md", "one two")
     board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 2}))
     watched, log = counted(board, tmp_path)
-    assert watched.call("check", {})["output"]["controls"][0]["used"] == len(["one", "two"])
+    assert watched.call("check", {})["data"]["output"]["controls"][0]["used"] == len(["one", "two"])
     assert [call for call in log.read_text().splitlines() if " refs " in call] == []
     board.write("controls/named.json", control("Short.", applies_to=["/docs/a.md"], rule={"budget": "words", "max": 2}))
     log.unlink()
-    assert [item["used"] for item in watched.call("check", {})["output"]["controls"]] == [2, 2]
+    assert [item["used"] for item in watched.call("check", {})["data"]["output"]["controls"]] == [2, 2]
     assert [call for call in log.read_text().splitlines() if " refs " in call] == [
         "--json refs --all -- /controls/named"
     ]
@@ -257,6 +257,6 @@ def test_check_reads_every_file_in_one_get_run(board: Board, tmp_path: Path, cou
         board.write(name, "one two")
     board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 99}))
     watched, log = counted(board, tmp_path)
-    assert watched.call("check", {})["output"]["controls"][0]["used"] == len(names) * len(["one", "two"])
+    assert watched.call("check", {})["data"]["output"]["controls"][0]["used"] == len(names) * len(["one", "two"])
     paths = " ".join(f"/{name}" for name in names)
     assert [call for call in log.read_text().splitlines() if " get " in call] == [f"--json get -- {paths}"]

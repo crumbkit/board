@@ -1,12 +1,16 @@
 //! How a refusal is printed, from a hand-built value.
 
 use board_model::{Code, Fields, Lined, Refusal};
-use serde_json::{Map, json};
+use serde_json::{Map, Value, json};
 
-use crate::render::{self, Format};
+use crate::render::{self, Printer};
 
 fn text(bytes: &[u8]) -> &str {
     std::str::from_utf8(bytes).unwrap()
+}
+
+fn refused(json: bool, refusal: &Refusal) -> crate::report::Output {
+    render::refused(&mut Printer::of(json, 1 << 20, &[]), refusal.clone())
 }
 
 #[test]
@@ -22,55 +26,56 @@ fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_j
             },
         )
     };
-    let plain = render::refused(Format::Text, &refusal);
+    let plain = refused(false, &refusal);
     assert_eq!(plain.code, 1);
     assert!(plain.stdout.is_empty());
     assert_eq!(
         text(&plain.stderr),
-        "error: board::plugin::failed: plugin tasks exited 1\n\
-         hint: the plugin exited without an answer; the end of its stderr follows this error\n\
+        "error: plugin tasks exited 1\n\
+         \x20 help:  the plugin exited without an answer; the end of its stderr follows this error\n\
+         \x20 code:  board::plugin::failed\n\
          Traceback: boom\n"
     );
-    let document = render::refused(Format::Json, &refusal);
+    let document = refused(true, &refusal);
     assert_eq!(document.code, 1);
     assert!(document.stderr.is_empty());
     assert_eq!(
-        text(&document.stdout),
-        "{\n  \"$type\": \"board/error/v1\",\n  \"code\": \"board::plugin::failed\",\n  \
-         \"fields\": {\n    \"plugin\": \"tasks\"\n  },\n  \"hint\": \"the plugin exited \
-         without an answer; the end of its stderr follows this error\",\n  \
-         \"message\": \"plugin tasks exited 1\"\n}\n"
+        serde_json::from_slice::<Value>(&document.stdout).unwrap(),
+        json!({
+            "schema": "crumbkit/failure/v1",
+            "code": "board::plugin::failed",
+            "message": "plugin tasks exited 1",
+            "fields": {"plugin": "tasks"},
+            "recovery": {
+                "kind": "hint",
+                "text": "the plugin exited without an answer; the end of its stderr follows this error",
+            },
+        })
     );
 }
 
 #[test]
-fn a_plugins_refusal_prints_no_hint_and_a_refused_command_line_exits_2() {
+fn a_plugins_refusal_says_it_has_no_hint_and_a_refused_command_line_exits_2() {
     let plugin = Refusal::plugin(
         "tasks::due::past".to_owned(),
         "the date is past".to_owned(),
         Map::new(),
     );
-    let plain = render::refused(Format::Text, &plugin);
+    let plain = refused(false, &plugin);
     assert_eq!(
         (text(&plain.stderr), plain.code),
-        ("error: tasks::due::past: the date is past\n", 1)
-    );
-    let document = render::refused(Format::Json, &plugin);
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&document.stdout).unwrap(),
-        json!({
-            "$type": "board/error/v1",
-            "code": "tasks::due::past",
-            "message": "the date is past",
-        })
+        (
+            "error: the date is past\n  help:  no next step: the plugin gave no hint\n  code:  tasks::due::past\n",
+            1
+        )
     );
     let usage = Refusal::new(Code::UsageInvalid, "no such command", &Fields::default());
-    assert_eq!(render::refused(Format::Text, &usage).code, 2);
-    assert_eq!(render::refused(Format::Json, &usage).code, 2);
+    assert_eq!(refused(false, &usage).code, 2);
+    assert_eq!(refused(true, &usage).code, 2);
 }
 
 #[test]
-fn a_refusal_that_lists_refused_lines_prints_each_between_its_error_and_hint() {
+fn a_refusal_that_lists_refused_lines_prints_each_after_crumbkits_text() {
     let line = |line, message: &str| Lined::new(line, Code::PutInvalid, message, Fields::default());
     let batch = Refusal::new(
         Code::PutInvalid,
@@ -80,20 +85,12 @@ fn a_refusal_that_lists_refused_lines_prints_each_between_its_error_and_hint() {
             ..Fields::default()
         },
     );
-    assert_eq!(
-        text(&render::refused(Format::Text, &batch).stderr),
-        "error: board::put::invalid: the batch is refused\n\
-         line 2: board::put::invalid: it has no $type\n\
-         line 4: board::put::invalid: it is empty\n\
-         hint: fix each line listed, then send the whole batch again; nothing was written\n"
-    );
+    assert!(text(&refused(false, &batch).stderr).ends_with(
+        "  line 2: board::put::invalid: it has no $type\n\
+             \x20 line 4: board::put::invalid: it is empty\n"
+    ));
     let single = Refusal::new(Code::PutInvalid, "it has no $type", &Fields::default());
-    assert_eq!(
-        text(&render::refused(Format::Text, &single).stderr),
-        "error: board::put::invalid: it has no $type\n\
-         hint: send one JSON object with a `$type` on stdin, such as \
-         `{\"$type\": \"lr/task/v1\", \"title\": \"a\"}`\n"
-    );
+    assert!(!text(&refused(false, &single).stderr).contains("line"));
 }
 
 #[test]
@@ -111,7 +108,8 @@ fn a_plugins_refusal_whose_fields_hold_refusals_prints_no_refused_lines() {
         )
     };
     assert_eq!(
-        text(&render::refused(Format::Text, &plugin).stderr),
-        "error: tasks::due::past: the date is past\na log line\n"
+        text(&refused(false, &plugin).stderr),
+        "error: the date is past\n  help:  no next step: the plugin gave no hint\n\
+         \x20 code:  tasks::due::past\na log line\n"
     );
 }

@@ -12,11 +12,11 @@ use std::path::{Path, PathBuf};
 use board_model::{BINARY_NAME, Code, Fields, LogicalPath, Refusal};
 use board_ops::Board;
 use clap::{Command, CommandFactory};
-use clap_complete::env::Shells;
 use clap_complete::{ArgValueCompleter, CompletionCandidate};
+use crumbkit::Sink;
 
 use crate::config::Context;
-use crate::render::{self, Format};
+use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::run::{Cli, entered};
 
@@ -30,75 +30,70 @@ pub(crate) fn complete(arguments: &[OsString], context: &Context) -> Option<Outp
         .complete
         .as_deref()
         .filter(|shell| !shell.is_empty() && *shell != "0")?;
-    let words = match arguments {
-        [_] => None,
-        [_, dashes, words @ ..] if dashes == "--" && !words.is_empty() => Some(words),
+    let script = match arguments {
+        [_] => true,
+        [_, dashes, words @ ..] if dashes == "--" && !words.is_empty() => false,
         _ => return None,
     };
-    let shells = Shells::builtins();
-    let Some(completer) = shell.to_str().and_then(|name| shells.completer(name)) else {
-        return Some(match words {
-            Some(_) => Output::default(),
-            None => unknown(shell, &shells),
+    let stem = Path::new(shell).file_stem().unwrap_or(shell);
+    let Some(name) = SHELLS.into_iter().find(|name| stem == *name) else {
+        return Some(if script {
+            unknown(shell)
+        } else {
+            Output::default()
         });
     };
-    let mut stdout = Vec::new();
-    let written = match words {
-        None => completer.write_registration(
-            VARIABLE,
-            BINARY_NAME,
-            BINARY_NAME,
-            BINARY_NAME,
-            &mut stdout,
-        ),
-        Some(words) => {
-            let start = start(words, completer.name(), context);
-            let mut command = with_paths(
-                Cli::command(),
-                &paths(start.clone(), completer.name(), context),
-            );
-            completer.write_complete(&mut command, words.to_vec(), start.as_deref(), &mut stdout)
-        }
+    // The script runs `board` from PATH, however this run was started.
+    let arguments = std::iter::once(BINARY_NAME.into()).chain(arguments[1..].iter().cloned());
+    let command = |typed: &[OsString]| {
+        let start = start(typed, name, context);
+        with_paths(Cli::command(), &paths(start, name, context))
     };
-    if written.is_err() {
-        stdout.clear();
-    }
+    let mut stdout = Vec::new();
+    let sink = &mut Sink::new(&mut stdout, std::io::sink());
+    // A line crumbkit cannot complete prints nothing, which is all the
+    // shell needs; its exit code goes unread.
+    let _ = crumbkit::complete_to(sink, command, &GUIDE, VARIABLE, shell, arguments, None);
     Some(Output {
         stdout,
         ..Output::default()
     })
 }
 
+/// The shells completion supports.
+const SHELLS: [&str; 5] = ["bash", "elvish", "fish", "powershell", "zsh"];
+
 /// The refusal of a script for a shell completion does not support.
-fn unknown(shell: &OsStr, shells: &Shells<'_>) -> Output {
-    let names: Vec<&str> = shells.names().collect();
-    render::refused(
-        Format::Text,
-        &Refusal::new(
-            Code::UsageInvalid,
-            format!(
-                "{VARIABLE} names the shell '{}', which completion does not support",
-                shell.to_string_lossy()
-            ),
-            &Fields::default(),
-        )
-        .with_hint(format!(
-            "set {VARIABLE} to one of {}, as in `{VARIABLE}=fish {BINARY_NAME} | source`",
-            names.join(", ")
-        )),
-    )
+fn unknown(shell: &OsStr) -> Output {
+    let message = format!(
+        "{VARIABLE} names the shell '{}', which completion does not support",
+        shell.to_string_lossy()
+    );
+    let hint = format!(
+        "set {VARIABLE} to one of {}, as in `{VARIABLE}=fish {BINARY_NAME} | source`",
+        SHELLS.join(", ")
+    );
+    let refusal = Refusal::new(Code::UsageInvalid, message, &Fields::default()).with_hint(hint);
+    let view = crumbkit::Output::new(
+        crumbkit::ViewFlags::new(),
+        Cli::command(),
+        &GUIDE,
+        [BINARY_NAME],
+    );
+    render::refused(&mut Printer { view }, refusal)
 }
 
 /// Where the command line being completed starts: after each `-C` before
-/// the word under the cursor, or `None` if one cannot be entered. bash and
-/// zsh send the whole line and the cursor's index; fish sends the line up
-/// to the cursor, with every word but the last already unquoted.
+/// the word under the cursor among the words `typed` after `board`, or
+/// `None` if one cannot be entered. bash and zsh send the whole line and
+/// the cursor's index; fish sends the line up to the cursor, with every
+/// word but the last already unquoted.
 fn start(words: &[OsString], shell: &str, context: &Context) -> Option<PathBuf> {
     let cursor = context
         .cursor
         .filter(|_| shell != "fish")
-        .unwrap_or(words.len().saturating_sub(1));
-    let before = words.get(1..cursor).unwrap_or_default();
+        .unwrap_or(words.len());
+    let before = words.get(..cursor.saturating_sub(1)).unwrap_or_default();
     let mut directories = Vec::new();
     let mut words = before.iter();
     while let Some(word) = words.next() {
@@ -121,7 +116,7 @@ fn start(words: &[OsString], shell: &str, context: &Context) -> Option<PathBuf> 
             directories.push(home(&directory, context)?);
         }
     }
-    entered(&context.start, &directories, Format::Text).ok()
+    entered(&context.start, &directories).ok()
 }
 
 /// `directory` with a leading `~` read as the home directory, as a shell

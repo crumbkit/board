@@ -12,7 +12,7 @@ INVALID = "board::record::invalid"
 def checked(board: Board, prefix: str = "/evals/") -> dict[str, str | None]:
     """Each record's code from `board check`, by its path; `None` when it is valid."""
     report = json.loads(board.run("--json", "check", "--all").stdout)
-    return {entry["logical"]: entry.get("code") for entry in report["entries"] if entry["logical"].startswith(prefix)}
+    return {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith(prefix)}
 
 
 def test_each_of_the_four_statuses_is_admitted_and_any_other_is_refused(board: Board) -> None:
@@ -192,7 +192,7 @@ def test_board_refs_on_a_repositorys_mount_lists_the_evals_that_name_it_and_no_o
 
     def naming(path: str) -> list[tuple[str, list[str]]]:
         report = board.json("refs", path)
-        return sorted((link["logical"], link["pointers"]) for link in report["answers"][0]["to"])
+        return sorted((link["logical"], link["pointers"]) for link in report["data"][0]["to"])
 
     assert naming("/repos/crumbkit") == [("/evals/a", ["/repos/0"]), ("/evals/b", ["/repos/1"])]
     assert naming("/repos/clap") == [("/evals/b", ["/repos/0"]), ("/evals/c", ["/repos/0"])]

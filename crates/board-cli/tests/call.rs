@@ -206,7 +206,7 @@ printf '{{"$type": "board/call-result/v1", "output": {{"due": %s}}}}' "$due"
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(report["output"], json!({"due": {"count": 2}}));
+    assert_eq!(report["data"]["output"], json!({"due": {"count": 2}}));
 }
 
 #[test]

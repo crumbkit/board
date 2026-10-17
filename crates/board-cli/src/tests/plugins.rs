@@ -35,39 +35,11 @@ fn plugin(board: &Scenario, data: &Scenario, arguments: &[&str]) -> Output {
 }
 
 #[test]
-fn plugin_list_prints_each_plugin_with_its_capabilities() {
+fn plugin_list_prints_each_plugin_with_the_names_of_its_capabilities() {
     let (board, data) = installed();
     let output = plugin(&board, &data, &["plugin", "list"]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
-    assert_eq!(
-        text(&output.stdout),
-        "ok tasks 0.1.0 enabled\n  due Open tasks due before a date.\n"
-    );
-}
-
-#[test]
-fn plugin_list_counts_a_line_per_plugin_and_capability_so_a_limit_cuts_within_a_plugin() {
-    let (board, data) = installed();
-    let cut = plugin(&board, &data, &["plugin", "list", "--limit", "1"]);
-    assert_eq!(text(&cut.stdout), "ok tasks 0.1.0 enabled\n");
-    assert_eq!(
-        text(&cut.stderr),
-        "note: showing 1 of 2 plugins and capabilities; \
-         --limit <n> (at most 10000) or --all shows more\n"
-    );
-    let report = json(&plugin(
-        &board,
-        &data,
-        &["--json", "plugin", "list", "--limit", "1"],
-    ));
-    assert_eq!(report["plugins"][0]["capabilities"], serde_json::json!([]));
-    assert_eq!(
-        (report["total"].clone(), report["truncated"].clone()),
-        (2.into(), true.into())
-    );
-    let whole = plugin(&board, &data, &["plugin", "list", "--limit", "2"]);
-    assert_eq!(text(&whole.stdout).lines().count(), 2);
-    assert_eq!(text(&whole.stderr), "");
+    assert_eq!(text(&output.stdout), "ok tasks 0.1.0 enabled offers due\n");
 }
 
 /// A manifest for `name` offering capabilities `one` and `two`.
@@ -88,7 +60,7 @@ fn two_capabilities(name: &str) -> String {
 }
 
 #[test]
-fn plugin_list_spends_its_limit_on_each_plugin_and_its_capabilities_in_turn() {
+fn plugin_list_spends_its_limit_on_whole_plugins() {
     let (board, data) = installed();
     data.write(
         "plugins/tasks/plugin.json",
@@ -99,21 +71,17 @@ fn plugin_list_spends_its_limit_on_each_plugin_and_its_capabilities_in_turn() {
         Item::File(&two_capabilities("zeta")),
     );
     let lines = [
-        "ok tasks 0.1.0 enabled\n",
-        "  one one.\n",
-        "  two two.\n",
-        "ok zeta 0.1.0 disabled\n",
-        "  one one.\n",
-        "  two two.\n",
+        "ok tasks 0.1.0 enabled offers one, two\n",
+        "ok zeta 0.1.0 disabled offers one, two\n",
     ];
-    for limit in 1..=6 {
+    for limit in 1..=2 {
         let output = plugin(
             &board,
             &data,
             &["plugin", "list", "--limit", &limit.to_string()],
         );
         assert_eq!(text(&output.stdout), lines[..limit].concat(), "{limit}");
-        assert_eq!(text(&output.stderr).is_empty(), limit == 6, "{limit}");
+        assert_eq!(text(&output.stderr).is_empty(), limit == 2, "{limit}");
     }
 }
 
@@ -121,9 +89,8 @@ fn plugin_list_spends_its_limit_on_each_plugin_and_its_capabilities_in_turn() {
 fn plugin_list_json_is_a_tagged_report_holding_the_manifest() {
     let (board, data) = installed();
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
-    assert_eq!(report["$type"], "board/plugin-list-report/v1");
-    assert_eq!(report["degraded"], false);
-    let tasks = &report["plugins"][0];
+    assert_eq!(report["schema"], "board/plugin-list-report/v2");
+    let tasks = &report["data"][0];
     assert_eq!(tasks["name"], "tasks");
     assert_eq!(tasks["status"], "ok");
     assert_eq!(tasks["enabled"], true);
@@ -147,7 +114,7 @@ fn plugin_list_json_prints_a_capabilitys_title_annotations_and_meta() {
     );
     data.write("plugins/tasks/plugin.json", Item::File(&full));
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
-    let due = &report["plugins"][0]["capabilities"][0];
+    let due = &report["data"][0]["capabilities"][0];
     assert_eq!(due["title"], "Due tasks");
     assert_eq!(
         due["annotations"],
@@ -158,7 +125,7 @@ fn plugin_list_json_prints_a_capabilitys_title_annotations_and_meta() {
     let refused = full.replace(r#""readOnlyHint""#, r#""readOnly""#);
     data.write("plugins/tasks/plugin.json", Item::File(&refused));
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
-    assert_eq!(report["plugins"][0]["code"], "board::plugin::bad_manifest");
+    assert_eq!(report["data"][0]["code"], "board::plugin::bad_manifest");
 }
 
 #[test]
@@ -168,9 +135,8 @@ fn plugin_list_fails_when_a_plugin_is_broken_or_missing() {
     let output = plugin(&board, &data, &["--json", "plugin", "list"]);
     assert_eq!(output.code, 1);
     let report = json(&output);
-    assert_eq!(report["degraded"], true);
-    assert_eq!(report["plugins"][0]["code"], "board::plugin::bad_manifest");
-    assert_eq!(report["plugins"][1]["status"], "ok");
+    assert_eq!(report["data"][0]["code"], "board::plugin::bad_manifest");
+    assert_eq!(report["data"][1]["status"], "ok");
 
     data.write("plugins/broken", Item::Deleted)
         .write("plugins/tasks", Item::Deleted);
@@ -218,8 +184,8 @@ fn plugin_find_json_names_the_plugin_and_capability() {
         &data,
         &["--json", "plugin", "find", "--capability", "due"],
     ));
-    assert_eq!(report["$type"], "board/plugin-find-report/v1");
-    let found = &report["capabilities"][0];
+    assert_eq!(report["schema"], "board/plugin-find-report/v2");
+    let found = &report["data"][0];
     assert_eq!(
         (&found["plugin"], &found["capability"], &found["version"]),
         (&"tasks".into(), &"due".into(), &"0.1.0".into())
@@ -295,10 +261,9 @@ fn call_json_wraps_the_output_in_a_call_report() {
     assert_eq!(
         report,
         serde_json::json!({
-            "$type": "board/call-report/v1",
-            "plugin": "tasks",
-            "capability": "due",
-            "output": {"count": 2}
+            "schema": "board/call-report/v2",
+            "data": {"plugin": "tasks", "capability": "due", "output": {"count": 2}},
+            "failures": []
         })
     );
     // Run with -C from elsewhere, a plugin that echoes its request sees the
@@ -312,7 +277,7 @@ fn call_json_wraps_the_output_in_a_call_report() {
     let plugins = data.workdir().join("plugins");
     let echoed = board_full(outside.workdir(), None, Some(&plugins), &arguments, b"{}");
     assert_eq!(
-        json(&echoed)["output"]["board"]["root"],
+        json(&echoed)["data"]["output"]["board"]["root"],
         root.to_str().unwrap(),
         "{}",
         text(&echoed.stderr)
@@ -328,10 +293,12 @@ fn a_plugins_error_prints_as_its_own_code_with_its_stderr() {
     assert_eq!(output.code, 1);
     assert_eq!(
         text(&output.stderr),
-        "error: tasks::date::bad: no such date\na log line\n"
+        "error: no such date\n  \
+         help:  no next step: the plugin gave no hint\n  \
+         code:  tasks::date::bad\na log line\n"
     );
     let report = json(&call(&board, &data, &["--json", "call", "tasks.due"], "{}"));
-    assert_eq!(report["$type"], "board/error/v1");
+    assert_eq!(report["schema"], "crumbkit/failure/v1");
     assert_eq!(report["code"], "tasks::date::bad");
     assert_eq!(
         report["fields"],
@@ -347,16 +314,14 @@ fn a_plugin_that_fails_without_an_error_prints_boards_code_and_hint_then_its_std
     assert_eq!(output.code, 1);
     let stderr = text(&output.stderr);
     let lines: Vec<&str> = stderr.lines().collect();
-    assert_eq!(lines.len(), 3, "{stderr}");
-    assert!(
-        lines[0].starts_with("error: board::plugin::failed: "),
-        "{stderr}"
-    );
-    assert!(lines[1].starts_with("hint: "), "{stderr}");
-    assert_eq!(lines[2], "a log line");
+    assert_eq!(lines.len(), 4, "{stderr}");
+    assert!(lines[0].starts_with("error: "), "{stderr}");
+    assert!(lines[1].starts_with("  help:  "), "{stderr}");
+    assert_eq!(lines[2], "  code:  board::plugin::failed");
+    assert_eq!(lines[3], "a log line");
     let report = json(&call(&board, &data, &["--json", "call", "tasks.due"], "{}"));
     assert_eq!(report["code"], "board::plugin::failed");
-    assert!(report["hint"].is_string());
+    assert!(report["recovery"]["text"].is_string());
     assert_eq!(
         report["fields"],
         serde_json::json!({"plugin": "tasks", "stderr": "a log line\n"})
@@ -379,29 +344,6 @@ fn a_call_names_a_target_or_a_capability_but_not_both() {
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
 
-/// A cache in which a call to tasks made the `plugins` directory beside a
-/// kept index, then made read-only, so notes, which has no database yet,
-/// cannot make one.
-pub(super) fn unwritable_databases(board: &Scenario, data: &Scenario) -> Scenario {
-    let cache = Scenario::new();
-    let called = board_full(
-        board.workdir(),
-        Some(cache.workdir()),
-        Some(&data.workdir().join("plugins")),
-        &["call", "tasks.due", "--json"],
-        b"{}",
-    );
-    assert_eq!(called.code, 0);
-    let boards: Vec<_> = std::fs::read_dir(cache.workdir().join("board"))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name())
-        .collect();
-    assert_eq!(boards.len(), 1, "{boards:?}");
-    let databases = format!("board/{}/plugins", boards[0].to_str().unwrap());
-    cache.write(&databases, Item::ReadOnly);
-    cache
-}
-
 #[test]
 fn query_reports_a_plugin_that_did_not_extract_and_still_answers() {
     let (board, data) = installed();
@@ -418,9 +360,12 @@ fn query_reports_a_plugin_that_did_not_extract_and_still_answers() {
     .write("plugins/tasks/run", Item::Executable(&answering("", 3)));
     let sql = "SELECT name FROM p_tasks.sqlite_schema";
     let report = json(&call(&board, &data, &["--json", "query", sql], ""));
-    assert_eq!(report["rows"], serde_json::json!([["board_database"]]));
-    assert_eq!(report["plugins"][0]["plugin"], "tasks");
-    assert_eq!(report["plugins"][0]["code"], "board::plugin::failed");
+    assert_eq!(report["data"], serde_json::json!([["board_database"]]));
+    assert_eq!(report["summary"]["plugins"][0]["plugin"], "tasks");
+    assert_eq!(
+        report["summary"]["plugins"][0]["code"],
+        "board::plugin::failed"
+    );
     let output = call(&board, &data, &["query", sql], "");
     assert_eq!(output.code, 0);
     assert!(
@@ -433,7 +378,7 @@ fn query_reports_a_plugin_that_did_not_extract_and_still_answers() {
         "#!/bin/sh\ncat > /dev/null\nprintf '%s' '{\"$type\": \"board/extract-result/v1\", \"blobs\": []}'\n",
     ));
     let report = json(&call(&board, &data, &["--json", "query", sql], ""));
-    assert_eq!(report["plugins"], serde_json::json!([]));
+    assert_eq!(report["summary"]["plugins"], serde_json::json!([]));
 }
 
 #[test]
@@ -447,7 +392,7 @@ fn query_attaches_each_enabled_plugins_database_with_hyphens_as_underscores() {
     let attached = "SELECT name FROM p_reading_list.sqlite_schema";
     let output = call(&board, &data, &["--json", "query", attached], "");
     assert_eq!(
-        json(&output)["rows"],
+        json(&output)["data"],
         serde_json::json!([["board_database"]])
     );
     let disabled = "SELECT count(*) FROM p_tasks.sqlite_schema";
@@ -540,9 +485,9 @@ fn plugin_enable_writes_the_schema_and_the_config_and_says_what_it_did() {
         &data,
         &["--json", "plugin", "enable", "notes"],
     ));
-    assert_eq!(report["$type"], "board/plugin-enable-report/v1");
-    assert_eq!(report["writes"], serde_json::json!([]));
-    assert_eq!(report["commit"], serde_json::Value::Null);
+    assert_eq!(report["schema"], "board/plugin-enable-report/v2");
+    assert_eq!(report["data"]["writes"], serde_json::json!([]));
+    assert_eq!(report["data"]["commit"], serde_json::Value::Null);
     let listed = text(&plugin(&board, &data, &["plugin", "list"]).stdout);
     assert_eq!(listed, "ok notes 1.0.0 enabled\n");
 }
@@ -580,12 +525,9 @@ fn plugin_list_names_a_schema_an_enabled_plugin_lacks_and_is_clean_once_enabled(
          board::plugin::schema_missing .board/types/notes/note/v1.schema.json\n"
     );
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
+    assert_eq!(report["data"][0]["code"], "board::plugin::schema_missing");
     assert_eq!(
-        report["plugins"][0]["code"],
-        "board::plugin::schema_missing"
-    );
-    assert_eq!(
-        report["plugins"][0]["schemas"],
+        report["data"][0]["schemas"],
         serde_json::json!([{
             "type": "notes/note/v1",
             "path": ".board/types/notes/note/v1.schema.json",
@@ -599,7 +541,7 @@ fn plugin_list_names_a_schema_an_enabled_plugin_lacks_and_is_clean_once_enabled(
     );
     let output = plugin(&board, &data, &["--json", "plugin", "list"]);
     assert_eq!(output.code, 0);
-    assert_eq!(json(&output)["plugins"][0].get("schemas"), None);
+    assert_eq!(json(&output)["data"][0].get("schemas"), None);
 }
 
 #[test]
@@ -610,6 +552,7 @@ fn plugin_enable_json_names_each_write_as_put_does() {
         &data,
         &["--json", "plugin", "enable", "notes"],
     ));
+    let report = &report["data"];
     assert_eq!(report["plugin"], "notes");
     let schema = &report["writes"][0];
     assert_eq!(schema["display"], "/.board/types/notes/note/v1.schema");
@@ -677,4 +620,29 @@ fn input_the_capability_refuses_hints_how_to_see_its_schema_and_valid_input_runs
     );
     assert_eq!(shown.code, 0);
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
+}
+
+/// A call whose plugin database fell back to a temporary file says so on
+/// stderr, in text and in JSON; the same call with its database beside the
+/// index prints no note.
+#[test]
+fn a_call_whose_database_is_temporary_notes_it_and_one_beside_the_index_does_not() {
+    let note = "note: plugin tasks's database is a temporary file for this run: \
+                no directory for it can be made beside the index\n";
+    for json in [false, true] {
+        let stderr = |fallback| {
+            let called = board_ops::Called {
+                report: board_plugin::CallReport {
+                    plugin: "tasks".parse().unwrap(),
+                    capability: "due".parse().unwrap(),
+                    output: json!({"count": 2}),
+                },
+                fallback,
+            };
+            let printer = &mut crate::render::Printer::of(json, 1 << 20, &["call", "tasks.due"]);
+            text(&crate::render::call(printer, &called).stderr)
+        };
+        assert_eq!(stderr(true), note, "json: {json}");
+        assert_eq!(stderr(false), "", "json: {json}");
+    }
 }

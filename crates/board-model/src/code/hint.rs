@@ -79,18 +79,6 @@ fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
     })
 }
 
-/// The hint for a path a `get` or `refs` run left for another run.
-fn over_budget(code: Code, path: &LogicalPath) -> String {
-    let command = if code == Code::GetOverBudget {
-        "get"
-    } else {
-        "refs"
-    };
-    format!(
-        "one run prints up to 64 MiB; ask for {path} and the paths after it in another `board {command}` run"
-    )
-}
-
 /// The hint for `code` with the values in `fields`, when it names one and
 /// `fields` holds it. A command it names in backticks must parse as it is.
 fn filled(code: Code, fields: &Fields) -> Option<String> {
@@ -101,7 +89,6 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         .filter(|pointer| !pointer.is_empty());
     let capability = fields.capability.as_ref();
     Some(match code {
-        Code::GetOverBudget | Code::RefsOverBudget => over_budget(code, path?),
         Code::JsonMergeConflict => format!(
             "resolve the git merge conflict in the file, then run `board check {}`",
             path?
@@ -353,12 +340,9 @@ fn generic(code: Code) -> &'static str {
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
         }
-        Code::GetOverBudget => {
-            "one run prints up to 64 MiB; ask for <path> and the paths after it in another `board get` run"
-        }
-        Code::RefsOverBudget => {
-            "one run prints up to 64 MiB; ask for <path> and the paths after it in another `board refs` run"
-        }
+        // crumbkit prints the recovery for a path a run left out: the
+        // command that asks for it.
+        Code::GetOverBudget | Code::RefsOverBudget => "ask for the paths left out in another run",
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
         }

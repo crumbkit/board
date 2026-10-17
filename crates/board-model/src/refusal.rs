@@ -31,7 +31,7 @@ pub struct Refusal {
     pub message: String,
     /// What to try next. A plugin's own code has none from Board.
     pub hint: Option<String>,
-    /// The values at fault, by their `board/error/v1` `fields` names.
+    /// The values at fault, by their names in a failure's `fields`.
     pub fields: Map<String, Value>,
     /// The end of a plugin's stderr, or empty.
     pub stderr: Vec<u8>,
@@ -126,6 +126,18 @@ mod tests {
         assert_eq!(
             Code::PathMalformed.hint(&beneath),
             "the logical path beneath `Projects` would be over 4096 bytes; write to a path with fewer or shorter segments, or link to a shallower target"
+        );
+    }
+
+    #[test]
+    fn a_merge_conflict_at_a_path_hints_checking_that_path_and_one_at_none_hints_a_placeholder() {
+        assert_eq!(
+            Code::JsonMergeConflict.hint(&Fields::at(&"/tasks/t".parse().unwrap())),
+            "resolve the git merge conflict in the file, then run `board check /tasks/t`"
+        );
+        assert_eq!(
+            Code::JsonMergeConflict.hint(&Fields::default()),
+            "resolve the git merge conflict in the file, then run `board check <path>`"
         );
     }
 

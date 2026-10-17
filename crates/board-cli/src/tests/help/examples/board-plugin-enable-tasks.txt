@@ -1,0 +1,4 @@
+wrote /.board/types/tasks/task/v1.schema fa9e021349eda2e7274c1a0d9dd7f4ef5156b553
+wrote /.board/board 892e4294231c82127504d3cd17a6b29d09329489
+committed 7331718426a3d97cb95b7a4d36135b706bffce7e
+enabled tasks
