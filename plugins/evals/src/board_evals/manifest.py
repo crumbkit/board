@@ -12,7 +12,15 @@ def manifest() -> dict[str, JsonValue]:
         "$type": "board/plugin-manifest/v1",
         "name": "evals",
         "version": "0.1.0",
-        "description": "Tests of libraries, tools, models and agents, as evals and the runs that answer them.",
+        # SKILL.md's description, the callout an agent sees first.
+        "description": (
+            "Record every test of a library, tool, model or agent as an eval and its runs in the board, and "
+            "check what was already tested before testing. Use it before you start a test and when you "
+            'conclude one. Start with `board -C <board> call evals.about` with `{"subject": "<name>"}` on '
+            "stdin, which lists the evals of what you will test. `board -C <board> call evals.open` with "
+            "`{}` on stdin lists those still planned or running. SKILL.md and README.md in the plugin's "
+            "directory say more."
+        ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_evals"],
         "metadata": {"area": "testing"},
         "types": [EVAL_TYPE, RUN_TYPE],

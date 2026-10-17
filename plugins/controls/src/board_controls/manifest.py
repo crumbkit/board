@@ -33,7 +33,15 @@ def manifest() -> dict[str, JsonValue]:
         "$type": "board/plugin-manifest/v1",
         "name": "controls",
         "version": "0.1.0",
-        "description": "Requirements on a board's files, stored as records in the board.",
+        # SKILL.md's description, the callout an agent sees first.
+        "description": (
+            "The controls plugin keeps requirements on files as records in the board that holds the files. "
+            "Use it when you start work in a board or a repository it mounts, and before you edit a file a "
+            'control may govern. Start with `board -C <board> call controls.check` with `{"path": '
+            '"/<directory>"}` on stdin, which lists the budgets it measures and the written requirements '
+            'under that path. `board -C <board> call controls.for-path` with `{"path": "/<file>"}` on stdin '
+            "lists the controls on one file. SKILL.md and README.md in the plugin's directory say more."
+        ),
         "run": [".venv/bin/python", "-m", "board_controls"],
         "metadata": {"area": "governance"},
         "types": [CONTROL_TYPE],

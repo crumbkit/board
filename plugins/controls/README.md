@@ -93,6 +93,12 @@ database Board gives it.
 The plugin runs `.venv/bin/python` directly, so run `uv sync --frozen --no-dev`
 again after pulling a change to `uv.lock`.
 
+The directory also holds `SKILL.md`, the instructions an agent follows when it
+works in a board that holds controls. Link the directory into the agent's
+skills to install it:
+
+    ln -s "$PWD" ~/.claude/skills/controls
+
 ## Developing
 
 The plugin talks to Board through the shared library in

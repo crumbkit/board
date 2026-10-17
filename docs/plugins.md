@@ -51,6 +51,11 @@ nothing.
 }
 ```
 
+A plugin that ships a `SKILL.md` gives its frontmatter `description` the same
+text as the manifest's `description`, the first thing an agent reads about the
+plugin. That text says what the plugin does, when to use it, the first command
+to run with its input on stdin, and where to learn more.
+
 Plugin and capability names are lowercase ASCII letters, digits and hyphens.
 The plugin's `metadata` is any JSON object, which `board plugin find` can
 match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,

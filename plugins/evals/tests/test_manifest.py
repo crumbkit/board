@@ -88,3 +88,16 @@ def test_a_board_that_cannot_be_read_is_reported_with_the_plugins_code_and_a_rea
     assert document["fields"] == {"code": "board::config::not_found"}
     code, document = plugin(request(board.root, "open"), board.root, board)
     assert (code, document["$type"]) == (0, "board/call-result/v1")
+
+
+def skill_description() -> str:
+    """The `description` of SKILL.md's frontmatter, a single-quoted YAML scalar on one line."""
+    [line] = [line for line in (PLUGIN / "SKILL.md").read_text().splitlines() if line.startswith("description: ")]
+    quoted = line.removeprefix("description: ")
+    assert quoted.startswith("'"), quoted
+    assert quoted.endswith("'"), quoted
+    return quoted[1:-1].replace("''", "'")
+
+
+def test_the_manifest_describes_the_plugin_with_the_skills_description() -> None:
+    assert manifest()["description"] == skill_description()

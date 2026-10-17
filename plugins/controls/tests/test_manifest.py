@@ -40,3 +40,16 @@ def test_enabling_writes_the_schema_so_a_control_checks_clean_and_a_broken_one_d
     assert status["/.board/types/controls/control/v1.schema"]["status"] == "ok"
     assert status["/controls/bad"]["status"] != "ok"
     assert status["/controls/bad"]["code"] == "board::record::invalid"
+
+
+def skill_description() -> str:
+    """The `description` of SKILL.md's frontmatter, a single-quoted YAML scalar on one line."""
+    [line] = [line for line in (PLUGIN / "SKILL.md").read_text().splitlines() if line.startswith("description: ")]
+    quoted = line.removeprefix("description: ")
+    assert quoted.startswith("'"), quoted
+    assert quoted.endswith("'"), quoted
+    return quoted[1:-1].replace("''", "'")
+
+
+def test_the_manifest_describes_the_plugin_with_the_skills_description() -> None:
+    assert manifest()["description"] == skill_description()
