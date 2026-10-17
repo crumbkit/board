@@ -2,8 +2,8 @@
 
 A Board plugin for recording tests of libraries, tools, models and agents. An
 eval states a question and how it will be tested. Each run of it is a separate
-record. Both are stored in the board, so they are versioned with the code they
-test, and an agent can ask what has already been tested before it tests again.
+record. Both are stored in a board, so an agent can ask what has already been
+tested before it tests again. `SKILL.md` says which board an eval belongs in.
 
 ## The eval record
 
@@ -98,8 +98,8 @@ The query reads the `records` view, which includes every mounted board, so
 the capabilities answer across repositories without knowing about mounts. A
 personal board mounts each repository at `/repos/<name>`, and `about` then
 lists `/repos/<name>/evals/<eval>`. A mounted board's own schemas govern its
-records, so each repository must run `board plugin enable evals` and commit
-the result; an eval it cannot validate is not listed. A mount is pinned to a
+records, so a repository that holds evals must run `board plugin enable evals`
+and commit the result; an eval it cannot validate is not listed. A mount is pinned to a
 commit, so run `board mount update /repos/<name>` to see new commits. The
 personal board can put an eval at `/repos/<name>/evals/...` when the
 repository's board sets `commit_on_put`, the mount's `follow` is a local
