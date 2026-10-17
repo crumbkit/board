@@ -226,10 +226,11 @@ the call fails. The client ignores another plugin's failure, and its own
 `board::plugin::no_database`, which means only that the database was not
 attached.
 
-Each plugin lives in `plugins/<name>/` in this repository, with its lockfile and
-a committed `plugin.json` that a test compares with the one its pydantic models
-generate. Its pytest suite drives the real `board` binary against fixture
-boards. CI runs each plugin's gates in its own job.
+Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
+`python/board-plugin/` to a commit, with its lockfile and a committed
+`plugin.json` that a test compares with the one its pydantic models generate.
+Its pytest suite drives the real `board` binary against fixture boards. CI runs
+the gates of each plugin here in its own job.
 
 There are three plugins: `controls`, `tasks` and `evals`. The README in each
 `plugins/<name>/` describes its records and capabilities.
