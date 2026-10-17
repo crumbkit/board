@@ -482,7 +482,7 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 [[package]]
 name = "crumbkit"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=14a13fbf345921ef3eab901aa44eacc356fad8fe#14a13fbf345921ef3eab901aa44eacc356fad8fe"
+source = "git+https://github.com/crumbkit/crumbkit?rev=7b077eb677c3bca4598c77a8fa12179d05f1491f#7b077eb677c3bca4598c77a8fa12179d05f1491f"
 dependencies = [
  "clap",
  "clap_complete",
@@ -496,7 +496,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-core"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=14a13fbf345921ef3eab901aa44eacc356fad8fe#14a13fbf345921ef3eab901aa44eacc356fad8fe"
+source = "git+https://github.com/crumbkit/crumbkit?rev=7b077eb677c3bca4598c77a8fa12179d05f1491f#7b077eb677c3bca4598c77a8fa12179d05f1491f"
 dependencies = [
  "schemars",
  "serde",
@@ -506,7 +506,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-markdown"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=14a13fbf345921ef3eab901aa44eacc356fad8fe#14a13fbf345921ef3eab901aa44eacc356fad8fe"
+source = "git+https://github.com/crumbkit/crumbkit?rev=7b077eb677c3bca4598c77a8fa12179d05f1491f#7b077eb677c3bca4598c77a8fa12179d05f1491f"
 dependencies = [
  "crumbkit",
  "serde",
@@ -516,7 +516,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-test"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=14a13fbf345921ef3eab901aa44eacc356fad8fe#14a13fbf345921ef3eab901aa44eacc356fad8fe"
+source = "git+https://github.com/crumbkit/crumbkit?rev=7b077eb677c3bca4598c77a8fa12179d05f1491f#7b077eb677c3bca4598c77a8fa12179d05f1491f"
 dependencies = [
  "clap",
  "crumbkit",
