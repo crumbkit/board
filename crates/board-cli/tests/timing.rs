@@ -1,7 +1,6 @@
 //! Every run of the `board` binary appends one record to the timing log in
 //! its cache directory, unless `BOARD_TIMINGS` is `0`, and a log that cannot
-//! be written changes nothing the run prints (docs/architecture.md, Timing
-//! log).
+//! be written changes nothing the run prints (docs/architecture/performance/timing.md).
 #![cfg(test)]
 #![expect(
     clippy::disallowed_methods,

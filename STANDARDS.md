@@ -39,7 +39,7 @@ what enforces it. A rule without a gate is still a rule.
 
 ## Performance
 
-20. **Count work, not time, in the gate.** A work-count test asserts how much work an operation does: after one record changes, a refresh parses exactly one blob; resolving through `n` pointers reads at most `n` pointer records. Such tests never flake, and they catch work that should grow with the change but grows with the corpus. One timing job runs the reference boards against the budgets in `docs/architecture.md`, reports every run and fails above three times a budget. A bound on what an agent receives (rows, bytes) stays small and explicit; a bound that only sizes Board's own work is set for realistic growth.
+20. **Count work, not time, in the gate.** A work-count test asserts how much work an operation does: after one record changes, a refresh parses exactly one blob; resolving through `n` pointers reads at most `n` pointer records. Such tests never flake, and they catch work that should grow with the change but grows with the corpus. One timing job runs the reference boards against the budgets in `docs/architecture/performance/budgets.md`, reports every run and fails above three times a budget. A bound on what an agent receives (rows, bytes) stays small and explicit; a bound that only sizes Board's own work is set for realistic growth.
 
 ## Toolchain and gates
 

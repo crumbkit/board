@@ -58,7 +58,7 @@ match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
 `_meta` are optional. Each schema's root is `"type": "object"`. `annotations`
 holds only MCP's five hint keys, which Board ignores. `_meta`
 is any JSON object. `icons` and `execution` are refused. `extract`
-lists the record types the plugin reads (see Extraction). `types` lists the
+lists the record types the plugin reads (see Extraction and databases). `types` lists the
 types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`
 in its directory. Each type's namespace is the plugin's name, never
 `board`. The manifest refuses
@@ -132,20 +132,10 @@ shows its last 64 KiB when the call fails. A call has 30 seconds and 16 MiB of
 stdout; past either, Board stops the plugin with `board::plugin::timeout` or
 `board::plugin::too_large`.
 
-On Unix, the plugin leads a new process group. Past a limit, Board sends
-SIGTERM to that group, waits up to a second for the plugin to exit, then sends
-SIGKILL to the group. Every process that stays in the group stops with it,
-including a `board` the plugin runs; `setsid` and `timeout` leave the group.
-Board stops reading, so a process still holding a pipe cannot keep it waiting.
-When Board receives SIGINT, SIGTERM or SIGHUP, as on Ctrl-C, it forwards the
-signal to the group and then stops. Once Board has started a plugin, it does
-not respect an inherited ignored SIGINT or SIGHUP, so `nohup board call`
-stops Board and its plugin on hangup.
-
-A nested Board leaves its plugin in the outermost plugin's group, which the
-outermost Board signals. Past its own limit, a nested Board signals only its
-plugin, so a `run` command must `exec` its final program or forward SIGTERM,
-as `uv run` does. Off Unix, Board kills only the plugin.
+On Unix the plugin leads a new process group, which Board signals past a limit
+or when Board itself is interrupted; a `run` command must `exec` its final
+program or forward SIGTERM. [plugins/processes.md](plugins/processes.md) has
+the detail.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory
@@ -153,63 +143,14 @@ at `board.root`. It never opens Board's index. Board increments `BOARD_CALL_DEPT
 0) and refuses a call arriving at 8, or at a value that is not a whole number,
 with `board::plugin::too_deep`.
 
-## Extraction
+## Extraction and databases
 
 A plugin that lists types in `extract` gets each record of those types once per
-blob, if the blob validates against its schema through some route. Codes that
-depend on the tree, such as `ref::dangling`, do not hold a record back. Board
-sends batches, in display path order, of at most 1,000 records or 16 MiB:
-
-```json
-{
-  "$type": "board/extract/v1",
-  "records": [
-    { "blob": "9c1e…", "path": "/tasks/write-plan", "type": "tasks/task/v1", "record": {} }
-  ],
-  "board": { "root": "…", "database": "…" }
-}
-```
-
-Each batch is one run of the plugin. `path` is the entry's display path, so a
-blob reached by several routes is sent once, and records in mounted boards are
-included. The plugin writes what it needs into its database, keyed by blob, and
-replies `{"$type": "board/extract-result/v1", "blobs": […]}` naming the blobs it
-handled; exit and stdout are read as for a call. Naming a blob it was not sent
-is `board::plugin::bad_output`; a blob it does not name is sent again next time.
-
-Board records in `extracted` which blobs each plugin version has handled, sends
-only new ones, and forgets them when the plugin's database is new. If Board
-cannot read or make the database's id, it sends nothing that run. A plugin
-replaces its rows for a blob it receives again. Extraction does not check that the board
-holds the plugin's schemas; it sends only records the board's own copy admits.
-
-Extraction runs in the refresh before `query`, for every enabled plugin, and at
-no other time. `check` runs no plugin code, and `call` starts the plugin without
-extracting first. A plugin that reads its rows through `board query` reads them
-extracted from the tree that query refreshed. A plugin that opens its database
-directly sees what the last `query` extracted, which can be older. When the
-index is in memory, or opening it fell back, each run's database is a new
-temporary file, so such a plugin sees no rows at all. When a
-plugin fails, `query` still answers and lists it under `plugins` in its report,
-with its code.
-
-Extraction must be a pure function of one record's bytes. Anything that spans
-records, like "tasks blocked by an open task", is a query that joins the
-plugin's tables with Board's `entries` view when it runs.
-
-## Databases
-
-Board gives each plugin version one SQLite file,
-`plugins/<name>@<version>.sqlite` beside the index, and passes its path in
-every request. Board puts the file in a temporary directory instead only when
-it cannot make that `plugins` directory or the index is in memory. The plugin owns everything inside it but `board_database`, which
-holds Board's id for the file. `board query` attaches it read-only as
-`p_<name>`, with hyphens turned into underscores, from before the first
-extraction. A new version starts with an empty file, extracts again, and
-deletes the files of older versions. When Board cannot make the file, or
-`board query` cannot read it, the plugin fails with
-`board::plugin::no_database`. Deleting any plugin database is safe. A
-plugin installed through a symlink keeps its rows when its code changes.
+blob, in batches, in the refresh before `query`, and writes what it needs into
+its own SQLite database, which `board query` attaches as `p_<name>`. Extraction
+must be a pure function of one record's bytes.
+[plugins/extraction.md](plugins/extraction.md) has the protocol, when it runs,
+and how Board keeps each database.
 
 ## Codes
 
@@ -220,28 +161,8 @@ plugin installed through a symlink keeps its rows when its code changes.
 
 ## Writing a plugin in Python
 
-Board validates a call's input and output, and `call` checks that the board
-holds the schemas the plugin ships. A plugin reading records with `board query`
-selects rows whose `status` is `ok`, or whose `code` is `ref::dangling` or
-`ref::wrong_type`, and need not validate them again. It still checks what no
-schema states, records in mounted boards, which their own schemas validate,
-and extracted records.
-
-Plugins are written in Python 3.12 or newer with uv, pydantic v2, ruff, pyright
-in strict mode and pytest (STANDARDS.md P1 to P6). Each plugin talks the
-protocol through the shared library in `python/board-plugin/`, which also
-runs `board`: Board's error becomes `<plugin>::board::refused`, carrying
-Board's code. A `board query` whose report lists the plugin's own extraction as
-failed also becomes `<plugin>::board::refused`, carrying the failure's code, so
-the call fails. The client ignores another plugin's failure, and its own
-`board::plugin::no_database`, which means only that the database was not
-attached.
-
-Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
-`python/board-plugin/` to a commit, with its lockfile and a committed
-`plugin.json` that a test compares with the one it generates.
-Its pytest suite drives the real `board` binary against fixture boards. CI runs
-the gates of each plugin here in its own job.
-
-There are three plugins: `controls`, `tasks` and `evals`. The README in each
-`plugins/<name>/` describes its records and capabilities.
+The plugins here are written in Python through the shared library in
+`python/board-plugin/`. There are three: `controls`, `tasks` and `evals`. The
+README in each `plugins/<name>/` describes its records and capabilities.
+[plugins/python.md](plugins/python.md) says what Board validates for a plugin,
+what the plugin still checks, and how plugins are built and tested.

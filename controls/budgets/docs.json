@@ -3,6 +3,6 @@
   "paths": [
     "docs/*.md"
   ],
-  "purpose": "Each level of the design must stay small enough to read whole. This records lint.toml's docs budget. cargo xtask lint enforces the budget and fails when this record disagrees with it.",
-  "requirement": "Each directory under docs/, docs/ included, holds at most 5,500 words in the .md files directly inside it. A subdirectory's words count only toward its own budget, so when a directory is full, detail moves into a subdirectory. Raise the budget only in a change that says why."
+  "purpose": "Each level of the design must stay small enough to read whole. This records lint.toml's docs budget. cargo xtask lint enforces the budget and fails when this record disagrees with it. Nearing the budget means passing 85% of it.",
+  "requirement": "Each directory under docs/, docs/ included, holds at most 5,500 words in the .md files directly inside it. A subdirectory's words count only toward its own budget, so once a directory nears its budget, detail moves into a subdirectory instead of being trimmed to fit. Raise the budget only in a change that says why."
 }

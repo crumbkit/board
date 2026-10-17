@@ -1,4 +1,4 @@
-//! The timing log (docs/architecture.md, Timing log).
+//! The timing log (docs/architecture/performance/timing.md).
 
 use std::fs::OpenOptions;
 use std::io::{self, Write as _};

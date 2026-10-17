@@ -1,4 +1,4 @@
-//! Extraction before `query` (docs/plugins.md, Extraction).
+//! Extraction before `query` (docs/plugins/extraction.md).
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};

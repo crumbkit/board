@@ -107,7 +107,7 @@ fn lint(root: &Path) -> Result<Report, LintError> {
     reason = "bench reads PATH and HOME, and installs the plugin it calls"
 )]
 fn bench(root: &Path, options: &bench::Options) -> Result<Vec<bench::Timed>, bench::BenchError> {
-    let docs = std::fs::read_to_string(root.join("docs/architecture.md"))
+    let docs = std::fs::read_to_string(root.join("docs/architecture/performance/budgets.md"))
         .map_err(bench::BenchError::Write)?;
     let budgets = bench::budgets(&docs)?;
     let data = tempfile::tempdir().map_err(bench::BenchError::Write)?;

@@ -1,5 +1,5 @@
 //! What each plugin version has extracted, and which records it still needs
-//! (docs/plugins.md, Extraction).
+//! (docs/plugins/extraction.md).
 
 use std::path::{Path, PathBuf};
 

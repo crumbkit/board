@@ -17,8 +17,9 @@ are the owner's:
    `board`, into its own repository. Done means a record count equal to
    `board objects list` and a list of the objects it could not map.
 2. Time the export with `cargo xtask bench --board <export>`. `cargo xtask
-   bench` fails above three times a budget in docs/architecture.md. The
-   targets there are speeds to aim for, and nothing enforces them.
+   bench` fails above three times a budget in
+   docs/architecture/performance/budgets.md. The targets there are speeds to
+   aim for, and nothing enforces them.
 3. Enable `tasks` and use Board daily. The export writes `legacy/*` records,
    and `tasks` reads `tasks/task/v1`.
 4. Route what daily use finds to builders as small fixes.

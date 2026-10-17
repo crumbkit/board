@@ -22,7 +22,8 @@ max_words = 400
 # Lowered from 8,000 to 5,000 by the owner after the altitude pass (#60,
 # 2026-10-04), raised to 5,500 on 2026-10-05 to describe the plugin, controls
 # and CLI features built since, and applied per node on 2026-10-06 so that
-# detail moves one level deeper when a node is full.
+# detail moves one level deeper when a node is full. Move detail down once a
+# node passes 85% of max_words, rather than trimming to stay under it.
 [docs]
 directory = "docs"
 max_words = 5500

@@ -1,5 +1,5 @@
 //! Where one run spends its time and how much work it does, for the timing
-//! log (docs/architecture.md, Timing log). Nothing here changes an answer.
+//! log (docs/architecture/performance/timing.md). Nothing here changes an answer.
 
 use std::collections::BTreeMap;
 use std::path::Path;

@@ -1,4 +1,4 @@
-//! Each plugin version's database file (docs/plugins.md, Databases). The
+//! Each plugin version's database file (docs/plugins/extraction.md, Databases). The
 //! plugin owns what is inside but one table, where Board keeps the id that
 //! tells this database from one made again at the same path.
 

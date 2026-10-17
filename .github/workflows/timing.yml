@@ -1,5 +1,5 @@
 # STANDARDS.md 20: the timing job. It times Board on a generated
-# 10,000-record board against the budgets in docs/architecture.md, reports
+# 10,000-record board against the budgets in docs/architecture/performance/budgets.md, reports
 # every run, and fails above three times a budget. The work-count tests in
 # bin/test are the hard gate; this job only watches the trend.
 name: timing

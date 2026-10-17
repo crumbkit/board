@@ -1,8 +1,8 @@
 //! `cargo xtask bench`: times Board's operations on a generated board, or on
-//! one given with `--board`, against the budgets in docs/architecture.md
-//! (Performance). It reports every operation and fails when one takes more
-//! than three times its budget. Build it with `--release`: a debug build
-//! measures the compiler, not Board.
+//! one given with `--board`, against the budgets in
+//! docs/architecture/performance/budgets.md. It reports every operation and
+//! fails when one takes more than three times its budget. Build it with
+//! `--release`: a debug build measures the compiler, not Board.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -357,7 +357,7 @@ pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
 /// Why `bench` could not measure.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum BenchError {
-    #[error("docs/architecture.md has no budgets table")]
+    #[error("docs/architecture/performance/budgets.md has no budgets table")]
     NoBudgets,
     #[error("budget row {line:?} is not `| operation | <n> ms |` or `<n> s`")]
     Budget { line: String },

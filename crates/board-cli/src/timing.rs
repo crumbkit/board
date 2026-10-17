@@ -1,4 +1,4 @@
-//! One timing record for each run (docs/architecture.md, Timing log).
+//! One timing record for each run (docs/architecture/performance/timing.md).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant, UNIX_EPOCH};
