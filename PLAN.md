@@ -10,23 +10,17 @@ identity, and its type is the `$type` field inside it.
 
 ## Next: M7, the switch to daily use
 
-The owner uses the new Board for daily work and archives the old one. The steps
-are the owner's:
+The owner uses the new Board for daily work and archives the old one. The
+steps left are the owner's:
 
-1. Run the M1 export (`tools/export-old-board/`) against the installed old
-   `board`, into its own repository. Done means a record count equal to
-   `board objects list` and a list of the objects it could not map.
-2. Time the export with `cargo xtask bench --board <export>`. `cargo xtask
-   bench` fails above three times a budget in
+1. Time the board in daily use with `cargo xtask bench --board ~/Code/board`.
+   `cargo xtask bench` fails above three times a budget in
    docs/architecture/performance/budgets.md. The targets there are speeds to
    aim for, and nothing enforces them.
-3. Enable `tasks` and use Board daily. The export writes `legacy/*` records,
-   and `tasks` reads `tasks/task/v1`.
-4. Route what daily use finds to builders as small fixes.
+2. Enable `tasks` and use Board daily.
+3. Route what daily use finds to builders as small fixes.
 
-After the switch, the export tool and viitta's
-`.board/types/legacy/work/v1.schema.json`, which its golden record needs, are
-deleted together. M7 is done when the owner says so.
+M7 is done when the owner says so.
 
 After M7, real numbers decide whether to land the three measured warm-check
 speedups (#33; warm `check` is about 20 µs per entry). The long-chain numbers

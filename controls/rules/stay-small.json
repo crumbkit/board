@@ -7,7 +7,6 @@
     "crates/*/src/*",
     "plugins/*/src/*",
     "xtask/src/*",
-    "tools/*",
     "bin/*",
     "python/*/src/*"
   ],

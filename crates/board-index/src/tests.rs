@@ -258,21 +258,6 @@ fn holds(path: &Path) -> (i64, String) {
 }
 
 #[test]
-fn an_index_another_format_uses_is_left_to_the_build_that_has_it_open() {
-    let cache = tempfile::tempdir().unwrap();
-    // Builds before the name carried the format used `index.sqlite`, and
-    // format 8 is one of theirs.
-    let (other, _holder) = beside(cache.path(), "index.sqlite", "8");
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
-    assert_eq!(
-        index.storage(),
-        &Storage::File(location(cache.path(), Path::new(ROOT)))
-    );
-    assert!(!has_fact(index), "it opened its own file");
-    assert_eq!(holds(&other), (1, "8".to_owned()), "the other is intact");
-}
-
-#[test]
 fn an_index_of_this_format_is_reused_while_another_build_has_it_open() {
     let cache = tempfile::tempdir().unwrap();
     let file = location(cache.path(), Path::new(ROOT));

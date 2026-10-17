@@ -152,8 +152,6 @@ fn formats_left(reused: bool) -> Vec<String> {
     }
     let (previous, older) = (INDEX_VERSION - 1, INDEX_VERSION - 2);
     for name in [
-        "index.sqlite".to_owned(),
-        "index.sqlite-wal".to_owned(),
         format!("index-{older}.sqlite"),
         format!("index-{older}.sqlite-shm"),
         format!("index-{previous}.sqlite"),
@@ -183,7 +181,7 @@ fn creating_an_index_deletes_files_older_than_the_previous_format() {
 
 #[test]
 fn reusing_an_index_keeps_the_files_of_every_format() {
-    assert_eq!(formats_left(true).len(), 6);
+    assert_eq!(formats_left(true).len(), 4);
 }
 
 #[test]

@@ -208,14 +208,9 @@ fn tidy(cache: &Path, root: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// The format of the index file or journal named `name`. The file from
-/// before formats were in its name counts as format 0.
+/// The format of the index file or journal named `name`.
 fn format(name: &str) -> Option<u32> {
-    let format = stem(name)?.strip_prefix("index")?;
-    if format.is_empty() {
-        return Some(0);
-    }
-    format.strip_prefix('-')?.parse().ok()
+    stem(name)?.strip_prefix("index-")?.parse().ok()
 }
 
 /// The name of an `SQLite` database or journal file without its suffix.
