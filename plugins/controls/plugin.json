@@ -177,17 +177,21 @@
           },
           "Stated": {
             "additionalProperties": false,
-            "description": "A control without a rule and its files at or under the path.",
+            "description": "A control without a rule, its patterns, and how many of its files are at or under the path.",
             "properties": {
               "control": {
                 "title": "Control",
                 "type": "string"
               },
               "files": {
+                "title": "Files",
+                "type": "integer"
+              },
+              "paths": {
                 "items": {
                   "type": "string"
                 },
-                "title": "Files",
+                "title": "Paths",
                 "type": "array"
               },
               "purpose": {
@@ -203,6 +207,7 @@
               "control",
               "requirement",
               "purpose",
+              "paths",
               "files"
             ],
             "title": "Stated",

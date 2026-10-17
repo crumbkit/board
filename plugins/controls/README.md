@@ -56,16 +56,18 @@ to `.board/types/controls/control/v1.schema.json`.
   `{"path": "/repos/crumbkit"}`, `/` when left out, and checks it where any
   link or mount leads. A path with nothing there fails with
   `controls::board::refused`. Under `/` it lists every control, so one whose
-  pattern matches nothing shows with no files; under another path, only
-  those reaching a file there. `measured` holds the budget controls, with
-  usage and `files`: every file the budget counts, inside the path or not.
-  `stated` holds the rest, with `files` under the path only, and never fails
-  the call. It fails, exiting 1, with `controls::budget::exceeded` when a
-  measured control is over budget; `controls::control::degraded` when Board
-  marks any control degraded, under any path; and
-  `controls::file::unreadable` when a measured control reaches something
-  that is not a readable file, such as a directory. Each error names every
-  control it applies to. A file counts once, however many references,
+  pattern matches nothing shows with `files: []` if measured and `files: 0` if
+  stated; under another path, only those reaching a file there. `measured`
+  holds the budget controls, with usage and `files`: every file the budget
+  counts, inside the path or not. `stated` holds the rest, with their `paths`
+  patterns and `files`, the number of their files under the path, so the
+  output stays short; `board get <control>` shows its `applies_to` and
+  `paths`. A stated control never fails the call. It fails, exiting 1, with
+  `controls::budget::exceeded` when a measured control is over budget;
+  `controls::control::degraded` when Board marks any control degraded, under
+  any path; and `controls::file::unreadable` when a measured control reaches
+  something that is not a readable file, such as a directory. Each error names
+  every control it applies to. A file counts once, however many references,
   patterns, links or mounts reach it, and a link's own file counts nothing.
   Reads are batched: one `board refs` per 10,000 controls, `board get` once
   per file, and `board query` pages of 10,000 control–file pairs, so a file

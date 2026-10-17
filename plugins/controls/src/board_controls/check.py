@@ -20,19 +20,19 @@ def check(request: CallRequest) -> CheckOutput:
     """The controls that apply to a file at or under the path asked, `/` when left out.
 
     Under `/`, every control applies, even one that reaches no file. Under
-    another path, only those reaching a file there do.
-    A control with a rule is measured over all its files, wherever they are,
-    and must be within its budget; one without a rule is stated, with its files
-    under the path. A path that names a link or mount is checked where it
-    leads. A control Board marks degraded, such as one whose reference
-    dangles, is `controls::control::degraded`, under any path, since what it
-    applies to is unknown; a measured control over its budget is
-    `controls::budget::exceeded`. Each error names every control it applies to.
-    A file reached by a reference and a pattern, or through a link, counts once.
-    Each file is read once, however many controls reach it, with `board get`
-    runs of up to 10,000 paths, and another run for paths left over a run's
-    64 MiB output budget. The files each control's patterns match come from
-    `board query` pages of up to 10,000 rows.
+    another path, only those reaching a file there do. A control with a rule
+    is measured over all its files, wherever they are, and must be within
+    its budget; one without a rule is stated, with its patterns and the
+    number of its files under the path. A path that names a link or mount is
+    checked where it leads. A control Board marks degraded, such as one
+    whose reference dangles, is `controls::control::degraded`, under any
+    path, since what it applies to is unknown; a measured control over its
+    budget is `controls::budget::exceeded`. Each error names every control
+    it applies to. A file reached by a reference and a pattern, or through a
+    link, counts once. Each file is read once, however many controls reach
+    it, with `board get` runs of up to 10,000 paths, and another run for
+    paths left over a run's 64 MiB output budget. The files each control's
+    patterns match come from `board query` pages of up to 10,000 rows.
     """
     reading = Board(request.board.root, "controls")
     broken = board.degraded(reading)
@@ -79,7 +79,8 @@ def check(request: CallRequest) -> CheckOutput:
             control=logical,
             requirement=controls[logical]["requirement"],
             purpose=controls[logical]["purpose"],
-            files=sorted(path for path in files[logical] if _under(path, scope)),
+            paths=controls[logical].get("paths", []),
+            files=sum(_under(path, scope) for path in files[logical]),
         )
         for logical in applying
         if logical not in budgets

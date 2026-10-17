@@ -99,12 +99,13 @@ class Checked(TypedDict):
 
 
 class Stated(TypedDict):
-    """A control without a rule and its files at or under the path."""
+    """A control without a rule, its patterns, and how many of its files are at or under the path."""
 
     control: str
     requirement: str
     purpose: str
-    files: list[str]
+    paths: list[str]
+    files: int
 
 
 class CheckOutput(TypedDict):

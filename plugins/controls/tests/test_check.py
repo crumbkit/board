@@ -291,7 +291,7 @@ def test_a_path_reports_the_controls_under_it_and_leaves_out_their_twins_elsewhe
     report = board.call("check", {"path": "/docs"})
     assert names(report) == (["/controls/docs-budget"], ["/controls/docs-style"])
     assert report["data"]["output"]["stated"] == [
-        {"control": "/controls/docs-style", "requirement": "Plain docs.", "purpose": "A test.", "files": ["/docs/a.md"]}
+        {"control": "/controls/docs-style", "requirement": "Plain docs.", "purpose": "A test.", "paths": [], "files": 1}
     ]
     assert report["data"]["output"]["measured"][0]["used"] == 2  # noqa: PLR2004 - the words in docs/a.md
     assert names(board.call("check", {"path": "/src"})) == (["/controls/src-budget"], ["/controls/src-style"])
@@ -313,7 +313,7 @@ def test_a_path_into_a_mount_reports_its_controls_and_one_beside_the_mount_does_
     scoped(board, tmp_path)
     report = board.call("check", {"path": "/vendor/lib"})
     assert names(report) == ([], ["/controls/vendor"])
-    assert report["data"]["output"]["stated"][0]["files"] == ["/vendor/lib/README.md"]
+    assert report["data"]["output"]["stated"][0]["files"] == 1
     assert names(board.call("check", {"path": "/vendor"})) == ([], ["/controls/vendor"])
     assert names(board.call("check", {"path": "/controls"})) == ([], [])
 
@@ -374,7 +374,7 @@ def test_a_stated_control_reaching_an_unreadable_file_passes_and_a_budget_reachi
     assert refused["fields"]["control"] == "/controls/budget"
 
 
-def test_a_budget_counts_its_files_outside_the_path_and_a_stated_control_lists_only_those_inside(
+def test_a_budget_lists_its_files_outside_the_path_and_a_stated_control_counts_only_those_inside(
     board: Board, tmp_path: Path
 ) -> None:
     scoped(board, tmp_path)
@@ -384,7 +384,9 @@ def test_a_budget_counts_its_files_outside_the_path_and_a_stated_control_lists_o
     assert [(item["files"], item["used"]) for item in output["measured"] if item["control"] == "/controls/both"] == [
         (["/docs/a.md", "/src/a.rs"], WORDS)
     ]
-    assert [item["files"] for item in output["stated"] if item["control"] == "/controls/both-style"] == [["/docs/a.md"]]
+    assert [
+        (item["paths"], item["files"]) for item in output["stated"] if item["control"] == "/controls/both-style"
+    ] == [(["docs/*", "src/*"], 1)]
 
 
 def test_the_root_lists_a_control_that_reaches_no_file_and_a_narrower_path_leaves_it_out(
@@ -401,5 +403,20 @@ def test_the_root_lists_a_control_that_reaches_no_file_and_a_narrower_path_leave
     )
     assert [
         item["files"] for item in report["data"]["output"]["stated"] if item["control"] == "/controls/typo-style"
-    ] == [[]]
+    ] == [0]
     assert names(board.call("check", {"path": "/docs"})) == (["/controls/docs-budget"], ["/controls/docs-style"])
+
+
+def test_a_stated_control_counts_a_file_it_reaches_by_reference_and_pattern_once_and_another_file_again(
+    board: Board, tmp_path: Path
+) -> None:
+    scoped(board, tmp_path)
+    board.write("controls/twice.json", control("Twice.", applies_to=["/docs/a.md"], paths=["docs/*"]))
+
+    def counted() -> list[tuple[list[str], int]]:
+        output = board.call("check", {"path": "/docs"})["data"]["output"]
+        return [(item["paths"], item["files"]) for item in output["stated"] if item["control"] == "/controls/twice"]
+
+    assert counted() == [(["docs/*"], 1)]
+    board.write("docs/b.md", "eight")
+    assert counted() == [(["docs/*"], 2)]
