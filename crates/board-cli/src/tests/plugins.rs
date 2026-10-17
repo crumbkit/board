@@ -719,50 +719,65 @@ fn plugin_list_prints_why_a_shipped_schema_is_unusable_and_a_usable_one_is_ok() 
     assert_eq!(text(&output.stdout), "ok notes 1.0.0 disabled\n");
 }
 
-/// `plugin enable` refused because the board holds another schema.
-pub(super) fn enable_over_another_schema() -> Output {
-    let (board, data) = shipping();
-    board.write(
-        ".board/types/notes/note/v1.schema.json",
-        Item::File(r#"{"type": "array"}"#),
-    );
-    plugin(&board, &data, &["--json", "plugin", "enable", "notes"])
+/// A board enabling tasks, which ships `tasks/note/v1` as `{"type":
+/// "object"}`, while the board holds `held` for it.
+fn holding(held: &str) -> (Scenario, Scenario) {
+    let (board, data) = installed();
+    let manifest = TASKS.replace(r#""run""#, r#""types": ["tasks/note/v1"], "run""#);
+    install(&data, "tasks", &answering(RESULT, 0));
+    data.write("plugins/tasks/plugin.json", Item::File(&manifest))
+        .write(
+            "plugins/tasks/types/tasks/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+    board
+        .write(".board/types/tasks/note/v1.schema.json", Item::File(held))
+        .write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        );
+    (board, data)
 }
 
-#[test]
-fn plugin_enable_writes_the_schema_and_the_config_and_says_what_it_did() {
-    let (board, data) = shipping();
-    let output = plugin(&board, &data, &["plugin", "enable", "notes"]);
-    assert_eq!(output.code, 0, "{}", text(&output.stderr));
-    let lines: Vec<String> = text(&output.stdout).lines().map(str::to_owned).collect();
-    assert!(lines[0].starts_with("wrote /.board/types/notes/note/v1.schema "));
-    assert!(lines[1].starts_with("wrote /.board/board "));
-    assert!(lines[2].starts_with("committed "));
-    assert_eq!(lines[3], "enabled notes");
-    let again = plugin(&board, &data, &["plugin", "enable", "notes"]);
-    assert_eq!(text(&again.stdout), "notes is already enabled\n");
-    let report = json(&plugin(
-        &board,
-        &data,
-        &["--json", "plugin", "enable", "notes"],
-    ));
-    assert_eq!(report["schema"], "board/plugin-enable-report/v2");
-    assert_eq!(report["data"]["writes"], serde_json::json!([]));
-    assert_eq!(report["data"]["commit"], serde_json::Value::Null);
-    let listed = text(&plugin(&board, &data, &["plugin", "list"]).stdout);
-    assert_eq!(listed, "ok notes 1.0.0 enabled\n");
-}
+const REPLACED: &str = "note: replaced .board/types/tasks/note/v1.schema.json with the schema \
+     the tasks plugin ships; records its old copy admitted may now be degraded, and \
+     `board check` lists them\n";
 
 #[test]
-fn plugin_enable_over_another_schema_is_refused_with_a_hint_and_over_none_is_admitted() {
-    let refused = enable_over_another_schema();
+fn a_call_refused_for_a_differing_schema_says_to_enable_again_which_replaces_it() {
+    let (board, data) = holding(r#"{"type": "array"}"#);
+    let refused = call(&board, &data, &["--json", "call", "tasks.due"], "{}");
     assert_eq!(refused.code, 1);
-    assert_eq!(json(&refused)["code"], "board::plugin::schema_differs");
-    let (board, data) = shipping();
+    let report = json(&refused);
+    assert_eq!(report["code"], "board::plugin::schema_differs");
+    let hint = report["recovery"]["text"].as_str().unwrap();
+    assert!(hint.contains("`board plugin enable tasks`"), "{hint}");
+    let enabled = plugin(&board, &data, &["plugin", "enable", "tasks"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let lines: Vec<String> = text(&enabled.stdout).lines().map(str::to_owned).collect();
+    assert!(lines[0].starts_with("wrote /.board/types/tasks/note/v1.schema "));
+    assert!(lines[1].starts_with("committed "));
+    assert_eq!(lines[2], "enabled tasks");
+    assert_eq!(text(&enabled.stderr), REPLACED);
+    assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
+}
+
+#[test]
+fn plugin_enable_reports_a_schema_it_replaced_and_none_when_the_schema_is_the_same() {
+    let (board, data) = holding(r#"{"type": "array"}"#);
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "tasks"]);
+    assert_eq!(text(&enabled.stderr), REPLACED);
     assert_eq!(
-        plugin(&board, &data, &["plugin", "enable", "notes"]).code,
-        0
+        json(&enabled)["data"]["replaced"],
+        serde_json::json!([".board/types/tasks/note/v1.schema.json"])
     );
+    let (board, data) = holding(r#"{"type": "object"}"#);
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "tasks"]);
+    assert_eq!(text(&enabled.stderr), "");
+    assert_eq!(json(&enabled)["data"]["replaced"], serde_json::json!([]));
+    let again = plugin(&board, &data, &["plugin", "enable", "tasks"]);
+    assert_eq!(text(&again.stdout), "tasks is already enabled\n");
+    assert_eq!(text(&again.stderr), "");
 }
 
 /// A board naming notes in its configuration without its schema.

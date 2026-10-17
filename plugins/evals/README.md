@@ -127,13 +127,10 @@ The put commits in the repository and moves the pin.
 and names the plugin in `.board/board.json`.
 
 The plugin's types stay at v1 and change in place while it has one user. After
-an update that changes a schema, Board refuses `board call evals.*` and
-`board plugin enable evals` with `board::plugin::schema_differs` until the
-board holds the new schema. Copy the plugin's `types/evals/` over the board's
-`.board/types/evals/` and commit the result:
-
-    cp -R types/evals/. <board>/.board/types/evals/
-    git -C <board> commit -m "Update the evals schemas" .board/types/evals
+an update that changes a schema, Board refuses `board call evals.*` with
+`board::plugin::schema_differs` until the board holds the new schema. Run
+`board plugin enable evals` again: it replaces the board's copy with the
+plugin's, and `board check` lists the records the new schema refuses.
 
 The directory also holds `SKILL.md`, the instructions an agent follows when it
 tests something. Link the directory into the agent's skills to install it:

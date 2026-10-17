@@ -585,35 +585,45 @@ fn unkept(starts: &mut Starts) {
     starts.variable(&place, Code::PluginNoDatabase, line, "TMPDIR");
 }
 
-/// `plugin enable` over a schema the board holds otherwise, and `plugin
+/// A call to a plugin whose schema the board holds otherwise, and `plugin
 /// list` on a board lacking an enabled plugin's schema.
 fn enabling_plugins(starts: &mut Starts) {
     let (board, data) = shipping();
     let xdg = Scenario::new();
-    for file in ["plugin.json", "types/notes/note/v1.schema.json"] {
-        let text = std::fs::read_to_string(data.workdir().join("plugins/notes").join(file));
+    let plugins = "xdg/data/board/plugins";
+    let schema = "types/notes/note/v1.schema.json";
+    let text = std::fs::read_to_string(data.workdir().join("plugins/notes").join(schema));
+    xdg.write(
+        &format!("{plugins}/notes/{schema}"),
+        Item::File(&text.unwrap()),
+    );
+    let notes = TASKS
+        .replace(r#""tasks""#, r#""notes""#)
+        .replace(r#""run""#, r#""types": ["notes/note/v1"], "run""#);
+    xdg.write(&format!("{plugins}/notes/plugin.json"), Item::File(&notes));
+    for name in ["notes", "tasks"] {
         xdg.write(
-            &format!("xdg/data/board/plugins/notes/{file}"),
-            Item::File(&text.unwrap()),
+            &format!("{plugins}/{name}/run"),
+            Item::Executable(&answering(RESULT, 0)),
         );
     }
-    xdg.write(
-        "xdg/data/board/plugins/tasks/plugin.json",
-        Item::File(TASKS),
-    );
-    board.write(
-        ".board/types/notes/note/v1.schema.json",
-        Item::File(r#"{"type": "array"}"#),
-    );
-    let place = starts.keep(board).xdg(xdg.workdir().join("xdg"));
-    let line = "plugin enable notes";
+    xdg.write(&format!("{plugins}/tasks/plugin.json"), Item::File(TASKS));
+    board
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "plugins": ["notes", "tasks"]}"#),
+        )
+        .write(
+            ".board/types/notes/note/v1.schema.json",
+            Item::File(r#"{"type": "array"}"#),
+        );
+    let place = starts
+        .keep(board)
+        .stdin("{}")
+        .xdg(xdg.workdir().join("xdg"));
+    let line = "call notes.due";
     starts.add(&place, Code::PluginSchemaDiffers, line);
-    starts.pair(
-        &place,
-        Code::PluginSchemaDiffers,
-        line,
-        "plugin enable tasks",
-    );
+    starts.pair(&place, Code::PluginSchemaDiffers, line, "call tasks.due");
     let place = starts
         .keep(lacking_a_schema().0)
         .xdg(xdg.workdir().join("xdg"));

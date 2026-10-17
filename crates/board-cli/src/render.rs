@@ -192,7 +192,7 @@ fn put_json(report: &PutReport) -> Value {
 }
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was
-/// needed.
+/// needed, with a note for each schema it replaced.
 pub(crate) fn plugin_enable(printer: &mut Printer, report: &EnableReport) -> Output {
     let name = report.name.as_str();
     let text = if report.put.writes.is_empty() {
@@ -202,7 +202,13 @@ pub(crate) fn plugin_enable(printer: &mut Printer, report: &EnableReport) -> Out
     };
     let mut value = put_json(&report.put);
     value["plugin"] = json!(name);
-    printer.print(ENABLE, Ok(said(value, text)))
+    value["replaced"] = json!(report.replaced);
+    let notes = (report.replaced.iter()).map(|path| {
+        Note::Always(format!(
+            "note: replaced {path} with the schema the {name} plugin ships; records its old copy admitted may now be degraded, and `board check` lists them"
+        ))
+    });
+    printer.noted(ENABLE, said(value, text), notes.collect())
 }
 
 /// Why an entry fails, to follow its path, with a count of the other

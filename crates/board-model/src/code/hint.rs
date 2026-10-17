@@ -148,6 +148,10 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "add `{}` to `plugins` in `.board/board.json`",
             fields.plugin.as_ref()?
         ),
+        Code::PluginSchemaDiffers => format!(
+            "run `board plugin enable {}`, which replaces the board's copy with the schema the plugin ships",
+            fields.plugin.as_ref()?
+        ),
         Code::PluginAmbiguous => format!(
             "name the plugin as well, as in `board call {}.{}`; `board plugin find --capability {}` lists the plugins that offer it",
             fields.plugin.as_ref()?,
@@ -357,7 +361,7 @@ fn generic(code: Code) -> &'static str {
             "run `board plugin enable <name>`, which writes the schemas the plugin ships"
         }
         Code::PluginSchemaDiffers => {
-            "a released type's schema never changes; compare the two files the message names and keep the right one, or ask the plugin's author"
+            "run `board plugin enable <name>`, which replaces the board's copy with the schema the plugin ships"
         }
         Code::PluginAmbiguous => {
             "name the plugin as well, as in `board call <plugin>.<capability>`; `board plugin find --capability <name>` lists the plugins that offer it"

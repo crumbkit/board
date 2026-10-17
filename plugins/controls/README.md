@@ -74,7 +74,8 @@ to `.board/types/controls/control/v1.schema.json`.
   changed between pages may or may not be counted.
 
 Board refuses both calls with `board::plugin::schema_differs` when the board's
-copy of the control schema differs from the one the plugin ships. When Board refuses a request the plugin makes, such as
+copy of the control schema differs from the one the plugin ships;
+`board plugin enable controls` replaces the board's copy. When Board refuses a request the plugin makes, such as
 a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
 

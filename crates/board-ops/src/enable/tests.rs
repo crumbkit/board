@@ -139,7 +139,7 @@ fn a_board_that_commits_on_put_commits_the_enable_once() {
 }
 
 #[test]
-fn a_symlink_to_the_same_schema_refuses_the_enable_and_a_regular_copy_is_kept() {
+fn a_symlinked_schema_refuses_the_enable_and_a_regular_copy_is_kept() {
     let (board, _data, plugins) = installed(SCHEMA);
     let at = ".board/types/notes/note/v1.schema.json";
     board
@@ -148,7 +148,11 @@ fn a_symlink_to_the_same_schema_refuses_the_enable_and_a_regular_copy_is_kept() 
     let refused = open(&board)
         .plugin_enable(Some(&plugins), &notes())
         .unwrap_err();
-    assert_eq!(refused.code(), Code::PluginSchemaDiffers);
+    assert_eq!(refused.code(), Code::PutSymlink);
+    assert!(
+        open(&board).config().plugins.is_empty(),
+        "nothing is written"
+    );
     board.write(at, Item::Deleted).write(at, Item::File(SCHEMA));
     let report = open(&board)
         .plugin_enable(Some(&plugins), &notes())
@@ -158,31 +162,43 @@ fn a_symlink_to_the_same_schema_refuses_the_enable_and_a_regular_copy_is_kept() 
 }
 
 #[test]
-fn a_different_schema_in_the_board_refuses_the_enable_and_the_same_one_is_kept() {
-    let (board, _data, plugins) = installed(SCHEMA);
+fn a_different_schema_in_the_board_is_replaced_and_reported() {
     let at = ".board/types/notes/note/v1.schema.json";
     // A file that is not JSON at all is another schema too.
     for other in [r#"{"type": "object"}"#, r#"{"type": "object",}"#] {
+        let (board, _data, plugins) = installed(SCHEMA);
         board.write(at, Item::File(other));
-        let refused = open(&board)
+        let report = open(&board)
             .plugin_enable(Some(&plugins), &notes())
-            .unwrap_err();
-        assert_eq!(refused.code(), Code::PluginSchemaDiffers, "{other}");
-        assert!(refused.to_string().contains(&format!("{at} holds")));
-        assert!(
-            open(&board).config().plugins.is_empty(),
-            "nothing is written"
-        );
+            .unwrap();
+        assert_eq!(report.replaced, [at], "{other}");
+        assert_eq!(report.put.writes.len(), 2, "{other}");
+        assert_eq!(read(&board, at), WRITTEN, "{other}");
+        assert_eq!(open(&board).config().plugins, vec![notes()]);
     }
-    // The same schema in another layout is the same schema.
-    board.write(
-        at,
-        Item::File(r#"{"required": ["title"], "type": "object"}"#),
-    );
+}
+
+#[test]
+fn the_same_schema_in_another_layout_is_left_alone_and_not_reported() {
+    let (board, _data, plugins) = installed(SCHEMA);
+    let at = ".board/types/notes/note/v1.schema.json";
+    let same = r#"{"required": ["title"], "type": "object"}"#;
+    board.write(at, Item::File(same));
     let report = open(&board)
         .plugin_enable(Some(&plugins), &notes())
         .unwrap();
-    assert_eq!(report.put.writes.len(), 1);
+    assert!(report.replaced.is_empty());
+    assert_eq!(report.put.writes.len(), 1, "only the config is written");
+    assert_eq!(read(&board, at), same.as_bytes());
+}
+
+#[test]
+fn a_new_schema_is_written_but_not_reported_as_replaced() {
+    let (board, _data, plugins) = installed(SCHEMA);
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), &notes())
+        .unwrap();
+    assert!(report.replaced.is_empty());
 }
 
 #[test]

@@ -1,10 +1,10 @@
 //! `plugin enable`: adding a plugin to a board with the schemas it ships
 //! (docs/plugins.md, Installing and enabling).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use board_model::{Code, LogicalPath, RecordType, canonical_json, parse_json};
-use board_plugin::{DiscoveryError, ManifestError, PluginName, installed, shipped_schema_path};
+use board_plugin::{DiscoveryError, ManifestError, PluginName, installed};
 use board_tree::{LOCK_WAIT, Lock, Resolver, Working, WriteError};
 use serde_json::Value;
 
@@ -13,20 +13,22 @@ use crate::board::config_file;
 use crate::put::{Expect, Failure, Prepared, PutError, PutReport, Schemas};
 use crate::verdict::Admitted;
 
-/// What `plugin enable` wrote: each schema the board lacked, then
-/// `.board/board.json` when it did not name the plugin.
+/// What `plugin enable` wrote: each schema the board lacked or held
+/// otherwise, then `.board/board.json` when it did not name the plugin.
 #[derive(Debug)]
 pub struct EnableReport {
     pub name: PluginName,
     pub put: PutReport,
+    /// Each schema the board held otherwise, by its path from the root.
+    pub replaced: Vec<String>,
 }
 
 impl Board {
     /// Enables the plugin `name` installed in `plugins`: writes each schema
     /// it ships to `.board/types/`, then adds it to `plugins` in
     /// `.board/board.json`, as one put. A schema the board already holds is
-    /// left as it is; a different one refuses the enable, which then writes
-    /// nothing. The board is read under the lock the write holds.
+    /// left as it is; a different one is replaced, since the plugin's copy is
+    /// the source. The board is read under the lock the write holds.
     pub fn plugin_enable(
         &self,
         plugins: Option<&Path>,
@@ -47,29 +49,26 @@ impl Board {
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let mut prepared = Vec::new();
+        let (mut prepared, mut replaced) = (Vec::new(), Vec::new());
         for (record_type, shipped) in &found.schemas {
-            match self.held(record_type, shipped)? {
-                Held::Absent => {
-                    let physical = record_type.schema_path();
-                    let stem = physical.strip_suffix(".json").unwrap_or(&physical);
-                    let path: LogicalPath =
-                        format!("/{stem}")
-                            .parse()
-                            .map_err(|_| EnableError::Schema {
-                                name: name.clone(),
-                                record_type: record_type.clone(),
-                            })?;
-                    prepared.push(Self::schema(&lock, &mut view, path, shipped)?);
-                }
-                Held::Same => {}
+            let expect = match self.held(record_type, shipped)? {
+                Held::Same => continue,
+                Held::Absent => Expect::Absent,
                 Held::Other => {
-                    return Err(EnableError::SchemaDiffers {
-                        path: record_type.schema_path(),
-                        shipped: found.directory.join(shipped_schema_path(record_type)),
-                    });
+                    replaced.push(record_type.schema_path());
+                    Expect::Any
                 }
-            }
+            };
+            let physical = record_type.schema_path();
+            let stem = physical.strip_suffix(".json").unwrap_or(&physical);
+            let path: LogicalPath =
+                format!("/{stem}")
+                    .parse()
+                    .map_err(|_| EnableError::Schema {
+                        name: name.clone(),
+                        record_type: record_type.clone(),
+                    })?;
+            prepared.push(Self::schema(&lock, &mut view, path, expect, shipped)?);
         }
         // The configuration is read again here, so a plugin another process
         // enabled since the board was opened is kept.
@@ -97,6 +96,7 @@ impl Board {
                     writes: Vec::new(),
                     commit: None,
                 },
+                replaced,
             });
         }
         let put = self
@@ -108,6 +108,7 @@ impl Board {
         Ok(EnableReport {
             name: name.clone(),
             put,
+            replaced,
         })
     }
 
@@ -130,17 +131,18 @@ impl Board {
         })
     }
 
-    /// A shipped schema, to be written where nothing is.
+    /// A shipped schema, to be written over what `expect` says is there.
     fn schema(
         _lock: &Lock,
         view: &mut Resolver<'_, '_>,
         path: LogicalPath,
+        expect: Expect,
         schema: &Value,
     ) -> Result<Prepared, EnableError> {
         let target = view.target(&path, false)?;
         Ok(Prepared {
             path,
-            expect: Expect::Absent,
+            expect,
             canonical: canonical_json(schema).into_bytes(),
             target,
             admitted: Admitted {
@@ -179,8 +181,6 @@ pub enum EnableError {
         name: PluginName,
         record_type: RecordType,
     },
-    #[error("{path} holds a schema other than the one the plugin ships at {}", shipped.display())]
-    SchemaDiffers { path: String, shipped: PathBuf },
     #[error(
         "the board changed while the {name} plugin was being enabled, so nothing was written; run the enable again"
     )]
@@ -196,7 +196,6 @@ impl EnableError {
             Self::NotInstalled { .. } => Code::PluginNotInstalled,
             Self::Manifest { source, .. } => source.code(),
             Self::Schema { .. } => Code::PluginBadManifest,
-            Self::SchemaDiffers { .. } => Code::PluginSchemaDiffers,
             Self::Changed { .. } => Code::PutStale,
             Self::Put(error) => error.code(),
         }

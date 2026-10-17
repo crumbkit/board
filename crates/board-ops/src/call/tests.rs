@@ -446,6 +446,35 @@ fn a_plugin_whose_schema_the_board_holds_differently_is_not_started_and_one_hold
 }
 
 #[test]
+fn a_plugin_whose_schema_differs_is_called_once_enable_replaces_the_schema() {
+    let fixture = shipping_a_schema();
+    let at = ".board/types/tasks/note/v1.schema.json";
+    fixture
+        .board
+        .write(
+            ".board/board.json",
+            Item::File(
+                r#"{"$type": "board/config/v1", "commit_on_put": false, "plugins": ["tasks"]}"#,
+            ),
+        )
+        .write(
+            at,
+            Item::File(r#"{"type": "object", "additionalProperties": true}"#),
+        );
+    assert_eq!(
+        fixture.refused("tasks.due", r#"{"n": 1}"#),
+        Board(Code::PluginSchemaDiffers)
+    );
+    let plugins = fixture.data.workdir().join("plugins");
+    let name = "tasks".parse().unwrap();
+    let enabled = open(&fixture.board)
+        .plugin_enable(Some(&plugins), &name)
+        .unwrap();
+    assert_eq!(enabled.replaced, [at]);
+    assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
+}
+
+#[test]
 fn input_that_is_not_strict_json_or_fails_the_schema_is_refused_before_the_plugin_runs() {
     let fixture = Fixture::tasks(RECORDING);
     for input in ["{", r#"{"n": 1, "n": 2}"#, r#"{"n": "one"}"#, "{}"] {

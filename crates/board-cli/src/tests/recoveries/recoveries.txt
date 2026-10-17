@@ -630,9 +630,10 @@ board call notes.due (with TMPDIR=/nonexistent)
   fails with board::plugin::no_database
   hint
 
-board plugin enable notes
+board call notes.due
   fails with board::plugin::schema_differs
-  hint
+  run board plugin enable notes
+    exits 0
 
 board plugin list
   fails with board::plugin::schema_missing

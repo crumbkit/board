@@ -19,9 +19,11 @@ runs a plugin from a board's tree.
 
 `board plugin enable <name>` writes each schema an installed plugin ships to
 `.board/types/`, then names the plugin in `.board/board.json`, as one put that
-`commit_on_put` commits. A schema already there must be equal, or the enable is
-`board::plugin::schema_differs` and writes nothing. Enabling again writes
-nothing.
+`commit_on_put` commits. A schema already there and equal is left alone. A
+different one is replaced, because the plugin's copy is the source; the report
+lists it in `replaced`, and a note on stderr says that records the old copy
+admitted may now be degraded and that `board check` lists them. Enabling again
+writes nothing.
 
 ## The manifest
 
