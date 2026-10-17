@@ -53,12 +53,15 @@ of the repository you are in before you test.
 1. Before testing anything, look for earlier evals. Run
    `echo '{"repo": "/repos/<name>"}' | board call evals.about` with the
    repository's mount, and `echo '{"subject": "<name>"}' | board call evals.about`
-   with each thing you will test.
+   with each thing you will test. The `repo` lookup finds the evals that
+   name the mount in `repos` and the evals stored in the repository's own
+   board. It reads that board through the mount at the mount's `commit`, so
+   it misses evals the repository added after that commit. To see them, run
+   `git -C <path> fetch`, then `board mount update /repos/<name>`, which
+   moves `commit` to the fetched `origin/main`. Evals not yet on
+   `origin/main`, such as ones on your branch, are not seen this way.
 
-   Ask each of these boards: the personal board, any board the owner named
-   for sharing, and the repository's board if it enables the plugin. Evals in
-   the repository's own board leave `repos` out, so ask that board with the
-   subjects only.
+   Ask the personal board and any board the owner named for sharing.
    `echo '{}' | board call evals.open` lists the evals still planned or
    running.
 2. Run the remaining steps in the board you chose. Before gathering

@@ -6,10 +6,10 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "The evals that name a subject or a repository's mount, whatever their status, here and in mounted boards.",
+      "description": "The evals that name a subject, or that name a repository's mount or live in it, whatever their status, here and in mounted boards.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "The evals that name this `subject` or this `repo`, at most `limit` of them.\n\nA subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`, matched\nexactly.",
+        "description": "The evals that name this `subject` or this `repo`, at most `limit` of them.\n\nA subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`. It matches\nan eval whose `repos` include that exact path, or whose own path lies under it.",
         "oneOf": [
           {
             "required": [

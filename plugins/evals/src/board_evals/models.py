@@ -171,8 +171,8 @@ class RunRecord(Record):
 class AboutInput(Strict):
     """The evals that name this `subject` or this `repo`, at most `limit` of them.
 
-    A subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`, matched
-    exactly.
+    A subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`. It matches
+    an eval whose `repos` include that exact path, or whose own path lies under it.
     """
 
     model_config = ConfigDict(json_schema_extra=SUBJECT_OR_REPO)
