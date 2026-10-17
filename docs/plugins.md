@@ -95,12 +95,15 @@ offers, or the nearest offered name, and so do its `fields`
 `board call <plugin>.<capability>` (or `--capability <name>`) reads input JSON
 on stdin and:
 
-1. validates it against `inputSchema` (`board::plugin::bad_input`);
-2. starts `run` in the plugin's directory (a program whose name holds `/` is
+1. checks that the board holds each schema the plugin ships, as `plugin list`
+   does (`schema_missing`, `schema_differs`), so a record Board admits is one
+   the plugin's own schema admits;
+2. validates it against `inputSchema` (`board::plugin::bad_input`);
+3. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
    `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `XDG_CACHE_HOME`,
    `XDG_DATA_HOME` and `BOARD_TIMINGS` when set;
-3. writes one request to the plugin's stdin:
+4. writes one request to the plugin's stdin:
 
    ```json
    {
@@ -111,10 +114,10 @@ on stdin and:
    }
    ```
 
-4. reads exactly one document from the plugin's stdout: `board/call-result/v1`
+5. reads exactly one document from the plugin's stdout: `board/call-result/v1`
    holding `output`, or `board/error/v1` holding `code`, `message` and typed
    `fields`;
-5. validates `output` against `outputSchema` and prints it: as JSON in text
+6. validates `output` against `outputSchema` and prints it: as JSON in text
    mode, and wrapped in `board/call-report/v1` `{plugin, capability, output}`
    with `--json`.
 
@@ -177,7 +180,8 @@ is `board::plugin::bad_output`; a blob it does not name is sent again next time.
 Board records in `extracted` which blobs each plugin version has handled, sends
 only new ones, and forgets them when the plugin's database is new. If Board
 cannot read or make the database's id, it sends nothing that run. A plugin
-replaces its rows for a blob it receives again.
+replaces its rows for a blob it receives again. Extraction does not check that the board
+holds the plugin's schemas; it sends only records the board's own copy admits.
 
 Extraction runs in the refresh before `query`, for every enabled plugin, and at
 no other time. `check` runs no plugin code, and `call` starts the plugin without

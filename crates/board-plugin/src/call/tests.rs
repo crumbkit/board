@@ -256,9 +256,9 @@ fn a_capability_nobody_offers_is_refused_with_the_nearest_name() {
 fn nearest_of(wanted: &str, offered: &[&str]) -> Option<String> {
     let manifests: Vec<_> = plugins(&[("tasks", offered)])
         .into_iter()
-        .map(|installed| (installed.manifest.unwrap(), installed.directory))
+        .map(|installed| installed.manifest.unwrap())
         .collect();
-    nearest(&wanted.parse().unwrap(), &manifests).map(|name| name.as_str().to_owned())
+    nearest(&wanted.parse().unwrap(), manifests.iter()).map(|name| name.as_str().to_owned())
 }
 
 #[test]

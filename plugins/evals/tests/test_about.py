@@ -70,14 +70,16 @@ def test_a_record_of_another_type_or_one_the_schema_refuses_is_not_an_eval(board
     assert board.paths("about", {"subject": "gix"}) == ["/evals/ok"]
 
 
-def test_an_eval_the_boards_own_looser_schema_admits_but_the_plugin_cannot_read_is_not_listed(board: Board) -> None:
+def test_board_refuses_the_call_when_its_eval_schema_is_looser_and_answers_with_the_shipped_one(board: Board) -> None:
+    board.write("evals/ruled.json", experiment("Ruled?", status="concluded", verdict="refuted"))
+    assert board.paths("about", {"subject": "gix"}) == ["/evals/ruled"]
     schema = board.root / ".board" / "types" / "evals" / "eval" / "v1.schema.json"
     loosened = json.loads(schema.read_text())
     del loosened["if"], loosened["then"]
     schema.write_text(json.dumps(loosened))
-    board.write("evals/bare.json", experiment("Bare?", status="concluded"))
-    board.write("evals/ruled.json", experiment("Ruled?", status="concluded", verdict="refuted"))
-    assert board.paths("about", {"subject": "gix"}) == ["/evals/ruled"]
+    refused = board.json("call", "evals.about", stdin=json.dumps({"subject": "gix"}))
+    assert refused["code"] == "board::plugin::schema_differs", refused
+    assert refused["fields"]["schema"] == ".board/types/evals/eval/v1.schema.json"
 
 
 def test_an_eval_whose_cases_file_reaches_nothing_is_still_listed(board: Board) -> None:

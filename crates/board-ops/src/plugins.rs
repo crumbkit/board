@@ -125,7 +125,11 @@ impl Board {
 
     /// What is wrong with how the board holds `shipped`, the schema a
     /// plugin ships for `record_type`, as `plugin enable` would find it.
-    fn problem(&self, record_type: &RecordType, shipped: &Value) -> Option<SchemaProblem> {
+    pub(crate) fn problem(
+        &self,
+        record_type: &RecordType,
+        shipped: &Value,
+    ) -> Option<SchemaProblem> {
         let code = match self.held(record_type, shipped) {
             Ok(Held::Same) => return None,
             Ok(Held::Absent) => Code::PluginSchemaMissing,

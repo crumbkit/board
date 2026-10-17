@@ -380,7 +380,69 @@ fn a_plugin_shipping_an_unusable_schema_is_a_bad_manifest_and_a_usable_one_is_ca
         "plugins/tasks/types/tasks/note/v1.schema.json",
         Item::File(r#"{"type": "object"}"#),
     );
+    fixture.board.write(
+        ".board/types/tasks/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
+}
+
+/// `tasks`, shipping `tasks/note/v1` as `{"type": "object"}`.
+fn shipping_a_schema() -> Fixture {
+    let fixture = Fixture::tasks(RECORDING);
+    let manifest = fixture.plugin("tasks").join("plugin.json");
+    let mut value: Value = serde_json::from_slice(&std::fs::read(manifest).unwrap()).unwrap();
+    value["types"] = json!(["tasks/note/v1"]);
+    fixture
+        .data
+        .write("plugins/tasks/plugin.json", Item::File(&value.to_string()))
+        .write(
+            "plugins/tasks/types/tasks/note/v1.schema.json",
+            Item::File(r#"{"type": "object"}"#),
+        );
+    fixture
+}
+
+#[test]
+fn a_plugin_whose_schema_the_board_lacks_is_not_started_and_one_the_board_holds_is_called() {
+    let fixture = shipping_a_schema();
+    let refused = fixture
+        .call("tasks.due", r#"{"n": 1}"#)
+        .unwrap_err()
+        .refusal();
+    assert_eq!(refused.code, Board(Code::PluginSchemaMissing));
+    assert_eq!(refused.fields["plugin"], "tasks");
+    assert_eq!(refused.fields["type"], "tasks/note/v1");
+    assert_eq!(
+        refused.fields["schema"],
+        ".board/types/tasks/note/v1.schema.json"
+    );
+    assert!(!fixture.plugin("tasks").join("request.json").exists());
+    fixture.board.write(
+        ".board/types/tasks/note/v1.schema.json",
+        Item::File(r#"{"type": "object"}"#),
+    );
+    assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());
+}
+
+#[test]
+fn a_plugin_whose_schema_the_board_holds_differently_is_not_started_and_one_holding_equal_json_is_called()
+ {
+    let fixture = shipping_a_schema();
+    fixture.board.write(
+        ".board/types/tasks/note/v1.schema.json",
+        Item::File(r#"{"type": "object", "additionalProperties": true}"#),
+    );
+    assert_eq!(
+        fixture.refused("--capability due", r#"{"n": 1}"#),
+        Board(Code::PluginSchemaDiffers)
+    );
+    assert!(!fixture.plugin("tasks").join("request.json").exists());
+    fixture.board.write(
+        ".board/types/tasks/note/v1.schema.json",
+        Item::File("{ \"type\" : \"object\" }\n"),
+    );
+    assert!(fixture.call("--capability due", r#"{"n": 1}"#).is_ok());
 }
 
 #[test]

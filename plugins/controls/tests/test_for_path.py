@@ -101,18 +101,17 @@ def test_a_new_file_under_a_mount_matches_no_pattern_and_one_beside_the_mount_do
     assert applying(board, "/vendor/new.md") == ["/controls/vendor"]
 
 
-def test_a_control_the_plugin_cannot_read_is_refused_and_one_it_can_is_returned(board: Board) -> None:
+def test_board_refuses_the_call_when_its_control_schema_is_wider_and_answers_with_the_shipped_one(board: Board) -> None:
+    board.write("AGENTS.md", "Rules.\n")
+    board.write("controls/kept.json", control("R.", applies_to=["/AGENTS.md"]))
+    assert applying(board, "/AGENTS.md") == ["/controls/kept"]
     schema = board.root / ".board/types/controls/control/v1.schema.json"
     widened = json.loads(schema.read_text())
     widened["additionalProperties"] = True
     schema.write_text(json.dumps(widened))
-    board.write("AGENTS.md", "Rules.\n")
-    board.write("controls/kept.json", control("R.", applies_to=["/AGENTS.md"]))
-    assert applying(board, "/AGENTS.md") == ["/controls/kept"]
-    board.write("controls/wider.json", control("R.", applies_to=["/AGENTS.md"], owner="me"))
     refused = board.call("for-path", {"path": "/AGENTS.md"})
-    assert refused["code"] == "controls::control::unreadable", refused
-    assert refused["fields"]["control"] == "/controls/wider"
+    assert refused["code"] == "board::plugin::schema_differs", refused
+    assert refused["fields"]["schema"] == ".board/types/controls/control/v1.schema.json"
 
 
 def test_a_malformed_path_is_refused_with_boards_code_and_a_well_formed_one_is_answered(board: Board) -> None:

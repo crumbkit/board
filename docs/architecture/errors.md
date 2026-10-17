@@ -42,7 +42,7 @@ plugin's own code carries.
 | `ancestor` | string | `path::not_found` | the deepest ancestor of the missing path that exists. The hint lists it, unless the path ends `.json` and the path without `.json` resolves; then the hint names that path |
 | `blob` | string | a code `get` gives for a file whose bytes it read (`json`, `record`, and `schema::invalid` for a schema in the reserved `board` namespace); `put::stale` | the blob the path holds |
 | `pointer` | string | `record::invalid`, `ref::malformed`, `plugin::bad_input`; `schema::invalid` from `put`, as `/$type` | a JSON pointer into the record or the call's input |
-| `type` | string | `record::unknown_type`, `repo::unreadable` and `schema::invalid` from a `put` whose record's schema is missing, cannot be read or does not compile | the record's type |
+| `type` | string | `record::unknown_type`, `repo::unreadable` and `schema::invalid` from a `put` whose record's schema is missing, cannot be read or does not compile; `plugin::schema_missing` and `plugin::schema_differs` from `call` | the record's type |
 | `schema` | string | the same as `type` | that type's schema file, by its path from the board's root |
 | `directory` | string | a code that a directory has of its own, such as `path::case_collision`, refusing a `put` beneath it | that directory, by its path from the board's root, without a leading `/` |
 | `plugin` | string | `plugin` codes from `call` that name one plugin; every plugin's own code | the plugin |

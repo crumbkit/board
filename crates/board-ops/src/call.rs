@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 
-use board_plugin::{CallReport, Context, Target};
+use board_plugin::{CallReport, Context, Target, shipped_schema_path};
 
 use crate::Board;
 use crate::extraction::{CallFailed, Plugins, database};
@@ -17,8 +17,9 @@ pub struct Called {
 
 impl Board {
     /// Runs the capability `target` names with `input`, in an installed plugin
-    /// that this board enables, with its database beside the index kept in
-    /// `cache`. It extracts nothing: the plugin's own `board query` does.
+    /// that this board enables and whose shipped schemas it holds, with its
+    /// database beside the index kept in `cache`. It extracts nothing: the
+    /// plugin's own `board query` does.
     pub fn call(
         &self,
         target: &Target,
@@ -28,6 +29,20 @@ impl Board {
     ) -> Result<Called, CallFailed> {
         plugins.environment.depth()?;
         let chosen = board_plugin::choose(plugins.installed()?, &self.config().plugins, target)?;
+        // A record Board admits must be one the plugin's own schema admits.
+        if let Some(problem) = chosen
+            .schemas
+            .iter()
+            .find_map(|(record_type, shipped)| self.problem(record_type, shipped))
+        {
+            return Err(CallFailed::Schema {
+                plugin: chosen.manifest.name,
+                shipped: chosen
+                    .directory
+                    .join(shipped_schema_path(&problem.record_type)),
+                problem,
+            });
+        }
         let index = self.index(cache)?;
         let database = database(index.storage(), &chosen.manifest)?;
         // The plugin may run `board query` or `board call`, which open the

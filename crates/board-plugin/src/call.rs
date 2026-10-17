@@ -6,7 +6,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use board_model::{Code, Fields, JsonError, Refusal, parse_json};
+use board_model::{Code, Fields, JsonError, RecordType, Refusal, parse_json};
 use board_validate::RecordError;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -95,6 +95,8 @@ impl Environment {
 pub struct Chosen {
     pub manifest: Manifest,
     pub directory: PathBuf,
+    /// Each type the plugin ships and its schema, as `Installed` holds them.
+    pub schemas: Vec<(RecordType, Value)>,
     capability: usize,
 }
 
@@ -147,22 +149,30 @@ pub fn choose(
             Ok(Chosen {
                 manifest,
                 directory: found.directory,
+                schemas: found.schemas,
                 capability: index,
             })
         }
         Target::Capability(capability) => {
             let manifests: Vec<_> = installed
                 .into_iter()
-                .filter_map(|installed| Some((installed.manifest.ok()?, installed.directory)))
+                .filter_map(|installed| {
+                    Some((
+                        installed.manifest.ok()?,
+                        installed.directory,
+                        installed.schemas,
+                    ))
+                })
                 .collect();
-            let nearest = nearest(capability, &manifests);
+            let nearest = nearest(capability, manifests.iter().map(|(manifest, ..)| manifest));
             let (on, off): (Vec<_>, Vec<_>) = manifests
                 .into_iter()
-                .filter_map(|(manifest, directory)| {
+                .filter_map(|(manifest, directory, schemas)| {
                     let index = offered(&manifest, capability)?;
                     Some(Chosen {
                         manifest,
                         directory,
+                        schemas,
                         capability: index,
                     })
                 })
@@ -192,14 +202,13 @@ pub fn choose(
 
 /// The capability of a working install whose name is nearest `capability`,
 /// within two edits and fewer edits than `capability` has letters.
-fn nearest(
+fn nearest<'a>(
     capability: &CapabilityName,
-    manifests: &[(Manifest, PathBuf)],
+    manifests: impl Iterator<Item = &'a Manifest>,
 ) -> Option<CapabilityName> {
     let wanted = capability.as_str();
     manifests
-        .iter()
-        .flat_map(|(manifest, _)| &manifest.capabilities)
+        .flat_map(|manifest| &manifest.capabilities)
         .map(|offered| {
             (
                 strsim::levenshtein(wanted, offered.name.as_str()),

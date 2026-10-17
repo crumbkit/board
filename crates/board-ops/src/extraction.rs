@@ -1,15 +1,17 @@
 //! Extraction before `query` (docs/plugins.md, Extraction).
 
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use board_index::{DatabaseError, IndexError, PluginDatabase, Storage, View};
 use board_model::{Fields, RecordType, Refusal, parse_json};
 use board_plugin::{
-    CallError, Context, Environment, Installed, Limits, Manifest, Record, extract, installed,
+    CallError, Context, Environment, Installed, Limits, Manifest, PluginName, Record, extract,
+    installed,
 };
 
 use crate::board::Board;
+use crate::plugins::SchemaProblem;
 
 /// Where plugins are installed, what they inherit and what a run may take.
 #[derive(Clone, Debug, Default)]
@@ -124,6 +126,17 @@ impl Board {
 /// index it needed.
 #[derive(Debug, thiserror::Error)]
 pub enum CallFailed {
+    #[error(
+        "the {plugin} plugin ships {} at {}, and the board does not hold the same schema at {}",
+        problem.record_type,
+        shipped.display(),
+        problem.path
+    )]
+    Schema {
+        plugin: PluginName,
+        shipped: PathBuf,
+        problem: SchemaProblem,
+    },
     #[error(transparent)]
     Call {
         #[from]
@@ -141,6 +154,18 @@ impl CallFailed {
     /// plugin's own, with the end of the plugin's stderr when it ran.
     pub fn refusal(&self) -> Refusal {
         match self {
+            Self::Schema {
+                plugin, problem, ..
+            } => Refusal::new(
+                problem.code,
+                self,
+                &Fields {
+                    plugin: Some(plugin.to_string()),
+                    record_type: Some(problem.record_type.clone()),
+                    schema: Some(problem.path.clone()),
+                    ..Fields::default()
+                },
+            ),
             Self::Call { source } => source.refusal(),
             Self::Index { source } => Refusal::new(source.code(), source, &Fields::default()),
         }
