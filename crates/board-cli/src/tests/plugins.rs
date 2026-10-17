@@ -42,6 +42,119 @@ fn plugin_list_prints_each_plugin_with_the_names_of_its_capabilities() {
     assert_eq!(text(&output.stdout), "ok tasks 0.1.0 enabled offers due\n");
 }
 
+/// A board enabling tasks and a missing plugin, beside a broken plugin.
+fn degraded() -> (Scenario, Scenario) {
+    let (board, data) = installed();
+    board.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "plugins": ["tasks", "gone"]}"#),
+    );
+    data.write("plugins/broken/plugin.json", Item::File("{}"));
+    (board, data)
+}
+
+#[test]
+fn plugin_list_prints_its_line_per_plugin_and_long_adds_each_description() {
+    let (board, data) = degraded();
+    let output = plugin(&board, &data, &["plugin", "list"]);
+    assert_eq!(output.code, 1);
+    assert_eq!(
+        text(&output.stdout),
+        "degraded board::plugin::bad_manifest broken disabled: the manifest is not a plugin manifest: missing field `$type`\n\
+         degraded board::plugin::not_installed gone enabled\n\
+         ok tasks 0.1.0 enabled offers due\n"
+    );
+    let output = plugin(&board, &data, &["plugin", "list", "--long"]);
+    assert_eq!(output.code, 1, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "STATUS    CODE                          NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE                                                       SCHEMAS\n\
+         degraded  board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`  -\n\
+         degraded  board::plugin::not_installed  gone    -        true     []       -            -                                                             -\n\
+         ok        -                             tasks   0.1.0    true     [\"due\"]  Open tasks.  -                                                             -\n"
+    );
+}
+
+#[test]
+fn plugin_list_fields_admits_description_and_refuses_an_unknown_field() {
+    let (board, data) = installed();
+    let output = plugin(
+        &board,
+        &data,
+        &["plugin", "list", "--fields", "name,description"],
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "NAME   DESCRIPTION\ntasks  Open tasks.\n"
+    );
+    let output = plugin(
+        &board,
+        &data,
+        &["plugin", "list", "--fields", "name,summary"],
+    );
+    assert_eq!(output.code, 2);
+    assert_eq!(text(&output.stdout), "");
+    assert_eq!(
+        text(&output.stderr),
+        "error: --fields names an unknown field 'summary'\n  \
+         help:  use the valid fields: capabilities, code, description, enabled, extract, message, metadata, name, offers, run, schemas, status, version\n  \
+         code:  board::usage::invalid\n"
+    );
+}
+
+#[test]
+fn plugin_list_json_adds_offers_and_is_otherwise_unchanged() {
+    let (board, data) = degraded();
+    let output = plugin(&board, &data, &["--json", "plugin", "list"]);
+    assert_eq!(output.code, 1);
+    assert_eq!(
+        text(&output.stdout),
+        concat!(
+            r#"{"schema":"board/plugin-list-report/v2","data":["#,
+            r#"{"code":"board::plugin::bad_manifest","enabled":false,"message":"the manifest is not a plugin manifest: missing field `$type`","name":"broken","offers":[],"status":"degraded"},"#,
+            r#"{"code":"board::plugin::not_installed","enabled":true,"name":"gone","offers":[],"status":"degraded"},"#,
+            r#"{"capabilities":[{"_meta":{},"description":"Open tasks due before a date.","inputSchema":{"type":"object"},"name":"due","outputSchema":{"type":"object"}}],"description":"Open tasks.","enabled":true,"extract":[],"metadata":{"area":"planning"},"name":"tasks","offers":["due"],"run":["./run"],"status":"ok","version":"0.1.0"}"#,
+            r#"],"total":3,"truncated":false}"#,
+            "\n"
+        )
+    );
+}
+
+#[test]
+fn plugin_list_help_names_its_columns() {
+    let (board, data) = installed();
+    let output = plugin(&board, &data, &["plugin", "list", "-h"]);
+    assert_eq!(output.code, 0);
+    let help = text(&output.stdout);
+    assert!(!help.contains("<ENTRY>"), "{help}");
+    assert!(
+        help.contains(
+            "<STATUS> [<CODE>] <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]"
+        ),
+        "{help}"
+    );
+    let output = plugin(&board, &data, &["plugin", "list", "--help"]);
+    let help = text(&output.stdout);
+    for column in [
+        "status",
+        "code",
+        "name",
+        "version",
+        "enabled",
+        "offers",
+        "description",
+        "message",
+        "schemas",
+    ] {
+        assert!(help.contains(&format!("  {column}")), "{column}: {help}");
+    }
+    assert!(
+        help.contains("`board plugin find --capability <name>` describes each"),
+        "{help}"
+    );
+}
+
 /// A manifest for `name` offering capabilities `one` and `two`.
 fn two_capabilities(name: &str) -> String {
     let capability = |capability: &str| {
@@ -172,7 +285,46 @@ fn plugin_find_prints_one_line_per_matching_capability() {
     assert_eq!((output.code, text(&output.stdout)), (0, String::new()));
     assert_eq!(
         text(&output.stderr),
-        "note: no installed capability matches every filter\n"
+        "note: no capability is installed, or none matches every filter given\n"
+    );
+}
+
+#[test]
+fn plugin_find_lists_every_capability_without_a_filter_and_a_filter_narrows_it() {
+    let (board, data) = installed();
+    data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&two_capabilities("tasks")),
+    )
+    .write(
+        "plugins/zeta/plugin.json",
+        Item::File(&two_capabilities("zeta")),
+    )
+    .write("plugins/broken/plugin.json", Item::File("{}"));
+    let output = plugin(&board, &data, &["plugin", "find"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "tasks.one enabled one.\ntasks.two enabled two.\n\
+         zeta.one disabled one.\nzeta.two disabled two.\n"
+    );
+    let output = plugin(&board, &data, &["plugin", "find", "--capability", "two"]);
+    assert_eq!(output.code, 0);
+    assert_eq!(
+        text(&output.stdout),
+        "tasks.two enabled two.\nzeta.two disabled two.\n"
+    );
+}
+
+#[test]
+fn plugin_find_without_a_filter_says_when_no_capability_is_installed() {
+    let (board, data) = installed();
+    data.write("plugins/tasks", Item::Deleted);
+    let output = plugin(&board, &data, &["plugin", "find"]);
+    assert_eq!((output.code, text(&output.stdout)), (0, String::new()));
+    assert_eq!(
+        text(&output.stderr),
+        "note: no capability is installed, or none matches every filter given\n"
     );
 }
 
@@ -198,7 +350,6 @@ fn a_capability_or_filter_that_cannot_be_read_refuses_the_command_line() {
     for refused in [
         &["plugin", "find", "--capability", "Due"][..],
         &["plugin", "find", "--meta", "area"],
-        &["plugin", "find"],
     ] {
         assert_eq!(plugin(&board, &data, refused).code, 2, "{refused:?}");
     }
@@ -533,6 +684,21 @@ fn plugin_list_names_a_schema_an_enabled_plugin_lacks_and_is_clean_once_enabled(
             "path": ".board/types/notes/note/v1.schema.json",
             "code": "board::plugin::schema_missing",
         }])
+    );
+    let output = plugin(&board, &data, &["plugin", "list", "--long"]);
+    assert_eq!(output.code, 1);
+    let long = text(&output.stdout);
+    assert!(
+        long.lines()
+            .next()
+            .is_some_and(|header| header.ends_with("  SCHEMAS")),
+        "{long}"
+    );
+    assert!(
+        long.lines().nth(1).is_some_and(|row| row.ends_with(
+            "  [{\"code\":\"board::plugin::schema_missing\",\"path\":\".board/types/notes/note/v1.schema.json\",\"type\":\"notes/note/v1\"}]"
+        )),
+        "{long}"
     );
 
     assert_eq!(

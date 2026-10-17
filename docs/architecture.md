@@ -201,7 +201,7 @@ moves the pin, as [architecture/writes.md](architecture/writes.md) says.
 | `board put <path>` | validate and write a record |
 | `board mount update <path>` | advance a mount to its `follow` |
 | `board query <sql>` | read-only SQL over the index |
-| `board plugin list` / `find` | installed plugins and their capabilities |
+| `board plugin list` / `find` | installed plugins, and every capability or those that match the filters given |
 | `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
 | `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
 

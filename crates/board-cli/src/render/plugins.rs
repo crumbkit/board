@@ -1,13 +1,15 @@
 //! `plugin list` and `plugin find`.
 
-use board_model::canonical_json;
+use board_model::{Code, canonical_json};
 use board_ops::{Called, Plugin, PluginFindReport, PluginListReport, PluginState};
-use board_plugin::{Capability, Manifest, PluginName};
+use board_plugin::{Capability, PluginName};
 use crumbkit::help::Leaf;
-use crumbkit::{Document, Listing, Prose};
+use crumbkit::{Document, Listing, Prose, Row};
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::kit::{Flagged, Note, Printer, Refused, Said, Whole};
+use super::kit::{Note, Printer, Refused, Said, Whole};
 use crate::report::Output;
 use crate::run::Page;
 
@@ -18,59 +20,136 @@ use crate::run::Page;
 pub(crate) fn plugin_list(printer: &mut Printer, report: &PluginListReport, page: &Page) -> Output {
     let mut plugins: Vec<&Plugin> = report.plugins.iter().collect();
     plugins.sort_by_key(|plugin| plugin.code().is_none());
-    let rows = plugins.into_iter().map(|plugin| {
-        let status = plugin
-            .code()
-            .map_or_else(|| "ok".to_owned(), |code| format!("degraded {code}"));
-        let capabilities = offered(plugin);
-        let version = match &plugin.state {
-            PluginState::Installed(manifest) => format!(" {}", manifest.version),
-            PluginState::BadManifest(_) | PluginState::NotInstalled => String::new(),
+    let rows = plugins.into_iter().map(Listed::of).collect();
+    let listing = page.first_of(rows).described("plugins");
+    printer.print(LIST_REPORT, Ok(listing))
+}
+
+/// A plugin as `plugin list` prints it. The fields are in name order, so
+/// the JSON keeps the order it had when each row was a JSON object.
+#[derive(Serialize, JsonSchema)]
+struct Listed {
+    /// An installed plugin's capabilities, each as an MCP Tool object.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capabilities: Option<Vec<Value>>,
+    /// The code of the plugin's first problem, left out when it has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<&'static str>,
+    /// What an installed plugin's manifest says the plugin does.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    /// Whether this board's configuration enables the plugin.
+    enabled: bool,
+    /// The record types an installed plugin extracts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extract: Option<Value>,
+    /// Why the plugin's manifest was refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+    /// An installed plugin's metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metadata: Option<Value>,
+    /// The plugins directory's entry, or the name the board enables.
+    name: String,
+    /// The names of the capabilities the plugin offers; `board plugin find
+    /// --capability <name>` describes each.
+    offers: Vec<String>,
+    /// The program an installed plugin runs, and its arguments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run: Option<Vec<String>>,
+    /// Each schema an enabled plugin ships that the board lacks or holds
+    /// differently, as its `type`, `path` and `code`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    schemas: Vec<Value>,
+    /// `ok`, or `degraded` when the plugin has a problem.
+    status: &'static str,
+    /// An installed plugin's version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip)]
+    line: String,
+}
+
+impl Listed {
+    fn of(plugin: &Plugin) -> Self {
+        let code = plugin.code();
+        let manifest = match &plugin.state {
+            PluginState::Installed(manifest) => Some(manifest),
+            PluginState::BadManifest(_) | PluginState::NotInstalled => None,
         };
-        let names: Vec<&str> = capabilities
-            .iter()
-            .map(|offered| offered.name.as_str())
+        let offers: Vec<String> = (manifest.iter())
+            .flat_map(|manifest| &manifest.capabilities)
+            .map(|offered| offered.name.to_string())
             .collect();
-        let offers = if names.is_empty() {
-            String::new()
-        } else {
-            format!(" offers {}", names.join(", "))
-        };
+        let version = manifest.map(|manifest| manifest.version.to_string());
         let line = format!(
-            "{status} {}{version} {}{}{offers}",
+            "{} {}{} {}{}{}",
+            code.map_or_else(|| "ok".to_owned(), |code| format!("degraded {code}")),
             plugin.name,
+            version
+                .as_ref()
+                .map_or_else(String::new, |v| format!(" {v}")),
             enabled(plugin.enabled),
-            problems(plugin)
+            problems(plugin),
+            if offers.is_empty() {
+                String::new()
+            } else {
+                format!(" offers {}", offers.join(", "))
+            },
         );
-        let mut value = match &plugin.state {
-            PluginState::Installed(manifest) => installed(manifest, capabilities),
-            PluginState::BadManifest(error) => json!({"message": error.to_string()}),
-            PluginState::NotInstalled => json!({}),
-        };
-        value["name"] = json!(plugin.name);
-        value["enabled"] = json!(plugin.enabled);
-        if !plugin.schemas.is_empty() {
-            value["schemas"] = (plugin.schemas.iter())
+        Self {
+            capabilities: manifest.map(|manifest| {
+                (manifest.capabilities.iter())
+                    .map(|offered| {
+                        let mut value = capability(offered);
+                        value["name"] = json!(offered.name);
+                        value
+                    })
+                    .collect()
+            }),
+            code: code.map(Code::as_str),
+            description: manifest.map(|manifest| manifest.description.clone()),
+            enabled: plugin.enabled,
+            extract: manifest.map(|manifest| json!(manifest.extract)),
+            message: match &plugin.state {
+                PluginState::BadManifest(error) => Some(error.to_string()),
+                PluginState::Installed(_) | PluginState::NotInstalled => None,
+            },
+            metadata: manifest.map(|manifest| json!(manifest.metadata)),
+            name: plugin.name.clone(),
+            offers,
+            run: manifest.map(|manifest| manifest.run.clone()),
+            schemas: (plugin.schemas.iter())
                 .map(|problem| {
                     json!({"type": problem.record_type.to_string(),
                         "path": problem.path, "code": problem.code.as_str()})
                 })
-                .collect();
+                .collect(),
+            status: if code.is_some() { "degraded" } else { "ok" },
+            version,
+            line,
         }
-        match plugin.code() {
-            None => value["status"] = json!("ok"),
-            Some(code) => {
-                value["status"] = json!("degraded");
-                value["code"] = json!(code.as_str());
-            }
-        }
-        Flagged(Whole::lined(value, line))
-    });
-    let listing = page.first_of(rows.collect()).described("plugins");
-    printer.print(LIST_REPORT, Ok(listing))
+    }
 }
 
-const LIST_REPORT: Document<Listing<Flagged>> = Document::new(
+/// Each row prints whole in JSON, for the readers that parse it so, and
+/// prints its own line in text unless `--long` or `--fields` asks for the
+/// table.
+impl Row for Listed {
+    const COLUMNS: &'static [&'static str] =
+        &["status", "code", "name", "version", "enabled", "offers"];
+    const LONG_COLUMNS: &'static [&'static str] = &["description", "message", "schemas"];
+    const WHOLE: bool = true;
+    const LINE: Option<&'static str> =
+        Some("<STATUS> [<CODE>] <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]");
+    const PROBLEM: Option<&'static str> = Some("code");
+
+    fn text_line(&self) -> Option<String> {
+        Some(self.line.clone())
+    }
+}
+
+const LIST_REPORT: Document<Listing<Listed>> = Document::new(
     "board",
     "plugin-list-report",
     2,
@@ -95,14 +174,6 @@ fn problems(plugin: &Plugin) -> String {
         String::new()
     } else {
         format!(": {}", problems.join("; "))
-    }
-}
-
-/// The capabilities a plugin offers: none unless it is installed.
-fn offered(plugin: &Plugin) -> &[Capability] {
-    match &plugin.state {
-        PluginState::Installed(manifest) => &manifest.capabilities,
-        PluginState::BadManifest(_) | PluginState::NotInstalled => &[],
     }
 }
 
@@ -134,33 +205,14 @@ const FIND_REPORT: Document<Listing<Whole>> = Document::new(
     "board",
     "plugin-find-report",
     2,
-    "The capabilities that match every filter.",
+    "The installed capabilities, or those that match every filter given.",
 )
-.when_empty("no installed capability matches every filter");
+.when_empty("no capability is installed, or none matches every filter given");
 
 pub(super) const FIND: Leaf = Leaf::new(&["plugin", "find"]).document(FIND_REPORT);
 
 fn enabled(enabled: bool) -> &'static str {
     if enabled { "enabled" } else { "disabled" }
-}
-
-/// The manifest, with only `capabilities` of its own.
-fn installed(manifest: &Manifest, capabilities: &[Capability]) -> Value {
-    json!({
-        "version": manifest.version,
-        "description": manifest.description,
-        "run": manifest.run,
-        "metadata": manifest.metadata,
-        "extract": manifest.extract,
-        "capabilities": capabilities
-            .iter()
-            .map(|offered| {
-                let mut value = capability(offered);
-                value["name"] = json!(offered.name);
-                value
-            })
-            .collect::<Vec<_>>(),
-    })
 }
 
 /// The capability as an MCP Tool object, without its name.

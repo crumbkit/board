@@ -1,0 +1,2 @@
+STATUS  CODE  NAME   VERSION  ENABLED  OFFERS          DESCRIPTION                                     MESSAGE  SCHEMAS
+ok      -     tasks  0.1.0    false    ["due","next"]  Tasks, their due dates and what each waits on.  -        -

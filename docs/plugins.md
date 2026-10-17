@@ -70,12 +70,17 @@ board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 ## Finding plugins
 
 `board plugin list` prints every installed plugin, its capabilities, and
-whether the board enables it. It exits 1 on a broken install
+whether the board enables it. Its columns are `status`, `code`, `name`,
+`version`, `enabled` and `offers`, the capability names. `--long` adds
+`description`, the plugin's description from its manifest, and the problem
+text: `message` for a refused manifest and `schemas` for schema problems. Text prints a line per plugin unless `--long`
+or `--fields` asks for the table. It exits 1 on a broken install
 (`board::plugin::bad_manifest`), an enabled name not installed
 (`not_installed`), or an enabled plugin's schema that the board lacks
 (`schema_missing`) or holds differently (`schema_differs`), naming the file.
-`board plugin find [--capability <name>] [--meta <key>=<value>]…`, with at least
-one filter, lists the capabilities of working installs that match every filter.
+`board plugin find [--capability <name>] [--meta <key>=<value>]…` lists the
+capabilities of working installs, a line each with its description. Each filter
+narrows the list to the capabilities that match it; with none, it lists them all.
 A `--meta` filter matches a string value in the capability's `_meta`, or in the
 plugin's `metadata` when `_meta` lacks the key. `--json` prints each capability
 as its Tool object.

@@ -232,16 +232,16 @@ enum PluginCommand {
     #[command(after_help = "\
 Examples:
   board plugin list
+  board plugin list --long
   board plugin list --json")]
     List {
         #[command(flatten)]
         page: Page,
     },
-    /// List the installed plugins' capabilities that match every filter.
-    #[command(
-        group = clap::ArgGroup::new("filter").required(true).multiple(true).args(["capability", "filters"]),
-        after_help = "\
+    /// List the installed plugins' capabilities, or those that match every filter.
+    #[command(after_help = "\
 Examples:
+  board plugin find
   board plugin find --capability due
   board plugin find --meta category=tasks --json")]
     Find {
