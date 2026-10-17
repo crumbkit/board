@@ -224,3 +224,19 @@ fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
     let utf8 = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
     assert!(text(&utf8.stderr).contains("\n  help:  run `board plugin -h`\n"));
 }
+
+#[test]
+fn a_long_listing_outside_a_board_fails_as_not_found_and_inside_one_lists() {
+    let scenario = board();
+    let outside = elsewhere();
+    let arguments = ["--json", "--long", "plugin", "list"];
+    let lost = board_in(outside.workdir(), &arguments);
+    assert_eq!(lost.code, 1, "{}", text(&lost.stdout));
+    assert!(lost.stderr.is_empty(), "{}", text(&lost.stderr));
+    let error = json(&lost);
+    assert_eq!(error["schema"], "board/failure/v1");
+    assert_eq!(error["code"], "board::config::not_found");
+    let found = board_in(scenario.workdir(), &arguments);
+    assert_eq!(found.code, 0, "{}", text(&found.stdout));
+    assert_eq!(json(&found)["schema"], "board/plugin-list-report/v2");
+}

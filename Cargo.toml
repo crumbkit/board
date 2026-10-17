@@ -35,8 +35,8 @@ clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 # crumbkit prints every command's reports, failures and help; crumbkit-test's convention
 # checks run against the built binary. Unreleased, so pinned by rev; the
 # version satisfies deny.toml's wildcards.
-crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "7b077eb677c3bca4598c77a8fa12179d05f1491f", version = "0.0.0", default-features = false }
-crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "7b077eb677c3bca4598c77a8fa12179d05f1491f", version = "0.0.0", default-features = false }
+crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "c6dab45c72942a1270ebffabda80a19e731c7b6b", version = "0.0.0", default-features = false }
+crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "c6dab45c72942a1270ebffabda80a19e731c7b6b", version = "0.0.0", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
