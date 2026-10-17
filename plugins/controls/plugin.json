@@ -195,11 +195,7 @@
   },
   "name": "controls",
   "run": [
-    "uv",
-    "run",
-    "--frozen",
-    "--no-dev",
-    "python",
+    ".venv/bin/python",
     "-m",
     "board_controls"
   ],

@@ -2,14 +2,12 @@
 
 import json
 
-from pydantic import JsonValue
-
-from board_plugin.protocol import CallRequest, ExtractRequest, PluginError, serve
+from board_plugin.protocol import CallRequest, ExtractRequest, JsonValue, PluginError, serve
 
 BOARD = {"root": "/b", "database": "/d.sqlite"}
 
 
-def echo(request: CallRequest) -> JsonValue:
+def echo(request: CallRequest) -> dict[str, JsonValue]:
     """A capability that returns its input, or refuses an input asking it to."""
     if request.input.get("refuse"):
         raise PluginError("demo::test::refused", "asked to refuse", {"why": "test"})

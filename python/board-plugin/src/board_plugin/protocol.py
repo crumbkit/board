@@ -6,68 +6,82 @@ The exit code is 0 with a result and 1 with an error. Logs go to stderr.
 
 import json
 import sys
-from collections.abc import Callable
-from typing import Annotated, Literal
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
-
-
-class Strict(BaseModel):
-    """A document that refuses fields it does not know."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
+type JsonValue = bool | int | float | str | list[JsonValue] | dict[str, JsonValue] | None
 
 
-class BoardContext(Strict):
+@dataclass(frozen=True)
+class BoardContext:
     """Where the plugin is running: the board's root and its own database."""
 
     root: str
     database: str
 
 
-class CallRequest(Strict):
-    """`board/call/v1`."""
+@dataclass(frozen=True)
+class CallRequest:
+    """`board/call/v1`. Board has validated `input` against the capability's `inputSchema`."""
 
-    tag: Literal["board/call/v1"] = Field(alias="$type")
     capability: str
     input: dict[str, JsonValue]
     board: BoardContext
 
 
-class ExtractRecord(Strict):
-    """One record to extract, by the blob that holds it."""
+@dataclass(frozen=True)
+class ExtractRecord:
+    """One record to extract, by the blob that holds it. Board has validated it against its schema."""
 
     blob: str
     path: str
-    record_type: str = Field(alias="type")
+    record_type: str
     record: dict[str, JsonValue]
 
 
-class ExtractRequest(Strict):
+@dataclass(frozen=True)
+class ExtractRequest:
     """`board/extract/v1`."""
 
-    tag: Literal["board/extract/v1"] = Field(alias="$type")
     records: list[ExtractRecord]
     board: BoardContext
 
 
-REQUEST: TypeAdapter[CallRequest | ExtractRequest] = TypeAdapter(
-    Annotated[CallRequest | ExtractRequest, Field(discriminator="tag")],
-)
+class BadRequestError(ValueError):
+    """A request Board never sends."""
+
+
+def parse(stdin: bytes) -> CallRequest | ExtractRequest:
+    """The request Board wrote, or `BadRequestError`."""
+    try:
+        document = json.loads(stdin)
+        board = BoardContext(**document["board"])
+        if document["$type"] == "board/call/v1":
+            return CallRequest(capability=document["capability"], input=document["input"], board=board)
+        if document["$type"] == "board/extract/v1":
+            records = [
+                ExtractRecord(blob=item["blob"], path=item["path"], record_type=item["type"], record=item["record"])
+                for item in document["records"]
+            ]
+            return ExtractRequest(records=records, board=board)
+    except (ValueError, KeyError, TypeError) as error:
+        raise BadRequestError(f"{type(error).__name__}: {error}") from None
+    raise BadRequestError(f"$type is {document['$type']!r}, not board/call/v1 or board/extract/v1")
 
 
 class PluginError(Exception):
     """A refusal Board reports with the plugin's code."""
 
-    def __init__(self, code: str, message: str, fields: dict[str, JsonValue] | None = None) -> None:
+    def __init__(self, code: str, message: str, fields: dict[str, object] | None = None) -> None:
         """Hold the code, the message and its typed fields."""
         super().__init__(message)
         self.code = code
         self.message = message
-        self.fields: dict[str, JsonValue] = fields or {}
+        self.fields: dict[str, object] = fields or {}
 
 
-Call = Callable[[CallRequest], JsonValue]
+# Board validates the output against the capability's outputSchema, whose root is an object.
+Call = Callable[[CallRequest], Mapping[str, object]]
 Extract = Callable[[ExtractRequest], list[str]]
 
 
@@ -78,9 +92,9 @@ def serve(plugin: str, call: Call, stdin: bytes, extract: Extract | None = None)
     sends it `board/extract/v1`; such a request is refused like any malformed one.
     """
     try:
-        request = REQUEST.validate_json(stdin)
+        request = parse(stdin)
         if isinstance(request, CallRequest):
-            document: dict[str, JsonValue] = {"$type": "board/call-result/v1", "output": call(request)}
+            document: dict[str, object] = {"$type": "board/call-result/v1", "output": call(request)}
         elif extract is None:
             failure = PluginError(
                 f"{plugin}::protocol::bad_request", f"{plugin} extracts nothing, so Board sends it no extraction"
@@ -88,7 +102,7 @@ def serve(plugin: str, call: Call, stdin: bytes, extract: Extract | None = None)
             return 1, _error(failure)
         else:
             document = {"$type": "board/extract-result/v1", "blobs": list(extract(request))}
-    except ValidationError as error:
+    except BadRequestError as error:
         failure = PluginError(f"{plugin}::protocol::bad_request", f"the request is not one Board sends: {error}")
         return 1, _error(failure)
     except PluginError as failure:

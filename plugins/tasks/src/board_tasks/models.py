@@ -7,7 +7,7 @@ generated from these models.
 import datetime
 from typing import Annotated, Literal, cast
 
-from board_plugin.protocol import Strict
+from board_plugin.model import Strict
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema

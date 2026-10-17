@@ -33,7 +33,9 @@ entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 `type`, `status`, `code`, `change`, `role` and `schema` (the schema blob a
 record was checked against). The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
-`body` is NULL when the record does not parse. Tables, views and columns are an
+`body` is NULL when the record does not parse. A `code` of `board::ref::dangling` or
+`board::ref::wrong_type` marks a record that its schema admits but whose
+reference is broken. Tables, views and columns are an
 interface agents write SQL against; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.

@@ -1,16 +1,12 @@
 """`check`: every budget control, measured against the files it applies to."""
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_controls import board
-from board_controls.models import Checked, CheckInput, CheckOutput, ControlRecord
-
-if TYPE_CHECKING:
-    from pydantic import JsonValue
-
+from board_controls.shapes import Checked, ControlRecord
 
 type Usage = dict[Literal["words", "bytes"], int]
 
@@ -20,7 +16,7 @@ def measure(data: bytes) -> Usage:
     return {"words": len(data.decode(errors="replace").split()), "bytes": len(data)}
 
 
-def check(request: CallRequest) -> CheckOutput:
+def check(request: CallRequest) -> list[Checked]:
     """Every budget control within its budget.
 
     A control Board marks degraded, such as one whose reference dangles, is
@@ -32,7 +28,6 @@ def check(request: CallRequest) -> CheckOutput:
     64 MiB output budget. The files each control's patterns match come from
     `board query` pages of up to 10,000 rows.
     """
-    CheckInput.model_validate(request.input)
     reading = Board(request.board.root, "controls")
     broken = board.degraded(reading)
     if broken:
@@ -42,8 +37,10 @@ def check(request: CallRequest) -> CheckOutput:
             f"controls Board cannot use: {names}; run `board check` for why",
             {"controls": [{"control": logical, "code": code} for logical, code in broken]},
         )
-    budgets = {logical: record for logical, record in board.controls(reading).items() if record.rule is not None}
-    files = board.referenced(reading, sorted(logical for logical, record in budgets.items() if record.applies_to))
+    budgets = {logical: record for logical, record in board.controls(reading).items() if record.get("rule") is not None}
+    files = board.referenced(
+        reading, sorted(logical for logical, record in budgets.items() if record.get("applies_to"))
+    )
     files.update({logical: set() for logical in budgets if logical not in files})
     for control, path, status, code in board.matched(reading):
         if control in files:
@@ -53,32 +50,31 @@ def check(request: CallRequest) -> CheckOutput:
     distinct = sorted({path for paths in files.values() for path in paths})
     reads = dict(zip(distinct, reading.get(distinct), strict=True))
     checked = [_checked(logical, budgets[logical], sorted(files[logical]), reads) for logical in sorted(budgets)]
-    failing = [item for item in checked if item.used > item.max]
+    failing = [item for item in checked if item["used"] > item["max"]]
     if failing:
-        names = ", ".join(f"{item.control} ({item.used} of {item.max} {item.budget})" for item in failing)
-        over: list[JsonValue] = [item.model_dump(mode="json") for item in failing]
+        names = ", ".join(f"{item['control']} ({item['used']} of {item['max']} {item['budget']})" for item in failing)
         raise PluginError(
             "controls::budget::exceeded",
             f"over budget: {names}; shorten the files, or raise the control's max in a change that says why",
-            {"controls": over},
+            {"controls": failing},
         )
-    return CheckOutput(controls=checked)
+    return checked
 
 
 def _checked(logical: str, record: ControlRecord, files: list[str], reads: dict[str, bytes | PluginError]) -> Checked:
-    rule = record.rule
+    rule = record.get("rule")
     assert rule is not None  # noqa: S101 - check passes only budget controls
     used = 0
     for path in files:
         read = reads[path]
         if isinstance(read, PluginError):
             raise _unreadable(logical, path, read.fields.get("code"))
-        used += measure(read)[rule.budget]
+        used += measure(read)[rule["budget"]]
     return Checked(
         control=logical,
-        requirement=record.requirement,
-        budget=rule.budget,
-        max=rule.max,
+        requirement=record["requirement"],
+        budget=rule["budget"],
+        max=rule["max"],
         used=used,
         files=files,
     )

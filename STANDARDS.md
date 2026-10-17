@@ -165,7 +165,7 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
 
 - **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
 - **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`. CI runs them on Linux, and on macOS before a release.
-- **P3. Typed edges.** Inputs and outputs are pydantic v2 models with `extra="forbid"`. The manifest's schemas are generated from those models, never written by hand.
+- **P3. Typed edges.** Board validates a call's input and output, and the records in the board's own tree, against the plugin's schemas (docs/plugins.md), so a plugin types them with TypedDicts and imports pydantic only to generate its schemas. A test compares the committed manifest and schemas with the generated ones, and another that a call loads no pydantic. A plugin that checks more than its schemas state validates with pydantic models with `extra="forbid"`.
 - **P4. Board's contract.** Rules 3, 4 and 17 apply to the protocol: every document carries `$type`, every error a stable code `<plugin>::<area>::<reason>`, the exit code is 0 or 1, and logs go to stderr only.
 - **P5. Pure extraction.** Extraction is a function of one record's bytes. Anything spanning records is a query.
 - **P6. Tests.** Test against real fixture boards and the real protocol. Rule 19 applies: sentences as names, every refusal paired with an admitted twin, no retries.

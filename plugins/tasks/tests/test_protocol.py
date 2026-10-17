@@ -83,10 +83,10 @@ def test_a_capability_the_plugin_does_not_offer_is_refused(tmp_path: Path) -> No
 
 def test_a_request_board_would_not_send_is_refused(tmp_path: Path) -> None:
     request = extract_request(tmp_path / "tasks.sqlite", ("a1", task("A")))
-    request["colour"] = "blue"
+    request["$type"] = "board/other/v1"
     code, document = plugin(request, tmp_path)
     assert (code, document["code"]) == (1, "tasks::protocol::bad_request")
-    del request["colour"]
+    request["$type"] = "board/extract/v1"
     assert plugin(request, tmp_path)[0] == 0
 
 

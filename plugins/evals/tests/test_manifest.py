@@ -70,10 +70,10 @@ def test_a_capability_the_plugin_does_not_offer_is_refused_and_one_it_offers_is_
 
 def test_a_request_board_would_not_send_is_refused(board: Board) -> None:
     given = request(board.root, "open")
-    given["colour"] = "blue"
+    given["$type"] = "board/other/v1"
     code, document = plugin(given, board.root, board)
     assert (code, document["code"]) == (1, "evals::protocol::bad_request")
-    del given["colour"]
+    given["$type"] = "board/call/v1"
     assert plugin(given, board.root, board)[0] == 0
 
 

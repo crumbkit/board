@@ -6,10 +6,10 @@ from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
 
 from board_controls import board
-from board_controls.models import CONTROL_TYPE, Applying, ForPathInput, ForPathOutput
+from board_controls.shapes import CONTROL_TYPE, Applying
 
 
-def for_path(request: CallRequest) -> ForPathOutput:
+def for_path(request: CallRequest) -> list[Applying]:
     """Each readable control whose `applies_to` reaches the path or whose `paths` match it, by the control's path.
 
     A pattern matches the path from the root of the file the path resolves
@@ -17,11 +17,11 @@ def for_path(request: CallRequest) -> ForPathOutput:
     to be written, is matched where Board would place a file there. A path
     beneath a file, where nothing can be, matches no pattern.
     """
-    asked = ForPathInput.model_validate(request.input)
+    asked = str(request.input["path"])
     root = request.board.root
     reading = Board(root, "controls")
     controls = board.controls(reading)
-    [report] = reading.refs([asked.path], missing=True)
+    [report] = reading.refs([asked], missing=True)
     if report is None:
         # Only a path beneath a file names nothing, and nothing can be written there.
         reaching: set[str] = set()
@@ -43,14 +43,12 @@ def for_path(request: CallRequest) -> ForPathOutput:
         )
         matched = {logical for (logical,) in rows}
     applying = (matched | reaching) & controls.keys()
-    return ForPathOutput(
-        controls=[
-            Applying(
-                control=logical,
-                requirement=controls[logical].requirement,
-                purpose=controls[logical].purpose,
-                rule=controls[logical].rule,
-            )
-            for logical in sorted(applying)
-        ],
-    )
+    return [
+        Applying(
+            control=logical,
+            requirement=controls[logical]["requirement"],
+            purpose=controls[logical]["purpose"],
+            rule=controls[logical].get("rule"),
+        )
+        for logical in sorted(applying)
+    ]

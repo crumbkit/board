@@ -63,9 +63,8 @@ to `.board/types/controls/control/v1.schema.json`.
   Each page is a separate run; a file added or removed between pages may or
   may not be counted, but no pair is skipped or counted twice.
 
-Both fail with `controls::control::unreadable` when a control is valid in the
-board but holds fields this plugin does not read, because the board's copy of
-the schema was changed. When Board refuses a request the plugin makes, such as
+Board refuses both calls with `board::plugin::schema_differs` when the board's
+copy of the control schema differs from the one the plugin ships. When Board refuses a request the plugin makes, such as
 a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
 
@@ -80,6 +79,9 @@ database Board gives it.
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/controls"
     board plugin enable controls
 
+The plugin runs `.venv/bin/python` directly, so run `uv sync --frozen --no-dev`
+again after pulling a change to `uv.lock`.
+
 ## Developing
 
 The plugin talks to Board through the shared library in
@@ -90,5 +92,5 @@ The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 `uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
 the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
-from the pydantic models in `src/board_controls/models.py` by
+from the TypedDicts in `src/board_controls/shapes.py` by
 `board_controls.manifest`, and a test checks that the committed files match.

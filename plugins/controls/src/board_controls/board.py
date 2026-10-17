@@ -1,37 +1,27 @@
 """What the controls plugin reads from the board: its controls and where paths lead."""
 
+import json
 from typing import Any
 
 from board_plugin.board import LIMIT, Board, literal
 from board_plugin.protocol import PluginError
-from pydantic import ValidationError
 
-from board_controls.models import CONTROL_TYPE, ControlRecord
+from board_controls.shapes import CONTROL_TYPE, ControlRecord
 
 
 def controls(board: Board) -> dict[str, ControlRecord]:
-    """Every control in the board's own tree this plugin can read, by its logical path.
+    """Every valid control in the board's own tree, by its logical path.
 
-    That includes a control Board marks degraded only because of the tree,
-    such as one with a dangling reference; an invalid control is left out.
+    That includes a control Board marks degraded only because a reference
+    dangles or reaches the wrong type, which Board checks only of a valid
+    record. A malformed reference fails the schema, so it is left out.
     """
     rows = board.rows(
-        "SELECT logical, body, status FROM records"  # noqa: S608 - the one value is a constant
-        f" WHERE type = {literal(CONTROL_TYPE)} AND source = 'worktree'",
+        "SELECT logical, body FROM records"  # noqa: S608 - the one value is a constant
+        f" WHERE type = {literal(CONTROL_TYPE)} AND source = 'worktree'"
+        " AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type'))",
     )
-    found: dict[str, ControlRecord] = {}
-    for logical, body, status in rows:
-        try:
-            found[logical] = ControlRecord.model_validate_json(body)
-        except ValidationError as error:
-            if status != "ok":
-                continue
-            raise PluginError(
-                "controls::control::unreadable",
-                f"{logical} is valid in the board but not a control this plugin reads: {error}",
-                {"control": logical},
-            ) from None
-    return found
+    return {logical: json.loads(body) for logical, body in rows}
 
 
 def degraded(board: Board) -> list[list[str]]:

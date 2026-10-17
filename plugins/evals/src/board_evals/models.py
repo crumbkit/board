@@ -8,7 +8,7 @@ import datetime
 from collections.abc import Callable
 from typing import Annotated, Any, Literal, Self, cast
 
-from board_plugin.protocol import Strict
+from board_plugin.model import Strict
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema

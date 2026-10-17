@@ -220,6 +220,13 @@ plugin installed through a symlink keeps its rows when its code changes.
 
 ## Writing a plugin in Python
 
+Board validates a call's input and output, and `call` checks that the board
+holds the schemas the plugin ships. A plugin reading records with `board query`
+selects rows whose `status` is `ok`, or whose `code` is `ref::dangling` or
+`ref::wrong_type`, and need not validate them again. It still checks what no
+schema states, records in mounted boards, which their own schemas validate,
+and extracted records.
+
 Plugins are written in Python 3.12 or newer with uv, pydantic v2, ruff, pyright
 in strict mode and pytest (STANDARDS.md P1 to P6). Each plugin talks the
 protocol through the shared library in `python/board-plugin/`, which also
@@ -232,7 +239,7 @@ attached.
 
 Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
 `python/board-plugin/` to a commit, with its lockfile and a committed
-`plugin.json` that a test compares with the one its pydantic models generate.
+`plugin.json` that a test compares with the one it generates.
 Its pytest suite drives the real `board` binary against fixture boards. CI runs
 the gates of each plugin here in its own job.
 

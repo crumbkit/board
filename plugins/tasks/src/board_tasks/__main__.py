@@ -3,14 +3,13 @@
 import sys
 
 from board_plugin.protocol import CallRequest, PluginError, main
-from pydantic import JsonValue
 
 from board_tasks.due import due
 from board_tasks.extract import extract
 from board_tasks.next import next_tasks
 
 
-def call(request: CallRequest) -> JsonValue:
+def call(request: CallRequest) -> dict[str, object]:
     """Dispatch a call to its capability."""
     if request.capability == "due":
         return due(request).model_dump(mode="json")

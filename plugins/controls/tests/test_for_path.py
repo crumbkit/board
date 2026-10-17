@@ -105,13 +105,15 @@ def test_board_refuses_the_call_when_its_control_schema_is_wider_and_answers_wit
     board.write("AGENTS.md", "Rules.\n")
     board.write("controls/kept.json", control("R.", applies_to=["/AGENTS.md"]))
     assert applying(board, "/AGENTS.md") == ["/controls/kept"]
+    assert board.call("check", {})["$type"] == "board/call-report/v1"
     schema = board.root / ".board/types/controls/control/v1.schema.json"
     widened = json.loads(schema.read_text())
     widened["additionalProperties"] = True
     schema.write_text(json.dumps(widened))
-    refused = board.call("for-path", {"path": "/AGENTS.md"})
-    assert refused["code"] == "board::plugin::schema_differs", refused
-    assert refused["fields"]["schema"] == ".board/types/controls/control/v1.schema.json"
+    for capability, given in [("for-path", {"path": "/AGENTS.md"}), ("check", {})]:
+        refused = board.call(capability, given)
+        assert refused["code"] == "board::plugin::schema_differs", refused
+        assert refused["fields"]["schema"] == ".board/types/controls/control/v1.schema.json"
 
 
 def test_a_malformed_path_is_refused_with_boards_code_and_a_well_formed_one_is_answered(board: Board) -> None:
@@ -120,6 +122,14 @@ def test_a_malformed_path_is_refused_with_boards_code_and_a_well_formed_one_is_a
     assert refused["fields"]["code"] == "board::usage::invalid"
     assert "first on PATH" not in refused["message"]
     assert applying(board, "/docs/x") == []
+
+
+def test_a_control_whose_malformed_reference_hides_a_schema_error_is_left_out_and_a_dangling_one_applies(
+    board: Board,
+) -> None:
+    board.write("controls/broken.json", control("R.", applies_to=["docs"], paths=["docs/*"], purpose=5))
+    board.write("controls/kept.json", control("R.", applies_to=["/gone.md"], paths=["docs/*"]))
+    assert applying(board, "/docs/a.md") == ["/controls/kept"]
 
 
 def test_a_control_with_one_dangling_reference_still_applies_to_the_others(board: Board) -> None:
