@@ -87,8 +87,12 @@ or `--fields` asks for the table. It exits 1 on a broken install
 capabilities of working installs, a line each with its description. Each filter
 narrows the list to the capabilities that match it; with none, it lists them all.
 A `--meta` filter matches a string value in the capability's `_meta`, or in the
-plugin's `metadata` when `_meta` lacks the key. `--json` prints each capability
-as its Tool object.
+plugin's `metadata` when `_meta` lacks the key. Its columns are `plugin`,
+`capability`, `enabled` and `description`, what the line shows. `--long` adds
+`title`, `version` and `annotations`. The schemas are too wide for a table, so
+only `--fields` names `inputSchema`, `outputSchema` and `_meta`. `--json` prints
+each capability as its Tool object, its name as `capability`, with `plugin`,
+`version` and `enabled`.
 
 Only enabled plugins can be called: naming one that is installed but not
 enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls

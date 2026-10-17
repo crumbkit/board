@@ -243,6 +243,7 @@ Examples:
 Examples:
   board plugin find
   board plugin find --capability due
+  board plugin find --capability due --long
   board plugin find --meta category=tasks --json")]
     Find {
         /// Only capabilities of this name.

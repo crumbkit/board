@@ -344,6 +344,116 @@ fn plugin_find_json_names_the_plugin_and_capability() {
     );
 }
 
+/// The tasks manifest with a capability that has a title, annotations and
+/// `_meta`.
+fn titled() -> (Scenario, Scenario) {
+    let (board, data) = installed();
+    let full = TASKS.replace(
+        r#""description": "Open tasks due before a date.","#,
+        r#""title": "Due tasks",
+    "description": "Open tasks due before a date.",
+    "annotations": {"readOnlyHint": true, "destructiveHint": false},
+    "_meta": {"area": "dates"},"#,
+    );
+    data.write("plugins/tasks/plugin.json", Item::File(&full));
+    (board, data)
+}
+
+#[test]
+fn plugin_find_prints_its_line_per_capability_and_long_adds_title_version_and_annotations() {
+    let (board, data) = titled();
+    let output = plugin(&board, &data, &["plugin", "find"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "tasks.due enabled Open tasks due before a date.\n"
+    );
+    let output = plugin(&board, &data, &["plugin", "find", "--long"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "PLUGIN  CAPABILITY  ENABLED  DESCRIPTION                    TITLE      VERSION  ANNOTATIONS\n\
+         tasks   due         true     Open tasks due before a date.  Due tasks  0.1.0    {\"destructiveHint\":false,\"readOnlyHint\":true}\n"
+    );
+}
+
+#[test]
+fn plugin_find_fields_admits_its_fields_and_refuses_an_unknown_field() {
+    let (board, data) = titled();
+    let output = plugin(
+        &board,
+        &data,
+        &["plugin", "find", "--fields", "capability,_meta,inputSchema"],
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "CAPABILITY  _META             INPUTSCHEMA\n\
+         due         {\"area\":\"dates\"}  {\"type\":\"object\"}\n"
+    );
+    let output = plugin(
+        &board,
+        &data,
+        &["plugin", "find", "--fields", "capability,summary"],
+    );
+    assert_eq!(output.code, 2);
+    assert_eq!(text(&output.stdout), "");
+    assert_eq!(
+        text(&output.stderr),
+        "error: --fields names an unknown field 'summary'\n  \
+         help:  use the valid fields: _meta, annotations, capability, description, enabled, inputSchema, outputSchema, plugin, title, version\n  \
+         code:  board::usage::invalid\n"
+    );
+}
+
+#[test]
+fn plugin_find_json_prints_each_capability_whole_in_key_order() {
+    let (board, data) = titled();
+    data.write(
+        "plugins/zeta/plugin.json",
+        Item::File(&two_capabilities("zeta")),
+    );
+    let output = plugin(&board, &data, &["--json", "plugin", "find"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        concat!(
+            r#"{"schema":"board/plugin-find-report/v2","data":["#,
+            r#"{"_meta":{"area":"dates"},"annotations":{"destructiveHint":false,"readOnlyHint":true},"capability":"due","description":"Open tasks due before a date.","enabled":true,"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"tasks","title":"Due tasks","version":"0.1.0"},"#,
+            r#"{"_meta":{},"capability":"one","description":"one.","enabled":false,"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"zeta","version":"0.1.0"},"#,
+            r#"{"_meta":{},"capability":"two","description":"two.","enabled":false,"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"zeta","version":"0.1.0"}"#,
+            r#"],"total":3,"truncated":false}"#,
+            "\n"
+        )
+    );
+}
+
+#[test]
+fn plugin_find_help_names_its_columns() {
+    let (board, data) = installed();
+    let output = plugin(&board, &data, &["plugin", "find", "-h"]);
+    assert_eq!(output.code, 0);
+    let help = text(&output.stdout);
+    assert!(!help.contains("<ENTRY>"), "{help}");
+    assert!(
+        help.contains("<PLUGIN>.<CAPABILITY> <ENABLED> <DESCRIPTION>"),
+        "{help}"
+    );
+    let output = plugin(&board, &data, &["plugin", "find", "--help"]);
+    let help = text(&output.stdout);
+    for column in [
+        "plugin",
+        "capability",
+        "enabled",
+        "description",
+        "title",
+        "version",
+        "annotations",
+    ] {
+        assert!(help.contains(&format!("  {column}")), "{column}: {help}");
+    }
+}
+
 #[test]
 fn a_capability_or_filter_that_cannot_be_read_refuses_the_command_line() {
     let (board, data) = installed();

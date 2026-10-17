@@ -7,9 +7,9 @@ use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose, Row};
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
-use super::kit::{Note, Printer, Refused, Said, Whole};
+use super::kit::{Note, Printer, Refused, Said};
 use crate::report::Output;
 use crate::run::Page;
 
@@ -181,27 +181,77 @@ fn problems(plugin: &Plugin) -> String {
 pub(crate) fn plugin_find(printer: &mut Printer, report: &PluginFindReport, page: &Page) -> Output {
     let rows = report.plugins.iter().flat_map(|found| {
         let manifest = &found.manifest;
-        manifest.capabilities.iter().map(move |offered| {
-            let line = format!(
-                "{}.{} {} {}",
-                manifest.name,
-                offered.name,
-                enabled(found.enabled),
-                offered.description
-            );
-            let mut value = capability(offered);
-            value["capability"] = json!(offered.name);
-            value["plugin"] = json!(manifest.name);
-            value["version"] = json!(manifest.version);
-            value["enabled"] = json!(found.enabled);
-            Whole::lined(value, line)
+        (manifest.capabilities.iter()).map(move |offered| Found {
+            meta: offered.meta.clone(),
+            annotations: offered.annotations.as_ref().map(|value| json!(value)),
+            capability: offered.name.to_string(),
+            description: offered.description.clone(),
+            enabled: found.enabled,
+            input_schema: offered.input.document().clone(),
+            output_schema: offered.output.document().clone(),
+            plugin: manifest.name.to_string(),
+            title: offered.title.clone(),
+            version: manifest.version.to_string(),
         })
     });
     let listing = page.first_of(rows.collect()).described("capabilities");
     printer.print(FIND_REPORT, Ok(listing))
 }
 
-const FIND_REPORT: Document<Listing<Whole>> = Document::new(
+/// A capability as `plugin find` prints it: its MCP Tool object without
+/// its name, with the plugin that offers it. The fields are in name order,
+/// so the JSON keeps the order it had when each row was a JSON object.
+#[derive(Serialize, JsonSchema)]
+struct Found {
+    /// The capability's `_meta`, which `--meta` matches before the
+    /// plugin's metadata.
+    #[serde(rename = "_meta")]
+    meta: Map<String, Value>,
+    /// MCP's hints about the capability, such as `readOnlyHint`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    annotations: Option<Value>,
+    /// The capability's name; `board call <plugin>.<capability>` runs it.
+    capability: String,
+    /// What the capability does.
+    description: String,
+    /// Whether this board's configuration enables the plugin.
+    enabled: bool,
+    /// The JSON Schema of the input the capability takes.
+    #[serde(rename = "inputSchema")]
+    input_schema: Value,
+    /// The JSON Schema of the output the capability returns.
+    #[serde(rename = "outputSchema")]
+    output_schema: Value,
+    /// The plugin that offers the capability.
+    plugin: String,
+    /// The capability's title for people.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    /// The plugin's version.
+    version: String,
+}
+
+/// Each row prints whole in JSON, for the readers that parse it so, and
+/// prints its own line in text unless `--long` or `--fields` asks for the
+/// table.
+impl Row for Found {
+    const COLUMNS: &'static [&'static str] = &["plugin", "capability", "enabled", "description"];
+    const LONG_COLUMNS: &'static [&'static str] = &["title", "version", "annotations"];
+    const WHOLE: bool = true;
+    const LINE: Option<&'static str> = Some("<PLUGIN>.<CAPABILITY> <ENABLED> <DESCRIPTION>");
+
+    fn text_line(&self) -> Option<String> {
+        Some(format!(
+            "{}.{} {} {}",
+            self.plugin,
+            self.capability,
+            enabled(self.enabled),
+            self.description
+        ))
+    }
+}
+
+const FIND_REPORT: Document<Listing<Found>> = Document::new(
     "board",
     "plugin-find-report",
     2,
