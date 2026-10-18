@@ -298,6 +298,39 @@ fn the_refs_budget_counts_the_bytes_of_the_format_printed() {
 }
 
 #[test]
+fn refs_over_budget_leaves_out_the_later_paths_in_one_failure_with_a_run_recovery_in_text_and_json()
+{
+    let scenario = hub();
+    let asked = ["/projects/p", "/projects/p", "/projects/p"];
+    let over = "  code:  board::output::over_budget\n";
+    // The first answer is 35 bytes as text and several hundred as JSON, so
+    // 1 is under it in both formats and 50 only in JSON; refs prints its
+    // first answer either way.
+    for budget in [1, 50] {
+        let as_text = rendered(&scenario, &asked, false, budget);
+        let stderr = text(&as_text.stderr);
+        assert_eq!(as_text.error.as_deref(), Some("board::output::over_budget"));
+        assert_eq!(stderr.matches(over).count(), 1, "{stderr}");
+        assert!(
+            stderr.contains("  help:  run `board refs /projects/p /projects/p`\n"),
+            "{stderr}"
+        );
+        let report = json(&rendered(&scenario, &asked, true, budget));
+        assert_eq!(report["data"].as_array().map(Vec::len), Some(1));
+        let failures = report["failures"].as_array().unwrap();
+        assert_eq!(failures.len(), 1, "{report}");
+        assert_eq!(failures[0]["code"], "board::output::over_budget");
+        assert_eq!(failures[0]["fields"]["left_out_from"], 1);
+        assert_eq!(failures[0]["recovery"]["kind"], "run");
+        assert_eq!(failures[0]["recovery"]["all"], "left_out");
+    }
+    for format in [false, true] {
+        let admitted = rendered(&scenario, &asked, format, usize::MAX);
+        assert_eq!((admitted.code, admitted.error), (0, None));
+    }
+}
+
+#[test]
 fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_not() {
     let paths = paths(&["/a", "/b"]);
     let failed = || {

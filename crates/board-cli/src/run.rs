@@ -57,9 +57,9 @@ Tables and views:
   refs, validations, blobs, trees, worktree, mounts, sources, extracted, state
   p_<name>  each enabled plugin's database
 
-Rows stop at 64 MiB of output, even with --all; --json then marks the
-listing `truncated` and its `cut` carries board::output::over_budget, and the
-text notes it. A first row past 64 MiB is refused with that code.
+Rows stop at 64 MiB of output, even with --all; --json then sets `truncated`
+and `cut.code`, board::output::over_budget, and the text notes it. A first
+row past 64 MiB is refused with that code.
 
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
