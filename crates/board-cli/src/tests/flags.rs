@@ -196,6 +196,7 @@ fn a_terminal_on_stdin_is_not_read() {
         home: None,
         cache: None,
         plugins: Some(data.workdir().join("plugins")),
+        boards: None,
         environment: board_plugin::Environment {
             path: Some("/usr/bin:/bin".into()),
             ..board_plugin::Environment::default()

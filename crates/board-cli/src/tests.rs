@@ -85,6 +85,7 @@ fn board_environment(
         home: None,
         cache: cache.map(Path::to_path_buf),
         plugins: plugins.map(Path::to_path_buf),
+        boards: None,
         environment,
         complete: None,
         terminal: false,
@@ -1213,6 +1214,7 @@ mod flags;
 mod get;
 mod help;
 mod hints;
+mod known;
 mod plugins;
 mod query;
 mod recoveries;

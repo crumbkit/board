@@ -10,6 +10,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::path::Path;
 
 use board_index::{Decided, Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
 use board_model::{
@@ -17,8 +18,8 @@ use board_model::{
     RecordType, Role, Source, Stat, classify,
 };
 use board_tree::{
-    Cache, Entry, Mounted, Repositories, Repository, ResolveError, Status, TreeRow, TreeRows,
-    in_scope, latest,
+    Cache, Entry, Mounted, Place, Repositories, Repository, ResolveError, Status, TreeRow,
+    TreeRows, in_scope, latest,
 };
 
 use crate::board::Board;
@@ -89,6 +90,24 @@ impl Board {
     pub(crate) fn view(&self, decided: Decided) -> Result<View, IndexError> {
         let _timed = self.timed("view");
         decided.view()
+    }
+
+    /// Each mount in the working tree whose repository holds `directory`
+    /// ([`Repositories::places`]), its pointers read from the index after a
+    /// refresh, which is all this decides.
+    pub fn places(
+        &self,
+        directory: &Path,
+        cache: Option<&Path>,
+    ) -> Result<Vec<Place>, RefreshError> {
+        let index = self.index(cache)?;
+        let (places, _, _) = transact(index, |writer| {
+            let refresh = self.refresh(writer)?;
+            let is_pointer = |path: &str| Indexing::is_pointer(&refresh.facts, path);
+            let places = (self.repositories()).places(&refresh.entries, &is_pointer, directory);
+            Ok((places, Vec::new()))
+        })?;
+        Ok(places)
     }
 
     /// Decides each entry, and returns the report, the references, the

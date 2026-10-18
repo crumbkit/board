@@ -15,6 +15,9 @@ pub(crate) struct Ran {
     pub(crate) command: Option<String>,
     pub(crate) trace: Trace,
     pub(crate) root: Option<PathBuf>,
+    /// The logical path the run started in, when a known board's mount
+    /// holds that directory.
+    pub(crate) prefix: Option<String>,
 }
 
 /// The `board/timing/v1` record of a run that started at `started`, nested
@@ -45,6 +48,7 @@ pub(crate) fn record(started: Instant, ran: &Ran, output: &Output, depth: u32) -
         "command": command,
         "depth": depth,
         "root": ran.root.as_ref().map(|root| root.display().to_string()),
+        "prefix": ran.prefix,
         "exit": output.code,
         "error": output.error,
         "total_us": micros(took),

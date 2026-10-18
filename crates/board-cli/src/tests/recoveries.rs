@@ -692,6 +692,33 @@ fn through_mounts(starts: &mut Starts) {
     }
 }
 
+/// A repository two known boards mount, run from inside it.
+fn known_boards(starts: &mut Starts) {
+    let library = Scenario::new();
+    let commit = library.commit(&[("a.md", "a")]);
+    let (one, two) = (enabling(""), enabling(""));
+    for board in [&one, &two] {
+        board.write("lib.json", Item::File(&mount_of(&library.path(), commit)));
+    }
+    let xdg = Scenario::new();
+    let boards = json!({"boards": [one.path(), two.path()]});
+    xdg.write(
+        "xdg/config/board/config.json",
+        Item::File(&boards.to_string()),
+    );
+    let place = RuntimeFailing::at(library.workdir()).xdg(xdg.workdir().join("xdg"));
+    starts.add(&place, Code::ConfigAmbiguous, "check");
+    let line = |dir: &Path| format!("-C {} check", dir.display());
+    let (refused, admitted) = (line(library.workdir()), line(one.workdir()));
+    starts.pair(&place, Code::ConfigAmbiguous, &refused, &admitted);
+    starts
+        .shared
+        .extend([one.workdir().to_path_buf(), two.workdir().to_path_buf()]);
+    starts
+        .kept
+        .extend([library, one, two, xdg].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
+}
+
 /// Every start, or every twin, whose code `ENV` provokes.
 fn starts(twins: bool) -> Starts {
     let mut starts = Starts::new(twins);
@@ -702,6 +729,7 @@ fn starts(twins: bool) -> Starts {
     enabling_plugins(&mut starts);
     apart(&mut starts);
     through_mounts(&mut starts);
+    known_boards(&mut starts);
     starts
 }
 

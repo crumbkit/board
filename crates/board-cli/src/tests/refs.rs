@@ -402,6 +402,7 @@ fn changed_between(change: bool, format: bool) -> (Output, serde_json::Value) {
         command: Some("refs".to_owned()),
         trace: board.take_trace(),
         root: None,
+        prefix: None,
     };
     let record = crate::timing::record(std::time::Instant::now(), &ran, &output, 0).unwrap();
     (output, record)

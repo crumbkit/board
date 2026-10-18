@@ -30,7 +30,9 @@ fn a_command_runs_in_the_directory_named_and_without_it_finds_no_board() {
         hint_of(&lost),
         "a board needs `.board/board.json` at its repository root, spelled exactly so; \
          in a git repository, `board init` makes it a board; outside one, run `git init` \
-         first; for a board elsewhere, run `board -C <dir> check`"
+         first; for a board elsewhere, run `board -C <dir> check`; to run from a repository \
+         a board mounts, list that board in `$XDG_CONFIG_HOME/board/config.json` as \
+         {\"boards\": [\"<board directory>\"]}"
     );
     let found = board_in(
         outside.workdir(),
@@ -204,6 +206,7 @@ fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
         home: None,
         cache: None,
         plugins: None,
+        boards: None,
         environment: board_plugin::Environment::default(),
         complete: None,
         terminal: false,

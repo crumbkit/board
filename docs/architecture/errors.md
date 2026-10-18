@@ -11,7 +11,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | --- | --- |
 | `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8`, `lossy_number` |
 | `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
-| `config` | `not_found`, `invalid` |
+| `config` | `not_found`, `invalid`, `ambiguous` |
 | `schema` | `invalid` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |

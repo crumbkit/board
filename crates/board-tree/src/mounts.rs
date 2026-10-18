@@ -3,7 +3,7 @@
 //! once however many places mount it.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
 
@@ -112,7 +112,8 @@ impl Repositories {
         };
         let mut candidates = Vec::new();
         let root = self.root();
-        let found = pointers::<C>(root, &Source::WorkingTree, entries, facts);
+        let is_pointer = |path: &str| C::is_pointer(facts, path);
+        let found = pointers(root, &Source::WorkingTree, entries, &is_pointer);
         let from = root.path();
         reached.add(self, from, &Source::WorkingTree, "", found, &mut candidates);
         let mut seen: HashSet<ObjectId> = HashSet::new();
@@ -123,12 +124,8 @@ impl Repositories {
             }
             let mounted = walk(candidate, cache)?;
             let source = Source::Commit(mounted.commit);
-            let found = pointers::<C>(
-                &mounted.repository,
-                &source,
-                &mounted.entries,
-                &mounted.facts,
-            );
+            let is_pointer = |path: &str| C::is_pointer(&mounted.facts, path);
+            let found = pointers(&mounted.repository, &source, &mounted.entries, &is_pointer);
             reached.add(
                 self,
                 mounted.repository.path(),
@@ -176,6 +173,74 @@ impl Repositories {
             canonical,
         })
     }
+}
+
+/// Where a directory is in a board: the mount whose repository holds it,
+/// and the directory's path beneath that repository's working tree.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Place {
+    pub mount: LogicalPath,
+    pub within: LogicalPath,
+}
+
+impl Place {
+    /// The directory's logical path in the board, such as
+    /// `/repos/crumbkit/docs`.
+    pub fn prefix(&self) -> String {
+        join(self.mount.as_str(), &self.within)
+    }
+}
+
+impl Repositories {
+    /// Each mount among `entries`, the working tree's, whose repository is
+    /// the one holding `directory`. Repositories are compared by the git
+    /// directory a linked worktree shares with its main one, so a linked
+    /// worktree matches too. `is_pointer` says, from a cache, which physical
+    /// paths hold a pointer that parses. Each call opens and compares every
+    /// mounted repository again.
+    pub fn places(
+        &self,
+        entries: &[Entry],
+        is_pointer: &dyn Fn(&str) -> bool,
+        directory: &Path,
+    ) -> Vec<Place> {
+        let Some((common, within)) = holding(directory) else {
+            return Vec::new();
+        };
+        let root = self.root();
+        let shares = |mount: &Mount| {
+            let mounted = self.mounted(root.path(), mount);
+            mounted.and_then(|mounted| mounted.git().common_dir().canonicalize().ok())
+                == Some(common.clone())
+        };
+        pointers(root, &Source::WorkingTree, entries, is_pointer)
+            .into_iter()
+            .filter(|(_, _, mount)| shares(mount))
+            .map(|(mount, _, _)| Place {
+                mount,
+                within: within.clone(),
+            })
+            .collect()
+    }
+}
+
+/// The canonical git directory of the repository whose working tree holds
+/// `directory`, the one its linked worktrees share, and `directory`'s path
+/// beneath that working tree. A directory inside the git directory is in no
+/// working tree, as `git rev-parse --show-prefix` refuses there.
+fn holding(directory: &Path) -> Option<(PathBuf, LogicalPath)> {
+    let git = gix::discover(directory).ok()?;
+    let common = git.common_dir().canonicalize().ok()?;
+    let directory = directory.canonicalize().ok()?;
+    if directory.starts_with(&common) {
+        return None;
+    }
+    let beneath = directory
+        .strip_prefix(git.workdir()?.canonicalize().ok()?)
+        .ok()?;
+    let segments: Option<Vec<&str>> = beneath.iter().map(std::ffi::OsStr::to_str).collect();
+    let within = format!("/{}", segments?.join("/")).parse().ok()?;
+    Some((common, within))
 }
 
 /// A mount pointer in the working tree, ready to move to its `follow`.
@@ -360,16 +425,17 @@ fn walk<C: Cache>(candidate: Candidate, cache: &mut C) -> Result<Mounted<C::Fact
 }
 
 /// Every mount among `entries` of `source`: its logical and physical paths
-/// in the source, and what it mounts.
-fn pointers<C: Cache>(
+/// in the source, and what it mounts. `is_pointer` says, from a cache, which
+/// physical paths hold a pointer that parses.
+fn pointers(
     repository: &Repository,
     source: &Source,
     entries: &[Entry],
-    facts: &C::Facts,
+    is_pointer: &dyn Fn(&str) -> bool,
 ) -> Vec<(LogicalPath, String, Mount)> {
     entries
         .iter()
-        .filter(|entry| entry.status == Status::Ok && C::is_pointer(facts, &entry.path))
+        .filter(|entry| entry.status == Status::Ok && is_pointer(&entry.path))
         .filter_map(|entry| {
             let contents = repository.read(source, &entry.path, entry.blob?).ok()??;
             match board_model::pointer(&contents.bytes) {

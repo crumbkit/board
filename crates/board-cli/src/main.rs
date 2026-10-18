@@ -5,6 +5,7 @@
 mod complete;
 mod config;
 mod graft;
+mod known;
 mod render;
 mod report;
 mod run;

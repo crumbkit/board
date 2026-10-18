@@ -20,6 +20,7 @@ pub enum Code {
     RecordNotARecord,
     ConfigNotFound,
     ConfigInvalid,
+    ConfigAmbiguous,
     SchemaInvalid,
     RefMalformed,
     RefWrongType,
@@ -71,7 +72,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 59] = [
+    pub const ALL: [Code; 60] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -84,6 +85,7 @@ impl Code {
         Self::RecordNotARecord,
         Self::ConfigNotFound,
         Self::ConfigInvalid,
+        Self::ConfigAmbiguous,
         Self::SchemaInvalid,
         Self::RefMalformed,
         Self::RefWrongType,
@@ -152,6 +154,7 @@ impl Code {
             Self::RecordNotARecord => "board::record::not_a_record",
             Self::ConfigNotFound => "board::config::not_found",
             Self::ConfigInvalid => "board::config::invalid",
+            Self::ConfigAmbiguous => "board::config::ambiguous",
             Self::SchemaInvalid => "board::schema::invalid",
             Self::RefMalformed => "board::ref::malformed",
             Self::RefWrongType => "board::ref::wrong_type",
@@ -231,6 +234,7 @@ mod tests {
             | Code::RecordNotARecord
             | Code::ConfigNotFound
             | Code::ConfigInvalid
+            | Code::ConfigAmbiguous
             | Code::SchemaInvalid
             | Code::RefMalformed
             | Code::RefWrongType

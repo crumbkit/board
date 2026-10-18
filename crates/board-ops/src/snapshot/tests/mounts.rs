@@ -286,3 +286,23 @@ fn a_reference_into_a_mount_is_typed_by_the_mounted_record_and_not_the_root_entr
     assert_eq!(status("ok.json"), Status::Ok);
     assert_eq!(status("wrong.json"), Status::Degraded(Code::RefWrongType));
 }
+
+#[test]
+fn a_board_places_a_directory_of_a_repository_it_mounts_and_not_one_of_another() {
+    let (library, commit) = library();
+    let other = Scenario::new();
+    let scenario = board();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&mount(&library.path(), commit)),
+    );
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    for _cold_then_warm in 0..2 {
+        let places = board.places(library.workdir(), Some(cache.path())).unwrap();
+        let prefixes: Vec<String> = places.iter().map(board_tree::Place::prefix).collect();
+        assert_eq!(prefixes, ["/vendor/lib"]);
+        let elsewhere = board.places(other.workdir(), Some(cache.path())).unwrap();
+        assert_eq!(elsewhere, []);
+    }
+}

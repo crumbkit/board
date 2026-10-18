@@ -13,7 +13,8 @@ log.
 
 A record holds the start time (`at_ms`), Board's `version`, the subcommands
 run (`command`, such as `plugin find`, never the values given), the plugin call
-`depth`, the board's absolute path (`root`), the `exit` code and `error` code,
+`depth`, the board's absolute path (`root`), the logical path the run
+started in when a known board's mount holds it (`prefix`, otherwise null), the `exit` code and `error` code,
 `total_us`, and `phases`. Each phase gives its
 `name`, its start after the run's (`at_us`), its time (`us`) and how often it
 was `entered`, in the order the phases started. A record has only the phases

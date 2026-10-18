@@ -26,6 +26,7 @@ use crumbkit::Sink;
 
 use crate::config::Context;
 use crate::graft;
+use crate::known;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::timing::Ran;
@@ -349,16 +350,14 @@ pub(crate) fn run(
         };
     }
     let opening = Instant::now();
-    let opened = Board::open(&start, context.home.clone());
+    let opened = open(context, &start);
     ran.trace.add("open", opening);
-    let board = match opened {
-        Ok(board) => board,
-        Err(error) => {
-            let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
-            return render::refused(printer, unopened(error.code(), &error, outside));
-        }
+    let (board, prefix) = match opened {
+        Ok(opened) => opened,
+        Err(refusal) => return render::refused(printer, *refusal),
     };
     ran.root = Some(board.repository().path().to_path_buf());
+    ran.prefix = prefix;
     let output = match grafted {
         Some((target, flags)) => call(&board, context, printer, &target, Some(flags), stdin),
         None => command(cli.command, &board, context, printer, stdin),
@@ -537,6 +536,23 @@ fn refs(printer: &mut Printer, board: &Board, context: &Context, asked: &Refs) -
         Err(error) => render::refused(printer, error.refusal()),
         Ok(answers) => render::refs(printer, &asked.paths, answers, limit),
     }
+}
+
+/// The board holding `start`, or else the one known board with a mount
+/// whose repository holds `start`, and `start`'s logical path in that
+/// board. Outside a git repository no mount can hold `start`, so the known
+/// boards are not read.
+fn open(context: &Context, start: &Path) -> Result<(Board, Option<String>), Box<Refusal>> {
+    let error = match Board::open(start, context.home.clone()) {
+        Ok(board) => return Ok((board, None)),
+        Err(error) => error,
+    };
+    let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
+    let refusal = unopened(error.code(), &error, outside);
+    if !matches!(error, board_ops::OpenError::NotFound { .. }) {
+        return Err(Box::new(refusal));
+    }
+    known::find(context, start, refusal).map(|(board, prefix)| (board, Some(prefix)))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git

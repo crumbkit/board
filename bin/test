@@ -9,7 +9,11 @@ cd "$(dirname "$0")/.."
 # a test let it inherit the cache, and the gate fails. Other tools, such as
 # mise, may write their own directories there.
 inherited=$(mktemp -d)
-trap 'rm -rf "$inherited"' EXIT
+# Every test, Rust and Python, runs with an empty config directory, so a
+# board run outside a board never reads the developer's known boards.
+config=$(mktemp -d)
+trap 'rm -rf "$inherited" "$config"' EXIT
+export XDG_CONFIG_HOME="$config"
 XDG_CACHE_HOME="$inherited" cargo nextest run --workspace --all-features --locked
 if [ -e "$inherited/board" ]; then
   echo "error: a test ran board with the cache directory it inherited; give it its own:" >&2

@@ -17,6 +17,7 @@ fn with_shell(
         home: home.map(Path::to_path_buf),
         cache: None,
         plugins: None,
+        boards: None,
         environment: board_plugin::Environment::default(),
         complete: Some(shell.into()),
         terminal: false,

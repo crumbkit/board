@@ -18,6 +18,9 @@ pub(crate) struct Context {
     /// Where plugins are installed: `$XDG_DATA_HOME/board/plugins`, or
     /// `~/.local/share/board/plugins`.
     pub(crate) plugins: Option<PathBuf>,
+    /// The file naming the user's known boards:
+    /// `$XDG_CONFIG_HOME/board/config.json`, or `~/.config/board/config.json`.
+    pub(crate) boards: Option<PathBuf>,
     /// What a called plugin inherits.
     pub(crate) environment: Environment,
     /// `BOARD_COMPLETE`, which names a shell to ask for completion.
@@ -47,11 +50,14 @@ impl Context {
         };
         let cache = base("XDG_CACHE_HOME", ".cache");
         let plugins = base("XDG_DATA_HOME", ".local/share").map(|data| data.join("board/plugins"));
+        let boards =
+            base("XDG_CONFIG_HOME", ".config").map(|config| config.join("board/config.json"));
         Self {
             start: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             home,
             cache,
             plugins,
+            boards,
             environment: Environment {
                 path: std::env::var_os("PATH"),
                 home: std::env::var_os("HOME"),

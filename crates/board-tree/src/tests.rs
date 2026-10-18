@@ -6,6 +6,7 @@ mod commits;
 mod kept;
 mod links;
 mod mounts;
+mod places;
 mod planned;
 mod reading;
 mod scoped;

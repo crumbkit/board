@@ -658,6 +658,10 @@ board put /vendor/projects/p
   run board mount update /vendor
     exits 0
 
+board check
+  fails with board::config::ambiguous
+  hint
+
 codes that no start provokes:
   board::index::failed: the index fails only when SQLite does, even in memory; board-index/src/tests.rs maps SQLite's failures to it
   board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME

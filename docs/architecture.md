@@ -17,7 +17,31 @@ A board is the working tree of a git repository whose root holds
 directory, as git does. Both names must be listed in that exact spelling, so
 `.Board/board.json` holds no board even where the file system ignores case. No
 board is `board::config::not_found`, and a `board.json` Board cannot read is
-`board::config::invalid`. Every file git sees
+`board::config::invalid`.
+
+When the search finds no board but the directory is in a git repository,
+Board reads the known boards in `$XDG_CONFIG_HOME/board/config.json`
+(`~/.config/board/config.json` by default), shaped
+`{"boards": ["/Users/me/Code/board"]}`. A relative path is read against the
+file's directory. A missing or empty file lists none, and any other file
+that is not this shape is `board::config::invalid`. Board refreshes each
+known board's index and reads the mounts in its working tree. A board
+listed under several spellings counts once. A mount
+matches when its repository has the same git common directory as the
+directory's repository, so a linked worktree matches too. With exactly one
+match, Board runs as that board, as git runs from a subdirectory. The prefix
+is the mount's path joined with the directory's path beneath the
+repository's root, such as `/repos/crumbkit/docs`; for now only the timing
+log records it. A directory inside the git directory has no prefix and
+matches nothing. No match is `board::config::not_found`. When the file lists
+boards, the message says they were read and none mounts the repository, and
+the hint says to add a mount; otherwise the hint says to list a board. More
+than one match, counting every mount of every known board, is
+`board::config::ambiguous`; `-C` then picks a board. A known board that
+cannot be opened or refreshed is passed over, and a `not_found` message
+names it. `-C` into a mounted repository finds its board the same way.
+
+Every file git sees
 under the root is an entry: tracked files, and untracked files that are not
 ignored. `.git` is never an entry. An entry has a path, a blob hash, a size, a
 kind and a status.

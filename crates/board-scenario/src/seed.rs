@@ -56,7 +56,7 @@ const QUERY: &str = "query gives it; check runs no query";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 33] = [
+pub const NOT_CHECKED: [(Code, &str); 34] = [
     (
         Code::OutputOverBudget,
         "a run gives it once its output reaches the budget; check's listing is cut to fit instead",
@@ -72,6 +72,10 @@ pub const NOT_CHECKED: [(Code, &str); 33] = [
     (
         Code::ConfigNotFound,
         "a board without its configuration does not open, so it has no entries",
+    ),
+    (
+        Code::ConfigAmbiguous,
+        "a board that cannot be chosen does not open, so it has no entries",
     ),
     (
         Code::PathNotFound,
