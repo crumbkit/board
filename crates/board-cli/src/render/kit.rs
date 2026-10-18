@@ -283,7 +283,6 @@ impl Printer {
         let code = crumbkit::finish_to(
             &mut Sink::new(&mut stdout, &mut stderr),
             &mut self.view,
-            Spelling::COLONS,
             document,
             result,
         );

@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::time::Instant;
 
 use board_model::{
@@ -22,7 +23,7 @@ fn plugins(context: &Context) -> Plugins<'_> {
 }
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
-use crumbkit::{Sink, Spelling};
+use crumbkit::Sink;
 
 use crate::config::Context;
 use crate::graft;
@@ -313,14 +314,18 @@ pub(crate) fn run(
         &mut Sink::new(&mut stdout, &mut stderr),
         graft::command(grafted.as_ref()),
         &graft::guide(grafted.as_ref()),
-        Spelling::COLONS,
         arguments.clone(),
     );
     ran.trace.add("parse", parsing);
     let (graft::Parsed { cli, grafted }, view) = match parsed {
         Ok(parsed) => parsed,
         Err(stop) => {
-            let code = stop.number();
+            // A stop exits 0 after help or the version, 2 after a refusal
+            // and 1 when the page could not be written.
+            let code = [0, 2]
+                .into_iter()
+                .find(|n| stop.code() == ExitCode::from(*n));
+            let code = code.unwrap_or(1);
             if let Some(output) = (code == 2).then(|| split(&arguments)).flatten() {
                 return output;
             }
