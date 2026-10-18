@@ -3,7 +3,6 @@
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 use std::time::Instant;
 
 use board_model::{
@@ -320,12 +319,7 @@ pub(crate) fn run(
     let (graft::Parsed { cli, grafted }, view) = match parsed {
         Ok(parsed) => parsed,
         Err(stop) => {
-            // A stop exits 0 after help or the version, 2 after a refusal
-            // and 1 when the page could not be written.
-            let code = [0, 2]
-                .into_iter()
-                .find(|n| stop.code() == ExitCode::from(*n));
-            let code = code.unwrap_or(1);
+            let code = stop.number();
             if let Some(output) = (code == 2).then(|| split(&arguments)).flatten() {
                 return output;
             }

@@ -6,7 +6,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::LazyLock;
 
 use clap::CommandFactory;
 use crumbkit::FieldValue;
@@ -735,13 +734,11 @@ const SCHEMA_MISSING: &str = "the board lacks an enabled plugin's schema, and no
 
 /// Board's codes, as crumbkit's, and why each one that no command line in
 /// a test provokes is not provoked.
-fn declared() -> (Vec<&'static crumbkit::Code>, Vec<Unprovoked<'static>>) {
-    static HELD: LazyLock<Vec<crumbkit::Code>> =
-        LazyLock::new(|| Code::ALL.into_iter().map(crumbkit_code).collect());
-    let held = |code: Code| &HELD[Code::ALL.iter().position(|each| *each == code).unwrap()];
+fn declared() -> (Vec<crumbkit::Code>, Vec<Unprovoked<'static>>) {
     let unprovoked = NOT_REPRODUCED.iter();
-    let unprovoked = unprovoked.map(|(code, reason)| Unprovoked::new(held(*code), reason));
-    let codes = Code::ALL.into_iter().map(held).collect();
+    let unprovoked =
+        unprovoked.map(|(code, reason)| Unprovoked::from_code(crumbkit_code(*code), reason));
+    let codes = Code::ALL.into_iter().map(crumbkit_code).collect();
     (codes, unprovoked.collect())
 }
 
@@ -755,8 +752,7 @@ fn recover(starts: &[Failing<'_>]) -> BTreeSet<String> {
         .allow(ALLOW)
         .failure_reader(&reader);
     let (codes, unprovoked) = declared();
-    let codes = [codes.as_slice()];
-    let recoveries = Recoveries::new(examples, &codes)
+    let recoveries = Recoveries::from_codes(examples, &codes)
         .starts(starts)
         .unprovoked(&unprovoked);
     crumbkit_test::check_recoveries(&Cli::command(), &guide(), &recoveries, GOLDENS);
@@ -821,8 +817,7 @@ fn every_refusal_has_a_twin_one_word_apart_that_succeeds() {
         .allow(&starts.untwinned)
         .failure_reader(&reader);
     let (codes, unprovoked) = declared();
-    let codes = [codes.as_slice()];
-    let twins = Twins::new(examples, &codes)
+    let twins = Twins::from_codes(examples, &codes)
         .pairs(&starts.pairs)
         .unprovoked(&unprovoked);
     crumbkit_test::check_twins(&Cli::command(), &guide(), &twins);
