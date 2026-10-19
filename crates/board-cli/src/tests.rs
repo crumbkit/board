@@ -180,7 +180,7 @@ fn a_refused_command_line_exits_two() {
     for refused in [
         &["frobnicate"][..],
         &["get"],
-        &["get", "projects/p"],
+        &["get", "projects//p"],
         &["check", "--colour"],
     ] {
         let output = board_in(scenario.workdir(), refused);
@@ -1220,3 +1220,4 @@ mod query;
 mod recoveries;
 mod refs;
 mod refused;
+mod relative;

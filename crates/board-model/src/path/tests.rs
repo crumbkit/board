@@ -122,6 +122,84 @@ fn a_path_serializes_as_its_string() {
     assert_eq!(serde_json::to_string(&path).unwrap(), r#""/work/x""#);
 }
 
+/// `text` read from `from`, and the refusal of its otherwise identical twin
+/// as malformed for `reason`.
+fn joined(from: &str, text: &str, expected: &str, twin: &str, reason: Malformation) {
+    let from: LogicalPath = from.parse().unwrap();
+    assert_eq!(from.join(text).unwrap().as_str(), expected);
+    let error = from.join(twin).unwrap_err();
+    assert_eq!(error.code(), Code::PathMalformed);
+    assert!(
+        matches!(error, PathError::Malformed { reason: got, .. } if got == reason),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_dot_is_the_path_joined_to_and_a_dot_dot_is_refused_as_a_dot_segment() {
+    joined(
+        "/repos/lib",
+        ".",
+        "/repos/lib",
+        "..",
+        Malformation::DotSegment,
+    );
+    joined("/", ".", "/", "..", Malformation::DotSegment);
+    joined(
+        "/repos/lib",
+        "./x",
+        "/repos/lib/x",
+        "../x",
+        Malformation::DotSegment,
+    );
+    joined("/", "./x", "/x", "./../x", Malformation::DotSegment);
+    joined("/repos", "./.", "/repos", "./..", Malformation::DotSegment);
+}
+
+#[test]
+fn a_relative_path_continues_the_path_joined_to_and_an_absolute_one_replaces_it() {
+    joined(
+        "/repos/lib",
+        "docs/a.md",
+        "/repos/lib/docs/a.md",
+        "docs//a.md",
+        Malformation::EmptySegment,
+    );
+    joined(
+        "/",
+        "docs/a.md",
+        "/docs/a.md",
+        "docs/./a.md",
+        Malformation::DotSegment,
+    );
+    joined(
+        "/repos/lib",
+        "/docs",
+        "/docs",
+        "/docs/",
+        Malformation::EmptySegment,
+    );
+    joined(
+        "/repos/lib",
+        "./",
+        "/repos/lib",
+        "",
+        Malformation::NotAbsolute,
+    );
+}
+
+#[test]
+fn one_trailing_slash_on_a_relative_path_is_dropped_and_two_are_an_empty_segment() {
+    joined(
+        "/repos",
+        "lib/",
+        "/repos/lib",
+        "lib//",
+        Malformation::EmptySegment,
+    );
+    joined("/", "./lib/", "/lib", "/lib/", Malformation::EmptySegment);
+}
+
 /// A segment that keeps every rule: no `/`, no control character, not `.` or
 /// `..`, and short enough that sixteen of them fit in one path.
 fn segment() -> impl Strategy<Value = String> {
@@ -152,6 +230,19 @@ proptest! {
         let kept = &segments[..depth.min(segments.len())];
         let expected: LogicalPath = format!("/{}", kept.join("/")).parse().unwrap();
         prop_assert_eq!(path.prefix(depth), expected);
+    }
+
+    #[test]
+    fn a_relative_path_joins_as_the_absolute_path_beneath_it(
+        from in proptest::collection::vec(segment(), 0..4),
+        rest in proptest::collection::vec(segment(), 1..4),
+    ) {
+        let from: LogicalPath = format!("/{}", from.join("/")).parse().unwrap();
+        let rest = rest.join("/");
+        let absolute = format!("{}/{rest}", from.as_str().trim_end_matches('/'));
+        for text in [rest.clone(), format!("./{rest}"), absolute.clone()] {
+            prop_assert_eq!(String::from(from.join(&text).unwrap()), absolute.clone());
+        }
     }
 
     #[test]

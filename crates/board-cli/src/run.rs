@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use board_model::{
-    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId, Refusal,
+    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, Malformation, ObjectId,
+    PathError, Refusal,
 };
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
@@ -40,9 +41,10 @@ Start here:
   board put /tasks/a < task.json    write the record and commit it
   board query 'SELECT logical, status FROM entries LIMIT 5'
 
-A path is logical: it starts with / and leaves out .json.
+A path is logical and omits .json; without a leading / it is relative to
+the current directory.
 A record is a JSON object whose `$type`, such as tasks/task/v1, names its
-schema, here .board/types/tasks/task/v1.schema.json.
+schema at .board/types/tasks/task/v1.schema.json.
 Run `board <command> --help` for a command's arguments and examples.
 
 Tab completion of commands, flags and board paths: in fish, add
@@ -75,7 +77,7 @@ Examples:
     after_help = ROOT_EXAMPLES,
 )]
 pub(crate) struct Cli {
-    /// Run as if Board were started in this directory, as `git -C` does.
+    /// Run as if Board started in this directory, as `git -C` does.
     #[arg(short = 'C', value_name = "DIR", value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
     directories: Vec<OsString>,
     #[command(flatten)]
@@ -87,12 +89,26 @@ pub(crate) struct Cli {
 /// How many entries a listing shows (STANDARDS.md 23).
 pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
+/// Where the run started, as a logical path in its board, or the refusal of
+/// that path when it is not one.
+pub(crate) type Prefix = Result<LogicalPath, PathError>;
+
+/// A path argument as typed: absolute, or relative to the run's prefix.
+#[derive(Clone, Debug)]
+pub(crate) struct Given(String);
+
+impl From<String> for Given {
+    fn from(text: String) -> Self {
+        Self(text)
+    }
+}
+
 /// `refs`'s arguments.
 #[derive(Debug, clap::Args)]
 struct Refs {
-    /// Each record's logical path, such as /projects/p; several are answered from one check of the board.
+    /// Each record's logical path, such as /projects/p, or p from /projects; several share one check of the board.
     #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
-    paths: Vec<LogicalPath>,
+    paths: Vec<Given>,
     /// When nothing is at a path yet, report where a file there would be instead of refusing.
     #[arg(long)]
     missing: bool,
@@ -123,17 +139,17 @@ Examples:
   board check /projects --all
   board check --json")]
     Check {
-        /// Check only the entries at or beneath this logical path, such as /projects.
-        path: Option<LogicalPath>,
+        /// Check only the entries at or beneath this logical path, such as /projects, or . for the current directory.
+        path: Option<Given>,
         #[command(flatten)]
         page: Page,
     },
     /// Print the file at each path, following pointers.
     #[command(after_help = render::GET_HELP)]
     Get {
-        /// Each file's logical path: it starts with /, and a JSON file's leaves out .json, such as /projects/p.
+        /// Each file's logical path, such as /projects/p, or p from /projects; a JSON file's leaves out .json.
         #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
-        paths: Vec<LogicalPath>,
+        paths: Vec<Given>,
     },
     /// List the directory at a path, without following pointers inside it.
     #[command(after_help = "\
@@ -141,8 +157,8 @@ Examples:
   board ls
   board ls /projects --limit 20")]
     Ls {
-        /// The directory's logical path; the board's root when left out.
-        path: Option<LogicalPath>,
+        /// The directory's logical path, such as /projects, or . for the current directory; the board's root when left out.
+        path: Option<Given>,
         #[command(flatten)]
         page: Page,
     },
@@ -161,9 +177,9 @@ Examples:
   board get /tasks/a | board put /tasks/b
   board put --batch < writes.jsonl")]
     Put {
-        /// Where to write: a logical path that leaves out .json, such as /tasks/a.
+        /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
         #[arg(required_unless_present = "batch")]
-        path: Option<LogicalPath>,
+        path: Option<Given>,
         /// The blob the file must hold, or `none` for a new file.
         #[arg(long, value_parser = expect)]
         expect: Option<Expect>,
@@ -308,12 +324,12 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
-    let grafted = graft::find(&arguments, context.plugins.as_deref());
+    let found = graft::find(&arguments, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let parsed = crumbkit::parse_to::<graft::Parsed, _, _, _, _>(
         &mut Sink::new(&mut stdout, &mut stderr),
-        graft::command(grafted.as_ref()),
-        &graft::guide(grafted.as_ref()),
+        graft::command(found.as_ref()),
+        &graft::guide(found.as_ref()),
         arguments.clone(),
     );
     ran.trace.add("parse", parsing);
@@ -357,31 +373,50 @@ pub(crate) fn run(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     ran.root = Some(board.repository().path().to_path_buf());
-    ran.prefix = prefix;
+    ran.prefix = prefix.as_ref().map(|prefix| match prefix {
+        Ok(path) => path.to_string(),
+        Err(PathError::Malformed { path, .. }) => path.clone(),
+    });
+    let prefix = prefix.as_ref();
     let output = match grafted {
-        Some((target, flags)) => call(&board, context, printer, &target, Some(flags), stdin),
-        None => command(cli.command, &board, context, printer, stdin),
+        Some((target, mut flags)) => {
+            graft::resolve(found.as_ref(), &mut flags, prefix);
+            call(&board, context, printer, &target, Some(flags), stdin)
+        }
+        None => command(cli.command, &board, context, printer, prefix, stdin)
+            .unwrap_or_else(|refusal| render::refused(printer, *refusal)),
     };
     ran.trace.extend(board.take_trace());
     output
 }
 
-/// Runs `command` against `board`.
+/// Runs `command` against `board`, reading each path it is given from
+/// `prefix`, or refuses a path that does not read as a logical path there.
 fn command(
     command: Command,
     board: &Board,
     context: &Context,
     printer: &mut Printer,
+    prefix: Option<&Prefix>,
     stdin: &mut dyn Read,
-) -> Output {
+) -> Result<Output, Box<Refusal>> {
     let cache = context.cache.as_deref();
-    match command {
+    let at = |given: &[Given], name| -> Result<Vec<_>, _> {
+        given.iter().map(|path| read(prefix, path, name)).collect()
+    };
+    Ok(match command {
         Command::Init => unreachable!("init runs before a board is opened"),
-        Command::Check { path, page } => match board.check(path.as_ref(), cache) {
-            Ok(report) => render::check(printer, &report, &page),
-            Err(error) => render::refused(printer, error.refusal()),
-        },
-        Command::Get { paths } => render::get(printer, &paths, board.get_each(&paths)),
+        Command::Check { path, page } => {
+            let path = path.map(|path| read(prefix, &path, "check")).transpose()?;
+            match board.check(path.as_ref(), cache) {
+                Ok(report) => render::check(printer, &report, &page),
+                Err(error) => render::refused(printer, error.refusal()),
+            }
+        }
+        Command::Get { paths } => {
+            let paths = at(&paths, "get")?;
+            render::get(printer, &paths, board.get_each(&paths))
+        }
         Command::Put { batch: true, .. } => {
             match board.put_batch(&mut std::io::BufReader::new(stdin)) {
                 Ok(report) => render::put(printer, &report),
@@ -392,13 +427,13 @@ fn command(
             path: Some(path),
             expect,
             ..
-        } => put(board, printer, &path, expect, stdin),
+        } => put(board, printer, &read(prefix, &path, "put")?, expect, stdin),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(printer, &report),
             Err(error) => render::refused(printer, error.refusal()),
         },
-        Command::Refs(asked) => refs(printer, board, context, &asked),
+        Command::Refs(asked) => refs(printer, board, context, &asked, &at(&asked.paths, "refs")?),
         Command::Query { sql, page } => {
             let budget = Some(render::rows_budget(printer.view.budget()));
             let limit = page.limit().unwrap_or(usize::MAX);
@@ -436,13 +471,53 @@ fn command(
             call(board, context, printer, &target, None, stdin)
         }
         Command::Ls { path, page } => {
-            let path = path.unwrap_or_else(LogicalPath::root);
+            let path = path.map_or(Ok(LogicalPath::root()), |path| read(prefix, &path, "ls"))?;
             match board.ls(&path, cache) {
                 Ok(report) => render::ls(printer, &report, &page),
                 Err(error) => render::refused(printer, error.refusal("ls")),
             }
         }
+    })
+}
+
+/// `given` read from `prefix`, which a relative path needs to be a logical
+/// path, or a refusal naming `given` as typed. A refused `..` that stays at
+/// or below `/` hints the absolute path it meant.
+fn read(prefix: Option<&Prefix>, given: &Given, name: &str) -> Result<LogicalPath, Box<Refusal>> {
+    let text = given.0.as_str();
+    let from = match prefix {
+        Some(prefix) if !text.starts_with('/') => prefix.clone(),
+        _ => Ok(LogicalPath::root()),
+    };
+    let from = from.map_err(|error| Box::new(plain(error.code(), &error)))?;
+    from.join(text)
+        .map_err(|PathError::Malformed { reason, .. }| {
+            let dots = reason == Malformation::DotSegment;
+            let unsupported = dots.then_some(", which Board does not support");
+            let unsupported = unsupported.unwrap_or_default();
+            let message =
+                format!("path {text:?}, read from {from}, is refused: {reason}{unsupported}");
+            let meant = dots.then(|| climbed(&from, text)).flatten();
+            let hint = meant.map_or_else(
+                || format!("run `board {name} -h`"),
+                |meant| format!("use {meant} for {text}"),
+            );
+            Box::new(plain(Code::CliUsage, &message).with_hint(hint))
+        })
+}
+
+/// `text` read from `from` with each `.` and `..` resolved, for a hint only,
+/// or `None` when it climbs above `/` or is malformed for another reason.
+fn climbed(from: &LogicalPath, text: &str) -> Option<LogicalPath> {
+    let mut segments: Vec<&str> = from.segments().collect();
+    for segment in text.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => drop(segments.pop()?),
+            segment => segments.push(segment),
+        }
     }
+    format!("/{}", segments.join("/")).parse().ok()
 }
 
 /// A refusal with the hint for its code.
@@ -523,8 +598,14 @@ pub(crate) fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf,
     Ok(start)
 }
 
-/// `refs` of one path or several, with `--missing` or without.
-fn refs(printer: &mut Printer, board: &Board, context: &Context, asked: &Refs) -> Output {
+/// `refs` of `paths`, read from the paths asked, with `--missing` or without.
+fn refs(
+    printer: &mut Printer,
+    board: &Board,
+    context: &Context,
+    asked: &Refs,
+    paths: &[LogicalPath],
+) -> Output {
     let absent = if asked.missing {
         Absent::Locate
     } else {
@@ -532,19 +613,19 @@ fn refs(printer: &mut Printer, board: &Board, context: &Context, asked: &Refs) -
     };
     let limit = asked.page.limit();
     let cache = context.cache.as_deref();
-    match board.refs(&asked.paths, absent, &asked.fields, limit, cache) {
+    match board.refs(paths, absent, &asked.fields, limit, cache) {
         Err(error) => render::refused(printer, error.refusal()),
-        Ok(answers) => render::refs(printer, &asked.paths, answers, limit),
+        Ok(answers) => render::refs(printer, paths, answers, limit),
     }
 }
 
 /// The board holding `start`, or else the one known board with a mount
 /// whose repository holds `start`, and `start`'s logical path in that
-/// board. Outside a git repository no mount can hold `start`, so the known
+/// board, if it has one. Outside a git repository no mount can hold `start`, so the known
 /// boards are not read.
-fn open(context: &Context, start: &Path) -> Result<(Board, Option<String>), Box<Refusal>> {
+fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let error = match Board::open(start, context.home.clone()) {
-        Ok(board) => return Ok((board, None)),
+        Ok(board) => return Ok((board, board_tree::within(start))),
         Err(error) => error,
     };
     let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
@@ -552,7 +633,7 @@ fn open(context: &Context, start: &Path) -> Result<(Board, Option<String>), Box<
     if !matches!(error, board_ops::OpenError::NotFound { .. }) {
         return Err(Box::new(refusal));
     }
-    known::find(context, start, refusal).map(|(board, prefix)| (board, Some(prefix)))
+    known::find(context, start, refusal).map(|(board, prefix)| (board, Some(prefix.parse())))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git

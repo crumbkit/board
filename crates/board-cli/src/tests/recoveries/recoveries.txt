@@ -446,9 +446,9 @@ board chek
   run board -h
     exits 0
 
-board get projects/p
+board get projects//p
   fails with board::cli::usage
-  run board get /projects/p --json
+  run board get -h
     exits 0
 
 board ls --limit 0

@@ -31,8 +31,8 @@ matches when its repository has the same git common directory as the
 directory's repository, so a linked worktree matches too. With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
 is the mount's path joined with the directory's path beneath the
-repository's root, such as `/repos/crumbkit/docs`; for now only the timing
-log records it. A directory inside the git directory has no prefix and
+repository's root, such as `/repos/crumbkit/docs`, and the timing log
+records it. A directory inside the git directory has no prefix and
 matches nothing. No match is `board::config::not_found`. When the file lists
 boards, the message says they were read and none mounts the repository, and
 the hint says to add a mount; otherwise the hint says to list a board. More
@@ -40,6 +40,21 @@ than one match, counting every mount of every known board, is
 `board::config::ambiguous`; `-C` then picks a board. A known board that
 cannot be opened or refreshed is passed over, and a `not_found` message
 names it. `-C` into a mounted repository finds its board the same way.
+
+A path given to `get`, `ls`, `refs`, `check` or `put` that does not start
+with `/` is relative to the prefix. In a board, the prefix is the directory's
+path beneath the board's root, such as `/controls`, and the timing log
+records it. `-C` sets the directory, as in git, so `board -C ~/Code/board ls .`
+lists `/`. A run with no prefix reads from `/`. `.` and `./` are the prefix
+itself, and `x` and `./x` are `x` beneath it. One trailing `/`, which a shell
+adds to a directory, is dropped. The result must be a logical path, so any
+other `.` or `..` segment is refused with `board::cli::usage`. The refusal
+names the path as typed, and for a `..` that stays at or below `/` its hint
+gives the absolute path. Board reads the prefix only for a relative path.
+A directory whose name is not a logical path, such as one holding a tab,
+refuses a relative path with `board::path::malformed`.
+`mount update` takes only an absolute path. A run
+from a mounted repository reads the mount's commit, never the files on disk.
 
 Every file git sees
 under the root is an entry: tracked files, and untracked files that are not
@@ -117,6 +132,12 @@ reports the first failing reference in document order: `ref::dangling`, or,
 when the schema names types, `ref::wrong_type` for anything but a record of one
 of them. Without `x-board-type`, a reference may reach any entry, such as a
 Markdown file.
+
+A capability's input schema marks a string property as a path with
+`"format": "board-path"`. `board call` reads such a flag's value as a path
+argument is read, relative to the prefix, before it validates the input; a
+value that is not then a logical path is sent as given. JSON on stdin is
+sent as given. The format means nothing anywhere else, such as in a record.
 
 A mounted board's schemas are untrusted. Board never fetches a remote `$ref`,
 and runs `pattern` on a linear-time regex engine. A schema is `schema::invalid`

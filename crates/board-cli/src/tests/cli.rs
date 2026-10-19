@@ -346,7 +346,7 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
 #[test]
 fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs() {
     let scenario = board();
-    let cases: [(&[&str], &str, &[&str]); 6] = [
+    let cases: [(&[&str], &str, &[&str]); 5] = [
         (
             &["ls", "--limt", "5"],
             "unexpected argument '--limt' found; a similar argument exists: '--limit'",
@@ -356,11 +356,6 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
             &["ls", "--limit", "0"],
             "invalid value '0' for '--limit <N>': --limit takes a whole number from 1 to 10000",
             &["ls", "--limit", "1"],
-        ),
-        (
-            &["get", "/projects//p"],
-            "invalid value '/projects//p' for '<PATH>...': ",
-            &["get", "/projects/p"],
         ),
         (
             &["ls", "--limit", "5", "--all"],
@@ -778,85 +773,36 @@ fn check_names_an_entry_by_its_logical_path_and_one_without_or_sharing_it_by_its
     assert_eq!(bad["path"], "zz/bad.json");
 }
 
+/// `mount update` still takes only an absolute path, so a relative one is
+/// refused with the line corrected to its leading `/` and without `.json`,
+/// quoted where the shell needs it, and the corrected line parses.
 #[test]
-fn a_path_refused_by_its_form_offers_the_corrected_line_and_that_line_runs() {
+fn a_mount_path_refused_by_its_form_recovers_with_the_corrected_line_and_that_line_parses() {
     let scenario = board();
-    for given in ["projects/p.json", "projects/p"] {
-        let refused = board_in(scenario.workdir(), &["get", given]);
-        assert_eq!(refused.code, 2);
-        let stderr = text(&refused.stderr);
-        assert!(
-            stderr.starts_with(&format!("error: invalid value '{given}' for '<PATH>...': ")),
-            "{stderr}"
-        );
-        assert!(
-            stderr.ends_with(
-                "  help:  run `board get /projects/p`\n  help:  run `board get -h`\n  \
-                 code:  board::cli::usage\n"
-            ),
-            "{stderr}"
-        );
-    }
-    let refused = json(&board_in(
-        scenario.workdir(),
-        &["refs", "projects/p.json", "--limit", "5", "--json"],
-    ));
-    assert_eq!(refused["code"], "board::cli::usage");
-    assert_eq!(refused["fields"]["value"], "projects/p.json");
-    assert_eq!(
-        refused["recovery"],
-        serde_json::json!({"kind": "run", "call": "board refs /projects/p --limit 5 --json"})
-    );
-    assert_eq!(
-        refused["alternatives"],
-        serde_json::json!([{"kind": "run", "call": "board refs -h"}])
-    );
-    assert_eq!(
-        board_in(scenario.workdir(), &["get", "/projects/p"]).code,
-        0
-    );
-}
-
-/// The corrected line is a call to run whether or not a word in it needs
-/// shell quoting: crumbkit quotes the word when it prints the call.
-#[test]
-fn a_corrected_line_is_a_call_with_a_word_that_needs_quoting_and_without_one() {
-    let scenario = board();
-    let recovery = |pointer: &str| {
-        let refused = board_in(
-            scenario.workdir(),
-            &["refs", "projects/p", "--field", pointer, "--json"],
-        );
+    let recovery = |given: &str| {
+        let refused = board_in(scenario.workdir(), &["mount", "update", given, "--json"]);
         assert_eq!(refused.code, 2);
         let refused = json(&refused);
         assert_eq!(refused["code"], "board::cli::usage");
-        refused["recovery"].clone()
+        assert_eq!(
+            refused["alternatives"],
+            json!([{"kind": "run", "call": "board mount update -h"}])
+        );
+        refused["recovery"]["call"].clone()
     };
     assert_eq!(
-        recovery("/a b"),
-        serde_json::json!({
-            "kind": "run",
-            "call": "board refs /projects/p --field '/a b' --json",
-        })
+        recovery("projects/p.json"),
+        "board mount update /projects/p --json"
     );
-    assert_eq!(
-        recovery("/ab"),
-        serde_json::json!({
-            "kind": "run",
-            "call": "board refs /projects/p --field /ab --json",
-        })
-    );
-    let ran = board_in(
-        scenario.workdir(),
-        &["refs", "/projects/p", "--field", "/a b", "--json"],
-    );
-    assert_eq!(ran.code, 0);
+    assert_eq!(recovery("a b"), "board mount update '/a b' --json");
+    let parsed = board_in(scenario.workdir(), &["mount", "update", "/projects/p"]);
+    assert_eq!(parsed.code, 1, "{}", text(&parsed.stderr));
 }
 
-/// A path whose corrected form still does not parse offers only crumbkit's
-/// recovery, and a path that parses runs.
+/// A malformed path offers only crumbkit's recovery, and a path that parses
+/// runs.
 #[test]
-fn a_path_that_stays_malformed_once_corrected_hints_the_help_and_a_well_formed_one_runs() {
+fn a_malformed_path_hints_the_help_and_a_well_formed_one_runs() {
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["get", "projects//p"]);
     assert_eq!(refused.code, 2);
@@ -874,36 +820,12 @@ fn a_path_that_stays_malformed_once_corrected_hints_the_help_and_a_well_formed_o
     );
 }
 
-/// Only a path is corrected. A path refused for its form recovers first
-/// with the corrected line and offers help after it. A refused `--field`
-/// pointer that would parse with a leading `/` gets no corrected line, so
-/// help is its recovery and it has no alternatives. The corrected line runs.
+/// A refused `--field` pointer that would parse with a leading `/` gets no
+/// corrected line, so help is its recovery and it has no alternatives. The
+/// pointer with its `/` runs.
 #[test]
-fn a_path_refused_for_its_form_recovers_first_with_its_corrected_line_and_a_refused_pointer_with_help()
- {
+fn a_refused_pointer_recovers_with_help_and_the_pointer_with_its_slash_runs() {
     let scenario = board();
-    let path = json(&board_in(
-        scenario.workdir(),
-        &["refs", "projects/p", "--field", "/status", "--json"],
-    ));
-    assert_eq!(path["code"], "board::cli::usage");
-    assert_eq!(
-        path["recovery"],
-        json!({"kind": "run", "call": "board refs /projects/p --field /status --json"})
-    );
-    assert_eq!(
-        path["alternatives"],
-        json!([{"kind": "run", "call": "board refs -h"}])
-    );
-    let path = board_in(
-        scenario.workdir(),
-        &["refs", "projects/p", "--field", "/status"],
-    );
-    assert_eq!(path.code, 2);
-    assert_eq!(
-        hint_of(&path),
-        "run `board refs /projects/p --field /status`"
-    );
     let pointer = json(&board_in(
         scenario.workdir(),
         &["refs", "/projects/p", "--field", "status", "--json"],
@@ -924,12 +846,6 @@ fn a_path_refused_for_its_form_recovers_first_with_its_corrected_line_and_a_refu
         scenario.workdir(),
         &["refs", "/projects/p", "--field", "/status"],
     );
-    assert_eq!(corrected.code, 0, "{}", text(&corrected.stderr));
-    // An optional path, such as `check`'s, is corrected as a required one is.
-    let optional = board_in(scenario.workdir(), &["check", "projects"]);
-    assert_eq!(optional.code, 2);
-    assert_eq!(hint_of(&optional), "run `board check /projects`");
-    let corrected = board_in(scenario.workdir(), &["check", "/projects"]);
     assert_eq!(corrected.code, 0, "{}", text(&corrected.stderr));
 }
 

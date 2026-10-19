@@ -67,6 +67,7 @@ class ForPathInput(TypedDict):
         str,
         Extra(
             pattern="^/",
+            format="board-path",
             description="The file to list the controls of, by its logical path, such as /docs/README.md;"
             " ask about a new file by the path it will have.",
         ),
@@ -96,6 +97,7 @@ class CheckInput(TypedDict):
             str,
             Extra(
                 pattern="^/",
+                format="board-path",
                 description="The directory or file whose controls to check, by its logical path,"
                 " such as /docs; / when left out.",
             ),

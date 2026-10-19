@@ -75,7 +75,8 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
 
 
 def test_call_help_prints_the_path_flag_with_its_sentence(board: Board) -> None:
-    sentence = input_descriptions()["check", "path"]
+    sentence = str(input_descriptions()["check", "path"]).removesuffix(".")
+    relative = "; a path without a leading / is read from the current directory."
     ran = board.run("call", "controls.check", "-h")
     assert ran.returncode == 0, ran.stderr
-    assert f"--path <path>  {sentence}\n" in ran.stdout, ran.stdout
+    assert f"--path <path>  {sentence}{relative}\n" in ran.stdout, ran.stdout

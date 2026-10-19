@@ -113,6 +113,9 @@ on stdin. `board call <plugin>.<capability>` also takes each top-level string,
 integer, number or boolean property of the capability's `inputSchema` as a flag
 of the same name, such as `--path /docs` or `--open true`, and `board call <plugin>.<capability> -h`
 lists them. Board reads stdin only when no flag is given.
+A flag whose property has `"format": "board-path"` may be given relative to
+the run's prefix, such as `--path docs` from inside a mounted repository;
+Board sends the absolute logical path (architecture.md, Typed references).
 No flags and nothing on stdin, or a terminal on stdin, is the input `{}`. An
 input property named like one of `board call`'s own flags (`--json`, `--fields`,
 `--long`, `--full`, `--capability` or `--help`), or not made of lowercase

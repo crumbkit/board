@@ -4,6 +4,7 @@
 use std::ffi::OsString;
 use std::path::Path;
 
+use board_model::LogicalPath;
 use board_plugin::{Capability, Target};
 use clap::builder::{BoolValueParser, StringValueParser};
 use clap::builder::{TypedValueParser as _, ValueParser};
@@ -12,7 +13,7 @@ use crumbkit::help::{Guide, RuntimeLeaf};
 use serde_json::{Map, Value};
 
 use crate::render::{CALL_REPORT, GUIDE};
-use crate::run::Cli;
+use crate::run::{Cli, Prefix};
 
 /// The target a command line names after `call`, and the description, the
 /// flags and the help on stdin of the capability an installed plugin offers
@@ -31,8 +32,15 @@ pub(crate) const RESERVED_FLAGS: &[&str] =
 const STDIN: &str =
     "Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.";
 
-/// An input property's name, help and parser.
-type Flag = (String, String, ValueParser);
+/// The format that marks a string input property as a logical path, which
+/// a flag gives relative to the run's prefix.
+const PATH_FORMAT: &str = "board-path";
+
+/// What a path flag's help adds, after its own text without a final `.`.
+const RELATIVE: &str = "; a path without a leading / is read from the current directory.";
+
+/// An input property's name, help and parser, and whether it is a path.
+type Flag = (String, String, ValueParser, bool);
 
 /// A parsed command line, with the target and flags of a grafted call.
 pub(crate) struct Parsed {
@@ -61,6 +69,28 @@ impl FromArgMatches for Parsed {
     fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), clap::Error> {
         *self = Self::from_arg_matches(matches)?;
         Ok(())
+    }
+}
+
+/// Reads each of `found`'s path flags in `flags` from the prefix `at`, or
+/// `/` without one. A value that does not read as a logical path stays as
+/// given, for the input schema to judge.
+pub(crate) fn resolve(
+    found: Option<&Grafted>,
+    flags: &mut Map<String, Value>,
+    at: Option<&Prefix>,
+) {
+    let offered = found.and_then(|found| found.offered.as_ref()).into_iter();
+    for (name, ..) in offered
+        .flat_map(|(_, flags, _)| flags)
+        .filter(|flag| flag.3)
+    {
+        if let Some(Value::String(text)) = flags.get_mut(name)
+            && let Ok(from) = at.cloned().unwrap_or(Ok(LogicalPath::root()))
+            && let Ok(path) = from.join(text)
+        {
+            *text = path.into();
+        }
     }
 }
 
@@ -135,9 +165,12 @@ fn flags(capability: &Capability) -> Vec<Flag> {
             let help = property
                 .get("description")
                 .and_then(Value::as_str)
-                .unwrap_or(kind)
-                .to_owned();
-            Some((name.clone(), help, parser))
+                .unwrap_or(kind);
+            let path = property.get("format").and_then(Value::as_str) == Some(PATH_FORMAT);
+            let relative = if path { RELATIVE } else { "" };
+            let help = help.strip_suffix('.').filter(|_| path).unwrap_or(help);
+            let help = format!("{help}{relative}");
+            Some((name.clone(), help, parser, path))
         })
         .collect()
 }
@@ -153,7 +186,7 @@ pub(crate) fn command(grafted: Option<&Grafted>) -> Command {
     let leaf = match &grafted.offered {
         Some((about, flags, stdin)) => {
             let leaf = leaf.about(about.clone()).after_help(stdin.clone());
-            flags.iter().fold(leaf, |leaf, (name, help, parser)| {
+            flags.iter().fold(leaf, |leaf, (name, help, parser, _)| {
                 leaf.arg(
                     Arg::new(name.clone())
                         .long(name.clone())

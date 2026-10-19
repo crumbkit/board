@@ -5,7 +5,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use board_model::{Code, Fields, LogicalPath, Mount, Object, ObjectId, Pointer, Source};
+use board_model::{
+    Code, Fields, LogicalPath, Malformation, Mount, Object, ObjectId, PathError, Pointer, Source,
+};
 
 use crate::git::{Contents, GitError, Repository, latest};
 use crate::repositories::Repositories;
@@ -204,7 +206,7 @@ impl Repositories {
         is_pointer: &dyn Fn(&str) -> bool,
         directory: &Path,
     ) -> Vec<Place> {
-        let Some((common, within)) = holding(directory) else {
+        let Some((common, Ok(within))) = holding(directory) else {
             return Vec::new();
         };
         let root = self.root();
@@ -224,11 +226,19 @@ impl Repositories {
     }
 }
 
+/// `directory`'s path beneath the working tree of the repository holding
+/// it, as `git rev-parse --show-prefix` gives it, such as `/docs`, or the
+/// refusal of that path when it is not a logical path.
+pub fn within(directory: &Path) -> Option<Result<LogicalPath, PathError>> {
+    holding(directory).map(|(_, within)| within)
+}
+
 /// The canonical git directory of the repository whose working tree holds
 /// `directory`, the one its linked worktrees share, and `directory`'s path
-/// beneath that working tree. A directory inside the git directory is in no
-/// working tree, as `git rev-parse --show-prefix` refuses there.
-fn holding(directory: &Path) -> Option<(PathBuf, LogicalPath)> {
+/// beneath that working tree, or its refusal when that is not a logical
+/// path. A directory inside the git directory is in no working tree, as
+/// `git rev-parse --show-prefix` refuses there.
+fn holding(directory: &Path) -> Option<(PathBuf, Result<LogicalPath, PathError>)> {
     let git = gix::discover(directory).ok()?;
     let common = git.common_dir().canonicalize().ok()?;
     let directory = directory.canonicalize().ok()?;
@@ -238,8 +248,12 @@ fn holding(directory: &Path) -> Option<(PathBuf, LogicalPath)> {
     let beneath = directory
         .strip_prefix(git.workdir()?.canonicalize().ok()?)
         .ok()?;
-    let segments: Option<Vec<&str>> = beneath.iter().map(std::ffi::OsStr::to_str).collect();
-    let within = format!("/{}", segments?.join("/")).parse().ok()?;
+    let path = format!("/{}", beneath.to_string_lossy());
+    let reason = Malformation::NotUtf8;
+    let within = match beneath.to_str() {
+        Some(_) => path.parse(),
+        None => Err(PathError::Malformed { path, reason }),
+    };
     Some((common, within))
 }
 

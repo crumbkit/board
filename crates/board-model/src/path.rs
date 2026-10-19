@@ -39,6 +39,20 @@ impl LogicalPath {
             .filter(|segment| !segment.is_empty())
     }
 
+    /// `text` read from this path, as `Path::join` reads it: an absolute
+    /// `text` replaces it, `.`, `./` or `./.` is this path, and `x` or `./x`
+    /// is `x` beneath it. One trailing `/` on a relative `text` is dropped, as
+    /// a shell adds it to a directory. Any other `.` or `..` segment stays
+    /// malformed.
+    pub fn join(&self, text: &str) -> Result<Self, PathError> {
+        let rest = text.strip_prefix("./").unwrap_or(text);
+        match rest.strip_suffix('/').unwrap_or(rest) {
+            _ if text.is_empty() || text.starts_with('/') => text.parse(),
+            "." | "" => Ok(self.clone()),
+            rest => format!("{}/{rest}", self.0.trim_end_matches('/')).parse(),
+        }
+    }
+
     /// The path of the first `depth` segments: the root for 0, the whole
     /// path for `depth` past its last segment.
     #[must_use]
@@ -120,6 +134,7 @@ pub enum Malformation {
     DotSegment,
     SegmentTooLong { bytes: usize },
     ControlCharacter,
+    NotUtf8,
 }
 
 impl fmt::Display for Malformation {
@@ -136,6 +151,7 @@ impl fmt::Display for Malformation {
                 "it has a segment of {bytes} bytes, over {MAX_SEGMENT_BYTES}"
             ),
             Self::ControlCharacter => formatter.write_str("it holds a control character"),
+            Self::NotUtf8 => formatter.write_str("it is not UTF-8"),
         }
     }
 }

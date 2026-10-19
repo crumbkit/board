@@ -313,7 +313,7 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
         (Code::QueryTimeout, unbounded),
         (Code::OutputOverBudget, zeroes),
         (Code::CliUsage, "chek"),
-        (Code::CliUsage, "get projects/p"),
+        (Code::CliUsage, "get projects//p"),
         (Code::CliUsage, "ls --limit 0"),
         (Code::CliUsage, "plugin"),
         (Code::MountFollowMissing, "mount update /mount/unfollowed"),

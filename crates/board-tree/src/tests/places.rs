@@ -49,6 +49,52 @@ fn the_root_of_a_mounted_repository_is_placed_at_its_mount_and_an_unmounted_one_
 }
 
 #[test]
+fn a_directory_is_within_its_repository_at_its_path_and_the_git_directory_is_within_none() {
+    let repository = Scenario::new();
+    repository.write("docs/deep/a.md", Item::File("a"));
+    let deep = repository.workdir().join("docs/deep");
+    assert_eq!(crate::within(&deep), Some(Ok(path("/docs/deep"))));
+    assert_eq!(crate::within(repository.workdir()), Some(Ok(path("/"))));
+    assert_eq!(crate::within(&repository.workdir().join(".git")), None);
+}
+
+/// The reason `within` gives for `name`, a directory at the root of a
+/// repository, or `None` when it gives a path.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test makes a directory whose name may not be UTF-8"
+)]
+fn refused(name: &std::ffi::OsStr) -> Option<board_model::Malformation> {
+    let repository = Scenario::new();
+    let directory = repository.workdir().join(name);
+    std::fs::create_dir(&directory).unwrap();
+    match crate::within(&directory) {
+        Some(Err(board_model::PathError::Malformed { reason, .. })) => Some(reason),
+        Some(Ok(_)) => None,
+        None => panic!("{} is in no working tree", directory.display()),
+    }
+}
+
+#[test]
+fn a_directory_whose_name_holds_a_control_character_is_within_a_refused_path() {
+    let reason = board_model::Malformation::ControlCharacter;
+    assert_eq!(refused("a\tb".as_ref()), Some(reason));
+    assert_eq!(refused("ab".as_ref()), None);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_directory_whose_name_is_not_utf8_is_within_a_refused_path() {
+    use std::os::unix::ffi::OsStrExt as _;
+    let reason = board_model::Malformation::NotUtf8;
+    assert_eq!(
+        refused(std::ffi::OsStr::from_bytes(b"a\xffb")),
+        Some(reason)
+    );
+    assert_eq!(refused(std::ffi::OsStr::from_bytes(b"ab")), None);
+}
+
+#[test]
 fn a_subdirectory_is_placed_beneath_its_mount() {
     let mounted = Scenario::new();
     mounted.write("docs/deep/a.md", Item::File("a"));

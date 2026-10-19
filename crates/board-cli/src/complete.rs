@@ -18,7 +18,7 @@ use crumbkit::Sink;
 use crate::config::Context;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
-use crate::run::{Cli, entered};
+use crate::run::{Cli, Given, entered};
 
 const VARIABLE: &str = "BOARD_COMPLETE";
 
@@ -194,7 +194,8 @@ fn paths(start: Option<PathBuf>, shell: &'static str, context: &Context) -> ArgV
 fn with_paths(command: Command, completer: &ArgValueCompleter) -> Command {
     command
         .mut_args(|arg| {
-            if arg.get_value_parser().type_id() == TypeId::of::<LogicalPath>() {
+            let id = arg.get_value_parser().type_id();
+            if id == TypeId::of::<LogicalPath>() || id == TypeId::of::<Given>() {
                 arg.add(completer.clone())
             } else {
                 arg
