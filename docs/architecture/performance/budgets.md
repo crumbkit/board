@@ -15,6 +15,7 @@ the other reference board.
 | simple `board query`, warm | 500 ms |
 | full index, cold | 1 s |
 | `board call tasks.next`, warm | 500 ms |
+| `board put` of a small record, warm | 300 ms |
 
 `cargo xtask bench` is the timing job. It runs on a generated board in CI,
 reports every run and fails above three times a budget. The owner times the
@@ -32,6 +33,13 @@ row, and says why, when the board does not enable tasks or `uv` is not on
 stale one, so build board-cli in xtask's profile first, as the timing job does:
 `cargo build --release --package board-cli`. `bin/test` gives bench no `uv`,
 so the gates need neither `uv` nor a network.
+
+The generated board commits its records in one commit, so git's index and
+HEAD hold them as a real board's do; a put pays for both, and a put into a
+board whose records are untracked takes a fifteenth of the time. The put row
+writes a new small record for each run, committed as the board's own
+identity. On a board given with `--board`, bench skips the row and says why,
+because bench writes only a board it generated.
 
 Targets are the speed an agent loop or a web view needs. None is met or
 enforced yet:

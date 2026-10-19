@@ -166,7 +166,12 @@ fn a_plugin_call_that_fails_fails_the_bench_and_one_that_answers_is_timed() {
     generate(root.path(), 1).unwrap();
     let call = |fixture: &Fixture, script: &str| {
         let budgets = [(CALL.to_owned(), Duration::from_secs(1))];
-        run(root.path(), &budgets, &host(fixture, script))
+        run(
+            root.path(),
+            &budgets,
+            &host(fixture, script),
+            Corpus::Generated,
+        )
     };
     let failed = call(&Fixture::new(), "#!/bin/sh\ncat > /dev/null\nexit 1\n").unwrap_err();
     assert_eq!(failed.code(), "xtask::bench::failed");
@@ -191,4 +196,55 @@ fn a_plugin_call_that_fails_fails_the_bench_and_one_that_answers_is_timed() {
     ] {
         assert!(seen.contains(&line), "{line} in {seen}");
     }
+}
+
+#[test]
+fn a_generated_board_is_committed_and_a_put_commits_onto_it_as_its_own_identity() {
+    let root = tempfile::tempdir().unwrap();
+    generate(root.path(), 1).unwrap();
+    let main = root.path().join(".git/refs/heads/main");
+    let generated = std::fs::read_to_string(&main).unwrap();
+    assert_eq!(generated.trim().len(), 40, "{generated:?}");
+    let board = Board::open(root.path(), None).unwrap();
+    let report = board
+        .put(
+            &"/put/first".parse().unwrap(),
+            board_ops::Expect::Absent,
+            br#"{"$type": "bench/task/v1", "title": "first", "project": "/projects/p0"}"#,
+        )
+        .unwrap();
+    let committed = report.commit.unwrap().to_string();
+    assert_ne!(committed, generated.trim());
+    assert_eq!(std::fs::read_to_string(&main).unwrap().trim(), committed);
+}
+
+#[test]
+fn the_put_row_writes_a_record_each_run_on_a_generated_board_and_skips_a_given_one() {
+    let root = tempfile::tempdir().unwrap();
+    generate(root.path(), 1).unwrap();
+    let budgets = [(PUT.to_owned(), Duration::from_secs(1))];
+    let host = host(&Fixture::new(), "");
+    let given = run(root.path(), &budgets, &host, Corpus::Given).unwrap();
+    assert_eq!(
+        given[0].took,
+        Took::Skipped(
+            "the board was given with --board, and bench writes only a board it generated"
+                .to_owned()
+        )
+    );
+    let timed = run(root.path(), &budgets, &host, Corpus::Generated).unwrap();
+    assert!(matches!(timed[0].took, Took::Median(_)), "{timed:?}");
+    let cache = tempfile::tempdir().unwrap();
+    let report = Board::open(root.path(), None)
+        .unwrap()
+        .query(
+            "SELECT count(*) FROM records WHERE path LIKE 'put/%' AND code IS NULL",
+            1,
+            None,
+            Some(cache.path()),
+            &board_ops::Plugins::default(),
+        )
+        .unwrap();
+    assert_eq!(report.rows, [[5]]);
+    assert_eq!(RUNS, 5);
 }

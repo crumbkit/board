@@ -8,8 +8,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use board_model::Kind;
-use board_ops::{Board, Plugins};
+use board_model::{Kind, LogicalPath};
+use board_ops::{Board, Expect, Plugins};
 use board_plugin::{Environment, Limits, Target};
 use board_tree::Status;
 
@@ -30,6 +30,16 @@ const TASK_SCHEMA: &str = include_str!("../../plugins/tasks/types/tasks/task/v1.
 
 /// The operation that times a call to a Python plugin.
 pub(crate) const CALL: &str = "`board call tasks.next`, warm";
+/// The operation that times a put, which writes a record into the board.
+pub(crate) const PUT: &str = "`board put` of a small record, warm";
+
+/// Whose board bench measures: one it generated and may write, or one
+/// given with `--board`, which it only reads.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Corpus {
+    Generated,
+    Given,
+}
 
 /// One operation's budget and what it took.
 #[derive(Debug, PartialEq, Eq)]
@@ -151,12 +161,14 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Duration)>, BenchError>
 }
 
 /// Times every budgeted operation on the board at `root`, a repository root.
-/// `get` reads the first record a check finds, `ls` lists its directory, and
-/// the plugin call runs on `host`.
+/// `get` reads the first record a check finds, `ls` lists its directory, the
+/// plugin call runs on `host`, and `put` writes a record for each run into a
+/// `Corpus::Generated` board.
 pub(crate) fn run(
     root: &Path,
     budgets: &[(String, Duration)],
     host: &Host,
+    corpus: Corpus,
 ) -> Result<Vec<Timed>, BenchError> {
     let board = Board::open(root, None).map_err(|error| failed(&error))?;
     let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
@@ -174,7 +186,7 @@ pub(crate) fn run(
         .as_str()
         .rsplit_once('/')
         .and_then(|(parent, _)| parent.parse().ok())
-        .unwrap_or_else(board_model::LogicalPath::root);
+        .unwrap_or_else(LogicalPath::root);
     budgets
         .iter()
         .map(|(operation, budget)| {
@@ -194,9 +206,25 @@ pub(crate) fn run(
                     took,
                 });
             }
+            if operation == PUT && corpus == Corpus::Given {
+                return Ok(Timed {
+                    operation: operation.clone(),
+                    budget: *budget,
+                    took: Took::Skipped(
+                        "the board was given with --board, and bench writes only a board it generated"
+                            .to_owned(),
+                    ),
+                });
+            }
             let mut times = Vec::with_capacity(RUNS);
-            for _ in 0..RUNS {
+            for run in 0..RUNS {
                 let cold = tempfile::tempdir().map_err(|error| failed(&error))?;
+                let path: LogicalPath = format!("/put/r{run}")
+                    .parse()
+                    .map_err(|error| failed(&error))?;
+                let record = format!(
+                    r#"{{"$type": "bench/task/v1", "title": "put {run}", "project": "/projects/p0"}}"#
+                );
                 let started = Instant::now();
                 match operation.as_str() {
                     "`board get`, warm" => board.get(sample).map(drop).map_err(|e| failed(&e)),
@@ -220,6 +248,10 @@ pub(crate) fn run(
                         .map_err(|e| failed(&e)),
                     "full index, cold" => board
                         .check(None, Some(cold.path()))
+                        .map(drop)
+                        .map_err(|e| failed(&e)),
+                    PUT => board
+                        .put(&path, Expect::Absent, record.as_bytes())
                         .map(drop)
                         .map_err(|e| failed(&e)),
                     _ => Err(BenchError::Unknown {
@@ -284,7 +316,8 @@ fn failed(error: &dyn std::fmt::Display) -> BenchError {
 
 /// Writes a board of `records` tasks, a hundred to a directory, each
 /// referring to one of a hundred projects, into `root`, with a minimal git
-/// directory so that `root` is a repository's working tree. The board
+/// directory so that `root` is a repository's working tree, and an identity
+/// so that a put can commit. The board
 /// enables the tasks plugin and holds `TASKS` of its open tasks; one in five
 /// waits on the first, so `tasks.next` asks Board what blocks it.
 #[expect(
@@ -292,12 +325,16 @@ fn failed(error: &dyn std::fmt::Display) -> BenchError {
     reason = "bench writes the board it measures, and nothing else"
 )]
 pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
-    let write = |path: &str, text: &str| -> std::io::Result<()> {
-        let path = root.join(path);
-        if let Some(parent) = path.parent() {
+    let mut files: Vec<(String, String)> = Vec::new();
+    let mut write = |path: &str, text: &str| -> std::io::Result<()> {
+        let full = root.join(path);
+        if let Some(parent) = full.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, text)
+        if !path.starts_with(".git/") {
+            files.push((path.to_owned(), text.to_owned()));
+        }
+        std::fs::write(full, text)
     };
     for directory in [".git/objects", ".git/refs/heads"] {
         std::fs::create_dir_all(root.join(directory))?;
@@ -305,7 +342,8 @@ pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
     write(".git/HEAD", "ref: refs/heads/main\n")?;
     write(
         ".git/config",
-        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n",
+        "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\
+         [user]\n\tname = bench\n\temail = bench@example.com\n",
     )?;
     write(
         ".board/board.json",
@@ -348,9 +386,33 @@ pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
             ),
         )?;
     }
+    commit(root, &files)?;
     // A file modified in the second a refresh begins is hashed again, as
     // git does, so the warm runs start in a later second.
     std::thread::sleep(Duration::from_millis(1_100));
+    Ok(())
+}
+
+/// Commits `files`, already in the working tree at `root`, in one commit,
+/// so that git's index holds every record as a real board's does.
+fn commit(root: &Path, files: &[(String, String)]) -> std::io::Result<()> {
+    let board = Board::open(root, None).map_err(std::io::Error::other)?;
+    let repository = board.repository();
+    let lock = repository
+        .lock(board_tree::LOCK_WAIT)
+        .map_err(std::io::Error::other)?;
+    let writes: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(path, text)| (path.as_str(), text.as_bytes()))
+        .collect();
+    let staged = repository
+        .stage_commit(&lock, &writes, "generated")
+        .map_err(std::io::Error::other)?;
+    if let Some(staged) = staged {
+        repository
+            .finish_commit(&lock, staged)
+            .map_err(std::io::Error::other)?;
+    }
     Ok(())
 }
 

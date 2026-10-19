@@ -123,11 +123,11 @@ fn bench(root: &Path, options: &bench::Options) -> Result<Vec<bench::Timed>, ben
         data: data.path().to_owned(),
     };
     if let Some(board) = &options.board {
-        return bench::run(board, &budgets, &host);
+        return bench::run(board, &budgets, &host, bench::Corpus::Given);
     }
     let generated = tempfile::tempdir().map_err(bench::BenchError::Write)?;
     bench::generate(generated.path(), options.records).map_err(bench::BenchError::Write)?;
-    bench::run(generated.path(), &budgets, &host)
+    bench::run(generated.path(), &budgets, &host, bench::Corpus::Generated)
 }
 
 #[derive(Debug, thiserror::Error)]

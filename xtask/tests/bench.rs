@@ -21,7 +21,7 @@ fn bench_times_a_generated_board_and_skips_the_plugin_call_without_uv() {
             .lines()
             .filter(|line| line.starts_with("pass"))
             .count(),
-        5,
+        6,
         "{stdout}"
     );
     assert!(
