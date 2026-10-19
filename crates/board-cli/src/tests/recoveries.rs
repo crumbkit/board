@@ -358,8 +358,13 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     }
     // The admitted lines write, so these twins have a board of their own.
     let own = starts.seed().stdin(project);
-    let pairs: [(Code, &str, &str); 5] = [
+    let pairs: [(Code, &str, &str); 6] = [
         (Code::PathMalformed, "put /.git/x", "put /projects/x"),
+        (
+            Code::PutNotAFile,
+            "put /projects/p --file",
+            "put /projects/p.md --file",
+        ),
         (Code::PutSymlink, "put /symlinked", "put /projects/s"),
         (Code::PutThroughMount, "put /mount/m/new", "put /projects/t"),
         (
@@ -383,8 +388,9 @@ fn refused_puts(starts: &mut Starts, fixture: &RuntimePlace) {
     let task = |fields: &str| format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#);
     let project = r#"{"$type": "lr/project/v1"}"#;
     let new = "put /projects/new";
-    let puts: [(Code, &str, &str); 13] = [
+    let puts: [(Code, &str, &str); 14] = [
         (Code::PathCaseCollision, "put /projects/P", project),
+        (Code::PutNotAFile, "put /projects/p --file", project),
         (Code::ResolveCycle, "put /cycle/a/new", project),
         (Code::RefDangling, "put /links/gone/new", project),
         (Code::PutInvalid, new, r#"{"name": "no type"}"#),

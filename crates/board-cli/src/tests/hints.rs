@@ -301,7 +301,7 @@ fn a_directory_asked_for_as_a_record_hints_listing_it_and_a_record_is_read() {
     let refused = board_in(scenario.workdir(), &["get", "/projects"]);
     assert_eq!(
         hint_of(&refused),
-        "only a file can be read, and only a record can be put; `board ls /projects` shows what is there"
+        "only a record is put without `--file`, and nothing is put beneath a file; `board ls /projects` shows what is there"
     );
     let error = super::get::got(&board_in(
         scenario.workdir(),

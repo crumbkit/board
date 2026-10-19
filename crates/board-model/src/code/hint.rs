@@ -110,7 +110,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             pointer?
         ),
         Code::RecordNotARecord => format!(
-            "only a file can be read, and only a record can be put; `board ls {}` shows what is there",
+            "only a record is put without `--file`, and nothing is put beneath a file; `board ls {}` shows what is there",
             path?
         ),
         Code::RefMalformed => format!(
@@ -245,7 +245,7 @@ fn generic(code: Code) -> &'static str {
             "change the record to satisfy its schema in `.board/types/`; a refused `board put` names the field that fails"
         }
         Code::RecordNotARecord => {
-            "only a file can be read, and only a record can be put; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
+            "only a record is put without `--file`, and nothing is put beneath a file; `board get <path>` prints any file's bytes, and `board ls <path>` shows what is there"
         }
         Code::ConfigNotFound => {
             "a board needs `.board/board.json` at its repository root, spelled exactly so; in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
@@ -341,6 +341,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PutInvalid => {
             "send one JSON object with a `$type` on stdin, such as `{\"$type\": \"lr/task/v1\", \"title\": \"a\"}`"
+        }
+        Code::PutNotAFile => {
+            "put a file with `--file` at its whole name, such as `/notes/plan.md`; a name ending `.json` is read as a record, and a directory holds no bytes"
         }
         Code::PutNoIdentity => {
             "set `git config user.name` and `git config user.email`, or set `commit_on_put` to false in `.board/board.json`"

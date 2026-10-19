@@ -83,6 +83,30 @@ fn a_write_that_reaches_a_file_that_is_not_a_record_names_that_file() {
 }
 
 #[test]
+fn a_file_refused_at_a_json_name_names_the_file_and_at_a_directory_says_so() {
+    let path: LogicalPath = "/tasks/a".parse().unwrap();
+    let record = WriteError::NotAFile {
+        path: path.clone(),
+        file: Some("tasks/a.json".to_owned()),
+    };
+    assert_eq!(record.code(), Code::PutNotAFile);
+    assert_eq!(
+        record.to_string(),
+        "/tasks/a cannot hold a file: tasks/a.json is read as a record"
+    );
+    assert_eq!(record.fields(), Fields::at(&path));
+    let directory = WriteError::NotAFile {
+        path: path.clone(),
+        file: None,
+    };
+    assert_eq!(
+        directory.to_string(),
+        "/tasks/a cannot hold a file: it is a directory"
+    );
+    assert_eq!(directory.fields(), Fields::at(&path));
+}
+
+#[test]
 fn a_write_into_git_names_the_file_it_would_write() {
     let path: LogicalPath = "/sub/GIT~1/y".parse().unwrap();
     let refused = WriteError::InGit {

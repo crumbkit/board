@@ -210,9 +210,15 @@ tables and views, how a refresh decides what to redo, and `board query` and
    `board::put::head_moved`. Any other failure is `board::put::failed`, and
    says whether the commit was made.
 
+`board put <path> --file` writes stdin as a file, as given, at the path that
+is the file's whole name, such as `/notes/plan.md`. It takes steps 1, 3, 4, 5
+and 6, and its only check is the 16 MiB limit. A path that names a directory,
+or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
+
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
-record}`, then takes the lock; when no line parses, it is refused without the
-lock. Every line is checked against one snapshot of the working tree, which
+record}` or `{path, expect, text}`, where `text` is written as a file, then
+takes the lock; when no line parses, it is refused without the lock. A line
+holding both `record` and `text`, or neither, is `board::put::invalid`. Every line is checked against one snapshot of the working tree, which
 lists each directory once, and every expect is compared before any write; two
 lines resolving to one file, one invalid line or one stale expect refuse the
 whole batch, listing each failing line with its code, as
@@ -243,7 +249,7 @@ moves the pin, as [architecture/writes.md](architecture/writes.md) says.
 | `board get <path>...` | resolve and print each file's stored bytes, up to 16 MiB each, all from one run; see below |
 | `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
 | `board refs <path>...` | references to and from each object, and values in each target, all from one check of the board; see docs/architecture/index.md |
-| `board put <path>` | validate and write a record |
+| `board put <path>` | validate and write a record; with `--file`, write a file as given |
 | `board mount update <path>` | advance a mount to its `follow` |
 | `board query <sql>` | read-only SQL over the index |
 | `board plugin list` / `find` | installed plugins, and every capability or those that match the filters given |

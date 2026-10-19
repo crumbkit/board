@@ -15,6 +15,7 @@ use crate::put::{Expect, PutReport, Schemas};
 use crate::tests::{MANIFEST, open, task};
 
 mod batch;
+mod file;
 mod parity;
 mod through;
 mod waiting;
@@ -700,7 +701,7 @@ fn a_path_that_names_a_file_that_is_not_a_record_is_refused() {
     );
     assert_eq!(
         error.code().hint(&error.fields()),
-        "only a file can be read, and only a record can be put; `board ls /notes.md` shows what is there"
+        "only a record is put without `--file`, and nothing is put beneath a file; `board ls /notes.md` shows what is there"
     );
     assert!(put(&scenario, "/notes", Expect::Any, &task("")).is_ok());
     assert!(put(&scenario, "/notes/a", Expect::Any, &task("")).is_ok());

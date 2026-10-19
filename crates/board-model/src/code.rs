@@ -49,6 +49,7 @@ pub enum Code {
     PutThroughMount,
     PutSymlink,
     PutInvalid,
+    PutNotAFile,
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
@@ -72,7 +73,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 60] = [
+    pub const ALL: [Code; 61] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -114,6 +115,7 @@ impl Code {
         Self::PutThroughMount,
         Self::PutSymlink,
         Self::PutInvalid,
+        Self::PutNotAFile,
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
@@ -183,6 +185,7 @@ impl Code {
             Self::PutThroughMount => "board::put::through_mount",
             Self::PutSymlink => "board::put::symlink",
             Self::PutInvalid => "board::put::invalid",
+            Self::PutNotAFile => "board::put::not_a_file",
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
@@ -263,6 +266,7 @@ mod tests {
             | Code::PutThroughMount
             | Code::PutSymlink
             | Code::PutInvalid
+            | Code::PutNotAFile
             | Code::PutNoIdentity
             | Code::PutHeadMoved
             | Code::PutFailed

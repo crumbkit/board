@@ -1145,6 +1145,72 @@ fn put_batch_writes_every_line_or_lists_the_refused_ones() {
 }
 
 #[test]
+fn put_file_writes_stdin_as_given_and_a_batch_of_a_record_and_files_makes_one_commit() {
+    let scenario = board();
+    scenario
+        .write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        )
+        .write(
+            ".board/types/lr/task/v1.schema.json",
+            Item::File(board_scenario::generated::TASK_SCHEMA),
+        );
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "/notes/plan.md", "--file"],
+        b"# Plan\n",
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    let head = scenario.head().unwrap();
+    assert_eq!(
+        text(&wrote.stdout),
+        format!(
+            "wrote /notes/plan.md {}\ncommitted {}\n",
+            scenario.blob("# Plan\n"),
+            head.id
+        )
+    );
+    assert_eq!(
+        text(&board_in(scenario.workdir(), &["get", "/notes/plan.md"]).stdout),
+        "# Plan\n"
+    );
+    let lines = concat!(
+        r#"{"path": "/reports/r1", "record": {"$type": "lr/task/v1", "title": "r1", "see": "/reports/r1/notes.md"}}"#,
+        "\n",
+        r##"{"path": "/reports/r1/notes.md", "text": "# Notes\n"}"##,
+        "\n",
+        r#"{"path": "/reports/r1/data.csv", "text": "a,b\n"}"#,
+        "\n",
+        r#"{"path": "/reports/r1/log.txt", "text": "ok\n"}"#,
+        "\n",
+    );
+    let batch = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--batch"],
+        lines.as_bytes(),
+    );
+    assert_eq!(batch.code, 0, "{}", text(&batch.stderr));
+    let head = scenario.head().unwrap();
+    assert_eq!(head.message, "board put --batch (1 records, 3 files)");
+    assert_eq!(head.parents.len(), 1);
+    for (path, bytes) in [
+        ("/reports/r1/notes.md", "# Notes\n"),
+        ("/reports/r1/data.csv", "a,b\n"),
+        ("/reports/r1/log.txt", "ok\n"),
+    ] {
+        let got = board_in(scenario.workdir(), &["get", path]);
+        assert_eq!(text(&got.stdout), bytes, "{path}");
+    }
+    let refs = board_in(scenario.workdir(), &["refs", "/reports/r1"]);
+    assert_eq!(text(&refs.stdout), "from /see /reports/r1/notes.md ok\n");
+    let both = board_with(scenario.workdir(), None, &["put", "--batch", "--file"], b"");
+    assert_eq!(both.code, 2);
+}
+
+#[test]
 fn put_needs_a_path_or_batch_and_not_both() {
     let scenario = board();
     for arguments in [

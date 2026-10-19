@@ -2,8 +2,8 @@
 
 `board put <path>`, for one record, can write through one mount. The record is
 put in the mounted board as an ordinary put, which commits it there, and then
-the mount's pointer is rewritten to pin that commit. `put --batch` refuses a
-path through a mount with `board::put::through_mount`.
+the mount's pointer is rewritten to pin that commit. `put --file` and
+`put --batch` refuse a path through a mount with `board::put::through_mount`.
 
 The put takes the root's `board.lock`, resolves the path, and finds the mount
 it passes and the record file in the mounted tree. It works through links in

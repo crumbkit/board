@@ -14,6 +14,12 @@ fn line(path: &str, expect: Option<&str>, record: &str) -> String {
     format!(r#"{{"path": "{path}", {expect}"record": {record}}}"#) + "\n"
 }
 
+/// A batch line that writes `text` as a file.
+fn text_line(path: &str, text: &str) -> String {
+    let text = serde_json::Value::String(text.to_owned());
+    format!(r#"{{"path": "{path}", "text": {text}}}"#) + "\n"
+}
+
 fn batch(scenario: &board_scenario::Scenario, input: &str) -> Result<PutReport, PutError> {
     open(scenario).put_batch(&mut input.as_bytes())
 }
@@ -53,6 +59,106 @@ fn a_batch_writes_every_line_in_order_with_one_commit() {
         ["tasks/a.json", "tasks/b.json"]
     );
     assert_eq!(head.files["tasks/a.json"], canonical(&task("")));
+}
+
+#[test]
+fn a_batch_writes_records_and_files_in_one_commit_and_the_record_s_references_resolve_to_the_files()
+{
+    let scenario = committing();
+    let input = line(
+        "/reports/r1",
+        Some("none"),
+        &task(r#", "see": "/reports/r1/notes.md""#),
+    ) + &text_line("/reports/r1/notes.md", "# Notes\n")
+        + &text_line("/reports/r1/data.csv", "a,b\n1,2\n")
+        + &text_line("/reports/r1/log.txt", "ok\n");
+    let report = batch(&scenario, &input).unwrap();
+    let displays: Vec<String> = report
+        .writes
+        .iter()
+        .map(|written| written.display.to_string())
+        .collect();
+    assert_eq!(
+        displays,
+        [
+            "/reports/r1",
+            "/reports/r1/notes.md",
+            "/reports/r1/data.csv",
+            "/reports/r1/log.txt"
+        ]
+    );
+    assert!(
+        report
+            .writes
+            .iter()
+            .all(|written| written.degraded.is_none())
+    );
+    let head = scenario.head().unwrap();
+    assert_eq!(Some(head.id), report.commit);
+    assert_eq!(head.message, "board put --batch (1 records, 3 files)");
+    assert_eq!(
+        head.files.keys().collect::<Vec<_>>(),
+        [
+            "reports/r1.json",
+            "reports/r1/data.csv",
+            "reports/r1/log.txt",
+            "reports/r1/notes.md"
+        ]
+    );
+    assert_eq!(head.files["reports/r1/notes.md"], b"# Notes\n");
+    assert_eq!(
+        file(&scenario, "reports/r1/data.csv").unwrap(),
+        b"a,b\n1,2\n"
+    );
+    let files = text_line("/a.md", "a") + &text_line("/b.md", "b");
+    assert_eq!(
+        scenario.head().unwrap().message,
+        "board put --batch (1 records, 3 files)"
+    );
+    batch(&scenario, &files).unwrap();
+    assert_eq!(
+        scenario.head().unwrap().message,
+        "board put --batch (2 files)"
+    );
+}
+
+#[test]
+fn a_line_with_both_record_and_text_or_neither_is_refused_and_a_line_with_one_is_admitted() {
+    let scenario = board();
+    let both = format!(
+        r#"{{"path": "/n.md", "record": {}, "text": "x"}}"#,
+        task("")
+    ) + "\n";
+    let neither = "{\"path\": \"/n.md\"}\n";
+    let json_named = text_line("/n.json", "x");
+    let result = batch(&scenario, &(both + neither + &json_named));
+    let messages: Vec<String> = match &result {
+        Err(PutError::Batch { refusals, .. }) => {
+            refusals.iter().map(|lined| lined.message.clone()).collect()
+        }
+        other => panic!("not a batch refusal: {other:?}"),
+    };
+    assert_eq!(
+        messages[..2],
+        [
+            "the line is not {path, expect, record} or {path, expect, text}: it holds both record and text",
+            "the line is not {path, expect, record} or {path, expect, text}: it holds neither record nor text",
+        ]
+    );
+    let (code, refusals) = refused(result);
+    assert_eq!(code, Code::PutInvalid);
+    assert_eq!(
+        refusals,
+        [
+            (1, Code::PutInvalid),
+            (2, Code::PutInvalid),
+            (3, Code::PutNotAFile)
+        ]
+    );
+    assert!(file(&scenario, "n.md").is_none());
+    let twin = text_line("/n.md", "x");
+    assert_eq!(batch(&scenario, &twin).unwrap().writes.len(), 1);
+    assert_eq!(file(&scenario, "n.md").unwrap(), b"x");
 }
 
 #[test]

@@ -1,5 +1,5 @@
-//! `board put`: checking a record and writing it in canonical form
-//! (docs/architecture.md, Writes).
+//! `board put`: checking a record and writing it in canonical form, or
+//! writing a file as given (docs/architecture.md, Writes).
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -53,11 +53,12 @@ pub struct PutReport {
     pub commit: Option<ObjectId>,
 }
 
-/// A record checked and placed, ready to be written.
+/// A record checked and placed, or a file placed, ready to be written.
 #[derive(Debug)]
 pub(crate) struct Prepared {
     pub(crate) path: LogicalPath,
     pub(crate) expect: Expect,
+    /// The record in canonical form, or the file's bytes as given.
     pub(crate) canonical: Vec<u8>,
     pub(crate) target: board_tree::Target,
     pub(crate) admitted: Admitted,
@@ -73,7 +74,10 @@ struct RawLine {
     path: String,
     #[serde(default)]
     expect: Option<String>,
-    record: Value,
+    #[serde(default)]
+    record: Option<Value>,
+    #[serde(default)]
+    text: Option<String>,
 }
 
 /// Each record type's schema, or what is there instead, read and compiled
@@ -93,7 +97,13 @@ pub(crate) type ReadLine = Result<(usize, Line), Lined>;
 pub(crate) struct Line {
     path: LogicalPath,
     expect: Expect,
-    bytes: Vec<u8>,
+    content: Content,
+}
+
+/// What a batch line writes: a record, or a file's bytes as given.
+enum Content {
+    Record(Vec<u8>),
+    File(Vec<u8>),
 }
 
 impl Board {
@@ -140,15 +150,29 @@ impl Board {
         };
         let message = format!("{BINARY_NAME} put {path}");
         self.write_all(lock, &[prepared], &message)
-            .map_err(|failure| match failure {
-                Failure::Stale(mut stale) => stale.remove(0).1,
-                Failure::Error(error) => error,
-            })
+            .map_err(Failure::one)
     }
 
-    /// Reads JSON Lines of `{path, expect, record}` from `input`, then takes
-    /// the lock, checks every line and compares every expect, and writes
-    /// them in order only if none refuses, with one commit.
+    /// Takes the lock and writes `bytes` as given to the file whose whole
+    /// name is `path`, only if the file is what `expect` says.
+    pub fn put_file(
+        &self,
+        path: &LogicalPath,
+        expect: Expect,
+        bytes: &[u8],
+    ) -> Result<PutReport, PutError> {
+        let lock = self.repository().lock(LOCK_WAIT)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
+        let prepared = Self::prepare_file(&lock, &mut view, path, expect, bytes)?;
+        let message = format!("{BINARY_NAME} put {path}");
+        self.write_all(lock, &[prepared], &message)
+            .map_err(Failure::one)
+    }
+
+    /// Reads JSON Lines of `{path, expect, record}` or `{path, expect,
+    /// text}` from `input`, then takes the lock, checks every line and
+    /// compares every expect, and writes them in order only if none refuses,
+    /// with one commit.
     pub fn put_batch(&self, input: &mut dyn BufRead) -> Result<PutReport, PutError> {
         let lines = Self::read_lines(input)?;
         if lines.is_empty() {
@@ -163,11 +187,17 @@ impl Board {
                 refusals: lines.into_iter().filter_map(Result::err).collect(),
             });
         }
+        let files = lines
+            .iter()
+            .flatten()
+            .filter(|(_, line)| matches!(line.content, Content::File(_)))
+            .count();
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (prepared, numbers) =
             self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
-        let message = format!("{BINARY_NAME} put --batch ({} records)", prepared.len());
+        let counted = counted(prepared.len() - files, files);
+        let message = format!("{BINARY_NAME} put --batch ({counted})");
         self.write_all(lock, &prepared, &message)
             .map_err(|failure| match failure {
                 Failure::Stale(stale) => PutError::Batch {
@@ -241,10 +271,21 @@ impl Board {
         let mut folded: HashMap<String, usize> = HashMap::new();
         for parsed in lines {
             let checked = match parsed {
-                Ok((number, line)) => self
-                    .prepare(lock, view, schemas, &line.path, line.expect, &line.bytes)
-                    .map(|item| (number, item))
-                    .map_err(|error| Lined::new(number, error.code(), &error, error.fields())),
+                Ok((
+                    number,
+                    Line {
+                        path,
+                        expect,
+                        content,
+                    },
+                )) => match content {
+                    Content::Record(bytes) => {
+                        self.prepare(lock, view, schemas, &path, expect, &bytes)
+                    }
+                    Content::File(bytes) => Self::prepare_file(lock, view, &path, expect, &bytes),
+                }
+                .map(|item| (number, item))
+                .map_err(|error| Lined::new(number, error.code(), &error, error.fields())),
                 Err(refused) => Err(refused),
             };
             let (number, item) = match checked {
@@ -290,7 +331,9 @@ impl Board {
     fn parse_line(line: &[u8]) -> Result<Line, PutError> {
         let invalid = |reason: String| PutError::Line {
             code: Code::PutInvalid,
-            reason: format!("the line is not {{path, expect, record}}: {reason}"),
+            reason: format!(
+                "the line is not {{path, expect, record}} or {{path, expect, text}}: {reason}"
+            ),
         };
         let value = parse_json(line).map_err(|error| PutError::Line {
             code: error.code(),
@@ -309,11 +352,47 @@ impl Board {
                 .map(Expect::Blob)
                 .ok_or_else(|| invalid(format!("expect {hex:?} is not `none` or a blob id")))?,
         };
-        let bytes = serde_json::to_vec(&raw.record).map_err(|error| invalid(error.to_string()))?;
+        let content = match (raw.record, raw.text) {
+            (Some(record), None) => Content::Record(
+                serde_json::to_vec(&record).map_err(|error| invalid(error.to_string()))?,
+            ),
+            (None, Some(text)) => Content::File(text.into_bytes()),
+            (Some(_), Some(_)) => return Err(invalid("it holds both record and text".to_owned())),
+            (None, None) => return Err(invalid("it holds neither record nor text".to_owned())),
+        };
         Ok(Line {
             path,
             expect,
-            bytes,
+            content,
+        })
+    }
+
+    /// Finds where the file whose whole name is `path` lands in `view`, for
+    /// `bytes` written as given, which need only fit the size limit, under
+    /// the lock that the write will hold.
+    fn prepare_file(
+        _lock: &Lock,
+        view: &mut Resolver<'_, '_>,
+        path: &LogicalPath,
+        expect: Expect,
+        bytes: &[u8],
+    ) -> Result<Prepared, PutError> {
+        if bytes.len() > MAX_RECORD_BYTES {
+            return Err(PutError::TooLarge {
+                path: path.clone(),
+                bytes: bytes.len(),
+            });
+        }
+        Ok(Prepared {
+            path: path.clone(),
+            expect,
+            canonical: bytes.to_vec(),
+            target: view.file_target(path)?,
+            admitted: Admitted {
+                value: Value::Null,
+                pointer: false,
+                references: Vec::new(),
+            },
         })
     }
 
@@ -580,12 +659,31 @@ impl Refused {
     }
 }
 
+/// What a batch's commit message counts: its records, its files, or both.
+fn counted(records: usize, files: usize) -> String {
+    match (records, files) {
+        (_, 0) => format!("{records} records"),
+        (0, _) => format!("{files} files"),
+        _ => format!("{records} records, {files} files"),
+    }
+}
+
 /// Why `write_all` wrote nothing: stale expects, by their index among the
 /// prepared records, or any other error.
 #[derive(Debug)]
 pub(crate) enum Failure {
     Stale(Vec<(usize, PutError)>),
     Error(PutError),
+}
+
+impl Failure {
+    /// The error of a put of one record or file.
+    fn one(self) -> PutError {
+        match self {
+            Self::Stale(mut stale) => stale.remove(0).1,
+            Self::Error(error) => error,
+        }
+    }
 }
 
 /// A put that wrote nothing, or for `head_moved`, wrote but did not commit.
@@ -613,6 +711,8 @@ pub enum PutError {
     Line { code: Code, reason: String },
     #[error("a batch holds more than {MAX_BATCH_LINES} lines")]
     TooManyLines,
+    #[error("{path} cannot be written: {bytes} bytes is over {MAX_RECORD_BYTES}")]
+    TooLarge { path: LogicalPath, bytes: usize },
     #[error("the batch cannot be read: {source}")]
     Input { source: std::io::Error },
     #[error(transparent)]
@@ -629,6 +729,7 @@ impl PutError {
             Self::Record { refused, .. } => refused.code(),
             Self::Batch { code, .. } | Self::Line { code, .. } => *code,
             Self::TooManyLines => Code::PutInvalid,
+            Self::TooLarge { .. } => Code::JsonTooLarge,
             Self::Input { .. } => Code::RepoUnreadable,
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
@@ -652,6 +753,7 @@ impl PutError {
                 refusals: refusals.clone(),
                 ..Fields::default()
             },
+            Self::TooLarge { path, .. } => Fields::at(path),
             Self::Write(error) => error.fields(),
             Self::Mount(error) => error.fields(),
             Self::HeadMoved { .. }

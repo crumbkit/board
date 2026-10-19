@@ -1,0 +1,2 @@
+wrote /notes/plan.md 14fba09b2e543cace2d9b291ea4e9e8a648725fe
+committed c05015c6d96efdfef91003bf96c369021fe868a5

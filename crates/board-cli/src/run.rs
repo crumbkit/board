@@ -165,7 +165,7 @@ Examples:
     /// List the references each record makes and the records that reach it.
     #[command(after_help = render::REFS_HELP)]
     Refs(Refs),
-    /// Check the record on stdin and write it, in canonical form, at a path.
+    /// Check and write the record on stdin at a path, or a file with --file.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
 schema its `$type` names. Each put is committed unless .board/board.json sets
@@ -175,6 +175,7 @@ Examples:
   board put /tasks/a < task.json
   board put /tasks/a --expect none < task.json
   board get /tasks/a | board put /tasks/b
+  board put /notes/plan.md --file < plan.md
   board put --batch < writes.jsonl")]
     Put {
         /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
@@ -183,9 +184,12 @@ Examples:
         /// The blob the file must hold, or `none` for a new file.
         #[arg(long, value_parser = expect)]
         expect: Option<Expect>,
-        /// Read JSON Lines of `{path, expect, record}` and write them all or none.
+        /// Read JSON Lines of `{path, expect, record}` or `{path, expect, text}` and write them all or none.
         #[arg(long, conflicts_with_all = ["path", "expect"])]
         batch: bool,
+        /// Write stdin as a file, as given, at a path that is the file's whole name, such as /notes/plan.md.
+        #[arg(long, conflicts_with = "batch")]
+        file: bool,
     },
     /// Work with mounts.
     #[command(
@@ -426,8 +430,16 @@ fn command(
         Command::Put {
             path: Some(path),
             expect,
+            file,
             ..
-        } => put(board, printer, &read(prefix, &path, "put")?, expect, stdin),
+        } => put(
+            board,
+            printer,
+            &read(prefix, &path, "put")?,
+            expect,
+            file,
+            stdin,
+        ),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(printer, &report),
@@ -650,21 +662,29 @@ fn unopened(code: Code, error: &dyn std::fmt::Display, outside: bool) -> Refusal
 }
 
 /// `put` of one record, read from stdin.
+/// `put <path>`: the record on stdin, or with `file`, stdin as a file.
 fn put(
     board: &Board,
     printer: &mut Printer,
     path: &LogicalPath,
     expect: Option<Expect>,
+    file: bool,
     stdin: &mut dyn Read,
 ) -> Output {
-    let record = match bounded(stdin) {
-        Ok(record) => record,
+    let bytes = match bounded(stdin) {
+        Ok(bytes) => bytes,
         Err(error) => {
             let message = format!("stdin cannot be read: {error}");
             return render::refused(printer, plain(Code::RepoUnreadable, &message));
         }
     };
-    match board.put(path, expect.unwrap_or(Expect::Any), &record) {
+    let expect = expect.unwrap_or(Expect::Any);
+    let written = if file {
+        board.put_file(path, expect, &bytes)
+    } else {
+        board.put(path, expect, &bytes)
+    };
+    match written {
         Ok(report) => render::put(printer, &report),
         Err(error) => render::refused(printer, error.refusal()),
     }

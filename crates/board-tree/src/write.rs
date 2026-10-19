@@ -26,8 +26,8 @@ pub const LOCK_WAIT: Duration = Duration::from_secs(5);
 /// How often a waiting put tries the lock again.
 const LOCK_POLL: Duration = Duration::from_millis(20);
 
-/// Where a put writes: the record file a logical path names, existing or
-/// not, in the working tree.
+/// Where a put writes: the record file a logical path names, or the file
+/// whose whole name it is, existing or not, in the working tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Target {
     /// The file's path in the working tree, `/`-separated.
@@ -86,6 +86,52 @@ impl Resolver<'_, '_> {
         };
         self.repository().refuse_symlink(path, &physical)?;
         self.writable(path, physical, location, is_pointer)
+    }
+
+    /// The file whose whole name is `path`, for writing bytes as given.
+    /// Pointers are followed as [`Resolver::target`] follows them. A path
+    /// that names a directory, or a JSON file, which is read as a record,
+    /// is refused.
+    pub fn file_target(&mut self, path: &LogicalPath) -> Result<Target, WriteError> {
+        let (location, physical, reached) = match self.resolve(path) {
+            Ok(location) => {
+                let physical = match location.object {
+                    Object::Blob(_) => Some(location.path.clone()),
+                    Object::Directory => None,
+                };
+                (location, physical, path.clone())
+            }
+            Err(ResolveError::NotFound { .. }) => {
+                let ancestor = self
+                    .ancestor(path)
+                    .map_err(|source| unresolved(path, source))?;
+                let physical = ancestor.path();
+                (ancestor.location, physical, ancestor.logical)
+            }
+            Err(source) => return Err(unresolved(path, source)),
+        };
+        if location.board.source != Source::WorkingTree {
+            return Err(through_mount(path, &location, None));
+        }
+        let Some(physical) = physical else {
+            // A directory holds no bytes, and a path continuing through a
+            // file other than a record names nothing.
+            return Err(match location.object {
+                Object::Directory => WriteError::NotAFile {
+                    path: path.clone(),
+                    file: None,
+                },
+                Object::Blob(_) => not_a_record(path, reached),
+            });
+        };
+        if board_model::needs_bytes(&physical) {
+            return Err(WriteError::NotAFile {
+                path: path.clone(),
+                file: Some(physical),
+            });
+        }
+        self.repository().refuse_symlink(path, &physical)?;
+        self.writable(path, physical, location, false)
     }
 
     /// The pointer file `path` names, which is not followed, for rewriting
@@ -598,6 +644,13 @@ pub enum WriteError {
     /// `file` is the physical path from the board's root.
     #[error("{path} cannot be written: {file} would be in git's own directory")]
     InGit { path: LogicalPath, file: String },
+    /// A file put refused because `path` names `file`, a JSON file read as
+    /// a record, or with no `file`, a directory.
+    #[error("{path} cannot hold a file: {}", file.as_ref().map_or_else(|| "it is a directory".to_owned(), |file| format!("{file} is read as a record")))]
+    NotAFile {
+        path: LogicalPath,
+        file: Option<String>,
+    },
     /// Refused for the code the file itself would have once written.
     #[error("{path} cannot be written: it {}", reason(*code, Tense::Would, None))]
     Degraded { path: LogicalPath, code: Code },
@@ -657,6 +710,7 @@ impl WriteError {
             Self::ThroughMount { why, .. } => why.code(),
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::InGit { .. } => Code::PathMalformed,
+            Self::NotAFile { .. } => Code::PutNotAFile,
             Self::Degraded { code, .. } => *code,
             Self::Beneath { beneath, .. } => beneath.code,
             Self::Symlink { .. } => Code::PutSymlink,
@@ -680,6 +734,7 @@ impl WriteError {
             }
             | Self::ThroughMount { mount: path, .. }
             | Self::InGit { path, .. }
+            | Self::NotAFile { path, .. }
             | Self::Degraded { path, .. }
             | Self::Symlink { path, .. } => Fields::at(path),
             Self::Unresolved { source, .. } => source.fields(),

@@ -474,6 +474,10 @@ board put /projects/P
   fails with board::path::case_collision
   hint
 
+board put /projects/p --file
+  fails with board::put::not_a_file
+  hint
+
 board put /cycle/a/new
   fails with board::resolve::cycle
   hint
