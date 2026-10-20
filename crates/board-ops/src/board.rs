@@ -24,6 +24,26 @@ pub struct Config {
     pub commit_on_put: bool,
     #[serde(default)]
     pub plugins: Vec<PluginName>,
+    /// Where bytes held outside the tree go (docs/architecture/attachments.md).
+    #[serde(default)]
+    pub store: Option<Store>,
+}
+
+/// The object store a board uploads large and binary files to.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Store {
+    pub backend: Backend,
+    /// For `directory`, the directory's path, absolute or relative to the
+    /// board's root.
+    pub location: String,
+}
+
+/// The backends Board offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    Directory,
 }
 
 fn commits_on_put() -> bool {

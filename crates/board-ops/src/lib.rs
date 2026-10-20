@@ -2,6 +2,7 @@
 //! (docs/architecture.md, Commands). `board-cli` only parses arguments,
 //! reads configuration and prints.
 
+mod attachment;
 mod board;
 mod call;
 mod check;
@@ -22,7 +23,8 @@ mod verdict;
 
 pub use board_index::{Budget, Fallback, append_timing, source_name};
 
-pub use crate::board::{Board, Config, OpenError};
+pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
+pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::call::Called;
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::enable::{EnableError, EnableReport};

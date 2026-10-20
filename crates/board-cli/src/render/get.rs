@@ -24,6 +24,9 @@ each path refused, by `index`. A file has its location, blob, `text` (or
 At most 10000 paths. Past 64 MiB of output, one board::output::over_budget
 names the paths `left_out`.
 
+Without --fetch, get prints a board/attachment/v1 record and never reaches
+the store that holds its bytes.
+
 Examples:
   board get /projects/p
   board get /projects/p --json

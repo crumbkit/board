@@ -59,6 +59,8 @@ pub enum Code {
     SyncEdited,
     SyncGaveUp,
     RefsTargetChanged,
+    AttachmentMissing,
+    AttachmentMismatch,
     PluginNotInstalled,
     PluginBadManifest,
     PluginNotEnabled,
@@ -78,7 +80,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 66] = [
+    pub const ALL: [Code; 68] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -130,6 +132,8 @@ impl Code {
         Self::SyncEdited,
         Self::SyncGaveUp,
         Self::RefsTargetChanged,
+        Self::AttachmentMissing,
+        Self::AttachmentMismatch,
         Self::PluginNotInstalled,
         Self::PluginBadManifest,
         Self::PluginNotEnabled,
@@ -205,6 +209,8 @@ impl Code {
             Self::SyncEdited => "board::sync::edited",
             Self::SyncGaveUp => "board::sync::gave_up",
             Self::RefsTargetChanged => "board::refs::target_changed",
+            Self::AttachmentMissing => "board::attachment::missing",
+            Self::AttachmentMismatch => "board::attachment::mismatch",
             Self::PluginNotInstalled => "board::plugin::not_installed",
             Self::PluginBadManifest => "board::plugin::bad_manifest",
             Self::PluginNotEnabled => "board::plugin::not_enabled",
@@ -291,6 +297,8 @@ mod tests {
             | Code::SyncEdited
             | Code::SyncGaveUp
             | Code::RefsTargetChanged
+            | Code::AttachmentMissing
+            | Code::AttachmentMismatch
             | Code::PluginNotInstalled
             | Code::PluginBadManifest
             | Code::PluginNotEnabled

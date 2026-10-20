@@ -155,34 +155,6 @@ impl Board {
             .map_err(Failure::one)
     }
 
-    /// Takes the lock, waiting up to [`LOCK_WAIT`], and writes `bytes` as
-    /// given to the file whose whole name is `path`, only if the file is
-    /// what `expect` says.
-    pub fn put_file(
-        &self,
-        path: &LogicalPath,
-        expect: Expect,
-        bytes: &[u8],
-    ) -> Result<PutReport, PutError> {
-        self.put_file_waiting(path, expect, bytes, LOCK_WAIT)
-    }
-
-    /// [`Board::put_file`], waiting up to `wait` for the lock.
-    pub fn put_file_waiting(
-        &self,
-        path: &LogicalPath,
-        expect: Expect,
-        bytes: &[u8],
-        wait: Duration,
-    ) -> Result<PutReport, PutError> {
-        let lock = self.repository().lock(wait)?;
-        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let prepared = Self::prepare_file(&lock, &mut view, path, expect, bytes)?;
-        let message = format!("{BINARY_NAME} put {path}");
-        self.write_all(lock, &[prepared], &message)
-            .map_err(Failure::one)
-    }
-
     /// Reads JSON Lines of `{path, expect, record}` or `{path, expect,
     /// text}` from `input`, then takes the lock, waiting up to
     /// [`LOCK_WAIT`], checks every line and compares every expect, and
@@ -387,35 +359,6 @@ impl Board {
             path,
             expect,
             content,
-        })
-    }
-
-    /// Finds where the file whose whole name is `path` lands in `view`, for
-    /// `bytes` written as given, which need only fit the size limit, under
-    /// the lock that the write will hold.
-    fn prepare_file(
-        _lock: &Lock,
-        view: &mut Resolver<'_, '_>,
-        path: &LogicalPath,
-        expect: Expect,
-        bytes: &[u8],
-    ) -> Result<Prepared, PutError> {
-        if bytes.len() > MAX_RECORD_BYTES {
-            return Err(PutError::TooLarge {
-                path: path.clone(),
-                bytes: bytes.len(),
-            });
-        }
-        Ok(Prepared {
-            path: path.clone(),
-            expect,
-            canonical: bytes.to_vec(),
-            target: view.file_target(path)?,
-            admitted: Admitted {
-                value: Value::Null,
-                pointer: false,
-                references: Vec::new(),
-            },
         })
     }
 
@@ -738,6 +681,12 @@ pub enum PutError {
     TooLarge { path: LogicalPath, bytes: usize },
     #[error("the batch cannot be read: {source}")]
     Input { source: std::io::Error },
+    #[error("{path} cannot be uploaded to {location}: {source}")]
+    Upload {
+        path: LogicalPath,
+        location: String,
+        source: std::io::Error,
+    },
     #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
@@ -754,6 +703,7 @@ impl PutError {
             Self::TooManyLines => Code::PutInvalid,
             Self::TooLarge { .. } => Code::JsonTooLarge,
             Self::Input { .. } => Code::RepoUnreadable,
+            Self::Upload { .. } => Code::PutFailed,
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
         }
@@ -776,7 +726,7 @@ impl PutError {
                 refusals: refusals.clone(),
                 ..Fields::default()
             },
-            Self::TooLarge { path, .. } => Fields::at(path),
+            Self::TooLarge { path, .. } | Self::Upload { path, .. } => Fields::at(path),
             Self::Write(error) => error.fields(),
             Self::Mount(error) => error.fields(),
             Self::HeadMoved { .. }
@@ -791,6 +741,7 @@ impl PutError {
     }
 }
 
+mod file;
 mod through;
 
 #[cfg(test)]

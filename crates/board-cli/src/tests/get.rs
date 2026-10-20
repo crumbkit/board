@@ -6,7 +6,7 @@ use board_scenario::{Item, Scenario};
 use board_tree::GitError;
 use serde_json::Value;
 
-use super::{answers, board, board_cached, json, text};
+use super::{answers, board, board_cached, board_with, json, text};
 use crate::render::{self, Printer};
 use crate::report::Output;
 
@@ -340,4 +340,61 @@ fn get_of_one_path_prints_its_bytes_alone_and_of_two_heads_each_with_its_path() 
             &b"==> /raw.bin <==\n\xff\x00a\n==> /raw.bin <==\n\xff\x00a"[..]
         )
     );
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test removes what the store holds"
+)]
+fn remove(location: &str) {
+    std::fs::remove_file(location).unwrap();
+}
+
+#[test]
+fn get_fetch_prints_an_attachments_bytes_from_the_store_and_without_fetch_its_record() {
+    let store = tempfile::tempdir().unwrap();
+    let scenario = board();
+    let config = serde_json::json!({
+        "$type": "board/config/v1",
+        "commit_on_put": false,
+        "store": {"backend": "directory", "location": store.path().display().to_string()},
+    });
+    scenario.write(".board/board.json", Item::File(&config.to_string()));
+    let bytes: Vec<u8> = (0..3000u32)
+        .map(|i| u8::try_from(i % 253).unwrap_or_default())
+        .collect();
+    let run =
+        |arguments: &[&str], stdin: &[u8]| board_with(scenario.workdir(), None, arguments, stdin);
+    let put = run(&["put", "/files/blob.bin", "--file", "--json"], &bytes);
+    assert_eq!((put.code, put.error.as_deref()), (0, None));
+    assert_eq!(
+        json(&put)["data"]["writes"][0]["location"]["path"],
+        "files/blob.bin.json"
+    );
+    let shown = run(&["get", "/files/blob.bin"], b"");
+    assert_eq!((shown.code, shown.error.as_deref()), (0, None));
+    assert!(text(&shown.stdout).contains("\"board/attachment/v1\""));
+    let fetched = run(&["get", "/files/blob.bin", "--fetch"], b"");
+    assert_eq!((fetched.code, fetched.error.as_deref()), (0, None));
+    assert_eq!(fetched.stdout, bytes);
+    let answer = got(&run(&["get", "/files/blob.bin", "--fetch", "--json"], b""));
+    assert_eq!(answer["record"]["$type"], "board/attachment/v1");
+    assert_eq!(answer["record"]["size"], 3000);
+    assert!(answer["base64"].is_string());
+    assert_eq!(
+        run(&["get", "/projects/p", "--fetch"], b"").stdout,
+        run(&["get", "/projects/p"], b"").stdout
+    );
+    remove(answer["record"]["location"].as_str().unwrap());
+    let gone = run(&["get", "/files/blob.bin", "--fetch"], b"");
+    assert_eq!(
+        (gone.code, gone.error.as_deref()),
+        (1, Some("board::attachment::missing"))
+    );
+    assert!(
+        text(&gone.stderr).starts_with("error: /files/blob.bin names "),
+        "{}",
+        text(&gone.stderr)
+    );
+    assert_eq!(run(&["get", "/files/blob.bin"], b"").code, 0);
 }

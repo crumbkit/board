@@ -21,6 +21,7 @@ use crate::through::{Inside, Through};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
 
+pub(crate) mod outside;
 pub(crate) mod sync;
 
 /// How long a put waits for another put's lock.

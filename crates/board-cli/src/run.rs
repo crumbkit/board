@@ -150,6 +150,9 @@ Examples:
         /// Each file's logical path, such as /projects/p, or p from /projects; a JSON file's leaves out .json.
         #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
         paths: Vec<Given>,
+        /// Fetch an attachment's bytes from the store and print them if their digest matches.
+        #[arg(long)]
+        fetch: bool,
     },
     /// List the directory at a path, without following pointers inside it.
     #[command(after_help = "\
@@ -176,7 +179,10 @@ Examples:
   board put /tasks/a --expect none < task.json
   board get /tasks/a | board put /tasks/b
   board put /notes/plan.md --file < plan.md
-  board put --batch < writes.jsonl")]
+  board put --batch < writes.jsonl
+
+With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under
+their digest and writes a board/attachment/v1 record.")]
     Put {
         /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
         #[arg(required_unless_present = "batch")]
@@ -453,9 +459,15 @@ fn command(
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }
-        Command::Get { paths } => {
+        Command::Get { paths, fetch } => {
             let paths = at(&paths, "get")?;
-            render::get(printer, &paths, board.get_each(&paths))
+            let answers = board.get_each(&paths).map(|each| {
+                each.map(move |answer| match answer {
+                    Ok(report) if fetch => board.fetched(report),
+                    answer => answer,
+                })
+            });
+            render::get(printer, &paths, answers)
         }
         Command::Put {
             batch: true, wait, ..
@@ -703,8 +715,8 @@ fn unopened(code: Code, error: &dyn std::fmt::Display, outside: bool) -> Refusal
     }
 }
 
-/// `put` of one record, read from stdin.
-/// `put <path>`: the record on stdin, or with `file`, stdin as a file.
+/// `put <path>`: the record on stdin, or with `file`, stdin as a file,
+/// read whole, since a file past the record bound may go to the store.
 fn put(
     board: &Board,
     printer: &mut Printer,
@@ -714,7 +726,13 @@ fn put(
     wait: Duration,
     stdin: &mut dyn Read,
 ) -> Output {
-    let bytes = match bounded(stdin) {
+    let read = if file {
+        let mut bytes = Vec::new();
+        stdin.read_to_end(&mut bytes).map(|_| bytes)
+    } else {
+        bounded(stdin)
+    };
+    let bytes = match read {
         Ok(bytes) => bytes,
         Err(error) => {
             let message = format!("stdin cannot be read: {error}");

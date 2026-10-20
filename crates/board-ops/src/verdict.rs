@@ -3,7 +3,8 @@
 //! (docs/architecture.md, Records).
 
 use board_model::{
-    CONFIG_TYPE, Classified, Code, Content, Fields, MANIFEST_TYPE, RecordType, parse_json,
+    ATTACHMENT_TYPE, Attachment, CONFIG_TYPE, Classified, Code, Content, Fields, MANIFEST_TYPE,
+    RecordType, parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_validate::{RecordError, Reference, Schema, SchemaError};
@@ -109,6 +110,11 @@ pub(crate) fn judge(classified: &Classified) -> Result<Option<Schema>, Fault> {
             Manifest::from_value(value.clone())?;
             Ok(None)
         }
+        Content::Record { record_type, value } if record_type.as_str() == ATTACHMENT_TYPE => {
+            Attachment::from_value(value)
+                .map(|_| None)
+                .map_err(|_| Fault::Code(Code::RecordInvalid))
+        }
         _ => Ok(None),
     }
 }
@@ -144,7 +150,10 @@ pub(crate) fn record<'s>(
     let (record_type, value) = match classified.content {
         Content::Pointer { value, .. } => return Ok(admitted(value, true)),
         Content::Record { record_type, value }
-            if matches!(record_type.as_str(), CONFIG_TYPE | MANIFEST_TYPE) =>
+            if matches!(
+                record_type.as_str(),
+                CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE
+            ) =>
         {
             return Ok(admitted(value, false));
         }

@@ -164,11 +164,23 @@ const BUDGETS: Budgets = Budgets::new()
         2_100,
         "The root page lists all eleven commands, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page.",
     )
-    .nodes(&[Budget::new(
-        "refs",
-        1_950,
-        "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output.",
-    )]);
+    .nodes(&[
+        Budget::new(
+            "get",
+            1_400,
+            "get has two output formats and --fetch, and a reader needs to know on one page that without --fetch get prints an attachment record and never reaches the store.",
+        ),
+        Budget::new(
+            "put",
+            1_350,
+            "put has four options, among them --file and --wait, and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
+        ),
+        Budget::new(
+            "refs",
+            1_950,
+            "refs has five options and two output formats, and a reader needs the from/to line format and the --field encoding on one page to parse its text output.",
+        ),
+    ]);
 
 /// Why each document's rows print whole: `--json` gives every field without
 /// `--full`.

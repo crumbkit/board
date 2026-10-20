@@ -24,6 +24,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`; see docs/architecture/writes.md |
+| `attachment` | `missing`: `get --fetch` found nothing at the record's location; `mismatch`: the bytes there hash to another digest |
 | `plugin` | see docs/plugins.md |
 | `output` | `over_budget`: the output reached 64 MiB, or `BOARD_OUTPUT_BUDGET` bytes when that variable is smaller. `get` and `refs` leave the paths in `left_out` unanswered and exit 1. `query` stops before the next row, carries this code beside its rows and exits 0; it refuses a first row or one value longer than the budget and exits 1. Any other result that is not a listing that can be cut to fit is refused and exits 1 |
 | `cli` | `usage`: the command line was refused, exit 2 |

@@ -688,6 +688,8 @@ board sync
     exits 0
 
 codes that no start provokes:
+  board::attachment::missing: the store must lose an object between the put and the fetch; board-ops/src/attachment/tests.rs removes one
+  board::attachment::mismatch: the store must hold other bytes under the digest between the put and the fetch; board-ops/src/attachment/tests.rs alters one
   board::index::failed: the index fails only when SQLite does, even in memory; board-index/src/tests.rs maps SQLite's failures to it
   board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME
   board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit

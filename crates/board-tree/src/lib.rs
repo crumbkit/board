@@ -31,5 +31,6 @@ pub use crate::walk::{Beneath, Entry, Name, Status};
 pub use crate::worktree::{
     Directory, Known, Prepare, Working, discover, is_repository_root, repository_root,
 };
+pub use crate::write::outside::write_outside;
 pub use crate::write::sync::{ATTEMPTS, Replayed, SyncError, Synced};
 pub use crate::write::{LOCK_WAIT, Lock, Staged, Target, WriteError};

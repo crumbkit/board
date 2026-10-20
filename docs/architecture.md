@@ -84,9 +84,13 @@ never followed; Board's links are pointers. A submodule is degraded with
 {
   "$type": "board/config/v1",
   "commit_on_put": true,
-  "plugins": ["tasks"]
+  "plugins": ["tasks"],
+  "store": {"backend": "directory", "location": "/Users/me/objects"}
 }
 ```
+
+`store`, when set, is where `put --file` sends a large or binary file, as
+[architecture/attachments.md](architecture/attachments.md) says.
 
 ## Records
 
@@ -114,8 +118,8 @@ and so is each record of its type. `record::invalid` names the first failing
 instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
-their schema. Board knows `board/config/v1`, `board/mount/v1` and
-`board/plugin-manifest/v1` wherever they are stored. A manifest is checked by its content alone; a
+their schema. Board knows `board/config/v1`, `board/mount/v1`,
+`board/plugin-manifest/v1` and `board/attachment/v1` wherever they are stored. A manifest is checked by its content alone; a
 broken one is `plugin::bad_manifest`. Any other `board/*` type is
 `record::unknown_type`.
 
@@ -196,7 +200,8 @@ tables and views, how a refresh decides what to redo, and `board query` and
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
-   `board/mount/v1` and `board/config/v1` are checked as their own types;
+   `board/mount/v1`, `board/config/v1` and `board/attachment/v1` are checked
+   as their own types;
 3. resolves and checks the path, as architecture/paths.md says under Writes;
 4. with `--expect <blob>`, or `--expect none` for a new file, refuses with
    `board::put::stale` unless the target's current blob matches. Without
@@ -217,6 +222,10 @@ tables and views, how a refresh decides what to redo, and `board query` and
 is the file's whole name, such as `/notes/plan.md`. It takes steps 1, 3, 4, 5
 and 6, and its only check is the 16 MiB limit. A path that names a directory,
 or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
+With a `store` in `.board/board.json`, a file over 1 MiB or not UTF-8 is
+uploaded under its digest and a `board/attachment/v1` record is written in
+its place, as [architecture/attachments.md](architecture/attachments.md)
+says.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
 record}` or `{path, expect, text}`, where `text` is written as a file, then
@@ -252,7 +261,7 @@ running the `git` executable for the fetch and the push.
 | --- | --- |
 | `board init` | write a minimal `.board/board.json` at this git repository's root unless one exists; commit nothing |
 | `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>...` | resolve and print each file's stored bytes, up to 16 MiB each, all from one run; see below |
+| `board get <path>...` | resolve and print each file's stored bytes, up to 16 MiB each, all from one run; with `--fetch`, an attachment's bytes from the store; see below |
 | `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
 | `board refs <path>...` | references to and from each object, and values in each target, all from one check of the board; see docs/architecture/index.md |
 | `board put <path>` | validate and write a record; with `--file`, write a file as given |

@@ -144,6 +144,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
                 "nothing is at {path}; put it as a new file with `board put {path} --expect none`"
             ),
         },
+        Code::AttachmentMissing | Code::AttachmentMismatch => reattach(path?),
         Code::PluginNotEnabled => format!(
             "add `{}` to `plugins` in `.board/board.json`",
             fields.plugin.as_ref()?
@@ -180,6 +181,14 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         },
         _ => return None,
     })
+}
+
+/// What to do about an attachment at `path` whose bytes the store has lost
+/// or altered.
+fn reattach(path: &LogicalPath) -> String {
+    format!(
+        "put the file again with `board put {path} --file`, which uploads it under its digest and rewrites the record"
+    )
 }
 
 /// What to do about a reference at `pointer` in the record at `path` that
@@ -251,7 +260,7 @@ fn generic(code: Code) -> &'static str {
             "a board needs `.board/board.json` at its repository root, spelled exactly so; in a git repository, `board init` makes it a board; outside one, run `git init` first; for a board elsewhere, run `board -C <dir> check`"
         }
         Code::ConfigInvalid => {
-            "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false) and `plugins` (distinct plugin names), nothing else"
+            "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
         }
         Code::ConfigAmbiguous => {
             "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"
@@ -408,6 +417,12 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PluginTooLarge => {
             "the plugin wrote more than 16 MiB; narrow its input or report it to the plugin's author"
+        }
+        Code::AttachmentMissing => {
+            "nothing is at the location the attachment names; put the file again with `board put <path> --file`, which uploads it under its digest and rewrites the record, or restore the store"
+        }
+        Code::AttachmentMismatch => {
+            "the bytes at the location the attachment names do not hash to its digest; put the file again with `board put <path> --file`, which uploads it under its digest and rewrites the record"
         }
         Code::PluginTooDeep => {
             "plugins called each other too deeply; look for a plugin that calls itself"

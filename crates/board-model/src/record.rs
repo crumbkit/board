@@ -8,6 +8,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::attachment::ATTACHMENT_TYPE;
 use crate::code::Code;
 use crate::json::parse_json;
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
@@ -241,7 +242,10 @@ impl Role {
             },
             _ => Classified {
                 code: (record_type.is_board()
-                    && !matches!(record_type.as_str(), CONFIG_TYPE | MANIFEST_TYPE))
+                    && !matches!(
+                        record_type.as_str(),
+                        CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE
+                    ))
                 .then_some(Code::RecordUnknownType),
                 content: Content::Record { record_type, value },
             },

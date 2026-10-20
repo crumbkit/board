@@ -12,6 +12,7 @@ use board_model::{
 use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Resolver, Status};
 use serde_json::Value;
 
+use crate::attachment::FetchError;
 use crate::board::Board;
 use crate::check::CheckError;
 use crate::index::Refreshed;
@@ -403,6 +404,11 @@ pub enum ReadError {
     Git { source: GitError },
     #[error(transparent)]
     Check { source: CheckError },
+    #[error("{path} {source}")]
+    Fetch {
+        path: LogicalPath,
+        source: FetchError,
+    },
 }
 
 impl ReadError {
@@ -413,6 +419,7 @@ impl ReadError {
             Self::Unread { code, .. } => *code,
             Self::Git { source } => source.code(),
             Self::Check { source } => source.code(),
+            Self::Fetch { source, .. } => source.code(),
         }
     }
 
@@ -422,7 +429,9 @@ impl ReadError {
     pub fn refusal(&self, command: &'static str) -> Refusal {
         let fields = match self {
             Self::Resolve { source } | Self::ByFile { source, .. } => source.fields(),
-            Self::NotARecord { path } | Self::Unread { path, .. } => Fields::at(path),
+            Self::NotARecord { path } | Self::Unread { path, .. } | Self::Fetch { path, .. } => {
+                Fields::at(path)
+            }
             Self::Git { .. } => Fields::default(),
             Self::Check { source } => return source.refusal(),
         };

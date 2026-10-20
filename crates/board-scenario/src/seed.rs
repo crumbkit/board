@@ -22,7 +22,17 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 5] = [
+pub const NOT_REPRODUCED: [(Code, &str); 7] = [
+    (
+        Code::AttachmentMissing,
+        "the store must lose an object between the put and the fetch; \
+         board-ops/src/attachment/tests.rs removes one",
+    ),
+    (
+        Code::AttachmentMismatch,
+        "the store must hold other bytes under the digest between the put and the fetch; \
+         board-ops/src/attachment/tests.rs alters one",
+    ),
     (
         Code::IndexFailed,
         "the index fails only when SQLite does, even in memory; \
@@ -57,7 +67,15 @@ const SYNC: &str = "sync gives it; check reads no remote";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 40] = [
+pub const NOT_CHECKED: [(Code, &str); 42] = [
+    (
+        Code::AttachmentMissing,
+        "only get --fetch gives it; check reads the attachment record and never the store",
+    ),
+    (
+        Code::AttachmentMismatch,
+        "only get --fetch gives it; check reads the attachment record and never the store",
+    ),
     (
         Code::OutputOverBudget,
         "a run gives it once its output reaches the budget; check's listing is cut to fit instead",
