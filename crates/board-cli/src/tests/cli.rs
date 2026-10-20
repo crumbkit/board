@@ -266,6 +266,7 @@ fn every_listing_command_takes_limit_and_all() {
         "put",
         "mount update",
         "plugin enable",
+        "type add",
         "call",
         "sync",
     ];
@@ -1012,6 +1013,7 @@ fn filled(line: &str) -> String {
         .replace("<key>=<value>", "k=v")
         .replace("<path>", "/a")
         .replace("<name>", "due")
+        .replace("<type>", "notes/note/v1")
         .replace("<sql>", "x")
 }
 

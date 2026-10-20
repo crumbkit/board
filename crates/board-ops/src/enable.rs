@@ -3,15 +3,14 @@
 
 use std::path::Path;
 
-use board_model::{Code, LogicalPath, RecordType, canonical_json, parse_json};
+use board_model::{Code, RecordType, canonical_json};
 use board_plugin::{DiscoveryError, ManifestError, PluginName, installed};
-use board_tree::{LOCK_WAIT, Lock, Resolver, Working, WriteError};
-use serde_json::Value;
+use board_tree::{LOCK_WAIT, WriteError};
 
 use crate::Board;
 use crate::board::config_file;
-use crate::put::{Expect, Failure, Prepared, PutError, PutReport, Schemas};
-use crate::verdict::Admitted;
+use crate::put::{Expect, Failure, PutError, PutReport, Schemas};
+use crate::types::{Held, schema_at};
 
 /// What `plugin enable` wrote: each schema the board lacked or held
 /// otherwise, then `.board/board.json` when it did not name the plugin.
@@ -52,22 +51,17 @@ impl Board {
         let (mut prepared, mut replaced) = (Vec::new(), Vec::new());
         for (record_type, shipped) in &found.schemas {
             let expect = match self.held(record_type, shipped)? {
-                Held::Same => continue,
+                Held::Same(_) => continue,
                 Held::Absent => Expect::Absent,
-                Held::Other => {
+                Held::Other | Held::Unparsed(_) => {
                     replaced.push(record_type.schema_path());
                     Expect::Any
                 }
             };
-            let physical = record_type.schema_path();
-            let stem = physical.strip_suffix(".json").unwrap_or(&physical);
-            let path: LogicalPath =
-                format!("/{stem}")
-                    .parse()
-                    .map_err(|_| EnableError::Schema {
-                        name: name.clone(),
-                        record_type: record_type.clone(),
-                    })?;
+            let path = schema_at(record_type).map_err(|_| EnableError::Schema {
+                name: name.clone(),
+                record_type: record_type.clone(),
+            })?;
             prepared.push(Self::schema(&lock, &mut view, path, expect, shipped)?);
         }
         // The configuration is read again here, so a plugin another process
@@ -111,54 +105,6 @@ impl Board {
             replaced,
         })
     }
-
-    /// How the working tree holds `shipped`, the schema a plugin ships for
-    /// `record_type`.
-    pub(crate) fn held(
-        &self,
-        record_type: &RecordType,
-        shipped: &Value,
-    ) -> Result<Held, WriteError> {
-        let schema = record_type.schema_path();
-        Ok(match self.repository().read_working(&schema, None)? {
-            Working::Missing => Held::Absent,
-            Working::Read(contents)
-                if parse_json(&contents.bytes).ok().as_ref() == Some(shipped) =>
-            {
-                Held::Same
-            }
-            Working::Read(_) | Working::TooLarge => Held::Other,
-        })
-    }
-
-    /// A shipped schema, to be written over what `expect` says is there.
-    fn schema(
-        _lock: &Lock,
-        view: &mut Resolver<'_, '_>,
-        path: LogicalPath,
-        expect: Expect,
-        schema: &Value,
-    ) -> Result<Prepared, EnableError> {
-        let target = view.target(&path, false)?;
-        Ok(Prepared {
-            path,
-            expect,
-            canonical: canonical_json(schema).into_bytes(),
-            target,
-            admitted: Admitted {
-                value: schema.clone(),
-                pointer: false,
-                references: Vec::new(),
-            },
-        })
-    }
-}
-
-/// How the board holds a schema a plugin ships.
-pub(crate) enum Held {
-    Absent,
-    Same,
-    Other,
 }
 
 /// An enable that wrote nothing.

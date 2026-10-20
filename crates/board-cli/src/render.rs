@@ -43,6 +43,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     plugins::LIST,
     plugins::FIND,
     Leaf::new(&["plugin", "enable"]).document(ENABLE),
+    Leaf::new(&["type", "add"]).document(PUT),
     plugins::CALL,
     Leaf::new(&["query"]).document(QUERY),
 ];
@@ -141,8 +142,8 @@ const CHECK: Document<Listing<Flagged, Said>> = Document::new(
 
 /// `put`: as text, one line per write naming its display path and new
 /// blob, and the commit when one was made. A write left degraded gets a
-/// note on stderr in either format.
-pub(crate) fn put(printer: &mut Printer, report: &PutReport) -> Output {
+/// note on stderr in either format, and `note` follows as text.
+pub(crate) fn put(printer: &mut Printer, report: &PutReport, note: Option<String>) -> Output {
     let notes = (report.writes.iter()).filter_map(|written| {
         let (code, detail) = written.degraded.as_ref()?;
         let (display, why) = (&written.display, detail_text(detail));
@@ -150,7 +151,7 @@ pub(crate) fn put(printer: &mut Printer, report: &PutReport) -> Output {
         Some(Note::Always(note))
     });
     let answer = said(put_json(report), put_text(report));
-    printer.noted(PUT, answer, notes.collect())
+    printer.noted(PUT, answer, notes.chain(note.map(Note::Text)).collect())
 }
 
 fn put_text(report: &PutReport) -> String {

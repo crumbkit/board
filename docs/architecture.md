@@ -108,8 +108,10 @@ letters, digits and hyphens; `n` is a positive integer. The `board` namespace is
 reserved for Board's own documents. A record's schema is
 `.board/types/<namespace>/<kind>/v<n>.schema.json` in the same board as the
 record, so a mounted board's records are checked against its own schemas.
-Schemas are JSON Schema 2020-12. After a release, a changed type is a new
-version; until a release or a second user, it changes in place.
+Schemas are JSON Schema 2020-12. Board's own `board/*` types change in place
+until a release or a second user, and after that a changed one is a new
+version. A user's type changes when its owner adds the next version with
+`board type add`, or edits its schema file by hand.
 
 Parsing is strict, and the first failure is the entry's code: over 16 MiB
 (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not JSON
@@ -258,6 +260,15 @@ changed, rewrites `commit` through `put` with `--expect` set to the pointer's
 blob. The report, `board/mount-update-report/v2`, gives the path, the old and
 new commit and whether it wrote.
 
+`board type add <type>` reads a JSON Schema on stdin, compiles it, and writes
+it in canonical form to the type's schema file, taking the lock and committing
+as a put does. A type in the `board` namespace, or a schema that does not
+compile, is `board::schema::invalid`, and a type with a part over 255 bytes is
+`board::path::malformed`. An equal schema already there is left as it is, and
+committed if HEAD lacks it. A different one is `board::schema::differs`,
+because a changed type is a new version, and one that is not JSON is refused
+with its `json` code. The report is `board/put-report/v2`.
+
 A put of one record through a mount writes it in the mounted repository and
 moves the pin, as [architecture/writes.md](architecture/writes.md) says. It
 also says how `board sync` fetches the branch this board follows, replays the
@@ -279,6 +290,7 @@ running the `git` executable for the fetch and the push.
 | `board query <sql>` | read-only SQL over the index |
 | `board plugin list` / `find` | installed plugins, and every capability or those that match the filters given |
 | `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
+| `board type add <type>` | compile the schema on stdin and write it to `.board/types/`; see Writes |
 | `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
 
 `board get` serves an agent that reads several records: it names them all in

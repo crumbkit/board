@@ -381,9 +381,12 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     for (code, line, admitted) in pairs {
         starts.pair(&own, code, line, admitted);
     }
+    let schema = starts.seed().stdin(r#"{"type": "array"}"#);
+    let (line, admitted) = ("type add lr/project/v1", "type add lr/project/v2");
+    starts.pair(&schema, Code::SchemaDiffers, line, admitted);
 }
 
-/// Puts the seed board refuses, none of whose hints writes.
+/// Puts and type adds the seed board refuses, none of whose hints writes.
 fn refused_puts(starts: &mut Starts, fixture: &RuntimePlace) {
     let task = |fields: &str| format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#);
     let project = r#"{"$type": "lr/project/v1"}"#;
@@ -419,6 +422,9 @@ fn refused_puts(starts: &mut Starts, fixture: &RuntimePlace) {
     for (code, line, stdin) in puts {
         starts.add(&fixture.clone().stdin(stdin), code, line);
     }
+    let schema = fixture.clone().stdin(r#"{"type": "array"}"#);
+    starts.add(&schema, Code::SchemaDiffers, "type add lr/project/v1");
+    starts.add(&schema, Code::SchemaInvalid, "type add board/note/v1");
 }
 
 /// Directories Board cannot open a board in, a new one for each command,

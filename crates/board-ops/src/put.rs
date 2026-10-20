@@ -644,7 +644,7 @@ pub(crate) enum Failure {
 
 impl Failure {
     /// The error of a put of one record or file.
-    fn one(self) -> PutError {
+    pub(crate) fn one(self) -> PutError {
         match self {
             Self::Stale(mut stale) => stale.remove(0).1,
             Self::Error(error) => error,

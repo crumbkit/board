@@ -9,7 +9,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::enable::Held;
+use crate::types::Held;
 
 /// Every installed plugin, and every enabled one that is not installed, in
 /// name order.
@@ -131,9 +131,9 @@ impl Board {
         shipped: &Value,
     ) -> Option<SchemaProblem> {
         let code = match self.held(record_type, shipped) {
-            Ok(Held::Same) => return None,
+            Ok(Held::Same(_)) => return None,
             Ok(Held::Absent) => Code::PluginSchemaMissing,
-            Ok(Held::Other) => Code::PluginSchemaDiffers,
+            Ok(Held::Other | Held::Unparsed(_)) => Code::PluginSchemaDiffers,
             Err(error) => error.code(),
         };
         Some(SchemaProblem {

@@ -67,7 +67,7 @@ const SYNC: &str = "sync gives it; check reads no remote";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 42] = [
+pub const NOT_CHECKED: [(Code, &str); 43] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -115,6 +115,10 @@ pub const NOT_CHECKED: [(Code, &str); 42] = [
     (Code::SyncConflict, SYNC),
     (Code::SyncEdited, SYNC),
     (Code::SyncGaveUp, SYNC),
+    (
+        Code::SchemaDiffers,
+        "type add refuses a schema with it; check compiles each schema alone",
+    ),
     (Code::PutStale, PUT),
     (Code::PutLocked, PUT),
     (Code::PutThroughMount, PUT),

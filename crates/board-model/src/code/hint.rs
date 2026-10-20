@@ -268,6 +268,9 @@ fn generic(code: Code) -> &'static str {
         Code::SchemaInvalid => {
             "fix the schema so it compiles as JSON Schema 2020-12; the message says what failed"
         }
+        Code::SchemaDiffers => {
+            "a changed type is a new version: add this schema as the next one, such as v2 after v1, and move its records there; a type not yet released may instead be edited by hand"
+        }
         Code::RefMalformed => {
             "a reference is a logical path that starts with `/`, such as `/projects/p`"
         }

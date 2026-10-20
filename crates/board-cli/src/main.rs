@@ -9,6 +9,7 @@ mod known;
 mod render;
 mod report;
 mod run;
+mod stdin;
 mod timing;
 
 #[cfg(test)]

@@ -1272,6 +1272,132 @@ fn mount_update_of_a_missing_path_says_nothing_is_there_and_of_a_mount_runs() {
     assert_eq!(mounted.code, 0, "{}", text(&mounted.stderr));
 }
 
+/// A board that commits each put as a test identity.
+fn committing() -> Scenario {
+    let scenario = board();
+    scenario.write(
+        ".git/config",
+        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+    );
+    scenario
+}
+
+#[test]
+fn type_add_writes_and_commits_the_schema_then_a_record_of_the_type_puts() {
+    let scenario = committing();
+    let schema = br#"{"type": "object", "required": ["title"]}"#;
+    let run =
+        |arguments: &[&str], stdin: &[u8]| board_with(scenario.workdir(), None, arguments, stdin);
+    let added = run(&["type", "add", "notes/note/v1"], schema);
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    let blob =
+        scenario.blob("{\n  \"required\": [\n    \"title\"\n  ],\n  \"type\": \"object\"\n}\n");
+    let head = scenario.head().unwrap();
+    assert_eq!(
+        text(&added.stdout),
+        format!(
+            "wrote /.board/types/notes/note/v1.schema {blob}\ncommitted {}\n",
+            head.id
+        )
+    );
+    let record = br#"{"$type": "notes/note/v1", "title": "a"}"#;
+    let put = run(&["put", "/notes/a"], record);
+    assert_eq!(put.code, 0, "{}", text(&put.stderr));
+    let again = run(&["type", "add", "notes/note/v1"], schema);
+    assert_eq!(again.code, 0, "{}", text(&again.stderr));
+    assert_eq!(text(&again.stdout), "");
+    assert_eq!(
+        text(&again.stderr),
+        "note: the board already holds this schema for notes/note/v1, so nothing is written\n"
+    );
+    let batch = run(&["put", "--batch"], b"");
+    assert_eq!(text(&batch.stderr), "", "{}", text(&batch.stdout));
+    let json = json(&run(&["type", "add", "notes/note/v1", "--json"], schema));
+    assert_eq!(json["schema"], "board/put-report/v2");
+    assert_eq!(json["data"]["writes"], json!([]));
+    assert_eq!(json["data"]["commit"], Value::Null);
+}
+
+#[test]
+fn type_add_commits_an_uncommitted_equal_schema_without_saying_the_board_held_it() {
+    let scenario = committing();
+    let schema = "{\n  \"type\": \"object\"\n}\n";
+    scenario.write(".board/types/notes/note/v1.schema.json", Item::File(schema));
+    let added = board_with(
+        scenario.workdir(),
+        None,
+        &["type", "add", "notes/note/v1"],
+        schema.as_bytes(),
+    );
+    assert_eq!(added.code, 0, "{}", text(&added.stderr));
+    let head = scenario.head().unwrap();
+    assert_eq!(text(&added.stdout), format!("committed {}\n", head.id));
+    assert_eq!(text(&added.stderr), "");
+}
+
+#[test]
+fn type_add_reads_a_schema_of_the_record_limit_and_refuses_one_byte_more() {
+    let scenario = committing();
+    let sized = |bytes: usize| {
+        let padding = bytes - r#"{"description": ""}"#.len();
+        format!(r#"{{"description": "{}"}}"#, "a".repeat(padding))
+    };
+    let run = |record_type: &str, schema: &str| {
+        board_with(
+            scenario.workdir(),
+            None,
+            &["type", "add", record_type],
+            schema.as_bytes(),
+        )
+    };
+    let over = run("notes/note/v1", &sized(board_model::MAX_RECORD_BYTES + 1));
+    assert_eq!(over.code, 1);
+    assert!(
+        text(&over.stderr).ends_with("\n  code:  board::json::too_large\n"),
+        "{}",
+        text(&over.stderr)
+    );
+    let at = run("notes/note/v1", &sized(board_model::MAX_RECORD_BYTES));
+    assert_eq!(at.code, 0, "{}", text(&at.stderr));
+}
+
+#[test]
+fn type_add_refuses_a_changed_schema_and_admits_it_as_the_next_version() {
+    let scenario = committing();
+    let changed = br#"{"type": "object", "required": ["body"]}"#;
+    let run = |arguments: &[&str]| board_with(scenario.workdir(), None, arguments, changed);
+    let refused = run(&["type", "add", "lr/task/v1"]);
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: the board already holds another schema for lr/task/v1 at \
+         .board/types/lr/task/v1.schema.json\n  help:  a changed type is a new version: add this \
+         schema as the next one, such as v2 after v1, and move its records there; a type not yet \
+         released may instead be edited by hand\n  code:  \
+         board::schema::differs\n"
+    );
+    let admitted = run(&["type", "add", "lr/task/v2"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn type_add_refuses_the_board_namespace_and_a_malformed_type() {
+    let scenario = committing();
+    let schema = br#"{"type": "object"}"#;
+    let run = |arguments: &[&str]| board_with(scenario.workdir(), None, arguments, schema);
+    let reserved = run(&["type", "add", "board/note/v1"]);
+    assert_eq!(reserved.code, 1);
+    assert!(
+        text(&reserved.stderr).contains("\n  code:  board::schema::invalid\n"),
+        "{}",
+        text(&reserved.stderr)
+    );
+    let malformed = run(&["type", "add", "Notes/note/v1"]);
+    assert_eq!(malformed.code, 2, "{}", text(&malformed.stderr));
+    let admitted = run(&["type", "add", "notes/note/v1"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
 mod cli;
 mod complete;
 mod consistency;

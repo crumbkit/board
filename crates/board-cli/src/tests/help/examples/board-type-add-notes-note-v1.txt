@@ -1,0 +1,2 @@
+wrote /.board/types/notes/note/v1.schema d24cd28f4422664dacbaa9711c1d109dc43ec102
+committed bebe7929852a98b74862cdaf7de0611d6d804c1b

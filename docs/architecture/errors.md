@@ -12,7 +12,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8`, `lossy_number` |
 | `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
 | `config` | `not_found`, `invalid`, `ambiguous` |
-| `schema` | `invalid` |
+| `schema` | `invalid`, `differs` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
 | `repo` | `unreadable`, `submodule` |
@@ -78,8 +78,8 @@ plugin's own code carries.
 | `ancestor` | string | `path::not_found` | the deepest ancestor of the missing path that exists. The hint lists it, unless the path ends `.json` and the path without `.json` resolves; then the hint names that path |
 | `blob` | string | a code `get` gives for a file whose bytes it read (`json`, `record`, and `schema::invalid` for a schema in the reserved `board` namespace); `put::stale` | the blob the path holds |
 | `pointer` | string | `record::invalid`, `ref::malformed`, `plugin::bad_input`; `schema::invalid` from `put`, as `/$type` | a JSON pointer into the record or the call's input |
-| `type` | string | `record::unknown_type`, `repo::unreadable` and `schema::invalid` from a `put` whose record's schema is missing, cannot be read or does not compile; `plugin::schema_missing` and `plugin::schema_differs` from `call` | the record's type |
-| `schema` | string | the same as `type` | that type's schema file, by its path from the board's root |
+| `type` | string | `record::unknown_type`, `repo::unreadable` and `schema::invalid` from a `put` whose record's schema is missing, cannot be read or does not compile; `plugin::schema_missing` and `plugin::schema_differs` from `call`; each `type add` refusal but a failed write | the record's type |
+| `schema` | string | the same as `type`, but from `type add` only `schema::differs` and a `json` code for the board's copy | that type's schema file, by its path from the board's root |
 | `directory` | string | a code that a directory has of its own, such as `path::case_collision`, refusing a `put` beneath it | that directory, by its path from the board's root, without a leading `/` |
 | `plugin` | string | `plugin` codes from `call` that name one plugin; every plugin's own code | the plugin |
 | `capability` | string | `plugin::not_installed`, `plugin::ambiguous`, `plugin::bad_input` | the capability called |

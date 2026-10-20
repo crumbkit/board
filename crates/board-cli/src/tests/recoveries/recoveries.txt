@@ -531,6 +531,14 @@ board put --batch
   fails with board::put::invalid
   hint
 
+board type add lr/project/v1
+  fails with board::schema::differs
+  hint
+
+board type add board/note/v1
+  fails with board::schema::invalid
+  hint
+
 board get /mount/commit/x
   fails with board::mount::commit_missing
   run board mount update /mount/commit

@@ -6,15 +6,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use board_model::{
-    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, Malformation, ObjectId,
-    PathError, Refusal,
+    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, ObjectId, PathError,
+    Refusal,
 };
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
-use serde_json::{Map, Value};
 
 /// What a plugin run gets from this command line's context.
-fn plugins(context: &Context) -> Plugins<'_> {
+pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
     Plugins {
         directory: context.plugins.as_deref(),
         environment: context.environment.clone(),
@@ -30,6 +29,7 @@ use crate::graft;
 use crate::known;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
+use crate::stdin::{TypeCommand, call, put};
 use crate::timing::Ran;
 
 const ROOT_EXAMPLES: &str = "\
@@ -47,10 +47,9 @@ A record is a JSON object whose `$type`, such as tasks/task/v1, names its
 schema at .board/types/tasks/task/v1.schema.json.
 Run `board <command> --help` for a command's arguments and examples.
 
-Tab completion of commands, flags and board paths: in fish, add
-`BOARD_COMPLETE=fish board | source` to ~/.config/fish/config.fish; in bash,
-add `eval \"$(BOARD_COMPLETE=bash board)\"` to ~/.bashrc; in zsh, add
-`eval \"$(BOARD_COMPLETE=zsh board)\"` to ~/.zshrc.";
+Tab completion: in fish, add `BOARD_COMPLETE=fish board | source` to
+~/.config/fish/config.fish; in bash, add `eval \"$(BOARD_COMPLETE=bash board)\"`
+to ~/.bashrc; in zsh, add `eval \"$(BOARD_COMPLETE=zsh board)\"` to ~/.zshrc.";
 
 const QUERY_EXAMPLES: &str = "\
 Tables and views:
@@ -243,6 +242,12 @@ Examples:
   board plugin enable tasks"
     )]
     Plugin(PluginCommand),
+    /// Add types.
+    #[command(
+        subcommand,
+        after_help = "Examples:\n  board type add notes/note/v1 < note.schema.json"
+    )]
+    Type(TypeCommand),
     /// Call a plugin's capability with flags, or else JSON on stdin.
     #[command(
         group = clap::ArgGroup::new("callee").required(true).args(["target", "capability"]),
@@ -479,7 +484,7 @@ fn command(
         Command::Put {
             batch: true, wait, ..
         } => match board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait) {
-            Ok(report) => render::put(printer, &report),
+            Ok(report) => render::put(printer, &report, None),
             Err(error) => render::refused(printer, error.refusal()),
         },
         Command::Put {
@@ -515,6 +520,7 @@ fn command(
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }
+        Command::Type(command) => crate::stdin::type_add(command, board, printer, stdin),
         Command::Plugin(PluginCommand::Enable { name }) => {
             match board.plugin_enable(context.plugins.as_deref(), &name) {
                 Ok(report) => render::plugin_enable(printer, &report),
@@ -594,7 +600,7 @@ fn climbed(from: &LogicalPath, text: &str) -> Option<LogicalPath> {
 }
 
 /// A refusal with the hint for its code.
-fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
+pub(crate) fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
     Refusal::new(code, message, &Fields::default())
 }
 
@@ -720,80 +726,4 @@ fn unopened(code: Code, error: &dyn std::fmt::Display, outside: bool) -> Refusal
     } else {
         refusal
     }
-}
-
-/// `put <path>`: the record on stdin, or with `file`, stdin as a file,
-/// read whole, since a file past the record bound may go to the store.
-fn put(
-    board: &Board,
-    printer: &mut Printer,
-    path: &LogicalPath,
-    expect: Option<Expect>,
-    file: bool,
-    wait: Duration,
-    stdin: &mut dyn Read,
-) -> Output {
-    let read = if file {
-        let mut bytes = Vec::new();
-        stdin.read_to_end(&mut bytes).map(|_| bytes)
-    } else {
-        bounded(stdin)
-    };
-    let bytes = match read {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            let message = format!("stdin cannot be read: {error}");
-            return render::refused(printer, plain(Code::RepoUnreadable, &message));
-        }
-    };
-    let expect = expect.unwrap_or(Expect::Any);
-    let written = if file {
-        board.put_file_waiting(path, expect, &bytes, wait)
-    } else {
-        board.put_waiting(path, expect, &bytes, wait)
-    };
-    match written {
-        Ok(report) => render::put(printer, &report),
-        Err(error) => render::refused(printer, error.refusal()),
-    }
-}
-
-/// `call`: the target, or the capability alone, with the input as flags or,
-/// when no flag is given, on stdin. A terminal on stdin, or nothing read
-/// from it, is no input.
-fn call(
-    board: &Board,
-    context: &Context,
-    printer: &mut Printer,
-    target: &Target,
-    flags: Option<Map<String, Value>>,
-    stdin: &mut dyn Read,
-) -> Output {
-    let read = match flags.filter(|flags| !flags.is_empty()) {
-        Some(flags) => Ok(Value::Object(flags).to_string().into_bytes()),
-        None if context.terminal => Ok(Vec::new()),
-        None => bounded(stdin),
-    };
-    let input = match read {
-        Ok(input) if input.trim_ascii().is_empty() => b"{}".to_vec(),
-        Ok(input) => input,
-        Err(error) => {
-            let message = format!("stdin cannot be read: {error}");
-            return render::refused(printer, plain(Code::PluginBadInput, &message));
-        }
-    };
-    match board.call(target, &input, &plugins(context), context.cache.as_deref()) {
-        Ok(report) => render::call(printer, &report),
-        Err(error) => render::refused(printer, error.refusal()),
-    }
-}
-
-/// stdin, read one byte past the record bound so a parse sees input that is
-/// too large.
-fn bounded(stdin: &mut dyn Read) -> std::io::Result<Vec<u8>> {
-    let mut bytes = Vec::new();
-    stdin
-        .take(MAX_RECORD_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)?;
-    Ok(bytes)
 }
