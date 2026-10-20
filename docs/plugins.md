@@ -13,6 +13,11 @@ A plugin is a directory on this machine, at
 `$XDG_DATA_HOME/board/plugins/<name>/` (by default
 `~/.local/share/board/plugins/<name>/`), holding `plugin.json` and its code. The
 directory may be a symlink, so a plugin can be installed from a checkout. A
+release ships each plugin here as `<name>-<version>.tar.gz`, holding that
+directory with `board-plugin` vendored under `vendor/` and its lockfile; extract
+it into `$XDG_DATA_HOME/board/plugins/` and run `uv sync --frozen --no-dev`
+in `<name>/`. `bin/package-plugin` builds the archive and `bin/install-check`
+installs it with a released `board` and runs init, enable, put and call. A
 board enables plugins by name in `.board/board.json`; a name that is not a
 plugin name, or one listed twice, makes it `board::config::invalid`. Board never
 runs a plugin from a board's tree.

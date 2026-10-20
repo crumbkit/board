@@ -1,5 +1,10 @@
-# The full gates before a release: ci.yml on macOS and Linux, then the
-# timing job. Pull requests and main run ci.yml on Linux only.
+# A release: the full gates on macOS and Linux and the timing job, then
+# `board` built for each target, each plugin packaged with bin/package-plugin,
+# bin/install-check run from the archives on each platform, and the archives
+# attached to a GitHub release with SHA256SUMS. The tag is `v<version>`,
+# where <version> is board-cli's version in its Cargo.toml, and
+# released.json must list what the release ships (docs/architecture/released.md).
+# workflow_dispatch runs everything but publishes nothing.
 name: release
 
 on:
@@ -10,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   ci:
     uses: $/.github/workflows/ci.yml
@@ -18,3 +26,140 @@ jobs:
 
   timing:
     uses: $/.github/workflows/timing.yml
+
+  # The tag names the version the binary prints, and released.json lists
+  # what the release ships.
+  version:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - id: version
+        run: |
+          version=$(cargo pkgid --package board-cli | sed 's/.*[#@]//')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "the tag is ${GITHUB_REF_NAME} and board-cli's Cargo.toml says $version" >&2
+            exit 1
+          fi
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-nextest@0.9.146
+      - run: cargo nextest run --locked --package board-cli -- released
+        env:
+          RELEASED: all
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: rustup target add "$TARGET"
+      - run: cargo build --release --locked --package board-cli --target "$TARGET"
+      - run: |
+          mkdir dist
+          tar -C "target/$TARGET/release" -czf "dist/board-$VERSION-$TARGET.tar.gz" board
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: board-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  plugins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.13.0"
+          enable-cache: false
+      - run: |
+          for name in tasks controls; do
+            bin/package-plugin "$name" dist
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: plugins
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  # A fresh machine installs the release and one plugin from the archives
+  # and runs init, plugin enable, put and call.
+  install:
+    needs: [version, build, plugins]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.13.0"
+          enable-cache: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: board-${{ matrix.target }}
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: plugins
+          path: dist
+      - run: bin/install-check "dist/board-$VERSION-$TARGET.tar.gz" dist/tasks-*.tar.gz "$VERSION"
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [ci, timing, install]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+      - run: |
+          cd dist
+          sha256sum -- *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --notes "board $VERSION for aarch64-apple-darwin, aarch64-unknown-linux-gnu and x86_64-unknown-linux-gnu, and each plugin, with SHA256SUMS." dist/*
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}

@@ -60,11 +60,18 @@ pub(super) fn words(line: &str) -> Vec<String> {
 }
 
 /// How clap takes a command line written in help or a hint: `Ok` when it
-/// parses or asks for help, and the error kind otherwise.
+/// parses or asks for help or the version, and the error kind otherwise.
 fn parses(line: &str) -> Result<(), ErrorKind> {
     match Cli::try_parse_from(words(line)) {
         Ok(_) => Ok(()),
-        Err(error) if error.kind() == ErrorKind::DisplayHelp => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) =>
+        {
+            Ok(())
+        }
         Err(error) => Err(error.kind()),
     }
 }

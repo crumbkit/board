@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Packages one plugin from plugins/<name>/ as <out>/<name>-<version>.tar.gz,
+# which installs without a checkout: the archive holds the plugin's
+# directory with python/board-plugin vendored under vendor/ and its lockfile
+# pointing there, so `uv sync --frozen --no-dev` in the extracted directory
+# builds the same environment the tests ran against (docs/plugins.md,
+# Installing and enabling). release.yml runs this for each plugin.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+name=$1
+out=$2
+plugin="plugins/$name"
+version=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$plugin/plugin.json")
+stage=$(mktemp -d)
+dir="$stage/$name"
+mkdir -p "$dir/vendor/board-plugin" "$out"
+cp -R "$plugin/plugin.json" "$plugin/pyproject.toml" "$plugin/uv.lock" "$plugin/src" "$plugin/types" "$dir/"
+for doc in README.md SKILL.md; do
+  [ -f "$plugin/$doc" ] && cp "$plugin/$doc" "$dir/"
+done
+cp -R python/board-plugin/pyproject.toml python/board-plugin/src "$dir/vendor/board-plugin/"
+# The checkout reaches board-plugin by a relative path; the archive by its vendored copy.
+sed -i.orig 's|"../../python/board-plugin"|"vendor/board-plugin"|' "$dir/pyproject.toml" "$dir/uv.lock"
+rm "$dir/pyproject.toml.orig" "$dir/uv.lock.orig"
+find "$dir" -name __pycache__ -type d -prune -exec rm -r {} +
+# The rewritten lockfile must still describe the project exactly.
+(cd "$dir" && uv lock --check --quiet)
+tar -C "$stage" -czf "$out/$name-$version.tar.gz" "$name"
+rm -r "$stage"
+echo "$out/$name-$version.tar.gz"

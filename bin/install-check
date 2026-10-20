@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Installs a released board and one released plugin on this machine, from
+# their archives alone, and runs the commands a fresh machine needs: init,
+# plugin enable, put and call. release.yml runs this on each runner before
+# it publishes; run it by hand against bin/package-plugin's output and a
+# tarball of target/release/board.
+#
+#   bin/install-check <board archive> <plugin archive> [<expected version>]
+set -euo pipefail
+
+board_archive=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+plugin_archive=$(cd "$(dirname "$2")" && pwd)/$(basename "$2")
+expected=${3:-}
+
+home=$(mktemp -d)
+mkdir -p "$home/bin" "$home/data/board/plugins" "$home/cache" "$home/config" "$home/repo"
+tar -C "$home/bin" -xzf "$board_archive"
+tar -C "$home/data/board/plugins" -xzf "$plugin_archive"
+plugin=$(ls "$home/data/board/plugins")
+export PATH="$home/bin:$PATH" HOME="$home" XDG_DATA_HOME="$home/data" XDG_CACHE_HOME="$home/cache" XDG_CONFIG_HOME="$home/config"
+(cd "$home/data/board/plugins/$plugin" && uv sync --frozen --no-dev --quiet)
+
+version=$(board --version)
+echo "$version"
+if [ -n "$expected" ] && [ "$version" != "board $expected" ]; then
+  echo "board --version printed '$version', and the release is $expected" >&2
+  exit 1
+fi
+
+cd "$home/repo"
+git init --quiet
+git config user.name "Install Check"
+git config user.email "install-check@example.com"
+board init
+board plugin enable "$plugin"
+echo '{"$type": "tasks/task/v1", "title": "Install the release", "status": "open", "due": "2026-01-01"}' | board put /tasks/install
+board call tasks.due --before 2027-01-01 --json | grep -q '"Install the release"'
+echo "installed board and $plugin from their archives, and put and call ran"
+rm -r "$home"
