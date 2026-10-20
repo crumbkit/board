@@ -106,8 +106,9 @@ fn schemas(hasher: &Scenario, directory: &Path, into: &mut BTreeMap<String, Stri
 /// Every report once, from a board holding a record, a mount one commit
 /// behind its library, and the tasks plugin shipping a schema that
 /// differs from the board's copy. The put lands a degraded record, so the
-/// check and the refs report a code. `query` and `call` are left out: their
-/// `data` is the statement's rows and the plugin's output.
+/// check and the refs report a code. A second clone's sync replays a
+/// commit, so its report holds `replayed`. `query` and `call` are left
+/// out: their `data` is the statement's rows and the plugin's output.
 fn reports() -> BTreeMap<String, BTreeSet<String>> {
     let library = Scenario::new();
     let old = library.commit(&[("a.md", "one")]);
@@ -148,10 +149,24 @@ fn reports() -> BTreeMap<String, BTreeSet<String>> {
         (&["plugin", "find"], b""),
         (&["plugin", "enable", "tasks"], b""),
     ];
+    let mut outputs: Vec<(Vec<&str>, Output)> = runs
+        .iter()
+        .map(|(arguments, stdin)| {
+            let arguments = [&["--json"], *arguments].concat();
+            let output = board_full(board.workdir(), None, Some(&plugins), &arguments, stdin);
+            (arguments, output)
+        })
+        .collect();
+    let (_remote, a, b) = sync::clones();
+    let project = br#"{"$type": "lr/project/v1"}"#;
+    for (clone, at) in [(&a, "/projects/a"), (&b, "/projects/b")] {
+        board_with(clone.workdir(), None, &["put", at], project);
+    }
+    board_in(a.workdir(), &["sync"]);
+    let arguments = vec!["--json", "sync"];
+    outputs.push((arguments.clone(), board_in(b.workdir(), &arguments)));
     let mut reports = BTreeMap::new();
-    for (arguments, stdin) in runs {
-        let arguments = [&["--json"], *arguments].concat();
-        let output = board_full(board.workdir(), None, Some(&plugins), &arguments, stdin);
+    for (arguments, output) in outputs {
         let report = json(&output);
         let schema = report["schema"]
             .as_str()

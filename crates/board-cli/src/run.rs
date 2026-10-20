@@ -191,6 +191,22 @@ Examples:
         #[arg(long, conflicts_with = "batch")]
         file: bool,
     },
+    /// Fetch the remote branch, replay this board's commits onto it, and push.
+    #[command(after_help = "\
+Board fetches the remote branch HEAD's branch follows, replays each commit
+only this board has onto it, pushes the result, and moves HEAD, git's index
+and the working tree to it. A commit that changed a file the remote also
+changed is refused. A fetch runs the `git` executable, so git's remotes,
+credentials and SSH settings apply.
+
+Examples:
+  board sync
+  board sync --no-push")]
+    Sync {
+        /// Fetch and replay, and leave the push for later.
+        #[arg(long)]
+        no_push: bool,
+    },
     /// Work with mounts.
     #[command(
         subcommand,
@@ -441,6 +457,10 @@ fn command(
             stdin,
         ),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
+        Command::Sync { no_push } => match board.sync(!no_push) {
+            Ok(report) => render::sync(printer, &report),
+            Err(error) => render::refused(printer, error.refusal()),
+        },
         Command::Mount(MountCommand::Update { path }) => match board.mount_update(&path) {
             Ok(report) => render::mount_update(printer, &report),
             Err(error) => render::refused(printer, error.refusal()),

@@ -238,7 +238,10 @@ blob. The report, `board/mount-update-report/v2`, gives the path, the old and
 new commit and whether it wrote.
 
 A put of one record through a mount writes it in the mounted repository and
-moves the pin, as [architecture/writes.md](architecture/writes.md) says.
+moves the pin, as [architecture/writes.md](architecture/writes.md) says. It
+also says how `board sync` fetches the branch this board follows, replays the
+commits only this clone has onto it, pushes, and moves HEAD to the result,
+running the `git` executable for the fetch and the push.
 
 ## Commands
 
@@ -251,6 +254,7 @@ moves the pin, as [architecture/writes.md](architecture/writes.md) says.
 | `board refs <path>...` | references to and from each object, and values in each target, all from one check of the board; see docs/architecture/index.md |
 | `board put <path>` | validate and write a record; with `--file`, write a file as given |
 | `board mount update <path>` | advance a mount to its `follow` |
+| `board sync [--no-push]` | fetch the branch this board follows, replay its own commits on top, push, and move HEAD |
 | `board query <sql>` | read-only SQL over the index |
 | `board plugin list` / `find` | installed plugins, and every capability or those that match the filters given |
 | `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |

@@ -16,6 +16,7 @@ mod query;
 mod read;
 mod refs;
 mod snapshot;
+mod sync;
 mod trace;
 mod verdict;
 
@@ -36,6 +37,7 @@ pub use crate::put::{Expect, MAX_BATCH_LINES, PutError, PutReport, Refused, Writ
 pub use crate::query::{DEFAULT_LIMIT, MAX_LIMIT, PluginFailed, QueryError, QueryReport};
 pub use crate::read::{GetReport, Listed, LsReport, ReadError};
 pub use crate::refs::{Absent, Fielded, Incoming, Missing, Outgoing, RefsError, RefsReport};
+pub use crate::sync::SyncError;
 pub use crate::trace::{Phase, Trace};
 pub use crate::verdict::{Fault, SchemaFound};
 

@@ -666,6 +666,27 @@ board check
   fails with board::config::ambiguous
   hint
 
+board sync
+  fails with board::sync::no_remote
+  hint
+
+board sync
+  fails with board::sync::failed
+  hint
+
+board sync
+  fails with board::sync::conflict
+  hint
+
+board sync
+  fails with board::sync::edited
+  hint
+
+board sync
+  fails with board::sync::gave_up
+  run board sync --no-push
+    exits 0
+
 codes that no start provokes:
   board::index::failed: the index fails only when SQLite does, even in memory; board-index/src/tests.rs maps SQLite's failures to it
   board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME

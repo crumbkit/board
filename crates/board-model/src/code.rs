@@ -53,6 +53,11 @@ pub enum Code {
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
+    SyncNoRemote,
+    SyncFailed,
+    SyncConflict,
+    SyncEdited,
+    SyncGaveUp,
     RefsTargetChanged,
     PluginNotInstalled,
     PluginBadManifest,
@@ -73,7 +78,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 61] = [
+    pub const ALL: [Code; 66] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -119,6 +124,11 @@ impl Code {
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
+        Self::SyncNoRemote,
+        Self::SyncFailed,
+        Self::SyncConflict,
+        Self::SyncEdited,
+        Self::SyncGaveUp,
         Self::RefsTargetChanged,
         Self::PluginNotInstalled,
         Self::PluginBadManifest,
@@ -189,6 +199,11 @@ impl Code {
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
+            Self::SyncNoRemote => "board::sync::no_remote",
+            Self::SyncFailed => "board::sync::failed",
+            Self::SyncConflict => "board::sync::conflict",
+            Self::SyncEdited => "board::sync::edited",
+            Self::SyncGaveUp => "board::sync::gave_up",
             Self::RefsTargetChanged => "board::refs::target_changed",
             Self::PluginNotInstalled => "board::plugin::not_installed",
             Self::PluginBadManifest => "board::plugin::bad_manifest",
@@ -270,6 +285,11 @@ mod tests {
             | Code::PutNoIdentity
             | Code::PutHeadMoved
             | Code::PutFailed
+            | Code::SyncNoRemote
+            | Code::SyncFailed
+            | Code::SyncConflict
+            | Code::SyncEdited
+            | Code::SyncGaveUp
             | Code::RefsTargetChanged
             | Code::PluginNotInstalled
             | Code::PluginBadManifest

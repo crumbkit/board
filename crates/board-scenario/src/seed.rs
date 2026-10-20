@@ -53,10 +53,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 5] = [
 const PUT: &str = "put refuses a write with it; check writes nothing";
 const PLUGIN: &str = "a plugin command gives it; check runs no plugin";
 const QUERY: &str = "query gives it; check runs no query";
+const SYNC: &str = "sync gives it; check reads no remote";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 35] = [
+pub const NOT_CHECKED: [(Code, &str); 40] = [
     (
         Code::OutputOverBudget,
         "a run gives it once its output reaches the budget; check's listing is cut to fit instead",
@@ -91,6 +92,11 @@ pub const NOT_CHECKED: [(Code, &str); 35] = [
     ),
     (Code::QueryInvalid, QUERY),
     (Code::QueryTimeout, QUERY),
+    (Code::SyncNoRemote, SYNC),
+    (Code::SyncFailed, SYNC),
+    (Code::SyncConflict, SYNC),
+    (Code::SyncEdited, SYNC),
+    (Code::SyncGaveUp, SYNC),
     (Code::PutStale, PUT),
     (Code::PutLocked, PUT),
     (Code::PutThroughMount, PUT),

@@ -698,6 +698,81 @@ fn through_mounts(starts: &mut Starts) {
     }
 }
 
+/// Clones of one remote that `sync` refuses: one following no remote
+/// branch, one whose remote git cannot reach, one that committed a record
+/// the remote also changed, one holding an edit of a file the remote
+/// changed, and one whose remote refuses every push. `-C` names the clone,
+/// which is the reason; the pushed clone's twin leaves the push for later.
+fn syncing(starts: &mut Starts) {
+    let files = [
+        (".board/board.json", CONFIG),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            r#"{"type": "object"}"#,
+        ),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ];
+    let changed = r#"{"$type": "lr/project/v1", "x": 1}"#;
+    let remote = Scenario::new();
+    remote.commit(&files);
+    remote.accepting_pushes();
+    let clone = || {
+        let clone = Scenario::clone_of(&remote);
+        identified(&clone);
+        clone
+    };
+    let put = |clone: &Scenario, at: &str| {
+        board_with(clone.workdir(), None, &["put", at], files[2].1.as_bytes())
+    };
+    let good = clone();
+    let no_remote = enabling("");
+    let unreachable = clone();
+    unreachable.unreachable_origin();
+    let (conflicting, edited) = (clone(), clone());
+    assert_eq!(put(&conflicting, "/projects/c").code, 0);
+    remote.commit(&[files[0], files[1], ("projects/c.json", changed)]);
+    edited.write("projects/p.json", Item::File(changed));
+    let refusing = Scenario::new();
+    refusing.commit(&files);
+    refusing.write(
+        ".git/hooks/pre-receive",
+        Item::Executable("#!/bin/sh\nexit 1\n"),
+    );
+    let refused = Scenario::clone_of(&refusing);
+    identified(&refused);
+    assert_eq!(put(&refused, "/projects/r").code, 0);
+    let line = |dir: &Path| format!("-C {} sync", dir.display());
+    let admitted = line(good.workdir());
+    let clones: [(Code, &Scenario); 4] = [
+        (Code::SyncNoRemote, &no_remote),
+        (Code::SyncFailed, &unreachable),
+        (Code::SyncConflict, &conflicting),
+        (Code::SyncEdited, &edited),
+    ];
+    for (code, clone) in clones {
+        let place = RuntimeFailing::at(clone.workdir());
+        starts.add(&place, code, "sync");
+        starts.pair(&place, code, &line(clone.workdir()), &admitted);
+    }
+    let place = RuntimeFailing::at(refused.workdir());
+    starts.add(&place, Code::SyncGaveUp, "sync");
+    starts.pair(&place, Code::SyncGaveUp, "sync", "sync --no-push");
+    starts.shared.push(good.workdir().to_path_buf());
+    let kept = [
+        remote,
+        good,
+        no_remote,
+        unreachable,
+        conflicting,
+        edited,
+        refusing,
+        refused,
+    ];
+    starts
+        .kept
+        .extend(kept.map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
+}
+
 /// A repository two known boards mount, run from inside it.
 fn known_boards(starts: &mut Starts) {
     let library = Scenario::new();
@@ -736,6 +811,7 @@ fn starts(twins: bool) -> Starts {
     apart(&mut starts);
     through_mounts(&mut starts);
     known_boards(&mut starts);
+    syncing(&mut starts);
     starts
 }
 

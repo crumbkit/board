@@ -47,3 +47,34 @@ commits it. If it is killed after the mounted commit and before the pin moves,
 running the same put again makes no mounted commit and moves the pin. If it
 is killed after the pin moves and before the root commits it, running the same
 put again commits the pin. A put that changes nothing makes no commit.
+
+# Sync
+
+`board sync` brings a clone of a board up to date with the remote branch
+HEAD's branch follows, as git configures it in `branch.<name>.remote` and
+`branch.<name>.merge`, and pushes what the clone committed. It takes the
+board's lock, so no put runs meanwhile, and then:
+
+1. fetches that branch into its remote-tracking ref by running the `git`
+   executable, so git's remotes, credentials and SSH settings apply, with
+   `fetch.fsckObjects` on;
+2. replays each commit only this clone has, oldest first, onto the fetched
+   commit, as a new commit with the same author and message, with the
+   committer git is configured with. A commit whose every change the remote
+   already holds makes no commit. A file that a replayed commit changed from
+   one blob to another, when the remote holds a third, is refused with
+   `board::sync::conflict`; Board never merges contents;
+3. pushes the result with `git push --atomic`, and when the remote moved
+   meanwhile fetches and replays again, up to three times
+   (`board::sync::gave_up`). `--no-push` leaves the push for later;
+4. moves HEAD, git's index and the working tree to the result, writing each
+   file the remote changed, as a put writes. A file whose working-tree bytes
+   are neither its old blob nor its new one is an edit, and the sync stops
+   before it pushes or writes, with `board::sync::edited`.
+
+A branch that follows no remote branch is `board::sync::no_remote`, and a
+fetch or push git itself refuses is `board::sync::failed`, which carries the
+end of git's stderr. The report is `board/sync-report/v2`: `remote`,
+`branch`, `fetched`, `old` (null before the first commit), `new`,
+`replayed` (each commit's `from` and its `to`, null when it made none),
+`pushed` and `attempts`.

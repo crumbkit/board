@@ -10,7 +10,7 @@ use board_ops::{
     MountUpdateReport, PutReport, QueryReport, source_name,
 };
 use board_plugin::PluginName;
-use board_tree::Status;
+use board_tree::{Status, Synced};
 use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose};
 use serde_json::{Map, Value, json};
@@ -38,6 +38,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["ls"]).document(LS),
     refs::LEAF,
     Leaf::new(&["put"]).document(PUT),
+    Leaf::new(&["sync"]).document(SYNC),
     Leaf::new(&["mount", "update"]).document(MOUNT_UPDATE),
     plugins::LIST,
     plugins::FIND,
@@ -65,6 +66,10 @@ const PUT: Document<Answer> = prose("put-report", "What each write wrote, and it
 const ENABLE: Document<Answer> = prose("plugin-enable-report", "What enabling a plugin wrote.");
 const MOUNT_UPDATE: Document<Answer> =
     prose("mount-update-report", "Where a mount moved from and to.");
+const SYNC: Document<Answer> = prose(
+    "sync-report",
+    "What a sync fetched, replayed and pushed, and where HEAD moved.",
+);
 
 /// `value` as prose that prints `text`.
 fn said(value: Value, text: String) -> Answer {
@@ -375,6 +380,59 @@ pub(crate) fn mount_update(printer: &mut Printer, report: &MountUpdateReport) ->
         "wrote": report.wrote,
     });
     printer.print(MOUNT_UPDATE, Ok(said(value, text)))
+}
+
+/// `sync`: as text, a line for the fetch, each replayed commit, the push
+/// and where HEAD moved.
+pub(crate) fn sync(printer: &mut Printer, report: &Synced) -> Output {
+    let upstream = &report.upstream;
+    let mut text = format!(
+        "fetched {}/{} {}\n",
+        upstream.remote, upstream.branch, report.fetched
+    );
+    for replayed in &report.replayed {
+        let _ = match replayed.to {
+            Some(to) => writeln!(text, "replayed {} -> {to}", replayed.from),
+            None => writeln!(
+                text,
+                "dropped {}: the remote holds its changes",
+                replayed.from
+            ),
+        };
+    }
+    if report.pushed {
+        let after = match report.attempts {
+            1 => String::new(),
+            attempts => format!(" after {attempts} attempts"),
+        };
+        let _ = writeln!(text, "pushed {}{after}", report.new);
+    }
+    let _ = match report.old {
+        Some(old) if old != report.new => writeln!(text, "moved HEAD {old} -> {}", report.new),
+        Some(_) => writeln!(text, "HEAD is at {} already", report.new),
+        None => writeln!(text, "checked out {}", report.new),
+    };
+    let replayed: Vec<Value> = report
+        .replayed
+        .iter()
+        .map(|replayed| {
+            json!({
+                "from": replayed.from.to_string(),
+                "to": replayed.to.map(|to| to.to_string()),
+            })
+        })
+        .collect();
+    let value = json!({
+        "remote": upstream.remote,
+        "branch": upstream.branch,
+        "fetched": report.fetched.to_string(),
+        "old": report.old.map(|old| old.to_string()),
+        "new": report.new.to_string(),
+        "replayed": replayed,
+        "pushed": report.pushed,
+        "attempts": report.attempts,
+    });
+    printer.print(SYNC, Ok(said(value, text)))
 }
 
 /// A refusal of a run that has no answer of its own to print.

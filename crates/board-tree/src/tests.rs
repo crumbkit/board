@@ -10,6 +10,7 @@ mod places;
 mod planned;
 mod reading;
 mod scoped;
+mod syncing;
 mod trees;
 mod working_tree;
 

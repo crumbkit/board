@@ -228,6 +228,70 @@ impl Scenario {
         self
     }
 
+    /// Lets `git push` move the branch this working tree has checked out,
+    /// so the repository can stand in for a bare remote.
+    pub fn accepting_pushes(&self) -> &Self {
+        self.write(
+            ".git/config",
+            Item::Appended("[receive]\n\tdenyCurrentBranch = ignore\n"),
+        )
+    }
+
+    /// A clone of `remote`, as `git clone` makes one: its objects copied,
+    /// `main` and `origin/main` at `remote`'s HEAD, which `main` follows,
+    /// and HEAD's files written and tracked. `remote` must have a commit.
+    pub fn clone_of(remote: &Self) -> Self {
+        let clone = Self::new();
+        let head = remote.head().unwrap();
+        let objects = remote.workdir().join(".git/objects");
+        for shard in fs::read_dir(&objects).unwrap().map(|entry| entry.unwrap()) {
+            if !shard.file_type().unwrap().is_dir() || shard.file_name().len() != 2 {
+                continue;
+            }
+            for object in fs::read_dir(shard.path())
+                .unwrap()
+                .map(|entry| entry.unwrap())
+            {
+                let at = format!(
+                    ".git/objects/{}/{}",
+                    shard.file_name().to_str().unwrap(),
+                    object.file_name().to_str().unwrap()
+                );
+                clone.write(&at, Item::Bytes(&fs::read(object.path()).unwrap()));
+            }
+        }
+        let config = format!(
+            "[remote \"origin\"]\n\turl = {}\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n\
+             [branch \"main\"]\n\tremote = origin\n\tmerge = refs/heads/main\n",
+            remote.path()
+        );
+        clone
+            .write(".git/config", Item::Appended(&config))
+            .write(
+                ".git/refs/heads/main",
+                Item::File(&format!("{}\n", head.id)),
+            )
+            .write(
+                ".git/refs/remotes/origin/main",
+                Item::File(&format!("{}\n", head.id)),
+            );
+        for (path, bytes) in &head.files {
+            clone.write(path, Item::Bytes(bytes));
+        }
+        clone.track(head.id);
+        clone
+    }
+
+    /// Points `origin` at a path that holds no repository.
+    pub fn unreachable_origin(&self) -> &Self {
+        let config = self.workdir().join(".git/config");
+        let text = fs::read_to_string(&config).unwrap();
+        let (before, after) = text.split_once("\turl = ").unwrap();
+        let (_, after) = after.split_once('\n').unwrap();
+        let text = format!("{before}\turl = /nowhere/at/all\n{after}");
+        self.write(".git/config", Item::File(&text))
+    }
+
     /// Makes the index hold the tree of `commit`, so its files are tracked.
     pub fn track(&self, commit: ObjectId) -> &Self {
         let commit = gix::ObjectId::try_from(commit.as_bytes()).unwrap();

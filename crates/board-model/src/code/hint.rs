@@ -354,6 +354,21 @@ fn generic(code: Code) -> &'static str {
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
         }
+        Code::SyncNoRemote => {
+            "clone the board from its remote, or set the branch's upstream with `git push -u <remote> <branch>`, then sync again"
+        }
+        Code::SyncFailed => {
+            "git's stderr follows this error; `git remote -v` shows the remote, and `git fetch` run by hand shows what git asks for"
+        }
+        Code::SyncConflict => {
+            "a commit here that is not pushed changed a file the remote also changed; resolve it in git, for example with `git pull --rebase`, then sync again"
+        }
+        Code::SyncEdited => {
+            "the file was edited after its last commit and the remote changed it too; commit the edit with git or discard it with `git checkout -- <file>`, then sync again"
+        }
+        Code::SyncGaveUp => {
+            "the remote refused every push; `board sync --no-push` brings this board up to date without pushing, and the commits stay for the next sync"
+        }
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
         }

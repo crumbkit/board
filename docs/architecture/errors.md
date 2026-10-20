@@ -23,6 +23,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `query` | `timeout`: the statement ran longer than 1 s |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `no_identity`, `head_moved`, `failed` (the file could not be written) |
+| `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`; see docs/architecture/writes.md |
 | `plugin` | see docs/plugins.md |
 | `output` | `over_budget`: the output reached 64 MiB, or `BOARD_OUTPUT_BUDGET` bytes when that variable is smaller. `get` and `refs` leave the paths in `left_out` unanswered and exit 1. `query` stops before the next row, carries this code beside its rows and exits 0; it refuses a first row or one value longer than the budget and exits 1. Any other result that is not a listing that can be cut to fit is refused and exits 1 |
 | `cli` | `usage`: the command line was refused, exit 2 |
@@ -72,7 +73,7 @@ plugin's own code carries.
 
 | Key | JSON type | Codes that carry it | Meaning |
 | --- | --- | --- | --- |
-| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get`, writing to it with `put`, or updating the mount there | the logical path at fault: a dangling link, a mount for a mount's code or for `put::through_mount`, or the file that a refused `put` reaches for `record::not_a_record` |
+| `path` | string | a code about one path, such as one from resolving it (`path::not_found` or `mount::commit_missing`), reading it with `get`, writing to it with `put`, updating the mount there, or syncing a change to it (`sync::conflict`, `sync::edited`) | the logical path at fault: a dangling link, a mount for a mount's code or for `put::through_mount`, or the file that a refused `put` reaches for `record::not_a_record` |
 | `ancestor` | string | `path::not_found` | the deepest ancestor of the missing path that exists. The hint lists it, unless the path ends `.json` and the path without `.json` resolves; then the hint names that path |
 | `blob` | string | a code `get` gives for a file whose bytes it read (`json`, `record`, and `schema::invalid` for a schema in the reserved `board` namespace); `put::stale` | the blob the path holds |
 | `pointer` | string | `record::invalid`, `ref::malformed`, `plugin::bad_input`; `schema::invalid` from `put`, as `/$type` | a JSON pointer into the record or the call's input |
@@ -84,7 +85,7 @@ plugin's own code carries.
 | `offered` | array of strings | `plugin::not_installed` when the named plugin lacks the capability | each capability that plugin offers |
 | `nearest` | string | `plugin::not_installed` when no plugin offers the capability and one offered name is near | the nearest offered name |
 | `plugins` | array of strings | `plugin::ambiguous` | each enabled plugin that offers the capability |
-| `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output`; every plugin's own code | the end of the plugin's stderr, with bytes that are not UTF-8 replaced |
+| `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output`; every plugin's own code; `sync::failed` | the end of the plugin's stderr, or of git's, with bytes that are not UTF-8 replaced |
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view, and each attached plugin database |
 | `columns` | object of string arrays | `query::invalid` for a missing column | each table or view the statement names, mapped to its columns; `{}` when it names none |
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |

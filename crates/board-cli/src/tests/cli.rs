@@ -267,6 +267,7 @@ fn every_listing_command_takes_limit_and_all() {
         "mount update",
         "plugin enable",
         "call",
+        "sync",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {

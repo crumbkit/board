@@ -21,6 +21,8 @@ use crate::through::{Inside, Through};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
 
+pub(crate) mod sync;
+
 /// How long a put waits for another put's lock.
 pub const LOCK_WAIT: Duration = Duration::from_secs(5);
 /// How often a waiting put tries the lock again.
@@ -350,6 +352,20 @@ impl Repository {
                 source,
             })
     }
+
+    /// Removes the working-tree file at the `/`-separated `path`, and is
+    /// done when it is already gone. The lock must be held.
+    pub fn remove_file(&self, _lock: &Lock, path: &str) -> Result<(), WriteError> {
+        let target = self.path().join(path);
+        match fs::remove_file(&target) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(source) => Err(WriteError::Io {
+                path: target,
+                source,
+            }),
+        }
+    }
 }
 
 /// A commit made ready before a put renames anything: the commit object is
@@ -411,15 +427,11 @@ impl Repository {
         if let Some(operation) = operation {
             return Err(WriteError::InProgress { operation });
         }
-        let index = git.index_path();
-        let index_lock =
-            gix::lock::File::acquire_to_update_resource(&index, Fail::Immediately, None)
-                .map_err(|error| lock_refused(error, index.with_extension("lock")))?;
         let mut staged = Staged {
             commit: ObjectId::Sha1([0; 20]),
             parent: self.head()?,
             index: self.load_index()?,
-            index_lock,
+            index_lock: self.lock_index()?,
         };
         let failed =
             |source: Box<dyn std::error::Error + Send + Sync>| WriteError::Commit { source };
@@ -464,7 +476,13 @@ impl Repository {
     /// then writes git's index for the committed paths. If HEAD moved, the
     /// index is left as it was and the put's files stay uncommitted edits.
     /// The board lock taken before staging must still be held.
-    pub fn finish_commit(&self, _lock: &Lock, mut staged: Staged) -> Result<ObjectId, WriteError> {
+    pub fn finish_commit(&self, lock: &Lock, staged: Staged) -> Result<ObjectId, WriteError> {
+        self.finish(lock, staged, &format!("commit: {BINARY_NAME} put"))
+    }
+
+    /// Finishes `staged` as [`Self::finish_commit`] does, writing `log` to
+    /// the reflog.
+    fn finish(&self, _lock: &Lock, mut staged: Staged, log: &str) -> Result<ObjectId, WriteError> {
         use gix::refs::Target as RefTarget;
         use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit, RefLog};
         let commit = gix::ObjectId::try_from(staged.commit.as_bytes()).map_err(|error| {
@@ -486,7 +504,7 @@ impl Repository {
                     log: LogChange {
                         mode: RefLog::AndReference,
                         force_create_reflog: false,
-                        message: format!("commit: {BINARY_NAME} put").into(),
+                        message: log.into(),
                     },
                     expected,
                     new: RefTarget::Object(commit),
@@ -498,7 +516,15 @@ impl Repository {
                 )?,
                 deref: true,
             };
-        if let Err(error) = self.git().edit_reference(edit) {
+        // As git does, the reflog names a fallback identity when none is
+        // configured: a put has refused by then, and a sync that only
+        // fast-forwards commits nothing.
+        let mut git = self.git().clone();
+        git.committer_or_set_generic_fallback()
+            .map_err(|error| WriteError::Uncommitted {
+                source: error.into(),
+            })?;
+        if let Err(error) = git.edit_reference(edit) {
             use gix::refs::file::transaction::prepare::{MustNotExist, ReferenceOutOfDate};
             if error.downcast_any_ref::<ReferenceOutOfDate>().is_some()
                 || error.downcast_any_ref::<MustNotExist>().is_some()
@@ -540,6 +566,13 @@ impl Repository {
                 git.index_path(),
             ))
         }
+    }
+
+    /// Takes git's `index.lock` without waiting.
+    fn lock_index(&self) -> Result<gix::lock::File, WriteError> {
+        let index = self.git().index_path();
+        gix::lock::File::acquire_to_update_resource(&index, Fail::Immediately, None)
+            .map_err(|error| lock_refused(error, index.with_extension("lock")))
     }
 }
 
