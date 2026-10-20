@@ -666,6 +666,10 @@ board check
   fails with board::config::ambiguous
   hint
 
+board --personal check
+  fails with board::config::not_found
+  hint
+
 board sync
   fails with board::sync::no_remote
   hint

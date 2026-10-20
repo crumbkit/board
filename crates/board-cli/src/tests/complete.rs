@@ -247,6 +247,36 @@ fn a_path_completes_in_the_board_that_dash_c_names() {
 }
 
 #[test]
+fn a_path_after_personal_completes_in_the_personal_board_and_without_one_named_nothing_is_offered()
+{
+    let (scenario, other, xdg) = (tasks(), board(), Scenario::new());
+    other.write("tables/t.json", Item::File(r#"{"$type": "lr/project/v1"}"#));
+    let offered = |known: &str| {
+        xdg.write("config.json", Item::File(known));
+        let context = Context {
+            start: other.workdir().to_path_buf(),
+            home: None,
+            cache: None,
+            plugins: None,
+            boards: Some(xdg.workdir().join("config.json")),
+            environment: board_plugin::Environment::default(),
+            complete: Some("fish".into()),
+            terminal: false,
+            cursor: None,
+        };
+        let arguments = ["--", BINARY_NAME, "--personal", "get", "/ta"];
+        let arguments = std::iter::once(BINARY_NAME)
+            .chain(arguments)
+            .map(OsString::from);
+        let output = run(arguments, &context, &mut &b""[..], &mut Ran::default());
+        text(&output.stdout)
+    };
+    let named = json!({"personal": scenario.path()}).to_string();
+    assert_eq!(offered(&named), "/tasks/\n");
+    assert_eq!(offered("{}"), "");
+}
+
+#[test]
 fn a_dash_c_joined_by_an_equals_sign_names_the_board() {
     let scenario = tasks();
     let outside = tempfile::tempdir().unwrap();

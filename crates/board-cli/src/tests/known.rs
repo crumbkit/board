@@ -37,6 +37,11 @@ fn listing(boards: &[&Scenario]) -> Scenario {
     config(Some(&json!({"boards": roots}).to_string()))
 }
 
+/// The known boards file naming `personal` as the personal board.
+fn naming(personal: &Scenario) -> Scenario {
+    config(Some(&json!({"personal": personal.path()}).to_string()))
+}
+
 /// Runs `board` in `directory` with `xdg`'s known boards file and `cache`,
 /// and the logical path it started in, which the timing record holds.
 fn known(
@@ -44,6 +49,17 @@ fn known(
     xdg: &Scenario,
     cache: Option<&Path>,
     arguments: &[&str],
+) -> (Output, Value) {
+    fed(directory, xdg, cache, arguments, b"")
+}
+
+/// `known`, with `stdin` as standard input.
+fn fed(
+    directory: &Path,
+    xdg: &Scenario,
+    cache: Option<&Path>,
+    arguments: &[&str],
+    stdin: &[u8],
 ) -> (Output, Value) {
     let context = Context {
         start: directory.to_path_buf(),
@@ -60,7 +76,7 @@ fn known(
         .chain(arguments.iter().copied())
         .map(OsString::from);
     let mut ran = Ran::default();
-    let output = run(arguments, &context, &mut &b""[..], &mut ran);
+    let output = run(arguments, &context, &mut &stdin[..], &mut ran);
     let started = std::time::Instant::now();
     let record = crate::timing::record(started, &ran, &output, 0).unwrap();
     (output, record["prefix"].clone())
@@ -332,4 +348,113 @@ fn discovery_answers_from_a_warm_index_as_from_a_cold_one_after_the_mount_moves(
     assert_eq!(warmed.code, 0, "{}", text(&warmed.stderr));
     assert_eq!(prefix, "/vendor/lib");
     assert_eq!(cold(&["check"]).1, prefix);
+}
+
+#[test]
+fn personal_puts_to_the_personal_board_from_inside_another_board_an_unmounted_repository_or_no_repository()
+ {
+    let personal = board();
+    let uncommitted = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    personal.write(".board/board.json", Item::File(uncommitted));
+    let xdg = naming(&personal);
+    let (other, unmounted) = (board(), Scenario::new());
+    let outside = tempfile::tempdir().unwrap();
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let starts = [other.workdir(), unmounted.workdir(), outside.path()];
+    for (name, start) in ["a", "b", "c"].into_iter().zip(starts) {
+        let arguments = ["--personal", "put", &format!("projects/{name}")];
+        let (put, prefix) = fed(start, &xdg, None, &arguments, record);
+        assert_eq!(put.code, 0, "{}", text(&put.stderr));
+        assert_eq!(prefix, "/");
+        let written = personal.workdir().join(format!("projects/{name}.json"));
+        assert!(written.is_file(), "{}", written.display());
+    }
+    assert!(!other.workdir().join("projects/a.json").exists());
+    let arguments = ["--personal", "-C", "projects", "ls", "."];
+    let (listed, prefix) = known(other.workdir(), &xdg, None, &arguments);
+    assert_eq!(listed.code, 0, "{}", text(&listed.stderr));
+    assert_eq!(prefix, "/projects");
+}
+
+#[test]
+fn personal_is_refused_when_the_known_boards_file_names_no_personal_board_and_admitted_when_it_does()
+ {
+    let personal = board();
+    let other = board();
+    for xdg in [config(None), listing(&[&personal])] {
+        let (refused, _) = known(other.workdir(), &xdg, None, &["--personal", "check"]);
+        assert_eq!(refused.code, 1);
+        assert_eq!(code(&refused), "board::config::not_found");
+        let file = xdg.workdir().join("board/config.json");
+        let hint = hint_of(&refused);
+        let named = format!("name the personal board in `{}` as", file.display());
+        assert!(hint.starts_with(&named), "{hint}");
+    }
+    let arguments = ["--personal", "check"];
+    let (admitted, prefix) = known(other.workdir(), &naming(&personal), None, &arguments);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(prefix, "/");
+}
+
+#[test]
+fn personal_naming_anything_but_a_boards_root_is_refused_and_the_root_is_admitted() {
+    let library = library();
+    let work = mounting(&library);
+    let missing = work.workdir().join("missing");
+    let below = work.workdir().join("projects");
+    let other = board();
+    for named in [missing.as_path(), library.workdir(), below.as_path()] {
+        let known_boards = json!({"boards": [work.path()], "personal": named});
+        let xdg = config(Some(&known_boards.to_string()));
+        let (refused, prefix) = known(other.workdir(), &xdg, None, &["--personal", "check"]);
+        assert_eq!(refused.code, 1, "{}", text(&refused.stdout));
+        assert_eq!(code(&refused), "board::config::not_found");
+        assert_eq!(prefix, Value::Null);
+        let file = xdg.workdir().join("board/config.json");
+        let message = format!(
+            "`personal` in `{}` names {}, which is not the root of a board",
+            file.display(),
+            named.display()
+        );
+        assert!(
+            text(&refused.stderr).contains(&message),
+            "{}",
+            text(&refused.stderr)
+        );
+        let hint = hint_of(&refused);
+        let named = format!("name the personal board in `{}` as", file.display());
+        assert!(hint.starts_with(&named), "{hint}");
+    }
+    let known_boards = json!({"boards": [work.path()], "personal": work.path()});
+    let xdg = config(Some(&known_boards.to_string()));
+    let (admitted, prefix) = known(other.workdir(), &xdg, None, &["--personal", "check"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(prefix, "/");
+}
+
+#[test]
+fn a_personal_board_whose_board_json_is_invalid_is_refused_as_invalid_and_a_valid_one_is_admitted()
+{
+    let (personal, other) = (board(), board());
+    let xdg = naming(&personal);
+    personal.write(".board/board.json", Item::File(r#"{"x": 1}"#));
+    let (refused, _) = known(other.workdir(), &xdg, None, &["--personal", "check"]);
+    assert_eq!(refused.code, 1);
+    assert_eq!(code(&refused), "board::config::invalid");
+    personal.write(".board/board.json", Item::File(CONFIG));
+    let (admitted, prefix) = known(other.workdir(), &xdg, None, &["--personal", "check"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(prefix, "/");
+}
+
+#[test]
+fn a_relative_personal_path_is_read_against_the_known_boards_files_directory() {
+    let (personal, other) = (board(), board());
+    let name = personal.workdir().file_name().unwrap();
+    let relative = Path::new("../..").join(name);
+    let xdg = config(Some(&json!({"personal": relative}).to_string()));
+    assert_eq!(xdg.workdir().parent(), personal.workdir().parent());
+    let (admitted, prefix) = known(other.workdir(), &xdg, None, &["--personal", "check"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(prefix, "/");
 }

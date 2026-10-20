@@ -41,6 +41,15 @@ than one match, counting every mount of every known board, is
 cannot be opened or refreshed is passed over, and a `not_found` message
 names it. `-C` into a mounted repository finds its board the same way.
 
+The same file may name the user's personal board, as in
+`{"boards": [...], "personal": "/Users/me/Code/board"}`, read against the
+file's directory when relative. `--personal` runs as that board from its
+root, from any directory: inside another board, in a repository no board
+mounts, or outside git. Any `-C` is taken from that root. A file
+that names no personal board, or names a directory that is not a board's
+root, refuses `--personal` with `board::config::not_found`, and the hint
+names the file.
+
 A path given to `get`, `ls`, `refs`, `check` or `put` that does not start
 with `/` is relative to the prefix. In a board, the prefix is the directory's
 path beneath the board's root, such as `/controls`, and the timing log
@@ -303,7 +312,8 @@ Each command returns one typed report. `--json` prints it as crumbkit's
 
 `-C <dir>` before the command runs it as if Board started in `<dir>`. Several
 combine as in git: a relative one is taken from the one before. A `<dir>` naming
-no directory is `board::cli::usage`.
+no directory is `board::cli::usage`. `--personal` starts from the personal
+board's root instead of the current directory.
 
 Tab completion covers commands, flags and logical paths, through
 `clap_complete`'s dynamic engine. `BOARD_COMPLETE=<shell> board`, with no other
@@ -315,7 +325,7 @@ line runs as usual whatever `BOARD_COMPLETE` holds. Install it in fish with
 `eval "$(BOARD_COMPLETE=zsh board)"` in `.zshrc`.
 
 `Board::complete` resolves the directory the typed path ends in, through links,
-mounts and any `-C` (a leading `~/` is the home directory), then
+mounts, `--personal` and any `-C` (a leading `~/` is the home directory), then
 `Repository::names` lists that one level without hashing, validating or
 indexing anything: about 20 ms in a directory of 5,000 records. A directory
 ends in `/`. A link or mount is offered without one, since a listing does not

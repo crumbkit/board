@@ -792,6 +792,9 @@ fn known_boards(starts: &mut Starts) {
     let line = |dir: &Path| format!("-C {} check", dir.display());
     let (refused, admitted) = (line(library.workdir()), line(one.workdir()));
     starts.pair(&place, Code::ConfigAmbiguous, &refused, &admitted);
+    let place = RuntimeFailing::at(one.workdir()).xdg(xdg.workdir().join("xdg"));
+    starts.add(&place, Code::ConfigNotFound, "--personal check");
+    starts.pair(&place, Code::ConfigNotFound, "--personal check", "check");
     starts
         .shared
         .extend([one.workdir().to_path_buf(), two.workdir().to_path_buf()]);

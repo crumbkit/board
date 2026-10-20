@@ -80,6 +80,11 @@ pub(crate) struct Cli {
     /// Run as if Board started in this directory, as `git -C` does.
     #[arg(short = 'C', value_name = "DIR", value_hint = clap::ValueHint::DirPath, value_parser = clap::builder::OsStringValueParser::new())]
     directories: Vec<OsString>,
+    /// Run as the personal board, from any directory.
+    ///
+    /// `personal` in `$XDG_CONFIG_HOME/board/config.json` names the personal board's directory. The run starts at its root, and any -C is taken from there.
+    #[arg(long)]
+    personal: bool,
     #[command(flatten)]
     view: crumbkit::ViewFlags,
     #[command(subcommand)]
@@ -398,7 +403,9 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     let printer = &mut Printer { view };
-    let start = match entered(&context.start, &cli.directories) {
+    let base = cli.personal.then(|| known::personal(context));
+    let base = base.unwrap_or_else(|| Ok(context.start.clone()));
+    let start = match base.and_then(|base| entered(&base, &cli.directories)) {
         Ok(start) => start,
         Err(refusal) => return render::refused(printer, *refusal),
     };

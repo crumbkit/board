@@ -1,25 +1,70 @@
 //! The user's known boards, listed in `$XDG_CONFIG_HOME/board/config.json`.
 //! When no board holds the directory Board started in, Board asks each one
-//! for a mount whose repository holds it (docs/architecture.md, Boards and
-//! entries).
+//! for a mount whose repository holds it. `--personal` runs as the personal
+//! board the file names (docs/architecture.md, Boards and entries).
 
 use std::collections::HashSet;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, Refusal};
-use board_ops::Board;
+use board_ops::{Board, OpenError};
 use serde::Deserialize;
 
 use crate::config::Context;
 
-/// The file's shape: `{"boards": ["/Users/me/Code/board"]}`. A relative
-/// path is read against the file's directory.
+/// The file's shape: `{"boards": ["/Users/me/Code/board"], "personal":
+/// "/Users/me/Code/board"}`. A relative path is read against the file's
+/// directory.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Known {
     #[serde(default)]
-    boards: Vec<std::path::PathBuf>,
+    boards: Vec<PathBuf>,
+    personal: Option<PathBuf>,
+}
+
+/// The root of the personal board the known boards file names, refused
+/// unless a board's root is there.
+pub(crate) fn personal(context: &Context) -> Result<PathBuf, Box<Refusal>> {
+    let file = context.boards.as_deref();
+    let shown = shown(file);
+    let message = match read(file)?.personal.map(|root| against(file, &root)) {
+        None => format!("--personal was given and `{shown}` names no personal board"),
+        Some(root) => {
+            let canonical = root.canonicalize().ok();
+            let found = match Board::open(&root, context.home.clone()) {
+                Ok(board) => board.repository().path().canonicalize().ok(),
+                Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => None,
+                Err(error) => {
+                    let refusal = Refusal::new(error.code(), &error, &Fields::default());
+                    return Err(Box::new(refusal));
+                }
+            };
+            if canonical.is_some() && found == canonical {
+                return Ok(root);
+            }
+            let named = root.display();
+            format!("`personal` in `{shown}` names {named}, which is not the root of a board")
+        }
+    };
+    let hint = format!(
+        "name the personal board in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
+    );
+    let refusal = Refusal::new(Code::ConfigNotFound, message, &Fields::default());
+    Err(Box::new(refusal.with_hint(hint)))
+}
+
+/// `root` read against the directory of `file`, the known boards file.
+fn against(file: Option<&Path>, root: &Path) -> PathBuf {
+    file.and_then(Path::parent).unwrap_or(root).join(root)
+}
+
+/// How a message names the known boards file.
+fn shown(file: Option<&Path>) -> String {
+    file.map_or("$XDG_CONFIG_HOME/board/config.json".into(), |file| {
+        file.display().to_string()
+    })
 }
 
 /// The one known board with a mount whose repository holds `start`, and
@@ -33,15 +78,10 @@ pub(crate) fn find(
     lost: Refusal,
 ) -> Result<(Board, String), Box<Refusal>> {
     let file = context.boards.as_deref();
-    let listed = file.map(read).transpose()?.unwrap_or_default().boards;
-    let shown = file.map_or("$XDG_CONFIG_HOME/board/config.json".into(), |file| {
-        file.display().to_string()
-    });
+    let listed = read(file)?.boards;
+    let shown = shown(file);
     let (mut seen, mut skipped, mut named, mut chosen) = (HashSet::new(), vec![], vec![], None);
-    for root in listed
-        .iter()
-        .map(|root| file.and_then(Path::parent).unwrap_or(root).join(root))
-    {
+    for root in listed.iter().map(|root| against(file, root)) {
         let opened = Board::open(&root, context.home.clone());
         let found = opened.map(|board| (board.places(start, context.cache.as_deref()), board));
         let Ok((Ok(places), board)) = found else {
@@ -98,8 +138,12 @@ fn unmounted(lost: Refusal, shown: &str, none: bool, skipped: &[String]) -> Refu
     ))
 }
 
-/// The known boards `file` lists: none when it is missing or empty.
-fn read(file: &Path) -> Result<Known, Box<Refusal>> {
+/// What the known boards `file` names: nothing when there is no file, or it
+/// is missing or empty.
+fn read(file: Option<&Path>) -> Result<Known, Box<Refusal>> {
+    let Some(file) = file else {
+        return Ok(Known::default());
+    };
     let parsed = match std::fs::read(file) {
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Known::default()),
         Ok(bytes) if bytes.trim_ascii().is_empty() => return Ok(Known::default()),
@@ -109,7 +153,7 @@ fn read(file: &Path) -> Result<Known, Box<Refusal>> {
     parsed.map_err(|reason| {
         let message = format!("{} is not a list of known boards: {reason}", file.display());
         let hint = format!(
-            "write `{}` as {{\"boards\": [\"<board directory>\"]}}, or remove it",
+            "write `{}` as {{\"boards\": [\"<board directory>\"], \"personal\": \"<board directory>\"}}, either key optional, or remove it",
             file.display()
         );
         Box::new(Refusal::new(Code::ConfigInvalid, message, &Fields::default()).with_hint(hint))

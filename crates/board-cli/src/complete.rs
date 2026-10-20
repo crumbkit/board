@@ -83,22 +83,25 @@ fn unknown(shell: &OsStr) -> Output {
     render::refused(&mut Printer { view }, refusal)
 }
 
-/// Where the command line being completed starts: after each `-C` before
-/// the word under the cursor among the words `typed` after `board`, or
-/// `None` if one cannot be entered. bash and zsh send the whole line and
-/// the cursor's index; fish sends the line up to the cursor, with every
-/// word but the last already unquoted.
+/// Where the command line being completed starts: after `--personal` and
+/// each `-C` before the word under the cursor among the words `typed` after
+/// `board`, or `None` if one cannot be entered. bash and zsh send the whole
+/// line and the cursor's index; fish sends the line up to the cursor, with
+/// every word but the last already unquoted.
 fn start(words: &[OsString], shell: &str, context: &Context) -> Option<PathBuf> {
     let cursor = context
         .cursor
         .filter(|_| shell != "fish")
         .unwrap_or(words.len());
     let before = words.get(..cursor.saturating_sub(1)).unwrap_or_default();
-    let mut directories = Vec::new();
+    let (mut base, mut directories) = (context.start.clone(), Vec::new());
     let mut words = before.iter();
     while let Some(word) = words.next() {
         if word == "--" {
             break;
+        }
+        if word == "--personal" {
+            base = crate::known::personal(context).ok()?;
         }
         let directory = if word == "-C" {
             words.next().and_then(|word| word.to_str())
@@ -116,7 +119,7 @@ fn start(words: &[OsString], shell: &str, context: &Context) -> Option<PathBuf> 
             directories.push(home(&directory, context)?);
         }
     }
-    entered(&context.start, &directories).ok()
+    entered(&base, &directories).ok()
 }
 
 /// `directory` with a leading `~` read as the home directory, as a shell
