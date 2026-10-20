@@ -721,7 +721,7 @@ fn plugin_list_prints_why_a_shipped_schema_is_unusable_and_a_usable_one_is_ok() 
 
 /// A board enabling tasks, which ships `tasks/note/v1` as `{"type":
 /// "object"}`, while the board holds `held` for it.
-fn holding(held: &str) -> (Scenario, Scenario) {
+pub(super) fn holding(held: &str) -> (Scenario, Scenario) {
     let (board, data) = installed();
     let manifest = TASKS.replace(r#""run""#, r#""types": ["tasks/note/v1"], "run""#);
     install(&data, "tasks", &answering(RESULT, 0));

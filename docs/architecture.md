@@ -343,6 +343,15 @@ STANDARDS.md 3 and 4 say. [architecture/errors.md](architecture/errors.md)
 lists the codes and the values an error names in text and in
 `board/failure/v1`.
 
+## Released interfaces
+
+After a release, a changed type is a new version and the old version stays
+readable, a `--json` report keeps every field it had, and a code is never
+renamed or removed. `released.json` at the repository root lists what the
+last release shipped, and a test refuses an in-place change to anything it
+lists. [architecture/released.md](architecture/released.md) states the rule
+and how a release writes the file.
+
 ## Testing
 
 `board-scenario` builds real git repositories in temporary directories, so
