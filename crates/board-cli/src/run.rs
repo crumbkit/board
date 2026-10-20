@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use board_model::{
     BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, MAX_RECORD_BYTES, Malformation, ObjectId,
@@ -190,6 +190,9 @@ Examples:
         /// Write stdin as a file, as given, at a path that is the file's whole name, such as /notes/plan.md.
         #[arg(long, conflicts_with = "batch")]
         file: bool,
+        /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
+        #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
+        wait: Duration,
     },
     /// Fetch the remote branch, replay this board's commits onto it, and push.
     #[command(after_help = "\
@@ -318,6 +321,23 @@ fn expect(text: &str) -> Result<Expect, String> {
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
 }
 
+/// A count of milliseconds, seconds, minutes or hours with its unit.
+fn duration(text: &str) -> Result<Duration, String> {
+    let count = text.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let scale = match &text[count.len()..] {
+        "ms" => Some(1),
+        "s" => Some(1_000),
+        "m" => Some(60_000),
+        "h" => Some(3_600_000),
+        _ => None,
+    };
+    scale
+        .zip(count.parse::<u64>().ok())
+        .and_then(|(scale, count)| count.checked_mul(scale))
+        .map(Duration::from_millis)
+        .ok_or_else(|| "must be a whole number with a unit: 500ms, 30s, 2m or 1h".to_owned())
+}
+
 /// A JSON pointer, by RFC 6901: empty, or each token after a `/`, in which
 /// `~` is followed by `0` or `1`.
 fn pointer(text: &str) -> Result<String, String> {
@@ -437,16 +457,17 @@ fn command(
             let paths = at(&paths, "get")?;
             render::get(printer, &paths, board.get_each(&paths))
         }
-        Command::Put { batch: true, .. } => {
-            match board.put_batch(&mut std::io::BufReader::new(stdin)) {
-                Ok(report) => render::put(printer, &report),
-                Err(error) => render::refused(printer, error.refusal()),
-            }
-        }
+        Command::Put {
+            batch: true, wait, ..
+        } => match board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait) {
+            Ok(report) => render::put(printer, &report),
+            Err(error) => render::refused(printer, error.refusal()),
+        },
         Command::Put {
             path: Some(path),
             expect,
             file,
+            wait,
             ..
         } => put(
             board,
@@ -454,6 +475,7 @@ fn command(
             &read(prefix, &path, "put")?,
             expect,
             file,
+            wait,
             stdin,
         ),
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
@@ -689,6 +711,7 @@ fn put(
     path: &LogicalPath,
     expect: Option<Expect>,
     file: bool,
+    wait: Duration,
     stdin: &mut dyn Read,
 ) -> Output {
     let bytes = match bounded(stdin) {
@@ -700,9 +723,9 @@ fn put(
     };
     let expect = expect.unwrap_or(Expect::Any);
     let written = if file {
-        board.put_file(path, expect, &bytes)
+        board.put_file_waiting(path, expect, &bytes, wait)
     } else {
-        board.put(path, expect, &bytes)
+        board.put_waiting(path, expect, &bytes, wait)
     };
     match written {
         Ok(report) => render::put(printer, &report),

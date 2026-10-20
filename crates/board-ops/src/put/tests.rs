@@ -900,6 +900,45 @@ fn a_put_commits_only_the_paths_it_wrote_onto_head() {
     assert_eq!(scenario.head().unwrap().id, second.commit.unwrap());
 }
 
+/// A put retries the lock itself, so a caller need not: ten puts at once
+/// each wait their turn and land in a commit of their own. The wait is long
+/// because the suite runs under load.
+#[test]
+fn ten_concurrent_puts_all_land_each_in_its_own_commit() {
+    let scenario = committing();
+    let root = scenario.workdir();
+    let commits: Vec<ObjectId> = std::thread::scope(|scope| {
+        let puts: Vec<_> = (0..10)
+            .map(|n| {
+                scope.spawn(move || {
+                    let board = Board::open(root, None).unwrap();
+                    let report = board
+                        .put_waiting(
+                            &path(&format!("/tasks/t{n}")),
+                            Expect::Absent,
+                            task("").as_bytes(),
+                            std::time::Duration::from_mins(2),
+                        )
+                        .unwrap();
+                    report.commit.unwrap()
+                })
+            })
+            .collect();
+        puts.into_iter().map(|put| put.join().unwrap()).collect()
+    });
+    let distinct: std::collections::BTreeSet<_> = commits.iter().collect();
+    assert_eq!(distinct.len(), 10);
+    let head = scenario.head().unwrap();
+    assert!(commits.contains(&head.id));
+    assert_eq!(head.parents.len(), 1);
+    for n in 0..10 {
+        assert_eq!(
+            head.files[&format!("tasks/t{n}.json")],
+            canonical(&task(""))
+        );
+    }
+}
+
 #[test]
 fn a_committed_put_checks_as_committed_and_the_rest_as_before() {
     let scenario = committing();

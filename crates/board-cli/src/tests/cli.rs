@@ -354,7 +354,12 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
 #[test]
 fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs() {
     let scenario = board();
-    let cases: [(&[&str], &str, &[&str]); 5] = [
+    let cases: [(&[&str], &str, &[&str]); 6] = [
+        (
+            &["put", "--batch", "--wait", "5"],
+            "invalid value '5' for '--wait <DURATION>': must be a whole number with a unit: 500ms, 30s, 2m or 1h",
+            &["put", "--batch", "--wait", "5s"],
+        ),
         (
             &["ls", "--limt", "5"],
             "unexpected argument '--limt' found; a similar argument exists: '--limit'",
@@ -1035,4 +1040,21 @@ fn a_documented_command_that_does_not_exist_does_not_parse_and_one_that_does_par
         filled("board plugin find [--capability <name>] [--meta <key>=<value>]…"),
         "board plugin find  "
     );
+}
+
+/// `--wait` reads each unit at its scale.
+#[test]
+fn wait_reads_milliseconds_seconds_minutes_and_hours() {
+    for (given, read) in [
+        ("500ms", "500ms"),
+        ("30s", "30s"),
+        ("2m", "120s"),
+        ("1h", "3600s"),
+    ] {
+        let cli = Cli::try_parse_from(["board", "put", "--batch", "--wait", given]).unwrap();
+        assert!(
+            format!("{cli:?}").contains(&format!("wait: {read}")),
+            "--wait {given}: {cli:?}"
+        );
+    }
 }

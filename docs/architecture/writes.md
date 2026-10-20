@@ -22,8 +22,8 @@ when:
   (`board::mount::not_ancestor`). The check walks back at most 100,000
   commits; `board mount update <mount>` then pins HEAD.
 
-The mounted put takes the mounted board's own lock, waiting up to 5 seconds
-(`board::put::locked`), and checks the record against the mounted board's
+The mounted put takes the mounted board's own lock, waiting as long as it
+waited for the root's (`board::put::locked`), and checks the record against the mounted board's
 schemas, never the root's. The record file must hold the same blob, or be
 absent, at the pinned commit and at HEAD, and the working tree must hold that
 blob or the record being put. Otherwise the put is refused with

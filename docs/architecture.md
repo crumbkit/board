@@ -186,10 +186,13 @@ tables and views, how a refresh decides what to redo, and `board query` and
 
 `board put <path>` reads one JSON record from stdin, then:
 
-1. takes `board.lock` in the worktree's git directory, waiting up to 5 seconds
-   and then refusing with `board::put::locked`. The steps below run under the
-   lock, so a record is checked against the board it is written to, and other
-   writers wait while it is checked;
+1. takes `board.lock` in the worktree's git directory, trying every 20
+   milliseconds for 5 seconds, or for as long as `--wait` says (`500ms`,
+   `30s`, `2m`, `1h`), and then refusing with `board::put::locked`. That wait
+   is the whole retry rule: a put retries the lock itself, so concurrent puts
+   each land in their own commit without the caller retrying. The steps below
+   run under the lock, so a record is checked against the board it is written
+   to, and other writers wait while it is checked;
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
@@ -217,7 +220,7 @@ or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
 record}` or `{path, expect, text}`, where `text` is written as a file, then
-takes the lock; when no line parses, it is refused without the lock. A line
+takes the lock with the same wait; when no line parses, it is refused without the lock. A line
 holding both `record` and `text`, or neither, is `board::put::invalid`. Every line is checked against one snapshot of the working tree, which
 lists each directory once, and every expect is compared before any write; two
 lines resolving to one file, one invalid line or one stale expect refuse the

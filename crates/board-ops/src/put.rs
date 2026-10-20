@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::convert::Infallible;
 use std::io::{BufRead, Read};
+use std::time::Duration;
 
 use board_model::{
     BINARY_NAME, Code, Fields, Found, JsonError, Lined, Location, LogicalPath, MAX_RECORD_BYTES,
@@ -107,9 +108,9 @@ enum Content {
 }
 
 impl Board {
-    /// Takes the lock, checks `bytes` as a record, and writes it in
-    /// canonical form to the file `path` names, only if the file is what
-    /// `expect` says.
+    /// Takes the lock, waiting up to [`LOCK_WAIT`], checks `bytes` as a
+    /// record, and writes it in canonical form to the file `path` names,
+    /// only if the file is what `expect` says.
     pub fn put(
         &self,
         path: &LogicalPath,
@@ -119,15 +120,16 @@ impl Board {
         self.put_waiting(path, expect, bytes, LOCK_WAIT)
     }
 
-    /// [`Board::put`], waiting up to `wait` for a mounted board's lock.
-    pub(crate) fn put_waiting(
+    /// [`Board::put`], waiting up to `wait` for the lock, and for a mounted
+    /// board's lock.
+    pub fn put_waiting(
         &self,
         path: &LogicalPath,
         expect: Expect,
         bytes: &[u8],
-        wait: std::time::Duration,
+        wait: Duration,
     ) -> Result<PutReport, PutError> {
-        let lock = self.repository().lock(LOCK_WAIT)?;
+        let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let prepared = self.prepare(
             &lock,
@@ -153,15 +155,27 @@ impl Board {
             .map_err(Failure::one)
     }
 
-    /// Takes the lock and writes `bytes` as given to the file whose whole
-    /// name is `path`, only if the file is what `expect` says.
+    /// Takes the lock, waiting up to [`LOCK_WAIT`], and writes `bytes` as
+    /// given to the file whose whole name is `path`, only if the file is
+    /// what `expect` says.
     pub fn put_file(
         &self,
         path: &LogicalPath,
         expect: Expect,
         bytes: &[u8],
     ) -> Result<PutReport, PutError> {
-        let lock = self.repository().lock(LOCK_WAIT)?;
+        self.put_file_waiting(path, expect, bytes, LOCK_WAIT)
+    }
+
+    /// [`Board::put_file`], waiting up to `wait` for the lock.
+    pub fn put_file_waiting(
+        &self,
+        path: &LogicalPath,
+        expect: Expect,
+        bytes: &[u8],
+        wait: Duration,
+    ) -> Result<PutReport, PutError> {
+        let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let prepared = Self::prepare_file(&lock, &mut view, path, expect, bytes)?;
         let message = format!("{BINARY_NAME} put {path}");
@@ -170,10 +184,19 @@ impl Board {
     }
 
     /// Reads JSON Lines of `{path, expect, record}` or `{path, expect,
-    /// text}` from `input`, then takes the lock, checks every line and
-    /// compares every expect, and writes them in order only if none refuses,
-    /// with one commit.
+    /// text}` from `input`, then takes the lock, waiting up to
+    /// [`LOCK_WAIT`], checks every line and compares every expect, and
+    /// writes them in order only if none refuses, with one commit.
     pub fn put_batch(&self, input: &mut dyn BufRead) -> Result<PutReport, PutError> {
+        self.put_batch_waiting(input, LOCK_WAIT)
+    }
+
+    /// [`Board::put_batch`], waiting up to `wait` for the lock.
+    pub fn put_batch_waiting(
+        &self,
+        input: &mut dyn BufRead,
+        wait: Duration,
+    ) -> Result<PutReport, PutError> {
         let lines = Self::read_lines(input)?;
         if lines.is_empty() {
             return Ok(PutReport {
@@ -192,7 +215,7 @@ impl Board {
             .flatten()
             .filter(|(_, line)| matches!(line.content, Content::File(_)))
             .count();
-        let lock = self.repository().lock(LOCK_WAIT)?;
+        let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (prepared, numbers) =
             self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;

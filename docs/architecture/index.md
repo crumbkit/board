@@ -52,7 +52,8 @@ second in which the last refresh that hashed or recorded a file began. A
 refresh that finds nothing changed, including a file it still cannot read,
 writes nothing, so it neither waits for nor blocks another process. If another
 process holds the lock or wrote first, the refresh runs again, waiting up to 5
-seconds for the lock. If the wait runs out, it runs in an index in memory. A
+seconds for the lock. If the wait runs out, it runs in an index in memory, so
+the index lock never refuses a `query` or a `call`. A
 JSON file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
 opens each file once. The walk lists directories and reads each entry's stat
 on up to four threads, as many as there are cores, never listing an ignored
