@@ -57,14 +57,14 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   SHA-256 object format. Its standing rule is settled decision 5 below.
 - **Views.** Every record type gets a view and a form derived from its schema,
   and plugins declare views as data. The owner's acceptance test is that views
-  can express widgets's UI, which needs read access to example-org/widgets.
+  can express the UI of an existing tool the owner will name.
 - **Serving.** `board serve` keeps the index warm for an agent loop or a web
   view, and no answer may depend on it. A `board mcp` adapter serves each
   capability as an MCP tool.
-- **Adoption.** Board imports records from other systems (widgets first, then JIRA)
+- **Adoption.** Board imports records from other systems, such as JIRA,
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
-  a spike that imports widgets's team store into a scratch board.
+  a spike that imports one existing store into a scratch board.
 - **Settings and the gentle slope.** Plugins ask Board whether to act or
   propose and how to tell the owner, and settings come in three layers:
   mandate, the owner's preferences in a personal board, and the board's own.
