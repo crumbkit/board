@@ -49,9 +49,10 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   sketch into a list of design gaps for a builder.
 - **Repositories across boards.** A board declares each repository once in
   `/.board/repos/<name>.json` with an optional `track`, references into
-  another repository read `name:/path`, and `board copy` and `board share` move
-  records between repositories. The owner agreed it on 2026-10-05; it refines
-  M8, and #55's content-addressed records are dropped.
+  another repository read `name:/path`. The owner agreed it on 2026-10-05; it
+  refines M8, and #55's content-addressed records are dropped. The `share`
+  plugin, built in place of the `board copy` and `board share` it named, copies
+  a record and what it needs into a mounted board (docs/plugins/share.md).
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
 - **Views.** Every record type gets a view and a form derived from its schema,

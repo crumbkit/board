@@ -19,7 +19,7 @@ DEMO = Board("/b", "demo")
 def printing(monkeypatch: pytest.MonkeyPatch, stdout: bytes, code: int = 0, stderr: bytes = b"logs") -> None:
     """Make every `board` the library runs print `stdout` and `stderr` and exit with `code`."""
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(["board", *arguments], code, stdout, stderr)
 
     monkeypatch.setattr(Board, "_run", run)
@@ -46,8 +46,8 @@ def test_a_board_that_prints_no_json_is_a_failure_and_one_that_does_is_read(monk
     assert DEMO.rows("SELECT 1") == [[1]]
 
 
-def test_a_board_error_is_a_refusal_carrying_boards_code_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
-    error = {
+def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+    error: dict[str, Any] = {
         "schema": "board/failure/v1",
         "code": "board::query::invalid",
         "message": "no such table",
@@ -58,6 +58,13 @@ def test_a_board_error_is_a_refusal_carrying_boards_code_and_hint(monkeypatch: p
         DEMO.rows("SELECT 1")
     assert refused.value.code == "demo::board::refused"
     assert refused.value.fields == {"code": "board::query::invalid"}
+    refusals = [{"line": 1, "code": "board::mount::stale", "message": "/team/a cannot be written"}]
+    printing(
+        monkeypatch, json.dumps({**error, "fields": {"refusals": refusals, "code": "not Board's"}}).encode(), code=1
+    )
+    with pytest.raises(PluginError) as refused:
+        DEMO.rows("SELECT 1")
+    assert refused.value.fields == {"refusals": refusals, "code": "board::query::invalid"}
     assert refused.value.message == "`board query` refused with board::query::invalid: no such table; fix it"
     error["recovery"] = {"kind": "run", "call": "board query -h"}
     printing(monkeypatch, json.dumps(error).encode(), code=1)
@@ -76,7 +83,7 @@ def test_a_failed_board_without_an_error_document_is_a_failure(monkeypatch: pyte
 def test_rows_asks_board_for_every_row_and_query_for_at_most_its_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     asked: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         asked.append(arguments)
         return subprocess.CompletedProcess(["board", *arguments], 0, report([[1]], truncated=False), b"")
 
@@ -200,7 +207,7 @@ def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it
     answer = {"location": {"display": "/-a"}}
     report = batch("refs", ["-a"], [answer])
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
 
@@ -215,7 +222,7 @@ def answering_each_path(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]
     """Make `board refs` answer each path after `--` with its display path, and return the runs it records."""
     runs: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
         report = batch("refs", asked, [{"location": {"display": path}} for path in asked])
@@ -250,7 +257,7 @@ def answering_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple
     """Make `board refs` answer each path until `budget` paths, then over budget, and return each run's arguments."""
     runs: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
         over = {"code": board.OVER_BUDGET}
@@ -319,7 +326,7 @@ def test_get_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_
     runs: list[tuple[str, ...]] = []
     report = batch("get", ["-a"], [{"text": "x"}])
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
 
@@ -337,7 +344,7 @@ def getting_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple[s
     """
     runs: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
         asked = arguments[arguments.index("--") + 1 :]
         runs.append(asked)
         over = {"code": board.OVER_BUDGET}
@@ -408,6 +415,8 @@ def real(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Board:
     root = tmp_path / "board"
     root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
     subprocess.run([binary, "init"], cwd=root, check=True, capture_output=True)
     (root / "docs").mkdir()
     (root / "docs" / "a.md").write_text("one two")
@@ -428,7 +437,8 @@ def test_the_real_board_gives_each_files_bytes_in_order_and_a_refused_path_its_c
     assert answers[2] == b"\xff\x00a"
     refused = answers[1]
     assert isinstance(refused, PluginError)
-    assert (refused.code, refused.fields) == ("demo::board::refused", {"code": "board::record::not_a_record"})
+    assert refused.code == "demo::board::refused"
+    assert refused.fields == {"path": "/docs", "code": "board::record::not_a_record"}
     assert real.get(["/docs/a.md", "/docs/raw.bin"]) == [b"one two", b"\xff\x00a"]
 
 
@@ -443,6 +453,15 @@ def test_the_real_board_cuts_a_run_at_its_byte_budget_with_the_code_the_library_
     assert json.loads(ran.stdout)["failures"][-1]["code"] == board.OVER_BUDGET
     assert real.get(paths) == [b"one two", b"b", b"c", b"d"]
     assert [answer and answer["location"]["display"] for answer in real.refs(paths)] == paths
+
+
+def test_a_document_run_writes_its_stdin_to_board_and_one_without_stdin_writes_nothing(real: Board) -> None:
+    written = real.document("put", "--file", "/docs/b.md", stdin=b"three")
+    assert written["data"]["writes"][0]["location"]["display"] == "/docs/b.md"
+    assert real.get(["/docs/b.md"]) == [b"three"]
+    with pytest.raises(PluginError) as refused:
+        real.document("put", "/docs/c")
+    assert refused.value.fields == {"path": "/docs/c", "code": "board::json::parse"}
 
 
 def test_the_real_board_resolves_a_path_and_a_missing_one_is_none(real: Board) -> None:

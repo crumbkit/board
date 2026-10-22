@@ -25,6 +25,6 @@ cargo test --workspace --all-features --locked --doc
 
 # The Python tests run the workspace's debug build of board.
 cargo build -p board-cli --locked
-for project in python/board-plugin plugins/tasks plugins/controls plugins/evals; do
+for project in python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/share; do
   (cd "$project" && uv run --locked pytest)
 done

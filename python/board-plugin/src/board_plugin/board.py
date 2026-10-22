@@ -43,21 +43,21 @@ class Board:
     # The most paths one run is asked; more are split over several runs.
     paths_per_run: int = PATHS_PER_RUN
 
-    def document(self, *arguments: str, partial: str | None = None) -> dict[str, Any]:
-        """The one JSON document `board --json <arguments>` prints.
+    def document(self, *arguments: str, partial: str | None = None, stdin: bytes = b"") -> dict[str, Any]:
+        """The one JSON document `board --json <arguments>` prints, given `stdin`, as a put reads its input.
 
         Board's own error is `<plugin>::board::refused`, with Board's code and
         hint. Anything else that is not a document is `<plugin>::board::failed`.
         A document whose `schema` is `partial` is the answer even when Board
         exits 1, as `refs` does when a path it was asked for is refused.
         """
-        return self._read(*arguments, partial=partial)[0]
+        return self._read(*arguments, partial=partial, stdin=stdin)[0]
 
     def _read(
-        self, *arguments: str, partial: str | None = None
+        self, *arguments: str, partial: str | None = None, stdin: bytes = b""
     ) -> tuple[dict[str, Any], subprocess.CompletedProcess[bytes]]:
         """The document `document` reads, and the run that printed it."""
-        ran = self._run("--json", *arguments)
+        ran = self._run("--json", *arguments, stdin=stdin)
         try:
             parsed: object = json.loads(ran.stdout)
         except ValueError:
@@ -68,7 +68,7 @@ class Board:
         if ran.returncode != 0 and (partial is None or document.get("schema") != partial):
             code = document.get("code")
             if document.get("schema") == FAILURE and isinstance(code, str):
-                raise self._refused(arguments, code, str(document.get("message", "")), _hint(document))
+                raise self._refused(arguments, code, str(document.get("message", "")), _hint(document), document)
             raise self._failed(arguments, ran, "failed without an error document")
         return document, ran
 
@@ -149,7 +149,7 @@ class Board:
             elif code == "board::path::not_found":
                 found.append(None)
             else:
-                raise self._refused(("refs",), str(code), str(answer.get("message", "")), _hint(answer))
+                raise self._refused(("refs",), str(code), str(answer.get("message", "")), _hint(answer), answer)
         if not found:
             raise self._failed(("refs",), ran, f"left every path unanswered as {OVER_BUDGET}")
         return found
@@ -199,18 +199,19 @@ class Board:
         for refused, answer in found:
             if refused and isinstance(answer, dict):
                 why, hint = str(answer.get("message", "")), _hint(answer)
-                read.append(self._refused(("get",), str(answer.get("code")), why, hint))
+                read.append(self._refused(("get",), str(answer.get("code")), why, hint, answer))
             elif isinstance(answer, bytes):
                 read.append(answer)
         if not read:
             raise self._failed(("get",), ran, f"left every path unread as {OVER_BUDGET}")
         return read
 
-    def _run(self, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    def _run(self, *arguments: str, stdin: bytes = b"") -> subprocess.CompletedProcess[bytes]:
         try:
             return subprocess.run(  # noqa: S603 - the program is Board itself, found on PATH
                 ["board", *arguments],  # noqa: S607
                 cwd=self.root,
+                input=stdin,
                 capture_output=True,
                 check=False,
             )
@@ -227,12 +228,17 @@ class Board:
             {"stderr": stderr},
         )
 
-    def _refused(self, arguments: tuple[str, ...], code: str, message: str, hint: object) -> PluginError:
+    def _refused(
+        self, arguments: tuple[str, ...], code: str, message: str, hint: object, failure: dict[str, Any] | None = None
+    ) -> PluginError:
+        """`<plugin>::board::refused`, carrying Board's code and the fields of Board's `failure`, such as `refusals`."""
         then = f"; {hint}" if isinstance(hint, str) and hint else ""
+        fields = failure.get("fields") if failure else None
+        carried = cast("dict[str, Any]", fields) if isinstance(fields, dict) else {}
         return PluginError(
             f"{self.plugin}::board::refused",
             f"`board {arguments[0]}` refused with {code}: {message}{then}",
-            {"code": code},
+            {**carried, "code": code},
         )
 
 

@@ -1,0 +1,121 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "description": "Copy a record, its children, everything they reference and the schemas it lacks into a mounted board, as one commit there, and move the mount's pin to it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Copy the entry at `path`, its children and every entry its records reference into the board mounted at `to`.",
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "description": "List what would be copied and the plugin's own refusals, and write nothing, when true. Board's checks for a write through a mount run only on the real call.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "local_attachments": {
+            "default": false,
+            "description": "Copy an attachment whose bytes are on this machine, which other readers cannot fetch, when true.",
+            "title": "Local Attachments",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "The record or file to share, such as /evals/x; its children under /evals/x/ go with it.",
+            "format": "board-path",
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "to": {
+            "description": "The mount record of the board to copy into, such as /team; the share writes through it.",
+            "format": "board-path",
+            "minLength": 1,
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "to"
+        ],
+        "title": "ToInput",
+        "type": "object"
+      },
+      "name": "to",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "What the share copied, or would copy on a dry run.\n\n`repository` is the repository the mount reaches. `commit` is the commit\nin it that holds the copies, which the mount's pin now names, null when\nnothing was written. `types` are the types whose schemas were added in\nthat commit. `copied` lists at most 100\npaths; `total` counts them all, and `truncated` says whether some were left\nout. `unchanged` counts the paths the destination already held equally.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "copied": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Copied",
+            "type": "array"
+          },
+          "repository": {
+            "title": "Repository",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Types",
+            "type": "array"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repository",
+          "commit",
+          "types",
+          "copied",
+          "total",
+          "truncated",
+          "unchanged"
+        ],
+        "title": "ToOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Copy a record from this board into a mounted board, such as a team's, with its children, every record and file it references and the schemas of their types, so a reader there can open it. Use it when someone else needs to read a record you wrote. Start with `board -C <board> call share.to --path /<record> --to /<mount> --dry_run true`, which lists what would be copied. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "sharing"
+  },
+  "name": "share",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_share"
+  ],
+  "version": "0.1.0"
+}

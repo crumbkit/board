@@ -141,7 +141,7 @@ def test_a_truncated_page_that_ends_no_later_than_the_last_fails_and_one_that_is
             "summary": {"plugins": []},
         }
 
-        def run(_self: plugin_board.Board, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+        def run(_self: plugin_board.Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
             return subprocess.CompletedProcess(["board", *arguments], 0, json.dumps(document).encode(), b"")
 
         monkeypatch.setattr(plugin_board.Board, "_run", run)

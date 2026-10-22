@@ -15,9 +15,9 @@ version=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["vers
 stage=$(mktemp -d)
 dir="$stage/$name"
 mkdir -p "$dir/vendor/board-plugin" "$out"
-cp -R "$plugin/plugin.json" "$plugin/pyproject.toml" "$plugin/uv.lock" "$plugin/src" "$plugin/types" "$dir/"
-for doc in README.md SKILL.md; do
-  [ -f "$plugin/$doc" ] && cp "$plugin/$doc" "$dir/"
+cp -R "$plugin/plugin.json" "$plugin/pyproject.toml" "$plugin/uv.lock" "$plugin/src" "$dir/"
+for extra in types README.md SKILL.md; do
+  [ -e "$plugin/$extra" ] && cp -R "$plugin/$extra" "$dir/"
 done
 cp -R python/board-plugin/pyproject.toml python/board-plugin/src "$dir/vendor/board-plugin/"
 # The checkout reaches board-plugin by a relative path; the archive by its vendored copy.
