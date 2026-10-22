@@ -29,7 +29,7 @@ fn answered(
 /// renders it.
 fn rendered(scenario: &Scenario, format: bool, limit: usize, budget: usize) -> Output {
     let report = answered(scenario, SQL, limit, budget).unwrap();
-    render::query(&mut Printer::of(format, 1 << 20, &[]), &report)
+    render::query(Printer::of(format, 1 << 20, &[]), &report)
 }
 
 #[test]

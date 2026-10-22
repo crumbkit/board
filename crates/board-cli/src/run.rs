@@ -20,9 +20,8 @@ pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
         limits: Limits::default(),
     }
 }
-use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::{CommandFactory, Parser, Subcommand};
-use crumbkit::Sink;
+use crumbkit::{Sink, Unparsed};
 
 use crate::config::Context;
 use crate::graft;
@@ -382,8 +381,9 @@ pub(crate) fn run(
     let parsing = Instant::now();
     let found = graft::find(&arguments, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
-    let parsed = crumbkit::parse_to::<graft::Parsed, _, _, _, _>(
-        &mut Sink::new(&mut stdout, &mut stderr),
+    let sink = &mut Sink::new(&mut stdout, &mut stderr);
+    let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
+        sink,
         graft::command(found.as_ref()),
         &graft::guide(found.as_ref()),
         arguments.clone(),
@@ -391,11 +391,13 @@ pub(crate) fn run(
     ran.trace.add("parse", parsing);
     let (graft::Parsed { cli, grafted }, view) = match parsed {
         Ok(parsed) => parsed,
-        Err(stop) => {
-            let code = stop.number();
-            if let Some(output) = (code == 2).then(|| split(&arguments)).flatten() {
+        Err(unparsed) => {
+            if let Unparsed::Refused(refused) = &unparsed
+                && let Some(output) = render::too_many_paths(refused)
+            {
                 return output;
             }
+            let code = unparsed.print_to(sink).number();
             let error = (code == 2).then(|| Code::CliUsage.as_str().to_owned());
             return Output {
                 stdout,
@@ -407,7 +409,7 @@ pub(crate) fn run(
     };
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
-    let printer = &mut Printer { view };
+    let printer = Printer { view };
     let base = cli.personal.then(|| known::personal(context));
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = match base.and_then(|base| entered(&base, &cli.directories)) {
@@ -441,8 +443,7 @@ pub(crate) fn run(
             graft::resolve(found.as_ref(), &mut flags, prefix);
             call(&board, context, printer, &target, Some(flags), stdin)
         }
-        None => command(cli.command, &board, context, printer, prefix, stdin)
-            .unwrap_or_else(|refusal| render::refused(printer, *refusal)),
+        None => command(cli.command, &board, context, printer, prefix, stdin),
     };
     ran.trace.extend(board.take_trace());
     output
@@ -454,32 +455,35 @@ fn command(
     command: Command,
     board: &Board,
     context: &Context,
-    printer: &mut Printer,
+    printer: Printer,
     prefix: Option<&Prefix>,
     stdin: &mut dyn Read,
-) -> Result<Output, Box<Refusal>> {
+) -> Output {
     let cache = context.cache.as_deref();
     let at = |given: &[Given], name| -> Result<Vec<_>, _> {
         given.iter().map(|path| read(prefix, path, name)).collect()
     };
-    Ok(match command {
+    // A path that does not read is refused before anything else prints.
+    macro_rules! or_refuse {
+        ($read:expr) => {
+            match $read {
+                Ok(read) => read,
+                Err(refusal) => return render::refused(printer, *refusal),
+            }
+        };
+    }
+    match command {
         Command::Init => unreachable!("init runs before a board is opened"),
         Command::Check { path, page } => {
-            let path = path.map(|path| read(prefix, &path, "check")).transpose()?;
+            let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {
                 Ok(report) => render::check(printer, &report, &page),
                 Err(error) => render::refused(printer, error.refusal()),
             }
         }
         Command::Get { paths, fetch } => {
-            let paths = at(&paths, "get")?;
-            let answers = board.get_each(&paths).map(|each| {
-                each.map(move |answer| match answer {
-                    Ok(report) if fetch => board.fetched(report),
-                    answer => answer,
-                })
-            });
-            render::get(printer, &paths, answers)
+            let paths = or_refuse!(at(&paths, "get"));
+            get(board, printer, &paths, fetch)
         }
         Command::Put {
             batch: true, wait, ..
@@ -493,15 +497,10 @@ fn command(
             file,
             wait,
             ..
-        } => put(
-            board,
-            printer,
-            &read(prefix, &path, "put")?,
-            expect,
-            file,
-            wait,
-            stdin,
-        ),
+        } => {
+            let path = or_refuse!(read(prefix, &path, "put"));
+            put(board, printer, &path, expect, file, wait, stdin)
+        }
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Sync { no_push } => match board.sync(!no_push) {
             Ok(report) => render::sync(printer, &report),
@@ -511,7 +510,10 @@ fn command(
             Ok(report) => render::mount_update(printer, &report),
             Err(error) => render::refused(printer, error.refusal()),
         },
-        Command::Refs(asked) => refs(printer, board, context, &asked, &at(&asked.paths, "refs")?),
+        Command::Refs(asked) => {
+            let paths = or_refuse!(at(&asked.paths, "refs"));
+            refs(printer, board, context, &asked, &paths)
+        }
         Command::Query { sql, page } => {
             let budget = Some(render::rows_budget(printer.view.budget()));
             let limit = page.limit().unwrap_or(usize::MAX);
@@ -550,13 +552,14 @@ fn command(
             call(board, context, printer, &target, None, stdin)
         }
         Command::Ls { path, page } => {
-            let path = path.map_or(Ok(LogicalPath::root()), |path| read(prefix, &path, "ls"))?;
+            let path =
+                or_refuse!(path.map_or(Ok(LogicalPath::root()), |path| read(prefix, &path, "ls")));
             match board.ls(&path, cache) {
                 Ok(report) => render::ls(printer, &report, &page),
                 Err(error) => render::refused(printer, error.refusal("ls")),
             }
         }
-    })
+    }
 }
 
 /// `given` read from `prefix`, which a relative path needs to be a logical
@@ -604,47 +607,6 @@ pub(crate) fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
     Refusal::new(code, message, &Fields::default())
 }
 
-/// Glue for a usage failure crumbkit words alike for every tool: a run
-/// given too many paths says to split them.
-fn split(arguments: &[OsString]) -> Option<Output> {
-    let error = Cli::try_parse_from(arguments).err()?;
-    let (Some(ContextValue::String(argument)), Some(ContextValue::String(value))) = (
-        error.get(ContextKind::InvalidArg),
-        error.get(ContextKind::InvalidValue),
-    ) else {
-        return None;
-    };
-    if error.kind() != ErrorKind::TooManyValues {
-        return None;
-    }
-    let (mut command, mut names) = (Cli::command(), vec![BINARY_NAME.to_owned()]);
-    for word in arguments.iter().skip(1) {
-        if let Some(sub) = command.find_subcommand(word).cloned() {
-            names.push(sub.get_name().to_owned());
-            command = sub;
-        }
-    }
-    let message = format!(
-        "{} was given more than {MAX_LIMIT} paths, and one run answers at most {MAX_LIMIT}",
-        names[1..].join(" ")
-    );
-    let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
-    let mut refusal = plain(Code::CliUsage, &message).with_hint(hint);
-    let name = argument.split(' ').next().unwrap_or(argument);
-    refusal.fields.insert("argument".to_owned(), name.into());
-    refusal
-        .fields
-        .insert("value".to_owned(), value.as_str().into());
-    let json = (arguments.iter().skip(1))
-        .take_while(|word| *word != "--")
-        .any(|word| word == "--json");
-    let flags = crumbkit::ViewFlags::new().json(json);
-    let printer = &mut Printer {
-        view: crumbkit::Output::new(flags, Cli::command(), &GUIDE, arguments.iter()),
-    };
-    Some(render::refused(printer, refusal))
-}
-
 /// `start` after entering each of `directories` in turn, as `git -C` does,
 /// or the refusal of the first that is not a directory.
 pub(crate) fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Refusal>> {
@@ -677,9 +639,20 @@ pub(crate) fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf,
     Ok(start)
 }
 
+/// `get` of `paths`, with each attachment's bytes when `fetch` is set.
+fn get(board: &Board, printer: Printer, paths: &[LogicalPath], fetch: bool) -> Output {
+    let answers = board.get_each(paths).map(|each| {
+        each.map(move |answer| match answer {
+            Ok(report) if fetch => board.fetched(report),
+            answer => answer,
+        })
+    });
+    render::get(printer, paths, answers)
+}
+
 /// `refs` of `paths`, read from the paths asked, with `--missing` or without.
 fn refs(
-    printer: &mut Printer,
+    printer: Printer,
     board: &Board,
     context: &Context,
     asked: &Refs,

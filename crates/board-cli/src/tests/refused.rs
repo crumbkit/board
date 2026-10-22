@@ -10,7 +10,7 @@ fn text(bytes: &[u8]) -> &str {
 }
 
 fn refused(json: bool, refusal: &Refusal) -> crate::report::Output {
-    render::refused(&mut Printer::of(json, 1 << 20, &[]), refusal.clone())
+    render::refused(Printer::of(json, 1 << 20, &[]), refusal.clone())
 }
 
 #[test]

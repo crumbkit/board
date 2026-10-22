@@ -203,26 +203,39 @@ impl<R: Row> Noted for Batch<R, Refused> {
     }
 }
 
-/// One run's printer: crumbkit's view of the command line it parsed.
+/// One run's printer: crumbkit's view of the command line it parsed. It
+/// prints one result, so printing takes it by value.
 pub(crate) struct Printer {
     pub(crate) view: crumbkit::Output,
 }
 
 impl Printer {
+    /// A printer for `words`, the whole command line, that prints JSON when
+    /// `json` is set and prints by `guide`.
+    pub(crate) fn new(
+        json: bool,
+        guide: &Guide,
+        words: impl IntoIterator<Item = impl Into<std::ffi::OsString>>,
+    ) -> Self {
+        use clap::CommandFactory as _;
+        let view = crumbkit::Output::new_to(
+            &mut Sink::new(std::io::sink(), std::io::sink()),
+            crumbkit::ViewFlags::new().json(json),
+            crumbkit::DryRun::default(),
+            crate::run::Cli::command(),
+            guide,
+            words,
+        )
+        .expect("crumbkit refuses only --full without --json or --fields with --long or --full, and these flags set neither");
+        Self { view }
+    }
+
     /// A printer for `words`, the command line after `board`, that prints
     /// JSON when `json` is set and has `budget` bytes.
     #[cfg(test)]
     pub(crate) fn of(json: bool, budget: usize, words: &[&str]) -> Self {
-        use clap::CommandFactory as _;
         let args = std::iter::once("board").chain(words.iter().copied());
-        Self {
-            view: crumbkit::Output::new(
-                crumbkit::ViewFlags::new().json(json),
-                crate::run::Cli::command(),
-                &guide(budget),
-                args,
-            ),
-        }
+        Self::new(json, &guide(budget), args)
     }
 
     pub(crate) const fn json(&self) -> bool {
@@ -232,7 +245,7 @@ impl Printer {
     /// `result` printed as `document`. A refusal's lines of a batch and a
     /// plugin's stderr, which crumbkit's text does not print, follow it.
     pub(crate) fn print<T: Rows>(
-        &mut self,
+        self,
         document: Document<T>,
         result: Result<T, Refusal>,
     ) -> Output {
@@ -245,7 +258,7 @@ impl Printer {
     /// Glue: crumbkit's JSON document has no place for a note, so with
     /// `--json` Board prints each [`Note::Always`] on stderr itself.
     pub(crate) fn noted<T: Noted>(
-        &mut self,
+        self,
         document: Document<T>,
         value: T,
         notes: Vec<Note>,
@@ -270,7 +283,7 @@ impl Printer {
         self.print(document, Ok(value))
     }
 
-    fn finish<T: Rows>(&mut self, document: Document<T>, result: Result<T, Refused>) -> Output {
+    fn finish<T: Rows>(self, document: Document<T>, result: Result<T, Refused>) -> Output {
         let error = match &result {
             Ok(value) => first_code(value),
             Err(refused) => Some(refused.0.code.as_str().to_owned()),
@@ -282,7 +295,7 @@ impl Printer {
         let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
         let code = crumbkit::finish_to(
             &mut Sink::new(&mut stdout, &mut stderr),
-            &mut self.view,
+            self.view,
             document,
             result,
         );

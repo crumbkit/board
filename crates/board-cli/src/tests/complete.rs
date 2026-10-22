@@ -141,8 +141,9 @@ fn board_complete_empty_or_zero_asks_for_no_script() {
     for shell in ["", "0"] {
         let output = completing(scenario.workdir(), shell, &[]);
         assert_eq!(output.code, 2, "{shell:?}");
+        assert!(output.stdout.is_empty(), "{shell:?}");
         assert!(
-            text(&output.stderr).starts_with("error: the command `board` needs a subcommand\n"),
+            text(&output.stderr).contains("\nUsage: board [OPTIONS] <COMMAND>\n"),
             "{shell:?}: {}",
             text(&output.stderr)
         );

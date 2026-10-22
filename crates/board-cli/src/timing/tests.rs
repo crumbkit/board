@@ -107,10 +107,10 @@ fn a_refusal_names_its_code_for_the_record_in_text_and_json() {
         serde_json::Map::new(),
     );
     for json in [false, true] {
-        let printer = &mut Printer::of(json, 1 << 20, &[]);
-        let refused = render::refused(printer, boards.clone());
+        let printer = || Printer::of(json, 1 << 20, &[]);
+        let refused = render::refused(printer(), boards.clone());
         assert_eq!(refused.error.as_deref(), Some("board::put::invalid"));
-        let refused = render::refused(printer, plugins.clone());
+        let refused = render::refused(printer(), plugins.clone());
         assert_eq!(refused.error.as_deref(), Some("tasks::date::bad"));
     }
 }

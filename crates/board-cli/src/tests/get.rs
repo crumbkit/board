@@ -122,11 +122,29 @@ fn get_answers_at_most_max_limit_paths_and_refuses_one_more() {
     );
     assert!(refused.stdout.is_empty());
     let stderr = String::from_utf8(refused.stderr).unwrap();
-    let split = format!(
-        "help:  split the paths over several runs of at most {} each",
-        board_ops::MAX_LIMIT
+    let limit = board_ops::MAX_LIMIT;
+    let message =
+        format!("get was given more than {limit} paths, and one run answers at most {limit}");
+    let split = format!("split the paths over several runs of at most {limit} each");
+    assert!(
+        stderr.starts_with(&format!("error: {message}\n")),
+        "{stderr}"
     );
-    assert!(stderr.contains(&split), "{stderr}");
+    assert!(stderr.contains(&format!("help:  {split}")), "{stderr}");
+    let mut arguments = vec!["--json", "get"];
+    arguments.extend(std::iter::repeat_n("/projects/p", limit + 1));
+    let refused = board_cached(scenario.workdir(), Some(cache.path()), &arguments);
+    assert_eq!(refused.code, 2);
+    assert!(refused.stderr.is_empty());
+    let failure = json(&refused);
+    assert_eq!(
+        (
+            &failure["code"],
+            &failure["message"],
+            &failure["recovery"]["text"]
+        ),
+        (&"board::cli::usage".into(), &message.into(), &split.into())
+    );
 }
 
 #[test]
@@ -144,7 +162,7 @@ fn rendered(scenario: &Scenario, paths: &[&str], format: bool, budget: usize) ->
     let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
     let paths: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
     render::get(
-        &mut Printer::of(format, budget, &["get"]),
+        Printer::of(format, budget, &["get"]),
         &paths,
         board.get_each(&paths),
     )
@@ -247,7 +265,7 @@ fn an_over_budget_get_recovers_with_the_callers_flags_and_without_its_words_name
     let paths = ["/a.md", "/b.md", "/c.md"];
     let asked: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
     let ran = |json: bool, budget: usize, words: &[&str]| {
-        let printer = &mut Printer::of(json, budget, words);
+        let printer = Printer::of(json, budget, words);
         render::get(printer, &asked, board.get_each(&asked))
     };
     let budget = rendered(&scenario, &paths[..1], true, usize::MAX)
@@ -312,7 +330,7 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         };
         Err(ReadError::Git { source })
     };
-    let ran = render::get(&mut Printer::of(true, 1 << 20, &["get"]), &paths, failed());
+    let ran = render::get(Printer::of(true, 1 << 20, &["get"]), &paths, failed());
     let failures = json(&ran)["failures"].as_array().cloned().unwrap();
     assert_eq!(failures.len(), 2);
     assert_eq!(
@@ -320,7 +338,7 @@ fn a_board_that_cannot_be_read_answers_every_path_with_its_one_error() {
         (&"/a".into(), &"/b".into())
     );
     assert_eq!(failures[0]["code"], failures[1]["code"]);
-    let ran = render::get(&mut Printer::of(false, 1 << 20, &["get"]), &paths, failed());
+    let ran = render::get(Printer::of(false, 1 << 20, &["get"]), &paths, failed());
     assert_eq!(ran.code, 1);
     let lines = text(&ran.stderr);
     assert!(lines.contains("  key:   /a (index 0)\n"), "{lines}");

@@ -483,22 +483,12 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 [[package]]
 name = "crumbkit"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=714f61344727ec5076e76029e54c0445145999db#714f61344727ec5076e76029e54c0445145999db"
+source = "git+https://github.com/crumbkit/crumbkit?rev=db1fa2a50070b63bfdc274484f421627b5b9f028#db1fa2a50070b63bfdc274484f421627b5b9f028"
 dependencies = [
  "clap",
  "clap_complete",
- "crumbkit-core",
+ "humantime",
  "is-ai-agent",
- "schemars",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "crumbkit-core"
-version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=714f61344727ec5076e76029e54c0445145999db#714f61344727ec5076e76029e54c0445145999db"
-dependencies = [
  "schemars",
  "serde",
  "serde_json",
@@ -507,7 +497,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-markdown"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=714f61344727ec5076e76029e54c0445145999db#714f61344727ec5076e76029e54c0445145999db"
+source = "git+https://github.com/crumbkit/crumbkit?rev=db1fa2a50070b63bfdc274484f421627b5b9f028#db1fa2a50070b63bfdc274484f421627b5b9f028"
 dependencies = [
  "crumbkit",
  "serde",
@@ -517,7 +507,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-test"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=714f61344727ec5076e76029e54c0445145999db#714f61344727ec5076e76029e54c0445145999db"
+source = "git+https://github.com/crumbkit/crumbkit?rev=db1fa2a50070b63bfdc274484f421627b5b9f028#db1fa2a50070b63bfdc274484f421627b5b9f028"
 dependencies = [
  "clap",
  "crumbkit",
@@ -1540,6 +1530,12 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+
+[[package]]
+name = "humantime"
+version = "2.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15cdd26707701c53297e2fa6afb323d55fbc1d0810c3aec078ae3ef0424c3c15"
 
 [[package]]
 name = "hybrid-array"

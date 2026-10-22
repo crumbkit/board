@@ -17,7 +17,7 @@ use crate::run::Page;
 /// whether the board enables it, any schema it lacks or holds differently,
 /// and the names of its capabilities. Broken or missing plugins come first
 /// and report a problem, so the run exits 1.
-pub(crate) fn plugin_list(printer: &mut Printer, report: &PluginListReport, page: &Page) -> Output {
+pub(crate) fn plugin_list(printer: Printer, report: &PluginListReport, page: &Page) -> Output {
     let mut plugins: Vec<&Plugin> = report.plugins.iter().collect();
     plugins.sort_by_key(|plugin| plugin.code().is_none());
     let rows = plugins.into_iter().map(Listed::of).collect();
@@ -178,7 +178,7 @@ fn problems(plugin: &Plugin) -> String {
 }
 
 /// `plugin find`: a line or an object per matching capability.
-pub(crate) fn plugin_find(printer: &mut Printer, report: &PluginFindReport, page: &Page) -> Output {
+pub(crate) fn plugin_find(printer: Printer, report: &PluginFindReport, page: &Page) -> Output {
     let rows = report.plugins.iter().flat_map(|found| {
         let manifest = &found.manifest;
         (manifest.capabilities.iter()).map(move |offered| Found {
@@ -283,7 +283,7 @@ fn capability(capability: &Capability) -> Value {
 }
 
 /// `call`: the output as canonical JSON, and as `data` with `--json`.
-pub(crate) fn call(printer: &mut Printer, called: &Called) -> Output {
+pub(crate) fn call(printer: Printer, called: &Called) -> Output {
     let report = &called.report;
     let value = json!({
         "plugin": report.plugin,

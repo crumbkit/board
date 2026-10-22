@@ -5,12 +5,14 @@
 use std::fmt::Write as _;
 
 use board_model::{Code, Fields, Location, LogicalPath, Refusal};
+use board_ops::MAX_LIMIT;
 use board_ops::{
     Budget, CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport,
     MountUpdateReport, PutReport, QueryReport, source_name,
 };
 use board_plugin::PluginName;
 use board_tree::{Status, Synced};
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose};
 use serde_json::{Map, Value, json};
@@ -80,11 +82,7 @@ fn said(value: Value, text: String) -> Answer {
 /// `check`: a line or an object per entry, degraded entries first, so a
 /// limited listing never hides one behind healthy entries. Each degraded
 /// entry reports a problem, so the run exits 1.
-pub(crate) fn check(
-    printer: &mut Printer,
-    report: &CheckReport,
-    page: &crate::run::Page,
-) -> Output {
+pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::Page) -> Output {
     let mut entries: Vec<&Checked> = report.entries.iter().collect();
     entries.sort_by_key(|entry| entry.status == Status::Ok);
     let degraded = entries.iter().filter(|entry| entry.status != Status::Ok);
@@ -143,7 +141,7 @@ const CHECK: Document<Listing<Flagged, Said>> = Document::new(
 /// `put`: as text, one line per write naming its display path and new
 /// blob, and the commit when one was made. A write left degraded gets a
 /// note on stderr in either format, and `note` follows as text.
-pub(crate) fn put(printer: &mut Printer, report: &PutReport, note: Option<String>) -> Output {
+pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) -> Output {
     let notes = (report.writes.iter()).filter_map(|written| {
         let (code, detail) = written.degraded.as_ref()?;
         let (display, why) = (&written.display, detail_text(detail));
@@ -194,7 +192,7 @@ fn put_json(report: &PutReport) -> Value {
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was
 /// needed, with a note for each schema it replaced.
-pub(crate) fn plugin_enable(printer: &mut Printer, report: &EnableReport) -> Output {
+pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     let name = report.name.as_str();
     let text = if report.put.writes.is_empty() {
         format!("{name} is already enabled\n")
@@ -245,14 +243,14 @@ pub(crate) fn rows_budget(bytes: usize) -> Budget {
 
 /// `query`'s rows: as text, the columns, then one JSON array per row. A
 /// note follows for each plugin that did not extract.
-pub(crate) fn query(printer: &mut Printer, report: &QueryReport) -> Output {
+pub(crate) fn query(printer: Printer, report: &QueryReport) -> Output {
     let rows: Vec<Whole> = report
         .rows
         .iter()
         .map(|row| Whole::new(json!(row)))
         .collect();
     let listing = Listing::uncounted(rows, report.truncated)
-        .bounded(board_ops::MAX_LIMIT)
+        .bounded(MAX_LIMIT)
         .described("rows");
     let plugins: Vec<Value> = (report.plugins.iter())
         .map(|failed| json!({"plugin": failed.plugin, "code": failed.code, "message": failed.message}))
@@ -310,7 +308,7 @@ fn memory_note(fallback: Fallback) -> String {
 }
 
 /// `init`: as text, what was written, and on stderr what to run next.
-pub(crate) fn init(printer: &mut Printer, report: &InitReport) -> Output {
+pub(crate) fn init(printer: Printer, report: &InitReport) -> Output {
     let root = report.root.display();
     let text = if report.created {
         format!("created .board/board.json in {root}\n")
@@ -327,7 +325,7 @@ pub(crate) fn init(printer: &mut Printer, report: &InitReport) -> Output {
     printer.print(INIT, Ok(answer))
 }
 
-pub(crate) fn ls(printer: &mut Printer, report: &LsReport, page: &crate::run::Page) -> Output {
+pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -> Output {
     let rows = report.listed.iter().map(|listed| match listed {
         Listed::Directory { name, logical } => Whole::lined(
             json!({"name": name, "logical": logical.to_string(), "kind": "directory"}),
@@ -368,7 +366,7 @@ const LS: Document<Listing<Whole, Said>> =
 
 /// `mount update`: as text, what the mount moved from and to, or that it
 /// was already there.
-pub(crate) fn mount_update(printer: &mut Printer, report: &MountUpdateReport) -> Output {
+pub(crate) fn mount_update(printer: Printer, report: &MountUpdateReport) -> Output {
     let text = if report.wrote {
         format!("updated {} {} -> {}\n", report.path, report.old, report.new)
     } else {
@@ -385,7 +383,7 @@ pub(crate) fn mount_update(printer: &mut Printer, report: &MountUpdateReport) ->
 
 /// `sync`: as text, a line for the fetch, each replayed commit, the push
 /// and where HEAD moved.
-pub(crate) fn sync(printer: &mut Printer, report: &Synced) -> Output {
+pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
     let upstream = &report.upstream;
     let mut text = format!(
         "fetched {}/{} {}\n",
@@ -437,7 +435,7 @@ pub(crate) fn sync(printer: &mut Printer, report: &Synced) -> Output {
 }
 
 /// A refusal of a run that has no answer of its own to print.
-pub(crate) fn refused(printer: &mut Printer, refusal: Refusal) -> Output {
+pub(crate) fn refused(printer: Printer, refusal: Refusal) -> Output {
     printer.print(INIT, Err(refusal))
 }
 
@@ -495,4 +493,34 @@ fn status_fields(value: &mut Value, status: Status) {
             }
         }
     }
+}
+
+/// Board's wording of crumbkit's refusal of a command line given more than
+/// `MAX_LIMIT` paths, which says to split them; `None` for any other refusal.
+pub(crate) fn too_many_paths(unparsed: &crumbkit::Refused) -> Option<Output> {
+    let error = unparsed.error()?;
+    let (Some(ContextValue::String(argument)), Some(ContextValue::String(value))) = (
+        error.get(ContextKind::InvalidArg),
+        error.get(ContextKind::InvalidValue),
+    ) else {
+        return None;
+    };
+    if error.kind() != ErrorKind::TooManyValues {
+        return None;
+    }
+    let message = format!(
+        "{} was given more than {MAX_LIMIT} paths, and one run answers at most {MAX_LIMIT}",
+        unparsed.path().join(" ")
+    );
+    let hint = format!("split the paths over several runs of at most {MAX_LIMIT} each");
+    let mut refusal = Refusal::new(Code::CliUsage, &message, &Fields::default()).with_hint(hint);
+    let name = argument.split(' ').next().unwrap_or(argument);
+    refusal.fields.insert("argument".to_owned(), name.into());
+    refusal
+        .fields
+        .insert("value".to_owned(), value.as_str().into());
+    let printer = Printer {
+        view: unparsed.output().clone(),
+    };
+    Some(refused(printer, refusal))
 }

@@ -929,7 +929,7 @@ fn a_call_whose_database_is_temporary_notes_it_and_one_beside_the_index_does_not
                 },
                 fallback,
             };
-            let printer = &mut crate::render::Printer::of(json, 1 << 20, &["call", "tasks.due"]);
+            let printer = crate::render::Printer::of(json, 1 << 20, &["call", "tasks.due"]);
             text(&crate::render::call(printer, &called).stderr)
         };
         assert_eq!(stderr(true), note, "json: {json}");

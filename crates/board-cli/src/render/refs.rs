@@ -164,7 +164,7 @@ impl<'a> Cut<'a> {
 /// references reach it, after a header when there are several paths. Exit
 /// 1 when any path is refused.
 pub(crate) fn refs(
-    printer: &mut Printer,
+    printer: Printer,
     paths: &[LogicalPath],
     mut answers: impl Iterator<Item = Result<RefsReport, RefsError>>,
     limit: Option<usize>,

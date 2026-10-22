@@ -39,7 +39,7 @@ Examples:
 /// could not be read at all, every path is answered with that one error.
 /// Exit 1 when any path is refused.
 pub(crate) fn get(
-    printer: &mut Printer,
+    printer: Printer,
     paths: &[LogicalPath],
     answers: Result<impl Iterator<Item = Result<GetReport, ReadError>>, ReadError>,
 ) -> Output {

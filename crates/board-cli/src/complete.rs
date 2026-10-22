@@ -74,13 +74,8 @@ fn unknown(shell: &OsStr) -> Output {
         SHELLS.join(", ")
     );
     let refusal = Refusal::new(Code::CliUsage, message, &Fields::default()).with_hint(hint);
-    let view = crumbkit::Output::new(
-        crumbkit::ViewFlags::new(),
-        Cli::command(),
-        &GUIDE,
-        [BINARY_NAME],
-    );
-    render::refused(&mut Printer { view }, refusal)
+    let printer = Printer::new(false, &GUIDE, [BINARY_NAME]);
+    render::refused(printer, refusal)
 }
 
 /// Where the command line being completed starts: after `--personal` and

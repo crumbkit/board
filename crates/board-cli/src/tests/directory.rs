@@ -156,12 +156,12 @@ fn a_directory_after_the_command_is_refused_and_before_it_is_admitted() {
 }
 
 #[test]
-fn a_group_without_its_command_after_a_directory_points_at_the_groups_help() {
+fn a_group_without_its_command_after_a_directory_prints_the_groups_help() {
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
     assert_eq!(refused.code, 2);
     assert!(
-        text(&refused.stderr).contains("\n  help:  run `board plugin -h`\n"),
+        text(&refused.stderr).contains("\nNext: board plugin <COMMAND> -h\n"),
         "{}",
         text(&refused.stderr)
     );
@@ -198,7 +198,7 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
 }
 
 #[test]
-fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
+fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
     use std::os::unix::ffi::OsStringExt;
     let scenario = board();
     let context = Context {
@@ -221,12 +221,12 @@ fn a_directory_that_is_not_utf8_still_points_a_groups_hint_at_its_help() {
     let refused = run(arguments, &context, &mut &b""[..], &mut Ran::default());
     assert_eq!(refused.code, 2);
     assert!(
-        text(&refused.stderr).contains("\n  help:  run `board plugin -h`\n"),
+        text(&refused.stderr).contains("\nNext: board plugin <COMMAND> -h\n"),
         "{}",
         text(&refused.stderr)
     );
     let utf8 = board_in(scenario.workdir(), &["-C", "projects", "plugin"]);
-    assert!(text(&utf8.stderr).contains("\n  help:  run `board plugin -h`\n"));
+    assert!(text(&utf8.stderr).contains("\nNext: board plugin <COMMAND> -h\n"));
 }
 
 #[test]

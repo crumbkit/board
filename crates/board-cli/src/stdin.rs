@@ -36,7 +36,7 @@ Examples:
 /// read whole, since a file past the record bound may go to the store.
 pub(crate) fn put(
     board: &Board,
-    printer: &mut Printer,
+    printer: Printer,
     path: &LogicalPath,
     expect: Option<Expect>,
     file: bool,
@@ -71,7 +71,7 @@ pub(crate) fn put(
 pub(crate) fn call(
     board: &Board,
     context: &Context,
-    printer: &mut Printer,
+    printer: Printer,
     target: &Target,
     flags: Option<Map<String, Value>>,
     stdin: &mut dyn Read,
@@ -97,7 +97,7 @@ pub(crate) fn call(
 pub(crate) fn type_add(
     command: TypeCommand,
     board: &Board,
-    printer: &mut Printer,
+    printer: Printer,
     stdin: &mut dyn Read,
 ) -> Output {
     let TypeCommand::Add { record_type } = command;

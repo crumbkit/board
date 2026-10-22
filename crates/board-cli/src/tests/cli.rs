@@ -293,6 +293,7 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
     assert_eq!(
         text(&refused.stderr),
         "error: unrecognized subcommand 'chek'; a similar subcommand exists: 'check'\n\
+         \x20 usage: board [OPTIONS] <COMMAND>\n\
          \x20 help:  run `board -h`\n\
          \x20 code:  board::cli::usage\n"
     );
@@ -300,18 +301,61 @@ fn a_misspelt_command_is_a_coded_error_with_a_suggestion_and_the_right_one_runs(
 }
 
 #[test]
-fn a_group_without_its_command_is_a_coded_error_with_its_help_and_with_one_runs() {
+fn a_group_without_its_command_prints_its_help_page_and_with_one_runs() {
     let scenario = board();
     let refused = board_in(scenario.workdir(), &["plugin"]);
     assert_eq!(refused.code, 2);
-    let stderr = text(&refused.stderr);
-    assert_eq!(
-        stderr,
-        "error: the command `board plugin` needs a subcommand\n\
-         \x20 help:  run `board plugin -h`\n\
-         \x20 code:  board::cli::usage\n"
-    );
+    assert!(refused.stdout.is_empty());
+    let page = board_in(scenario.workdir(), &["plugin", "-h"]);
+    assert_eq!(text(&refused.stderr), text(&page.stdout));
     assert_eq!(board_in(scenario.workdir(), &["plugin", "list"]).code, 0);
+}
+
+#[test]
+fn board_help_prints_the_root_help_as_dash_dash_help_does() {
+    let scenario = board();
+    let helped = board_in(scenario.workdir(), &["--help"]);
+    assert_eq!(helped.code, 0);
+    assert!(text(&helped.stdout).contains("Topics: exit-codes."));
+    for line in [&["help"][..], &["help", "--json"]] {
+        let asked = board_in(scenario.workdir(), line);
+        assert_eq!((asked.code, &asked.stdout), (0, &helped.stdout), "{line:?}");
+    }
+}
+
+#[test]
+fn a_bare_group_in_json_names_its_subcommands_and_with_one_runs() {
+    let scenario = board();
+    let refused = board_in(scenario.workdir(), &["plugin", "--json"]);
+    assert_eq!(refused.code, 2);
+    let document = json(&refused);
+    assert_eq!(document["code"], "board::cli::usage");
+    assert_eq!(
+        document["message"],
+        "the command `board plugin` needs a subcommand: list, find, enable"
+    );
+    let admitted = board_in(scenario.workdir(), &["plugin", "list", "--json"]);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+/// A zero-width space or a right-to-left override in a name would hide
+/// what the name is, so text escapes it and JSON keeps the name.
+#[test]
+fn ls_text_escapes_format_characters_in_a_name_and_json_keeps_them() {
+    let scenario = board();
+    scenario.write("a\u{200b}b.md", Item::File("x"));
+    scenario.write("c\u{202e}d.md", Item::File("y"));
+    let listed = board_in(scenario.workdir(), &["ls", "/"]);
+    assert_eq!(listed.code, 0);
+    let text = text(&listed.stdout);
+    assert!(text.contains("file ok /a\\u{200b}b.md\n"), "{text}");
+    assert!(text.contains("file ok /c\\u{202e}d.md\n"), "{text}");
+    let listed = json(&board_in(scenario.workdir(), &["ls", "/", "--json"]));
+    let names: Vec<&str> = (listed["data"].as_array().unwrap().iter())
+        .filter_map(|entry| entry["logical"].as_str())
+        .collect();
+    assert!(names.contains(&"/a\u{200b}b.md"), "{names:?}");
+    assert!(names.contains(&"/c\u{202e}d.md"), "{names:?}");
 }
 
 #[test]
@@ -350,44 +394,54 @@ fn a_misspelt_command_in_json_suggests_the_right_one_and_the_right_one_runs() {
     assert_eq!(json(&admitted)["schema"], "board/check-report/v2");
 }
 
+/// A refused command line, the start of its message, clap's usage line when
+/// clap prints one, and a corrected twin that runs.
+type Refusal<'a> = (&'a [&'a str], &'a str, Option<&'a str>, &'a [&'a str]);
+
 /// Each refused command line names the value at fault, and a corrected
 /// twin of it runs.
 #[test]
 fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs() {
     let scenario = board();
-    let cases: [(&[&str], &str, &[&str]); 6] = [
+    let cases: [Refusal; 6] = [
         (
             &["put", "--batch", "--wait", "5"],
             "invalid value '5' for '--wait <DURATION>': must be a whole number with a unit: 500ms, 30s, 2m or 1h",
+            None,
             &["put", "--batch", "--wait", "5s"],
         ),
         (
             &["ls", "--limt", "5"],
             "unexpected argument '--limt' found; a similar argument exists: '--limit'",
+            Some("board ls --limit <N> [PATH]"),
             &["ls", "--limit", "5"],
         ),
         (
             &["ls", "--limit", "0"],
             "invalid value '0' for '--limit <N>': --limit takes a whole number from 1 to 10000",
+            None,
             &["ls", "--limit", "1"],
         ),
         (
             &["ls", "--limit", "5", "--all"],
             "the argument '--limit <N>' cannot be used with '--all'",
+            Some("board ls --limit <N> [PATH]"),
             &["ls", "--all"],
         ),
         (
             &["ls", "--limit"],
             "a value is required for '--limit <N>' but none was supplied",
+            None,
             &["ls", "--limit", "1"],
         ),
         (
             &["ls", "-x"],
             "unexpected argument '-x' found; to pass '-x' as a value, use '-- -x'",
+            Some("board ls [OPTIONS] [PATH]"),
             &["ls"],
         ),
     ];
-    for (refused, message, admitted) in cases {
+    for (refused, message, usage, admitted) in cases {
         let output = board_in(scenario.workdir(), &[&["--json"], refused].concat());
         assert_eq!(output.code, 2, "{refused:?}");
         let error = json(&output);
@@ -397,9 +451,12 @@ fn a_refused_command_line_names_the_value_at_fault_and_its_corrected_twin_runs()
         let call = format!("board {} -h", refused[0]);
         assert_eq!(error["recovery"]["call"], call.as_str(), "{refused:?}");
         let text_form = text(&board_in(scenario.workdir(), refused).stderr);
+        let usage = usage
+            .map(|usage| format!("  usage: {usage}\n"))
+            .unwrap_or_default();
         assert_eq!(
             text_form,
-            format!("error: {said}\n  help:  run `{call}`\n  code:  board::cli::usage\n")
+            format!("error: {said}\n{usage}  help:  run `{call}`\n  code:  board::cli::usage\n")
         );
         assert_eq!(
             board_in(scenario.workdir(), admitted).code,

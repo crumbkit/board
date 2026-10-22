@@ -197,7 +197,7 @@ fn rendered(scenario: &Scenario, texts: &[&str], format: bool, budget: usize) ->
     let paths = paths(texts);
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
     render::refs(
-        &mut Printer::of(format, budget, &["refs"]),
+        Printer::of(format, budget, &["refs"]),
         &paths,
         answers,
         None,
@@ -238,12 +238,7 @@ fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slo
     let mut pulled = 0;
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
     let answers = answers.inspect(|_| pulled += 1);
-    let refused = render::refs(
-        &mut Printer::of(false, 27, &["refs"]),
-        &paths,
-        answers,
-        None,
-    );
+    let refused = render::refs(Printer::of(false, 27, &["refs"]), &paths, answers, None);
     assert_eq!(pulled, 1, "a path left over budget is never resolved");
     assert_eq!(
         (refused.code, refused.error.as_deref()),
@@ -349,7 +344,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
     let answers =
         |second: RefsError| -> [Result<RefsReport, RefsError>; 2] { [Err(alone()), Err(second)] };
     let refused = render::refs(
-        &mut Printer::of(true, 1 << 20, &[]),
+        Printer::of(true, 1 << 20, &[]),
         &paths,
         answers(failed()).into_iter(),
         None,
@@ -358,7 +353,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
     assert_eq!(refused["schema"], "board/failure/v1");
     assert_eq!(refused["code"], failed().code().as_str());
     let admitted = render::refs(
-        &mut Printer::of(true, 1 << 20, &[]),
+        Printer::of(true, 1 << 20, &[]),
         &paths,
         answers(alone()).into_iter(),
         None,
@@ -393,7 +388,7 @@ fn changed_between(change: bool, format: bool) -> (Output, serde_json::Value) {
             }
         });
     let output = render::refs(
-        &mut Printer::of(format, usize::MAX, &["refs"]),
+        Printer::of(format, usize::MAX, &["refs"]),
         &paths,
         answers,
         Some(1),
