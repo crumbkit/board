@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::convert::Infallible;
-use std::io::{BufRead, Read};
 use std::time::Duration;
 
 use board_model::{
@@ -15,11 +14,11 @@ use board_tree::{
     Directory, LOCK_WAIT, Lock, PinError, ResolveError, Resolver, Working, WriteError,
 };
 use board_validate::Schema;
-use serde_json::Value;
 
 use crate::board::Board;
 use crate::check::{Detail, Tally, follow, unresolved};
 use crate::snapshot::read_type;
+use crate::types::TypeError;
 use crate::verdict::{self, Admitted, Fault, SchemaFound};
 
 /// What a put expects to find where it writes.
@@ -65,22 +64,6 @@ pub(crate) struct Prepared {
     pub(crate) admitted: Admitted,
 }
 
-/// The most lines one batch may hold.
-pub const MAX_BATCH_LINES: usize = 10_000;
-
-/// One line of `put --batch`.
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawLine {
-    path: String,
-    #[serde(default)]
-    expect: Option<String>,
-    #[serde(default)]
-    record: Option<Value>,
-    #[serde(default)]
-    text: Option<String>,
-}
-
 /// Each record type's schema, or what is there instead, read and compiled
 /// once while the lock is held, so a batch compiles a schema once per type
 /// and not once per line.
@@ -89,22 +72,6 @@ pub(crate) struct Schemas {
     held: HashMap<RecordType, Result<Schema, SchemaFound>>,
     /// How many schemas were compiled. Work-count tests assert it.
     pub(crate) compiled: usize,
-}
-
-/// A batch line read with its number, or why it is refused.
-pub(crate) type ReadLine = Result<(usize, Line), Lined>;
-
-/// One batch line, read but not yet checked.
-pub(crate) struct Line {
-    path: LogicalPath,
-    expect: Expect,
-    content: Content,
-}
-
-/// What a batch line writes: a record, or a file's bytes as given.
-enum Content {
-    Record(Vec<u8>),
-    File(Vec<u8>),
 }
 
 impl Board {
@@ -146,220 +113,19 @@ impl Board {
                 inside: Some(inside),
                 ..
             })) => {
-                return self.put_through(lock, path, (&mount, &inside), expect, bytes, wait);
+                let crossing = Crossing {
+                    number: 1,
+                    path: path.clone(),
+                    mount,
+                    inside: *inside,
+                };
+                return self.put_through(lock, &[crossing], Sent::Record(expect, bytes), wait);
             }
             prepared => prepared?,
         };
         let message = format!("{BINARY_NAME} put {path}");
         self.write_all(lock, &[prepared], &message)
             .map_err(Failure::one)
-    }
-
-    /// Reads JSON Lines of `{path, expect, record}` or `{path, expect,
-    /// text}` from `input`, then takes the lock, waiting up to
-    /// [`LOCK_WAIT`], checks every line and compares every expect, and
-    /// writes them in order only if none refuses, with one commit.
-    pub fn put_batch(&self, input: &mut dyn BufRead) -> Result<PutReport, PutError> {
-        self.put_batch_waiting(input, LOCK_WAIT)
-    }
-
-    /// [`Board::put_batch`], waiting up to `wait` for the lock.
-    pub fn put_batch_waiting(
-        &self,
-        input: &mut dyn BufRead,
-        wait: Duration,
-    ) -> Result<PutReport, PutError> {
-        let lines = Self::read_lines(input)?;
-        if lines.is_empty() {
-            return Ok(PutReport {
-                writes: Vec::new(),
-                commit: None,
-            });
-        }
-        if lines.iter().all(Result::is_err) {
-            return Err(PutError::Batch {
-                code: Code::PutInvalid,
-                refusals: lines.into_iter().filter_map(Result::err).collect(),
-            });
-        }
-        let files = lines
-            .iter()
-            .flatten()
-            .filter(|(_, line)| matches!(line.content, Content::File(_)))
-            .count();
-        let lock = self.repository().lock(wait)?;
-        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let (prepared, numbers) =
-            self.check_lines(&lock, &mut view, lines, &mut Schemas::default())?;
-        let counted = counted(prepared.len() - files, files);
-        let message = format!("{BINARY_NAME} put --batch ({counted})");
-        self.write_all(lock, &prepared, &message)
-            .map_err(|failure| match failure {
-                Failure::Stale(stale) => PutError::Batch {
-                    code: Code::PutStale,
-                    refusals: stale
-                        .into_iter()
-                        .map(|(at, error)| {
-                            Lined::new(numbers[at], error.code(), &error, error.fields())
-                        })
-                        .collect(),
-                },
-                Failure::Error(error) => error,
-            })
-    }
-
-    /// Reads every line of a batch, each with its number or why it is
-    /// refused.
-    pub(crate) fn read_lines(input: &mut dyn BufRead) -> Result<Vec<ReadLine>, PutError> {
-        let mut lines = Vec::new();
-        let mut line = Vec::new();
-        for number in 1.. {
-            line.clear();
-            let read = input
-                .take(MAX_RECORD_BYTES as u64 + 2)
-                .read_until(b'\n', &mut line)
-                .map_err(|source| PutError::Input { source })?;
-            if read == 0 {
-                break;
-            }
-            if number > MAX_BATCH_LINES {
-                return Err(PutError::TooManyLines);
-            }
-            let text = line.strip_suffix(b"\n").unwrap_or(&line);
-            if text.len() > MAX_RECORD_BYTES {
-                // The rest of the line has not been read, so no later line
-                // can be found.
-                lines.push(Err(Lined::new(
-                    number,
-                    Code::JsonTooLarge,
-                    format!("the line is over {MAX_RECORD_BYTES} bytes"),
-                    Fields::default(),
-                )));
-                break;
-            }
-            if text.iter().all(u8::is_ascii_whitespace) {
-                continue;
-            }
-            lines.push(match Self::parse_line(text) {
-                Ok(parsed) => Ok((number, parsed)),
-                Err(error) => Err(Lined::new(number, error.code(), &error, error.fields())),
-            });
-        }
-        Ok(lines)
-    }
-
-    /// Checks every line of a batch under `lock` against the one snapshot
-    /// `view`, and returns each prepared record with its line number, or
-    /// every refusal.
-    pub(crate) fn check_lines(
-        &self,
-        lock: &Lock,
-        view: &mut Resolver<'_, '_>,
-        lines: Vec<ReadLine>,
-        schemas: &mut Schemas,
-    ) -> Result<(Vec<Prepared>, Vec<usize>), PutError> {
-        let mut prepared: Vec<Prepared> = Vec::new();
-        let mut numbers: Vec<usize> = Vec::new();
-        let mut refusals: Vec<Lined> = Vec::new();
-        // Each target folded as the walk folds names, so two lines that a
-        // case-insensitive file system would make one file clash.
-        let mut folded: HashMap<String, usize> = HashMap::new();
-        for parsed in lines {
-            let checked = match parsed {
-                Ok((
-                    number,
-                    Line {
-                        path,
-                        expect,
-                        content,
-                    },
-                )) => match content {
-                    Content::Record(bytes) => {
-                        self.prepare(lock, view, schemas, &path, expect, &bytes)
-                    }
-                    Content::File(bytes) => Self::prepare_file(lock, view, &path, expect, &bytes),
-                }
-                .map(|item| (number, item))
-                .map_err(|error| Lined::new(number, error.code(), &error, error.fields())),
-                Err(refused) => Err(refused),
-            };
-            let (number, item) = match checked {
-                Ok(checked) => checked,
-                Err(refused) => {
-                    refusals.push(refused);
-                    continue;
-                }
-            };
-            match folded.entry(item.target.path.to_ascii_lowercase()) {
-                Entry::Occupied(first) => {
-                    let first = *first.get();
-                    let earlier = &prepared[first].target.path;
-                    let (code, message) = if *earlier == item.target.path {
-                        (Code::PutInvalid, "as")
-                    } else {
-                        (Code::PathCaseCollision, "differing only in case from")
-                    };
-                    let message = format!(
-                        "it writes {} {message} line {} writes {earlier}",
-                        item.target.path, numbers[first]
-                    );
-                    refusals.push(Lined::new(number, code, message, Fields::at(&item.path)));
-                }
-                Entry::Vacant(entry) => {
-                    entry.insert(prepared.len());
-                }
-            }
-            prepared.push(item);
-            numbers.push(number);
-        }
-        if refusals.is_empty() {
-            Ok((prepared, numbers))
-        } else {
-            Err(PutError::Batch {
-                code: Code::PutInvalid,
-                refusals,
-            })
-        }
-    }
-
-    /// Reads one batch line.
-    fn parse_line(line: &[u8]) -> Result<Line, PutError> {
-        let invalid = |reason: String| PutError::Line {
-            code: Code::PutInvalid,
-            reason: format!(
-                "the line is not {{path, expect, record}} or {{path, expect, text}}: {reason}"
-            ),
-        };
-        let value = parse_json(line).map_err(|error| PutError::Line {
-            code: error.code(),
-            reason: error.to_string(),
-        })?;
-        let raw: RawLine =
-            serde_json::from_value(value).map_err(|error| invalid(error.to_string()))?;
-        let path: LogicalPath = raw
-            .path
-            .parse()
-            .map_err(|_| invalid(format!("{:?} is not a logical path", raw.path)))?;
-        let expect = match raw.expect.as_deref() {
-            None => Expect::Any,
-            Some("none") => Expect::Absent,
-            Some(hex) => ObjectId::from_hex(hex)
-                .map(Expect::Blob)
-                .ok_or_else(|| invalid(format!("expect {hex:?} is not `none` or a blob id")))?,
-        };
-        let content = match (raw.record, raw.text) {
-            (Some(record), None) => Content::Record(
-                serde_json::to_vec(&record).map_err(|error| invalid(error.to_string()))?,
-            ),
-            (None, Some(text)) => Content::File(text.into_bytes()),
-            (Some(_), Some(_)) => return Err(invalid("it holds both record and text".to_owned())),
-            (None, None) => return Err(invalid("it holds neither record nor text".to_owned())),
-        };
-        Ok(Line {
-            path,
-            expect,
-            content,
-        })
     }
 
     /// Checks one record and finds where it lands in `view`, under the lock
@@ -625,15 +391,6 @@ impl Refused {
     }
 }
 
-/// What a batch's commit message counts: its records, its files, or both.
-fn counted(records: usize, files: usize) -> String {
-    match (records, files) {
-        (_, 0) => format!("{records} records"),
-        (0, _) => format!("{files} files"),
-        _ => format!("{records} records, {files} files"),
-    }
-}
-
 /// Why `write_all` wrote nothing: stale expects, by their index among the
 /// prepared records, or any other error.
 #[derive(Debug)]
@@ -691,6 +448,9 @@ pub enum PutError {
     Write(#[from] WriteError),
     #[error(transparent)]
     Mount(#[from] PinError),
+    /// A schema line of a batch refused as `type add` refuses it.
+    #[error(transparent)]
+    Type(Box<TypeError>),
 }
 
 impl PutError {
@@ -706,6 +466,7 @@ impl PutError {
             Self::Upload { .. } => Code::PutFailed,
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
+            Self::Type(error) => error.code(),
         }
     }
 
@@ -729,6 +490,7 @@ impl PutError {
             Self::TooLarge { path, .. } | Self::Upload { path, .. } => Fields::at(path),
             Self::Write(error) => error.fields(),
             Self::Mount(error) => error.fields(),
+            Self::Type(error) => error.fields(),
             Self::HeadMoved { .. }
             | Self::Line { .. }
             | Self::TooManyLines
@@ -741,8 +503,13 @@ impl PutError {
     }
 }
 
+mod batch;
 mod file;
 mod through;
+
+pub use batch::MAX_BATCH_LINES;
+pub(crate) use batch::{Checked, ReadLine};
+use through::{Crossing, Sent};
 
 #[cfg(test)]
 mod tests;

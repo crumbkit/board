@@ -217,8 +217,8 @@ tables and views, how a refresh decides what to redo, and `board query` and
 1. takes `board.lock` in the worktree's git directory, trying every 20
    milliseconds for 5 seconds, or for as long as `--wait` says (`500ms`,
    `30s`, `2m`, `1h`), and then refusing with `board::put::locked`. That wait
-   is the whole retry rule: a put retries the lock itself, so concurrent puts
-   each land in their own commit without the caller retrying. The steps below
+   is the only retry: concurrent puts each land in their own commit without
+   the caller retrying. The steps below
    run under the lock, so a record is checked against the board it is written
    to, and other writers wait while it is checked;
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
@@ -255,8 +255,11 @@ says.
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
 record}` or `{path, expect, text}`, where `text` is written as a file, then
 takes the lock with the same wait; when no line parses, it is refused without the lock. A line
-holding both `record` and `text`, or neither, is `board::put::invalid`. Every line is checked against one snapshot of the working tree, which
-lists each directory once, and every expect is compared before any write; two
+holding both `record` and `text`, or neither, is `board::put::invalid`. A
+record line at a schema's path, such as `/.board/types/lr/note/v1.schema`,
+takes no expect and is checked first, as `type add` checks it; an equal schema
+is committed if HEAD lacks it. Every line is checked against one snapshot of
+the working tree, and every expect is compared before any write; two
 lines resolving to one file, one invalid line or one stale expect refuse the
 whole batch, listing each failing line with its code, as
 [architecture/errors.md](architecture/errors.md) describes. Writes go in input
@@ -283,11 +286,9 @@ committed if HEAD lacks it. A different one is `board::schema::differs`,
 because a changed type is a new version, and one that is not JSON is refused
 with its `json` code. The report is `board/put-report/v2`.
 
-A put of one record through a mount writes it in the mounted repository and
-moves the pin, as [architecture/writes.md](architecture/writes.md) says. It
-also says how `board sync` fetches the branch this board follows, replays the
-commits only this clone has onto it, pushes, and moves HEAD to the result,
-running the `git` executable for the fetch and the push.
+[architecture/writes.md](architecture/writes.md) says how a put of one record
+or a batch writes through a mount and moves the pin, and how `board sync`
+replays this clone's commits onto the branch it follows.
 
 ## Commands
 

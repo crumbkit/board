@@ -1,151 +1,223 @@
 //! A put through one mount: an ordinary put in the mounted board, then the
 //! mount's pin moved to the commit it made (docs/architecture/writes.md).
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use board_model::{BINARY_NAME, Location, LogicalPath, Object, ObjectId, Source, repinned};
 use board_tree::{Inside, Lock, PinError, Through, WriteError};
 
+use super::batch::{message, refused_lines, shown_as};
+use super::{Checked, Expect, Failure, Prepared, PutError, PutReport, ReadLine, Schemas, Written};
 use crate::board::Board;
-use crate::put::{Expect, Failure, Prepared, PutError, PutReport, Schemas, Written};
+
+/// A line that leads through a mount: its number, its path from the root,
+/// the mount it passes and where it lands in the mounted board.
+pub(crate) struct Crossing {
+    pub(crate) number: usize,
+    pub(crate) path: LogicalPath,
+    pub(crate) mount: LogicalPath,
+    pub(crate) inside: Inside,
+}
+
+/// What a put through a mount writes: one record, or the lines of a batch
+/// as the mounted board reads them.
+pub(crate) enum Sent<'a> {
+    Record(Expect, &'a [u8]),
+    Batch(Vec<ReadLine>),
+}
+
+/// What the mounted board wrote: each item with the line it came from and
+/// the blob at the pin, the commit they are in and the commit message.
+struct Mounted<'a> {
+    prepared: Vec<Prepared>,
+    crossed: Vec<&'a Crossing>,
+    pinned: Vec<Option<ObjectId>>,
+    commit: ObjectId,
+    message: String,
+}
 
 impl Board {
-    /// Puts `bytes` at `path`, which leads through the mount at `mount` to
-    /// `inside`, holding this board's `lock`, and waiting up to `wait` for
-    /// the mounted board's. `expect` is compared with the pinned blob.
+    /// Puts what `sent` holds through the mount every one of `crossings`
+    /// passes, holding this board's `lock`, and waiting up to `wait` for
+    /// the mounted board's. Each expect is compared with the pinned blob.
     pub(super) fn put_through(
         &self,
         lock: Lock,
-        path: &LogicalPath,
-        (mount, inside): (&LogicalPath, &Inside),
-        expect: Expect,
-        bytes: &[u8],
+        crossings: &[Crossing],
+        sent: Sent<'_>,
         wait: Duration,
     ) -> Result<PutReport, PutError> {
+        let first = &crossings[0];
+        let (mount, inside) = (&first.mount, &first.inside);
         if inside.repository == self.repository().path() {
-            return Err(refused(path, mount, Through::Own));
+            return Err(refused(&first.path, mount, Through::Own));
         }
         let home = self.repositories().home().map(Into::into);
         let mounted = match Board::open(&inside.repository, home) {
             Ok(mounted) if mounted.repository().path() == inside.repository => mounted,
-            _ => return Err(refused(path, mount, Through::NotABoard)),
+            _ => return Err(refused(&first.path, mount, Through::NotABoard)),
         };
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;
-        let (prepared, pinned, new) =
-            mounted.put_mounted(path, (mount, inside), &pin.follow, expect, bytes, wait)?;
+        let root = match sent {
+            Sent::Record(..) => Some(format!("{BINARY_NAME} put {}", first.path)),
+            Sent::Batch(_) => None,
+        };
+        let written = mounted.put_mounted(crossings, &pin.follow, sent, wait)?;
+        let new = written.commit;
         // Repinned even when the pointer already names `new`, so a pin moved
         // by a put killed before the root committed it is committed now.
         let canonical = repinned(&pin.canonical, new).map_err(|error| PinError::Mount {
             path: mount.clone(),
             code: error.code(),
         })?;
-        let message = format!("{BINARY_NAME} put {path}");
+        let message = root.unwrap_or(written.message);
         let commit = self
             .repin(lock, mount, pin.target, pin.blob, &canonical, &message)?
             .commit;
-        let blob = mounted.repository().blob_id(&prepared.canonical);
-        let location = self.repositories().snapshot().ok();
-        let location = location.and_then(|mut view| view.resolve(path).ok());
-        let location = location.unwrap_or_else(|| Location {
-            board: board_model::Board {
-                repository: inside.repository.clone(),
-                source: Source::Commit(new),
-            },
-            path: inside.file.clone(),
-            object: Object::Blob(blob),
-            pointers: Vec::new(),
-        });
-        // References in the record are read in the mounted commit the root
+        let mut view = self.repositories().snapshot().ok();
+        // References in each record are read in the mounted commit the root
         // now pins.
         let repositories = mounted.repositories();
         let resolve =
             &mut |path: &LogicalPath| repositories.resolve_in(repositories.root(), new, path);
-        let degraded = mounted.degraded(resolve, &prepared, &inside.path);
-        Ok(PutReport {
-            writes: vec![Written {
-                display: location.display_path().unwrap_or_else(|| path.clone()),
+        let mut writes = Vec::with_capacity(written.prepared.len());
+        let items = written.prepared.iter().zip(written.crossed);
+        for ((item, crossing), previous) in items.zip(written.pinned) {
+            let blob = mounted.repository().blob_id(&item.canonical);
+            let location = view
+                .as_mut()
+                .and_then(|view| view.resolve(&crossing.path).ok());
+            let location = location.unwrap_or_else(|| Location {
+                board: board_model::Board {
+                    repository: inside.repository.clone(),
+                    source: Source::Commit(new),
+                },
+                path: crossing.inside.file.clone(),
+                object: Object::Blob(blob),
+                pointers: Vec::new(),
+            });
+            writes.push(Written {
+                display: location
+                    .display_path()
+                    .unwrap_or_else(|| crossing.path.clone()),
                 location,
-                previous: pinned,
+                previous,
                 blob,
-                degraded,
-            }],
-            commit,
-        })
+                degraded: mounted.degraded(resolve, item, &crossing.inside.path),
+            });
+        }
+        Ok(PutReport { writes, commit })
     }
 
-    /// In this board, mounted at `mount`, puts `bytes` at `inside` under its
-    /// own lock: when HEAD is on the branch `follow` names and descends from
-    /// the pin, and the record file is the same at the pin and at HEAD, and
-    /// in the working tree unless it already holds the record. Returns what
-    /// it put, the pinned blob and the commit the record is in.
-    fn put_mounted(
+    /// In this board, mounted where `crossings` lead, puts what `sent`
+    /// holds under its own lock: when HEAD is on the branch `follow` names
+    /// and descends from the pin, and each file is the same at the pin and
+    /// at HEAD, and in the working tree unless it already holds what is put.
+    fn put_mounted<'a>(
         &self,
-        path: &LogicalPath,
-        (mount, inside): (&LogicalPath, &Inside),
+        crossings: &'a [Crossing],
         follow: &str,
-        expect: Expect,
-        bytes: &[u8],
+        sent: Sent<'_>,
         wait: Duration,
-    ) -> Result<(Prepared, Option<ObjectId>, ObjectId), PutError> {
-        let refuse = |why| refused(path, mount, why);
+    ) -> Result<Mounted<'a>, PutError> {
+        let first = &crossings[0];
+        let refuse = |path: &LogicalPath, why| refused(path, &first.mount, why);
         if !self.config().commit_on_put {
-            return Err(refuse(Through::Uncommitted));
+            return Err(refuse(&first.path, Through::Uncommitted));
         }
         let lock = self.repository().lock(wait)?;
         let head = self
             .repository()
-            .writable_head(follow, inside.commit)
+            .writable_head(follow, first.inside.commit)
             .map_err(WriteError::from)?
-            .map_err(refuse)?;
+            .map_err(|why| refuse(&first.path, why))?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let schemas = &mut Schemas::default();
-        let prepared = self
-            .prepare(&lock, &mut view, schemas, &inside.path, Expect::Any, bytes)
-            .map_err(|error| match error {
-                PutError::Write(WriteError::ThroughMount { .. }) => refuse(Through::Nested),
-                PutError::Record { refused, .. } => PutError::Record {
-                    path: path.clone(),
-                    refused,
-                },
-                error => error,
-            })?;
-        let [pinned, at_head, working] = self
-            .repository()
-            .held(inside.commit, head, &inside.file)
-            .map_err(WriteError::from)?;
-        let found = match expect {
-            Expect::Any => true,
-            Expect::Absent => pinned.is_none(),
-            Expect::Blob(blob) => pinned == Some(blob),
+        let batch = matches!(sent, Sent::Batch(_));
+        let (message, mut prepared, crossed) = match sent {
+            Sent::Record(expect, bytes) => {
+                let schemas = &mut Schemas::default();
+                let item = self
+                    .prepare(&lock, &mut view, schemas, &first.inside.path, expect, bytes)
+                    .map_err(|error| match error {
+                        PutError::Write(WriteError::ThroughMount { .. }) => {
+                            refuse(&first.path, Through::Nested)
+                        }
+                        error => shown_as(error, &first.path),
+                    })?;
+                let message = format!("{BINARY_NAME} put {}", first.inside.path);
+                (message, vec![item], vec![first])
+            }
+            Sent::Batch(lines) => {
+                match self.check_lines(&lock, &mut view, lines, &mut Schemas::default())? {
+                    Checked::Here(prepared, numbers) => {
+                        let by_number: HashMap<usize, &Crossing> = crossings
+                            .iter()
+                            .map(|crossing| (crossing.number, crossing))
+                            .collect();
+                        let crossed = numbers.iter().map(|number| by_number[number]).collect();
+                        (message(&prepared), prepared, crossed)
+                    }
+                    Checked::Through(..) => return Err(refuse(&first.path, Through::Nested)),
+                }
+            }
         };
-        if !found {
-            return Err(PutError::Stale {
-                path: path.clone(),
-                found: pinned,
+        let (mut pinned, mut failures, mut committed) = (Vec::new(), Vec::new(), true);
+        for (item, crossing) in prepared.iter_mut().zip(&crossed) {
+            let (number, path, inside) = (crossing.number, &crossing.path, &crossing.inside);
+            let [at_pin, at_head, working] = self
+                .repository()
+                .held(inside.commit, head, &inside.file)
+                .map_err(WriteError::from)?;
+            let found = match std::mem::replace(&mut item.expect, Expect::Any) {
+                Expect::Any => true,
+                Expect::Absent => at_pin.is_none(),
+                Expect::Blob(blob) => at_pin == Some(blob),
+            };
+            let blob = Some(self.repository().blob_id(&item.canonical));
+            // A put killed after its mounted commit left only the pin to move.
+            let done = at_head == blob && working == blob;
+            let unchanged = at_pin == at_head && (working == at_head || working == blob);
+            if !found {
+                let found = at_pin;
+                failures.push((
+                    number,
+                    PutError::Stale {
+                        path: path.clone(),
+                        found,
+                    },
+                ));
+            // A link in the working tree may lead elsewhere than at the pin.
+            } else if item.target.path != inside.file || !(done || unchanged) {
+                let file = inside.file.clone();
+                failures.push((number, refuse(path, Through::Moved { file })));
+            }
+            committed &= done;
+            pinned.push(at_pin);
+        }
+        if !failures.is_empty() {
+            return Err(if batch {
+                refused_lines(&failures)
+            } else {
+                failures.remove(0).1
             });
         }
-        let blob = Some(self.repository().blob_id(&prepared.canonical));
-        // A put killed after its mounted commit left only the pin to move.
-        let committed = at_head == blob && working == blob;
-        let unchanged = pinned == at_head && (working == at_head || working == blob);
-        // A link in the working tree may lead elsewhere than at the pin.
-        if prepared.target.path != inside.file || !(committed || unchanged) {
-            return Err(refuse(Through::Moved {
-                file: inside.file.clone(),
-            }));
-        }
-        if committed {
-            return Ok((prepared, pinned, head));
-        }
-        let message = format!("{BINARY_NAME} put {}", inside.path);
-        let written = self
-            .write_all(lock, std::slice::from_ref(&prepared), &message)
-            .map_err(|failure| match failure {
-                Failure::Stale(mut stale) => stale.remove(0).1,
-                Failure::Error(error) => error,
-            })?;
-        Ok((prepared, pinned, written.commit.unwrap_or(head)))
+        let commit = if committed {
+            head
+        } else {
+            self.write_all(lock, &prepared, &message)
+                .map_err(Failure::one)?
+                .commit
+                .unwrap_or(head)
+        };
+        Ok(Mounted {
+            prepared,
+            crossed,
+            pinned,
+            commit,
+            message,
+        })
     }
 }
 

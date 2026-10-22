@@ -41,9 +41,8 @@ paged reports and control status.
 These sketches are not built. Their full text is in PLAN.md at commit 226829b
 on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 
-- **M8 Sharing.** `put --batch` writes through mounts; a put of one record
-  through a local mount and `board sync` of the root board are built
-  (docs/architecture/writes.md). The owner decided that transport runs
+- **M8 Sharing.** A put of one record or a batch through a local mount and
+  `board sync` of the root board are built (docs/architecture/writes.md). The owner decided that transport runs
   the `git` executable, that remote mounts change `board/mount/v1` in place,
   that Board fetches only remotes the root board names, and that Board detects
   a colocated jj repository automatically with no setting. After M7, turn the

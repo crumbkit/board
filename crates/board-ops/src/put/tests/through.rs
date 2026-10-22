@@ -11,7 +11,7 @@ use board_tree::LOCK_WAIT;
 use super::{board, canonical, file, path, put};
 use crate::Board;
 use crate::extraction::Plugins;
-use crate::put::{Expect, PutReport};
+use crate::put::{Expect, PutError, PutReport};
 
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, open, task};
 
@@ -382,15 +382,390 @@ fn a_write_through_two_mounts_is_refused_and_one_through_a_link_to_one_mount_is_
     );
 }
 
+/// A batch line at `path` holding `field`, which is `record` or `text`.
+fn batch_line(path: &str, field: &str, value: &str) -> String {
+    format!(r#"{{"path": "{path}", "{field}": {value}}}"#) + "\n"
+}
+
+/// A batch through `/vendor`: a schema, a record of its type that refers to
+/// a file, and the file.
+fn shared() -> String {
+    batch_line(
+        "/vendor/notes/a",
+        "record",
+        r#"{"$type": "lr/note/v1", "see": "/notes/a.md"}"#,
+    ) + &batch_line("/vendor/notes/a.md", "text", "\"# A\\n\"")
+        + &batch_line(
+            "/vendor/.board/types/lr/note/v1.schema",
+            "record",
+            r#"{"type": "object"}"#,
+        )
+}
+
+fn put_batch(scenario: &Scenario, input: &str) -> Result<PutReport, PutError> {
+    open(scenario).put_batch(&mut input.as_bytes())
+}
+
 #[test]
-fn a_batch_through_a_mount_is_refused_and_the_same_record_put_alone_is_admitted() {
+fn a_batch_of_a_schema_records_and_files_through_a_mount_commits_once_there_and_moves_the_pin() {
     let (library, commit) = library();
     let scenario = mounting(&library, commit);
-    let line = format!(r#"{{"path": "/vendor/tasks/a", "record": {}}}"#, task(""));
-    let refused = open(&scenario).put_batch(&mut line.as_bytes()).unwrap_err();
-    assert_eq!(refused.code(), Code::PutInvalid);
-    assert_eq!(refused.fields().refusals[0].code, Code::PutThroughMount);
-    assert!(put(&scenario, "/vendor/tasks/a", Expect::Any, &task("")).is_ok());
+    let report = put_batch(&scenario, &shared()).unwrap();
+    let head = library.head().unwrap();
+    assert_eq!(head.message, "board put --batch (2 records, 1 files)");
+    assert_eq!(head.parents, [commit]);
+    assert_eq!(
+        head.files[".board/types/lr/note/v1.schema.json"],
+        canonical(r#"{"type": "object"}"#)
+    );
+    assert_eq!(head.files["notes/a.md"], b"# A\n");
+    assert!(head.files.contains_key("notes/a.json"));
+    assert_eq!(pinned(&scenario), head.id.to_string());
+    let displays: Vec<String> = report
+        .writes
+        .iter()
+        .map(|w| w.display.to_string())
+        .collect();
+    assert_eq!(
+        displays,
+        [
+            "/vendor/notes/a",
+            "/vendor/notes/a.md",
+            "/vendor/.board/types/lr/note/v1.schema"
+        ]
+    );
+    assert!(
+        report
+            .writes
+            .iter()
+            .all(|w| w.location.board.source == Source::Commit(head.id))
+    );
+    assert_eq!(report.commit, None);
+    assert_clean(&library);
+    assert!(!open(&scenario).check(None, None).unwrap().degraded());
+    // Again, with everything in place, nothing is written and the pin stays.
+    put_batch(&scenario, &shared()).unwrap();
+    assert_eq!(library.head().unwrap().id, head.id);
+    assert_eq!(pinned(&scenario), head.id.to_string());
+}
+
+#[test]
+fn after_a_kill_left_a_batch_uncommitted_in_the_mounted_board_the_same_batch_commits_its_schema_too()
+ {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let schema = canonical(r#"{"type": "object"}"#);
+    let note = canonical(r#"{"$type": "lr/note/v1", "see": "/notes/a.md"}"#);
+    // The kill came after the files were written and before the commit.
+    let written: [(&str, &[u8]); 3] = [
+        (".board/types/lr/note/v1.schema.json", &schema),
+        ("notes/a.json", &note),
+        ("notes/a.md", b"# A\n"),
+    ];
+    for (at, bytes) in written {
+        library.write(at, Item::File(std::str::from_utf8(bytes).unwrap()));
+    }
+    put_batch(&scenario, &shared()).unwrap();
+    let head = library.head().unwrap();
+    assert_eq!(head.parents, [commit]);
+    assert_eq!(head.files[".board/types/lr/note/v1.schema.json"], schema);
+    assert_eq!(head.files["notes/a.json"], note);
+    assert_eq!(pinned(&scenario), head.id.to_string());
+    assert_clean(&library);
+}
+
+#[test]
+fn a_batch_through_a_mount_off_its_branch_or_not_committing_is_refused_writing_nothing_and_its_twin_is_admitted()
+ {
+    let (library, first) = library();
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    let commit = commit_in(&library, &[("projects/q.json", project)]);
+    let scenario = mounting(&library, commit);
+    let at_commit = format!("{commit}\n");
+    library
+        .write(".git/refs/heads/other", Item::File(&at_commit))
+        .write(".git/refs/remotes/origin/main", Item::File(&at_commit));
+    let mount = mount_of(&library.path(), commit);
+    let cases = [
+        (
+            &library,
+            ".git/HEAD",
+            "ref: refs/heads/other\n".to_owned(),
+            "ref: refs/heads/main\n".to_owned(),
+            Code::PutThroughMount,
+            "whose HEAD is on refs/heads/other, not on refs/heads/main".to_owned(),
+        ),
+        (
+            &library,
+            ".board/board.json",
+            r#"{"$type": "board/config/v1", "commit_on_put": false}"#.to_owned(),
+            r#"{"$type": "board/config/v1"}"#.to_owned(),
+            Code::PutThroughMount,
+            "whose board sets commit_on_put to false".to_owned(),
+        ),
+        (
+            &scenario,
+            "vendor.json",
+            mount.replace(r#""main""#, r#""origin/main""#),
+            mount.clone(),
+            Code::PutThroughMount,
+            "whose follow origin/main is not a local branch".to_owned(),
+        ),
+        (
+            &library,
+            ".git/refs/heads/main",
+            format!("{first}\n"),
+            at_commit.clone(),
+            Code::MountNotAncestor,
+            format!("whose HEAD {first} does not descend from the mount's commit {commit}"),
+        ),
+    ];
+    for (board, at, text, twin, code, why) in cases {
+        board.write(at, Item::File(&text));
+        let head = library.head().unwrap().id;
+        let refused = put_batch(&scenario, &shared()).unwrap_err();
+        assert_eq!(refused.code(), code, "{why}");
+        assert_eq!(refused.fields(), Fields::at(&path("/vendor")));
+        assert!(refused.to_string().ends_with(&why), "{refused}");
+        assert_eq!(library.head().unwrap().id, head);
+        assert!(!library.workdir().join("notes").exists());
+        assert_eq!(pinned(&scenario), commit.to_string());
+        board.write(at, Item::File(&twin));
+    }
+    put_batch(&scenario, &shared()).unwrap();
+    assert_eq!(library.head().unwrap().parents, [commit]);
+}
+
+#[test]
+fn a_batch_the_mounted_board_refuses_names_the_callers_paths_and_leaves_both_boards_and_its_twin_is_admitted()
+ {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let unknown = batch_line("/vendor/tasks/x", "record", r#"{"$type": "lr/missing/v1"}"#);
+    let expect =
+        r#"{"path": "/vendor/.board/types/lr/other/v1.schema", "expect": "none", "record": {}}"#;
+    let input = shared() + &unknown + expect + "\n";
+    let PutError::Batch { refusals, .. } = put_batch(&scenario, &input).unwrap_err() else {
+        panic!("not a batch refusal");
+    };
+    let lines: Vec<_> = refusals.iter().map(|r| (r.line, r.code)).collect();
+    assert_eq!(lines, [(4, Code::RecordUnknownType), (5, Code::PutInvalid)]);
+    assert_eq!(refusals[0].fields.path, Some(path("/vendor/tasks/x")));
+    assert!(
+        refusals[1]
+            .message
+            .starts_with("/vendor/.board/types/lr/other/v1.schema is a schema"),
+        "{}",
+        refusals[1].message
+    );
+    assert_eq!(library.head().unwrap().id, commit);
+    assert_clean(&library);
+    assert!(!library.workdir().join("notes").exists());
+    assert_eq!(pinned(&scenario), commit.to_string());
+    assert!(scenario.head().is_none());
+    put_batch(&scenario, &shared()).unwrap();
+    assert_eq!(library.head().unwrap().parents, [commit]);
+}
+
+/// A batch line that writes the task schema `library()` holds.
+fn task_schema_line() -> String {
+    let schema: serde_json::Value = serde_json::from_str(TASK_SCHEMA).unwrap();
+    batch_line(
+        "/vendor/.board/types/lr/task/v1.schema",
+        "record",
+        &schema.to_string(),
+    )
+}
+
+/// The refusals of a batch, as (line, code, path field, message).
+fn refusals(result: Result<PutReport, PutError>) -> Vec<(usize, Code, Option<String>, String)> {
+    let PutError::Batch { refusals, .. } = result.unwrap_err() else {
+        panic!("not a batch refusal");
+    };
+    let refusals = refusals.into_iter();
+    refusals
+        .map(|r| {
+            (
+                r.line,
+                r.code,
+                r.fields.path.map(|p| p.to_string()),
+                r.message,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn two_batch_lines_through_a_mount_writing_one_file_name_the_callers_paths_and_two_files_are_admitted()
+ {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let a = batch_line("/vendor/tasks/a", "record", &task(""));
+    let upper = batch_line("/vendor/tasks/A", "record", &task(""));
+    let b = batch_line("/vendor/tasks/b", "record", &task(""));
+    for (second, code, shown, message) in [
+        (
+            &a,
+            Code::PutInvalid,
+            "/vendor/tasks/a",
+            "it writes /vendor/tasks/a, the same file as line 1's /vendor/tasks/a",
+        ),
+        (
+            &upper,
+            Code::PathCaseCollision,
+            "/vendor/tasks/A",
+            "it writes /vendor/tasks/A, differing only in case from line 1's /vendor/tasks/a",
+        ),
+    ] {
+        assert_eq!(
+            refusals(put_batch(&scenario, &(a.clone() + second))),
+            [(2, code, Some(shown.to_owned()), message.to_owned())]
+        );
+        assert_eq!(library.head().unwrap().id, commit);
+    }
+    put_batch(&scenario, &(a + &b)).unwrap();
+    assert_eq!(library.head().unwrap().parents, [commit]);
+}
+
+#[test]
+fn a_batch_line_or_put_that_differs_in_case_from_a_mounted_file_names_the_callers_path_and_its_twin_is_admitted()
+ {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    let upper = batch_line("/vendor/projects/P", "record", project);
+    let [(line, code, path, _)] = &refusals(put_batch(&scenario, &upper))[..] else {
+        panic!("not one refusal");
+    };
+    assert_eq!((*line, *code), (1, Code::PathCaseCollision));
+    assert_eq!(path.as_deref(), Some("/vendor/projects/P"));
+    let at = self::path("/vendor/projects/P");
+    let single = open(&scenario).put(&at, Expect::Any, project.as_bytes());
+    let single = single.unwrap_err();
+    assert_eq!(
+        (single.code(), single.fields().path),
+        (Code::PathCaseCollision, Some(at))
+    );
+    assert_eq!(library.head().unwrap().id, commit);
+    put_batch(
+        &scenario,
+        &batch_line("/vendor/projects/p", "record", project),
+    )
+    .unwrap();
+    put(&scenario, "/vendor/projects/p", Expect::Any, project).unwrap();
+}
+
+#[test]
+fn a_schema_line_whose_schema_the_mounted_working_tree_deleted_is_mount_stale_and_restored_is_admitted()
+ {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let at = ".board/types/lr/task/v1.schema.json";
+    library.write(at, Item::Deleted);
+    let schema = task_schema_line();
+    let [(line, code, _, _)] = &refusals(put_batch(&scenario, &schema))[..] else {
+        panic!("not one refusal");
+    };
+    assert_eq!((*line, *code), (1, Code::MountStale));
+    assert_eq!(library.head().unwrap().id, commit);
+    library.write(at, Item::File(TASK_SCHEMA));
+    put_batch(&scenario, &schema).unwrap();
+}
+
+#[test]
+fn a_batch_of_a_schema_the_mounted_board_holds_moves_the_pin_to_a_head_ahead_of_it() {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    let ahead = commit_in(&library, &[("projects/q.json", project)]);
+    let schema = task_schema_line();
+    let report = put_batch(&scenario, &schema).unwrap();
+    assert_eq!(library.head().unwrap().id, ahead);
+    assert_eq!(pinned(&scenario), ahead.to_string());
+    assert_eq!(report.writes.len(), 1);
+    assert_eq!(report.writes[0].previous, Some(report.writes[0].blob));
+}
+
+#[test]
+fn a_batch_that_writes_in_two_boards_is_refused_and_each_board_alone_is_admitted() {
+    let (library, commit) = library();
+    let scenario = mounting(&library, commit);
+    let (other, other_commit) = self::library();
+    scenario.write(
+        "other.json",
+        Item::File(&mount_of(&other.path(), other_commit)),
+    );
+    let here = batch_line("/tasks/a", "record", &task(""));
+    let vendor = batch_line("/vendor/tasks/a", "record", &task(""));
+    let elsewhere = batch_line("/other/tasks/a", "record", &task(""));
+    for (input, line, message) in [
+        (
+            here.clone() + &vendor,
+            2,
+            "it writes in the board mounted at /vendor, and line 1 writes in this board; a batch writes in one board",
+        ),
+        // A schema line is checked first, and line 1 is still the one compared.
+        (
+            vendor.clone() + &batch_line("/.board/types/lr/note/v1.schema", "record", "{}"),
+            2,
+            "it writes in this board, and line 1 writes in the board mounted at /vendor; a batch writes in one board",
+        ),
+        (
+            vendor.clone() + &elsewhere,
+            2,
+            "it writes in the board mounted at /other, and line 1 writes in the board mounted at /vendor; a batch writes in one board",
+        ),
+    ] {
+        let PutError::Batch { refusals, .. } = put_batch(&scenario, &input).unwrap_err() else {
+            panic!("not a batch refusal");
+        };
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(
+            (refusals[0].line, refusals[0].code),
+            (line, Code::PutThroughMount)
+        );
+        assert_eq!(refusals[0].message, message);
+        assert!(file(&scenario, "tasks/a.json").is_none());
+        assert_eq!(library.head().unwrap().id, commit);
+    }
+    put_batch(&scenario, &here).unwrap();
+    put_batch(&scenario, &vendor).unwrap();
+    assert!(library.head().unwrap().files.contains_key("tasks/a.json"));
+}
+
+#[test]
+fn a_batch_line_changed_since_the_pin_or_stale_refuses_the_batch_and_its_twin_is_admitted() {
+    let (library, _) = library();
+    let first = commit_in(&library, &[("tasks/a.json", &task(""))]);
+    let scenario = mounting(&library, first);
+    let blob = library.blob(&task(""));
+    let b = batch_line("/vendor/tasks/b", "record", &task(""));
+    let stale = format!(
+        r#"{{"path": "/vendor/tasks/a", "expect": "none", "record": {}}}"#,
+        task("")
+    ) + "\n";
+    let PutError::Batch { code, refusals } =
+        put_batch(&scenario, &(b.clone() + &stale)).unwrap_err()
+    else {
+        panic!("not a batch refusal");
+    };
+    assert_eq!(code, Code::PutStale);
+    assert_eq!((refusals[0].line, refusals[0].code), (2, Code::PutStale));
+    assert_eq!(refusals[0].fields.blob, Some(blob));
+    assert_eq!(refusals[0].fields.path, Some(path("/vendor/tasks/a")));
+    library.write("tasks/a.json", Item::File(&task(r#", "see": "/x""#)));
+    let changed = batch_line("/vendor/tasks/a", "record", &task(""));
+    let PutError::Batch { code, refusals } =
+        put_batch(&scenario, &(b.clone() + &changed)).unwrap_err()
+    else {
+        panic!("not a batch refusal");
+    };
+    assert_eq!(code, Code::PutInvalid);
+    assert_eq!((refusals[0].line, refusals[0].code), (2, Code::MountStale));
+    assert_eq!(library.head().unwrap().id, first);
+    library.write("tasks/a.json", Item::File(&task("")));
+    put_batch(&scenario, &(b + &changed)).unwrap();
+    assert_eq!(library.head().unwrap().parents, [first]);
 }
 
 #[test]

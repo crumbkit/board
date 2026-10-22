@@ -1076,7 +1076,7 @@ fn a_batch_refused_for_several_reasons_prints_each_line_as_golden_text_and_its_f
          \x20 help:  fix each line listed, then send the whole batch again; nothing was written\n\
          \x20 code:  board::put::invalid\n\
          \x20 line 2: board::json::parse: json does not parse: EOF while parsing an object at line 1 column 1\n\
-         \x20 line 3: board::put::invalid: it writes tasks/a.json as line 1 writes tasks/a.json\n\
+         \x20 line 3: board::put::invalid: it writes /tasks/a, the same file as line 1's /tasks/a\n\
          \x20 line 4: board::record::unknown_type: the record for /tasks/c is refused: \
          no schema for lr/nope/v1 at .board/types/lr/nope/v1.schema.json\n"
     );

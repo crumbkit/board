@@ -20,6 +20,33 @@ impl Board {
     /// schema already there is left as it is, and committed if it was not;
     /// a different one is refused, since a changed type is a new version.
     pub fn type_add(&self, record_type: &RecordType, bytes: &[u8]) -> Result<PutReport, TypeError> {
+        let lock = self.repository().lock(LOCK_WAIT)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
+        let (mut prepared, _, held) = self.prepare_type(&lock, &mut view, record_type, bytes)?;
+        // An equal schema is written again as it is, in its own layout,
+        // which commits it if HEAD lacks it, and is no write.
+        prepared.canonical = held.unwrap_or(prepared.canonical);
+        let message = format!("Add the type {record_type}");
+        let mut report = self
+            .write_all(lock, &[prepared], &message)
+            .map_err(Failure::one)?;
+        report
+            .writes
+            .retain(|written| written.previous != Some(written.blob));
+        Ok(report)
+    }
+
+    /// Compiles `bytes` as the schema of `record_type`, and finds where it
+    /// lands in `view`, expecting no file when the board lacks it. Returns
+    /// the compiled schema, and the file's bytes when the board holds an
+    /// equal schema. A different schema is refused.
+    pub(crate) fn prepare_type(
+        &self,
+        lock: &Lock,
+        view: &mut Resolver<'_, '_>,
+        record_type: &RecordType,
+        bytes: &[u8],
+    ) -> Result<(Prepared, Schema, Option<Vec<u8>>), TypeError> {
         let record_type = record_type.clone();
         if record_type.is_board() {
             return Err(TypeError::Reserved { record_type });
@@ -33,17 +60,18 @@ impl Board {
                 });
             }
         };
-        if let Err(source) = Schema::compile(schema.clone()) {
-            return Err(TypeError::Schema {
-                record_type,
-                source,
-            });
-        }
+        let compiled = match Schema::compile(schema.clone()) {
+            Ok(compiled) => compiled,
+            Err(source) => {
+                return Err(TypeError::Schema {
+                    record_type,
+                    source,
+                });
+            }
+        };
         let Ok(path) = schema_at(&record_type) else {
             return Err(TypeError::TooLong { record_type });
         };
-        let lock = self.repository().lock(LOCK_WAIT)?;
-        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (expect, held) = match self.held(&record_type, &schema)? {
             Held::Absent => (Expect::Absent, None),
             Held::Same(bytes) => (Expect::Any, Some(bytes)),
@@ -55,18 +83,8 @@ impl Board {
                 });
             }
         };
-        let mut prepared = Self::schema(&lock, &mut view, path, expect, &schema)?;
-        // An equal schema is written again as it is, in its own layout,
-        // which commits it if HEAD lacks it, and is no write.
-        prepared.canonical = held.unwrap_or(prepared.canonical);
-        let message = format!("Add the type {record_type}");
-        let mut report = self
-            .write_all(lock, &[prepared], &message)
-            .map_err(Failure::one)?;
-        report
-            .writes
-            .retain(|written| written.previous != Some(written.blob));
-        Ok(report)
+        let prepared = Self::schema(lock, view, path, expect, &schema)?;
+        Ok((prepared, compiled, held))
     }
 
     /// How the working tree holds `schema` for `record_type`.

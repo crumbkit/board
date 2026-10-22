@@ -195,6 +195,11 @@ their digest and writes a board/attachment/v1 record.")]
         #[arg(long, value_parser = expect)]
         expect: Option<Expect>,
         /// Read JSON Lines of `{path, expect, record}` or `{path, expect, text}` and write them all or none.
+        ///
+        /// A record line at `/.board/types/<namespace>/<kind>/v<n>.schema` adds that schema and takes
+        /// no expect. Schema lines are checked before the other lines, and a schema the board holds
+        /// is committed if HEAD lacks it. Every line writes in one board: this board, or the board one mount leads to. A
+        /// batch through a mount commits in the mounted board and moves the mount's pin.
         #[arg(long, conflicts_with_all = ["path", "expect"])]
         batch: bool,
         /// Write stdin as a file, as given, at a path that is the file's whole name, such as /notes/plan.md.

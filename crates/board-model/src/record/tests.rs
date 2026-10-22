@@ -40,6 +40,22 @@ fn a_record_type_names_its_schema_path() {
 }
 
 #[test]
+fn a_schema_path_names_its_record_type_and_any_other_path_names_none() {
+    let record_type: RecordType = "lr/task/v2".parse().unwrap();
+    assert_eq!(
+        RecordType::of_schema(&record_type.schema_path()),
+        Some(record_type)
+    );
+    for other in [
+        ".board/types/lr/task/v2.json",
+        "types/lr/task/v2.schema.json",
+        ".board/types/lr/task.schema.json",
+    ] {
+        assert_eq!(RecordType::of_schema(other), None, "{other}");
+    }
+}
+
+#[test]
 fn a_record_type_deserializes_under_the_same_rules() {
     let admitted: RecordType = serde_json::from_str(r#""lr/task/v1""#).unwrap();
     assert_eq!(admitted.as_str(), "lr/task/v1");

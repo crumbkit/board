@@ -44,6 +44,13 @@ impl RecordType {
     pub fn schema_path(&self) -> String {
         format!("{TYPES_DIRECTORY}{}.schema.json", self.0)
     }
+
+    /// The type whose schema a board holds at `path`, relative to its root:
+    /// the inverse of [`RecordType::schema_path`].
+    pub fn of_schema(path: &str) -> Option<Self> {
+        let name = path.strip_prefix(TYPES_DIRECTORY)?;
+        name.strip_suffix(".schema.json")?.parse().ok()
+    }
 }
 
 fn well_formed(text: &str) -> bool {

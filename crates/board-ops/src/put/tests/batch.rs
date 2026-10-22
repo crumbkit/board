@@ -6,8 +6,8 @@ use board_scenario::Item;
 use board_tree::LOCK_WAIT;
 
 use super::{board, canonical, committing, file};
-use crate::put::{MAX_BATCH_LINES, PutError, PutReport, Schemas};
-use crate::tests::{open, task};
+use crate::put::{Checked, MAX_BATCH_LINES, PutError, PutReport, Schemas};
+use crate::tests::{NOTE, NOTE_SCHEMA_PATH, open, task};
 
 fn line(path: &str, expect: Option<&str>, record: &str) -> String {
     let expect = expect.map_or_else(String::new, |expect| format!(r#""expect": "{expect}", "#));
@@ -276,7 +276,7 @@ fn two_lines_that_write_one_file_are_refused_and_two_files_are_admitted() {
         serde_json::json!([{
             "line": 2,
             "code": "board::put::invalid",
-            "message": "it writes tasks/a.json as line 1 writes tasks/a.json",
+            "message": "it writes /links/a, the same file as line 1's /tasks/a",
             "fields": { "path": "/links/a" },
         }])
     );
@@ -336,13 +336,25 @@ fn a_line_over_the_record_limit_is_too_large_and_one_at_it_is_admitted() {
 }
 
 #[test]
+fn a_line_over_the_record_limit_is_read_no_further_than_two_bytes_past_it() {
+    let limit = board_model::MAX_RECORD_BYTES;
+    let mut input = std::io::Cursor::new(vec![b'x'; 2 * limit]);
+    let lines = crate::Board::read_lines(&mut input).unwrap();
+    let [Err(refused)] = lines.as_slice() else {
+        panic!("the line is not refused alone");
+    };
+    assert_eq!((refused.line, refused.code), (1, Code::JsonTooLarge));
+    assert_eq!(input.position(), limit as u64 + 2);
+}
+
+#[test]
 fn two_lines_differing_only_in_case_collide_and_two_names_are_admitted() {
     let scenario = board();
     let folded = line("/tasks/a", None, &task("")) + &line("/tasks/A", None, &task(""));
     let refusal = batch(&scenario, &folded).unwrap_err();
     assert_eq!(
         refusal.refusal().fields["refusals"][0]["message"],
-        "it writes tasks/A.json differing only in case from line 1 writes tasks/a.json"
+        "it writes /tasks/A, differing only in case from line 1's /tasks/a"
     );
     assert_eq!(refused(Err(refusal)).1, [(2, Code::PathCaseCollision)]);
     assert!(file(&scenario, "tasks/a.json").is_none());
@@ -378,11 +390,31 @@ fn a_batch_compiles_each_types_schema_once_however_many_lines_use_it() {
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
-    let (prepared, _) = board
-        .check_lines(&lock, &mut view, lines, &mut schemas)
-        .unwrap();
+    let Ok(Checked::Here(prepared, _)) = board.check_lines(&lock, &mut view, lines, &mut schemas)
+    else {
+        panic!("the batch is not checked in this board");
+    };
     assert_eq!(prepared.len(), 5);
     assert_eq!(schemas.compiled, 2);
+}
+
+#[test]
+fn a_batch_compiles_a_schema_it_adds_once_and_its_records_use_that_schema() {
+    let scenario = board();
+    let input = line("/notes/a", None, NOTE)
+        + &line("/notes/b", None, NOTE)
+        + &schema_line(None, r#"{"type": "object"}"#);
+    let board = open(&scenario);
+    let lines = crate::Board::read_lines(&mut input.as_bytes()).unwrap();
+    let lock = board.repository().lock(LOCK_WAIT).unwrap();
+    let mut view = board.repositories().snapshot().unwrap();
+    let mut schemas = Schemas::default();
+    let Ok(Checked::Here(prepared, _)) = board.check_lines(&lock, &mut view, lines, &mut schemas)
+    else {
+        panic!("the batch is not checked in this board");
+    };
+    assert_eq!(prepared.len(), 3);
+    assert_eq!(schemas.compiled, 1);
 }
 
 /// How many directories a batch of `count` lines reads from disk while it
@@ -404,9 +436,10 @@ fn listed_checking(count: usize) -> usize {
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let before = board.repository().directories_listed();
     let mut view = board.repositories().snapshot().unwrap();
-    let (prepared, _) = board
-        .check_lines(&lock, &mut view, lines, &mut Schemas::default())
-        .unwrap();
+    let schemas = &mut Schemas::default();
+    let Ok(Checked::Here(prepared, _)) = board.check_lines(&lock, &mut view, lines, schemas) else {
+        panic!("the batch is not checked in this board");
+    };
     assert_eq!(prepared.len(), count);
     board.repository().directories_listed() - before
 }
@@ -458,4 +491,145 @@ fn a_line_beneath_an_ignored_file_is_refused_before_any_line_is_written_and_its_
     scenario.write("x", Item::Deleted);
     batch(&scenario, &input).unwrap();
     assert!(file(&scenario, "x/y.json").is_some());
+}
+
+/// A batch line that writes `schema` as the schema of `lr/note/v1`.
+fn schema_line(expect: Option<&str>, schema: &str) -> String {
+    line("/.board/types/lr/note/v1.schema", expect, schema)
+}
+
+#[test]
+fn a_batch_writes_a_schema_and_records_of_its_type_in_one_commit_and_without_it_is_refused() {
+    let scenario = committing();
+    let notes = line("/notes/a", None, NOTE) + &line("/notes/b", None, NOTE);
+    let (_, refusals) = refused(batch(&scenario, &notes));
+    assert_eq!(
+        refusals,
+        [(1, Code::RecordUnknownType), (2, Code::RecordUnknownType)]
+    );
+    // The schema comes last, and the records before it are checked against it.
+    let input = notes + &schema_line(None, r#"{"type": "object"}"#);
+    let report = batch(&scenario, &input).unwrap();
+    assert_eq!(report.writes.len(), 3);
+    let head = scenario.head().unwrap();
+    assert_eq!(Some(head.id), report.commit);
+    assert_eq!(head.message, "board put --batch (3 records)");
+    assert_eq!(
+        head.files[NOTE_SCHEMA_PATH],
+        canonical(r#"{"type": "object"}"#)
+    );
+    assert_eq!(head.files["notes/a.json"], canonical(NOTE));
+}
+
+#[test]
+fn a_batch_reports_its_writes_in_input_order_though_it_checks_a_schema_line_first() {
+    let scenario = committing();
+    let input = line("/notes/a", None, NOTE)
+        + &schema_line(None, r#"{"type": "object"}"#)
+        + &line("/notes/b", None, NOTE);
+    let report = batch(&scenario, &input).unwrap();
+    let displays: Vec<String> = report
+        .writes
+        .iter()
+        .map(|w| w.display.to_string())
+        .collect();
+    assert_eq!(
+        displays,
+        ["/notes/a", "/.board/types/lr/note/v1.schema", "/notes/b"]
+    );
+}
+
+#[test]
+fn a_schema_the_board_holds_is_left_as_it_is_and_a_different_one_refuses_the_batch() {
+    let scenario = committing();
+    scenario.write(NOTE_SCHEMA_PATH, Item::File(r#"{ "type": "object" }"#));
+    let note = line("/notes/a", None, NOTE);
+    let other = schema_line(None, r#"{"type": "object", "required": ["x"]}"#);
+    let (_, refusals) = refused(batch(&scenario, &(other + &note)));
+    assert_eq!(refusals, [(1, Code::SchemaDiffers)]);
+    assert!(file(&scenario, "notes/a.json").is_none());
+    let same = schema_line(None, r#"{"type": "object"}"#);
+    let report = batch(&scenario, &(same.clone() + &note)).unwrap();
+    let written = |report: &PutReport| -> Vec<bool> {
+        let writes = report.writes.iter();
+        writes.map(|w| w.previous != Some(w.blob)).collect()
+    };
+    // The schema is reported as a write that changed nothing.
+    assert_eq!(written(&report), [false, true]);
+    // The schema HEAD lacked is committed in the layout the board holds.
+    let head = scenario.head().unwrap();
+    assert_eq!(
+        head.files.keys().collect::<Vec<_>>(),
+        [NOTE_SCHEMA_PATH, "notes/a.json"]
+    );
+    assert_eq!(head.files[NOTE_SCHEMA_PATH], br#"{ "type": "object" }"#);
+    let again = batch(&scenario, &same).unwrap();
+    assert_eq!((written(&again), again.commit), (vec![false], None));
+}
+
+#[test]
+fn after_a_kill_left_a_batch_s_files_uncommitted_the_same_batch_commits_its_schema_with_its_records()
+ {
+    let scenario = committing();
+    let schema = r#"{"type": "object"}"#;
+    // The kill came after the files were written and before the commit.
+    for (at, text) in [(NOTE_SCHEMA_PATH, schema), ("notes/a.json", NOTE)] {
+        let bytes = canonical(text);
+        scenario.write(at, Item::File(std::str::from_utf8(&bytes).unwrap()));
+    }
+    let input = line("/notes/a", None, NOTE) + &schema_line(None, schema);
+    let report = batch(&scenario, &input).unwrap();
+    let head = scenario.head().unwrap();
+    assert_eq!(report.commit, Some(head.id));
+    assert_eq!(head.files[NOTE_SCHEMA_PATH], canonical(schema));
+    assert_eq!(head.files["notes/a.json"], canonical(NOTE));
+}
+
+#[test]
+fn a_schema_line_in_the_board_namespace_is_refused_and_one_in_another_is_admitted() {
+    let scenario = board();
+    let reserved = line(
+        "/.board/types/board/note/v1.schema",
+        None,
+        r#"{"type": "object"}"#,
+    );
+    let refusal = batch(&scenario, &reserved).unwrap_err();
+    let PutError::Batch { refusals, .. } = &refusal else {
+        panic!("not a batch refusal: {refusal}");
+    };
+    assert_eq!(
+        (refusals[0].line, refusals[0].code),
+        (1, Code::SchemaInvalid)
+    );
+    assert!(
+        refusals[0]
+            .message
+            .contains("board/note/v1 is in the `board` namespace")
+    );
+    assert!(file(&scenario, ".board/types/board/note/v1.schema.json").is_none());
+    batch(&scenario, &schema_line(None, r#"{"type": "object"}"#)).unwrap();
+    assert!(file(&scenario, NOTE_SCHEMA_PATH).is_some());
+}
+
+#[test]
+fn a_schema_line_that_does_not_compile_or_carries_an_expect_is_refused_and_its_twin_is_admitted() {
+    let scenario = board();
+    let note = line("/notes/a", None, NOTE);
+    for (refused_line, code) in [
+        (schema_line(None, r#"{"type": 5}"#), Code::SchemaInvalid),
+        (
+            schema_line(Some("none"), r#"{"type": "object"}"#),
+            Code::PutInvalid,
+        ),
+    ] {
+        let (_, refusals) = refused(batch(&scenario, &(refused_line + &note)));
+        assert_eq!(refusals[0], (1, code));
+        assert!(file(&scenario, NOTE_SCHEMA_PATH).is_none());
+    }
+    batch(
+        &scenario,
+        &(schema_line(None, r#"{"type": "object"}"#) + &note),
+    )
+    .unwrap();
+    assert!(file(&scenario, NOTE_SCHEMA_PATH).is_some());
 }

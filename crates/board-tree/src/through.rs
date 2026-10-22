@@ -21,7 +21,7 @@ pub struct Inside {
     pub repository: PathBuf,
     /// The commit the mount is pinned to.
     pub commit: ObjectId,
-    /// The record file's path in the mounted tree, `/`-separated.
+    /// The path's file in the mounted tree, `/`-separated.
     pub file: String,
     /// The record's logical path in the mounted board.
     pub path: LogicalPath,
@@ -31,7 +31,7 @@ pub struct Inside {
 /// refusal adds after naming the mount.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Through {
-    /// One mount, which a single put may write through.
+    /// One mount, which a put or a batch may write through.
     #[error("")]
     Mounted,
     #[error(", and a put writes through one mount at most")]
