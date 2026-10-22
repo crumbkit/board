@@ -148,6 +148,19 @@ when the schema names types, `ref::wrong_type` for anything but a record of one
 of them. Without `x-board-type`, a reference may reach any entry, such as a
 Markdown file.
 
+A file ending `.md` is Markdown, and each of its links that names a board path
+is a reference. CommonMark decides what a link is: inline, reference and image
+links count, even in a footnote, and text in code or HTML does not. An
+autolink, a link with a URL scheme or starting `//`, and a fragment alone name
+no board path. Each segment is percent-decoded, so `%2e%2e` is `..`. A
+link is then read against the file's path as RFC 3986 5.2 reads a URL
+path: from the root when it starts `/`, else from the file's directory, with
+`.` and `..` removed and `..` stopping at the root. The query and fragment are
+ignored, and a final `.json` is dropped, so `../tasks/a.json` reaches
+`/tasks/a`. A link that is then not a logical path, or has a segment
+decoding to `/`, names nothing. `refs` lists each link as written. A link to
+nothing degrades the file with `ref::dangling`, as a reference does a record.
+
 A capability's input schema marks a string property as a path with
 `"format": "board-path"`. `board call` reads such a flag's value as a path
 argument is read, relative to the prefix, before it validates the input; a
@@ -231,7 +244,8 @@ tables and views, how a refresh decides what to redo, and `board query` and
 
 `board put <path> --file` writes stdin as a file, as given, at the path that
 is the file's whole name, such as `/notes/plan.md`. It takes steps 1, 3, 4, 5
-and 6, and its only check is the 16 MiB limit. A path that names a directory,
+and 6, and its only check is the 16 MiB limit; a Markdown file's links are
+followed for the report. A path that names a directory,
 or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
 With a `store` in `.board/board.json`, a file over 1 MiB or not UTF-8 is
 uploaded under its digest and a `board/attachment/v1` record is written in

@@ -1,1 +1,2 @@
 from /project /projects/p ok target=- "/status"=absent "/title"=absent
+to /notes/plan.md ../tasks/a.json

@@ -9,4 +9,5 @@
 ["sqlite_autoindex_bodies_1",null]
 ["validations","CREATE TABLE validations (\n    record TEXT NOT NULL,\n    schema TEXT NOT NULL,\n    code TEXT,\n    pointer TEXT,\n    reason TEXT,\n    failures INTEGER,\n    PRIMARY KEY (record, schema)\n) WITHOUT ROWID"]
 ["refs","CREATE TABLE refs (\n    record TEXT NOT NULL,\n    schema TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    pointer TEXT NOT NULL,\n    target TEXT NOT NULL,\n    accepts TEXT,\n    PRIMARY KEY (record, schema, ordinal)\n) WITHOUT ROWID"]
+["links","CREATE TABLE links (\n    blob TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    destination TEXT NOT NULL,\n    PRIMARY KEY (blob, ordinal)\n) WITHOUT ROWID"]
 ["extracted","CREATE TABLE extracted (\n    plugin TEXT NOT NULL,\n    version TEXT NOT NULL,\n    blob TEXT NOT NULL,\n    PRIMARY KEY (plugin, version, blob)\n) WITHOUT ROWID"]

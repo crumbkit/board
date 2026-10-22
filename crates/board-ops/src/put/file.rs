@@ -3,8 +3,9 @@
 
 use std::time::Duration;
 
-use board_model::{BINARY_NAME, LogicalPath, MAX_RECORD_BYTES};
+use board_model::{BINARY_NAME, LogicalPath, MAX_RECORD_BYTES, Role};
 use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
+use board_validate::Reference;
 use serde_json::Value;
 
 use super::{Expect, Failure, Prepared, PutError, PutReport};
@@ -45,7 +46,8 @@ impl Board {
 
     /// Finds where the file whose whole name is `path` lands in `view`, for
     /// `bytes` written as given, which need only fit the size limit, under
-    /// the lock that the write will hold.
+    /// the lock that the write will hold. A Markdown file's links are its
+    /// references, so the report says what `check` will.
     pub(super) fn prepare_file(
         _lock: &Lock,
         view: &mut Resolver<'_, '_>,
@@ -59,16 +61,39 @@ impl Board {
                 bytes: bytes.len(),
             });
         }
+        let target = view.file_target(path)?;
+        // Read from where the file lands, as `check` reads it, and not from
+        // a path through a link.
+        let references = match (Role::of(&target.path), format!("/{}", target.path).parse()) {
+            (Some(Role::Markdown), Ok(landed)) => references(&landed, bytes),
+            _ => Vec::new(),
+        };
         Ok(Prepared {
             path: path.clone(),
             expect,
             canonical: bytes.to_vec(),
-            target: view.file_target(path)?,
+            target,
             admitted: Admitted {
                 value: Value::Null,
                 pointer: false,
-                references: Vec::new(),
+                references,
             },
         })
     }
+}
+
+/// The links in `bytes`, a Markdown file at `path`, as references, so a
+/// link to nothing degrades the file in the report as `Decide::links` does
+/// in `check`.
+fn references(path: &LogicalPath, bytes: &[u8]) -> Vec<Reference> {
+    board_model::links(bytes)
+        .into_iter()
+        .filter_map(|link| {
+            Some(Reference {
+                path: board_model::reached(path, &link)?,
+                pointer: link,
+                accepts: None,
+            })
+        })
+        .collect()
 }

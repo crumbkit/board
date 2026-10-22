@@ -169,25 +169,26 @@ impl Kind {
     }
 }
 
-/// How a `.json` entry's path says to read its bytes. A path that is not
-/// `.json` has no role: it is a file, never read.
+/// How an entry's path says to read its bytes. A path that is neither
+/// `.json` nor `.md` has no role: it is a file, never read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Role {
     Json,
     Schema,
     /// A schema in the reserved `board` namespace, which no board may define.
     ReservedSchema,
+    /// A Markdown file, a file whose links are references.
+    Markdown,
 }
 
 impl Role {
     /// The role of the entry at the `/`-separated physical `path`. The
     /// extension is matched exactly, so `x.JSON` is a file.
     pub fn of(path: &str) -> Option<Self> {
-        if Path::new(path)
-            .extension()
-            .is_none_or(|extension| extension != "json")
-        {
-            return None;
+        match Path::new(path).extension() {
+            Some(extension) if extension == "md" => return Some(Self::Markdown),
+            Some(extension) if extension == "json" => {}
+            _ => return None,
         }
         if !(path.starts_with(TYPES_DIRECTORY) && path.ends_with(".schema.json")) {
             return Some(Self::Json);
@@ -204,13 +205,17 @@ impl Role {
             Self::Json => "json",
             Self::Schema => "schema",
             Self::ReservedSchema => "reserved_schema",
+            Self::Markdown => "markdown",
         }
     }
 
     /// Classifies `bytes` read in this role, or `None` when they are over
     /// the size limit. Board's own types are checked here; other records
-    /// wait for their schema.
+    /// wait for their schema. A Markdown file is a file whatever it holds.
     pub fn classify(self, bytes: Option<&[u8]>) -> Classified {
+        if self == Self::Markdown {
+            return Classified::ok(Content::File);
+        }
         let parsed_kind = if self == Self::Json {
             Kind::Json
         } else {
@@ -298,7 +303,7 @@ impl Classified {
 /// Whether classifying the entry at `path` needs its bytes: only `.json`
 /// files are read.
 pub fn needs_bytes(path: &str) -> bool {
-    Role::of(path).is_some()
+    Role::of(path).is_some_and(|role| role != Role::Markdown)
 }
 
 /// Classifies the entry at the `/`-separated physical `path`, holding

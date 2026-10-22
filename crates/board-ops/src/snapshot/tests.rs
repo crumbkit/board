@@ -141,13 +141,14 @@ fn viewed(view: &View) -> Vec<Checked> {
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time, and the index's size after
 /// its last prune.
-const EVERY_TABLE: [&str; 12] = [
+const EVERY_TABLE: [&str; 13] = [
     "SELECT * FROM entries ORDER BY source, path",
     "SELECT * FROM records ORDER BY source, path",
     "SELECT * FROM bodies ORDER BY blob",
     "SELECT * FROM blobs ORDER BY blob, role",
     "SELECT * FROM validations ORDER BY record, schema",
     "SELECT * FROM refs ORDER BY record, schema, ordinal",
+    "SELECT * FROM links ORDER BY blob, ordinal",
     "SELECT * FROM trees ORDER BY tree, name",
     "SELECT * FROM worktree ORDER BY path",
     "SELECT * FROM sources ORDER BY source",
@@ -490,6 +491,7 @@ fn only_a_pointer_without_a_code_is_followed_as_a_mount() {
             record_type: None,
             code,
             reason: None,
+            links: Vec::new(),
         },
         validation: None,
     };
@@ -562,6 +564,7 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
             record_type: Some("lr/task/v1".parse().unwrap()),
             code: None,
             reason: None,
+            links: Vec::new(),
         },
         validation,
     };

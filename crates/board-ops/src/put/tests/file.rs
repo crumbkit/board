@@ -146,3 +146,53 @@ fn a_file_over_the_size_limit_is_refused_and_one_at_the_limit_is_admitted() {
     );
     assert!(put_file(&scenario, "/big.bin", Expect::Any, &bytes[1..]).is_ok());
 }
+
+/// The code `put --file` reports `text` degraded with at `at`.
+fn degraded(scenario: &Scenario, at: &str, text: &str) -> Option<Code> {
+    let report = put_file(scenario, at, Expect::Any, text.as_bytes()).unwrap();
+    report.writes[0].degraded.as_ref().map(|(code, _)| *code)
+}
+
+#[test]
+fn a_note_with_a_link_to_nothing_is_reported_degraded_and_its_twin_is_not() {
+    let scenario = board();
+    assert_eq!(
+        degraded(&scenario, "/notes/a.md", "[gone](gone.md)"),
+        Some(Code::RefDangling)
+    );
+    assert_eq!(
+        degraded(&scenario, "/notes/a.md", "[p](../projects/p.json)"),
+        None
+    );
+}
+
+#[test]
+fn a_note_written_through_a_link_reads_its_links_from_where_it_lands() {
+    let scenario = board();
+    scenario
+        .write(
+            "alias.json",
+            Item::File(r#"{"$type": "board/mount/v1", "path": "/deep/dir"}"#),
+        )
+        .write("deep/x.md", Item::File("here"))
+        .write("deep/dir/other.md", Item::File("beside"));
+    // From /deep/dir/note.md, ../x.md is /deep/x.md; from /alias/note.md it
+    // would be /x.md, which is nothing.
+    let checked = || {
+        open(&scenario)
+            .check(None, None)
+            .unwrap()
+            .entries
+            .into_iter()
+            .find(|entry| entry.path == "deep/dir/note.md")
+            .unwrap()
+            .status
+    };
+    assert_eq!(degraded(&scenario, "/alias/note.md", "[x](../x.md)"), None);
+    assert_eq!(checked(), board_tree::Status::Ok);
+    assert_eq!(
+        degraded(&scenario, "/alias/note.md", "[x](../../x.md)"),
+        Some(Code::RefDangling)
+    );
+    assert_eq!(checked(), board_tree::Status::Degraded(Code::RefDangling));
+}

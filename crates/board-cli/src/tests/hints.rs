@@ -354,8 +354,8 @@ fn check_hints_how_to_fix_each_degraded_entry_and_gives_a_healthy_one_no_hint() 
         )
         .write("notes/n.json", Item::File(r#"{"$type": "lr/note/v1"}"#));
     let schema = "add the type's schema at `.board/types/lr/note/v1.schema.json`, or fix `$type`";
-    let reference = "create the record the reference at `/project` names, or change \
-                     the reference; `board refs /tasks/t` lists the record's references";
+    let reference = "create what the reference at `/project` names, or change \
+                     the reference; `board refs /tasks/t` lists its references";
     let link = "create the file the link at /links/gone names, or change the link's \
                 `path`; `board ls /links` shows the link";
     let checked = board_in(scenario.workdir(), &["check"]);
@@ -538,7 +538,7 @@ fn check_hints_for_a_mounted_board_send_its_fixes_to_that_boards_repository() {
         ),
         format!(
             "hint: /vendor/lib/tasks/t: /vendor/lib/tasks/t is {there}, which Board cannot \
-             write; there, create the record the reference at `/project` names, or change the \
+             write; there, create what the reference at `/project` names, or change the \
              reference, then run `board mount update /vendor/lib`"
         ),
         format!(

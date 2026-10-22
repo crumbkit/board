@@ -3,11 +3,12 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 13;
+pub const INDEX_VERSION: u32 = 14;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
-/// record's references are numbered in the order the schema finds them.
+/// record's references are numbered in the order the schema finds them, and
+/// a Markdown file's links in document order.
 pub(crate) const TABLES: &str = "
 CREATE TABLE state (
     key TEXT PRIMARY KEY,
@@ -79,6 +80,12 @@ CREATE TABLE refs (
     accepts TEXT,
     PRIMARY KEY (record, schema, ordinal)
 ) WITHOUT ROWID;
+CREATE TABLE links (
+    blob TEXT NOT NULL,
+    ordinal INTEGER NOT NULL,
+    destination TEXT NOT NULL,
+    PRIMARY KEY (blob, ordinal)
+) WITHOUT ROWID;
 CREATE TABLE extracted (
     plugin TEXT NOT NULL,
     version TEXT NOT NULL,
@@ -90,9 +97,10 @@ CREATE TABLE extracted (
 /// Deletes the facts nothing current reaches: each tree beneath a source's
 /// root, each object those trees hold, and each working-tree blob. A
 /// validation and its references go unless both blobs are reached.
-pub(crate) const PRUNE: [&str; 6] = [
+pub(crate) const PRUNE: [&str; 7] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
+    "DELETE FROM main.links WHERE blob NOT IN temp.kept",
     "DELETE FROM main.bodies WHERE blob NOT IN temp.kept",
     "DELETE FROM main.validations
      WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
@@ -183,6 +191,9 @@ WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS refs AS
 SELECT * FROM main.refs
 WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
+CREATE TEMP VIEW IF NOT EXISTS links AS
+SELECT * FROM main.links
+WHERE blob IN (SELECT blob FROM temp.resolved WHERE role = 'markdown');
 CREATE TEMP VIEW IF NOT EXISTS extracted AS
 SELECT * FROM main.extracted
 WHERE blob IN (

@@ -25,6 +25,9 @@ pub struct BlobFact {
     /// Why the blob fails with `code`, when the parser or schema compiler
     /// says more than the code.
     pub reason: Option<String>,
+    /// For a Markdown file, the destination of each link that names a board
+    /// path, as written and in order.
+    pub links: Vec<String>,
 }
 
 /// A `blobs` row as stored: kind, type, code and reason.
@@ -255,6 +258,16 @@ impl Writer {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
             })
             .optional()?;
+        let links = match (&row, role) {
+            (Some(_), Role::Markdown) => self
+                .connection()
+                .prepare_cached(
+                    "SELECT destination FROM main.links WHERE blob = ?1 ORDER BY ordinal",
+                )?
+                .query_map(params![blob.to_string()], |row| row.get(0))?
+                .collect::<Result<_, _>>()?,
+            _ => Vec::new(),
+        };
         Ok(row.and_then(|(kind, record_type, code, reason)| {
             Some(BlobFact {
                 kind: Kind::ALL.into_iter().find(|known| known.as_str() == kind)?,
@@ -267,6 +280,7 @@ impl Writer {
                     None => None,
                 },
                 reason,
+                links,
             })
         }))
     }
@@ -285,6 +299,14 @@ impl Writer {
                 fact.code.map(Code::as_str),
                 fact.reason,
             ])?;
+        for (ordinal, link) in (0_i64..).zip(&fact.links) {
+            self.connection()
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO main.links (blob, ordinal, destination)
+                     VALUES (?1, ?2, ?3)",
+                )?
+                .execute(params![blob.to_string(), ordinal, link])?;
+        }
         Ok(())
     }
 

@@ -78,7 +78,15 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             "links/l.json",
             vec![link("/projects/p"), link("/gone"), link("/links/l")],
         ),
-        ("notes.md", vec!["a".to_owned(), "b".to_owned()]),
+        (
+            "notes.md",
+            vec![
+                "a".to_owned(),
+                // Links that reach a record, through a link and nowhere.
+                "[p](projects/p.json) [l](/links/l#x) [gone](/gone)".to_owned(),
+                "[a](./tasks/a.json) `[b](/tasks/b)`".to_owned(),
+            ],
+        ),
         // A name with no logical path. Its last content is the same bytes
         // as a task `projects/p.json` can hold, so one blob can be a record
         // at one path and a plain file at another.

@@ -17,8 +17,8 @@ use crate::report::Output;
 
 /// `board refs --help` after its options.
 pub(crate) const REFS_HELP: &str = "\
-Lines are `from <pointer> <target> <status>` for each reference the record
-makes, then `to <path> <pointer>` for each record that reaches it. Several
+Lines are `from <pointer> <target> <status>` for each reference the entry
+makes, then `to <path> <pointer>` for each entry that reaches it. Several
 paths print each after a `==> <path> <==` line; --limit applies to each. A
 refused path does not stop the others; the exit code is 1.
 
@@ -35,7 +35,7 @@ At most 10000 paths. Past 64 MiB of output, one board::output::over_budget
 names the paths `left_out`.
 
 Examples:
-  board refs /projects/p
+  board refs /notes/plan.md
   board refs /projects/p --json
   board refs /tasks/a /tasks/b --all --json
   board refs /tasks/a --field /status --field /title

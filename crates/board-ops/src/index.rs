@@ -214,6 +214,8 @@ struct Parsed {
     /// Why the bytes did not parse, which only the bytes can say.
     reason: Option<String>,
     body: Option<Canonical>,
+    /// A Markdown file's links that name board paths, as written.
+    links: Vec<String>,
 }
 
 /// Classifies the `bytes` of `blob` in `role`, or a blob too large to
@@ -229,12 +231,17 @@ fn parse(blob: ObjectId, role: Role, bytes: Option<&[u8]>) -> Parsed {
         Content::Record { value, .. } => Some(canonical_json(value)),
         _ => None,
     };
+    let links = match (role, bytes) {
+        (Role::Markdown, Some(bytes)) => board_model::links(bytes),
+        _ => Vec::new(),
+    };
     Parsed {
         blob,
         role,
         classified,
         reason,
         body,
+        links,
     }
 }
 
@@ -287,6 +294,7 @@ impl Kept {
             classified,
             reason,
             body,
+            links,
         } = parsed;
         let (judged, compiled) = judged(&classified);
         self.compiled += usize::from(compiled);
@@ -301,6 +309,7 @@ impl Kept {
                 Ok(_) => None,
                 Err(fault) => reason.or_else(|| fault.reason(None)),
             },
+            links,
         };
         writer.put_blob(blob, role, &fact)?;
         if let Some(body) = &body {

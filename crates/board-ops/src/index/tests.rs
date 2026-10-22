@@ -23,7 +23,7 @@ fn tasks() -> Scenario {
         .write("tasks/a.json", Item::File(&task("")))
         .write("tasks/b.json", Item::File(&task("")))
         .write("tasks/bad.json", Item::File(r#"{"$type": "lr/task/v1"}"#))
-        .write("notes.md", Item::File("not read"));
+        .write("notes.txt", Item::File("not read"));
     scenario
 }
 
@@ -33,7 +33,7 @@ fn a_cold_refresh_hashes_every_file_and_parses_each_json_file_and_compiles_each_
     let cache = tempfile::tempdir().unwrap();
     // Eight files are hashed; board.json, two schemas, the project and three
     // tasks are parsed, each on the thread that hashed it, so the two tasks
-    // that share their bytes are parsed twice and stored once; notes.md is
+    // that share their bytes are parsed twice and stored once; notes.txt is
     // never read. Each schema validates the records of its type with the
     // compilation that judged it.
     assert_eq!(
@@ -82,6 +82,21 @@ fn a_cold_refresh_opens_each_file_once_and_a_warm_one_opens_none() {
     // from the bytes hashed.
     assert_eq!(opened(&scenario, cache.path()), 8, "cold");
     assert_eq!(opened(&scenario, cache.path()), 0, "warm");
+}
+
+#[test]
+fn a_markdown_file_is_parsed_from_the_bytes_hashed_and_only_again_when_it_changes() {
+    let scenario = tasks();
+    scenario.write("notes/a.md", Item::File("[p](/projects/p)"));
+    let cache = tempfile::tempdir().unwrap();
+    // The nine files hashed are each opened once. Every run follows the link
+    // and so opens the project's file once more, as following a record's
+    // reference does.
+    assert_eq!(opened(&scenario, cache.path()), 10, "cold");
+    assert_eq!(opened(&scenario, cache.path()), 1, "warm");
+    scenario.write("notes/a.md", Item::File("[q](/projects/q)"));
+    let work = build(&scenario, cache.path());
+    assert_eq!((work.hashed, work.parsed), (1, 1));
 }
 
 #[test]
@@ -272,7 +287,7 @@ fn the_index_holds_each_validation_with_its_references_in_the_order_found() {
 #[test]
 fn a_file_modified_after_the_last_refresh_began_is_hashed_again() {
     let scenario = tasks();
-    scenario.write("fresh.md", Item::Ahead("just saved"));
+    scenario.write("fresh.txt", Item::Ahead("just saved"));
     let cache = tempfile::tempdir().unwrap();
     build(&scenario, cache.path());
     assert_eq!(
@@ -358,8 +373,8 @@ fn a_deleted_file_leaves_the_index_and_a_new_one_is_hashed() {
     let scenario = tasks();
     let cache = tempfile::tempdir().unwrap();
     build(&scenario, cache.path());
-    scenario.write("notes.md", Item::Deleted);
-    scenario.write("more.md", Item::File("new"));
+    scenario.write("notes.txt", Item::Deleted);
+    scenario.write("more.txt", Item::File("new"));
     assert_eq!(
         build(&scenario, cache.path()),
         Refreshed {
@@ -369,8 +384,8 @@ fn a_deleted_file_leaves_the_index_and_a_new_one_is_hashed() {
         }
     );
     let paths = read(&scenario, cache.path(), "SELECT path FROM main.worktree");
-    assert!(paths.contains(&json!(["more.md"])));
-    assert!(!paths.contains(&json!(["notes.md"])));
+    assert!(paths.contains(&json!(["more.txt"])));
+    assert!(!paths.contains(&json!(["notes.txt"])));
 }
 
 #[test]
@@ -494,6 +509,7 @@ fn retried(interfere: bool) -> (usize, bool, bool) {
         record_type: None,
         code: None,
         reason: None,
+        links: Vec::new(),
     };
     let index = Index::open(Some(cache.path()), root).unwrap();
     let mut runs = 0;

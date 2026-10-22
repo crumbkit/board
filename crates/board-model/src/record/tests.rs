@@ -52,6 +52,10 @@ fn only_json_files_are_read() {
     assert!(!needs_bytes("notes.md"));
     assert!(!needs_bytes("x.JSON"));
     assert_eq!(classify("notes.md", None), Classified::ok(Content::File));
+    assert_eq!(
+        classify("notes.md", Some(b"[a](a.md)")),
+        Classified::ok(Content::File)
+    );
 }
 
 #[test]
@@ -198,7 +202,9 @@ fn bolero_classifying_any_bytes_never_panics_and_unparsed_content_has_a_code() {
 
 #[test]
 fn a_path_gives_the_role_its_bytes_are_read_in() {
-    assert_eq!(Role::of("notes.md"), None);
+    assert_eq!(Role::of("notes/a.md"), Some(Role::Markdown));
+    assert_eq!(Role::of("notes/a.MD"), None);
+    assert_eq!(Role::of("notes.txt"), None);
     assert_eq!(Role::of("x.JSON"), None);
     assert_eq!(Role::of("tasks/a.json"), Some(Role::Json));
     assert_eq!(

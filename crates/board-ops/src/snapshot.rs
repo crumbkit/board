@@ -10,6 +10,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::Infallible;
 use std::path::Path;
 
 use board_index::{Decided, Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
@@ -260,7 +261,7 @@ impl Decisions {
         let fact = decide.facts.get(&entry.path);
         let role = Role::of(&entry.path);
         let kind = match (role, fact) {
-            (None, _) => Kind::File,
+            (None | Some(Role::Markdown), _) => Kind::File,
             (Some(_), Some(fact)) => fact.fact.kind,
             (Some(_), None) => Kind::Json,
         };
@@ -420,8 +421,39 @@ impl Decide<'_> {
                     )
                 }))),
             Kind::Record => self.record(fact, schema, reached),
-            Kind::Schema | Kind::Json | Kind::File => Ok(Ok(None)),
+            Kind::File => Ok(Ok(self.links(entry, &fact.fact.links, reached))),
+            Kind::Schema | Kind::Json => Ok(Ok(None)),
         }
+    }
+
+    /// Follows the links of a Markdown file, each from the file's own path,
+    /// as a record's references are followed. A link to nothing degrades
+    /// the file as a dangling reference degrades a record. To report it in
+    /// `refs` alone, return `None` here and give a Markdown file no
+    /// references in put/file.rs.
+    fn links(
+        &self,
+        entry: &Entry,
+        links: &[String],
+        reached: &mut Vec<Reached>,
+    ) -> Option<Failure> {
+        let file = entry.logical.as_ref()?;
+        let mut tally = Tally::default();
+        for link in links {
+            let Some(target) = board_model::reached(file, link) else {
+                continue;
+            };
+            let Ok((location, failure)) =
+                follow::<Infallible>(&target, None, self.resolve(&target), |_| Ok(None));
+            tally.add(link, failure.as_ref());
+            reached.push(Reached {
+                pointer: link.clone(),
+                target,
+                location,
+                code: failure.map(|(code, _)| code),
+            });
+        }
+        tally.first().map(|(code, detail)| (code, Some(detail)))
     }
 
     /// Checks a record against its schema and its references.

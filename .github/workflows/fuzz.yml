@@ -23,6 +23,7 @@ jobs:
           - json::tests::bolero_canonical_output_reads_back_as_the_same_value_and_bytes
           - record::tests::bolero_classifying_any_bytes_never_panics_and_unparsed_content_has_a_code
           - path::tests::bolero_any_text_is_admitted_exactly_or_refused_as_malformed
+          - markdown::tests::bolero_any_bytes_give_links_that_name_paths
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

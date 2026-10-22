@@ -25,6 +25,18 @@ fn record() -> BlobFact {
         record_type: Some("test/task/v1".parse().unwrap()),
         code: None,
         reason: None,
+        links: Vec::new(),
+    }
+}
+
+/// A Markdown file with two links.
+fn markdown() -> BlobFact {
+    BlobFact {
+        kind: Kind::File,
+        record_type: None,
+        code: None,
+        reason: None,
+        links: vec!["b.md#intro".to_owned(), "/tasks/a.json".to_owned()],
     }
 }
 
@@ -35,6 +47,7 @@ fn unparsed() -> BlobFact {
         record_type: None,
         code: Some(Code::JsonParse),
         reason: Some("json does not parse: EOF at line 1 column 1".to_owned()),
+        links: Vec::new(),
     }
 }
 
@@ -62,6 +75,23 @@ fn decided(index: Index) -> View {
 fn has_fact(index: Index) -> bool {
     let writer = index.deferred().unwrap();
     writer.blob(blob(1), Role::Json).unwrap().is_some()
+}
+
+#[test]
+fn a_markdown_files_links_come_back_in_order_with_its_fact() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    writer
+        .put_blob(blob(1), Role::Markdown, &markdown())
+        .unwrap();
+    let mut empty = markdown();
+    empty.links.clear();
+    writer.put_blob(blob(2), Role::Markdown, &empty).unwrap();
+    assert_eq!(
+        writer.blob(blob(1), Role::Markdown).unwrap(),
+        Some(markdown())
+    );
+    assert_eq!(writer.blob(blob(2), Role::Markdown).unwrap(), Some(empty));
+    assert_eq!(writer.blob(blob(3), Role::Markdown).unwrap(), None);
 }
 
 #[test]

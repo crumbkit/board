@@ -1,6 +1,7 @@
 /:
 directory /.board/
 file ok /README.md
+directory /notes/
 directory /projects/
 directory /tasks/
 directory /vendor/

@@ -89,6 +89,10 @@ fn every_help_example_runs_on_a_fixture_board_and_prints_its_golden_output() {
         .write("tasks/c.json", Item::File(&task("c")))
         .write("README.md", Item::File("# A fixture board\n"))
         .write(
+            "notes/plan.md",
+            Item::File("Do [a](../tasks/a.json), then [b](/tasks/b#title).\n"),
+        )
+        .write(
             "vendor/lib.json",
             Item::File(&mount_of(&library.path(), old)),
         )

@@ -41,7 +41,18 @@ clap = { version = "4.6.7", default-features = false, features = ["derive", "err
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
+# A Markdown link names a path percent-encoded, as a URL does. gix already
+# brings this crate in.
+percent-encoding = "2.3.2"
 proptest = "1.11.0"
+# Links in Markdown files are references. A CommonMark parser tells a link
+# from the same text in a code span, a fenced block or an HTML block, and
+# resolves reference links; Board had none. Without the html and getopts
+# features it brings only bitflags, memchr and unicase.
+# The index keys each Markdown blob's links by blob, so an upgrade that
+# changes which links are found must also bump INDEX_VERSION in
+# board-index/src/schema.rs, or a warm index keeps the old links.
+pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = "1.12.2"
 # bundled: every platform runs the same SQLite, built from source.
 # modern_sqlite: a refresh asks whether its transaction took the write lock.

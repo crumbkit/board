@@ -1,8 +1,6 @@
 # The index
 
-This file holds detail for docs/architecture.md. It says where the index
-lives, what it stores, how a refresh decides what to redo, and the commands
-that read it.
+This file holds the index detail for docs/architecture.md.
 
 ## Where it lives and what it holds
 
@@ -20,10 +18,11 @@ directory of each other board whose recorded root it can see is gone.
 | `sources` | the root working tree and each mounted commit: its root tree and the repository it was first read from | source: `worktree` or a commit id |
 | `trees` | every entry in a tree: name, mode, object, logical segment and path code | tree |
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
-| `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`): kind, type, code, and the parser's or compiler's reason; a schema's code says whether it compiles | blob, role |
+| `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`, `markdown`): kind, type, code, and the parser's or compiler's reason; a schema's code says whether it compiles | blob, role |
 | `bodies` | the canonical form of each record that parses | blob |
 | `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
+| `links` | a Markdown file's links to board paths, in order, as written | blob, ordinal |
 | `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
@@ -34,9 +33,9 @@ entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 record was checked against). The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
 `body` is NULL when the record does not parse. A `code` of `board::ref::dangling` or
-`board::ref::wrong_type` marks a record that its schema admits but whose
-reference is broken. Tables, views and columns are an
-interface agents write SQL against; changing one changes the index format. A
+`board::ref::wrong_type` marks a broken reference in a record its schema
+admits; only the first marks a Markdown file. Tables, views and columns are an
+interface for agents' SQL; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.
 
@@ -44,17 +43,17 @@ shortest display path, then the first lexically.
 
 Each command refreshes the index first, doing work in proportion to what
 changed: it hashes only working-tree files whose stat changed, as git does,
-parses each JSON file it hashes on the thread that hashed it, and stores and
+parses each JSON or Markdown file on its hashing thread, and stores and
 validates only blobs it has not seen. A file it could not read is
-tried again by every refresh, because whether it can be read may change while
-its stat does not. A file is hashed again if its mtime falls in or after the
+tried again by every refresh, since it may become readable while its stat
+stays the same. A file is hashed again if its mtime falls in or after the
 second in which the last refresh that hashed or recorded a file began. A
 refresh that finds nothing changed, including a file it still cannot read,
 writes nothing, so it neither waits for nor blocks another process. If another
 process holds the lock or wrote first, the refresh runs again, waiting up to 5
 seconds for the lock. If the wait runs out, it runs in an index in memory, so
 the index lock never refuses a `query` or a `call`. A
-JSON file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
+JSON or Markdown file of up to 16 MiB is parsed from the bytes hashed, so a cold refresh
 opens each file once. The walk lists directories and reads each entry's stat
 on up to four threads, as many as there are cores, never listing an ignored
 directory, then hashes the files whose stat the index does not hold on as
@@ -93,8 +92,8 @@ sees each fact table filtered to what the current tree reaches, so it answers
 the same warm as cold; `main.<table>` is the whole cache, which keeps facts for
 other branches.
 
-`board refs <path>` reports each reference the record makes, resolved now with
-its status, and each record whose references reach its identity, whatever path
+`board refs <path>` reports each reference the entry makes, resolved now with
+its status, and each entry whose references reach its identity, whatever path
 they name.
 With `--missing`, a path that names nothing reports its deepest resolving
 ancestor and, under `missing`, the physical path a file there would have, by

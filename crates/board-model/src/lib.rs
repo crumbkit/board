@@ -6,6 +6,7 @@ mod code;
 mod fields;
 mod json;
 mod location;
+mod markdown;
 mod path;
 mod pointer;
 mod record;
@@ -18,6 +19,7 @@ pub use crate::code::Code;
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
+pub use crate::markdown::{links, reached};
 pub use crate::path::{LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, Malformation, PathError};
 pub use crate::pointer::{
     MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer, repinned,

@@ -16,10 +16,11 @@ use crate::check::CheckError;
 use crate::read::{ReadError, display, join, read_at};
 use crate::snapshot::{Referenced, Snapshot};
 
-/// One reference the record makes.
+/// One reference the record or Markdown file makes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Outgoing {
-    /// Where it is in the record, as a JSON pointer.
+    /// Where it is in the record, as a JSON pointer, or a Markdown link's
+    /// destination as written.
     pub pointer: String,
     pub target: LogicalPath,
     /// Where it resolved, or `None` when it dangles.
@@ -31,13 +32,15 @@ pub struct Outgoing {
     pub fields: Option<Fielded>,
 }
 
-/// One record that makes references to the object, however it names it.
+/// One record or Markdown file that makes references to the object,
+/// however it names it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Incoming {
     pub source: Source,
     pub path: String,
     pub logical: Option<LogicalPath>,
-    /// The JSON pointers in that record whose references reach the object.
+    /// The JSON pointers in that record, or the destinations of that
+    /// file's links, whose references reach the object.
     pub pointers: Vec<String>,
 }
 

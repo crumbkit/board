@@ -62,7 +62,7 @@ fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
             fields.path.as_ref()?,
             match fields.pointer.as_ref() {
                 Some(pointer) => format!(
-                    "create the record the reference at `{pointer}` names, or change the reference"
+                    "create what the reference at `{pointer}` names, or change the reference"
                 ),
                 None => "create the file the link names, or change the link's `path`".to_owned(),
             }
@@ -201,7 +201,7 @@ fn dangling(fields: &Fields) -> Option<String> {
         .filter(|pointer| !pointer.is_empty());
     Some(match pointer {
         Some(pointer) => format!(
-            "create the record the reference at `{pointer}` names, or change the reference; `board refs {path}` lists the record's references"
+            "create what the reference at `{pointer}` names, or change the reference; `board refs {path}` lists its references"
         ),
         None => format!(
             "create the file the link at {path} names, or change the link's `path`; `board ls {}` shows the link",
@@ -290,7 +290,7 @@ fn generic(code: Code) -> &'static str {
             "rename one of the names that differ only in case; a macOS working tree cannot hold both"
         }
         Code::RefDangling => {
-            "create the record the reference names, or change the reference; `board refs <path>` lists them"
+            "create what the reference names, or change the reference; `board refs <path>` lists them"
         }
         Code::MountInvalid => {
             "a link holds `$type` `board/mount/v1` and `path`; a mount holds `repo`, `follow` and `commit`"

@@ -8,6 +8,7 @@ use board_tree::{Entry, Status};
 use crate::{Board, CheckReport, OpenError};
 
 mod complete;
+mod markdown;
 pub(crate) mod verdicts;
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;

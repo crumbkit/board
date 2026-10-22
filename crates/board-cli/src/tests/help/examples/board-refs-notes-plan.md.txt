@@ -1,0 +1,2 @@
+from ../tasks/a.json /tasks/a ok
+from /tasks/b#title /tasks/b ok

@@ -1,3 +1,0 @@
-to /tasks/a /project
-to /tasks/b /project
-to /tasks/c /project

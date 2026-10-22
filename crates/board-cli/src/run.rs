@@ -55,7 +55,8 @@ Tables and views:
   entries   one row per entry: source, path, logical, blob, size, kind, type,
             status, code, change, role, schema
   records   entries of kind record, with body, the record as JSON
-  refs, validations, blobs, trees, worktree, mounts, sources, extracted, state
+  refs, links, validations, blobs, trees, worktree, mounts, sources,
+  extracted, state
   p_<name>  each enabled plugin's database
 
 Rows stop at 64 MiB of output, even with --all; --json then sets `truncated`
@@ -109,7 +110,7 @@ impl From<String> for Given {
 /// `refs`'s arguments.
 #[derive(Debug, clap::Args)]
 struct Refs {
-    /// Each record's logical path, such as /projects/p, or p from /projects; several share one check of the board.
+    /// Each entry's logical path, such as /projects/p, or p from /projects; several share one check of the board.
     #[arg(required = true, value_name = "PATH", num_args = 1..=MAX_LIMIT)]
     paths: Vec<Given>,
     /// When nothing is at a path yet, report where a file there would be instead of refusing.
@@ -168,7 +169,7 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
-    /// List the references each record makes and the records that reach it.
+    /// List the references each entry makes and the entries that reach it.
     #[command(after_help = render::REFS_HELP)]
     Refs(Refs),
     /// Check and write the record on stdin at a path, or a file with --file.

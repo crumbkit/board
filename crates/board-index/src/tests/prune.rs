@@ -69,6 +69,9 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
             .unwrap();
     }
     writer
+        .put_blob(blob(4), Role::Markdown, &markdown())
+        .unwrap();
+    writer
         .put_validation(blob(1), blob(2), &valid("/a"))
         .unwrap();
     writer
@@ -83,6 +86,9 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
             rows: vec![row("c.json", FILE_MODE, blob(3))],
         })
         .unwrap();
+    writer
+        .put_blob(blob(5), Role::Markdown, &markdown())
+        .unwrap();
     for gone in [3, 5] {
         writer.put_blob(blob(gone), Role::Json, &record()).unwrap();
         writer
@@ -96,8 +102,9 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
     writer
         .put_validation(blob(3), blob(2), &valid("/d"))
         .unwrap();
-    // One tree row, two blobs and two bodies, two validations and their refs.
-    1 + 2 + 2 + 2 + 2
+    // One tree row, three blobs with two links and two bodies, two
+    // validations and their refs.
+    1 + 3 + 2 + 2 + 2 + 2
 }
 
 /// The rows of every table a prune may delete from.
@@ -108,6 +115,7 @@ fn counts(index: &Index) -> Vec<(String, i64)> {
         "bodies",
         "validations",
         "refs",
+        "links",
         "extracted",
     ]
     .into_iter()

@@ -266,7 +266,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
     scenario
         .write("known.json", Item::File("{}"))
         .write("dir/unknown.json", Item::File("[]"))
-        .write("notes.md", Item::File("[]"));
+        .write("notes.txt", Item::File("[]"));
     let stand_in = scenario.blob("not what the file holds");
     let mut asked = Vec::new();
     let mut kept = Vec::new();
@@ -290,7 +290,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         [
             ("dir/unknown.json".to_owned(), 2),
             ("known.json".to_owned(), 2),
-            ("notes.md".to_owned(), 2),
+            ("notes.txt".to_owned(), 2),
         ]
     );
     let blobs: Vec<_> = entries
@@ -302,7 +302,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
         [
             ("dir/unknown.json", Some(scenario.blob("[]"))),
             ("known.json", Some(stand_in)),
-            ("notes.md", Some(scenario.blob("[]"))),
+            ("notes.txt", Some(scenario.blob("[]"))),
         ],
         "the known blob is taken as given, which shows the file was not hashed"
     );
@@ -346,7 +346,7 @@ fn a_walk_on_one_thread_and_on_four_give_the_same_entries_keep_the_same_files_an
         scenario.write(&format!("d{}/r{n}.json", n % 5), Item::File(&text));
     }
     scenario
-        .write("notes.md", Item::File("not kept"))
+        .write("notes.txt", Item::File("not kept"))
         .write("locked.json", Item::Unreadable("{}"))
         .write("link.json", Item::Symlink("d0/r0.json"));
     let one = walked_on(&scenario, 1);
