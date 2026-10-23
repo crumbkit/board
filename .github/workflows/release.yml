@@ -5,7 +5,9 @@
 # attached to a GitHub release with SHA256SUMS. The tag is `v<version>`,
 # where <version> is board-cli's version in its Cargo.toml, and
 # released.json must list what the release ships (docs/architecture/released.md).
-# workflow_dispatch runs everything but publishes nothing.
+# workflow_dispatch runs everything but publishes nothing. Until released.json
+# lists a release, the version job's `released` test fails, on a dispatch and
+# on a tag push alike, so build, install and release are skipped.
 name: release
 
 on:
@@ -153,7 +155,7 @@ jobs:
 
   release:
     if: github.ref_type == 'tag'
-    needs: [ci, slow, install]
+    needs: [version, ci, slow, install]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

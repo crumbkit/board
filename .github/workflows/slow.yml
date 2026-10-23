@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       mutants-base:
-        description: Commit to mutate the changes since. Empty means the head of the previous successful nightly run.
+        description: Commit to mutate the changes since; the diff starts where it meets this run's commit. Empty means the nightly base. It does not move the nightly base.
         type: string
         default: ""
   workflow_call:
@@ -27,10 +27,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # The commit the night's changes start from: the head of the previous
-  # successful nightly run, or, when there is none, the last commit before
-  # 00:00 UTC of the previous day. A nightly run whose main has not changed
-  # since that run skips every job.
+  # The commit the mutants start from. A hand-run may name one with
+  # mutants-base; it does not move the nightly base, which comes only from
+  # scheduled runs. Otherwise the base is the head of the newest scheduled run
+  # of the last 3 days whose mutants jobs all passed, so a night that fails
+  # for another reason still moves it. A shard cancelled by its timeout never
+  # passes, so the window bounds a failing streak's range to about 4 days of
+  # changes. With no such run, it is the last commit before 00:00 UTC of the
+  # previous day. A scheduled run whose main has not changed since the
+  # previous scheduled run skips macos, timing and mutants. A run in which any
+  # job timed out ends cancelled, as a hand-cancelled run does, so neither
+  # counts as that previous run, and the next night runs again.
   base:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -41,6 +48,10 @@ jobs:
       base: ${{ steps.base.outputs.base }}
       run: ${{ steps.base.outputs.run }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - id: base
         env:
           GH_TOKEN: ${{ github.token }}
@@ -48,19 +59,39 @@ jobs:
           EVENT: ${{ github.event_name }}
           GIVEN: ${{ inputs.mutants-base }}
         run: |
-          base=$GIVEN
-          if [ -z "$base" ]; then
-            base=$(gh run list --workflow slow.yml --event schedule --branch main --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+          gh run list --workflow slow.yml --event schedule --branch main --status completed --limit 20 \
+            --json databaseId,headSha,createdAt,conclusion > runs.json
+          if [ -n "$GIVEN" ]; then
+            base=$(git rev-parse --verify --end-of-options "$GIVEN^{commit}")
+            how="mutants-base was given as $GIVEN"
+          else
+            base=
+            window=$(date -u -d '3 days ago' +%s)
+            for run in $(jq -r --argjson since "$window" '.[] | select((.createdAt | fromdateiso8601) >= $since) | .databaseId' runs.json); do
+              passed=$(gh api "repos/$GH_REPO/actions/runs/$run/jobs?per_page=100" \
+                --jq '[.jobs[] | select(.name | startswith("mutants")) | .conclusion] | length > 0 and all(. == "success")')
+              if [ "$passed" = true ]; then
+                base=$(jq -r --argjson run "$run" '.[] | select(.databaseId == $run) | .headSha' runs.json)
+                how="the head of scheduled run $run, the newest of the last 3 days whose mutants all passed"
+                break
+              fi
+            done
+            if [ -z "$base" ]; then
+              base=$(git rev-list -1 --before="$(date -u -d yesterday +%F)T00:00:00Z" HEAD)
+              how="the last commit before 00:00 UTC of the previous day; no scheduled run of the last 3 days had all its mutants pass"
+            fi
           fi
-          if [ -z "$base" ]; then
-            boundary="$(date -u -d yesterday +%F)T00:00:00Z"
-            base=$(gh api "repos/$GH_REPO/commits?sha=$GITHUB_SHA&until=$boundary&per_page=1" --jq '.[0].sha // empty')
-          fi
+          previous=$(jq -r '[.[] | select(.conclusion != "cancelled")][0].headSha // empty' runs.json)
           run=true
-          if [ "$EVENT" = schedule ] && [ "$base" = "$GITHUB_SHA" ]; then
+          if [ "$EVENT" = schedule ] && [ "$previous" = "$GITHUB_SHA" ]; then
             run=false
-            echo "main has not changed since the previous successful nightly run, $base" >> "$GITHUB_STEP_SUMMARY"
           fi
+          {
+            echo "Mutants base: ${base:-none} ($how)."
+            if [ "$run" = false ]; then
+              echo "main has not changed since the previous scheduled run, so macos, timing and mutants are skipped."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "run=$run" >> "$GITHUB_OUTPUT"
 
@@ -77,12 +108,13 @@ jobs:
         with:
           tool: cargo-nextest@0.9.146
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.13.0"
       - run: bin/lint
       - run: bin/test
 
+  # Fuzzing is randomised, so it runs every night, even on an unchanged main.
   fuzz:
-    needs: base
-    if: needs.base.outputs.run == 'true'
     uses: $/.github/workflows/fuzz.yml
 
   timing:
@@ -125,7 +157,7 @@ jobs:
           tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
       - id: diff
         run: |
-          git diff "$BASE" HEAD -- '*.rs' > changes.diff
+          git diff --end-of-options "$BASE...HEAD" -- '*.rs' > changes.diff
           echo "mutating the changes since $BASE" >> "$GITHUB_STEP_SUMMARY"
           if [ -s changes.diff ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
         env:
@@ -144,10 +176,12 @@ jobs:
 
   # A nightly failure shows nowhere else, so it opens one issue and later
   # failures comment on it until someone closes it. A job that runs past its
-  # timeout ends cancelled, which counts as a failure here.
+  # timeout ends cancelled, and so does the run's conclusion, but cancelled()
+  # stays false for the jobs after it, so it is reported. A run cancelled by
+  # hand makes cancelled() true and reports nothing.
   report:
     needs: [base, macos, fuzz, timing, mutants]
-    if: always() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
