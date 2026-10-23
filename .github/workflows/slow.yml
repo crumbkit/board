@@ -31,7 +31,8 @@ jobs:
   # The commit the mutants start from. A hand-run may name one with
   # mutants-base; it does not move the nightly base, which comes only from
   # scheduled runs. Otherwise the base is the head of the newest scheduled run
-  # of the last 3 days whose mutants jobs all passed, so a night that fails
+  # of the last 3 days whose mutants jobs all passed, not counting a second
+  # pass skipped because the first missed nothing, so a night that fails
   # for another reason still moves it. A shard cancelled by its timeout never
   # passes, so the window bounds a failing streak's range to about 4 days of
   # changes. With no such run, it is the last commit before 00:00 UTC of the
@@ -77,7 +78,7 @@ jobs:
             window=$(date -u -d '3 days ago' +%s)
             for run in $(jq -r --argjson since "$window" '.[] | select((.createdAt | fromdateiso8601) >= $since) | .databaseId' runs.json); do
               passed=$(gh api "repos/$GH_REPO/actions/runs/$run/jobs?per_page=100" \
-                --jq '[.jobs[] | select(.name | startswith("mutants")) | .conclusion] | length > 0 and all(. == "success")')
+                --jq '[.jobs[] | select(.name | startswith("mutants")) | .conclusion | select(. != "skipped")] | length > 0 and all(. == "success")')
               if [ "$passed" = true ]; then
                 base=$(jq -r --argjson run "$run" '.[] | select(.databaseId == $run) | .headSha' runs.json)
                 how="the head of scheduled run $run, the newest of the last 3 days whose mutants all passed"
@@ -160,21 +161,27 @@ jobs:
 
   # Mutation testing of the lines changed since the base commit. A release
   # skips it: a mutant does not gate a release, and the nightly run has
-  # already covered each day's changes. Each mutant runs the whole
-  # workspace's tests, because board-cli's tests catch mutants in the crates
-  # it calls. board-scenario is test support with no tests of its own, and
-  # cargo-mutants runs its baseline on the mutated crates only, so it is not
-  # mutated. cargo-mutants sets each mutant's test timeout to five times that
-  # baseline, which can be shorter than one run of the whole workspace (50 to
-  # 66 s here), so the timeout is at least 180 s. Nextest's mutants profile
-  # fails a test that runs past a minute and stops at the first failure, so a
-  # mutant that makes a walk wait forever fails its run and counts as caught.
-  # The baseline runs only the mutated crates' tests, so it does not check
-  # that every test finishes within that minute. Once a correct test
-  # approaches 60 s here, every mutant fails it and counts as caught, which
-  # would hide missed mutants. A missed mutant fails the job, which the
-  # report job surfaces.
-  mutants:
+  # already covered each day's changes. board-scenario is test support with
+  # no tests of its own, and cargo-mutants runs its baseline on the mutated
+  # crates only, so it is not mutated.
+  #
+  # It runs in two passes. The first tests each mutant with its own crate's
+  # tests only, which rebuilds and tests far less. The second tests the
+  # mutants the first missed or timed out with the whole workspace's tests,
+  # because board-cli's tests catch mutants in the crates it calls; a missed
+  # mutant there fails the job, which the report job surfaces. Together the
+  # passes catch what one whole-workspace pass catches, in fewer runner
+  # minutes.
+  #
+  # cargo-mutants sets each mutant's test timeout to five times its baseline,
+  # which can be shorter than one run of the whole workspace, so the timeout
+  # is at least 180 s. Nextest's mutants profile fails a test that runs past a
+  # minute and stops at the first failure, so a mutant that makes a walk wait
+  # forever fails its run and counts as caught. The baseline runs only the
+  # mutated crates' tests, so it does not check that every test finishes
+  # within that minute. Once a correct test approaches 60 s here, every mutant
+  # fails it and counts as caught, which would hide missed mutants.
+  mutants-crate:
     needs: base
     if: needs.base.outputs.run == 'true' && needs.base.outputs.base != '' && !inputs.release
     runs-on: ubuntu-24.04
@@ -200,8 +207,13 @@ jobs:
           BASE: ${{ needs.base.outputs.base }}
       # Without debug info each mutant rebuilds faster. A panic in a mutant's
       # log still names its file and line; only backtrace frames lose them.
+      # Exit code 2 means a mutant was missed and 3 that one timed out. The
+      # second pass tests both again, so neither fails this one.
       - if: steps.diff.outputs.changed == 'true'
-        run: cargo mutants --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/8"
+        run: |
+          status=0
+          cargo mutants --in-diff changes.diff --test-tool nextest --test-workspace=false --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/8" || status=$?
+          [ "$status" = 0 ] || [ "$status" = 2 ] || [ "$status" = 3 ]
         env:
           SHARD: ${{ matrix.shard }}
           NEXTEST_PROFILE: mutants
@@ -209,7 +221,94 @@ jobs:
       - if: always() && steps.diff.outputs.changed == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutants-${{ matrix.shard }}
+          name: mutants-crate-${{ matrix.shard }}
+          path: mutants.out/
+          if-no-files-found: ignore
+
+  # Gathers every first-pass shard's caught and unviable mutants into one
+  # caught.txt. --iterate skips the mutants it names, so the second pass's
+  # shards split only what the first pass missed or timed out: eight mutants
+  # a shard, at most eight shards.
+  mutants-misses:
+    needs: [base, mutants-crate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      shards: ${{ steps.misses.outputs.shards }}
+      total: ${{ steps.misses.outputs.total }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-mutants@27.1.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: mutants-crate-*
+          path: crate
+      - id: misses
+        run: |
+          git diff --end-of-options "$BASE...HEAD" -- '*.rs' > changes.diff
+          mkdir mutants.out
+          touch misses.txt
+          if [ -s changes.diff ]; then
+            # A diff whose changes hold no mutants leaves no shard an artifact,
+            # so the globs may match nothing. /dev/null keeps cat off stdin.
+            shopt -s nullglob
+            cat /dev/null crate/*/caught.txt crate/*/unviable.txt > mutants.out/caught.txt
+            cargo mutants --list --iterate --in-diff changes.diff --exclude 'crates/board-scenario/**' > misses.txt
+          fi
+          count=$(wc -l < misses.txt)
+          total=$(( (count + 7) / 8 > 8 ? 8 : (count + 7) / 8 ))
+          echo "The first pass left $count mutants for the whole workspace's tests, on $total shards." >> "$GITHUB_STEP_SUMMARY"
+          echo "total=$total" >> "$GITHUB_OUTPUT"
+          echo "shards=$(jq -cn --argjson n "$total" '[range($n)]')" >> "$GITHUB_OUTPUT"
+        env:
+          BASE: ${{ needs.base.outputs.base }}
+      - if: steps.misses.outputs.total != '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutants-misses-caught
+          path: mutants.out/caught.txt
+
+  mutants-workspace:
+    needs: [base, mutants-misses]
+    if: needs.mutants-misses.outputs.total != '0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.mutants-misses.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mutants-misses-caught
+          path: mutants.out
+      # Without debug info each mutant rebuilds faster. A panic in a mutant's
+      # log still names its file and line; only backtrace frames lose them.
+      - run: |
+          git diff --end-of-options "$BASE...HEAD" -- '*.rs' > changes.diff
+          cargo mutants --iterate --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/${TOTAL}"
+        env:
+          BASE: ${{ needs.base.outputs.base }}
+          SHARD: ${{ matrix.shard }}
+          TOTAL: ${{ needs.mutants-misses.outputs.total }}
+          NEXTEST_PROFILE: mutants
+          CARGO_PROFILE_DEV_DEBUG: "0"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutants-workspace-${{ matrix.shard }}
           path: mutants.out/
           if-no-files-found: ignore
 
@@ -219,7 +318,7 @@ jobs:
   # stays false for the jobs after it, so it is reported. A run cancelled by
   # hand makes cancelled() true and reports nothing.
   report:
-    needs: [base, macos, fuzz, timing, mutants]
+    needs: [base, macos, fuzz, timing, mutants-crate, mutants-misses, mutants-workspace]
     if: ${{ !cancelled() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -230,10 +329,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants: ${{ needs.mutants.result }}"
+          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants-crate: ${{ needs.mutants-crate.result }}, mutants-misses: ${{ needs.mutants-misses.result }}, mutants-workspace: ${{ needs.mutants-workspace.result }}"
         run: |
           title="Slow lane failed"
-          body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts, and missed mutants are in the mutants-* artifacts."
+          body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts, and missed mutants are in the mutants-workspace-* artifacts."
           number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
           if [ -n "$number" ]; then
             gh issue comment "$number" --body "$body"

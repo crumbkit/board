@@ -11,16 +11,48 @@ fail-fast = false
 filter = 'binary_id(board-cli::kill)'
 slow-timeout = { period = "60s", terminate-after = 2 }
 
-# The mutants job in the slow lane (slow.yml) runs under this profile. A mutant can make a walk
-# wait forever. With fail-fast off, every test that walks would then wait
-# until cargo-mutants stops the whole run, and it would report the mutant as
-# timed out. Under this profile a test still running after a minute fails and
-# the first failure stops the run, so cargo-mutants reports the mutant as
-# caught. The slowest test takes about 15 seconds on a laptop. cargo-mutants
-# runs its baseline on the mutated crates' tests only, so nothing checks that
-# every test finishes within the minute in CI. Once a correct test approaches
-# 60 seconds in CI, every mutant fails it and counts as caught, which would
-# hide missed mutants.
+# The mutants jobs in the slow lane (slow.yml) run under this profile. A
+# mutant can make a walk wait forever. With fail-fast off, every test that
+# walks would then wait until cargo-mutants stops the whole run, and it would
+# report the mutant as timed out. Under this profile a test still running
+# after a minute fails and the first failure stops the run, so cargo-mutants
+# reports the mutant as caught. The slowest test takes about 15 seconds on a
+# laptop. cargo-mutants runs its baseline on the mutated crates' tests only,
+# so nothing checks that every test finishes within the minute in CI. Once a
+# correct test approaches 60 seconds in CI, every mutant fails it and counts
+# as caught, which would hide missed mutants.
 [profile.mutants]
 fail-fast = { max-fail = 1, terminate = "immediate" }
 slow-timeout = { period = "30s", terminate-after = 2 }
+
+# Under the mutants profile the narrow slow tests run last. Each holds 16 MiB
+# of data, waits out a fixed lock, busy or time limit, or runs bolero or the
+# bench, and checks one narrow thing, so it is rarely the first test to catch
+# a mutant. The broad board-cli tests keep the default priority, because they
+# often are. A renamed test no longer matches and runs at the default priority.
+[[profile.mutants.overrides]]
+filter = '''
+(package(board-cli) & test(=tests::type_add_reads_a_schema_of_the_record_limit_and_refuses_one_byte_more))
+| (package(board-index) & (test(=tests::a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes) | test(=tests::an_index_another_process_holds_past_the_wait_is_replaced_by_one_in_memory)))
+| (package(board-model) & test(/::bolero_/))
+| (package(board-ops) & (
+    test(=call::tests::a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started)
+  | test(=call::tests::a_plugin_that_traps_sigterm_has_the_grace_period_to_finish_and_one_that_ignores_it_is_killed)
+  | test(=call::tests::a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it)
+  | test(=check::tests::a_check_that_must_write_while_another_process_holds_the_lock_works_in_memory)
+  | test(=index::tests::a_file_of_the_largest_size_kept_is_opened_once)
+  | test(=index::tests::a_file_the_walk_saw_at_16_mib_that_grew_before_the_read_is_left_out)
+  | test(=index::tests::a_file_the_walk_saw_over_16_mib_is_too_large)
+  | test(=index::tests::a_file_too_large_to_keep_is_hashed_and_then_opened_again_to_be_classified)
+  | test(=put::tests::a_held_lock_refuses_a_put_and_a_released_one_admits_it)
+  | test(=put::tests::an_ignored_file_too_large_to_read_is_never_absent_and_its_own_blob_is_expected)
+  | test(=put::tests::batch::a_batch_with_a_line_that_parses_is_refused_as_locked_while_the_lock_is_held)
+  | test(=put::tests::batch::a_line_over_the_record_limit_is_too_large_and_one_at_it_is_admitted)
+  | test(=put::tests::expect_over_a_file_too_large_to_read_compares_its_whole_blob)
+  | test(=put::tests::file::a_file_over_the_size_limit_is_refused_and_one_at_the_limit_is_admitted)
+  | test(=tests::get_reads_a_file_of_16_mib_and_refuses_a_larger_one)))
+| (package(board-plugin) & test(=extract::tests::a_batch_holds_at_most_sixteen_mebibytes_of_records))
+| (package(board-tree) & (test(=tests::links::a_record_of_pointer_type_too_large_to_read_does_not_shadow_its_directory) | test(=tests::reading::a_file_of_exactly_the_limit_is_read_and_one_byte_more_is_too_large)))
+| (package(xtask) & (binary_id(xtask::bench) | test(/^bench::tests::/)))
+'''
+priority = -50
