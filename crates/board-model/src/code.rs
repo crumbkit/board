@@ -381,4 +381,48 @@ mod tests {
         let other = Code::PutThroughMount.hint(&named);
         assert!(!other.contains("reapply your change"), "{other}");
     }
+
+    #[test]
+    fn a_record_its_schema_refuses_hints_at_the_pointer_that_failed() {
+        let fields = Fields {
+            pointer: Some("/due".to_owned()),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Code::RecordInvalid.hint(&fields),
+            "change the value at `/due` so the record satisfies its schema in `.board/types/`"
+        );
+    }
+
+    #[test]
+    fn a_hint_for_a_file_in_a_mounted_board_sends_the_fix_to_that_boards_repository() {
+        let mount: LogicalPath = "/vendor".parse().unwrap();
+        let fields = Fields {
+            path: Some("/vendor/a".parse().unwrap()),
+            schema: Some(".board/types/task.json".to_owned()),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Code::SchemaInvalid.hint_in_mount(&fields, &mount),
+            "fix the schema at `.board/types/task.json` in the repository of the board \
+             mounted at /vendor; `board check /vendor/.board/types` says what failed"
+        );
+        for code in [
+            Code::MountCommitMissing,
+            Code::RecordUnknownType,
+            Code::RefDangling,
+            Code::JsonParse,
+        ] {
+            let hint = code.hint_in_mount(&fields, &mount);
+            assert!(
+                hint.contains("in the repository of the board mounted at /vendor"),
+                "{code}: {hint}"
+            );
+        }
+        assert_eq!(
+            Code::PathNotFound.hint_in_mount(&fields, &mount),
+            Code::PathNotFound.hint(&fields),
+            "a code with no mounted hint"
+        );
+    }
 }

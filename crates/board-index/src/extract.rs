@@ -158,3 +158,16 @@ fn source_of(name: &str) -> Option<Source> {
     }
     ObjectId::from_hex(name).map(Source::Commit)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_source_is_named_worktree_or_by_its_commit_and_any_other_name_is_none() {
+        assert_eq!(source_of("worktree"), Some(Source::WorkingTree));
+        let commit = ObjectId::Sha1([0xab; 20]);
+        assert_eq!(source_of(&commit.to_string()), Some(Source::Commit(commit)));
+        assert_eq!(source_of("Worktree"), None);
+    }
+}

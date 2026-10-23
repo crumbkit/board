@@ -738,7 +738,7 @@ fn a_plugin_past_its_time_limit_is_asked_to_stop_what_it_started() {
 #[test]
 fn a_plugin_that_traps_sigterm_has_the_grace_period_to_finish_and_one_that_ignores_it_is_killed() {
     let limits = Limits {
-        time: Duration::from_secs(2),
+        time: Duration::from_millis(500),
         ..Limits::default()
     };
     let finish = "echo stopped > stopped.txt; exit 1";
@@ -760,7 +760,7 @@ fn a_plugin_that_traps_sigterm_has_the_grace_period_to_finish_and_one_that_ignor
 #[test]
 fn a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it() {
     let limits = Limits {
-        time: Duration::from_secs(2),
+        time: Duration::from_millis(500),
         ..Limits::default()
     };
     for exec in ["exec ", ""] {
@@ -789,7 +789,7 @@ fn a_wrapper_has_its_program_stopped_whether_or_not_it_execs_it() {
 #[test]
 fn a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started() {
     let limits = Limits {
-        time: Duration::from_secs(2),
+        time: Duration::from_millis(500),
         ..Limits::default()
     };
     // A plugin that waits for its grandchild past the limit, then one that

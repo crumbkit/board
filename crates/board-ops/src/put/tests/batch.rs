@@ -1,6 +1,8 @@
 //! `put --batch`: every line is checked and every expect compared before
 //! anything is written, and the writes share one commit.
 
+use std::time::Duration;
+
 use board_model::{Code, Lined, RefusalCode};
 use board_scenario::Item;
 use board_tree::LOCK_WAIT;
@@ -471,7 +473,9 @@ fn a_batch_with_a_line_that_parses_is_refused_as_locked_while_the_lock_is_held()
     let board = open(&scenario);
     let _held = board.repository().lock(LOCK_WAIT).unwrap();
     let input = "{\n".to_owned() + &line("/tasks/a", None, &task(""));
-    let refused = board.put_batch(&mut input.as_bytes()).unwrap_err();
+    let refused = board
+        .put_batch_waiting(&mut input.as_bytes(), Duration::ZERO)
+        .unwrap_err();
     assert_eq!(refused.code(), Code::PutLocked);
 }
 

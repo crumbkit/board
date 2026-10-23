@@ -733,6 +733,27 @@ fn target(scenario: &Scenario, text: &str, is_pointer: bool) -> Result<String, C
         .map_err(|error| error.code())
 }
 
+#[cfg(unix)]
+#[test]
+fn an_ignored_symlink_on_the_way_is_refused_by_name_and_an_ignored_directory_is_admitted() {
+    let scenario = Scenario::new();
+    scenario
+        .write(".gitignore", Item::File("plain/\n"))
+        .write("tasks/a.json", Item::File("{}"))
+        .write("plain/a.json", Item::File("{}"))
+        .write("plain/linked", Item::Symlink("../tasks"));
+    let repository = scenario.repositories();
+    let mut snapshot = repository.snapshot().unwrap();
+    match snapshot.target(&path("/plain/linked/b"), false) {
+        Err(WriteError::Symlink { symlink, .. }) => assert_eq!(symlink, "plain/linked"),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert_eq!(
+        target(&scenario, "/plain/b", false),
+        Ok("plain/b.json".into())
+    );
+}
+
 #[test]
 fn a_write_into_a_directory_beside_an_invalid_pointer_is_refused_as_shadowed() {
     let scenario = Scenario::new();
@@ -978,4 +999,23 @@ fn a_resolver_answers_the_same_through_a_lazy_listing_as_through_a_full_one() {
         assert_eq!(planned(false, file, pointer), code, "{file}, lazily");
         assert_eq!(planned(true, file, pointer), code, "{file}, fully listed");
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_walked_file_carries_the_change_time_inode_and_mode_the_file_system_gives() {
+    use std::os::unix::fs::MetadataExt as _;
+    let scenario = Scenario::new();
+    scenario.write("a.json", Item::File("{}"));
+    let entries = scenario.open().walk(&Source::WorkingTree).unwrap();
+    let stat = entries[0].stat.unwrap();
+    let metadata = std::fs::symlink_metadata(scenario.workdir().join("a.json")).unwrap();
+    assert_eq!(
+        (stat.changed_ns, stat.inode, stat.mode),
+        (
+            metadata.ctime() * 1_000_000_000 + metadata.ctime_nsec(),
+            metadata.ino(),
+            metadata.mode()
+        )
+    );
 }

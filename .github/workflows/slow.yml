@@ -198,11 +198,14 @@ jobs:
           if [ -s changes.diff ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
         env:
           BASE: ${{ needs.base.outputs.base }}
+      # Without debug info each mutant rebuilds faster. A panic in a mutant's
+      # log still names its file and line; only backtrace frames lose them.
       - if: steps.diff.outputs.changed == 'true'
         run: cargo mutants --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/8"
         env:
           SHARD: ${{ matrix.shard }}
           NEXTEST_PROFILE: mutants
+          CARGO_PROFILE_DEV_DEBUG: "0"
       - if: always() && steps.diff.outputs.changed == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

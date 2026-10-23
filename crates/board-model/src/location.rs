@@ -147,4 +147,27 @@ mod tests {
         );
         assert_eq!(ObjectId::Sha256([0xff; 32]).to_string(), "f".repeat(64));
     }
+
+    fn at(path: &str, object: Object) -> Location {
+        Location {
+            board: Board {
+                repository: PathBuf::from("/boards/one"),
+                source: Source::WorkingTree,
+            },
+            path: path.to_owned(),
+            object,
+            pointers: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_file_displays_without_its_json_extension_and_a_directory_as_it_is() {
+        let file = at("tasks/a.json", Object::Blob(ObjectId::Sha1([1; 20])));
+        assert_eq!(file.display_path(), Some("/tasks/a".parse().unwrap()));
+        let directory = at("tasks/a.json", Object::Directory);
+        assert_eq!(
+            directory.display_path(),
+            Some("/tasks/a.json".parse().unwrap())
+        );
+    }
 }

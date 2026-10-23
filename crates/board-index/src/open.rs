@@ -77,13 +77,22 @@ impl Index {
     /// that is corrupt or of another format is deleted and rebuilt; one held
     /// past the wait, or one that cannot be used, gives an index in memory.
     pub fn open(cache: Option<&Path>, root: &Path) -> Result<Self, IndexError> {
+        Self::open_waiting(cache, root, BUSY_WAIT)
+    }
+
+    /// [`Index::open`], waiting up to `wait` for another process's write.
+    pub(crate) fn open_waiting(
+        cache: Option<&Path>,
+        root: &Path,
+        wait: Duration,
+    ) -> Result<Self, IndexError> {
         let Some(cache) = cache else {
             return Self::memory(Fallback::NoCache);
         };
-        match Self::file(cache, root, false) {
+        match Self::file(cache, root, false, wait) {
             Ok(index) => Ok(index),
             Err(Failure::Busy) => Self::memory(Fallback::Busy),
-            Err(Failure::Unusable) => match Self::file(cache, root, true) {
+            Err(Failure::Unusable) => match Self::file(cache, root, true, wait) {
                 Ok(index) => Ok(index),
                 Err(Failure::Busy) => Self::memory(Fallback::Busy),
                 Err(Failure::Unusable) => Self::memory(Fallback::Unusable),
@@ -101,11 +110,11 @@ impl Index {
         Self::memory(Fallback::Busy)
     }
 
-    fn file(cache: &Path, root: &Path, reset: bool) -> Result<Self, Failure> {
+    fn file(cache: &Path, root: &Path, reset: bool, wait: Duration) -> Result<Self, Failure> {
         let file = location(cache, root);
         directory(&file, reset).map_err(|_| Failure::Unusable)?;
         let mut connection = Connection::open(&file).map_err(|error| failure(&error))?;
-        let created = prepare(&mut connection).map_err(|error| match error {
+        let created = prepare(&mut connection, wait).map_err(|error| match error {
             Prepared::Sql(error) => failure(&error),
             Prepared::Foreign => Failure::Unusable,
         })?;
@@ -129,7 +138,7 @@ impl Index {
 
     fn memory(fallback: Fallback) -> Result<Self, IndexError> {
         let mut connection = Connection::open_in_memory().map_err(IndexError::from)?;
-        prepare(&mut connection).map_err(|error| match error {
+        prepare(&mut connection, BUSY_WAIT).map_err(|error| match error {
             Prepared::Sql(error) => IndexError::from(error),
             Prepared::Foreign => IndexError::Foreign,
         })?;
@@ -241,8 +250,8 @@ impl From<rusqlite::Error> for Prepared {
 /// Confirms the format of a filled database, or takes the write lock and
 /// creates the tables in an empty one, and says whether it created them.
 /// Confirming only reads, so it does not wait for another process's write.
-fn prepare(connection: &mut Connection) -> Result<bool, Prepared> {
-    connection.busy_timeout(BUSY_WAIT)?;
+fn prepare(connection: &mut Connection, wait: Duration) -> Result<bool, Prepared> {
+    connection.busy_timeout(wait)?;
     // Room for every statement the writer runs, so each is compiled once.
     connection.set_prepared_statement_cache_capacity(32);
     // So a prune can give pages back to the file, and a body of a few KiB

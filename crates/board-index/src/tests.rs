@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use board_model::{Code, Kind, ObjectId, Role, Source, canonical_json};
 use board_tree::MountPoint;
@@ -102,6 +102,39 @@ fn a_writer_counts_each_blob_lookup_whether_or_not_the_index_holds_the_blob() {
     assert!(writer.blob(blob(1), Role::Json).unwrap().is_some());
     assert!(writer.blob(blob(2), Role::Json).unwrap().is_none());
     assert_eq!(writer.blobs_read(), 2);
+}
+
+#[test]
+fn a_writer_counts_each_validation_lookup_whether_or_not_the_index_holds_it() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    writer
+        .put_validation(blob(1), blob(2), &ValidationFact::Valid(Vec::new()))
+        .unwrap();
+    assert_eq!(writer.validations_read(), 0);
+    assert!(writer.validation(blob(1), blob(2)).unwrap().is_some());
+    assert!(writer.validation(blob(3), blob(2)).unwrap().is_none());
+    assert_eq!(writer.validations_read(), 2);
+}
+
+#[test]
+fn a_stored_tree_reads_back_and_one_never_stored_is_none() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    let rows = vec![board_tree::TreeRow {
+        name: "a.json".into(),
+        mode: 0o100_644,
+        object: blob(2),
+        size: Some(2),
+        segment: Some("a".into()),
+        code: None,
+    }];
+    writer
+        .put_tree(&board_tree::TreeRows {
+            id: blob(1),
+            rows: rows.clone(),
+        })
+        .unwrap();
+    assert_eq!(writer.tree(blob(1)).unwrap(), Some(rows));
+    assert_eq!(writer.tree(blob(3)).unwrap(), None);
 }
 
 /// Writes one blob fact to a new index file, then decides when `decided`
@@ -308,11 +341,9 @@ fn an_index_another_process_holds_past_the_wait_is_replaced_by_one_in_memory() {
         .execute_batch("PRAGMA locking_mode = EXCLUSIVE; BEGIN EXCLUSIVE")
         .unwrap();
     let started = Instant::now();
-    let index = Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
-    assert!(
-        started.elapsed().as_secs() >= 5,
-        "it waits before giving up"
-    );
+    let wait = Duration::from_millis(200);
+    let index = Index::open_waiting(Some(cache.path()), Path::new(ROOT), wait).unwrap();
+    assert!(started.elapsed() >= wait, "it waits before giving up");
     assert_eq!(index.storage(), &Storage::Memory(Fallback::Busy));
     assert!(!has_fact(index), "the index in memory starts empty");
 }
@@ -635,10 +666,12 @@ fn a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes() {
                      SELECT count(*) FROM c";
     let refused = index.query(unbounded, 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryTimeout);
-    let bounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 10) \
+    // Many times the steps between checks of the clock, and still well
+    // within the time limit.
+    let bounded = "WITH RECURSIVE c(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM c WHERE n < 10000) \
                    SELECT count(*) FROM c";
     let admitted = index.query(bounded, 10, None).unwrap();
-    assert_eq!(admitted.rows, [vec![serde_json::json!(10)]]);
+    assert_eq!(admitted.rows, [vec![serde_json::json!(10000)]]);
     assert_eq!(journal_mode(&index), "wal");
     assert!(has_fact(index.index), "the index is still writable");
 }

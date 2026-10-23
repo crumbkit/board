@@ -1,14 +1,16 @@
 //! Checking through the index: what it says against HEAD, how it shares the
 //! index with other processes, and that a warm check answers as a cold one.
 
+use std::time::{Duration, Instant};
+
 use board_index::{Fallback, Index};
-use board_model::{Change, Code};
+use board_model::{Change, Code, Kind, Source};
 use board_scenario::{Item, Scenario};
 use board_tree::Status;
 
 use crate::check::Tally;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, stand_in, task};
-use crate::{CheckReport, Detail, Refreshed};
+use crate::{CheckReport, Checked, Detail, Refreshed};
 
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
     open(scenario)
@@ -139,8 +141,11 @@ fn check_changed_while(held: bool) -> CheckReport {
 
 #[test]
 fn a_check_that_must_write_while_another_process_holds_the_lock_works_in_memory() {
+    let started = Instant::now();
     let report = check_changed_while(true);
     assert_eq!(report.memory, Some(Fallback::Busy));
+    // The documented wait for the lock is 5 seconds.
+    assert!(started.elapsed() >= Duration::from_secs(5));
 }
 
 #[test]
@@ -267,4 +272,56 @@ fn a_tally_names_its_first_failing_reference_as_a_predicate_and_counts_every_one
     clean.add("/see", None);
     clean.add("/project", None);
     assert_eq!(clean.first(), None);
+}
+
+#[test]
+fn a_degraded_entry_hints_at_its_fix_where_its_file_is_and_an_ok_one_has_no_hint() {
+    let degraded = Checked {
+        source: Source::WorkingTree,
+        path: "tasks/a.json".to_owned(),
+        logical: Some("/tasks/a".parse().unwrap()),
+        kind: Kind::Json,
+        status: Status::Degraded(Code::JsonMergeConflict),
+        detail: None,
+        change: Change::Uncommitted,
+        schema: None,
+    };
+    assert_eq!(
+        degraded.hint().as_deref(),
+        Some("resolve the git merge conflict in the file, then run `board check /tasks/a`")
+    );
+    let mounted = Checked {
+        detail: Some(Detail {
+            at: Some("/vendor/a".parse().unwrap()),
+            mount: Some("/vendor".parse().unwrap()),
+            ..Detail::default()
+        }),
+        status: Status::Degraded(Code::JsonParse),
+        ..degraded.clone()
+    };
+    let hint = mounted.hint().unwrap();
+    assert!(
+        hint.starts_with("/vendor/a is in the repository of the board mounted at /vendor"),
+        "{hint}"
+    );
+    let invalid = Checked {
+        status: Status::Degraded(Code::RecordInvalid),
+        detail: Some(Detail {
+            pointer: Some("/due".to_owned()),
+            ..Detail::default()
+        }),
+        ..degraded.clone()
+    };
+    assert!(invalid.hint().unwrap().contains("`/due`"));
+    let untyped = Checked {
+        status: Status::Degraded(Code::RecordUnknownType),
+        schema: Some(".board/types/task.json".to_owned()),
+        ..degraded.clone()
+    };
+    assert!(untyped.hint().unwrap().contains("`.board/types/task.json`"));
+    let ok = Checked {
+        status: Status::Ok,
+        ..degraded
+    };
+    assert_eq!(ok.hint(), None);
 }

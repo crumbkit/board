@@ -205,6 +205,11 @@ mod tests {
     }
 
     #[test]
+    fn the_record_limit_is_sixteen_mebibytes() {
+        assert_eq!(MAX_RECORD_BYTES, 16_777_216);
+    }
+
+    #[test]
     fn a_record_over_the_size_limit_is_never_read_as_a_pointer() {
         let small = format!(
             r#"{{"$type": "board/mount/v1", "path": "/x"}}{}"#,
