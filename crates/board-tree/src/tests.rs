@@ -10,6 +10,7 @@ mod places;
 mod planned;
 mod reading;
 mod scoped;
+mod symlinks;
 mod syncing;
 mod trees;
 mod working_tree;
@@ -333,28 +334,6 @@ fn a_path_over_4096_bytes_is_malformed() {
     assert_eq!(
         statuses,
         [Status::Degraded(Code::PathMalformed), Status::Ok]
-    );
-}
-
-#[test]
-fn a_symlink_is_a_file_that_is_never_followed() {
-    let scenario = Scenario::new();
-    let commit = scenario.commit_items(&[
-        (b"work/x.json", Item::File("{}")),
-        (b"s.json", Item::Symlink("work")),
-    ]);
-    assert_eq!(
-        walk(&scenario, commit),
-        [ok("s.json", "/s.json"), ok("work/x.json", "/work/x")]
-    );
-    let link = resolve(&scenario, commit, "/s.json").unwrap();
-    assert_eq!(link.object, Object::Blob(scenario.blob("work")));
-    pair(
-        &scenario,
-        commit,
-        ("/work/x", "work/x.json"),
-        "/s.json/x",
-        Code::PathNotFound,
     );
 }
 

@@ -7,6 +7,7 @@ use board_model::{
     RecordType, parse_json,
 };
 use board_plugin::{Manifest, ManifestError};
+use board_tree::Refused;
 use board_validate::{RecordError, Reference, Schema, SchemaError};
 use serde_json::Value;
 
@@ -28,6 +29,7 @@ pub enum Fault {
         SchemaFound::Missing => format!("no schema for {record_type} at {}", record_type.schema_path()),
         SchemaFound::Unreadable => format!("its schema at {} could not be read", record_type.schema_path()),
         SchemaFound::Unusable => format!("its schema at {} does not compile", record_type.schema_path()),
+        SchemaFound::Symlink(refused) => format!("its schema at {} is {refused}", record_type.schema_path()),
     })]
     NoSchema {
         record_type: RecordType,
@@ -46,6 +48,7 @@ impl Fault {
                 SchemaFound::Missing => Code::RecordUnknownType,
                 SchemaFound::Unreadable => Code::RepoUnreadable,
                 SchemaFound::Unusable => Code::SchemaInvalid,
+                SchemaFound::Symlink(refused) => refused.code,
             },
         }
     }
@@ -59,6 +62,10 @@ impl Fault {
             Self::NoSchema { record_type, found } => Fields {
                 pointer: (*found == SchemaFound::Unusable).then(|| "/$type".to_owned()),
                 schema: Some(record_type.schema_path()),
+                target: match found {
+                    SchemaFound::Symlink(refused) => Some(refused.target.clone()),
+                    _ => None,
+                },
                 record_type: Some(record_type.clone()),
                 ..Fields::default()
             },
@@ -83,13 +90,15 @@ impl Fault {
 }
 
 /// What is at a record type's schema path when it is not a usable schema.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SchemaFound {
     Missing,
     /// A file that could not be read, or that changed while it was read.
     Unreadable,
     /// A file that is not a schema that compiles.
     Unusable,
+    /// A symlink that leads to no file.
+    Symlink(Refused),
 }
 
 /// Judges a classified blob by its bytes alone: its classification's code,

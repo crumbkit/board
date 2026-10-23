@@ -4,7 +4,6 @@
 //! Writes). The lock the caller holds keeps puts out while it runs.
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::io;
 
 use board_model::{Code, Fields, LogicalPath, ObjectId};
@@ -14,6 +13,7 @@ use gix::object::tree::EntryKind;
 use super::{Lock, Staged, WriteError, stage_entry};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Pushed, Upstream};
+use crate::worktree::Working;
 
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
@@ -309,16 +309,10 @@ impl Repository {
             };
             let (was, now) = (blob(was), blob(now));
             let path = path.to_string();
-            let held = match fs::read(self.path().join(&path)) {
-                Ok(bytes) => Some(self.blob_id(&bytes)),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-                Err(source) => {
-                    return Err(GitError::File {
-                        path: self.path().join(&path),
-                        source,
-                    }
-                    .into());
-                }
+            let held = match self.read_working(&path)? {
+                Working::Read(contents) => Some(contents.blob),
+                Working::TooLarge => Some(self.working_blob(&path)?),
+                Working::Missing => None,
             };
             if held != was && held != now {
                 return Err(SyncError::Edited { path });

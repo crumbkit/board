@@ -114,7 +114,7 @@ def test_a_file_in_a_commit_mounted_twice_is_matched_by_the_path_check_counts_it
     assert applying(board, "/zz/long/lib/docs/new.md") == ["/controls/long"], "a missing path is matched as asked"
 
 
-def test_a_symlink_or_directory_named_json_is_matched_by_its_name_and_a_json_file_by_its_file_name(
+def test_a_directory_named_json_is_matched_by_its_name_and_a_json_file_or_symlink_by_its_file_name(
     board: Board,
 ) -> None:
     board.write("docs/t.md", "T.\n")
@@ -123,7 +123,7 @@ def test_a_symlink_or_directory_named_json_is_matched_by_its_name_and_a_json_fil
     board.write("box.json/f.md", "F.\n")
     board.write("controls/names.json", control("R.", paths=["docs/l.json", "docs/a.json", "box.json"]))
     board.write("controls/doubled.json", control("R.", paths=["*.json.json"]))
-    assert applying(board, "/docs/l.json") == ["/controls/names"]
+    assert applying(board, "/docs/l") == ["/controls/names"]
     assert applying(board, "/docs/a") == ["/controls/names"]
     assert applying(board, "/box.json") == ["/controls/names"]
 

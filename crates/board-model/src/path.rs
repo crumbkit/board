@@ -14,6 +14,11 @@ pub const MAX_PATH_BYTES: usize = 4096;
 /// The longest segment, in bytes. Most file systems refuse longer names.
 pub const MAX_SEGMENT_BYTES: usize = 255;
 
+/// The most symlinks one read follows: the fewest that an operating system
+/// Board runs on follows (macOS), so that a working-tree read through the
+/// file system reaches every file the tree's rule admits.
+pub const MAX_SYMLINKS: usize = 32;
+
 /// An absolute logical path: `/` alone (the board root), or `/` followed by
 /// segments separated by `/`. A segment is non-empty, at most
 /// [`MAX_SEGMENT_BYTES`], holds no control character and is not `.` or `..`.

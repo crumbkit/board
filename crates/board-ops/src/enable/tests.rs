@@ -139,12 +139,17 @@ fn a_board_that_commits_on_put_commits_the_enable_once() {
 }
 
 #[test]
-fn a_symlinked_schema_refuses_the_enable_and_a_regular_copy_is_kept() {
-    let (board, _data, plugins) = installed(SCHEMA);
+fn a_schema_symlinked_to_a_different_one_refuses_the_enable_and_one_symlinked_to_an_equal_one_is_left()
+ {
     let at = ".board/types/notes/note/v1.schema.json";
-    board
-        .write("schemas/note.json", Item::File(SCHEMA))
-        .write(at, Item::Symlink("../../../../schemas/note.json"));
+    let linked = |held: &str| {
+        let (board, data, plugins) = installed(SCHEMA);
+        board
+            .write("schemas/note.json", Item::File(held))
+            .write(at, Item::Symlink("../../../../schemas/note.json"));
+        (board, data, plugins)
+    };
+    let (board, _data, plugins) = linked(r#"{"type": "object"}"#);
     let refused = open(&board)
         .plugin_enable(Some(&plugins), &notes())
         .unwrap_err();
@@ -153,12 +158,13 @@ fn a_symlinked_schema_refuses_the_enable_and_a_regular_copy_is_kept() {
         open(&board).config().plugins.is_empty(),
         "nothing is written"
     );
-    board.write(at, Item::Deleted).write(at, Item::File(SCHEMA));
+    let (board, _data, plugins) = linked(SCHEMA);
     let report = open(&board)
         .plugin_enable(Some(&plugins), &notes())
         .unwrap();
     assert_eq!(report.put.writes.len(), 1, "only the config is written");
-    assert_eq!(read(&board, at), SCHEMA.as_bytes());
+    let kept = std::fs::read_link(board.workdir().join(at)).unwrap();
+    assert_eq!(kept, std::path::Path::new("../../../../schemas/note.json"));
 }
 
 #[test]

@@ -306,3 +306,90 @@ fn a_board_places_a_directory_of_a_repository_it_mounts_and_not_one_of_another()
         assert_eq!(elsewhere, []);
     }
 }
+
+/// How many trees the mounted library decoded while a board checked itself,
+/// when each of `notes` notes links through the mount twice: once to a
+/// symlink whose long text passes through `notes/deep` 400 times, and once
+/// to a file.
+fn decoded_for(notes: usize) -> usize {
+    let library = Scenario::new();
+    let text = format!("{}a.md", "../deep/".repeat(400));
+    let commit = library.commit_items(&[
+        (b"notes/deep/a.md", Item::File("A.\n")),
+        (b"notes/deep/l.md", Item::Symlink(&text)),
+        (b"notes/other/b.md", Item::File("B.\n")),
+    ]);
+    let scenario = board();
+    scenario.write("lib.json", Item::File(&mount(&library.path(), commit)));
+    for note in 0..notes {
+        let text = "[a](/lib/notes/deep/l.md) [b](/lib/notes/other/b.md)\n";
+        scenario.write(&format!("notes/{note}.md"), Item::File(text));
+    }
+    let board = open(&scenario);
+    let report = board.check(None, None).unwrap();
+    let statuses: Vec<_> = report.entries.iter().map(|entry| entry.status).collect();
+    assert!(
+        statuses.iter().all(|status| *status == Status::Ok),
+        "{statuses:?}"
+    );
+    let mounted = board_model::Board {
+        repository: library.workdir().to_path_buf(),
+        source: Source::Commit(commit),
+    };
+    board
+        .repositories()
+        .repository(&mounted)
+        .unwrap()
+        .trees_decoded()
+}
+
+#[test]
+fn each_link_through_a_mount_decodes_the_trees_on_its_path_once_however_long_a_symlink_text_on_it()
+{
+    // Listing the mount decodes its four directories. Each note then adds
+    // the three on each of its two paths: the root, `notes` and `deep` or
+    // `other`. The symlink's 400 passes through `deep` decode nothing more.
+    assert_eq!(decoded_for(0), 4);
+    assert_eq!(decoded_for(1), 4 + 6);
+    assert_eq!(decoded_for(20), 4 + 20 * 6);
+}
+
+#[test]
+fn symlinks_in_a_mount_whose_texts_are_long_are_reported_by_their_length_and_a_short_twin_whole() {
+    let long = "a/".repeat(10_000);
+    let names: Vec<String> = (0..50).map(|n| format!("notes/l{n}.md")).collect();
+    let mut items: Vec<(&[u8], Item<'_>)> = names
+        .iter()
+        .map(|name| (name.as_bytes(), Item::Symlink(&long)))
+        .collect();
+    items.push((b"notes/short.md", Item::Symlink("gone.md")));
+    let library = Scenario::new();
+    let commit = library.commit_items(&items);
+    let scenario = board();
+    scenario.write("lib.json", Item::File(&mount(&library.path(), commit)));
+    let report = check(&scenario, None);
+    let shown = "… (over 4096 bytes)".to_owned();
+    let mut links = 0;
+    for entry in &report.entries {
+        let Some(detail) = &entry.detail else {
+            continue;
+        };
+        links += 1;
+        assert_eq!(entry.status, Status::Degraded(Code::SymlinkDangling));
+        let expected = if entry.path == "notes/short.md" {
+            "gone.md"
+        } else {
+            &shown
+        };
+        assert_eq!(detail.target.as_deref(), Some(expected), "{}", entry.path);
+        let hint = entry.hint().unwrap();
+        assert!(
+            detail.reason.len() + hint.len() < 1_000,
+            "{detail:?} {hint}"
+        );
+    }
+    assert_eq!(links, 51);
+    // Fifty texts of 20,000 bytes would make a report of over a megabyte.
+    let size = format!("{report:?}").len();
+    assert!(size < 100_000, "{size} bytes");
+}

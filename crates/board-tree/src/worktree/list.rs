@@ -40,7 +40,7 @@ pub(crate) enum RawKind {
 #[derive(Clone)]
 pub(crate) struct Item {
     pub(crate) name: Vec<u8>,
-    file_type: Option<fs::FileType>,
+    pub(super) file_type: Option<fs::FileType>,
 }
 
 /// The items of `directory` beneath `root`, sorted by name, leaving out

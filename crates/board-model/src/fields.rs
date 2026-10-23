@@ -34,6 +34,8 @@ pub struct Fields {
     pub found: Option<Found>,
     /// Each line of a batch that refused it, in order.
     pub refusals: Vec<Lined>,
+    /// The text of a symlink: the path it names.
+    pub target: Option<String>,
 }
 
 /// What a put found where it would write.
@@ -94,6 +96,7 @@ impl Fields {
             ("plugin", self.plugin.clone()),
             ("capability", self.capability.clone()),
             ("directory", self.directory.clone()),
+            ("target", self.target.clone()),
         ];
         let mut json: Map<String, Value> = strings
             .into_iter()
@@ -257,6 +260,7 @@ mod tests {
             directory: Some("tasks".to_owned()),
             known: Some(Known::Tables(Vec::new())),
             found: Some(Found::Nothing),
+            target: Some("../x.json".to_owned()),
             refusals: vec![Lined::new(1, Code::PutInvalid, "no", Fields::default())],
         };
         let columns = Fields {

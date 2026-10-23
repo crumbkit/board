@@ -216,6 +216,7 @@ fn every_command_a_hint_names_parses() {
             std::collections::BTreeMap::new(),
         )),
         found: Some(board_model::Found::Blob(ObjectId::Sha1([1; 20]))),
+        target: Some("../x.json".to_owned()),
         refusals: Vec::new(),
     };
     let no_blob = Fields {

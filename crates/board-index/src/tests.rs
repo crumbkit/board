@@ -95,6 +95,37 @@ fn a_markdown_files_links_come_back_in_order_with_its_fact() {
 }
 
 #[test]
+fn a_tree_keeps_names_that_show_alike_apart_and_exact_and_its_files_show_them_lossily() {
+    let writer = Index::fall_back().unwrap().write().unwrap();
+    let names: [&[u8]; 4] = [b"x", b"x.json", b"\xff.md", b"\xfe.md"];
+    let rows: Vec<_> = names
+        .iter()
+        .map(|name| board_tree::TreeRow {
+            name: name.to_vec(),
+            mode: 0o100_644,
+            object: blob(1),
+            size: None,
+            segment: None,
+            code: None,
+        })
+        .collect();
+    writer
+        .put_tree(&board_tree::TreeRows { id: blob(9), rows })
+        .unwrap();
+    let mut stored: Vec<_> = writer.tree(blob(9)).unwrap().unwrap();
+    stored.sort_by(|a, b| a.name.cmp(&b.name));
+    let mut expected = names.map(<[u8]>::to_vec);
+    expected.sort();
+    assert_eq!(
+        stored.into_iter().map(|row| row.name).collect::<Vec<_>>(),
+        expected
+    );
+    let files = writer.files(blob(9)).unwrap();
+    let shown: BTreeSet<_> = files.keys().map(String::as_str).collect();
+    assert_eq!(shown, BTreeSet::from(["x", "x.json", "\u{fffd}.md"]));
+}
+
+#[test]
 fn a_writer_counts_each_blob_lookup_whether_or_not_the_index_holds_the_blob() {
     let writer = Index::fall_back().unwrap().write().unwrap();
     writer.put_blob(blob(1), Role::Json, &record()).unwrap();

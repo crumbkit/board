@@ -170,30 +170,6 @@ fn expect_over_a_symlink_is_refused_whichever_blob_it_names_and_over_the_target_
     assert_eq!(written.writes[0].previous, Some(targets));
 }
 
-#[test]
-fn a_record_whose_schema_is_a_symlink_is_refused_as_check_reads_it_and_a_regular_twin_is_admitted()
-{
-    let scenario = board();
-    scenario
-        .write("schemas/note.json", Item::File(r#"{"type": "object"}"#))
-        .write(
-            ".board/types/lr/note/v1.schema.json",
-            Item::Symlink("../../../../schemas/note.json"),
-        );
-    let note = r#"{"$type": "lr/note/v1"}"#;
-    assert_eq!(
-        put(&scenario, "/n", Expect::Any, note).unwrap_err(),
-        Code::SchemaInvalid
-    );
-    scenario
-        .write(".board/types/lr/note/v1.schema.json", Item::Deleted)
-        .write(
-            ".board/types/lr/note/v1.schema.json",
-            Item::File(r#"{"type": "object"}"#),
-        );
-    assert!(put(&scenario, "/n", Expect::Any, note).is_ok());
-}
-
 /// The codes put shares with check are pinned by the property in `parity`;
 /// these are put's own checks, made before it reads the record as check does.
 #[test]
@@ -1019,8 +995,7 @@ fn a_write_left_degraded_says_where_and_why_as_check_does_and_its_twin_is_clean(
         pointer: pointer.map(str::to_owned),
         reason: reason.to_owned(),
         failures,
-        at: None,
-        mount: None,
+        ..Detail::default()
     };
     assert_eq!(
         dangling,

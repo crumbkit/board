@@ -4,10 +4,10 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    CONFIG_TYPE, Classified, Code, Content, LogicalPath, Object, ObjectId, Source, classify,
+    CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, Source, classify,
 };
 use board_plugin::PluginName;
-use board_tree::{GitError, Repositories, Repository, latest};
+use board_tree::{GitError, Repositories, Repository, ResolveError, latest};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
@@ -101,7 +101,14 @@ impl Board {
         if repositories.root().path() != root {
             return Err(not_found());
         }
-        let config = read_config(&repositories).ok_or(OpenError::Config { root })?;
+        let config = match config_file(&repositories) {
+            Ok((_, _, config)) => config,
+            // A symlink on the way is named, rather than the configuration.
+            Err(Some(source @ ResolveError::Symlink { .. })) => {
+                return Err(OpenError::Symlink { root, source });
+            }
+            Err(_) => return Err(OpenError::Config { root }),
+        };
         Ok(Self {
             repositories,
             config,
@@ -122,28 +129,36 @@ impl Board {
     }
 }
 
+/// The logical path of the board's configuration.
+const CONFIG_PATH: &str = "/.board/board";
+
 /// The configuration in the working tree's `.board/board.json`.
 pub(crate) fn read_config(repositories: &Repositories) -> Option<Config> {
-    config_file(repositories).map(|(_, _, config)| config)
+    config_file(repositories).ok().map(|(_, _, config)| config)
 }
 
 /// The working tree's `.board/board.json`: its blob, its value and the
-/// configuration it holds, when it holds a valid one.
-pub(crate) fn config_file(repositories: &Repositories) -> Option<(ObjectId, Value, Config)> {
-    let path: LogicalPath = "/.board/board".parse().ok()?;
-    let location = repositories.resolve(&Source::WorkingTree, &path).ok()?;
+/// configuration it holds, when it holds a valid one, else why its path
+/// does not resolve, if it does not.
+pub(crate) fn config_file(
+    repositories: &Repositories,
+) -> Result<(ObjectId, Value, Config), Option<ResolveError>> {
+    let path: LogicalPath = CONFIG_PATH.parse().map_err(|_| None)?;
+    let location = repositories.resolve(&Source::WorkingTree, &path)?;
     let Object::Blob(blob) = location.object else {
-        return None;
+        return Err(None);
     };
-    let contents = latest(repositories.read(&location, blob)).ok()??;
+    let root = &mut repositories.root().reader();
+    let contents = latest(repositories.read(root, &location, blob));
+    let contents = contents.ok().flatten().ok_or(None)?;
     match classify(&location.path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, value },
             code: None,
-        } if record_type.as_str() == CONFIG_TYPE => {
-            Config::from_value(&value).map(|config| (contents.blob, value, config))
-        }
-        _ => None,
+        } if record_type.as_str() == CONFIG_TYPE => Config::from_value(&value)
+            .map(|config| (contents.blob, value, config))
+            .ok_or(None),
+        _ => Err(None),
     }
 }
 
@@ -156,6 +171,8 @@ pub enum OpenError {
     NoRepository { start: PathBuf },
     #[error("the board at {root:?} has a .board/board.json that is not a valid board/config/v1")]
     Config { root: PathBuf },
+    #[error("the board at {root:?} cannot read its configuration: {source}")]
+    Symlink { root: PathBuf, source: ResolveError },
     #[error(transparent)]
     Git { source: GitError },
 }
@@ -165,7 +182,16 @@ impl OpenError {
         match self {
             Self::NotFound { .. } | Self::NoRepository { .. } => Code::ConfigNotFound,
             Self::Config { .. } => Code::ConfigInvalid,
+            Self::Symlink { source, .. } => source.code(),
             Self::Git { source } => source.code(),
+        }
+    }
+
+    /// The symlink at fault, for a configuration a symlink leads nowhere.
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Symlink { source, .. } => source.fields(),
+            _ => Fields::default(),
         }
     }
 }

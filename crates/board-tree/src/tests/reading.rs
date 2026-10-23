@@ -22,11 +22,11 @@ fn walked(repository: &Repository) -> impl Fn(&str) -> ObjectId {
 
 /// The file at `path` as the reader finds it, walked or not.
 fn working(repository: &Repository, path: &str) -> Working {
-    repository.read_working(path, None).unwrap()
+    repository.read_working(path).unwrap()
 }
 
 fn read(repository: &Repository, path: &str, blob: ObjectId) -> Result<Option<Contents>, GitError> {
-    repository.read(&Source::WorkingTree, path, blob)
+    repository.reader().read(&Source::WorkingTree, path, blob)
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn a_file_that_cannot_be_read_is_unreadable_and_a_readable_twin_is_read() {
         .write("a.json/b.json", Item::File("{}"))
         .write("b.json", Item::File("{}"));
     let repository = scenario.open();
-    let directory = repository.read_working("a.json", None);
+    let directory = repository.read_working("a.json");
     assert_eq!(directory.unwrap_err().code(), Code::RepoUnreadable);
     assert!(matches!(working(&repository, "b.json"), Working::Read(_)));
 }
@@ -133,7 +133,7 @@ fn a_file_in_a_directory_that_cannot_be_searched_is_unreadable_and_not_missing()
     ));
     let locked = scenario.workdir().join("locked");
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let read = repository.read_working("locked/a.json", None);
+    let read = repository.read_working("locked/a.json");
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
     // Root searches any directory, so the case cannot be made as root.
     if !matches!(read, Ok(Working::Read(_))) {
@@ -142,19 +142,26 @@ fn a_file_in_a_directory_that_cannot_be_searched_is_unreadable_and_not_missing()
 }
 
 #[test]
-fn a_symlink_is_read_as_its_target_path_with_the_blob_the_walk_gave_it() {
+fn a_symlink_walked_to_its_file_reads_the_file_and_one_walked_as_itself_reads_its_text() {
     let scenario = Scenario::new();
     scenario
         .write("target.json", Item::File("{}"))
         .write("link.json", Item::Symlink("target.json"));
     let repository = scenario.open();
     let blob = walked(&repository);
-    let link = read(&repository, "link.json", blob("link.json")).unwrap();
+    assert_eq!(blob("link.json"), scenario.blob("{}"));
+    let through = read(&repository, "link.json", blob("link.json")).unwrap();
+    let the_file = Contents {
+        blob: scenario.blob("{}"),
+        bytes: b"{}".to_vec(),
+    };
+    assert_eq!(through, Some(the_file));
+    let itself = read(&repository, "link.json", scenario.blob("target.json")).unwrap();
     let as_git_stores_it = Contents {
         blob: scenario.blob("target.json"),
         bytes: b"target.json".to_vec(),
     };
-    assert_eq!(link, Some(as_git_stores_it));
+    assert_eq!(itself, Some(as_git_stores_it));
 }
 
 #[test]
@@ -301,4 +308,32 @@ fn a_path_the_walk_leaves_out_as_ignored_is_ignored_and_a_tracked_twin_is_seen()
         assert!(walked.iter().any(|walked| walked == path), "{path}");
     }
     assert_eq!(directory("build"), Some(Directory::Entries));
+}
+
+#[test]
+fn a_file_beneath_a_symlink_to_a_directory_outside_the_repository_is_missing_and_one_beneath_a_directory_is_read()
+ {
+    let outer = Scenario::new();
+    outer
+        .write("outside/a.json", Item::File("{}"))
+        .write("outside/b.json", Item::Symlink("a.json"));
+    let scenario = Scenario::within(&outer);
+    scenario
+        .write("real/linked", Item::Symlink("../../outside"))
+        .write("real/a.json", Item::File("{}"));
+    let repository = scenario.open();
+    for path in ["real/linked/a.json", "real/linked/b.json"] {
+        assert_eq!(working(&repository, path), Working::Missing, "{path}");
+        let through = repository.reader().read_through(path).unwrap();
+        assert_eq!(through, (Working::Missing, false), "{path}");
+    }
+    let read = Working::Read(Contents {
+        blob: scenario.blob("{}"),
+        bytes: b"{}".to_vec(),
+    });
+    assert_eq!(working(&repository, "real/a.json"), read);
+    assert_eq!(
+        repository.reader().read_through("real/a.json").unwrap(),
+        (read, false)
+    );
 }

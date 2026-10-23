@@ -83,6 +83,7 @@ impl Board {
         let (name, version) = (manifest.name.as_str(), manifest.version.as_str());
         view.trust(name, version, id)?;
         let types: Vec<&str> = manifest.extract.iter().map(RecordType::as_str).collect();
+        let mut snapshot = self.repositories().snapshot().ok();
         let records: Vec<Record> = view
             .unhandled(name, version, &types)?
             .into_iter()
@@ -91,10 +92,9 @@ impl Board {
                     repository: unhandled.repository,
                     source: unhandled.source,
                 };
-                let repository = self.repositories().repository(&board).ok()?;
                 // A file that changed since the refresh is sent next time.
-                let contents = repository
-                    .read(&board.source, &unhandled.path, unhandled.blob)
+                let contents = (snapshot.as_mut()?)
+                    .read(&board, &unhandled.path, unhandled.blob)
                     .ok()??;
                 Some(Record {
                     blob: unhandled.blob,

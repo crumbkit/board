@@ -7,6 +7,7 @@ mod git;
 mod mounts;
 mod repositories;
 mod resolve;
+mod symlink;
 mod through;
 mod transport;
 mod tree;
@@ -23,13 +24,14 @@ pub use crate::mounts::{
     Cache, MountPoint, Mounted, Pin, PinError, Place, Reached, Scopes, in_scope, within,
 };
 pub use crate::repositories::Repositories;
-pub use crate::resolve::{Ancestor, MAX_HOPS, ResolveError, Resolver};
+pub use crate::resolve::{Ancestor, InCommit, MAX_HOPS, ResolveError, Resolver};
+pub use crate::symlink::Refused;
 pub use crate::through::{Inside, Through};
 pub use crate::transport::Upstream;
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
-pub use crate::walk::{Beneath, Entry, Name, Status};
+pub use crate::walk::{Beneath, Entry, Link, Name, Status};
 pub use crate::worktree::{
-    Directory, Known, Prepare, Working, discover, is_repository_root, repository_root,
+    Directory, Known, Prepare, Reader, Working, discover, is_repository_root, repository_root,
 };
 pub use crate::write::outside::write_outside;
 pub use crate::write::sync::{ATTEMPTS, Replayed, SyncError, Synced};

@@ -2,25 +2,28 @@
 //! tracked files and untracked files that are not ignored.
 
 mod list;
+mod read;
 mod settle;
+
+pub use crate::worktree::read::{Directory, Reader, Working};
 
 use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs::{self, Metadata};
-use std::io::{self, BufReader, Read};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::UNIX_EPOCH;
 
-use board_model::{MAX_RECORD_BYTES, ObjectId, Source, Stat};
+use board_model::{ObjectId, Source, Stat};
 use gix::bstr::{BString, ByteSlice};
 use gix::index::entry::Mode;
 use gix::worktree::stack::state::ignore;
 
 use crate::address::{self, Named, Pointers};
 use crate::git::{Contents, GitError, Repository};
-use crate::tree::{Kind, RawEntry, Settled, Tree, Unhashed, Visit};
+use crate::tree::{Folded, Kind, RawEntry, Settled, Tree, Unhashed, Visit, is_alike};
 use crate::worktree::list::{Item, Raw, RawKind};
 use crate::worktree::settle::hash_stream;
 
@@ -80,10 +83,7 @@ struct Listing {
     /// Each item as git sees it, once classified: `None` when git does not
     /// see it.
     seen: Vec<OnceCell<Option<RawEntry<PathBuf>>>>,
-    /// Where each name, folded to lower case, is found among the items,
-    /// made the first time a name is looked up, so finding a name does not
-    /// scan a large directory.
-    folded: OnceCell<HashMap<Vec<u8>, Vec<usize>>>,
+    folded: Folded,
 }
 
 impl Listing {
@@ -91,30 +91,8 @@ impl Listing {
         Self {
             seen: items.iter().map(|_| OnceCell::new()).collect(),
             items,
-            folded: OnceCell::new(),
+            folded: Folded::default(),
         }
-    }
-
-    /// Where the items named one of `names` but for ASCII case are, in
-    /// listing order.
-    fn folded(&self, names: &[&[u8]]) -> Vec<usize> {
-        let folded = self.folded.get_or_init(|| {
-            let mut folded: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
-            for (at, item) in self.items.iter().enumerate() {
-                let name = item.name.to_ascii_lowercase();
-                folded.entry(name).or_default().push(at);
-            }
-            folded
-        });
-        let mut found: Vec<usize> = names
-            .iter()
-            .filter_map(|name| folded.get(&name.to_ascii_lowercase()))
-            .flatten()
-            .copied()
-            .collect();
-        found.sort_unstable();
-        found.dedup();
-        found
     }
 }
 
@@ -239,11 +217,12 @@ impl<T: Send> WorkingTree<'_, '_, T> {
                 };
                 (kind, None)
             }
+            // A symlink's text is in hand, and the blob the index knows for
+            // it is the file's it leads to.
             RawKind::Symlink { stat, target } => {
-                let blob = self.known(&path, stat).or_else(|| {
-                    let target = target.as_deref()?;
-                    self.repository.hash(&mut &target[..], target.len() as u64)
-                });
+                let blob = target
+                    .as_deref()
+                    .and_then(|target| self.repository.hash(&mut &target[..], target.len() as u64));
                 (blob.map_or(Kind::Unreadable, Kind::Symlink), Some(*stat))
             }
             RawKind::File(seen) => match self.known(&path, seen) {
@@ -300,11 +279,25 @@ impl<T: Send> WorkingTree<'_, '_, T> {
         })
     }
 
-    /// The entries of `directory`, listed as `raw`, as git sees them.
+    /// The entries of `directory`, listed as `raw`, as git sees them, kept
+    /// as its listing so that a later lookup there reads nothing again.
     fn classify(&mut self, directory: &Path, raw: Vec<Raw>) -> Rc<[RawEntry<PathBuf>]> {
-        raw.into_iter()
-            .filter_map(|item| self.seen(directory, item))
-            .collect()
+        let (mut items, mut seen) = (Vec::new(), Vec::new());
+        for raw in raw {
+            // An item already classified is not read again, so its type
+            // is not needed.
+            let (name, file_type) = (raw.name.clone(), None);
+            items.push(Item { name, file_type });
+            seen.push(OnceCell::from(self.seen(directory, raw)));
+        }
+        let listed = seen.iter().filter_map(|seen| seen.get()?.clone()).collect();
+        let listing = Listing {
+            items,
+            seen,
+            folded: Folded::default(),
+        };
+        self.listed.insert(directory.to_path_buf(), listing);
+        listed
     }
 
     /// The blob of the file at `path` with `stat`, if already known.
@@ -353,20 +346,13 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
         name: &[u8],
         segment: Option<&str>,
     ) -> Result<Vec<RawEntry<PathBuf>>, GitError> {
-        let record = segment.map(|segment| format!("{segment}.json"));
-        let names = [
-            Some(name),
-            segment.map(str::as_bytes),
-            record.as_deref().map(str::as_bytes),
-        ];
-        let names: Vec<&[u8]> = names.into_iter().flatten().collect();
-        let found = self.listing(directory)?.folded(&names);
+        let listing = self.listing(directory)?;
+        let names = listing.items.iter().map(|item| item.name.as_slice());
+        let found = listing.folded.find(names, name, segment);
         Ok(found
             .into_iter()
             .filter_map(|at| self.entry(directory, at))
-            .filter(|entry| {
-                entry.name.eq_ignore_ascii_case(name) || address::segment(entry) == segment
-            })
+            .filter(|entry| is_alike(entry, name, segment))
             .collect())
     }
 
@@ -431,7 +417,10 @@ impl<T: Send> Tree for WorkingTree<'_, '_, T> {
             Kind::File(blob) | Kind::Symlink(blob) => Some(blob),
             _ => None,
         };
-        let contents = self.repository.read_walked(&path, listed)?;
+        // The entry's own bytes, a symlink's text: a symlink is followed
+        // only by whoever asked for it.
+        let working = self.repository.read_working(&path)?;
+        let contents = self.repository.as_walked(&path, working, listed)?;
         Ok(contents.map(|contents| contents.bytes))
     }
 }
@@ -514,165 +503,12 @@ fn names(directory: &Path) -> io::Result<Vec<OsString>> {
         .collect()
 }
 
-/// A working-tree directory as [`Repository::working_directory`] finds it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Directory {
-    /// A submodule, or a path beneath one.
-    Submodule,
-    /// The walk lists nothing at this path.
-    Entries,
-    /// The walk leaves out this path, or a directory above it, because it
-    /// is untracked and ignored.
-    Ignored,
-}
-
-/// A working-tree file as [`Repository::read_working`] finds it.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Working {
-    /// Nothing is at the path, or a path continues through a file.
-    Missing,
-    /// The file holds more than [`MAX_RECORD_BYTES`].
-    TooLarge,
-    Read(Contents),
-}
-
 impl Repository {
-    /// The working-tree file at `relative`. A symlink's contents are its
-    /// target path, as git stores it. A file read that no longer holds the
-    /// blob it was `walked` with is [`GitError::Changed`].
-    pub fn read_working(
-        &self,
-        relative: impl AsRef<Path>,
-        walked: Option<ObjectId>,
-    ) -> Result<Working, GitError> {
-        let path = self.path().join(relative);
-        let unreadable = |source| GitError::File {
-            path: path.clone(),
-            source,
-        };
-        let metadata = match fs::symlink_metadata(&path) {
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-                ) =>
-            {
-                return Ok(Working::Missing);
-            }
-            metadata => metadata.map_err(unreadable)?,
-        };
-        let mut bytes = Vec::new();
-        if metadata.is_symlink() {
-            let target = fs::read_link(&path).map_err(unreadable)?;
-            bytes = gix::path::into_bstr(target).to_vec();
-        } else {
-            self.opened_one();
-            fs::File::open(&path)
-                .and_then(|file| {
-                    file.take(MAX_RECORD_BYTES as u64 + 1)
-                        .read_to_end(&mut bytes)
-                })
-                .map_err(unreadable)?;
-        }
-        if bytes.len() > MAX_RECORD_BYTES {
-            return Ok(Working::TooLarge);
-        }
-        let contents = Contents {
-            blob: self.blob_id(&bytes),
-            bytes,
-        };
-        match walked {
-            Some(blob) if blob != contents.blob => Err(GitError::Changed { path, contents }),
-            _ => Ok(Working::Read(contents)),
-        }
-    }
-
-    /// What the walk finds on the way to `relative`, by its rules: left out
-    /// when it or a directory above it is untracked and ignored, a
-    /// submodule when it or a directory above it is one, else a directory
-    /// of entries, which includes a path beneath a symlink and anything the
-    /// walk does not list, such as a FIFO, or a name that a case-insensitive
-    /// file system finds under another spelling. `None` when a file or
-    /// symlink is there, or nothing is, or a file is on the way. A directory
-    /// on the way that cannot be listed, or whose ignore rules cannot be
-    /// read, is [`GitError::File`].
-    pub fn working_directory(
-        &self,
-        relative: impl AsRef<Path>,
-    ) -> Result<Option<Directory>, GitError> {
-        let index = self.index()?;
-        let mut excludes = self.excludes(&index)?;
-        let mut components = relative.as_ref().components().peekable();
-        let mut at = PathBuf::new();
-        let mut listed = names(self.path()).map_err(|source| GitError::File {
-            path: self.path().to_path_buf(),
-            source,
-        })?;
-        while let Some(component) = components.next() {
-            at.push(component);
-            let absolute = self.path().join(&at);
-            let Ok(metadata) = fs::symlink_metadata(&absolute) else {
-                return Ok(None);
-            };
-            if !listed.iter().any(|name| name == component.as_os_str()) {
-                return Ok(Some(Directory::Entries));
-            }
-            let unreadable = |source| GitError::File {
-                path: absolute.clone(),
-                source,
-            };
-            if ignored(&index, &mut excludes, &at, metadata.is_dir()).map_err(unreadable)? {
-                return Ok(Some(Directory::Ignored));
-            }
-            if !metadata.is_dir() {
-                // The walk lists only files and symlinks, and does not
-                // follow a symlink.
-                let listed =
-                    metadata.is_file() || metadata.is_symlink() && components.peek().is_none();
-                return Ok((!listed).then_some(Directory::Entries));
-            }
-            if submodule(&index, &at, absolute.join(".git").exists()) {
-                return Ok(Some(Directory::Submodule));
-            }
-            listed = names(&absolute).map_err(unreadable)?;
-        }
-        Ok(Some(Directory::Entries))
-    }
-
-    /// The blob of the working-tree file at `relative`, hashed in constant
-    /// memory, for a file too large to read.
-    pub fn working_blob(&self, relative: impl AsRef<Path>) -> Result<ObjectId, GitError> {
-        let path = self.path().join(relative);
-        let hashed = fs::File::open(&path).and_then(|file| {
-            let length = file.metadata()?.len();
-            self.hash(&mut BufReader::new(file), length)
-                .ok_or_else(|| io::Error::other("the file changed while it was hashed"))
-        });
-        hashed.map_err(|source| GitError::File { path, source })
-    }
-
     /// The id git gives a blob of `length` bytes read from `stream`, in
     /// constant memory; `None` if the stream fails, or yields fewer or more
     /// bytes than `length` because the file changed while it was read.
     fn hash(&self, stream: &mut dyn Read, length: u64) -> Option<ObjectId> {
         hash_stream(self.git().object_hash(), stream, length)
-    }
-
-    /// The contents of a working-tree file that was walked, or `None` when it
-    /// is too large. One that is gone is [`GitError::File`].
-    pub(crate) fn read_walked(
-        &self,
-        relative: &Path,
-        walked: Option<ObjectId>,
-    ) -> Result<Option<Contents>, GitError> {
-        match self.read_working(relative, walked)? {
-            Working::Read(contents) => Ok(Some(contents)),
-            Working::TooLarge => Ok(None),
-            Working::Missing => Err(GitError::File {
-                path: self.path().join(relative),
-                source: io::ErrorKind::NotFound.into(),
-            }),
-        }
     }
 }
 

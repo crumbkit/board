@@ -15,7 +15,7 @@ fn row<'a>(trees: &'a [TreeRows], name: &str) -> &'a TreeRow {
     trees
         .iter()
         .flat_map(|tree| &tree.rows)
-        .find(|row| row.name == name)
+        .find(|row| row.name == name.as_bytes())
         .unwrap_or_else(|| panic!("no row {name}"))
 }
 
@@ -104,7 +104,7 @@ fn walked_stored_and_from_the_commit(
             .find(|tree: &&TreeRows| tree.id == id)
             .map(|tree| tree.rows.clone())
     };
-    let walked = crate::walk_stored(repository.path(), commit, root, &mut rows);
+    let walked = crate::walk_stored(&repository, commit, root, &mut rows);
     (walked, repository.walk(&commit.source()).unwrap())
 }
 
@@ -133,7 +133,7 @@ fn a_root_the_cache_does_not_hold_fails_a_stored_walk_unless_it_is_empty() {
         let commit = scenario.commit(files);
         let repository = scenario.open();
         let root = repository.head_tree().unwrap().unwrap();
-        let walked = crate::walk_stored(repository.path(), commit, root, &mut |_| None);
+        let walked = crate::walk_stored(&repository, commit, root, &mut |_| None);
         (walked, root)
     };
     let (walked, root) = walk(&[("a.md", "")]);
@@ -204,7 +204,7 @@ proptest! {
         let root = repository.head_tree().unwrap().unwrap();
         let stored: Vec<TreeRows> = repository.trees(root, &mut |_| false).unwrap();
         let mut rows = |id| stored.iter().find(|tree| tree.id == id).map(|tree| tree.rows.clone());
-        let walked = crate::walk_stored(repository.path(), commit, root, &mut rows).unwrap();
+        let walked = crate::walk_stored(&repository, commit, root, &mut rows).unwrap();
         prop_assert_eq!(walked, repository.walk(&commit.source()).unwrap());
     }
 }

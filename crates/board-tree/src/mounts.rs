@@ -155,7 +155,7 @@ impl Repositories {
         };
         let root = self.root();
         let Contents { blob, bytes } =
-            latest(root.read(&Source::WorkingTree, &target.path, resolved))
+            latest((root.reader()).read(&Source::WorkingTree, &target.path, resolved))
                 .map_err(|error| refused(error.code()))?
                 .ok_or_else(not_a_mount)?;
         let mount = match board_model::pointer(&bytes) {
@@ -424,9 +424,7 @@ fn walk<C: Cache>(candidate: Candidate, cache: &mut C) -> Result<Mounted<C::Fact
     for tree in repository.trees(root, &mut |tree| cache.has_tree(tree))? {
         cache.put_tree(&tree)?;
     }
-    let entries = walk_stored(repository.path(), commit, root, &mut |tree| {
-        cache.rows(tree)
-    })?;
+    let entries = walk_stored(&repository, commit, root, &mut |tree| cache.rows(tree))?;
     let facts = cache.facts(&repository, &Source::Commit(commit), &entries)?;
     Ok(Mounted {
         commit,
@@ -447,11 +445,12 @@ fn pointers(
     entries: &[Entry],
     is_pointer: &dyn Fn(&str) -> bool,
 ) -> Vec<(LogicalPath, String, Mount)> {
+    let reader = &mut repository.reader();
     entries
         .iter()
         .filter(|entry| entry.status == Status::Ok && is_pointer(&entry.path))
         .filter_map(|entry| {
-            let contents = repository.read(source, &entry.path, entry.blob?).ok()??;
+            let contents = reader.read(source, &entry.path, entry.blob?).ok()??;
             match board_model::pointer(&contents.bytes) {
                 Ok(Some(Pointer::Mount(mount))) => {
                     Some((entry.logical.clone()?, entry.path.clone(), mount))

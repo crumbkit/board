@@ -11,8 +11,9 @@ use board_model::{
 };
 
 use crate::address::{Named, Pointers};
-use crate::git::{GitError, Repository};
+use crate::git::{CommitTree, Contents, GitError, Repository};
 use crate::repositories::Repositories;
+use crate::symlink::{Chains, End, Node, ROOT, Refused};
 use crate::tree::{Kind, RawEntry, Tree};
 use crate::worktree::{Known, WorkingTree};
 
@@ -20,7 +21,7 @@ use crate::worktree::{Known, WorkingTree};
 pub const MAX_HOPS: usize = 40;
 
 /// Where a path that names nothing would be: its deepest ancestor that
-/// resolves, and the segments past it (docs/architecture/paths.md, Writes).
+/// resolves, and the segments past it (docs/architecture/paths/writes.md).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ancestor {
     /// Where the ancestor resolved, with every pointer followed.
@@ -67,8 +68,22 @@ impl Repositories {
         commit: ObjectId,
         path: &LogicalPath,
     ) -> Result<Location, ResolveError> {
-        let mut tree = repository.commit_tree(commit)?;
-        self.resolve_tree(&mut tree, path, true, &mut Pointers::default())
+        self.in_commit(repository, commit)?.resolve(path)
+    }
+
+    /// A resolver for many paths in `commit` of `repository`, as
+    /// [`Repositories::resolve_in`] resolves one.
+    pub fn in_commit<'r>(
+        &'r self,
+        repository: &'r Repository,
+        commit: ObjectId,
+    ) -> Result<InCommit<'r>, GitError> {
+        Ok(InCommit {
+            repositories: self,
+            tree: repository.commit_tree(commit)?,
+            pointers: Pointers::default(),
+            chains: Chains::default(),
+        })
     }
 
     /// The deepest ancestor of `path` that resolves in the working tree,
@@ -85,6 +100,7 @@ impl Repositories {
             repositories: self,
             tree: self.root().working_tree(Some(known))?.on_demand(),
             pointers: Pointers::default(),
+            chains: Chains::default(),
         })
     }
 
@@ -96,6 +112,7 @@ impl Repositories {
             repositories: self,
             tree: self.root().working_tree(None)?.on_demand(),
             pointers: Pointers::default(),
+            chains: Chains::default(),
         })
     }
 
@@ -104,7 +121,7 @@ impl Repositories {
         tree: &mut T,
         path: &LogicalPath,
         follow_last: bool,
-        pointers: &mut Pointers,
+        (pointers, chains): (&mut Pointers, &mut Chains<T::Directory>),
     ) -> Result<Location, ResolveError> {
         let mut trail = Trail {
             path: path.clone(),
@@ -114,7 +131,7 @@ impl Repositories {
             follow_last,
         };
         let segments = path.segments().map(str::to_owned).collect();
-        self.follow(tree, segments, 0, &mut trail, pointers)
+        self.follow(tree, segments, 0, &mut trail, (pointers, chains))
     }
 
     /// Resolves `remaining` from the root of `tree`, recording on `trail`
@@ -128,14 +145,14 @@ impl Repositories {
         mut remaining: VecDeque<String>,
         mut from_link: usize,
         trail: &mut Trail,
-        pointers: &mut Pointers,
+        (pointers, chains): (&mut Pointers, &mut Chains<T::Directory>),
     ) -> Result<Location, ResolveError> {
         let path = &trail.path.clone();
         let board = Board {
             repository: tree.repository().to_path_buf(),
             source: tree.source(),
         };
-        let mut directory = Some(tree.root());
+        let mut directory = Some((tree.root(), ROOT));
         let mut physical: Vec<String> = Vec::new();
         let mut object = Object::Directory;
         while let Some(segment) = remaining.pop_front() {
@@ -147,7 +164,7 @@ impl Repositories {
                 },
                 _ => not_found(path, remaining.len()),
             };
-            let Some(current) = directory.take() else {
+            let Some((current, place)) = directory.take() else {
                 return Err(missing(from_link, trail));
             };
             let entries = tree.alike(&current, segment.as_bytes(), Some(&segment))?;
@@ -163,20 +180,23 @@ impl Repositories {
             else {
                 return Err(missing(from_link, trail));
             };
-            let entry = &tree.settle(&current, entry);
+            let entry = tree.settle(&current, entry);
             from_link = usize::saturating_sub(from_link, 1);
             physical.push(String::from_utf8_lossy(&entry.name).into_owned());
+            let reached = path.segments().count().saturating_sub(remaining.len());
+            let entered = chains.enter(tree, place, &entry);
+            let (entry, at) = &through(tree, chains, entered, entry, &physical, (path, reached))?;
             match &entry.kind {
                 Kind::Directory(child) => {
                     object = Object::Directory;
-                    directory = Some(child.clone());
+                    directory = Some((child.clone(), entered));
                 }
                 Kind::File(id) => {
                     object = Object::Blob(*id);
                     if remaining.is_empty() && !trail.follow_last {
                         continue;
                     }
-                    let Some(next) = pointer(tree, &current, entry, path, pointers)? else {
+                    let Some(next) = pointer(tree, (chains, *at), entry, path, pointers)? else {
                         continue;
                     };
                     trail.pointers.push(Location {
@@ -201,7 +221,7 @@ impl Repositories {
                             from_link = target.segments().count();
                             trail.followed_link(target);
                             remaining = next;
-                            directory = Some(tree.root());
+                            directory = Some((tree.root(), ROOT));
                             physical.clear();
                             object = Object::Directory;
                         }
@@ -284,7 +304,8 @@ impl Repositories {
                 path: trail.path.clone(),
             });
         }
-        self.follow(&mut tree, remaining, from_link, trail, pointers)
+        let chains = &mut Chains::default();
+        self.follow(&mut tree, remaining, from_link, trail, (pointers, chains))
     }
 }
 
@@ -294,6 +315,7 @@ pub struct Resolver<'r, 'k> {
     repositories: &'r Repositories,
     tree: WorkingTree<'r, 'k>,
     pointers: Pointers,
+    pub(crate) chains: Chains<std::path::PathBuf>,
 }
 
 impl std::fmt::Debug for Resolver<'_, '_> {
@@ -313,15 +335,46 @@ impl Resolver<'_, '_> {
     /// Resolves `path` as [`Repositories::resolve`] does in the working
     /// tree.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        self.repositories
-            .resolve_tree(&mut self.tree, path, true, &mut self.pointers)
+        self.repositories.resolve_tree(
+            &mut self.tree,
+            path,
+            true,
+            (&mut self.pointers, &mut self.chains),
+        )
+    }
+
+    /// The file at the `/`-separated `path` in `board`, whose blob was
+    /// `blob` when it was walked, as [`Reader::read`](crate::Reader::read)
+    /// reads it, with a symlink in this working tree followed through this
+    /// snapshot. A board in the working tree is the root repository's, as a
+    /// snapshot has only that one.
+    pub fn read(
+        &mut self,
+        board: &Board,
+        path: &str,
+        blob: ObjectId,
+    ) -> Result<Option<Contents>, GitError> {
+        if board.source != Source::WorkingTree {
+            return self
+                .repositories
+                .repository(board)?
+                .reader()
+                .read(&board.source, path, blob);
+        }
+        let root = self.repositories.root();
+        let snapshot = (&mut self.tree, &mut self.chains);
+        root.read_walked(move || Ok(snapshot), Path::new(path), Some(blob))
     }
 
     /// Resolves `path` as [`Resolver::resolve`] does, except that a pointer
     /// at the end is not followed, as `lstat` does not follow a symlink.
     pub fn resolve_pointer(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        self.repositories
-            .resolve_tree(&mut self.tree, path, false, &mut self.pointers)
+        self.repositories.resolve_tree(
+            &mut self.tree,
+            path,
+            false,
+            (&mut self.pointers, &mut self.chains),
+        )
     }
 
     /// What [`crate::walk::planned_code`] gives `file` in this snapshot.
@@ -359,6 +412,27 @@ impl Resolver<'_, '_> {
             path: path.clone(),
             ancestor: LogicalPath::root(),
         })
+    }
+}
+
+/// Resolves paths in one commit: each directory is decoded once, and each
+/// symlink followed once, however many paths pass through it.
+#[derive(Debug)]
+pub struct InCommit<'r> {
+    repositories: &'r Repositories,
+    tree: CommitTree<'r>,
+    pointers: Pointers,
+    pub(crate) chains: Chains<ObjectId>,
+}
+
+impl InCommit<'_> {
+    pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
+        self.repositories.resolve_tree(
+            &mut self.tree,
+            path,
+            true,
+            (&mut self.pointers, &mut self.chains),
+        )
     }
 }
 
@@ -422,10 +496,48 @@ fn pick<'e, T: Tree>(
     }
 }
 
+/// `entry`, or, for a symlink at the physical path `link` and the place
+/// `at`, what it stands for: a file entry for the file it leads to, or
+/// itself, a file holding its text, when it leads to a directory. `path` is
+/// the path resolved, and `reached` how many of its segments reach the
+/// symlink.
+fn through<T: Tree>(
+    tree: &mut T,
+    chains: &mut Chains<T::Directory>,
+    at: Node,
+    mut entry: RawEntry<T::Directory>,
+    link: &[String],
+    (path, reached): (&LogicalPath, usize),
+) -> Result<(RawEntry<T::Directory>, Node), ResolveError> {
+    let Some((end, target)) = chains.follow(tree, at)? else {
+        return Ok((entry, at));
+    };
+    match end {
+        End::File { blob, at, .. } => {
+            entry.kind = Kind::File(blob);
+            return Ok((entry, at));
+        }
+        End::Directory(_) => {}
+        End::Refused(Code::RepoUnreadable) => {
+            return Err(ResolveError::Unreadable { path: path.clone() });
+        }
+        End::Refused(code) => {
+            return Err(ResolveError::Symlink {
+                path: path.clone(),
+                reached,
+                link: link.join("/").into(),
+                refused: Refused { code, target },
+            });
+        }
+    }
+    Ok((entry, at))
+}
+
 /// The pointer `entry` holds, if it is a `.json` file whose record is one.
+/// Its bytes are the file's at `at`: its own, or a symlink's target's.
 fn pointer<T: Tree>(
     tree: &mut T,
-    directory: &T::Directory,
+    (chains, at): (&Chains<T::Directory>, Node),
     entry: &RawEntry<T::Directory>,
     path: &LogicalPath,
     pointers: &mut Pointers,
@@ -433,7 +545,7 @@ fn pointer<T: Tree>(
     if !matches!(entry.kind, Kind::File(_)) || !entry.name.ends_with(b".json") {
         return Ok(None);
     }
-    let parsed = pointers.parse(entry, || tree.read(directory, entry))?;
+    let parsed = pointers.parse(entry, || chains.read(tree, at))?;
     parsed.map_err(|source| ResolveError::InvalidPointer {
         path: path.clone(),
         pointer: String::from_utf8_lossy(&entry.name).into_owned(),
@@ -488,6 +600,15 @@ pub enum ResolveError {
     Cycle { path: LogicalPath },
     #[error("{path} {}", self.predicate().unwrap_or_default())]
     TooManyHops { path: LogicalPath },
+    /// `path` reaches the symlink at the physical `link`, which its first
+    /// `reached` segments name, and which leads to no file.
+    #[error("{path} {}", self.predicate().unwrap_or_default())]
+    Symlink {
+        path: LogicalPath,
+        reached: usize,
+        link: Box<str>,
+        refused: Refused,
+    },
     #[error(transparent)]
     Git(#[from] GitError),
 }
@@ -512,6 +633,15 @@ impl ResolveError {
                 "returns to a board and path it already resolved through a pointer".to_owned()
             }
             Self::TooManyHops { .. } => format!("follows more than {MAX_HOPS} pointers"),
+            Self::Symlink {
+                path,
+                reached,
+                refused,
+                ..
+            } if *reached < path.segments().count() => {
+                format!("passes through {}, {refused}", path.prefix(*reached))
+            }
+            Self::Symlink { refused, .. } => format!("is {refused}"),
             Self::NotFound { .. }
             | Self::Shadowed { .. }
             | Self::Dangling { .. }
@@ -533,6 +663,7 @@ impl ResolveError {
             Self::CommitMissing { .. } => Code::MountCommitMissing,
             Self::Cycle { .. } => Code::ResolveCycle,
             Self::TooManyHops { .. } => Code::ResolveTooManyHops,
+            Self::Symlink { refused, .. } => refused.code,
             Self::Git(error) => error.code(),
         }
     }
@@ -545,6 +676,10 @@ impl ResolveError {
                 ancestor: Some(ancestor.clone()),
                 ..Fields::at(path)
             },
+            Self::Symlink { path, refused, .. } => Fields {
+                target: Some(refused.target.clone()),
+                ..Fields::at(path)
+            },
             Self::Shadowed { path, .. }
             | Self::Submodule { path }
             | Self::Unreadable { path }
@@ -553,7 +688,7 @@ impl ResolveError {
             | Self::CommitMissing { path, .. }
             | Self::Cycle { path }
             | Self::TooManyHops { path } => Fields::at(path),
-            Self::Git(_) => Fields::default(),
+            Self::Git(error) => error.fields(),
         }
     }
 }

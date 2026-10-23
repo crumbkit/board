@@ -10,16 +10,17 @@ use board_model::{Code, LogicalPath, ObjectId, Pointer, PointerError};
 
 use crate::tree::{Kind, RawEntry};
 
-/// The segment that addresses an entry, if its name is UTF-8: a file's name
-/// without `.json`, or any other entry's whole name. The segment may still
-/// break the segment rules; parsing the child path decides that.
+/// The segment that addresses an entry, if its name is UTF-8: a file's or
+/// symlink's name without `.json`, or any other entry's whole name. The
+/// segment may still break the segment rules; parsing the child path
+/// decides that.
 pub(crate) fn segment<D>(entry: &RawEntry<D>) -> Option<&str> {
     let name = std::str::from_utf8(&entry.name).ok()?;
     Some(match entry.kind {
-        Kind::File(_) | Kind::Unreadable | Kind::Unhashed(_) => {
+        Kind::File(_) | Kind::Symlink(_) | Kind::Unreadable | Kind::Unhashed(_) => {
             name.strip_suffix(".json").unwrap_or(name)
         }
-        Kind::Directory(_) | Kind::Symlink(_) | Kind::Submodule => name,
+        Kind::Directory(_) | Kind::Submodule => name,
     })
 }
 
@@ -74,9 +75,11 @@ pub(crate) fn classify<'a, D, E>(
     let (record, children) = match (matches.next(), matches.next(), matches.next()) {
         (None, _, _) => return Ok(Named::Nothing),
         (Some(one), None, _) => return Ok(Named::One(one)),
+        // Two entries share a segment only when one is a file or symlink
+        // whose name ends in `.json`, so the other's directory is beside it.
         (Some(a), Some(b), None) => match (&a.kind, &b.kind) {
-            (Kind::File(_) | Kind::Unreadable | Kind::Unhashed(_), Kind::Directory(_)) => (a, b),
-            (Kind::Directory(_), Kind::File(_) | Kind::Unreadable | Kind::Unhashed(_)) => (b, a),
+            (_, Kind::Directory(_)) => (a, b),
+            (Kind::Directory(_), _) => (b, a),
             _ => return Ok(Named::Shadowed),
         },
         _ => return Ok(Named::Shadowed),

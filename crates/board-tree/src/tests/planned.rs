@@ -1,5 +1,5 @@
 //! The write check: the code the walk would give a file once it is written
-//! (docs/architecture/paths.md, Writes). Commits can hold names that differ
+//! (docs/architecture/paths/writes.md). Commits can hold names that differ
 //! only in case on any file system, so these run over commits.
 
 use std::collections::BTreeMap;

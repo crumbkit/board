@@ -82,6 +82,7 @@ impl Board {
         let repositories = mounted.repositories();
         let resolve =
             &mut |path: &LogicalPath| repositories.resolve_in(repositories.root(), new, path);
+        let root = &mut repositories.root().reader();
         let mut writes = Vec::with_capacity(written.prepared.len());
         let items = written.prepared.iter().zip(written.crossed);
         for ((item, crossing), previous) in items.zip(written.pinned) {
@@ -105,7 +106,7 @@ impl Board {
                 location,
                 previous,
                 blob,
-                degraded: mounted.degraded(resolve, item, &crossing.inside.path),
+                degraded: mounted.degraded((resolve, root), item, &crossing.inside.path),
             });
         }
         Ok(PutReport { writes, commit })

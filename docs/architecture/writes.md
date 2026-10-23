@@ -49,6 +49,16 @@ finishes it: after the mounted files were written, it commits them; after the
 mounted commit, it moves the pin with no new mounted commit; after the pin
 moved, it commits the pin. A put that changes nothing makes no commit.
 
+## Moving a pin
+
+`board mount update <path>` takes the lock, then reads the mount pointer at
+`path`, which it does not follow. Anything other than a mount pointer there is
+`board::mount::invalid`. It reads the pointer's `follow` ref in the mounted
+repository (missing: `board::mount::follow_missing`) and, if the commit
+changed, rewrites `commit` through `put` with `--expect` set to the pointer's
+blob. The report, `board/mount-update-report/v2`, gives the path, the old and
+new commit and whether it wrote.
+
 # Sync
 
 `board sync` brings a clone of a board up to date with the remote branch

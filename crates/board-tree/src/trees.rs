@@ -4,14 +4,14 @@
 //! a fact about the tree's content.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use board_model::{Code, LogicalPath, ObjectId, Source};
 
 use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
-use crate::tree::{Kind, RawEntry, Tree};
+use crate::tree::{Indexed, Kind, RawEntry, Tree};
 use crate::walk::{Entry, walk_in};
 
 /// One tree's entries.
@@ -24,8 +24,8 @@ pub struct TreeRows {
 /// One entry of a tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreeRow {
-    /// The entry's name; one that is not UTF-8 is shown lossily.
-    pub name: String,
+    /// The entry's name, exactly as git records it.
+    pub name: Vec<u8>,
     /// git's mode: `0o40000` for a tree, `0o100644` for a file, and so on.
     pub mode: u32,
     pub object: ObjectId,
@@ -48,21 +48,26 @@ impl TreeRow {
 pub type Rows<'r> = &'r mut dyn FnMut(ObjectId) -> Option<Vec<TreeRow>>;
 
 /// A commit's tree as stored rows: walking it gives exactly what walking
-/// the commit gives, without reading the repository.
+/// the commit gives, reading from the repository only symlinks' text.
 struct StoredTree<'r> {
-    repository: PathBuf,
+    repository: &'r Repository,
     commit: ObjectId,
     root: ObjectId,
     rows: Rows<'r>,
-    /// Each listed tree's rows, by tree, for addressing what was listed.
-    listed: HashMap<ObjectId, Vec<TreeRow>>,
+    /// Each listed tree's entries and rows, by tree, so a tree is fetched
+    /// once however often a walk or a symlink looks in it, and what was
+    /// listed is addressed by its rows.
+    listed: HashMap<ObjectId, Listed>,
 }
+
+/// A stored tree's entries as a walk reads them, and the rows they came from.
+type Listed = (Indexed<ObjectId>, Vec<TreeRow>);
 
 impl Tree for StoredTree<'_> {
     type Directory = ObjectId;
 
     fn repository(&self) -> &Path {
-        &self.repository
+        self.repository.path()
     }
 
     fn source(&self) -> Source {
@@ -74,18 +79,21 @@ impl Tree for StoredTree<'_> {
     }
 
     fn list(&mut self, directory: &ObjectId) -> Result<Rc<[RawEntry<ObjectId>]>, GitError> {
+        if let Some((listed, _)) = self.listed.get(directory) {
+            return Ok(Rc::clone(&listed.entries));
+        }
         let Some(rows) = (self.rows)(*directory).or_else(|| is_empty(*directory).then(Vec::new))
         else {
             return Err(GitError::Object {
-                repository: self.repository.clone(),
+                repository: self.repository.path().to_path_buf(),
                 id: *directory,
                 source: "the tree is not in the index".into(),
             });
         };
-        let entries = rows
+        let entries: Vec<_> = rows
             .iter()
             .map(|row| RawEntry {
-                name: row.name.as_bytes().to_vec(),
+                name: row.name.clone(),
                 kind: match row.mode {
                     TreeRow::TREE_MODE => Kind::Directory(row.object),
                     TreeRow::LINK_MODE => Kind::Symlink(row.object),
@@ -96,16 +104,33 @@ impl Tree for StoredTree<'_> {
                 size: row.size,
             })
             .collect();
-        self.listed.insert(*directory, rows);
+        let entries: Rc<[_]> = entries.into();
+        self.listed
+            .insert(*directory, (Indexed::new(Rc::clone(&entries)), rows));
         Ok(entries)
     }
 
+    fn alike(
+        &mut self,
+        directory: &ObjectId,
+        name: &[u8],
+        segment: Option<&str>,
+    ) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
+        self.list(directory)?;
+        Ok(self.listed[directory].0.alike(name, segment))
+    }
+
+    /// Only a symlink is read: the stored codes say whether a record
+    /// shadows its directory.
     fn read(
         &mut self,
         _directory: &ObjectId,
-        _entry: &RawEntry<ObjectId>,
+        entry: &RawEntry<ObjectId>,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        Ok(None)
+        match entry.kind {
+            Kind::Symlink(id) => self.repository.read_blob(id),
+            _ => Ok(None),
+        }
     }
 
     /// The stored segments and codes: addressing a tree depends only on it,
@@ -116,7 +141,10 @@ impl Tree for StoredTree<'_> {
         parent: &LogicalPath,
         entries: &[RawEntry<ObjectId>],
     ) -> Vec<(Option<LogicalPath>, Option<Code>)> {
-        let rows = self.listed.get(directory).map_or(&[][..], Vec::as_slice);
+        let rows = self
+            .listed
+            .get(directory)
+            .map_or(&[][..], |(_, rows)| rows.as_slice());
         entries
             .iter()
             .zip(rows)
@@ -144,13 +172,13 @@ fn is_empty(id: ObjectId) -> bool {
 /// [`Repository::walk`] walks the commit: a tree whose rows are not known
 /// is one degraded entry, as an unreadable one is.
 pub fn walk_stored(
-    repository: &Path,
+    repository: &Repository,
     commit: ObjectId,
     root: ObjectId,
     rows: Rows<'_>,
 ) -> Result<Vec<Entry>, GitError> {
     walk_in(&mut StoredTree {
-        repository: repository.to_path_buf(),
+        repository,
         commit,
         root,
         rows,
@@ -203,7 +231,7 @@ impl Repository {
                         pending.push(*child);
                     }
                     TreeRow {
-                        name: String::from_utf8_lossy(&raw.name).into_owned(),
+                        name: raw.name,
                         mode,
                         object,
                         size: raw.size,

@@ -1,5 +1,5 @@
 //! The one module that writes the working tree and the git directory
-//! (docs/architecture.md, Writes; docs/architecture/paths.md, Writes): where
+//! (docs/architecture.md, Writes; docs/architecture/paths/writes.md): where
 //! a put lands, the lock, and the write that a kill cannot leave half done.
 #![expect(
     clippy::disallowed_methods,
@@ -147,12 +147,11 @@ impl Resolver<'_, '_> {
         if location.board.source != Source::WorkingTree {
             return Err(through_mount(path, &location, None, ""));
         }
-        let physical = match location.object {
-            Object::Blob(_) => {
-                record_file(&location).ok_or_else(|| not_a_record(path, path.clone()))?
-            }
-            Object::Directory => return Err(not_a_record(path, path.clone())),
+        let Object::Blob(_) = location.object else {
+            return Err(not_a_record(path, path.clone()));
         };
+        let physical = record_file(&location).ok_or_else(|| not_a_record(path, path.clone()))?;
+        self.repository().refuse_symlink(path, &physical)?;
         self.writable(path, physical, location, true)
     }
 
@@ -199,11 +198,18 @@ impl Resolver<'_, '_> {
     }
 }
 
-/// A write to `path` refused because resolving it failed.
+/// A write to `path` refused because resolving it failed. A symlink that
+/// leads to no file is refused as any symlink is.
 fn unresolved(path: &LogicalPath, source: ResolveError) -> WriteError {
-    WriteError::Unresolved {
-        path: path.clone(),
-        source,
+    match source {
+        ResolveError::Symlink { link, .. } => WriteError::Symlink {
+            path: path.clone(),
+            symlink: link.into(),
+        },
+        source => WriteError::Unresolved {
+            path: path.clone(),
+            source,
+        },
     }
 }
 
@@ -783,6 +789,7 @@ impl WriteError {
                 directory: Some(beneath.directory.clone()),
                 ..Fields::at(path)
             },
+            Self::Git(error) => error.fields(),
             _ => Fields::default(),
         }
     }

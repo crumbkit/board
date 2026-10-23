@@ -6,6 +6,7 @@ use board_model::{Code, RecordType};
 use board_plugin::{
     CapabilityName, DiscoveryError, Manifest, ManifestError, MetaFilter, PluginName, installed,
 };
+use board_tree::Reader;
 use serde_json::Value;
 
 use crate::Board;
@@ -85,6 +86,7 @@ impl Board {
             Some(plugins) => installed(plugins)?,
             None => Vec::new(),
         };
+        let reader = &mut self.repository().reader();
         let mut listed: Vec<Plugin> = installed
             .into_iter()
             .map(|installed| {
@@ -93,7 +95,9 @@ impl Board {
                     installed
                         .schemas
                         .iter()
-                        .filter_map(|(record_type, shipped)| self.problem(record_type, shipped))
+                        .filter_map(|(record_type, shipped)| {
+                            Self::problem(reader, record_type, shipped)
+                        })
                         .collect()
                 } else {
                     Vec::new()
@@ -126,12 +130,12 @@ impl Board {
     /// What is wrong with how the board holds `shipped`, the schema a
     /// plugin ships for `record_type`, as `plugin enable` would find it.
     pub(crate) fn problem(
-        &self,
+        reader: &mut Reader<'_>,
         record_type: &RecordType,
         shipped: &Value,
     ) -> Option<SchemaProblem> {
-        let code = match self.held(record_type, shipped) {
-            Ok(Held::Same(_)) => return None,
+        let code = match Self::held(reader, record_type, shipped) {
+            Ok(Held::Same(_) | Held::Linked) => return None,
             Ok(Held::Absent) => Code::PluginSchemaMissing,
             Ok(Held::Other | Held::Unparsed(_)) => Code::PluginSchemaDiffers,
             Err(error) => error.code(),

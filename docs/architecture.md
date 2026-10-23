@@ -83,8 +83,8 @@ Board never refuses to index a file; the worst it says is a path and a code.
 A file or directory that cannot be read is `board::repo::unreadable`. A
 degraded directory passes its code to every entry beneath it. Working-tree
 files are hashed as stored, with no clean filter, so a file under end-of-line
-conversion or LFS shows as uncommitted. A symlink is a `file` entry and is
-never followed; Board's links are pointers. A submodule is degraded with
+conversion or LFS shows as uncommitted. A symlink to a file in the repository
+reads as that file (docs/architecture/paths/symlinks.md). A submodule is degraded with
 `board::repo::submodule` and never descended.
 
 `.board/board.json` is `board/config/v1`:
@@ -258,7 +258,7 @@ takes the lock with the same wait; when no line parses, it is refused without th
 holding both `record` and `text`, or neither, is `board::put::invalid`. A
 record line at a schema's path, such as `/.board/types/lr/note/v1.schema`,
 takes no expect and is checked first, as `type add` checks it; an equal schema
-is committed if HEAD lacks it. Every line is checked against one snapshot of
+is committed if HEAD lacks it, unless a symlink holds it. Every line is checked against one snapshot of
 the working tree, and every expect is compared before any write; two
 lines resolving to one file, one invalid line or one stale expect refuse the
 whole batch, listing each failing line with its code, as
@@ -269,25 +269,19 @@ The report is `board/put-report/v2`, whose `data` holds `writes`, each with its 
 path, `previous` blob (null for a new file), `blob` and `degraded` (as `check`
 reports it, or null); and `commit` (null when none was made).
 
-`board mount update <path>` takes the lock, then reads the mount pointer at
-`path`, which it does not follow. Anything other than a mount pointer there is
-`board::mount::invalid`. It reads the pointer's `follow` ref in the mounted
-repository (missing: `board::mount::follow_missing`) and, if the commit
-changed, rewrites `commit` through `put` with `--expect` set to the pointer's
-blob. The report, `board/mount-update-report/v2`, gives the path, the old and
-new commit and whether it wrote.
-
 `board type add <type>` reads a JSON Schema on stdin, compiles it, and writes
 it in canonical form to the type's schema file, taking the lock and committing
 as a put does. A type in the `board` namespace, or a schema that does not
 compile, is `board::schema::invalid`, and a type with a part over 255 bytes is
 `board::path::malformed`. An equal schema already there is left as it is, and
-committed if HEAD lacks it. A different one is `board::schema::differs`,
+committed if HEAD lacks it, unless a symlink holds it
+(architecture/paths/symlinks.md). A different one is `board::schema::differs`,
 because a changed type is a new version, and one that is not JSON is refused
 with its `json` code. The report is `board/put-report/v2`.
 
 [architecture/writes.md](architecture/writes.md) says how a put of one record
-or a batch writes through a mount and moves the pin, and how `board sync`
+or a batch writes through a mount and moves the pin, how `board mount update`
+moves a pin to the commit its `follow` ref names, and how `board sync`
 replays this clone's commits onto the branch it follows.
 
 ## Commands

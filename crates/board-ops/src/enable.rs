@@ -49,9 +49,10 @@ impl Board {
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (mut prepared, mut replaced) = (Vec::new(), Vec::new());
+        let reader = &mut self.repository().reader();
         for (record_type, shipped) in &found.schemas {
-            let expect = match self.held(record_type, shipped)? {
-                Held::Same(_) => continue,
+            let expect = match Self::held(reader, record_type, shipped)? {
+                Held::Same(_) | Held::Linked => continue,
                 Held::Absent => Expect::Absent,
                 Held::Other | Held::Unparsed(_) => {
                     replaced.push(record_type.schema_path());
@@ -67,7 +68,8 @@ impl Board {
         // The configuration is read again here, so a plugin another process
         // enabled since the board was opened is kept.
         let changed = || EnableError::Changed { name: name.clone() };
-        let (blob, mut config, current) = config_file(self.repositories()).ok_or_else(changed)?;
+        let (blob, mut config, current) =
+            config_file(self.repositories()).map_err(|_| changed())?;
         if !current.plugins.contains(name) {
             let fields = config.as_object_mut().ok_or_else(changed)?;
             let mut enabled = current.plugins;

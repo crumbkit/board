@@ -54,6 +54,9 @@ proptest = "1.11.0"
 # board-index/src/schema.rs, or a warm index keeps the old links.
 pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = "1.12.2"
+# A symlink text in a refusal escapes Unicode format characters, such as
+# U+202E, which reorder text. jsonschema already brings this crate in.
+unicode-general-category = "1.1.0"
 # bundled: every platform runs the same SQLite, built from source.
 # modern_sqlite: a refresh asks whether its transaction took the write lock.
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache", "hooks", "limits", "modern_sqlite"] }

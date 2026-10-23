@@ -637,3 +637,50 @@ fn a_schema_line_that_does_not_compile_or_carries_an_expect_is_refused_and_its_t
     .unwrap();
     assert!(file(&scenario, NOTE_SCHEMA_PATH).is_some());
 }
+
+#[test]
+fn a_schema_line_reads_a_schema_held_through_a_symlink_and_leaves_an_equal_one_unwritten_and_its_twin_over_a_file_is_written()
+ {
+    let scenario = committing();
+    let schema_text = r#"{ "type": "object" }"#;
+    scenario
+        .write("schemas/note.json", Item::File(schema_text))
+        .write(
+            NOTE_SCHEMA_PATH,
+            Item::Symlink("../../../../schemas/note.json"),
+        );
+    let note = line("/notes/a", None, NOTE);
+    let other = schema_line(None, r#"{"type": "object", "required": ["x"]}"#);
+    let same = schema_line(None, r#"{"type": "object"}"#);
+    let (_, refusals) = refused(batch(&scenario, &(other + &note)));
+    assert_eq!(refusals, [(1, Code::SchemaDiffers)]);
+    let written = batch(&scenario, &(same.clone() + &note)).unwrap();
+    assert_eq!(written.writes.len(), 1, "only the record: {written:?}");
+    let head = scenario.head().unwrap();
+    assert!(
+        !head.files.contains_key(NOTE_SCHEMA_PATH),
+        "the symlink stays uncommitted"
+    );
+    scenario.write(NOTE_SCHEMA_PATH, Item::Deleted).write(
+        NOTE_SCHEMA_PATH,
+        Item::Symlink("../../../../schemas/gone.json"),
+    );
+    // The record's schema dangles too, as `check` would say.
+    let other_note = line("/notes/b", None, NOTE);
+    let (_, refusals) = refused(batch(&scenario, &(same.clone() + &other_note)));
+    assert_eq!(
+        refusals,
+        [(1, Code::SymlinkDangling), (2, Code::SymlinkDangling)]
+    );
+    assert!(file(&scenario, "notes/b.json").is_none());
+    scenario
+        .write(NOTE_SCHEMA_PATH, Item::Deleted)
+        .write(NOTE_SCHEMA_PATH, Item::File(schema_text));
+    assert_eq!(
+        batch(&scenario, &(same + &other_note))
+            .unwrap()
+            .writes
+            .len(),
+        2
+    );
+}

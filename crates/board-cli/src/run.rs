@@ -198,7 +198,7 @@ their digest and writes a board/attachment/v1 record.")]
         ///
         /// A record line at `/.board/types/<namespace>/<kind>/v<n>.schema` adds that schema and takes
         /// no expect. Schema lines are checked before the other lines, and a schema the board holds
-        /// is committed if HEAD lacks it. Every line writes in one board: this board, or the board one mount leads to. A
+        /// is committed if HEAD lacks it, unless a symlink holds it. Every line writes in one board: this board, or the board one mount leads to. A
         /// batch through a mount commits in the mounted board and moves the mount's pin.
         #[arg(long, conflicts_with_all = ["path", "expect"])]
         batch: bool,
@@ -427,7 +427,10 @@ pub(crate) fn run(
             Ok(report) => render::init(printer, &report),
             Err(error) => {
                 let outside = matches!(error, board_ops::InitError::NotARepository { .. });
-                render::refused(printer, unopened(error.code(), &error, outside))
+                render::refused(
+                    printer,
+                    unopened(error.code(), &error, &Fields::default(), outside),
+                )
             }
         };
     }
@@ -687,7 +690,7 @@ fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<
         Err(error) => error,
     };
     let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
-    let refusal = unopened(error.code(), &error, outside);
+    let refusal = unopened(error.code(), &error, &error.fields(), outside);
     if !matches!(error, board_ops::OpenError::NotFound { .. }) {
         return Err(Box::new(refusal));
     }
@@ -696,8 +699,8 @@ fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<
 
 /// The refusal when a board cannot be opened or made. `outside` a git
 /// repository, `board init` fails too, so the hint names only what can run.
-fn unopened(code: Code, error: &dyn std::fmt::Display, outside: bool) -> Refusal {
-    let refusal = Refusal::new(code, error, &Fields::default());
+fn unopened(code: Code, error: &dyn std::fmt::Display, fields: &Fields, outside: bool) -> Refusal {
+    let refusal = Refusal::new(code, error, fields);
     if outside {
         refusal.with_hint(
             "run `git init` first to make the directory a repository; for a board elsewhere, run `board -C <dir> check`",

@@ -19,8 +19,8 @@ use board_model::{
     RecordType, Role, Source, Stat, classify,
 };
 use board_tree::{
-    Cache, Entry, Mounted, Place, Repositories, Repository, ResolveError, Status, TreeRow,
-    TreeRows, in_scope, latest,
+    Cache, Entry, Mounted, Place, Reader, Refused, Repositories, Repository, ResolveError, Status,
+    TreeRow, TreeRows, in_scope, latest,
 };
 
 use crate::board::Board;
@@ -139,12 +139,15 @@ impl Board {
             listed: &refresh.entries,
             facts: &refresh.facts,
             resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
+            reader: RefCell::new(self.repositories().root().reader()),
         };
         for entry in &refresh.entries {
             if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
                 continue;
             }
-            let change = if refresh.head.get(&entry.path) == Some(&entry.blob) {
+            // A symlink is committed when its own blob is.
+            let own = entry.link.as_ref().map(|link| link.blob).or(entry.blob);
+            let change = if refresh.head.get(&entry.path) == Some(&own) {
                 Change::Committed
             } else {
                 Change::Uncommitted
@@ -162,16 +165,16 @@ impl Board {
         drop(known);
         for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
+            let mut in_commit =
+                (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
             let decide = Decide {
                 repositories: self.repositories(),
                 mounted: Some(mounted),
                 writer,
                 listed: &mounted.entries,
                 facts: &mounted.facts,
-                resolve: RefCell::new(Box::new(|path: &LogicalPath| {
-                    self.repositories()
-                        .resolve_in(&mounted.repository, mounted.commit, path)
-                })),
+                resolve: RefCell::new(Box::new(|path: &LogicalPath| in_commit.resolve(path))),
+                reader: RefCell::new(self.repositories().root().reader()),
             };
             for entry in &mounted.entries {
                 if !in_scope(&scopes, &source, entry.logical.as_ref()) {
@@ -218,6 +221,27 @@ fn known<'e>(
         *hashed += usize::from(seen.is_none());
         seen.and_then(|(_, blob)| *blob)
     }
+}
+
+/// Why the symlink `entry` leads to no file, when `code` says it does not.
+fn symlink(entry: &Entry, code: Code) -> Option<Detail> {
+    let link = entry.link.as_ref()?;
+    matches!(
+        code,
+        Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling
+    )
+    .then(|| Detail {
+        reason: format!(
+            "is {}",
+            Refused {
+                code,
+                target: link.target.clone()
+            }
+        ),
+        failures: 1,
+        target: Some(link.target.clone()),
+        ..Detail::default()
+    })
 }
 
 /// What a run decided: the report's entries and the rows of `resolved`,
@@ -269,12 +293,12 @@ impl Decisions {
         let schema =
             wanted.map(|record_type| (record_type, decide.found(&record_type.schema_path())));
         let judged = match entry.status {
-            Status::Degraded(code) => Ok(Some((code, None))),
+            Status::Degraded(code) => Ok(Some((code, symlink(entry, code)))),
             // Only a path too long under its mount point fails here.
             Status::Ok if logical.is_none() => Ok(Some((Code::PathMalformed, None))),
             Status::Ok => {
                 let mut reached = Vec::new();
-                let judged = decide.code(entry, &mut reached, role, fact, schema)?;
+                let judged = decide.code(entry, &mut reached, role, fact, schema.clone())?;
                 self.references
                     .extend(reached.into_iter().map(|reached| Referenced {
                         source: source.clone(),
@@ -302,6 +326,7 @@ impl Decisions {
                 };
                 let detail = Detail {
                     pointer: fields.pointer,
+                    target: fields.target,
                     reason,
                     failures: 1,
                     ..Detail::default()
@@ -369,6 +394,8 @@ struct Decide<'a> {
     /// What the index holds about the source's entries, by physical path.
     facts: &'a HashMap<String, Indexed>,
     resolve: RefCell<Resolve<'a>>,
+    /// The root repository's reader, for a reference into the working tree.
+    reader: RefCell<Reader<'a>>,
 }
 
 impl Decide<'_> {
@@ -480,6 +507,7 @@ impl Decide<'_> {
                     failures: 1,
                     at: None,
                     mount: None,
+                    target: None,
                 };
                 return Ok(Ok(Some((Code::RepoUnreadable, Some(detail)))));
             }
@@ -527,8 +555,19 @@ impl Decide<'_> {
     fn found(&self, path: &str) -> Result<ObjectId, SchemaFound> {
         schema_of(self.facts, path).ok_or_else(|| {
             let above = path.rmatch_indices('/').map(|(at, _)| &path[..at]);
+            let link = self.listed(path).and_then(|entry| match entry.status {
+                Status::Degraded(
+                    code @ (Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling),
+                ) => Some((code, entry.link.as_ref()?)),
+                _ => None,
+            });
             if self.facts.contains_key(path) {
                 SchemaFound::Unusable
+            } else if let Some((code, link)) = link {
+                SchemaFound::Symlink(Refused {
+                    code,
+                    target: link.target.clone(),
+                })
             } else if self.listed(path).is_some()
                 || above
                     .filter_map(|directory| self.listed(directory))
@@ -601,7 +640,7 @@ impl Decide<'_> {
             Some(indexed) => indexed.fact.clone(),
             None => match self.writer.blob(blob, role)? {
                 Some(fact) => fact,
-                None => return Ok(read_type(self.repositories, location, blob)),
+                None => return Ok(self.read_type(location, blob)),
             },
         };
         Ok(match (fact.code, fact.kind) {
@@ -610,15 +649,21 @@ impl Decide<'_> {
             (None, _) => fact.record_type,
         })
     }
+
+    fn read_type(&self, location: &Location, blob: ObjectId) -> Option<RecordType> {
+        let root = &mut self.reader.borrow_mut();
+        read_type(self.repositories, root, location, blob)
+    }
 }
 
 /// The `$type` of the record at `location`, read in its own board.
 pub(crate) fn read_type(
     repositories: &Repositories,
+    root: &mut Reader<'_>,
     location: &Location,
     blob: ObjectId,
 ) -> Option<RecordType> {
-    let contents = latest(repositories.read(location, blob)).ok()??;
+    let contents = latest(repositories.read(root, location, blob)).ok()??;
     match classify(&location.path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, .. },

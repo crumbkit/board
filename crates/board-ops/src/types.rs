@@ -6,7 +6,7 @@ use board_model::{
     Code, Fields, JsonError, LogicalPath, PathError, RecordType, Refusal, canonical_json,
     parse_json,
 };
-use board_tree::{LOCK_WAIT, Lock, Resolver, Working, WriteError};
+use board_tree::{LOCK_WAIT, Lock, Reader, Resolver, Working, WriteError};
 use board_validate::{Schema, SchemaError};
 use serde_json::Value;
 
@@ -17,15 +17,21 @@ use crate::verdict::Admitted;
 impl Board {
     /// Compiles `bytes` as the schema of `record_type`, then writes it to
     /// `.board/types/` as one put that `commit_on_put` commits. An equal
-    /// schema already there is left as it is, and committed if it was not;
-    /// a different one is refused, since a changed type is a new version.
+    /// schema already there is left as it is, and committed if it was not,
+    /// unless a symlink holds it; a different one is refused, since a
+    /// changed type is a new version.
     pub fn type_add(&self, record_type: &RecordType, bytes: &[u8]) -> Result<PutReport, TypeError> {
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let (mut prepared, _, held) = self.prepare_type(&lock, &mut view, record_type, bytes)?;
-        // An equal schema is written again as it is, in its own layout,
-        // which commits it if HEAD lacks it, and is no write.
-        prepared.canonical = held.unwrap_or(prepared.canonical);
+        let reader = &mut self.repository().reader();
+        let (Some(prepared), _) =
+            Self::prepare_type(&lock, (&mut view, reader), record_type, bytes)?
+        else {
+            return Ok(PutReport {
+                writes: Vec::new(),
+                commit: None,
+            });
+        };
         let message = format!("Add the type {record_type}");
         let mut report = self
             .write_all(lock, &[prepared], &message)
@@ -38,15 +44,17 @@ impl Board {
 
     /// Compiles `bytes` as the schema of `record_type`, and finds where it
     /// lands in `view`, expecting no file when the board lacks it. Returns
-    /// the compiled schema, and the file's bytes when the board holds an
-    /// equal schema. A different schema is refused.
+    /// the write, if any, and the compiled schema. An equal schema is
+    /// written again as the board holds it, in its own layout, which commits
+    /// it if HEAD lacks it and is otherwise no write. An equal schema held
+    /// through a symlink is not written, since no put writes over a
+    /// symlink. A different schema is refused.
     pub(crate) fn prepare_type(
-        &self,
         lock: &Lock,
-        view: &mut Resolver<'_, '_>,
+        (view, reader): (&mut Resolver<'_, '_>, &mut Reader<'_>),
         record_type: &RecordType,
         bytes: &[u8],
-    ) -> Result<(Prepared, Schema, Option<Vec<u8>>), TypeError> {
+    ) -> Result<(Option<Prepared>, Schema), TypeError> {
         let record_type = record_type.clone();
         if record_type.is_board() {
             return Err(TypeError::Reserved { record_type });
@@ -72,9 +80,10 @@ impl Board {
         let Ok(path) = schema_at(&record_type) else {
             return Err(TypeError::TooLong { record_type });
         };
-        let (expect, held) = match self.held(&record_type, &schema)? {
+        let (expect, held) = match Self::held(reader, &record_type, &schema)? {
             Held::Absent => (Expect::Absent, None),
             Held::Same(bytes) => (Expect::Any, Some(bytes)),
+            Held::Linked => return Ok((None, compiled)),
             Held::Other => return Err(TypeError::Differs { record_type }),
             Held::Unparsed(source) => {
                 return Err(TypeError::Held {
@@ -83,20 +92,22 @@ impl Board {
                 });
             }
         };
-        let prepared = Self::schema(lock, view, path, expect, &schema)?;
-        Ok((prepared, compiled, held))
+        let mut prepared = Self::schema(lock, view, path, expect, &schema)?;
+        prepared.canonical = held.unwrap_or(prepared.canonical);
+        Ok((Some(prepared), compiled))
     }
 
     /// How the working tree holds `schema` for `record_type`.
     pub(crate) fn held(
-        &self,
+        reader: &mut Reader<'_>,
         record_type: &RecordType,
         schema: &Value,
     ) -> Result<Held, WriteError> {
-        let path = record_type.schema_path();
-        Ok(match self.repository().read_working(&path, None)? {
+        let (working, linked) = reader.read_through(&record_type.schema_path())?;
+        Ok(match working {
             Working::Missing => Held::Absent,
             Working::Read(contents) => match parse_json(&contents.bytes) {
+                Ok(held) if held == *schema && linked => Held::Linked,
                 Ok(held) if held == *schema => Held::Same(contents.bytes),
                 Ok(_) => Held::Other,
                 Err(error) => Held::Unparsed(error),
@@ -136,10 +147,12 @@ pub(crate) fn schema_at(record_type: &RecordType) -> Result<LogicalPath, PathErr
 }
 
 /// How the board holds a type's schema: not at all, as an equal schema
-/// with the file's bytes, as another one, or as a file that is not JSON.
+/// with the file's bytes, as an equal schema through a symlink, as another
+/// one, or as a file that is not JSON.
 pub(crate) enum Held {
     Absent,
     Same(Vec<u8>),
+    Linked,
     Other,
     Unparsed(JsonError),
 }

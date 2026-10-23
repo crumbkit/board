@@ -16,7 +16,7 @@ directory of each other board whose recorded root it can see is gone.
 | Table | Holds | Keyed by |
 | --- | --- | --- |
 | `sources` | the root working tree and each mounted commit: its root tree and the repository it was first read from | source: `worktree` or a commit id |
-| `trees` | every entry in a tree: name, mode, object, logical segment and path code | tree |
+| `trees` | every entry in a tree: name, mode, object, logical segment and path code; a name that is not UTF-8 is a blob of its bytes | tree, name |
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`, `markdown`): kind, type, code, and the parser's or compiler's reason; a schema's code says whether it compiles | blob, role |
 | `bodies` | the canonical form of each record that parses | blob |

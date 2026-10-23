@@ -193,6 +193,7 @@ fn a_path_through_a_file_or_a_symlink_loop_is_refused_and_a_directory_is_admitte
         )),
         "{stderr}"
     );
+    scenario.write("loop", Item::Deleted);
     let admitted = board_in(scenario.workdir(), &["-C", "projects", "check"]);
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }

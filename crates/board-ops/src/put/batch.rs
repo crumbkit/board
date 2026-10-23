@@ -166,12 +166,12 @@ impl Board {
     /// Checks every line of a batch under `lock` against the one snapshot
     /// `view`, schema lines first so that a record can use a schema the
     /// batch adds, and returns what it checked, or every refusal.
-    pub(crate) fn check_lines(
-        &self,
+    pub(crate) fn check_lines<'b>(
+        &'b self,
         lock: &Lock,
         view: &mut Resolver<'_, '_>,
         lines: Vec<ReadLine>,
-        schemas: &mut Schemas,
+        schemas: &mut Schemas<'b>,
     ) -> Result<Checked, PutError> {
         let mut prepared: Vec<Prepared> = Vec::new();
         let mut numbers: Vec<usize> = Vec::new();
@@ -196,7 +196,7 @@ impl Board {
             };
             let shown = line.shown.clone();
             let (item, board) = match self.check_line(lock, view, schemas, &line) {
-                Ok(item) => (Some(item), None),
+                Ok(item) => (item, None),
                 // `inside` is only set for one mount.
                 Err(PutError::Write(WriteError::ThroughMount {
                     mount,
@@ -258,14 +258,15 @@ impl Board {
         })
     }
 
-    /// Checks one line: a record, a schema or a file.
-    fn check_line(
-        &self,
+    /// Checks one line: a record, a schema or a file. A schema the board
+    /// holds through a symlink, and equal, is not written.
+    fn check_line<'b>(
+        &'b self,
         lock: &Lock,
         view: &mut Resolver<'_, '_>,
-        schemas: &mut Schemas,
+        schemas: &mut Schemas<'b>,
         line: &Line,
-    ) -> Result<Prepared, PutError> {
+    ) -> Result<Option<Prepared>, PutError> {
         let Line {
             path,
             shown,
@@ -275,6 +276,7 @@ impl Board {
         let bytes = match content {
             Content::File(bytes) => {
                 return Self::prepare_file(lock, view, path, *expect, bytes)
+                    .map(Some)
                     .map_err(|error| shown_as(error, shown));
             }
             Content::Record(bytes) => bytes,
@@ -282,6 +284,7 @@ impl Board {
         let Some(record_type) = line.schema_type() else {
             return self
                 .prepare(lock, view, schemas, path, *expect, bytes)
+                .map(Some)
                 .map_err(|error| shown_as(error, shown));
         };
         if *expect != Expect::Any {
@@ -292,22 +295,25 @@ impl Board {
                 ),
             });
         }
-        let (mut prepared, compiled, held) = self
-            .prepare_type(lock, view, &record_type, bytes)
-            .map_err(|error| match error {
-                TypeError::Put(error) => shown_as(error, shown),
-                error => PutError::Type(Box::new(error)),
-            })?;
+        let (prepared, compiled) = Self::prepare_type(
+            lock,
+            (view, Schemas::reader(&mut schemas.reader, self)),
+            &record_type,
+            bytes,
+        )
+        .map_err(|error| match error {
+            TypeError::Put(error) => shown_as(error, shown),
+            error => PutError::Type(Box::new(error)),
+        })?;
         schemas.held.insert(record_type, Ok(compiled));
         schemas.compiled += 1;
-        // An equal schema is written again as the board holds it, which
-        // commits it if HEAD lacks it, as `type add` does.
-        prepared.canonical = held.unwrap_or(prepared.canonical);
         // Through a mount, an expect is compared with the pin, which may hold
         // a schema the working tree lacks; that is a moved file, not a stale
         // expect.
-        prepared.expect = Expect::Any;
-        Ok(prepared)
+        Ok(prepared.map(|prepared| Prepared {
+            expect: Expect::Any,
+            ..prepared
+        }))
     }
 
     /// Reads one batch line.

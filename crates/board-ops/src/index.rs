@@ -13,7 +13,7 @@ use board_model::{
     Canonical, Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
     canonical_json,
 };
-use board_tree::{Entry, GitError, Repository, latest};
+use board_tree::{Entry, GitError, Reader, Repository, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -341,6 +341,7 @@ pub(crate) fn facts(
     mut kept: Kept,
 ) -> Result<HashMap<String, Indexed>, RefreshError> {
     let mut facts: HashMap<String, Indexed> = HashMap::new();
+    let reader = &mut repository.reader();
     // The index is keyed by blob, so blob order visits its keys in order.
     let mut entries: Vec<&Entry> = entries.iter().collect();
     entries.sort_unstable_by_key(|entry| entry.blob);
@@ -355,7 +356,7 @@ pub(crate) fn facts(
         } else {
             // A blob that cannot be read has no content fact to store. Only a
             // blob the walk saw over the limit reads as too large.
-            let (read, bytes) = match latest(repository.read(source, &entry.path, blob)) {
+            let (read, bytes) = match latest(reader.read(source, &entry.path, blob)) {
                 Ok(Some(contents)) => (contents.blob, Some(contents.bytes)),
                 Ok(None) if entry.size > Some(MAX_RECORD_BYTES as u64) => (blob, None),
                 Ok(None) | Err(_) => continue,
@@ -377,7 +378,7 @@ pub(crate) fn facts(
         };
         facts.insert(entry.path.clone(), indexed);
     }
-    validate_all(writer, repository, source, &mut facts, &mut kept, work)?;
+    validate_all(writer, reader, source, &mut facts, &mut kept, work)?;
     work.compiled += kept.compiled;
     Ok(facts)
 }
@@ -387,7 +388,7 @@ pub(crate) fn facts(
 /// refresh did not compile is read and compiled once.
 fn validate_all(
     writer: &Writer,
-    repository: &Repository,
+    reader: &mut Reader<'_>,
     source: &Source,
     facts: &mut HashMap<String, Indexed>,
     kept: &mut Kept,
@@ -416,7 +417,7 @@ fn validate_all(
             continue;
         }
         if !kept.schemas.contains_key(&schema) {
-            let compiled = match repository.read(source, schema_path, schema) {
+            let compiled = match reader.read(source, schema_path, schema) {
                 Ok(Some(contents)) => {
                     let classified = Role::Schema.classify(Some(&contents.bytes));
                     let (judged, compiled) = judged(&classified);
@@ -430,7 +431,7 @@ fn validate_all(
         let Some(Some(compiled)) = kept.schemas.get(&schema) else {
             continue;
         };
-        let Some(value) = known(&kept.values, repository, source, path, record.blob) else {
+        let Some(value) = known(&kept.values, reader, source, path, record.blob) else {
             continue;
         };
         let validation = validate(compiled, &value);
@@ -459,7 +460,7 @@ pub(crate) fn schema_of(facts: &HashMap<String, Indexed>, path: &str) -> Option<
 /// The parsed value of a record, from this refresh or read again.
 fn known(
     values: &HashMap<ObjectId, Value>,
-    repository: &Repository,
+    reader: &mut Reader<'_>,
     source: &Source,
     path: &str,
     blob: ObjectId,
@@ -467,7 +468,7 @@ fn known(
     if let Some(value) = values.get(&blob) {
         return Some(value.clone());
     }
-    let contents = repository.read(source, path, blob).ok()??;
+    let contents = reader.read(source, path, blob).ok()??;
     match Role::Json.classify(Some(&contents.bytes)).content {
         Content::Record { value, .. } => Some(value),
         _ => None,

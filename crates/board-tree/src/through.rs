@@ -154,7 +154,7 @@ impl Repository {
                 .filter(|entry| entry.mode().is_blob())
                 .map(|entry| model_id(entry.oid())))
         };
-        let working = match self.read_working(file, None)? {
+        let working = match self.read_working(file)? {
             Working::Missing => None,
             Working::Read(contents) => Some(contents.blob),
             Working::TooLarge => Some(self.working_blob(file)?),

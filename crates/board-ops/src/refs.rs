@@ -215,7 +215,12 @@ impl Answering<'_> {
     /// the blob the walk listed and `snapshot` decided that code for: a file
     /// that resolved or reads as another blob changed after the walk, and is
     /// `refs::target_changed`, counted as `target_changed` in the trace.
-    fn fielded(&self, snapshot: &Snapshot, location: &Location, target: &LogicalPath) -> Fielded {
+    fn fielded(
+        &mut self,
+        snapshot: &Snapshot,
+        location: &Location,
+        target: &LogicalPath,
+    ) -> Fielded {
         let degraded = snapshot
             .report
             .entries
@@ -236,23 +241,24 @@ impl Answering<'_> {
             self.board.trace.borrow_mut().count("target_changed", 1);
             Code::RefsTargetChanged
         };
-        let record = match location.object {
-            Object::Blob(blob) if walked != Some(Some(blob)) => Err(changed()),
-            _ => read_at(self.board.repositories(), location.clone(), target, false).map_err(
-                |error| match error {
-                    ReadError::Git {
-                        source: GitError::Changed { .. },
-                    } => changed(),
-                    error => error.code(),
-                },
-            ),
-        }
-        .and_then(|report| {
-            report.record.map_err(|refusal| match refusal.code {
-                RefusalCode::Board(code) => code,
-                RefusalCode::Plugin(_) => Code::RecordNotARecord,
-            })
-        });
+        let record =
+            match location.object {
+                Object::Blob(blob) if walked != Some(Some(blob)) => Err(changed()),
+                _ => read_at(&mut self.view, location.clone(), target, false).map_err(|error| {
+                    match error {
+                        ReadError::Git {
+                            source: GitError::Changed { .. },
+                        } => changed(),
+                        error => error.code(),
+                    }
+                }),
+            }
+            .and_then(|report| {
+                report.record.map_err(|refusal| match refusal.code {
+                    RefusalCode::Board(code) => code,
+                    RefusalCode::Plugin(_) => Code::RecordNotARecord,
+                })
+            });
         match record {
             Ok(record) => Fielded {
                 values: Some(

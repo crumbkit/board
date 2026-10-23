@@ -194,6 +194,7 @@ dependencies = [
  "proptest",
  "tempfile",
  "thiserror",
+ "unicode-general-category",
 ]
 
 [[package]]

@@ -115,6 +115,27 @@ fn put_agrees_with_check_when_a_symlink_is_above_the_schema() {
 }
 
 #[test]
+fn put_agrees_with_check_that_a_schema_symlinked_to_a_file_is_read_and_one_leaving_the_repository_is_not()
+ {
+    let linked = |text: &str| {
+        let scenario = slot(None);
+        scenario
+            .write("elsewhere/task.json", Item::File(TASK_SCHEMA))
+            .write(TASK_SCHEMA_PATH, Item::Symlink(text));
+        scenario
+    };
+    admitted(
+        &linked("../../../../elsewhere/task.json"),
+        "a symlink to a file",
+    );
+    agree_with(
+        &linked("../../../../../elsewhere/task.json"),
+        Code::SymlinkOutside,
+        "a symlink leaving the repository",
+    );
+}
+
+#[test]
 fn put_agrees_with_check_when_a_directory_at_or_above_the_schema_cannot_be_listed() {
     admitted(&board(), "every directory can be listed");
     let at = slot(None);
@@ -240,5 +261,35 @@ proptest! {
                 put
             );
         }
+    }
+}
+
+#[test]
+fn put_names_the_text_of_a_schema_symlink_that_dangles_and_not_of_one_to_a_file_that_cannot_be_read()
+ {
+    let text = "../../../../elsewhere/task.json";
+    let scenario = slot(None);
+    scenario.write(TASK_SCHEMA_PATH, Item::Symlink(text));
+    let refused = |code, target| {
+        agree_with(
+            &scenario,
+            code,
+            "a schema symlink to no file or to one unread",
+        );
+        let refused = open(&scenario)
+            .put(
+                &super::path("/tasks/r"),
+                Expect::Absent,
+                task("").as_bytes(),
+            )
+            .unwrap_err();
+        let fields = refused.fields();
+        assert_eq!((refused.code(), fields.target.as_deref()), (code, target));
+    };
+    refused(Code::SymlinkDangling, Some(text));
+    scenario.write("elsewhere/task.json", Item::File(TASK_SCHEMA));
+    admitted(&scenario, "a schema symlink to a file");
+    if unreadable(&scenario, "elsewhere/task.json", TASK_SCHEMA) {
+        refused(Code::RepoUnreadable, None);
     }
 }

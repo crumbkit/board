@@ -41,6 +41,9 @@ pub enum Code {
     ResolveTooManyHops,
     RepoUnreadable,
     RepoSubmodule,
+    SymlinkOutside,
+    SymlinkLoop,
+    SymlinkDangling,
     IndexFailed,
     QueryInvalid,
     QueryTimeout,
@@ -81,7 +84,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 69] = [
+    pub const ALL: [Code; 72] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -115,6 +118,9 @@ impl Code {
         Self::ResolveTooManyHops,
         Self::RepoUnreadable,
         Self::RepoSubmodule,
+        Self::SymlinkOutside,
+        Self::SymlinkLoop,
+        Self::SymlinkDangling,
         Self::IndexFailed,
         Self::QueryInvalid,
         Self::QueryTimeout,
@@ -193,6 +199,9 @@ impl Code {
             Self::ResolveTooManyHops => "board::resolve::too_many_hops",
             Self::RepoUnreadable => "board::repo::unreadable",
             Self::RepoSubmodule => "board::repo::submodule",
+            Self::SymlinkOutside => "board::symlink::outside",
+            Self::SymlinkLoop => "board::symlink::loop",
+            Self::SymlinkDangling => "board::symlink::dangling",
             Self::IndexFailed => "board::index::failed",
             Self::QueryInvalid => "board::query::invalid",
             Self::QueryTimeout => "board::query::timeout",
@@ -244,7 +253,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::{Fields, LogicalPath};
+    use crate::{Fields, LogicalPath, MAX_SYMLINKS};
 
     /// Fails to compile when a variant is added, so `ALL` stays complete.
     fn listed(code: Code) {
@@ -282,6 +291,9 @@ mod tests {
             | Code::ResolveTooManyHops
             | Code::RepoUnreadable
             | Code::RepoSubmodule
+            | Code::SymlinkOutside
+            | Code::SymlinkLoop
+            | Code::SymlinkDangling
             | Code::IndexFailed
             | Code::QueryInvalid
             | Code::QueryTimeout
@@ -380,6 +392,48 @@ mod tests {
         }
         let other = Code::PutThroughMount.hint(&named);
         assert!(!other.contains("reapply your change"), "{other}");
+    }
+
+    #[test]
+    fn a_symlink_hint_names_the_symlink_text_and_its_own_remedy_and_in_a_mount_sends_the_fix_there()
+    {
+        let mount: LogicalPath = "/vendor".parse().unwrap();
+        let path: LogicalPath = "/vendor/docs/l".parse().unwrap();
+        let named = Fields {
+            target: Some("../x.json".to_owned()),
+            ..Fields::at(&path)
+        };
+        let cases = [
+            (
+                Code::SymlinkOutside,
+                "starts at `/` or leaves the repository",
+            ),
+            (
+                Code::SymlinkLoop,
+                &format!("more than {MAX_SYMLINKS} symlinks"),
+            ),
+            (
+                Code::SymlinkDangling,
+                "no file the board holds is at `../x.json`",
+            ),
+        ];
+        for (code, remedy) in cases {
+            let hint = code.hint(&named);
+            assert!(
+                hint.contains("`../x.json`") && hint.contains(remedy),
+                "{hint}"
+            );
+            let mounted = code.hint_in_mount(&named, &mount);
+            assert_eq!(
+                mounted,
+                format!(
+                    "/vendor/docs/l is in the repository of the board mounted at /vendor, which Board cannot write; there, {hint}, then run `board mount update /vendor`"
+                )
+            );
+            let unnamed = Fields::at(&path);
+            assert_eq!(code.hint(&unnamed), code.hint(&Fields::default()));
+            assert!(!code.hint(&unnamed).contains("../x.json"));
+        }
     }
 
     #[test]

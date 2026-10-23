@@ -16,6 +16,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
 | `repo` | `unreadable`, `submodule` |
+| `symlink` | `outside`, `loop`, `dangling`; see docs/architecture/paths/symlinks.md |
 | `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing`, `not_ancestor`, `stale` |
 | `resolve` | `cycle`, `too_many_hops` |
 | `index` | `failed`: the disposable index could not be used, even in memory |
@@ -90,6 +91,7 @@ plugin's own code carries.
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view, and each attached plugin database |
 | `columns` | object of string arrays | `query::invalid` for a missing column | each table or view the statement names, mapped to its columns; `{}` when it names none |
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |
+| `target` | string | a `symlink` code | the symlink's text, cut to 100 characters and its length when longer, with control characters and backslashes escaped |
 | `refusals` | array of objects | `put::invalid` and `put::stale` for a batch | each refused line, in order, with its `line` (from 1), `code`, `message` and, when it names any, its own `fields` |
 
 A stale put's hint gives the `--expect` that matches. When `columns` is `{}`,

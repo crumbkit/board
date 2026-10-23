@@ -1,16 +1,18 @@
 //! The one module that reads git objects and references.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
-use board_model::{Code, MAX_RECORD_BYTES, ObjectId, Source};
+use board_model::{Code, Fields, LogicalPath, MAX_RECORD_BYTES, ObjectId, Source};
 use gix::object::tree::EntryKind;
 
-use crate::tree::{Kind, RawEntry, Tree};
+use crate::symlink::Refused;
+use crate::tree::{Indexed, Kind, RawEntry, Tree};
 
 /// The most threads a walk lists directories and hashes files on unless the
 /// repository is set to another number. Measured on an M4 Max: listing a
@@ -41,16 +43,21 @@ pub struct Repository {
     listed: AtomicUsize,
     /// How many working-tree files it opened to hash or read.
     opened: AtomicUsize,
+    /// How many trees it decoded from the object database, shared by every
+    /// `Repository` that [`Repositories`](crate::Repositories) lends for it.
+    decoded: Arc<AtomicUsize>,
     /// How many threads a walk lists directories and hashes files on.
     threads: AtomicUsize,
 }
 
-/// A commit's tree, read from the object database.
+/// A commit's tree, read from the object database. Each directory is
+/// decoded once however often it is listed.
 #[derive(Debug)]
 pub(crate) struct CommitTree<'r> {
     repository: &'r Repository,
     commit: ObjectId,
     root: ObjectId,
+    listed: HashMap<ObjectId, Indexed<ObjectId>>,
 }
 
 impl Repository {
@@ -65,16 +72,17 @@ impl Repository {
             .unwrap_or_else(|| git.git_dir())
             .canonicalize()
             .map_err(|error| unreadable(Box::new(error)))?;
-        Ok(Self::lent(path, git))
+        Ok(Self::lent(path, git, Arc::default()))
     }
 
     /// The repository at the canonical `path` that `git` has open.
-    pub(crate) fn lent(path: PathBuf, git: gix::Repository) -> Self {
+    pub(crate) fn lent(path: PathBuf, git: gix::Repository, decoded: Arc<AtomicUsize>) -> Self {
         Self {
             path,
             git,
             listed: AtomicUsize::new(0),
             opened: AtomicUsize::new(0),
+            decoded,
             threads: AtomicUsize::new(default_threads()),
         }
     }
@@ -119,6 +127,19 @@ impl Repository {
         self.opened.load(Ordering::Relaxed)
     }
 
+    /// The count of trees decoded, for each `Repository` lent for this one
+    /// to add to.
+    pub(crate) fn decodes(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.decoded)
+    }
+
+    /// How many trees this repository decoded from the object database,
+    /// through this `Repository` or any other lent for it. Work-count tests
+    /// assert it.
+    pub fn trees_decoded(&self) -> usize {
+        self.decoded.load(Ordering::Relaxed)
+    }
+
     /// Counts one working-tree file opened.
     pub(crate) fn opened_one(&self) {
         self.opened_many(1);
@@ -158,6 +179,7 @@ impl Repository {
             repository: self,
             commit,
             root: model_id(&tree),
+            listed: HashMap::new(),
         })
     }
 
@@ -181,6 +203,7 @@ impl Repository {
             .find_tree(self.gix_id(tree)?)
             .map_err(|error| self.missing(tree, error))?;
         let decoded = found.decode().map_err(|error| self.missing(tree, error))?;
+        self.decoded.fetch_add(1, Ordering::Relaxed);
         Ok(decoded
             .entries
             .iter()
@@ -211,22 +234,6 @@ impl Repository {
                 (raw, u32::from(entry.mode.value()), id)
             })
             .collect())
-    }
-
-    /// The contents of the file at the `/`-separated `path` in `source`,
-    /// whose blob was `blob` when it was walked, or `None` when it holds more
-    /// than [`MAX_RECORD_BYTES`]. A working-tree file that no longer holds
-    /// `blob` is [`GitError::Changed`], which carries what was read.
-    pub fn read(
-        &self,
-        source: &Source,
-        path: &str,
-        blob: ObjectId,
-    ) -> Result<Option<Contents>, GitError> {
-        match source {
-            Source::Commit(_) => Ok(self.read_blob(blob)?.map(|bytes| Contents { blob, bytes })),
-            Source::WorkingTree => self.read_walked(Path::new(path), Some(blob)),
-        }
     }
 
     /// The bytes of blob `id`, or `None` when it holds more than
@@ -280,7 +287,23 @@ impl Tree for CommitTree<'_> {
     }
 
     fn list(&mut self, directory: &ObjectId) -> Result<Rc<[RawEntry<ObjectId>]>, GitError> {
-        Ok(self.repository.list_tree(*directory)?.into())
+        if let Some(listed) = self.listed.get(directory) {
+            return Ok(Rc::clone(&listed.entries));
+        }
+        let listed: Rc<[_]> = self.repository.list_tree(*directory)?.into();
+        self.listed
+            .insert(*directory, Indexed::new(Rc::clone(&listed)));
+        Ok(listed)
+    }
+
+    fn alike(
+        &mut self,
+        directory: &ObjectId,
+        name: &[u8],
+        segment: Option<&str>,
+    ) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
+        self.list(directory)?;
+        Ok(self.listed[directory].alike(name, segment))
     }
 
     fn read(
@@ -288,10 +311,10 @@ impl Tree for CommitTree<'_> {
         _directory: &ObjectId,
         entry: &RawEntry<ObjectId>,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        let Kind::File(id) = entry.kind else {
-            return Ok(None);
-        };
-        self.repository.read_blob(id)
+        match entry.kind {
+            Kind::File(id) | Kind::Symlink(id) => self.repository.read_blob(id),
+            _ => Ok(None),
+        }
     }
 }
 
@@ -341,6 +364,10 @@ pub enum GitError {
     },
     #[error("{path:?} changed while it was read; run the command again")]
     Changed { path: PathBuf, contents: Contents },
+    /// The working-tree symlink at `path` in the repository leads to no
+    /// file.
+    #[error("/{} is {refused}", path.display())]
+    Symlink { path: PathBuf, refused: Refused },
     #[error("object {id} in {repository:?} cannot be read")]
     Object {
         repository: PathBuf,
@@ -358,6 +385,19 @@ impl GitError {
             | Self::File { .. }
             | Self::Changed { .. }
             | Self::Object { .. } => Code::RepoUnreadable,
+            Self::Symlink { refused, .. } => refused.code,
+        }
+    }
+
+    /// A symlink's board path and text, which its hint names.
+    pub fn fields(&self) -> Fields {
+        match self {
+            Self::Symlink { path, refused } => Fields {
+                path: LogicalPath::root().join(&path.to_string_lossy()).ok(),
+                target: Some(refused.target.clone()),
+                ..Fields::default()
+            },
+            _ => Fields::default(),
         }
     }
 }

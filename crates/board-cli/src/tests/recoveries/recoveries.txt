@@ -328,14 +328,57 @@ board refs /repo/nested
   fails with board::repo::submodule
   hint
 
-board check /symlinked.json
-  fails with board::json::parse
+board check /symlink/dangling
+  fails with board::symlink::dangling
   hint
 
-board ls /symlinked.json
-  fails with board::path::not_found
-  run board ls /
-    exits 0
+board get /symlink/dangling
+  fails with board::symlink::dangling
+  hint
+
+board ls /symlink/dangling
+  fails with board::symlink::dangling
+  hint
+
+board refs /symlink/dangling
+  fails with board::symlink::dangling
+  hint
+
+board check /symlink/loop
+  fails with board::symlink::loop
+  hint
+
+board get /symlink/loop
+  fails with board::symlink::loop
+  hint
+
+board ls /symlink/loop
+  fails with board::symlink::loop
+  hint
+
+board refs /symlink/loop
+  fails with board::symlink::loop
+  hint
+
+board check /symlink/outside
+  fails with board::symlink::outside
+  hint
+
+board get /symlink/outside
+  fails with board::symlink::outside
+  hint
+
+board ls /symlink/outside
+  fails with board::symlink::outside
+  hint
+
+board refs /symlink/outside
+  fails with board::symlink::outside
+  hint
+
+board check /symlinked
+  fails with board::json::parse
+  hint
 
 board check /mount/m/A
   fails with board::path::case_collision

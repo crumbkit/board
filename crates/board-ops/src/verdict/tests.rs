@@ -1,6 +1,7 @@
 //! Judging a blob by its bytes alone, as a pure function.
 
 use board_model::{Code, Content, Role, parse_json};
+use board_tree::Refused;
 use board_validate::Schema;
 use proptest::prelude::*;
 
@@ -150,15 +151,26 @@ fn a_record_without_a_usable_schema_is_refused_naming_its_type_and_schema_file()
             SchemaFound::Unusable,
             format!("its schema at {TASK_SCHEMA_PATH} does not compile"),
         ),
+        (
+            SchemaFound::Symlink(Refused {
+                code: Code::SymlinkDangling,
+                target: "gone.json".to_owned(),
+            }),
+            format!(
+                "its schema at {TASK_SCHEMA_PATH} is a symlink to \"gone.json\", which names nothing"
+            ),
+        ),
     ] {
         let classified = Role::Json.classify(Some(task("").as_bytes()));
-        let fault = record(classified, |_| Err(found)).unwrap_err();
+        let fault = record(classified, |_| Err(found.clone())).unwrap_err();
         assert_eq!(fault.to_string(), message);
         let fields = fault.fields();
         assert_eq!(fields.schema.as_deref(), Some(TASK_SCHEMA_PATH));
         assert_eq!(fields.record_type.unwrap().as_str(), "lr/task/v1");
         let pointer = (found == SchemaFound::Unusable).then_some("/$type");
         assert_eq!(fields.pointer.as_deref(), pointer);
+        let target = matches!(found, SchemaFound::Symlink(_)).then_some("gone.json");
+        assert_eq!(fields.target.as_deref(), target);
     }
 }
 
@@ -234,16 +246,23 @@ proptest! {
             (SchemaFound::Missing, Code::RecordUnknownType),
             (SchemaFound::Unreadable, Code::RepoUnreadable),
             (SchemaFound::Unusable, Code::SchemaInvalid),
+            (
+                SchemaFound::Symlink(Refused {
+                    code: Code::SymlinkLoop,
+                    target: "a.json".to_owned(),
+                }),
+                Code::SymlinkLoop,
+            ),
         ];
         for bytes in records {
             let judged = code(Role::Json, &bytes);
             let mut unasked = Vec::new();
-            for (found, its) in states {
+            for (found, its) in states.clone() {
                 let asked = Cell::new(false);
                 let classified = Role::Json.classify(Some(bytes.as_bytes()));
                 let refused = record(classified, |_| {
                     asked.set(true);
-                    Err(found)
+                    Err(found.clone())
                 })
                 .err()
                 .map(|fault| fault.code());

@@ -39,6 +39,8 @@ pub enum Item<'a> {
     /// A file holding any bytes, UTF-8 or not.
     Bytes(&'a [u8]),
     Symlink(&'a str),
+    /// A symlink whose text is any bytes, UTF-8 or not.
+    LinkBytes(&'a [u8]),
     /// A submodule pinned to an arbitrary commit id.
     Submodule,
     /// A top-level directory whose tree object is absent from the repository.
@@ -182,6 +184,10 @@ impl Scenario {
                 backdate(&path);
             }
             Item::Symlink(target) => std::os::unix::fs::symlink(target, path).unwrap(),
+            Item::LinkBytes(text) => {
+                use std::os::unix::ffi::OsStrExt;
+                std::os::unix::fs::symlink(std::ffi::OsStr::from_bytes(text), path).unwrap();
+            }
             Item::Deleted if path.is_dir() => fs::remove_dir_all(path).unwrap(),
             Item::Deleted => fs::remove_file(path).unwrap(),
             Item::Appended(text) => {
@@ -332,6 +338,9 @@ impl Scenario {
                     EntryKind::Link,
                     self.git.write_blob(target).unwrap().detach(),
                 ),
+                Item::LinkBytes(text) => {
+                    (EntryKind::Link, self.git.write_blob(text).unwrap().detach())
+                }
                 Item::MissingTree | Item::MissingBlob | Item::EmptyTree => continue,
                 Item::Unreadable(_) => panic!("a commit cannot hold an unreadable file"),
                 Item::Locked | Item::Searchable | Item::ReadOnly => {

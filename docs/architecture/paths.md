@@ -36,6 +36,9 @@ including one that continues through a file, is `board::path::not_found`. A
 repository that cannot be opened, or a missing or corrupt object, is
 `board::repo::unreadable`.
 
+A git symlink to a file in the same repository reads as that file at the
+symlink's own path; architecture/paths/symlinks.md says how Board follows it.
+
 ## Pointers: links and mounts
 
 A pointer is a record of type `board/mount/v1` holding exactly one target:
@@ -96,21 +99,5 @@ name it. Only `board-tree` reads pointers.
 ## Writes
 
 `board put` resolves the path, following pointers, so a write through a link
-lands at its target; put does not create a missing target, and refuses with its
-resolution code. A path through a mount writes as architecture/writes.md says. A
-segment git keeps, `.git` under any spelling HFS+ or NTFS opens as it, is
-`board::path::malformed`, in `mount update` too. Missing directories are
-created. A write that would leave its own path degraded is refused with the
-code the walk would give it, such as `path::shadowed`. When that code comes
-from a directory above, such as one whose name collides in case, the error
-names the directory, says whether the write would create it, and names the
-existing entry it collides with.
-
-Put checks the disk as well as the entries, because the listing hides ignored
-files. A put never writes through or over a symlink: when the file it writes,
-or a directory on the way to it, is a symlink on disk, ignored or not, it is
-refused with `board::put::symlink`, which names the symlink. Otherwise an
-ignored path is written like any other: put writes into an ignored directory
-and commits the file. An ignored file where a directory must go cannot be read
-as one, so the put is refused with `board::repo::unreadable` before anything
-is written.
+lands at its target. architecture/paths/writes.md says which paths a write
+refuses.

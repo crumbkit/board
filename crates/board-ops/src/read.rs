@@ -9,7 +9,7 @@ use board_model::{
     BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
     Source, classify, parse_json,
 };
-use board_tree::{Contents, GitError, Repositories, Repository, ResolveError, Resolver, Status};
+use board_tree::{Contents, GitError, Reader, ResolveError, Resolver, Status};
 use serde_json::Value;
 
 use crate::attachment::FetchError;
@@ -60,7 +60,9 @@ impl Board {
     /// directory is `record::not_a_record`, and a file over 16 MiB is
     /// `json::too_large`.
     pub fn get(&self, path: &LogicalPath) -> Result<GetReport, ReadError> {
-        read_at(self.repositories(), self.locate(path)?, path, true)
+        let mut view = self.working_view()?;
+        let location = self.locate_in(&mut view, path)?;
+        read_at(&mut view, location, path, true)
     }
 
     /// Each of `paths` as [`Board::get`] gives it, in order, read as the
@@ -71,18 +73,18 @@ impl Board {
         &'a self,
         paths: &'a [LogicalPath],
     ) -> Result<impl Iterator<Item = Result<GetReport, ReadError>> + 'a, ReadError> {
-        let snapshot = self.repositories().snapshot();
-        let mut view = snapshot.map_err(|source| ReadError::Resolve {
-            source: ResolveError::Git(source),
-        })?;
+        let mut view = self.working_view()?;
         Ok(paths.iter().map(move |path| {
-            read_at(
-                self.repositories(),
-                self.locate_in(&mut view, path)?,
-                path,
-                true,
-            )
+            let location = self.locate_in(&mut view, path)?;
+            read_at(&mut view, location, path, true)
         }))
+    }
+
+    /// One snapshot of the working tree to resolve and read in.
+    fn working_view(&self) -> Result<Resolver<'_, 'static>, ReadError> {
+        (self.repositories().snapshot()).map_err(|source| ReadError::Resolve {
+            source: ResolveError::Git(source),
+        })
     }
 
     /// Resolves `path`, following pointers, and lists the directory there
@@ -121,10 +123,7 @@ impl Board {
         } else {
             let scope = match location.object {
                 Object::Directory => location.path.as_str(),
-                Object::Blob(_) => location
-                    .path
-                    .rsplit_once('/')
-                    .map_or("", |(parent, _)| parent),
+                Object::Blob(_) => location.path.rsplit_once('/').map_or("", |(up, _)| up),
             };
             fallback = repository
                 .walk_under(&location.board.source, scope)
@@ -137,6 +136,7 @@ impl Board {
             format!("{}/", location.path)
         };
         let mut listed: BTreeMap<String, Listed> = BTreeMap::new();
+        let reader = &mut repository.reader();
         for entry in entries {
             let (name, below) = match location.object {
                 Object::Blob(_) if entry.path == location.path => {
@@ -165,7 +165,7 @@ impl Board {
                     .get(&(&location.board.source, entry.path.as_str()))
                     .copied()
                     .unwrap_or_else(|| {
-                        let classified = classify_entry(&repository, &location.board.source, entry);
+                        let classified = classify_entry(reader, &location.board.source, entry);
                         let status = match (entry.status, classified.code) {
                             (Status::Ok, Some(code)) => Status::Degraded(code),
                             (status, _) => status,
@@ -289,7 +289,7 @@ impl Board {
 /// bytes read. With `latest`, a file that changed since it was resolved is
 /// read as it is now; without, it is [`GitError::Changed`].
 pub(crate) fn read_at(
-    repositories: &Repositories,
+    view: &mut Resolver,
     mut location: Location,
     path: &LogicalPath,
     latest: bool,
@@ -297,7 +297,7 @@ pub(crate) fn read_at(
     let Object::Blob(blob) = location.object else {
         return Err(ReadError::NotARecord { path: path.clone() });
     };
-    let read = repositories.read(&location, blob);
+    let read = view.read(&location.board, &location.path, blob);
     let Contents { blob, bytes } = if latest {
         board_tree::latest(read)
     } else {
@@ -348,7 +348,7 @@ pub(crate) fn read_at(
 /// An entry's kind and what parsing found, reading it only when it is a
 /// `.json` file.
 pub(crate) fn classify_entry(
-    repository: &Repository,
+    reader: &mut Reader<'_>,
     source: &Source,
     entry: &board_tree::Entry,
 ) -> Classified {
@@ -356,7 +356,7 @@ pub(crate) fn classify_entry(
         return classify(&entry.path, None);
     }
     let read = entry.blob.ok_or(Code::RepoUnreadable).and_then(|blob| {
-        repository
+        reader
             .read(source, &entry.path, blob)
             .map_err(|error| error.code())
     });

@@ -43,10 +43,13 @@ impl<T> WorkingTree<'_, '_, T> {
 }
 
 impl<T: Send> WorkingTree<'_, '_, T> {
-    /// Settles each file in `unhashed`. One already settled is answered on
-    /// this thread; the rest are opened and hashed on the repository's
+    /// Settles each file in `unhashed`, as [`Tree::settle`] would, so that
+    /// each keeps one blob in this snapshot. One already settled is answered
+    /// on this thread; the rest are opened and hashed on the repository's
     /// threads, no more than there are files, each file on one of them. The
     /// answer is the same however many threads hash.
+    ///
+    /// [`Tree::settle`]: crate::tree::Tree::settle
     pub(super) fn settle_each(
         &mut self,
         unhashed: Vec<Unhashed<PathBuf>>,
@@ -80,14 +83,19 @@ impl<T: Send> WorkingTree<'_, '_, T> {
             kind: self.repository.git().object_hash(),
             prepare: self.kept.as_ref().map(|kept| kept.prepare),
         };
-        match &mut self.kept {
-            None => settled.extend(hasher.all(&jobs, threads, &mut |_| true)),
+        let answers = match &mut self.kept {
+            None => hasher.all(&jobs, threads, &mut |_| true),
             // A walk that `keep` ended is discarded, so it hashes no more.
-            Some(kept) if kept.stopped => {}
-            Some(kept) => settled.extend(hasher.all(&jobs, threads, &mut |prepared| {
+            Some(kept) if kept.stopped => Vec::new(),
+            Some(kept) => hasher.all(&jobs, threads, &mut |prepared| {
                 kept.stopped = !(kept.keep)(prepared);
                 !kept.stopped
-            })),
+            }),
+        };
+        for (job, kind, stat) in answers {
+            let Job { at, relative, .. } = &jobs[job];
+            self.settled.insert(relative.clone(), (kind.clone(), stat));
+            settled.push((*at, kind, stat));
         }
         settled
     }
@@ -96,7 +104,8 @@ impl<T: Send> WorkingTree<'_, '_, T> {
 impl<T: Send> Hasher<'_, T> {
     /// Hashes `jobs` on `threads` threads, each taking the next job as it
     /// finishes one, and hands what they prepare to `keep` on this thread
-    /// as they prepare it; no thread is started for no jobs. When `keep`
+    /// as they prepare it; no thread is started for no jobs. Each answer
+    /// names its job by where it is in `jobs`. When `keep`
     /// answers `false`, each thread stops once it next prepares a file.
     ///
     /// # Panics
@@ -111,9 +120,11 @@ impl<T: Send> Hasher<'_, T> {
         let next = AtomicUsize::new(0);
         let work = |send: SyncSender<T>| {
             let mut mine = Vec::new();
-            while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
+            loop {
+                let at = next.fetch_add(1, Ordering::Relaxed);
+                let Some(job) = jobs.get(at) else { break };
                 let (kind, stat, prepared) = self.hash(&job.relative, &job.path, job.seen);
-                mine.push((job.at, kind, stat));
+                mine.push((at, kind, stat));
                 if let Some(prepared) = prepared
                     && send.send(prepared).is_err()
                 {

@@ -30,10 +30,11 @@ impl Board {
         plugins.environment.depth()?;
         let chosen = board_plugin::choose(plugins.installed()?, &self.config().plugins, target)?;
         // A record Board admits must be one the plugin's own schema admits.
+        let reader = &mut self.repository().reader();
         if let Some(problem) = chosen
             .schemas
             .iter()
-            .find_map(|(record_type, shipped)| self.problem(record_type, shipped))
+            .find_map(|(record_type, shipped)| Self::problem(reader, record_type, shipped))
         {
             return Err(CallFailed::Schema {
                 plugin: chosen.manifest.name,

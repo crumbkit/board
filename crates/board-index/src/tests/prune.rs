@@ -57,6 +57,7 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
         status: Status::Ok,
         stat: None,
         size: None,
+        link: None,
     };
     let worktree = writer.worktree().unwrap();
     writer.sync_worktree(worktree, &[file]).unwrap();

@@ -3,8 +3,9 @@
 use board_scenario::{Item, Scenario};
 
 use super::*;
-use crate::put::Expect;
+use crate::put::{Expect, PutError};
 use crate::tests::open;
+use board_tree::Status;
 
 const SCHEMA: &str = r#"{"type": "object", "required": ["title"]}"#;
 
@@ -216,4 +217,121 @@ fn an_equal_schema_in_another_layout_is_kept_as_it_is_committed_or_not() {
     assert_eq!(added.commit, Some(head.id));
     assert_eq!(head.files[&uncommitted], layout.as_bytes());
     assert_eq!(read(&board, &uncommitted), layout.as_bytes());
+}
+
+#[test]
+fn an_equal_schema_held_through_a_symlink_is_left_uncommitted_and_a_different_or_dangling_one_is_refused()
+ {
+    let linked = |held: Option<&str>| {
+        let board = Scenario::new();
+        board
+            .write(
+                ".git/config",
+                Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+            )
+            .write(
+                ".board/board.json",
+                Item::File(r#"{"$type": "board/config/v1"}"#),
+            )
+            .write(AT, Item::Symlink("../../../../schemas/note.json"));
+        if let Some(held) = held {
+            board.write("schemas/note.json", Item::File(held));
+        }
+        board
+    };
+    let board = linked(Some(SCHEMA));
+    let report = open(&board).type_add(&note(1), SCHEMA.as_bytes()).unwrap();
+    assert_eq!((report.writes.len(), report.commit), (0, None));
+    assert!(board.head().is_none(), "the symlink stays uncommitted");
+    let kept = std::fs::read_link(board.workdir().join(AT)).unwrap();
+    assert_eq!(kept, std::path::Path::new("../../../../schemas/note.json"));
+
+    let board = linked(Some(r#"{"type": "object"}"#));
+    let refused = open(&board)
+        .type_add(&note(1), SCHEMA.as_bytes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::SchemaDiffers);
+
+    let board = linked(None);
+    let refused = open(&board)
+        .type_add(&note(1), SCHEMA.as_bytes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::SymlinkDangling);
+    let refusal = refused.refusal();
+    let target = Some("../../../../schemas/note.json".to_owned());
+    assert_eq!(refused.fields().target, target);
+    let at = format!("/{AT}");
+    assert_eq!(
+        refused.fields().path.map(|path| path.to_string()),
+        Some(at.clone())
+    );
+    assert!(
+        refusal.message.contains(&format!("{at} is a symlink to")),
+        "{}",
+        refusal.message
+    );
+    let hint = refusal.hint.unwrap();
+    assert!(hint.contains("no file the board holds"), "{hint}");
+}
+
+#[test]
+fn a_record_whose_schema_is_a_dangling_symlink_is_refused_with_its_code_and_its_twin_is_put() {
+    let text = "../../../../schemas/note.json";
+    for (held, code) in [(None, Some(Code::SymlinkDangling)), (Some(SCHEMA), None)] {
+        let board = board();
+        board.write(AT, Item::Symlink(text));
+        if let Some(held) = held {
+            board.write("schemas/note.json", Item::File(held));
+        }
+        let record = r#"{"$type": "notes/note/v1", "title": "x"}"#;
+        let at = "/notes/a".parse().unwrap();
+        let put = open(&board).put(&at, Expect::Any, record.as_bytes());
+        assert_eq!(put.as_ref().err().map(PutError::code), code);
+        if let Err(error) = put {
+            assert_eq!(error.fields().target.as_deref(), Some(text));
+            let message = error.to_string();
+            assert!(
+                message.contains(&format!("is a symlink to {text:?}")),
+                "{message}"
+            );
+        }
+        board.write("notes/b.json", Item::File(record));
+        let report = open(&board).check(None, None).unwrap();
+        let checked = report
+            .entries
+            .iter()
+            .find(|entry| entry.path == "notes/b.json")
+            .unwrap();
+        let status = code.map_or(Status::Ok, Status::Degraded);
+        assert_eq!(checked.status, status);
+        let target = checked
+            .detail
+            .as_ref()
+            .and_then(|detail| detail.target.as_deref());
+        assert_eq!(target, code.map(|_| text));
+    }
+}
+
+#[test]
+fn a_schema_beneath_a_symlink_to_a_directory_outside_the_repository_is_not_read_and_one_beneath_a_directory_is()
+ {
+    let outer = Scenario::new();
+    let unparsed = r#"{"secret": "abc" "#;
+    outer.write("outside/notes/note/v1.schema.json", Item::File(unparsed));
+    for (linked, code) in [(true, Code::PutSymlink), (false, Code::JsonParse)] {
+        let board = Scenario::within(&outer);
+        board.write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+        );
+        if linked {
+            board.write(".board/types", Item::Symlink("../../outside"));
+        } else {
+            board.write(AT, Item::File(unparsed));
+        }
+        let refused = open(&board)
+            .type_add(&note(1), SCHEMA.as_bytes())
+            .unwrap_err();
+        assert_eq!(refused.code(), code, "linked: {linked}");
+    }
 }

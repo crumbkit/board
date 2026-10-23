@@ -16,7 +16,7 @@ use crate::tests::{board, open, task};
 use crate::{CheckReport, Checked, Refreshed};
 use board_scenario::generated::{Generated, generated};
 
-use super::{Decide, Facts, Indexing, Referenced, Snapshot, known, read_type};
+use super::{Decide, Facts, Indexing, Referenced, Snapshot, known};
 
 /// A snapshot with its views filled, as a query reads it.
 struct Filled {
@@ -460,6 +460,7 @@ fn a_file_seen_as_it_is_now_is_known_or_tried_again_uncounted_and_any_other_is_c
         status: Status::Ok,
         stat: Some(stat),
         size: Some(2),
+        link: None,
     };
     let entries = [entry("a.json", Some(blob)), entry("sealed.json", None)];
     let mut hashed = 3;
@@ -521,18 +522,31 @@ fn a_pointer_the_index_does_not_hold_is_read_as_the_pointer_type_and_a_record_as
         .write("tasks/a.json", Item::File(&task("")))
         .write("l.json", Item::File(link));
     let board = open(&scenario);
+    let index = Index::open(None, board.repository().path()).unwrap();
+    let writer = index.write().unwrap();
+    let facts = std::collections::HashMap::new();
+    let decide = Decide {
+        repositories: board.repositories(),
+        writer: &writer,
+        listed: &[],
+        facts: &facts,
+        mounted: None,
+        resolve: std::cell::RefCell::new(Box::new(|_: &board_model::LogicalPath| {
+            panic!("reading a type resolves nothing")
+        })),
+        reader: std::cell::RefCell::new(board.repository().reader()),
+    };
     let at = |path: &str, text: &str| {
-        let blob = scenario.blob(text);
         let location = Location {
             board: board_model::Board {
                 repository: board.repository().path().to_path_buf(),
                 source: Source::WorkingTree,
             },
             path: path.to_owned(),
-            object: Object::Blob(blob),
+            object: Object::Blob(scenario.blob(text)),
             pointers: Vec::new(),
         };
-        read_type(board.repositories(), &location, blob)
+        decide.record_type(&location).unwrap()
     };
     assert_eq!(at("l.json", link), POINTER_TYPE.parse().ok());
     assert_eq!(at("tasks/a.json", &task("")), "lr/task/v1".parse().ok());
@@ -554,6 +568,7 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
         resolve: std::cell::RefCell::new(Box::new(|_: &board_model::LogicalPath| {
             panic!("a record with no references resolves nothing")
         })),
+        reader: std::cell::RefCell::new(board.repository().reader()),
     };
     let blob = ObjectId::from_hex("0123456789abcdef0123456789abcdef01234567").unwrap();
     let record = |validation| Indexed {

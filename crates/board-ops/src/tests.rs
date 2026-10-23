@@ -9,6 +9,7 @@ use crate::{Board, CheckReport, OpenError};
 
 mod complete;
 mod markdown;
+mod symlinks;
 pub(crate) mod verdicts;
 
 const CONFIG: &str = r#"{"$type": "board/config/v1"}"#;
@@ -148,10 +149,9 @@ fn opening_a_board_opens_only_its_configuration_and_an_unreadable_one_is_invalid
     let readable = board_beside_large_files();
     readable.write(".board/board.json", Item::File(CONFIG));
     let board = open(&readable);
-    // board.json is hashed when resolution picks it and read to tell
-    // whether it is a pointer. The read for its configuration goes through
-    // a lent repository, which counts its own files.
-    assert_eq!(board.repository().files_opened(), 2);
+    // board.json is hashed when resolution picks it, read to tell whether
+    // it is a pointer, and read for its configuration.
+    assert_eq!(board.repository().files_opened(), 3);
     let locked = board_beside_large_files();
     if unreadable(&locked, ".board/board.json", CONFIG) {
         let error = Board::open(locked.workdir(), None).unwrap_err();
@@ -771,12 +771,11 @@ fn get_returns_the_blob_of_the_bytes_it_read_when_the_file_changed_after_resolut
     };
     let (changed, unchanged) = (locate("/work/a"), locate("/work/b"));
     scenario.write("work/a.json", Item::File(&new));
-    let changed =
-        crate::read::read_at(board.repositories(), changed, &path("/work/a"), true).unwrap();
+    let mut view = board.repositories().snapshot().unwrap();
+    let changed = crate::read::read_at(&mut view, changed, &path("/work/a"), true).unwrap();
     assert_eq!(changed.location.object, Object::Blob(scenario.blob(&new)));
     assert_eq!(changed.bytes, new.as_bytes());
-    let unchanged =
-        crate::read::read_at(board.repositories(), unchanged, &path("/work/b"), true).unwrap();
+    let unchanged = crate::read::read_at(&mut view, unchanged, &path("/work/b"), true).unwrap();
     assert_eq!(unchanged.location.object, Object::Blob(scenario.blob(&old)));
 }
 
@@ -1440,4 +1439,42 @@ fn ls_through_a_mount_lists_what_the_same_directory_lists_in_a_plain_board() {
     assert_eq!(shape(&through), shape(&direct));
     assert_eq!(shape(&direct).len(), 3);
     assert_eq!(through.display.as_str(), "/shared/work");
+}
+
+#[test]
+fn a_board_whose_configuration_is_reached_through_a_symlink_out_of_its_repository_names_the_symlink()
+ {
+    let outer = Scenario::new();
+    outer.write("outside/board.json", Item::File(CONFIG));
+    let directory = Scenario::within(&outer);
+    directory.write(".board", Item::Symlink("../outside"));
+    let file = Scenario::within(&outer);
+    file.write(
+        ".board/board.json",
+        Item::Symlink("../../outside/board.json"),
+    );
+    for (linked, target) in [
+        (directory, "../outside"),
+        (file, "../../outside/board.json"),
+    ] {
+        let refused = Board::open(linked.workdir(), None).unwrap_err();
+        assert_eq!(refused.code(), Code::SymlinkOutside);
+        assert!(refused.to_string().contains("\"../"), "{refused}");
+        let fields = refused.fields();
+        assert_eq!(fields.path, Some("/.board/board".parse().unwrap()));
+        assert_eq!(fields.target.as_deref(), Some(target));
+    }
+    let inside = Scenario::within(&outer);
+    inside
+        .write(".board/config.json", Item::File(CONFIG))
+        .write(".board/board.json", Item::Symlink("config.json"));
+    assert!(Board::open(inside.workdir(), None).is_ok());
+    let invalid = Scenario::within(&outer);
+    invalid.write(".board/board.json", Item::File("{}"));
+    let refused = Board::open(invalid.workdir(), None).unwrap_err();
+    assert_eq!(refused.code(), Code::ConfigInvalid);
+    assert_eq!(refused.fields().path, None);
+    let real = Scenario::within(&outer);
+    real.write(".board/board.json", Item::File(CONFIG));
+    assert!(Board::open(real.workdir(), None).is_ok());
 }

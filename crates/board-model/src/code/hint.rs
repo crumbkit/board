@@ -1,7 +1,7 @@
 //! What to try next after each code (STANDARDS.md 25). The generic match
 //! has no wildcard, so a new code does not compile until it has a hint.
 
-use crate::{Code, Fields, Found, Known, LogicalPath};
+use crate::{Code, Fields, Found, Known, LogicalPath, MAX_SYMLINKS};
 
 impl Code {
     /// What to try next after an error with this code that names `fields`:
@@ -75,6 +75,11 @@ fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
             "{} is {repository}, which Board cannot write; fix the file there as the message says, then run `board mount update {mount}`",
             fields.path.as_ref()?
         ),
+        Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling => format!(
+            "{} is {repository}, which Board cannot write; there, {}, then run `board mount update {mount}`",
+            fields.path.as_ref()?,
+            symlink(code, fields)?
+        ),
         _ => return None,
     })
 }
@@ -131,6 +136,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             fields.ancestor.as_ref()?
         ),
         Code::RefDangling => dangling(fields)?,
+        Code::SymlinkOutside | Code::SymlinkLoop | Code::SymlinkDangling => symlink(code, fields)?,
         Code::MountCommitMissing
         | Code::PutThroughMount
         | Code::MountNotAncestor
@@ -165,20 +171,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             capability?,
             capability?
         ),
-        Code::QueryInvalid => match fields.known.as_ref()? {
-            Known::Tables(tables) => format!(
-                "the tables and views are {}; `board query --help` describes them",
-                tables.join(", ")
-            ),
-            Known::Columns(tables) if tables.is_empty() => "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns".to_owned(),
-            Known::Columns(tables) => {
-                let tables: Vec<String> = tables
-                    .iter()
-                    .map(|(table, columns)| format!("{table}: {}", columns.join(", ")))
-                    .collect();
-                format!("the columns are {}", tables.join("; "))
-            }
-        },
+        Code::QueryInvalid => query(fields.known.as_ref()?),
         _ => return None,
     })
 }
@@ -208,6 +201,42 @@ fn dangling(fields: &Fields) -> Option<String> {
             parent(path)
         ),
     })
+}
+
+/// What to do about a symlink whose text is `fields.target` and that
+/// `code` says Board cannot follow to a file.
+fn symlink(code: Code, fields: &Fields) -> Option<String> {
+    let target = fields.target.as_ref()?;
+    Some(match code {
+        Code::SymlinkOutside => format!(
+            "the symlink names `{target}`, which starts at `/` or leaves the repository; make it a relative path to a file inside the repository, or replace the symlink with the file"
+        ),
+        Code::SymlinkLoop => format!(
+            "the symlinks from `{target}` lead back to each other or pass through more than {MAX_SYMLINKS} symlinks; make the chain end at a file"
+        ),
+        Code::SymlinkDangling => format!(
+            "no file the board holds is at `{target}`, which the symlink names (a file git ignores or one in `.git` is not held); create or track the file there, or change the symlink to name a file the board holds"
+        ),
+        _ => return None,
+    })
+}
+
+/// What to do about a query that names a table or column `known` lacks.
+fn query(known: &Known) -> String {
+    match known {
+        Known::Tables(tables) => format!(
+            "the tables and views are {}; `board query --help` describes them",
+            tables.join(", ")
+        ),
+        Known::Columns(tables) if tables.is_empty() => "run `board query \"SELECT name, sql FROM sqlite_master\"` for every table and its columns".to_owned(),
+        Known::Columns(tables) => {
+            let tables: Vec<String> = tables
+                .iter()
+                .map(|(table, columns)| format!("{table}: {}", columns.join(", ")))
+                .collect();
+            format!("the columns are {}", tables.join("; "))
+        }
+    }
 }
 
 /// What to do about a refused batch, whatever refused its lines.
@@ -324,6 +353,15 @@ fn generic(code: Code) -> &'static str {
         }
         Code::RepoSubmodule => {
             "Board does not read submodules; mount the repository with a `board/mount/v1` record instead"
+        }
+        Code::SymlinkOutside => {
+            "make the symlink a relative path to a file inside the repository, or replace it with the file; Board reads only the repository's tree"
+        }
+        Code::SymlinkLoop => {
+            "make the chain of symlinks end at a file without a loop; the message says how many symlinks Board follows"
+        }
+        Code::SymlinkDangling => {
+            "create or track the file the symlink names, or change the symlink to name a file the board holds; a file git ignores or one in `.git` is not held"
         }
         Code::IndexFailed => {
             "delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` and run the command again; the index is rebuilt from the tree"

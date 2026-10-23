@@ -4,6 +4,7 @@
 use super::*;
 use crate::MAX_HOPS;
 use crate::address::Pointers;
+use crate::symlink::Chains;
 use crate::tree::{RawEntry, Tree};
 
 fn link(target: &str) -> String {
@@ -317,7 +318,12 @@ fn resolving_through_n_pointers_reads_n_pointers_and_the_record_it_reaches() {
             reads: 0,
         };
         let location = repositories
-            .resolve_tree(&mut tree, &path(start), true, &mut Pointers::default())
+            .resolve_tree(
+                &mut tree,
+                &path(start),
+                true,
+                (&mut Pointers::default(), &mut Chains::default()),
+            )
             .unwrap();
         assert_eq!(location.pointers.len(), hops);
         assert_eq!(tree.reads, hops + 1, "{hops} hops");
@@ -338,7 +344,12 @@ fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
         let mut pointers = Pointers::default();
         for start in 0..hops {
             let location = repositories
-                .resolve_tree(&mut tree, &path(&format!("/l{start}")), true, &mut pointers)
+                .resolve_tree(
+                    &mut tree,
+                    &path(&format!("/l{start}")),
+                    true,
+                    (&mut pointers, &mut Chains::default()),
+                )
                 .unwrap();
             assert_eq!(location.pointers.len(), hops - start);
         }
@@ -361,10 +372,32 @@ fn many_references_to_one_record_read_it_once_in_one_run() {
     let mut pointers = Pointers::default();
     for _ in 0..1_000 {
         repositories
-            .resolve_tree(&mut tree, &path("/projects/hub"), true, &mut pointers)
+            .resolve_tree(
+                &mut tree,
+                &path("/projects/hub"),
+                true,
+                (&mut pointers, &mut Chains::default()),
+            )
             .unwrap();
     }
     assert_eq!(tree.reads, 1);
+}
+
+#[test]
+fn resolving_many_paths_in_one_commit_decodes_each_directory_once() {
+    let scenario = Scenario::new();
+    let names: Vec<String> = (0..20).map(|n| format!("a/b/r{n}.json")).collect();
+    let files: Vec<(&str, &str)> = names.iter().map(|name| (name.as_str(), "{}")).collect();
+    let commit = scenario.commit(&files);
+    let repositories = scenario.repositories();
+    let repository = repositories.root();
+    let mut in_commit = repositories.in_commit(repository, commit).unwrap();
+    let before = repository.trees_decoded();
+    for n in 0..20 {
+        in_commit.resolve(&path(&format!("/a/b/r{n}"))).unwrap();
+    }
+    // The root, a and a/b.
+    assert_eq!(repository.trees_decoded() - before, 3);
 }
 
 #[test]
@@ -387,7 +420,12 @@ fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
     let mut pointers = Pointers::default();
     let mut refused = || {
         repositories
-            .resolve_tree(&mut tree, &path("/bad"), true, &mut pointers)
+            .resolve_tree(
+                &mut tree,
+                &path("/bad"),
+                true,
+                (&mut pointers, &mut Chains::default()),
+            )
             .unwrap_err()
     };
     let (first, second) = (refused(), refused());
@@ -398,7 +436,12 @@ fn an_invalid_pointer_reached_twice_is_refused_the_same_way_both_times() {
     );
     let mut admitted = || {
         repositories
-            .resolve_tree(&mut tree, &path("/good"), true, &mut pointers)
+            .resolve_tree(
+                &mut tree,
+                &path("/good"),
+                true,
+                (&mut pointers, &mut Chains::default()),
+            )
             .unwrap()
     };
     assert_eq!(admitted(), admitted());
@@ -417,7 +460,12 @@ fn resolving_a_directory_path_reads_no_blob() {
         reads: 0,
     };
     repositories
-        .resolve_tree(&mut tree, &path("/a"), true, &mut Pointers::default())
+        .resolve_tree(
+            &mut tree,
+            &path("/a"),
+            true,
+            (&mut Pointers::default(), &mut Chains::default()),
+        )
         .unwrap();
     assert_eq!(tree.reads, 0);
 }

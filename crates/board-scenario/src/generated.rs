@@ -2,6 +2,7 @@
 //! cold one and that the commands agree about each entry.
 
 use std::collections::BTreeMap;
+use std::fs;
 
 use board_model::ObjectId;
 use proptest::prelude::*;
@@ -85,6 +86,30 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
                 // Links that reach a record, through a link and nowhere.
                 "[p](projects/p.json) [l](/links/l#x) [gone](/gone)".to_owned(),
                 "[a](./tasks/a.json) `[b](/tasks/b)`".to_owned(),
+                // Links through symlinks, to a record and to a note.
+                "[c](/tasks/c) [n](linked.md)".to_owned(),
+            ],
+        ),
+        // Symlinks: to a record, to one in another directory, to nothing,
+        // to themselves and out of the repository, and a file in their place.
+        (
+            "tasks/c.json",
+            vec![
+                "LINK a.json".to_owned(),
+                "LINK ../projects/p.json".to_owned(),
+                "LINK gone.json".to_owned(),
+                "LINK c.json".to_owned(),
+                task(r#", "see": "/tasks/c""#),
+            ],
+        ),
+        // A symlinked note, one to a directory, and one out of the board.
+        (
+            "linked.md",
+            vec![
+                "LINK notes.md".to_owned(),
+                "LINK tasks".to_owned(),
+                "LINK ../../outside.md".to_owned(),
+                "[a](tasks/a.json)".to_owned(),
             ],
         ),
         // A name with no logical path. Its last content is the same bytes
@@ -103,6 +128,12 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             ],
         ),
     ]
+}
+
+/// The item `text` describes: a symlink to what follows `LINK `, or a file.
+fn item(text: &str) -> Item<'_> {
+    text.strip_prefix("LINK ")
+        .map_or(Item::File(text), Item::Symlink)
 }
 
 /// For each file a generated board can hold, which content it holds, if
@@ -165,11 +196,11 @@ impl Generated {
                     ))
                 })
                 .collect();
-            let files: Vec<(&str, &str)> = files
+            let items: Vec<(&[u8], Item<'_>)> = files
                 .iter()
-                .map(|(path, text)| (path.as_str(), text.as_str()))
+                .map(|(path, text)| (path.as_bytes(), item(text)))
                 .collect();
-            generated.scenario.commit(&files);
+            generated.scenario.commit_items(&items);
         }
         generated
     }
@@ -185,7 +216,15 @@ impl Generated {
             match chosen {
                 Some(at) => {
                     let text = self.materialize(&contents[*at]);
-                    self.scenario.write(path, Item::File(&text));
+                    let item = item(&text);
+                    // Writing a file through a symlink would write its target,
+                    // and a symlink cannot be made over a file.
+                    let linked = fs::symlink_metadata(self.scenario.workdir().join(path))
+                        .is_ok_and(|metadata| metadata.is_symlink());
+                    if was && (linked || matches!(item, Item::Symlink(_))) {
+                        self.scenario.write(path, Item::Deleted);
+                    }
+                    self.scenario.write(path, item);
                 }
                 None if was => {
                     self.scenario.write(path, Item::Deleted);

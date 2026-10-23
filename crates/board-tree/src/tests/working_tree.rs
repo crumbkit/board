@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::symlink::Chains;
 use crate::tree::{Kind, Listed, RawEntry, Visit};
 use crate::worktree::WorkingTree as WorkingTreeView;
 use crate::{Contents, Entry, GitError};
@@ -817,12 +818,14 @@ fn a_snapshot_lists_each_directory_once_and_each_target_without_one_lists_again(
 }
 
 #[test]
-fn a_resolver_names_its_repository_when_debugged() {
+fn a_resolver_and_a_reader_name_their_repository_when_debugged() {
     let scenario = Scenario::new();
     let repositories = scenario.repositories();
     let shown = format!("{:?}", repositories.snapshot().unwrap());
     let path = format!("{:?}", repositories.root().path());
     assert_eq!(shown, format!("Resolver {{ repository: {path}, .. }}"));
+    let shown = format!("{:?}", repositories.root().reader());
+    assert_eq!(shown, format!("Reader {{ repository: {path}, .. }}"));
 }
 
 /// Whether resolving `/work/x` finds the blob of `{}` or a code, beside
@@ -946,25 +949,25 @@ fn a_resolver_answers_the_same_through_a_lazy_listing_as_through_a_full_one() {
     let resolve = |full: bool, text: &str| {
         let mut pointers = Pointers::default();
         repositories
-            .resolve_tree(&mut tree(full), &path(text), true, &mut pointers)
+            .resolve_tree(
+                &mut tree(full),
+                &path(text),
+                true,
+                (&mut pointers, &mut Chains::default()),
+            )
             .map(|location| (location.path, location.object))
             .map_err(|error| error.code())
     };
-    let symlink = Object::Blob(scenario.blob("x.json"));
+    let x = Object::Blob(scenario.blob(r#"{"x": 1}"#));
     let expected = [
-        (
-            "/d/x",
-            Ok((
-                "d/x.json".to_owned(),
-                Object::Blob(scenario.blob(r#"{"x": 1}"#)),
-            )),
-        ),
+        ("/d/x", Ok(("d/x.json".to_owned(), x))),
         ("/d/missing", Err(Code::PathNotFound)),
         ("/d/ignored", Err(Code::PathNotFound)),
         ("/d/X", Err(Code::PathNotFound)),
-        ("/d/link", Ok(("d/link".to_owned(), symlink))),
-        ("/d/s.json", Ok(("d/s.json".to_owned(), symlink))),
-        ("/d/s", Err(Code::PathNotFound)),
+        // A symlink reads as the file it leads to, addressed without `.json`.
+        ("/d/link", Ok(("d/link".to_owned(), x))),
+        ("/d/s", Ok(("d/s.json".to_owned(), x))),
+        ("/d/s.json", Err(Code::PathNotFound)),
         // A record beside its directory: the segment names both.
         (
             "/d/sub",

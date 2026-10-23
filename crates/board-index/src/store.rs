@@ -10,6 +10,7 @@ use board_model::{
     Canonical, Change, Code, Kind, LogicalPath, ObjectId, RecordType, Role, Source, Stat,
 };
 use board_tree::{Entry, MountPoint, Status, TreeRow, TreeRows};
+use rusqlite::types::{ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, TransactionState, params};
 
 use crate::open::{Index, IndexError, Storage};
@@ -568,7 +569,7 @@ impl Writer {
                 )?
                 .execute(params![
                     id,
-                    row.name,
+                    name(&row.name),
                     row.mode,
                     row.object.to_string(),
                     row.size.map(u64::cast_signed),
@@ -587,7 +588,7 @@ impl Writer {
         let rows = statement
             .query_map([tree.to_string()], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
+                    row.get_ref(0)?.as_bytes()?.to_vec(),
                     row.get::<_, u32>(1)?,
                     row.get::<_, String>(2)?,
                     row.get::<_, Option<i64>>(3)?,
@@ -752,7 +753,7 @@ impl Writer {
         )?;
         let rows = statement.query_map([root.to_string()], |row| {
             Ok((
-                row.get::<_, String>(0)?,
+                String::from_utf8_lossy(row.get_ref(0)?.as_bytes()?).into_owned(),
                 row.get::<_, u32>(1)?,
                 row.get::<_, String>(2)?,
             ))
@@ -788,4 +789,11 @@ impl Writer {
         }
         Ok(self.index)
     }
+}
+
+/// A tree entry's name as the trees table holds it: text when it is UTF-8,
+/// else its bytes as a blob, so that names that show alike stay apart.
+fn name(name: &[u8]) -> ToSqlOutput<'_> {
+    let text = std::str::from_utf8(name).map(|_| ValueRef::Text(name));
+    ToSqlOutput::Borrowed(text.unwrap_or(ValueRef::Blob(name)))
 }

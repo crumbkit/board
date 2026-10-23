@@ -4,11 +4,12 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use board_model::{Board, Location, Mount, ObjectId};
+use board_model::{Board, Location, Mount, ObjectId, Source};
 
 use crate::git::{Contents, GitError, Repository};
+use crate::worktree::Reader;
 
 /// The repository a board is in, and a cache of every repository its mounts
 /// name, so each is opened from disk once. Each lookup gives a
@@ -32,6 +33,7 @@ pub struct Repositories {
 struct Opened {
     path: PathBuf,
     git: gix::ThreadSafeRepository,
+    decoded: Arc<AtomicUsize>,
 }
 
 impl Opened {
@@ -39,6 +41,7 @@ impl Opened {
         Self {
             path: repository.path().to_path_buf(),
             git: repository.git().clone().into_sync(),
+            decoded: repository.decodes(),
         }
     }
 
@@ -55,7 +58,11 @@ impl Opened {
     }
 
     fn lend(&self) -> Repository {
-        Repository::lent(self.path.clone(), self.git.to_thread_local())
+        Repository::lent(
+            self.path.clone(),
+            self.git.to_thread_local(),
+            Arc::clone(&self.decoded),
+        )
     }
 }
 
@@ -93,9 +100,23 @@ impl Repositories {
         self.lend(&board.repository)
     }
 
-    pub fn read(&self, location: &Location, blob: ObjectId) -> Result<Option<Contents>, GitError> {
-        self.repository(&location.board)?
-            .read(&location.board.source, &location.path, blob)
+    /// The file at `location`, whose blob was `blob` when it was walked,
+    /// read with `root`, the root repository's reader, when it is in the
+    /// working tree, since only the root board is.
+    pub fn read(
+        &self,
+        root: &mut Reader<'_>,
+        location: &Location,
+        blob: ObjectId,
+    ) -> Result<Option<Contents>, GitError> {
+        let (source, path) = (&location.board.source, &location.path);
+        match source {
+            Source::WorkingTree => root.read(source, path, blob),
+            Source::Commit(_) => self
+                .repository(&location.board)?
+                .reader()
+                .read(source, path, blob),
+        }
     }
 
     /// The repository `mount`, a pointer in the repository at `from`, names:

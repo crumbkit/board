@@ -7,6 +7,7 @@ use board_model::{Code, LogicalPath, ObjectId, Source, Stat};
 
 use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
+use crate::symlink::{Chains, End, Node, ROOT};
 use crate::tree::{Kind, RawEntry, Tree, Unhashed};
 use crate::worktree::{Known, Prepare};
 
@@ -26,6 +27,18 @@ pub struct Entry {
     pub stat: Option<Stat>,
     /// The blob's size in bytes, when known.
     pub size: Option<u64>,
+    /// For a symlink, its own blob and text; its `blob` and `size` are the
+    /// file's it leads to.
+    pub link: Option<Link>,
+}
+
+/// A symlink: its own blob, which git records, and its text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Link {
+    pub blob: ObjectId,
+    /// The path it names, shortened when long and shown lossily when it is
+    /// not UTF-8.
+    pub target: String,
 }
 
 /// One name inside a directory: the last segment of its logical path, and
@@ -134,6 +147,8 @@ pub(crate) fn walk_in<T: Tree>(tree: &mut T) -> Result<Vec<Entry>, GitError> {
 struct Descent<'p, D> {
     /// The deepest directory on the path that exists.
     at: Pending<D>,
+    /// Its place among the `chains` the descent was given.
+    place: Node,
     /// The directory on the way whose own code `at` inherits.
     fault: Option<Beneath>,
     /// The path's segments past `at`.
@@ -238,12 +253,13 @@ pub(crate) fn reason(code: Code, tense: Tense, other: Option<&str>) -> String {
 }
 
 /// The deepest directory on the `/`-separated `path`, reached from the root
-/// as a walk reaches it: with its logical path and the code its ancestors
-/// pass down. Only the entries alike to each segment are addressed, since no
-/// others bear on its code.
+/// as a walk reaches it: with its logical path, the code its ancestors pass
+/// down and its place among `chains`. Only the entries alike to each segment
+/// are addressed, since no others bear on its code.
 fn descend<'p, T: Tree>(
     tree: &mut T,
     path: &'p str,
+    chains: &mut Chains<T::Directory>,
 ) -> Result<Descent<'p, T::Directory>, GitError> {
     let mut at = Pending {
         directory: tree.root(),
@@ -252,6 +268,7 @@ fn descend<'p, T: Tree>(
         inherited: None,
     };
     let mut fault = None;
+    let mut place = ROOT;
     let mut segments = path
         .split('/')
         .filter(|segment| !segment.is_empty())
@@ -266,11 +283,17 @@ fn descend<'p, T: Tree>(
             .iter()
             .zip(addressed)
             .find(|(entry, _)| entry.name == segment.as_bytes());
-        let Some((Kind::Directory(child), (logical, own))) =
-            found.map(|(entry, addressed)| (&entry.kind, addressed))
+        let Some((
+            entry @ RawEntry {
+                kind: Kind::Directory(child),
+                ..
+            },
+            (logical, own),
+        )) = found
         else {
             break;
         };
+        place = chains.enter(tree, place, entry);
         if let (None, Some(code)) = (&fault, own) {
             fault = Some(Beneath::new(code, &at.path, &alike, segment, false));
         }
@@ -284,6 +307,7 @@ fn descend<'p, T: Tree>(
     }
     Ok(Descent {
         at,
+        place,
         fault,
         rest: segments.collect(),
     })
@@ -298,7 +322,9 @@ pub(crate) fn planned_code<T: Tree>(
     is_pointer: bool,
 ) -> Result<Option<Planned>, GitError> {
     let (directory, name) = file.rsplit_once('/').unwrap_or(("", file));
-    let Descent { at, fault, rest } = descend(tree, directory)?;
+    let Descent {
+        at, fault, rest, ..
+    } = descend(tree, directory, &mut Chains::default())?;
     // A directory without a logical path has its own code, so it is the
     // fault; the walk gives no code beneath one that has neither.
     let mut parent = match (fault, at.logical) {
@@ -364,7 +390,7 @@ fn join(directory: &str, segment: &str) -> String {
 }
 
 fn names_in<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Name>, GitError> {
-    let Descent { at, rest, .. } = descend(tree, path)?;
+    let Descent { at, rest, .. } = descend(tree, path, &mut Chains::default())?;
     let (
         Pending {
             directory,
@@ -391,17 +417,22 @@ fn names_in<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Name>, GitError> {
 }
 
 pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>, GitError> {
+    let chains = &mut Chains::default();
     let Descent {
-        at: start, rest, ..
-    } = descend(tree, path)?;
+        at: start,
+        place,
+        rest,
+        ..
+    } = descend(tree, path, chains)?;
     if !rest.is_empty() {
         return Ok(Vec::new());
     }
     let start_path = start.path.clone();
     let mut entries = Vec::new();
     let mut unhashed = Vec::new();
-    let start = (start.directory.clone(), start);
-    tree.visit_all(start, &mut |tree, (directory, pending), listed| {
+    let mut links = Vec::new();
+    let start = (start.directory.clone(), (start, place));
+    tree.visit_all(start, &mut |tree, (directory, (pending, place)), listed| {
         let listed = match listed {
             Ok(listed) => listed,
             Err(error) if pending.path == start_path => return Err(error),
@@ -414,6 +445,7 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
                     status: Status::Degraded(code),
                     stat: None,
                     size: None,
+                    link: None,
                 });
                 return Ok(Vec::new());
             }
@@ -429,19 +461,21 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
             let code = pending.inherited.or(own);
             let blob = match &entry.kind {
                 Kind::Directory(child) => {
-                    let child = child.clone();
-                    children.push((
-                        child.clone(),
-                        Pending {
-                            directory: child,
-                            path,
-                            logical,
-                            inherited: code,
-                        },
-                    ));
+                    let pending = Pending {
+                        directory: child.clone(),
+                        path,
+                        logical,
+                        inherited: code,
+                    };
+                    let place = chains.enter(tree, place, entry);
+                    children.push((child.clone(), (pending, place)));
                     continue;
                 }
-                Kind::File(id) | Kind::Symlink(id) => Some(*id),
+                Kind::File(id) => Some(*id),
+                Kind::Symlink(id) => {
+                    links.push((entries.len(), *id, chains.enter(tree, place, entry)));
+                    Some(*id)
+                }
                 Kind::Submodule | Kind::Unreadable => None,
                 Kind::Unhashed(seen) => {
                     unhashed.push(Unhashed {
@@ -460,6 +494,7 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
                 status: code.map_or(Status::Ok, Status::Degraded),
                 stat: entry.stat,
                 size: blob.and(entry.size),
+                link: None,
             });
         }
         Ok(children)
@@ -474,6 +509,36 @@ pub(crate) fn walk_from<T: Tree>(tree: &mut T, path: &str) -> Result<Vec<Entry>,
         entry.stat = stat;
         entry.size = entry.blob.and(stat.map(|stat| stat.size));
     }
+    follow_links(tree, chains, &mut entries, links)?;
     entries.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(entries)
+}
+
+/// Gives each symlink among `entries` the blob and size of the file it leads
+/// to, or the code that says why it leads to none. `links` holds where each
+/// symlink is among `entries`, its own blob and its place among `chains`.
+fn follow_links<T: Tree>(
+    tree: &mut T,
+    chains: &mut Chains<T::Directory>,
+    entries: &mut [Entry],
+    links: Vec<(usize, ObjectId, Node)>,
+) -> Result<(), GitError> {
+    for (at, own, place) in links {
+        let (end, target) = chains
+            .follow(tree, place)?
+            .expect("the walk entered a symlink at each place it followed");
+        let entry = &mut entries[at];
+        match end {
+            End::File { blob, size, .. } => (entry.blob, entry.size) = (Some(blob), size),
+            End::Directory(_) => {}
+            End::Refused(code) => {
+                (entry.blob, entry.size) = (None, None);
+                if entry.status == Status::Ok {
+                    entry.status = Status::Degraded(code);
+                }
+            }
+        }
+        entry.link = Some(Link { blob: own, target });
+    }
+    Ok(())
 }

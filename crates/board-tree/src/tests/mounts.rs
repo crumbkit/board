@@ -137,7 +137,8 @@ fn resolving_and_reading_through_one_mounted_repository_opens_it_once_and_a_seco
         let location = repositories
             .resolve(&commit.source(), &path(asked))
             .unwrap();
-        let read = repositories.read(&location, one.blob("1")).unwrap();
+        let read = repositories.read(&mut repositories.root().reader(), &location, one.blob("1"));
+        let read = read.unwrap();
         assert_eq!(read.unwrap().bytes, b"1", "{asked}");
     }
     assert_eq!(repositories.opened(), 1);
@@ -340,6 +341,16 @@ fn an_uncommitted_root_reads_committed_mounted_content() {
     assert_eq!(mounted.board.source, Source::Commit(pinned));
     let root = resolve(&outer, WorkingTree, "/y").unwrap();
     assert_eq!(root.board.source, Source::WorkingTree);
+    let repositories = outer.repositories();
+    let mut view = repositories.snapshot().unwrap();
+    for (text, bytes) in [("/m/x", "committed"), ("/y", "uncommitted")] {
+        let location = view.resolve(&path(text)).unwrap();
+        let Object::Blob(blob) = location.object else {
+            panic!("{text} is a directory");
+        };
+        let read = view.read(&location.board, &location.path, blob);
+        assert_eq!(read.unwrap().unwrap().bytes, bytes.as_bytes(), "{text}");
+    }
 }
 
 #[test]
@@ -472,5 +483,19 @@ fn pinning_a_link_is_refused_naming_the_link_and_pinning_a_mount_is_admitted() {
     let error = outer.repositories().pin(&path("/l")).unwrap_err();
     assert_eq!(error.code(), Code::MountInvalid);
     assert_eq!(error.fields(), board_model::Fields::at(&path("/l")));
+    assert_eq!(outer.repositories().pin(&path("/m")).unwrap().new, pinned);
+}
+
+#[test]
+fn pinning_a_symlink_to_a_mount_is_refused_naming_the_symlink_and_pinning_its_mount_is_admitted() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let outer = Scenario::new();
+    outer
+        .write("m.json", Item::File(&mount(&inner.path(), pinned)))
+        .write("s.json", Item::Symlink("m.json"));
+    let error = outer.repositories().pin(&path("/s")).unwrap_err();
+    assert_eq!(error.code(), Code::PutSymlink);
+    assert_eq!(error.fields(), board_model::Fields::at(&path("/s")));
     assert_eq!(outer.repositories().pin(&path("/m")).unwrap().new, pinned);
 }

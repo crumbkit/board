@@ -125,6 +125,7 @@ fn file(path: &str, byte: u8, modified_ns: i64) -> Entry {
         status: Status::Ok,
         stat: Some(stat_with(1, modified_ns, 0, 1, 0o100_644)),
         size: Some(1),
+        link: None,
     }
 }
 

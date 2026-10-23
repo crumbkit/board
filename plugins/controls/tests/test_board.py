@@ -114,7 +114,7 @@ def test_matched_pages_across_mounts_and_a_pattern_anchored_in_the_own_tree_stay
     assert queries(log) == len(rows)
 
 
-def test_matched_names_a_symlink_named_json_by_its_name_and_a_json_file_by_its_file_name(
+def test_matched_names_a_symlink_named_json_and_a_json_file_by_their_file_names(
     board: Board, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     board.write("docs/t.md", "T.\n")
@@ -124,7 +124,7 @@ def test_matched_names_a_symlink_named_json_by_its_name_and_a_json_file_by_its_f
     board.write("controls/doubled.json", control("R.", paths=["*.json.json"]))
     logged(board, monkeypatch)
     rows = matched(plugin_board.Board(str(board.root), "controls"))
-    assert [row[:2] for row in rows] == [["/controls/names", "/docs/a"], ["/controls/names", "/docs/l.json"]]
+    assert [row[:2] for row in rows] == [["/controls/names", "/docs/a"], ["/controls/names", "/docs/l"]]
 
 
 @pytest.mark.parametrize(

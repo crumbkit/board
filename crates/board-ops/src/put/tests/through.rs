@@ -1016,3 +1016,79 @@ fn after_a_kill_left_the_moved_pin_uncommitted_the_same_put_commits_it_and_then_
     assert_eq!(again.commit, None);
     assert_eq!(scenario.head().unwrap().id, root.id);
 }
+
+/// `library()` with its task schema at `schemas/task.json` and a symlink
+/// whose text is `text` at the schema's path, committed and tracked.
+fn linked_library(text: &str) -> (Scenario, ObjectId) {
+    let library = Scenario::new();
+    let items: [(&str, Item<'_>); 5] = [
+        (
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1"}"#),
+        ),
+        ("schemas/task.json", Item::File(TASK_SCHEMA)),
+        (".board/types/lr/task/v1.schema.json", Item::Symlink(text)),
+        (
+            ".board/types/lr/project/v1.schema.json",
+            Item::File(PROJECT_SCHEMA),
+        ),
+        (
+            "projects/p.json",
+            Item::File(r#"{"$type": "lr/project/v1"}"#),
+        ),
+    ];
+    for (at, item) in items {
+        library.write(at, item);
+    }
+    let bytes: Vec<(&[u8], Item<'_>)> = items
+        .iter()
+        .map(|(at, item)| (at.as_bytes(), *item))
+        .collect();
+    let commit = library.commit_items(&bytes);
+    library
+        .track(commit)
+        .write(".git/config", Item::Appended(IDENTITY));
+    (library, commit)
+}
+
+#[test]
+fn a_put_through_a_mount_reads_a_schema_symlinked_to_a_file_and_one_to_nothing_is_refused() {
+    let record = task(r#", "project": "/projects/p""#);
+    let (library, commit) = linked_library("../../../../schemas/task.json");
+    let scenario = mounting(&library, commit);
+    put(&scenario, "/vendor/tasks/a", Expect::Absent, &record).unwrap();
+    let head = library.head().unwrap();
+    assert_eq!(head.files["tasks/a.json"], canonical(&record));
+    assert!(!open(&scenario).check(None, None).unwrap().degraded());
+
+    let (library, commit) = linked_library("../../../../schemas/gone.json");
+    let scenario = mounting(&library, commit);
+    let refused = put(&scenario, "/vendor/tasks/a", Expect::Absent, &record).unwrap_err();
+    assert_eq!(refused, Code::SymlinkDangling);
+    assert_eq!(library.head().unwrap().id, commit);
+}
+
+#[test]
+fn a_batch_through_a_mount_leaves_an_equal_schema_held_through_a_symlink_and_writes_its_record() {
+    let (library, commit) = linked_library("../../../../schemas/task.json");
+    let scenario = mounting(&library, commit);
+    let record = batch_line(
+        "/vendor/tasks/a",
+        "record",
+        &task(r#", "project": "/projects/p""#),
+    );
+    let report = put_batch(&scenario, &(task_schema_line() + &record)).unwrap();
+    assert_eq!(report.writes.len(), 1, "only the record: {report:?}");
+    let head = library.head().unwrap();
+    assert_eq!(head.parents, [commit]);
+    assert!(head.files.contains_key("tasks/a.json"));
+    let kept = std::fs::read_link(
+        library
+            .workdir()
+            .join(".board/types/lr/task/v1.schema.json"),
+    );
+    assert_eq!(
+        kept.unwrap(),
+        std::path::Path::new("../../../../schemas/task.json")
+    );
+}

@@ -220,6 +220,16 @@ const TEXT: [(&str, &str, Option<Code>); 25] = [
     ("plugins/broken/plugin.json", r#"{"$type": "board/plugin-manifest/v1"}"#, Some(Code::PluginBadManifest)),
 ];
 
+/// Exhibits in the root board that are symlinks: path, text and code. A
+/// symlink to a file reads as that file.
+#[rustfmt::skip]
+const SYMLINKS: [(&str, &str, Option<Code>); 4] = [
+    ("symlink/outside.json", "../../outside.json", Some(Code::SymlinkOutside)),
+    ("symlink/loop.json", "loop.json", Some(Code::SymlinkLoop)),
+    ("symlink/dangling.json", "nowhere.json", Some(Code::SymlinkDangling)),
+    ("symlink/ok.json", "../record/untyped.json", None),
+];
+
 /// A mount of `repo` at `commit`, following `main`.
 pub fn mount_of(repo: &str, commit: ObjectId) -> String {
     format!(
@@ -286,6 +296,7 @@ impl Seed {
             ),
             ("mount/m.json", Item::File(&mount), None),
         ]);
+        root.extend(SYMLINKS.map(|(path, text, code)| (path, Item::Symlink(text), code)));
         // Resolving /hops/h0 follows 41 pointers, one more than the limit.
         let hops: Vec<(String, String)> = (0..=41)
             .map(|hop| {

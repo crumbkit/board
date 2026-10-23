@@ -11,7 +11,8 @@ use board_model::{
     Object, ObjectId, RecordType, Refusal, Role, canonical_json, classify, parse_json,
 };
 use board_tree::{
-    Directory, LOCK_WAIT, Lock, PinError, ResolveError, Resolver, Working, WriteError,
+    Directory, GitError, LOCK_WAIT, Lock, PinError, Reader, ResolveError, Resolver, Working,
+    WriteError,
 };
 use board_validate::Schema;
 
@@ -68,10 +69,21 @@ pub(crate) struct Prepared {
 /// once while the lock is held, so a batch compiles a schema once per type
 /// and not once per line.
 #[derive(Debug, Default)]
-pub(crate) struct Schemas {
+pub(crate) struct Schemas<'r> {
     held: HashMap<RecordType, Result<Schema, SchemaFound>>,
     /// How many schemas were compiled. Work-count tests assert it.
     pub(crate) compiled: usize,
+    /// The working tree's reader, made by the first read, so the schemas
+    /// a command reads through symlinks share one snapshot.
+    reader: Option<Reader<'r>>,
+}
+
+impl<'r> Schemas<'r> {
+    /// The reader `reader` holds, made for `board` the first time. It
+    /// takes the field, so a caller can borrow the other fields beside it.
+    fn reader<'s>(reader: &'s mut Option<Reader<'r>>, board: &'r Board) -> &'s mut Reader<'r> {
+        reader.get_or_insert_with(|| board.repository().reader())
+    }
 }
 
 impl Board {
@@ -130,11 +142,11 @@ impl Board {
 
     /// Checks one record and finds where it lands in `view`, under the lock
     /// that the write will hold, so that what is checked is what is written.
-    pub(crate) fn prepare(
-        &self,
+    pub(crate) fn prepare<'b>(
+        &'b self,
         _lock: &Lock,
         view: &mut Resolver<'_, '_>,
-        schemas: &mut Schemas,
+        schemas: &mut Schemas<'b>,
         path: &LogicalPath,
         expect: Expect,
         bytes: &[u8],
@@ -178,7 +190,7 @@ impl Board {
         let mut stale = Vec::new();
         for (at, item) in prepared.iter().enumerate() {
             let found = repository
-                .read_working(&item.target.path, None)
+                .read_working(&item.target.path)
                 .map_err(|error| Failure::Error(WriteError::from(error).into()))?;
             let previous = match &found {
                 Working::Missing => None,
@@ -250,9 +262,13 @@ impl Board {
         };
         drop(lock);
         let mut view = self.repositories().snapshot().map_err(ResolveError::Git);
+        let root = &mut self.repositories().root().reader();
         for (written, item) in writes.iter_mut().zip(prepared) {
             written.degraded = match &mut view {
-                Ok(view) => self.degraded(&mut |path| view.resolve(path), item, &written.display),
+                Ok(view) => {
+                    let resolve = &mut |path: &LogicalPath| view.resolve(path);
+                    self.degraded((resolve, root), item, &written.display)
+                }
                 Err(error) => Self::unresolvable(item, error),
             };
         }
@@ -262,9 +278,9 @@ impl Board {
     /// Checks `bytes` as `check` checks a record, with its codes, and
     /// returns what it admits. Input that is not one JSON object with a
     /// `$type` is `put::invalid`.
-    pub(crate) fn check_record(
-        &self,
-        schemas: &mut Schemas,
+    pub(crate) fn check_record<'b>(
+        &'b self,
+        schemas: &mut Schemas<'b>,
         bytes: &[u8],
     ) -> Result<Admitted, Refused> {
         if bytes.iter().all(u8::is_ascii_whitespace) {
@@ -279,32 +295,44 @@ impl Board {
         }
         let find = move |record_type: &RecordType| {
             // Moving the borrow out makes this `FnOnce`, so it can lend the schema.
-            let Schemas { held, compiled } = { schemas };
+            let Schemas {
+                held,
+                compiled,
+                reader,
+            } = { schemas };
             let schema = match held.entry(record_type.clone()) {
                 Entry::Occupied(held) => held.into_mut(),
                 Entry::Vacant(entry) => {
-                    let schema = self.read_schema(entry.key());
+                    let reader = Schemas::reader(reader, self);
+                    let schema = self.read_schema(reader, entry.key());
                     *compiled += usize::from(schema.is_ok());
                     entry.insert(schema)
                 }
             };
-            schema.as_ref().map_err(|found| *found)
+            schema.as_ref().map_err(SchemaFound::clone)
         };
         Ok(verdict::record(Role::Json.classify(Some(bytes)), find)?)
     }
 
     /// Reads and compiles the schema of `record_type` from the working tree.
-    fn read_schema(&self, record_type: &RecordType) -> Result<Schema, SchemaFound> {
+    fn read_schema(
+        &self,
+        reader: &mut Reader<'_>,
+        record_type: &RecordType,
+    ) -> Result<Schema, SchemaFound> {
         let schema_path = record_type.schema_path();
         match self.repository().working_directory(&schema_path) {
             Ok(None) => {}
             Ok(Some(Directory::Entries | Directory::Ignored)) => return Err(SchemaFound::Missing),
             Ok(Some(Directory::Submodule)) | Err(_) => return Err(SchemaFound::Unreadable),
         }
-        let schema_bytes = match self.repository().read_working(&schema_path, None) {
-            Ok(Working::Read(contents)) => Some(contents.bytes),
-            Ok(Working::TooLarge) => None,
-            Ok(Working::Missing) => return Err(SchemaFound::Missing),
+        let schema_bytes = match reader.read_through(&schema_path) {
+            Ok((Working::Read(contents), _)) => Some(contents.bytes),
+            Ok((Working::TooLarge, _)) => None,
+            Ok((Working::Missing, _)) => return Err(SchemaFound::Missing),
+            Err(GitError::Symlink { refused, .. }) if refused.code != Code::RepoUnreadable => {
+                return Err(SchemaFound::Symlink(refused));
+            }
             Err(_) => return Err(SchemaFound::Unreadable),
         };
         verdict::judge(&classify(&schema_path, schema_bytes.as_deref()))
@@ -314,10 +342,14 @@ impl Board {
     }
 
     /// What `check` finds wrong with `item`, just written at `display`,
-    /// with `resolve` reading the working tree as written.
+    /// with `resolve` and `root`, the root repository's reader, reading the
+    /// working tree as written.
     fn degraded(
         &self,
-        resolve: &mut impl FnMut(&LogicalPath) -> Result<Location, ResolveError>,
+        (resolve, root): (
+            &mut impl FnMut(&LogicalPath) -> Result<Location, ResolveError>,
+            &mut Reader<'_>,
+        ),
         item: &Prepared,
         display: &LogicalPath,
     ) -> Option<(Code, Detail)> {
@@ -331,7 +363,7 @@ impl Board {
                 reference.accepts.as_deref(),
                 resolve(&reference.path),
                 |location| match location.object {
-                    Object::Blob(blob) => Ok(read_type(self.repositories(), location, blob)),
+                    Object::Blob(blob) => Ok(read_type(self.repositories(), root, location, blob)),
                     Object::Directory => Ok(None),
                 },
             );

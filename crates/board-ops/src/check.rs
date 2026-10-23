@@ -45,6 +45,7 @@ impl Checked {
                 .or_else(|| self.logical.clone()),
             pointer: detail.and_then(|detail| detail.pointer.clone()),
             schema: self.schema.clone(),
+            target: detail.and_then(|detail| detail.target.clone()),
             ..Fields::default()
         };
         Some(match detail.and_then(|detail| detail.mount.as_ref()) {
@@ -68,6 +69,8 @@ pub struct Detail {
     /// The mount point of the mounted board that holds the file at fault,
     /// which Board cannot write; `None` when the root board holds it.
     pub mount: Option<LogicalPath>,
+    /// The text of a symlink that leads to no file.
+    pub target: Option<String>,
 }
 
 /// An entry's code, with its detail when Board knows one.

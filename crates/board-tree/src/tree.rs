@@ -1,5 +1,7 @@
 //! What resolution and walking read: the directories of one source.
 
+use std::cell::OnceCell;
+use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -40,15 +42,14 @@ pub(crate) trait Tree {
         let listed = self.list(directory)?;
         Ok(listed
             .iter()
-            .filter(|entry| {
-                entry.name.eq_ignore_ascii_case(name) || address::segment(entry) == segment
-            })
+            .filter(|entry| is_alike(entry, name, segment))
             .cloned()
             .collect())
     }
 
     /// The bytes of the file `entry` in `directory`, or `None` when it holds
-    /// more than [`board_model::MAX_RECORD_BYTES`].
+    /// more than [`board_model::MAX_RECORD_BYTES`]. A symlink's bytes are
+    /// its text.
     fn read(
         &mut self,
         directory: &Self::Directory,
@@ -183,4 +184,85 @@ pub(crate) struct RawEntry<D> {
     pub(crate) stat: Option<Stat>,
     /// A file's or symlink's size in bytes, when known.
     pub(crate) size: Option<u64>,
+}
+
+/// Whether `entry` bears on the code of an entry named `name`, whose segment
+/// is `segment`, beside it: its segment is `segment`, or its name is `name`
+/// but for ASCII case.
+pub(crate) fn is_alike<D>(entry: &RawEntry<D>, name: &[u8], segment: Option<&str>) -> bool {
+    entry.name.eq_ignore_ascii_case(name) || address::segment(entry) == segment
+}
+
+/// Where each name of one listing, folded to ASCII lower case, is found in
+/// it, made the first time a name is looked up there, so that a lookup does
+/// not scan a large directory.
+#[derive(Debug, Default)]
+pub(crate) struct Folded(OnceCell<HashMap<Vec<u8>, Vec<usize>>>);
+
+impl Folded {
+    /// Where the items of the listing whose names are `names` may be alike
+    /// to `name` and `segment`, in listing order: those named `name`,
+    /// `segment` or `segment.json` but for ASCII case.
+    pub(crate) fn find<'n>(
+        &self,
+        names: impl Iterator<Item = &'n [u8]>,
+        name: &[u8],
+        segment: Option<&str>,
+    ) -> Vec<usize> {
+        let folded = self.0.get_or_init(|| {
+            let mut folded: HashMap<Vec<u8>, Vec<usize>> = HashMap::new();
+            for (at, name) in names.enumerate() {
+                folded
+                    .entry(name.to_ascii_lowercase())
+                    .or_default()
+                    .push(at);
+            }
+            folded
+        });
+        let record = segment.map(|segment| format!("{segment}.json"));
+        let wanted = [
+            Some(name),
+            segment.map(str::as_bytes),
+            record.as_deref().map(str::as_bytes),
+        ];
+        let mut found: Vec<usize> = wanted
+            .into_iter()
+            .flatten()
+            .filter_map(|name| folded.get(&name.to_ascii_lowercase()))
+            .flatten()
+            .copied()
+            .collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+}
+
+/// A directory's entries, with their names folded for [`Tree::alike`].
+#[derive(Debug)]
+pub(crate) struct Indexed<D> {
+    pub(crate) entries: Rc<[RawEntry<D>]>,
+    folded: Folded,
+}
+
+impl<D: Clone> Indexed<D> {
+    pub(crate) fn new(entries: Rc<[RawEntry<D>]>) -> Self {
+        Self {
+            entries,
+            folded: Folded::default(),
+        }
+    }
+
+    /// The entries alike to `name` and `segment`, as [`Tree::alike`] gives
+    /// them.
+    pub(crate) fn alike(&self, name: &[u8], segment: Option<&str>) -> Vec<RawEntry<D>> {
+        let names = self.entries.iter().map(|entry| entry.name.as_slice());
+        self.folded
+            .find(names, name, segment)
+            .into_iter()
+            .map(|at| &self.entries[at])
+            .filter(|entry| is_alike(entry, name, segment))
+            .cloned()
+            .collect()
+    }
 }
