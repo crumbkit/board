@@ -6,7 +6,7 @@
     reason = "a nested call needs the real board on the plugin's PATH"
 )]
 
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
 use std::process::{Child, Command, Output, Stdio};
@@ -122,8 +122,11 @@ fn ctrl_c_on_a_call_stops_every_process_in_the_plugins_group() {
                 "#!/bin/sh\ncat > /dev/null\nsh -c 'echo $$ > program.pid; exec sleep {seconds}'\nprintf '%s' '{{\"$type\": \"board/call-result/v1\", \"output\": {{}}}}'\n"
             ),
         );
-        let child = start(&board, &data, &["call", "sleeper.go"], "{}");
-        let pid = written_pid(&data.workdir().join("board/plugins/sleeper/program.pid"));
+        let mut child = start(&board, &data, &["call", "sleeper.go"], "{}");
+        let pid = written_pid(
+            &data.workdir().join("board/plugins/sleeper/program.pid"),
+            &mut child,
+        );
         if interrupted {
             tool(&["kill", "-s", "INT", "--", &format!("-{}", child.id())]);
         }
@@ -144,16 +147,31 @@ fn ctrl_c_on_a_call_stops_every_process_in_the_plugins_group() {
 }
 
 /// The pid a fixture script wrote to `path`, once the whole line is there.
-fn written_pid(path: &Path) -> String {
-    for _ in 0..1000 {
+/// It waits as long as `board` runs, because a loaded machine can take many
+/// seconds to start the first `board` of a test run, and fails at once if
+/// `board` exits first.
+fn written_pid(path: &Path, board: &mut Child) -> String {
+    loop {
+        // Board's exit is checked first: once it has exited, the plugin has
+        // written all it ever will.
+        let exited = board.try_wait().unwrap();
         if let Ok(text) = std::fs::read_to_string(path)
             && text.ends_with('\n')
         {
             return text.trim().to_owned();
         }
+        if let Some(status) = exited {
+            let mut stderr = String::new();
+            board
+                .stderr
+                .take()
+                .unwrap()
+                .read_to_string(&mut stderr)
+                .unwrap();
+            panic!("board exited with {status} before the plugin wrote a pid: {stderr}");
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("the plugin never wrote a pid to {}", path.display());
 }
 
 /// Whether the process `pid` has ended within a bounded number of checks.
