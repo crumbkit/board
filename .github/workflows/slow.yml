@@ -1,0 +1,169 @@
+# STANDARDS.md 21: the slow lane. It runs what costs too much or catches too
+# little to run on every pull request: the gates on macOS, mutation testing,
+# fuzzing and the timing job. It runs nightly on main, by hand, and from
+# release.yml before a release, which skips mutants.
+name: slow
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      mutants-base:
+        description: Commit to mutate the changes since. Empty means the head of the previous successful nightly run.
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      release:
+        description: Run for a release, which skips mutants.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The commit the night's changes start from: the head of the previous
+  # successful nightly run, or, when there is none, the last commit before
+  # 00:00 UTC of the previous day. A nightly run whose main has not changed
+  # since that run skips every job.
+  base:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      base: ${{ steps.base.outputs.base }}
+      run: ${{ steps.base.outputs.run }}
+    steps:
+      - id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          GIVEN: ${{ inputs.mutants-base }}
+        run: |
+          base=$GIVEN
+          if [ -z "$base" ]; then
+            base=$(gh run list --workflow slow.yml --event schedule --branch main --status success --limit 1 --json headSha --jq '.[0].headSha // empty')
+          fi
+          if [ -z "$base" ]; then
+            boundary="$(date -u -d yesterday +%F)T00:00:00Z"
+            base=$(gh api "repos/$GH_REPO/commits?sha=$GITHUB_SHA&until=$boundary&per_page=1" --jq '.[0].sha // empty')
+          fi
+          run=true
+          if [ "$EVENT" = schedule ] && [ "$base" = "$GITHUB_SHA" ]; then
+            run=false
+            echo "main has not changed since the previous successful nightly run, $base" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: base
+    if: needs.base.outputs.run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-nextest@0.9.146
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+      - run: bin/lint
+      - run: bin/test
+
+  fuzz:
+    needs: base
+    if: needs.base.outputs.run == 'true'
+    uses: $/.github/workflows/fuzz.yml
+
+  timing:
+    needs: base
+    if: needs.base.outputs.run == 'true'
+    uses: $/.github/workflows/timing.yml
+
+  # Mutation testing of the lines changed since the base commit. A release
+  # skips it: a mutant does not gate a release, and the nightly run has
+  # already covered each day's changes. Each mutant runs the whole
+  # workspace's tests, because board-cli's tests catch mutants in the crates
+  # it calls. board-scenario is test support with no tests of its own, and
+  # cargo-mutants runs its baseline on the mutated crates only, so it is not
+  # mutated. cargo-mutants sets each mutant's test timeout to five times that
+  # baseline, which can be shorter than one run of the whole workspace (50 to
+  # 66 s here), so the timeout is at least 180 s. Nextest's mutants profile
+  # fails a test that runs past a minute and stops at the first failure, so a
+  # mutant that makes a walk wait forever fails its run and counts as caught.
+  # The baseline runs only the mutated crates' tests, so it does not check
+  # that every test finishes within that minute. Once a correct test
+  # approaches 60 s here, every mutant fails it and counts as caught, which
+  # would hide missed mutants. A missed mutant fails the job, which the
+  # report job surfaces.
+  mutants:
+    needs: base
+    if: needs.base.outputs.run == 'true' && needs.base.outputs.base != '' && !inputs.release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
+      - id: diff
+        run: |
+          git diff "$BASE" HEAD -- '*.rs' > changes.diff
+          echo "mutating the changes since $BASE" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s changes.diff ]; then echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+        env:
+          BASE: ${{ needs.base.outputs.base }}
+      - if: steps.diff.outputs.changed == 'true'
+        run: cargo mutants --in-diff changes.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/8"
+        env:
+          SHARD: ${{ matrix.shard }}
+          NEXTEST_PROFILE: mutants
+      - if: always() && steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutants-${{ matrix.shard }}
+          path: mutants.out/
+          if-no-files-found: ignore
+
+  # A nightly failure shows nowhere else, so it opens one issue and later
+  # failures comment on it until someone closes it. A job that runs past its
+  # timeout ends cancelled, which counts as a failure here.
+  report:
+    needs: [base, macos, fuzz, timing, mutants]
+    if: always() && github.event_name == 'schedule' && (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULTS: "base: ${{ needs.base.result }}, macos: ${{ needs.macos.result }}, fuzz: ${{ needs.fuzz.result }}, timing: ${{ needs.timing.result }}, mutants: ${{ needs.mutants.result }}"
+        run: |
+          title="Slow lane failed"
+          body="$RUN failed ($RESULTS). A fuzz failure's crash inputs are in its crashes-* artifacts, and missed mutants are in the mutants-* artifacts."
+          number=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

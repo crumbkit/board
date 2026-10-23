@@ -11,7 +11,7 @@ fail-fast = false
 filter = 'binary_id(board-cli::kill)'
 slow-timeout = { period = "60s", terminate-after = 2 }
 
-# The mutants job in CI runs under this profile. A mutant can make a walk
+# The mutants job in the slow lane (slow.yml) runs under this profile. A mutant can make a walk
 # wait forever. With fail-fast off, every test that walks would then wait
 # until cargo-mutants stops the whole run, and it would report the mutant as
 # timed out. Under this profile a test still running after a minute fails and

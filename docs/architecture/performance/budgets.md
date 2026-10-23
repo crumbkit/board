@@ -17,8 +17,8 @@ the other reference board.
 | `board call tasks.next`, warm | 500 ms |
 | `board put` of a small record, warm | 300 ms |
 
-`cargo xtask bench` is the timing job. It runs on a generated board in CI,
-reports every run and fails above three times a budget. The owner times the
+`cargo xtask bench` is the timing job. It runs on a generated board in CI's
+nightly slow lane and before each release, reports every run and fails above three times a budget. A pull request that takes an operation past its budget is caught by the next nightly run. The bench's own tests in nextest run its parts against small boards and a stand-in `uv`, and compare no timing with a budget. The owner times the
 private export locally with `--board`. The work-count tests are the hard gate.
 
 The plugin call row calls this repository's tasks plugin in process, as the

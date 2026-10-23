@@ -1,4 +1,5 @@
-# A release: the full gates on macOS and Linux and the timing job, then
+# A release: the pull-request lane and the slow lane without mutants (the
+# gates on macOS, fuzzing and the timing job), then
 # `board` built for each target, each plugin packaged with bin/package-plugin,
 # bin/install-check run from the archives on each platform, and the archives
 # attached to a GitHub release with SHA256SUMS. The tag is `v<version>`,
@@ -21,11 +22,18 @@ env:
 jobs:
   ci:
     uses: $/.github/workflows/ci.yml
-    with:
-      os: '["ubuntu-24.04", "macos-15"]'
 
-  timing:
-    uses: $/.github/workflows/timing.yml
+  # A called workflow may not ask for more than its caller grants. The slow
+  # lane's base job reads earlier runs, and its report job may open an issue
+  # on a nightly failure; it opens none here. A release skips mutants.
+  slow:
+    uses: $/.github/workflows/slow.yml
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    with:
+      release: true
 
   # The tag names the version the binary prints, and released.json lists
   # what the release ships.
@@ -145,16 +153,23 @@ jobs:
 
   release:
     if: github.ref_type == 'tag'
-    needs: [ci, timing, install]
+    needs: [ci, slow, install]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
+      # Only the build and plugin archives: the slow lane's artifacts are in
+      # this run too.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
+          pattern: board-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: plugins
+          path: dist
       - run: |
           cd dist
           sha256sum -- *.tar.gz > SHA256SUMS

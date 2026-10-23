@@ -107,3 +107,16 @@ print_stderr = "deny"
 inherits = "dev"
 opt-level = 3
 codegen-units = 1
+
+# Tests hash and compress files of up to 16 MiB through these crates. Built
+# unoptimised, the fourteen tests that do took 20.9 s on two threads on a
+# laptop and about 70 s on CI; optimised, 2.8 s on the laptop. Only these three
+# crates are optimised, so a clean build costs little more.
+[profile.dev.package.sha1dc]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.dev.package.zlib-rs]
+opt-level = 3

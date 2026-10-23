@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 # Every lint gate, in the order CI runs them. STANDARDS.md 21.
+# With no argument it runs every part; CI runs `bin/lint rust` and
+# `bin/lint python` in separate jobs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+part=${1:-all}
+case $part in all | rust | python) ;; *) echo "usage: bin/lint [rust|python]" >&2; exit 2 ;; esac
 
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
-cargo xtask lint
+if [ "$part" != python ]; then
+  cargo fmt --all --check
+  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
+  cargo xtask lint
+fi
 
 # The Python gates, STANDARDS.md P2. uv syncs each project from its lockfile.
-for project in python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/share; do
-  (
-    cd "$project"
-    uv run --locked ruff format --check .
-    uv run --locked ruff check .
-    uv run --locked pyright
-  )
-done
+if [ "$part" != rust ]; then
+  for project in python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/share; do
+    (
+      cd "$project"
+      uv run --locked ruff format --check .
+      uv run --locked ruff check .
+      uv run --locked pyright
+    )
+  done
+fi

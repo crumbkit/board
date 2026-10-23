@@ -24,5 +24,5 @@ attached.
 Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
 `python/board-plugin/` to a commit, with its lockfile and a committed
 `plugin.json` that a test compares with the one it generates.
-Its pytest suite drives the real `board` binary against fixture boards. CI runs
-the gates of each plugin here in its own job.
+Its pytest suite drives the real `board` binary against fixture boards. CI's
+`python` job runs the gates of every plugin here.

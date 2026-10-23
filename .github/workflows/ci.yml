@@ -1,18 +1,14 @@
-# STANDARDS.md 21.
+# STANDARDS.md 21: the pull-request lane.
 name: ci
 
-# Pull requests and main run on Linux only. release.yml calls this workflow
-# with macOS added before a release.
+# Pull requests and main run the checks that catch failures often, on Linux,
+# in parallel jobs. slow.yml runs macOS, mutants, fuzzing and timing nightly
+# and before a release. release.yml calls this workflow too.
 on:
   pull_request:
   push:
     branches: [main]
   workflow_call:
-    inputs:
-      os:
-        description: JSON list of runners for the gates and plugin jobs.
-        type: string
-        default: '["ubuntu-24.04"]'
 
 permissions:
   contents: read
@@ -23,15 +19,38 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # Line tables keep panic locations and compile faster than full debug info.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
-  gates:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # Caches the dependencies' build, keyed on the toolchain, the CARGO* and
+      # RUST* variables and Cargo.lock. A changed Cargo.lock restores the
+      # newest cache with the same toolchain and variables. Only main saves,
+      # so pull requests never evict main's cache.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: bin/lint rust
+      - run: bin/test doc
+
+  # The tests are split across jobs by a hash of each test's name, so a test
+  # stays in the same job from run to run.
+  test:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.os || '["ubuntu-24.04"]') }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+        partition: [1, 2, 3]
+    name: test (${{ matrix.partition }}/3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -39,10 +58,27 @@ jobs:
       - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
           tool: cargo-nextest@0.9.146
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.partition == 1 }}
+      - run: bin/test rust --partition "hash:${PARTITION}/3"
+        env:
+          PARTITION: ${{ matrix.partition }}
+
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
-      # bin/lint and bin/test include the Python gates (STANDARDS.md P2).
-      - run: bin/lint
-      - run: bin/test
+      - run: bin/lint python
+      - run: bin/test python
       # The budget controls only record lint.toml; bin/lint checks they agree.
       - name: viitta passes board check with the controls plugin installed
         run: |
@@ -76,44 +112,3 @@ jobs:
         with:
           tool: zizmor@1.30.1
       - run: zizmor --offline .github/workflows
-
-  # Mutation testing of the lines a pull request changes. It only reports;
-  # a surviving mutant does not fail the pull request. Each mutant runs the
-  # whole workspace's tests, because board-cli's tests catch mutants in the
-  # crates it calls. That is about four times slower than one crate's tests,
-  # so the mutants are split across four jobs to stay within the timeout.
-  # board-scenario is test support with no tests of its own, and cargo-mutants
-  # runs its baseline on the mutated crates only, so it is not mutated.
-  # cargo-mutants sets each mutant's test timeout to five times that baseline,
-  # which can be shorter than one run of the whole workspace (50 to 66 s here),
-  # so the timeout is at least 180 s. Nextest's mutants profile fails a test
-  # that runs past a minute and stops at the first failure, so a mutant that
-  # makes a walk wait forever fails its run and counts as caught. The
-  # baseline runs only the mutated crates' tests, so it does not check that
-  # every test finishes within that minute. Once a correct test approaches
-  # 60 s here, every mutant fails it and counts as caught, which would hide
-  # missed mutants.
-  mutants:
-    if: github.event_name == 'pull_request'
-    continue-on-error: true
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
-        with:
-          tool: cargo-mutants@27.1.0,cargo-nextest@0.9.146
-      - run: git diff "origin/${BASE_REF}...HEAD" > pr.diff
-        env:
-          BASE_REF: ${{ github.base_ref }}
-      - run: cargo mutants --in-diff pr.diff --test-tool nextest --test-workspace=true --exclude 'crates/board-scenario/**' --minimum-test-timeout 180 --shard "${SHARD}/4"
-        env:
-          SHARD: ${{ matrix.shard }}
-          NEXTEST_PROFILE: mutants
