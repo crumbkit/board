@@ -1,7 +1,8 @@
 # STANDARDS.md 21: the slow lane. It runs what costs too much or catches too
 # little to run on every pull request: the gates on macOS, mutation testing,
 # fuzzing and the timing job. It runs nightly on main, by hand, and from
-# release.yml before a release, which skips mutants.
+# release.yml before a release, which skips mutants. The jobs on macOS run in
+# the Monday night run only, and in every hand-run and release run.
 name: slow
 
 on:
@@ -35,9 +36,15 @@ jobs:
   # passes, so the window bounds a failing streak's range to about 4 days of
   # changes. With no such run, it is the last commit before 00:00 UTC of the
   # previous day. A scheduled run whose main has not changed since the
-  # previous scheduled run skips macos, timing and mutants. A run in which any
+  # previous scheduled run skips Linux timing and mutants. A run in which any
   # job timed out ends cancelled, as a hand-cancelled run does, so neither
-  # counts as that previous run, and the next night runs again.
+  # counts as that previous run, and the next night runs them again.
+  #
+  # A macOS runner bills ten times a Linux one, so of the scheduled runs only
+  # Monday's runs macos and timing's macOS leg. It skips them when main has
+  # not changed since the previous Monday run whose macos job passed, so after
+  # a Monday whose macos job failed or was cancelled, the next Monday runs it
+  # again. It does not compare with Sunday's run, which skipped macOS.
   base:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -47,6 +54,7 @@ jobs:
     outputs:
       base: ${{ steps.base.outputs.base }}
       run: ${{ steps.base.outputs.run }}
+      macos: ${{ steps.base.outputs.macos }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -86,18 +94,43 @@ jobs:
           if [ "$EVENT" = schedule ] && [ "$previous" = "$GITHUB_SHA" ]; then
             run=false
           fi
+          macos=true
+          if [ "$EVENT" = schedule ]; then
+            # A re-run keeps its run's creation time, so the day comes from it.
+            created=$(gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID" --jq .created_at)
+            if [ "$(date -u -d "$created" +%u)" != 1 ]; then
+              macos=false
+            else
+              # gmtime's seventh field is the day of the week; 1 is Monday.
+              for monday in $(jq -r '.[] | select((.createdAt | fromdateiso8601 | gmtime | .[6]) == 1) | .databaseId' runs.json); do
+                passed=$(gh api "repos/$GH_REPO/actions/runs/$monday/jobs?per_page=100" \
+                  --jq '[.jobs[] | select(.name == "macos") | .conclusion] == ["success"]')
+                if [ "$passed" = true ]; then
+                  tested=$(jq -r --argjson run "$monday" '.[] | select(.databaseId == $run) | .headSha' runs.json)
+                  if [ "$tested" = "$GITHUB_SHA" ]; then
+                    macos=false
+                  fi
+                  break
+                fi
+              done
+            fi
+          fi
           {
             echo "Mutants base: ${base:-none} ($how)."
             if [ "$run" = false ]; then
-              echo "main has not changed since the previous scheduled run, so macos, timing and mutants are skipped."
+              echo "main has not changed since the previous scheduled run, so Linux timing and mutants are skipped."
+            fi
+            if [ "$macos" = false ]; then
+              echo "The jobs on macOS run on Monday nights, unless main has not changed since the previous Monday run whose macos job passed, so this run skips them."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "macos=$macos" >> "$GITHUB_OUTPUT"
 
   macos:
     needs: base
-    if: needs.base.outputs.run == 'true'
+    if: needs.base.outputs.macos == 'true'
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -117,10 +150,13 @@ jobs:
   fuzz:
     uses: $/.github/workflows/fuzz.yml
 
+  # A Monday run on an unchanged main still times Linux when it times macOS.
   timing:
     needs: base
-    if: needs.base.outputs.run == 'true'
+    if: needs.base.outputs.run == 'true' || needs.base.outputs.macos == 'true'
     uses: $/.github/workflows/timing.yml
+    with:
+      macos: ${{ needs.base.outputs.macos == 'true' }}
 
   # Mutation testing of the lines changed since the base commit. A release
   # skips it: a mutant does not gate a release, and the nightly run has

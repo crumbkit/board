@@ -2,13 +2,24 @@
 # 10,000-record board against the budgets in docs/architecture/performance/budgets.md, reports
 # every run, and fails above three times a budget. The work-count tests in
 # bin/test are the hard gate; this job only watches the trend. slow.yml calls
-# it nightly and before a release; a pull request that changes the bench can
-# run it by hand.
+# it nightly and before a release, with the macOS leg on Monday nights and
+# before a release only; a pull request that changes the bench can run it by
+# hand.
 name: timing
 
 on:
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Time on macOS as well as Linux.
+        type: boolean
+        default: true
   workflow_call:
+    inputs:
+      macos:
+        description: Time on macOS as well as Linux.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -21,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: ${{ inputs.macos && fromJSON('["ubuntu-24.04", "macos-15"]') || fromJSON('["ubuntu-24.04"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:

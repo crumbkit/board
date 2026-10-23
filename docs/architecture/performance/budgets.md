@@ -18,7 +18,7 @@ the other reference board.
 | `board put` of a small record, warm | 300 ms |
 
 `cargo xtask bench` is the timing job. It runs on a generated board in CI's
-nightly slow lane and before each release, reports every run and fails above three times a budget. A pull request that takes an operation past its budget is caught by the next nightly run. In nextest, `xtask/tests/bench.rs` runs the real bench on a 20-record board without `uv` and checks its six rows against three times each budget; a board that small does not show a regression. The owner times the
+slow lane, on Linux nightly, on macOS on Monday nights, and on both before each release. It reports every run and fails above three times a budget. A pull request that takes an operation past its budget is caught by the next nightly run on Linux, or by the next Monday run when only macOS is slow. In nextest, `xtask/tests/bench.rs` runs the real bench on a 20-record board without `uv` and checks its six rows against three times each budget; a board that small does not show a regression. The owner times the
 private export locally with `--board`. The work-count tests are the hard gate.
 
 The plugin call row calls this repository's tasks plugin in process, as the

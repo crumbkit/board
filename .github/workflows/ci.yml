@@ -2,8 +2,9 @@
 name: ci
 
 # Pull requests and main run the checks that catch failures often, on Linux,
-# in parallel jobs. slow.yml runs macOS, mutants, fuzzing and timing nightly
-# and before a release. release.yml calls this workflow too.
+# in parallel jobs. slow.yml runs mutants, fuzzing and Linux timing nightly,
+# the jobs on macOS weekly, and all but mutants before a release. release.yml
+# calls this workflow too.
 on:
   pull_request:
   push:
