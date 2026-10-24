@@ -47,11 +47,11 @@ owner's own. The owner writes Ruby, Rust and sometimes Elixir, and prefers
 error codes named after the domain. When you report a test, explain what it
 proves and what it does not.
 
-All code and identifiers are named board for now: the crates, record types,
-plugin ids, config, the `board` binary and its help. Viitta is the
-repository's name and a stable identifier kept as a hedge; if a rename is ever
-needed, for example for trademark reasons, internal and public naming are
-split at that point.
+All code, identifiers and docs are named board for now: the crates, error
+codes, record types, plugin ids, config, the `board` binary and its help.
+Viitta is the repository's name and a stable identifier kept as a hedge; if a
+rename is ever needed, for example for trademark reasons, internal and public
+naming are split at that point.
 
 ## Writing
 
