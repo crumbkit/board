@@ -178,7 +178,7 @@ mod tests {
         );
         assert_eq!(
             Code::RepoUnreadable.hint(&Fields::at(&"/notes/a".parse().unwrap())),
-            "check that git can read the repository, for example with `git fsck`"
+            "run the command again, because a file may have changed while it was read; if it fails again, check that git can read the repository, for example with `git fsck`"
         );
         assert_eq!(
             Code::SchemaInvalid.hint(&schema),

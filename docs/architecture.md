@@ -17,7 +17,8 @@ A board is the working tree of a git repository whose root holds
 directory, as git does. Both names must be listed in that exact spelling, so
 `.Board/board.json` holds no board even where the file system ignores case. No
 board is `board::config::not_found`, and a `board.json` Board cannot read is
-`board::config::invalid`.
+`board::config::invalid`. A `board.json` symlink that leads to no file is
+refused with its symlink code (docs/architecture/paths/symlinks.md).
 
 When the search finds no board but the directory is in a git repository,
 Board reads the known boards in `$XDG_CONFIG_HOME/board/config.json`

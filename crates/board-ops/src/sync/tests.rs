@@ -261,3 +261,71 @@ fn a_remote_that_refuses_every_push_gives_up_after_three_and_keeps_the_commits()
         (from_a, false, 1)
     );
 }
+
+/// Makes `notes` in `clone` a symlink to `outside`, a directory outside the
+/// clone, when `linked`, and a directory holding `kept.txt` otherwise.
+fn notes(clone: &Scenario, outside: &Scenario, linked: bool) {
+    if linked {
+        if clone.workdir().join("notes").exists() {
+            clone.write("notes", Item::Deleted);
+        }
+        clone.write("notes", Item::Symlink(outside.workdir().to_str().unwrap()));
+    } else {
+        clone.write("notes/kept.txt", Item::File("kept"));
+    }
+}
+
+#[test]
+fn a_file_the_remote_adds_beneath_a_symlinked_directory_stops_the_sync_and_one_beneath_a_directory_is_admitted()
+ {
+    for linked in [true, false] {
+        let remote = remote();
+        let a = clone(&remote);
+        let outside = Scenario::new();
+        notes(&a, &outside, linked);
+        let before = a.head().unwrap().id;
+        remote_commit(&remote, &[("notes/n.json", PROJECT)]);
+        if linked {
+            let (code, message) = refused(&a, true);
+            assert_eq!(code, Code::PutSymlink);
+            assert_eq!(
+                message,
+                "notes/n.json cannot be written: notes is a symlink"
+            );
+            assert_eq!(a.head().unwrap().id, before);
+            assert!(!outside.workdir().join("n.json").exists());
+        } else {
+            sync(&a, true).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(a.workdir().join("notes/n.json")).unwrap(),
+                PROJECT
+            );
+        }
+    }
+}
+
+#[test]
+fn a_file_the_remote_removes_beneath_a_symlinked_directory_stops_the_sync_and_one_beneath_a_directory_is_admitted()
+ {
+    for linked in [true, false] {
+        let remote = remote();
+        remote_commit(&remote, &[("notes/n.json", PROJECT)]);
+        let a = clone(&remote);
+        let outside = Scenario::new();
+        outside.write("n.json", Item::File(PROJECT));
+        notes(&a, &outside, linked);
+        remote_commit(&remote, &[]);
+        if linked {
+            let (code, message) = refused(&a, true);
+            assert_eq!(code, Code::PutSymlink);
+            assert_eq!(
+                message,
+                "notes/n.json cannot be written: notes is a symlink"
+            );
+            assert!(outside.workdir().join("n.json").exists());
+        } else {
+            sync(&a, true).unwrap();
+            assert!(!a.workdir().join("notes/n.json").exists());
+        }
+    }
+}

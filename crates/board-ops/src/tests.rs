@@ -1478,3 +1478,16 @@ fn a_board_whose_configuration_is_reached_through_a_symlink_out_of_its_repositor
     real.write(".board/board.json", Item::File(CONFIG));
     assert!(Board::open(real.workdir(), None).is_ok());
 }
+
+#[test]
+fn a_board_whose_configuration_is_a_dangling_symlink_names_the_symlink_and_one_to_a_file_opens() {
+    let dangling = Scenario::new();
+    dangling.write(".board/board.json", Item::Symlink("config.json"));
+    let refused = Board::open(dangling.workdir(), None).unwrap_err();
+    assert_eq!(refused.code(), Code::SymlinkDangling);
+    let fields = refused.fields();
+    assert_eq!(fields.path, Some("/.board/board".parse().unwrap()));
+    assert_eq!(fields.target.as_deref(), Some("config.json"));
+    dangling.write(".board/config.json", Item::File(CONFIG));
+    assert!(Board::open(dangling.workdir(), None).is_ok());
+}

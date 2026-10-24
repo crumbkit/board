@@ -285,24 +285,13 @@ impl Repository {
     /// on the way to it, is a symlink. The working-tree listing hides an
     /// ignored symlink, so resolution alone would write through one.
     fn refuse_symlink(&self, path: &LogicalPath, file: &str) -> Result<(), WriteError> {
-        let mut at = self.path().to_path_buf();
-        let mut end = 0;
-        for segment in file.split('/') {
-            at.push(segment);
-            end += segment.len();
-            match fs::symlink_metadata(&at) {
-                Ok(metadata) if metadata.is_symlink() => {
-                    return Err(WriteError::Symlink {
-                        path: path.clone(),
-                        symlink: file[..end].to_owned(),
-                    });
-                }
-                Ok(_) => end += 1,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-                Err(source) => return Err(GitError::File { path: at, source }.into()),
-            }
+        match self.symlink_on_way(file)? {
+            Some(symlink) => Err(WriteError::Symlink {
+                path: path.clone(),
+                symlink,
+            }),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// The git directory of this working tree, where its locks live.

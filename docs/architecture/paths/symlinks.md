@@ -36,8 +36,13 @@ directories listed by `get` of many symlinks, and by a cold `check`, a warm
 symlinks the index must parse again. Another test bounds the steps that
 reading many symlinks through one chain takes. A symlink retargeted during a
 command reads as the snapshot first found it if the snapshot has already
-followed it. A read that meets its changed text is refused with
-`board::repo::unreadable`.
+followed it. A read that meets its changed text finds a file other than the
+one the walk found. `get`, and the reads of the board's configuration, of a
+mount pointer and of a record's `$type`, take that file as it is now. `refs`
+refuses the target with `board::refs::target_changed`. The index refresh
+leaves the entry out of its run, so `check` reports it as
+`board::repo::unreadable`, whose hint says to run the command again. Other
+reads refuse it with `board::repo::unreadable`.
 
 Each relative Markdown link in a file read through a symlink resolves from
 the symlink's directory, because the entry has the symlink's path. The same
