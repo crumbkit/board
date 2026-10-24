@@ -1,0 +1,199 @@
+{
+  "$defs": {
+    "Host": {
+      "additionalProperties": false,
+      "description": "The machine a run ran on.",
+      "properties": {
+        "arch": {
+          "title": "Arch",
+          "type": "string"
+        },
+        "logical_cpus": {
+          "minimum": 1,
+          "title": "Logical Cpus",
+          "type": "integer"
+        },
+        "os": {
+          "title": "Os",
+          "type": "string"
+        }
+      },
+      "required": [
+        "os",
+        "arch",
+        "logical_cpus"
+      ],
+      "title": "Host",
+      "type": "object"
+    },
+    "Result": {
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "outcome"
+          ]
+        },
+        {
+          "required": [
+            "measures"
+          ]
+        }
+      ],
+      "description": "What one case gave in a run: a case that did not pass, with a `note`, or a case's measures.",
+      "if": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "fail",
+              "error",
+              "skipped"
+            ]
+          }
+        },
+        "required": [
+          "outcome"
+        ]
+      },
+      "properties": {
+        "case": {
+          "title": "Case",
+          "type": "string"
+        },
+        "measures": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Measures",
+          "type": "object"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "error",
+            "skipped"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        }
+      },
+      "required": [
+        "case"
+      ],
+      "then": {
+        "required": [
+          "note"
+        ]
+      },
+      "title": "Result",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges. `versions` maps what was used, such as a commit, a model or a\nlibrary, to its version. `measures` holds the run's own measures, such as\n`tests` and `failures`. `results` lists the cases that did not pass and\nthe cases that measured something; a passing case without measures is\nleft out.",
+  "properties": {
+    "$type": {
+      "const": "runs/run/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "by": {
+      "title": "By",
+      "type": "string"
+    },
+    "dirty": {
+      "title": "Dirty",
+      "type": "boolean"
+    },
+    "finished": {
+      "format": "date-time",
+      "title": "Finished",
+      "type": "string"
+    },
+    "host": {
+      "$ref": "#/$defs/Host"
+    },
+    "measures": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "boolean"
+          }
+        ]
+      },
+      "title": "Measures",
+      "type": "object"
+    },
+    "results": {
+      "items": {
+        "$ref": "#/$defs/Result"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "scope": {
+      "enum": [
+        "full",
+        "targeted"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "started": {
+      "format": "date-time",
+      "title": "Started",
+      "type": "string"
+    },
+    "suite": {
+      "format": "board-ref",
+      "title": "Suite",
+      "type": "string",
+      "x-board-type": "runs/suite/v1"
+    },
+    "versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Versions",
+      "type": "object"
+    }
+  },
+  "required": [
+    "$type",
+    "suite",
+    "by",
+    "started",
+    "scope",
+    "dirty",
+    "results"
+  ],
+  "title": "RunRecord",
+  "type": "object"
+}

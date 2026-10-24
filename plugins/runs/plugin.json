@@ -1,0 +1,279 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The latest full run of a clean revision of a suite, with its outcome, measures, failed cases and age, or null when no run qualifies.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The latest full run of a clean revision of `suite`.",
+        "properties": {
+          "suite": {
+            "description": "The suite's logical path, such as /suites/board-bench, here or in a mounted board.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite"
+        ],
+        "title": "LatestInput",
+        "type": "object"
+      },
+      "name": "latest",
+      "outputSchema": {
+        "$defs": {
+          "Latest": {
+            "additionalProperties": false,
+            "description": "A run, by path, and what it gave. `outcome` is `fail` when a result failed or erred, else `pass`.\n\n`age_s` is the whole seconds since the run finished, or since it started when it records no finish.",
+            "properties": {
+              "age_s": {
+                "title": "Age S",
+                "type": "integer"
+              },
+              "failed": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Failed",
+                "type": "array"
+              },
+              "finished": {
+                "anyOf": [
+                  {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Finished"
+              },
+              "measures": {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "title": "Measures",
+                "type": "object"
+              },
+              "outcome": {
+                "enum": [
+                  "pass",
+                  "fail"
+                ],
+                "title": "Outcome",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "started": {
+                "format": "date-time",
+                "title": "Started",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "started",
+              "finished",
+              "outcome",
+              "measures",
+              "failed",
+              "age_s"
+            ],
+            "title": "Latest",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The latest qualifying run, or `null` when none qualifies.\n\n`not_counted` is how many runs of the suite were left out because they were targeted or dirty. `unreadable` is\nhow many were left out because Board marks them degraded for anything but a broken reference, or this plugin\ncannot read them.",
+        "properties": {
+          "not_counted": {
+            "title": "Not Counted",
+            "type": "integer"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Latest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unreadable": {
+            "title": "Unreadable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "run",
+          "not_counted",
+          "unreadable"
+        ],
+        "title": "LatestOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "One measure of a suite, or of one of its cases, over its full runs of clean revisions, newest first.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One measure over the full runs of a clean revision of `suite`, newest first.",
+        "properties": {
+          "case": {
+            "default": null,
+            "description": "The case whose measure to read, such as get; the run's own measure when left out.",
+            "minLength": 1,
+            "title": "Case",
+            "type": "string"
+          },
+          "limit": {
+            "default": 1000,
+            "description": "The most points to return, 1 to 1000; 1000 when left out.",
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "measure": {
+            "description": "The measure's name, such as median_ms.",
+            "minLength": 1,
+            "title": "Measure",
+            "type": "string"
+          },
+          "suite": {
+            "description": "The suite's logical path, such as /suites/board-bench, here or in a mounted board.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Suite",
+            "type": "string"
+          }
+        },
+        "required": [
+          "suite",
+          "measure"
+        ],
+        "title": "TrendInput",
+        "type": "object"
+      },
+      "name": "trend",
+      "outputSchema": {
+        "$defs": {
+          "Point": {
+            "additionalProperties": false,
+            "description": "One run's value of the measure.",
+            "properties": {
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "started": {
+                "format": "date-time",
+                "title": "Started",
+                "type": "string"
+              },
+              "value": {
+                "title": "Value",
+                "type": "number"
+              }
+            },
+            "required": [
+              "path",
+              "started",
+              "value"
+            ],
+            "title": "Point",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Points, newest first.\n\n`total` counts every point and `truncated` says whether the limit left some out. `without_measure` is how many\nqualifying runs give no number for the measure. `not_counted` is how many runs were targeted or dirty, and\n`unreadable` how many Board marks degraded or this plugin cannot read.",
+        "properties": {
+          "not_counted": {
+            "title": "Not Counted",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/$defs/Point"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unreadable": {
+            "title": "Unreadable",
+            "type": "integer"
+          },
+          "without_measure": {
+            "title": "Without Measure",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "points",
+          "total",
+          "truncated",
+          "without_measure",
+          "not_counted",
+          "unreadable"
+        ],
+        "title": "TrendOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Suites of tests, benchmarks and evals, and the runs that record what each gave. `board call runs.latest --suite /suites/<name>` returns the latest full run of a clean revision; `board call runs.trend --suite /suites/<name> --measure <name>` returns a measure over such runs. README.md in the plugin's directory says how to record a run.",
+  "metadata": {
+    "area": "testing"
+  },
+  "name": "runs",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_runs"
+  ],
+  "types": [
+    "runs/suite/v1",
+    "runs/run/v1"
+  ],
+  "version": "0.1.0"
+}

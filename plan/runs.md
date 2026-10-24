@@ -13,7 +13,7 @@ is written.
 ## Build order
 
 1. The `runs` plugin in viitta: `runs/suite/v1`, `runs/run/v1`, `latest` and
-   `trend`.
+   `trend`. Built: plugins/runs/README.md describes it.
 2. `evals` refers to suites and lists runs (decisions 4 and 9). The evals
    skill changes in the same step.
 3. `controls` gains a measure rule kind, and `controls.check` calls
@@ -48,8 +48,9 @@ is written.
    `controls.check` judges only the latest full run of a clean revision and
    reports its outcome and age, or says no run qualifies. There is no filter
    on a control (AGENTS.md rule 6).
-6. **Results.** A run records only the cases that did not pass, each with a
-   short curated `note`, plus run-level measures `tests`, `failures`,
+6. **Results.** A run records the cases that did not pass, each with a
+   short curated `note`, and the cases that measured something, such as a
+   bench operation, plus run-level measures `tests`, `failures`,
    `errors` and `skipped`. Board holds curated data: raw files such as
    `junit.xml` stay outside the board (adopter X keeps them in its state
    directory).
@@ -69,7 +70,8 @@ is written.
 10. **The fields of `runs/suite/v1`.** A suite has these fields:
     - `command`: the command that runs the suite.
     - `cases` or `cases_file`: the cases, listed inline in `cases` or kept in
-      the file that `cases_file` names. A suite has one or the other.
+      the file that `cases_file` names. A suite has at most one of them; a
+      test suite whose cases are found when it runs has neither.
     - `measures`: the measures a run records, each with its unit.
     - `subjects`: what the suite tests.
     - `method`: how the suite tests its subjects. It moves here from
@@ -87,8 +89,10 @@ is written.
     - `latest {suite}` returns the latest such run, with its outcome,
       measures and age, or says no run qualifies. `controls.check` calls it
       through `board call`.
-    - `trend {suite, measure, limit}` returns one point per such run, newest
-      first: the run's path, its `started` time and the measure's value. It
+    - `trend {suite, measure, case, limit}` returns one point per such run,
+      newest first: the run's path, its `started` time and the measure's
+      value. With `case`, the value is that case's measure, as the bench
+      records one per operation. It
       reports how many points it left out. The bench and CI timings
       (decisions 13 and 14) are its first users.
     Flaky tests stay plain SQL through `board query` until a caller needs
