@@ -89,7 +89,19 @@ of the repository you are in before you test.
    repository, commit them, and reference them from the results. Add the
    run to the eval's `runs`, and set `status: running` at the first run.
 5. Conclude with `verdict` and `conclusion`, and set `status: concluded`.
-   The eval's `runs` lists the runs the verdict rests on.
+   The eval's `runs` lists the runs the verdict rests on. If you stop
+   before concluding, set `status: abandoned` and say why in `conclusion`.
+6. After an `inconclusive` verdict, the `conclusion` says what would make
+   the question conclusive, such as more trials, fixing a cause of error,
+   blind scoring or a threshold set in advance. Keep `status: concluded`
+   and choose one:
+   - Write a narrower eval that tests one of those changes now, with
+     `status: planned` (step 2), and give its path in this eval's
+     `conclusion`. Give it a new suite whose `method` states the thresholds
+     for `supported` and `refuted`, so the earlier runs keep their method.
+   - Say in the `conclusion` why the question is not worth pursuing.
+
+   Tell the owner which you chose, because the owner may choose the other.
 
 A personal board that mounts a repository at `/repos/<name>` lists that
 repository's evals in `about` and `open`. The plugin's README says how to
