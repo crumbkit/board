@@ -65,6 +65,8 @@ pub struct Environment {
     pub path: Option<OsString>,
     pub home: Option<OsString>,
     pub lang: Option<OsString>,
+    /// `TZ`, so a plugin's local time is the caller's.
+    pub tz: Option<OsString>,
     pub cache: Option<OsString>,
     pub data: Option<OsString>,
     /// `BOARD_CALL_DEPTH`.
@@ -386,6 +388,7 @@ fn environment(inherited: &Environment, depth: u32) -> Vec<(&'static str, OsStri
         ("PATH", &inherited.path),
         ("HOME", &inherited.home),
         ("LANG", &inherited.lang),
+        ("TZ", &inherited.tz),
         ("XDG_CACHE_HOME", &inherited.cache),
         ("XDG_DATA_HOME", &inherited.data),
         ("BOARD_TIMINGS", &inherited.timings),

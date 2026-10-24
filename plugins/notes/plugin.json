@@ -1,0 +1,185 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "description": "Sync the vault, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it through the mount and push it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Append text under a `## HH:MM` heading to today's daily note, or to a topic's note.",
+        "properties": {
+          "text": {
+            "description": "The Markdown to append; not only whitespace.",
+            "pattern": "\\S",
+            "title": "Text",
+            "type": "string"
+          },
+          "topic": {
+            "description": "The title of the note to append to, at notes/<slug>.md; today's daily note when left out.",
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          },
+          "vault": {
+            "description": "The vault mounted at /vaults/<vault>; the only one mounted there when left out.",
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AddInput",
+        "type": "object"
+      },
+      "name": "add",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "Where the text went.\n\n`path` is the logical path written and `commit` the vault's commit that\nholds it, which the mount's pin names. `parked` is null, or the Board code\nthat kept the text out of the note: it went to the sibling `<name>.agent.md`\ninstead. `unpushed` is null when the commit reached the vault's remote, or\nthe Board code of the sync that did not push it.",
+        "properties": {
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "parked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parked"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "vault": {
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault",
+          "path",
+          "commit",
+          "parked",
+          "unpushed"
+        ],
+        "title": "AddOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Sync the vault and print a day's daily note, unless the note is private.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The daily note of one day, as the vault's remote holds it.",
+        "properties": {
+          "date": {
+            "description": "The day, as YYYY-MM-DD; today, in this machine's time zone, when left out.",
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "vault": {
+            "description": "The vault mounted at /vaults/<vault>; the only one mounted there when left out.",
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "title": "DailyInput",
+        "type": "object"
+      },
+      "name": "daily",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The daily note.\n\n`text` is null when the note does not exist, or when it is private:\nits frontmatter has a `private` key whose value is not plainly false\n(`false`, `no`, `off` or `0`), as Reflect keeps private notes from AI. A read\ncreates no note. `commit` is the vault's commit read. `unsynced` is null\nwhen the vault synced first, or the Board code of the sync that failed,\nand the note is then as this clone holds it.",
+        "properties": {
+          "commit": {
+            "title": "Commit",
+            "type": "string"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          },
+          "vault": {
+            "title": "Vault",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault",
+          "path",
+          "exists",
+          "private",
+          "text",
+          "commit",
+          "unsynced"
+        ],
+        "title": "DailyOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Append a note to today's daily note, or to a topic's note, in a Reflect vault mounted at /vaults/<name>, and read a day's daily note. Use it when the person asks you to note something down or asks what their daily note says. Start with `board -C <board> call notes.daily`, which syncs the vault and prints today's note. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "notes"
+  },
+  "name": "notes",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_notes"
+  ],
+  "version": "0.1.0"
+}

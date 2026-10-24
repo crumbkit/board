@@ -65,6 +65,17 @@ fn a_plugin_inherits_board_timings_when_it_is_set_and_not_when_it_is_not() {
     assert!(!unset.iter().any(|(key, _)| *key == "BOARD_TIMINGS"));
 }
 
+#[test]
+fn a_plugin_inherits_tz_when_it_is_set_and_not_when_it_is_not() {
+    let far = Environment {
+        tz: Some(OsString::from("Pacific/Kiritimati")),
+        ..Environment::default()
+    };
+    assert!(environment(&far, 1).contains(&("TZ", OsString::from("Pacific/Kiritimati"))));
+    let unset = environment(&Environment::default(), 1);
+    assert!(!unset.iter().any(|(key, _)| *key == "TZ"));
+}
+
 /// An install of `name` that offers `capabilities`, each taking `input`.
 fn plugin(name: &str, capabilities: &[&str], input: &Value) -> Installed {
     let manifest = json!({

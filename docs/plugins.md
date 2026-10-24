@@ -136,7 +136,7 @@ Then Board:
 2. validates it against `inputSchema` (`board::plugin::bad_input`);
 3. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
-   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `XDG_CACHE_HOME`,
+   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `TZ`, `XDG_CACHE_HOME`,
    `XDG_DATA_HOME` and `BOARD_TIMINGS` when set;
 4. writes one request to the plugin's stdin:
 
@@ -197,8 +197,8 @@ and how Board keeps each database.
 ## Writing a plugin in Python
 
 The plugins here are written in Python through the shared library in
-`python/board-plugin/`. There are five: `controls`, `tasks`, `evals`,
-`runs` and `share`. The README in each `plugins/<name>/` describes its records and
+`python/board-plugin/`. There are six: `controls`, `tasks`, `evals`,
+`runs`, `share` and `notes`. The README in each `plugins/<name>/` describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains the design of
 `share`.
 [plugins/python.md](plugins/python.md) says what Board validates for a plugin,

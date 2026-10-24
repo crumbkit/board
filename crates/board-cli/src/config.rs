@@ -62,6 +62,7 @@ impl Context {
                 path: std::env::var_os("PATH"),
                 home: std::env::var_os("HOME"),
                 lang: std::env::var_os("LANG"),
+                tz: std::env::var_os("TZ"),
                 cache: std::env::var_os("XDG_CACHE_HOME"),
                 data: std::env::var_os("XDG_DATA_HOME"),
                 depth: std::env::var_os("BOARD_CALL_DEPTH"),
