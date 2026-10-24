@@ -47,6 +47,14 @@ owner's own. The owner writes Ruby, Rust and sometimes Elixir, and prefers
 error codes named after the domain. When you report a test, explain what it
 proves and what it does not.
 
+Viitta is the project's stable internal code name. Board is its current public
+name and may change, for example for trademark reasons. The `board` binary and
+its help text say board because customers see them. New internal identifiers,
+such as crate names, record type prefixes, plugin ids, config keys, design docs
+and notes, use viitta so that they survive a rename. Existing identifiers that
+say board, such as `board/mount/v1` and `~/.config/board`, keep their names
+unless the owner decides otherwise.
+
 ## Writing
 
 Use short sentences and plain words. Say each thing once. `lint.toml` sets word

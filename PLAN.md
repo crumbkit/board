@@ -86,8 +86,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 
 ## Settled decisions
 
-1. The name stays `board`: the binary, the `board-*` crates, `board::` codes
-   and the reserved `board` namespace. `viitta` is only the repository's name.
+1. Viitta is the internal code name and Board the public name (2026-10-24).
+   AGENTS.md says which identifiers use each; existing `board` names stay.
 2. The code is proprietary and unpublished.
 3. A limit that refuses a write, such as a file-size limit, is a setting that
    `put` and `check` apply. A requirement on files is a control (2026-10-05).
