@@ -15,6 +15,7 @@ pub(crate) struct Config {
     pub(crate) docs_index: FileBudget,
     pub(crate) docs: DirectoryBudget,
     pub(crate) plan: FileBudget,
+    pub(crate) plan_leaves: DirectoryBudget,
     pub(crate) source: SourceBudget,
     pub(crate) expect: ExpectBudget,
 }
@@ -62,9 +63,9 @@ pub(crate) struct ExpectBudget {
 
 impl Config {
     /// Each section with a `max_words`: its name, the files or GLOB it
-    /// names, and the limit. The docs GLOB matches every `.md` file below the
-    /// directory, because `*` matches `/` in `SQLite` GLOB.
-    pub(crate) fn word_budgets(&self) -> [(&'static str, Vec<String>, usize); 4] {
+    /// names, and the limit. A directory's GLOB matches every `.md` file below
+    /// it, because `*` matches `/` in `SQLite` GLOB.
+    pub(crate) fn word_budgets(&self) -> [(&'static str, Vec<String>, usize); 5] {
         let context = self.context.entry.clone();
         let index = &self.docs_index;
         [
@@ -76,6 +77,11 @@ impl Config {
                 self.docs.max_words,
             ),
             ("plan", vec![self.plan.file.clone()], self.plan.max_words),
+            (
+                "plan_leaves",
+                vec![format!("{}/*.md", self.plan_leaves.directory)],
+                self.plan_leaves.max_words,
+            ),
         ]
     }
 

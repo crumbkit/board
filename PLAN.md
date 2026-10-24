@@ -2,8 +2,10 @@
 
 This file holds what comes next and the decisions that still constrain work.
 docs/architecture.md and docs/plugins.md describe what is built, and
-STANDARDS.md holds the code standards. When a milestone lands, its design moves
-into docs/ and leaves this file. `lint.toml` limits this file's length.
+STANDARDS.md holds the code standards. A milestone whose design does not fit
+here keeps it in one flat leaf, `plan/<milestone>.md`, linked once below. When
+a milestone lands, its design moves into docs/ and leaves this file and its
+leaf. `lint.toml` limits the length of this file and of each leaf.
 
 The principles are the rules in AGENTS.md, plus one: a record's path is its
 identity, and its type is the `$type` field inside it.
@@ -25,6 +27,14 @@ M7 is done when the owner says so.
 After M7, real numbers decide whether to land the three measured warm-check
 speedups (#33; warm `check` is about 20 µs per entry). The long-chain numbers
 are in #57 and viitta-stress-test 9d557d1.
+
+## Then: runs
+
+Board records test, perf and eval results. A new `runs` plugin holds suites
+and their runs, `evals` and `controls` refer to it, `cargo xtask bench
+--record` writes runs, and a `github` plugin imports CI timings across
+repositories. [plan/runs.md](plan/runs.md) holds the decisions and the build
+order.
 
 ## Out of scope
 

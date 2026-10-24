@@ -89,6 +89,8 @@ pub(crate) enum CheckKind {
     DocsIndex,
     Docs,
     Plan,
+    PlanLeaf,
+    PlanLinks,
     SourceLines,
     Expect,
 }
@@ -100,6 +102,8 @@ impl CheckKind {
             Self::DocsIndex => "docs-index",
             Self::Docs => "docs",
             Self::Plan => "plan",
+            Self::PlanLeaf => "plan-leaves",
+            Self::PlanLinks => "plan-links",
             Self::SourceLines => "source",
             Self::Expect => "expect",
         }
@@ -107,7 +111,8 @@ impl CheckKind {
 
     fn unit(self) -> &'static str {
         match self {
-            Self::Context | Self::DocsIndex | Self::Docs | Self::Plan => "words",
+            Self::Context | Self::DocsIndex | Self::Docs | Self::Plan | Self::PlanLeaf => "words",
+            Self::PlanLinks => "problems",
             Self::SourceLines => "lines",
             Self::Expect => "attributes",
         }
@@ -116,9 +121,10 @@ impl CheckKind {
     /// The code a failure of this check carries.
     pub(crate) fn code(self) -> &'static str {
         match self {
-            Self::Context | Self::DocsIndex | Self::Docs | Self::Plan => {
+            Self::Context | Self::DocsIndex | Self::Docs | Self::Plan | Self::PlanLeaf => {
                 "xtask::budget::over_limit"
             }
+            Self::PlanLinks => "xtask::plan::index_differs",
             Self::SourceLines => "xtask::source::too_long",
             Self::Expect => "xtask::expect::count_changed",
         }
@@ -214,7 +220,7 @@ pub(crate) fn render(report: &Report) -> String {
             name = check.name(),
             used = check.used,
             unit = check.kind.unit(),
-            parts = summarise(&check.parts),
+            parts = summarise(check),
         );
         if !check.passed() {
             let _ = writeln!(text, "      {}: {}", check.kind.code(), advice(check));
@@ -229,11 +235,15 @@ pub(crate) fn render(report: &Report) -> String {
     text
 }
 
-fn summarise(parts: &[Part]) -> String {
+fn summarise(check: &Check) -> String {
+    let parts = &check.parts;
     let mut shown: Vec<String> = parts
         .iter()
         .take(SHOWN_PARTS)
-        .map(|part| format!("{} {}", part.label, part.amount))
+        .map(|part| match check.kind {
+            CheckKind::PlanLinks => part.label.clone(),
+            _ => format!("{} {}", part.label, part.amount),
+        })
         .collect();
     if parts.len() > SHOWN_PARTS {
         shown.push(format!("and {} more", parts.len() - SHOWN_PARTS));
@@ -249,6 +259,16 @@ fn advice(check: &Check) -> String {
         ),
         (CheckKind::Expect, _) => format!("lower expect.count to {} in lint.toml", check.used),
         (CheckKind::SourceLines, _) => "split the files above".to_owned(),
+        (CheckKind::PlanLeaf, _) => format!(
+            "split {leaf} into two milestones, or raise plan_leaves.max_words in lint.toml \
+             in a change that says why",
+            leaf = check.name(),
+        ),
+        (CheckKind::PlanLinks, _) => {
+            "link each milestone leaf from the plan once, remove links to missing leaves, \
+             and keep the plan directory flat"
+                .to_owned()
+        }
         (CheckKind::Docs, Limit::AtMost(max)) => format!(
             "{node} holds {used} words in its own .md files, over its limit of {max}; \
              move detail into a subdirectory of {node}, or raise docs.max_words in lint.toml \

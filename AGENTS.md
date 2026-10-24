@@ -32,8 +32,8 @@ rules they cannot.
 7. **Pair refusals.** A test that something is refused has an otherwise
    identical twin that is admitted, and asserts the exact code.
 8. **Docs say what exists.** docs/ describes the design and says what is built.
-   PLAN.md holds what comes next; when a milestone lands, its settled design
-   moves into docs/ and leaves PLAN.md.
+   PLAN.md and its leaves in plan/ hold what comes next; when a milestone
+   lands, its settled design moves into docs/ and its plan text is deleted.
 9. **The CLI serves agents and people equally.** Output is bounded by default
    and says what it left out. Help lets a reader start from one line per
    command and drill down to examples. Every error carries its code, says what

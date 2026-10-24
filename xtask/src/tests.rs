@@ -74,6 +74,9 @@ max_words = 20
 [plan]
 file = "PLAN.md"
 max_words = 6
+[plan_leaves]
+directory = "plan"
+max_words = 8
 [source]
 max_lines = 3
 [expect]
@@ -81,7 +84,7 @@ count = 0
 "#;
 
 /// The controls that record `CONFIG`'s word budgets, by path.
-pub(crate) const CONTROLS: [(&str, &str); 4] = [
+pub(crate) const CONTROLS: [(&str, &str); 5] = [
     (
         "controls/budgets/context.json",
         r#"{"applies_to": ["/AGENTS.md", "/CLAUDE.md"], "requirement": "At most 10 words."}"#,
@@ -98,6 +101,10 @@ pub(crate) const CONTROLS: [(&str, &str); 4] = [
         "controls/budgets/plan.json",
         r#"{"applies_to": ["/PLAN.md"], "requirement": "At most 6 words."}"#,
     ),
+    (
+        "controls/budgets/plan_leaves.json",
+        r#"{"paths": ["plan/*.md"], "requirement": "At most 8 words."}"#,
+    ),
 ];
 
 fn within_every_budget() -> Fixture {
@@ -111,7 +118,8 @@ fn within_every_budget() -> Fixture {
         .write("AGENTS.md", &words(9))
         .write("DOCS.md", &words(5))
         .write("docs/a.md", &words(20))
-        .write("PLAN.md", &words(6))
+        .write("PLAN.md", &format!("[a](plan/a.md) {}", words(5)))
+        .write("plan/a.md", &words(8))
         .write("src/lib.rs", "fn a() {}\n");
     fixture
 }
@@ -143,11 +151,44 @@ fn the_lint_fails_a_repository_over_one_budget_and_names_that_check() {
 #[test]
 fn the_lint_fails_a_repository_whose_plan_is_over_budget_and_names_the_plan_check() {
     let fixture = within_every_budget();
-    fixture.write("PLAN.md", &words(7));
+    fixture.write("PLAN.md", &format!("[a](plan/a.md) {}", words(6)));
     let report = crate::lint(fixture.path()).unwrap();
     assert_eq!(failed(&report), [CheckKind::Plan]);
     let text = crate::report::render(&report);
     assert!(text.contains("plan.max_words"), "{text}");
+}
+
+#[test]
+fn the_lint_fails_a_repository_whose_plan_leaf_is_over_budget_and_passes_its_twin() {
+    let fixture = within_every_budget();
+    fixture.write("plan/a.md", &words(9));
+    let report = crate::lint(fixture.path()).unwrap();
+    assert_eq!(failed(&report), [CheckKind::PlanLeaf]);
+    let text = crate::report::render(&report);
+    assert!(text.contains("xtask::budget::over_limit"), "{text}");
+    assert!(text.contains("plan_leaves.max_words"), "{text}");
+
+    let twin = within_every_budget();
+    twin.write("plan/a.md", &words(8));
+    assert!(crate::lint(twin.path()).unwrap().passed());
+}
+
+#[test]
+fn the_lint_fails_a_repository_with_a_plan_leaf_that_plan_md_does_not_link_and_passes_its_twin() {
+    let fixture = within_every_budget();
+    fixture.write("plan/b.md", "one");
+    let report = crate::lint(fixture.path()).unwrap();
+    assert_eq!(failed(&report), [CheckKind::PlanLinks]);
+    let text = crate::report::render(&report);
+    assert!(text.contains("xtask::plan::index_differs"), "{text}");
+    assert!(text.contains("plan/b.md"), "{text}");
+
+    let twin = within_every_budget();
+    twin.write("plan/b.md", "one").write(
+        "PLAN.md",
+        &format!("[a](plan/a.md) [b](plan/b.md) {}", words(3)),
+    );
+    assert!(crate::lint(twin.path()).unwrap().passed());
 }
 
 #[test]

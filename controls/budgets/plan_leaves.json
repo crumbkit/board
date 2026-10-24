@@ -1,0 +1,8 @@
+{
+  "$type": "controls/control/v1",
+  "paths": [
+    "plan/*.md"
+  ],
+  "purpose": "A milestone whose design does not fit in PLAN.md keeps it in one leaf, and the leaf leaves with the milestone, so plan text never outlives its work. This records lint.toml's plan_leaves budget. cargo xtask lint enforces the budget and fails when this record disagrees with it.",
+  "requirement": "Each milestone leaf in plan/ holds at most 1,300 words. PLAN.md links each leaf once, links no missing leaf, and plan/ holds no subdirectory; a milestone too big for one leaf is split into two milestones."
+}

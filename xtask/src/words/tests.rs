@@ -32,3 +32,17 @@ fn an_import_inside_a_fenced_block_is_not_an_import() {
     let text = "@before.md\n```\n@inside.md\n```\n~~~\n@tilde.md\n~~~\n@after.md\n";
     assert_eq!(imports(text), ["before.md", "after.md"]);
 }
+
+#[test]
+fn a_link_target_drops_its_title_brackets_fragment_and_leading_slash() {
+    assert_eq!(
+        link_targets("[a](plan/a.md \"t\") [b](<plan/b.md>) [c](./plan/c.md#x) [d](/plan/d.md)"),
+        ["plan/a.md", "plan/b.md", "plan/c.md", "plan/d.md"]
+    );
+}
+
+#[test]
+fn a_link_inside_code_is_not_a_link_and_its_twin_outside_code_is() {
+    let text = "`[a](plan/a.md)`\n```\n[b](plan/b.md)\n```\n[c](plan/c.md)";
+    assert_eq!(link_targets(text), ["plan/c.md"]);
+}
