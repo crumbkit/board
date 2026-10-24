@@ -10,7 +10,8 @@ use board_model::{Code, Fields, LogicalPath, ObjectId};
 use gix::bstr::{BString, ByteSlice};
 use gix::object::tree::EntryKind;
 
-use super::{Lock, Staged, WriteError, stage_entry};
+use super::entries::{stage_entry, unstage_entry};
+use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Pushed, Upstream};
 use crate::worktree::Working;
@@ -347,9 +348,7 @@ impl Repository {
                 stage_entry(&mut staged.index, &change.path, self.gix_id(blob)?);
             } else {
                 self.remove_file(lock, &change.path)?;
-                staged.index.remove_tree();
-                let path = change.path.as_bytes();
-                staged.index.remove_entries(|_, at, _| at == path);
+                unstage_entry(&mut staged.index, &change.path);
             }
         }
         self.finish(lock, staged, "board sync")?;

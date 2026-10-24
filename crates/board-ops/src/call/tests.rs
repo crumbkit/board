@@ -468,7 +468,7 @@ fn a_plugin_whose_schema_differs_is_called_once_enable_replaces_the_schema() {
     let plugins = fixture.data.workdir().join("plugins");
     let name = "tasks".parse().unwrap();
     let enabled = open(&fixture.board)
-        .plugin_enable(Some(&plugins), &name)
+        .plugin_enable(Some(&plugins), None, &name)
         .unwrap();
     assert_eq!(enabled.replaced, [at]);
     assert!(fixture.call("tasks.due", r#"{"n": 1}"#).is_ok());

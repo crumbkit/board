@@ -192,10 +192,10 @@ fn put_json(report: &PutReport) -> Value {
 }
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was
-/// needed, with a note for each schema it replaced.
+/// needed, with a note for each schema it replaced or removed.
 pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     let name = report.name.as_str();
-    let text = if report.put.writes.is_empty() {
+    let text = if report.put.writes.is_empty() && report.removed.is_empty() {
         format!("{name} is already enabled\n")
     } else {
         format!("{}enabled {name}\n", put_text(&report.put))
@@ -203,11 +203,15 @@ pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     let mut value = put_json(&report.put);
     value["plugin"] = json!(name);
     value["replaced"] = json!(report.replaced);
+    value["removed"] = json!(report.removed);
     let notes = (report.replaced.iter()).map(|path| {
-        Note::Always(format!(
+        format!(
             "note: replaced {path} with the schema the {name} plugin ships; records its old copy admitted may now be degraded, and `board check` lists them"
-        ))
+        )
     });
+    let removed = (report.removed.iter())
+        .map(|path| format!("note: removed {path}, which the {name} plugin no longer ships"));
+    let notes = notes.chain(removed).map(Note::Always);
     printer.noted(ENABLE, said(value, text), notes.collect())
 }
 

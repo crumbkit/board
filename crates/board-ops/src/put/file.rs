@@ -40,7 +40,7 @@ impl Board {
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let prepared = Self::prepare_file(&lock, &mut view, path, expect, bytes)?;
         let message = format!("{BINARY_NAME} put {path}");
-        self.write_all(lock, &[prepared], &message)
+        self.write_all(lock, &[prepared], &[], &message)
             .map_err(Failure::one)
     }
 

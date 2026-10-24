@@ -786,6 +786,41 @@ fn plugin_enable_reports_a_schema_it_replaced_and_none_when_the_schema_is_the_sa
     assert_eq!(text(&again.stderr), "");
 }
 
+#[test]
+fn plugin_enable_refuses_while_a_record_has_a_type_the_plugin_dropped_and_removes_its_schema_once_none_does()
+ {
+    let (board, data) = shipping();
+    let old = ".board/types/notes/old/v1.schema.json";
+    board
+        .write(old, Item::File(r#"{"type": "object"}"#))
+        .write("old.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
+    let refused = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+    assert_eq!(refused.code, 1);
+    let report = json(&refused);
+    assert_eq!(report["code"], "board::plugin::type_in_use");
+    let message = report["message"].as_str().unwrap();
+    assert!(
+        message.contains("notes/old/v1") && message.contains("/old"),
+        "{message}"
+    );
+    assert!(
+        report["recovery"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("git rm")
+    );
+
+    board.write("old.json", Item::Deleted);
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    assert_eq!(json(&enabled)["data"]["removed"], serde_json::json!([old]));
+    assert_eq!(
+        text(&enabled.stderr),
+        format!("note: removed {old}, which the notes plugin no longer ships\n")
+    );
+    assert!(!board.workdir().join(old).exists());
+}
+
 /// A board naming notes in its configuration without its schema.
 pub(super) fn lacking_a_schema() -> (Scenario, Scenario) {
     let (board, data) = shipping();

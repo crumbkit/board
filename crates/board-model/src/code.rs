@@ -70,6 +70,7 @@ pub enum Code {
     PluginNotEnabled,
     PluginSchemaMissing,
     PluginSchemaDiffers,
+    PluginTypeInUse,
     PluginAmbiguous,
     PluginBadInput,
     PluginBadOutput,
@@ -84,7 +85,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 72] = [
+    pub const ALL: [Code; 73] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -147,6 +148,7 @@ impl Code {
         Self::PluginNotEnabled,
         Self::PluginSchemaMissing,
         Self::PluginSchemaDiffers,
+        Self::PluginTypeInUse,
         Self::PluginAmbiguous,
         Self::PluginBadInput,
         Self::PluginBadOutput,
@@ -228,6 +230,7 @@ impl Code {
             Self::PluginNotEnabled => "board::plugin::not_enabled",
             Self::PluginSchemaMissing => "board::plugin::schema_missing",
             Self::PluginSchemaDiffers => "board::plugin::schema_differs",
+            Self::PluginTypeInUse => "board::plugin::type_in_use",
             Self::PluginAmbiguous => "board::plugin::ambiguous",
             Self::PluginBadInput => "board::plugin::bad_input",
             Self::PluginBadOutput => "board::plugin::bad_output",
@@ -320,6 +323,7 @@ mod tests {
             | Code::PluginNotEnabled
             | Code::PluginSchemaMissing
             | Code::PluginSchemaDiffers
+            | Code::PluginTypeInUse
             | Code::PluginAmbiguous
             | Code::PluginBadInput
             | Code::PluginBadOutput

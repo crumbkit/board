@@ -22,13 +22,15 @@ board enables plugins by name in `.board/board.json`; a name that is not a
 plugin name, or one listed twice, makes it `board::config::invalid`. Board never
 runs a plugin from a board's tree.
 
-`board plugin enable <name>` writes each schema an installed plugin ships to
-`.board/types/`, then names the plugin in `.board/board.json`, as one put that
-`commit_on_put` commits. A schema already there and equal is left alone. A
-different one is replaced, because the plugin's copy is the source; the report
-lists it in `replaced`, and a note on stderr says that records the old copy
-admitted may now be degraded and that `board check` lists them. Enabling again
-writes nothing.
+`board plugin enable <name>` makes one put, which `commit_on_put` commits:
+
+- Each shipped schema goes to `.board/types/`. A different one there is
+  replaced and listed in `replaced`; `board check` lists records it degrades.
+- Each other schema under `.board/types/<name>/` is removed and listed in
+  `removed`. A record of that type refuses it: `board::plugin::type_in_use`.
+- `.board/board.json` names the plugin.
+
+An equal schema is left, so enabling again writes nothing.
 
 ## The manifest
 
@@ -190,7 +192,7 @@ and how Board keeps each database.
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
-`schema_missing`, `schema_differs`, `ambiguous`,
+`schema_missing`, `schema_differs`, `type_in_use`, `ambiguous`,
 `bad_input`, `bad_output`, `failed`, `no_database`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 

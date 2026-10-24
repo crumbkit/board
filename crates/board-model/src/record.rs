@@ -20,7 +20,7 @@ pub const CONFIG_TYPE: &str = "board/config/v1";
 pub const MANIFEST_TYPE: &str = "board/plugin-manifest/v1";
 
 /// The directory that holds schemas.
-const TYPES_DIRECTORY: &str = ".board/types/";
+pub const TYPES_DIRECTORY: &str = ".board/types/";
 
 /// A record's `$type`: `<namespace>/<kind>/v<n>`, where namespace and kind
 /// are lowercase ASCII letters, digits and hyphens, and `n` is a positive

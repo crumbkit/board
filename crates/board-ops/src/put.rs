@@ -65,6 +65,15 @@ pub(crate) struct Prepared {
     pub(crate) admitted: Admitted,
 }
 
+/// A working-tree file a put removes, only if it still holds `blob`.
+#[derive(Debug)]
+pub(crate) struct Removal {
+    pub(crate) path: LogicalPath,
+    /// The `/`-separated path in the working tree.
+    pub(crate) file: String,
+    pub(crate) blob: ObjectId,
+}
+
 /// Each record type's schema, or what is there instead, read and compiled
 /// once while the lock is held, so a batch compiles a schema once per type
 /// and not once per line.
@@ -136,7 +145,7 @@ impl Board {
             prepared => prepared?,
         };
         let message = format!("{BINARY_NAME} put {path}");
-        self.write_all(lock, &[prepared], &message)
+        self.write_all(lock, &[prepared], &[], &message)
             .map_err(Failure::one)
     }
 
@@ -175,13 +184,15 @@ impl Board {
     }
 
     /// Compares every expect under `lock`, the lock the records were
-    /// prepared under, and writes every prepared record in order, with one
-    /// commit when `commit_on_put` is set. Writes nothing unless every
-    /// expect holds.
+    /// prepared under, and writes every prepared record in order, then
+    /// removes each of `removed`, with one commit when `commit_on_put` is
+    /// set. Writes nothing unless every expect holds and every file to
+    /// remove holds its blob.
     pub(crate) fn write_all(
         &self,
         lock: Lock,
         prepared: &[Prepared],
+        removed: &[Removal],
         message: &str,
     ) -> Result<PutReport, Failure> {
         let _timed = self.timed("put.write");
@@ -229,15 +240,22 @@ impl Board {
                 degraded: None,
             });
         }
+        for (at, removal) in removed.iter().enumerate() {
+            let found = repository.working_blob(&removal.file).ok();
+            if found != Some(removal.blob) {
+                let path = removal.path.clone();
+                stale.push((prepared.len() + at, PutError::Stale { path, found }));
+            }
+        }
         if !stale.is_empty() {
             return Err(Failure::Stale(stale));
         }
         // The commit is made ready before anything is renamed, so a put
         // with no identity to commit as writes nothing.
         let staged = if self.config().commit_on_put {
-            let files: Vec<(&str, &[u8])> = prepared
-                .iter()
-                .map(|item| (item.target.path.as_str(), item.canonical.as_slice()))
+            let files: Vec<_> = (prepared.iter())
+                .map(|item| (item.target.path.as_str(), Some(item.canonical.as_slice())))
+                .chain(removed.iter().map(|removal| (removal.file.as_str(), None)))
                 .collect();
             repository
                 .stage_commit(&lock, &files, message)
@@ -248,6 +266,11 @@ impl Board {
         for item in prepared {
             repository
                 .write_file(&lock, &item.target.path, &item.canonical)
+                .map_err(|error| Failure::Error(error.into()))?;
+        }
+        for removal in removed {
+            repository
+                .remove_file(&lock, &removal.file)
                 .map_err(|error| Failure::Error(error.into()))?;
         }
         let commit = match staged {

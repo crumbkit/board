@@ -34,7 +34,7 @@ impl Board {
         };
         let message = format!("Add the type {record_type}");
         let mut report = self
-            .write_all(lock, &[prepared], &message)
+            .write_all(lock, &[prepared], &[], &message)
             .map_err(Failure::one)?;
         report
             .writes

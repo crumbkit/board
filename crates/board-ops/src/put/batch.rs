@@ -111,7 +111,7 @@ impl Board {
                     return self.put_through(lock, &crossings, Sent::Batch(lines), wait);
                 }
             };
-        self.write_all(lock, &prepared, &message(&prepared))
+        self.write_all(lock, &prepared, &[], &message(&prepared))
             .map_err(|failure| match failure {
                 Failure::Stale(stale) => refused_lines(
                     &stale

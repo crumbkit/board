@@ -28,7 +28,7 @@ pub use crate::pointer::{
 };
 pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RecordType, RecordTypeError, Role,
-    classify, needs_bytes,
+    TYPES_DIRECTORY, classify, needs_bytes,
 };
 pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::stat::{Change, Stat};
