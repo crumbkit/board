@@ -3,7 +3,7 @@
 from board_plugin.protocol import dumped
 from pydantic import JsonValue
 
-from board_evals.models import EVAL_TYPE, RUN_TYPE, AboutInput, EvalRecord, ListOutput, OpenInput, RunRecord
+from board_evals.models import EVAL_TYPE, AboutInput, EvalRecord, ListOutput, OpenInput
 
 
 def manifest() -> dict[str, JsonValue]:
@@ -22,7 +22,7 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_evals"],
         "metadata": {"area": "testing"},
-        "types": [EVAL_TYPE, RUN_TYPE],
+        "types": [EVAL_TYPE],
         "capabilities": [
             {
                 "name": "about",
@@ -50,11 +50,6 @@ def manifest() -> dict[str, JsonValue]:
 def eval_schema() -> dict[str, JsonValue]:
     """The schema of `evals/eval/v1`, as the plugin ships it."""
     return EvalRecord.model_json_schema(by_alias=True)
-
-
-def run_schema() -> dict[str, JsonValue]:
-    """The schema of `evals/run/v1`, as the plugin ships it."""
-    return RunRecord.model_json_schema(by_alias=True)
 
 
 if __name__ == "__main__":

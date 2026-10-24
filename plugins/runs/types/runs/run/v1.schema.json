@@ -40,7 +40,7 @@
           ]
         }
       ],
-      "description": "What one case gave in a run: a case that did not pass, with a `note`, or a case's measures.",
+      "description": "What one case gave in a run. A case that did not pass has a `note`.\n\n`trial` numbers repeated trials of one case, from 1. `evidence` references files in the board that back the\nresult, such as a log an eval kept.",
       "if": {
         "properties": {
           "outcome": {
@@ -59,6 +59,14 @@
         "case": {
           "title": "Case",
           "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "format": "board-ref",
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
         },
         "measures": {
           "additionalProperties": {
@@ -93,6 +101,11 @@
           ],
           "title": "Outcome",
           "type": "string"
+        },
+        "trial": {
+          "minimum": 1,
+          "title": "Trial",
+          "type": "integer"
         }
       },
       "required": [
@@ -108,7 +121,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges. `versions` maps what was used, such as a commit, a model or a\nlibrary, to its version. `measures` holds the run's own measures, such as\n`tests` and `failures`. `results` lists the cases that did not pass and\nthe cases that measured something; a passing case without measures is\nleft out.",
+  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.",
   "properties": {
     "$type": {
       "const": "runs/run/v1",
@@ -166,6 +179,10 @@
       "title": "Scope",
       "type": "string"
     },
+    "setup": {
+      "title": "Setup",
+      "type": "string"
+    },
     "started": {
       "format": "date-time",
       "title": "Started",
@@ -176,6 +193,10 @@
       "title": "Suite",
       "type": "string",
       "x-board-type": "runs/suite/v1"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
     },
     "versions": {
       "additionalProperties": {
@@ -191,7 +212,6 @@
     "by",
     "started",
     "scope",
-    "dirty",
     "results"
   ],
   "title": "RunRecord",

@@ -16,7 +16,8 @@ def latest(request: CallRequest) -> LatestOutput:
     if not counted.runs:
         return LatestOutput(run=None, not_counted=counted.not_counted, unreadable=counted.unreadable)
     path, run = counted.runs[0]
-    failed = [result.case for result in run.results if result.outcome in FAILED]
+    # A case that failed in several trials is listed once.
+    failed = list(dict.fromkeys(result.case for result in run.results if result.outcome in FAILED))
     ended = run.finished or run.started
     age = datetime.datetime.now(datetime.UTC) - ended
     return LatestOutput(

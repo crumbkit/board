@@ -46,6 +46,17 @@ def test_trend_reads_one_cases_measure_when_given_a_case(board: Board) -> None:
     assert (output["points"], output["without_measure"]) == ([], 2)
 
 
+def test_trend_reads_the_first_trial_of_a_case_that_ran_several(board: Board) -> None:
+    board.write("suites/a.json", suite())
+    results = [
+        {"case": "cold", "trial": 2, "measures": {"wall_ms": 50}},
+        {"case": "cold", "trial": 1, "measures": {"wall_ms": 40}},
+    ]
+    board.write("suites/a/runs/1.json", run("/suites/a", results=results))
+    output = board.call("trend", {"suite": "/suites/a", "measure": "wall_ms", "case": "cold"})
+    assert [point["value"] for point in output["points"]] == [40]
+
+
 def test_trend_shows_at_most_its_limit_and_says_how_many_it_left_out(board: Board) -> None:
     board.write("suites/a.json", suite())
     for day in (1, 2, 3):

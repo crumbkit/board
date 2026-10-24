@@ -53,12 +53,13 @@ timestamp and a short random suffix, such as `20261018T101500Z-a3f9`.
 }
 ```
 
-- `suite`, `by`, `started`, `scope`, `dirty` and `results` are required.
+- `suite`, `by`, `started`, `scope` and `results` are required.
   `suite` must reach a `runs/suite/v1` record, or `check` reports
   `board::ref::dangling` or `board::ref::wrong_type`.
 - `started` and `finished` carry a time zone.
 - `scope` is `full` when every case ran and `targeted` when some did.
-  `dirty` says whether the tree under test had uncommitted changes.
+  `dirty` says whether the tree under test had uncommitted changes. A run
+  that leaves it out is never counted as clean.
 - `versions` maps what was used, such as a commit, a model or a library, to
   its version. `host` names the machine, with all three fields.
 - `measures` holds the run's own measures, such as the counts above.
@@ -66,13 +67,18 @@ timestamp and a short random suffix, such as `20261018T101500Z-a3f9`.
   (`fail`, `error` or `skipped`), with a `note` saying why, and each case that
   measured something, such as a benchmark's operation. The schema refuses a
   case that did not pass without a note, and a result with neither an
-  `outcome` nor `measures`. A passing case without measures is left out.
+  `outcome` nor `measures`. A passing case without measures is left out,
+  except that an eval's run may list every case.
+- A result's `trial` numbers repeated trials of one case, from 1, and its
+  `evidence` references raw files kept in the board, such as an eval's logs.
+- `setup` says how the run was prepared and `summary` what it showed, both
+  as prose.
 
 ## Capabilities
 
 Both capabilities count only the full runs of a clean revision: `scope` is
 `full` and `dirty` is false. Each reports how many runs of the suite it left
-out for being targeted or dirty in `not_counted`, and in `unreadable` how many
+out for being targeted, dirty or silent about `dirty` in `not_counted`, and in `unreadable` how many
 it left out because Board marks them degraded for anything but a broken
 reference or the plugin cannot read them. Each takes the suite by its
 logical path, which may be in a mounted board, and refuses a path that holds
@@ -80,15 +86,16 @@ no suite with `runs::suite::not_found`.
 
 `board call runs.latest --suite /suites/board-tests` returns the newest such
 run by `started`, a tie going to the run whose path sorts last. It gives the run's `path`, `started`,
-`finished`, `measures`, the cases that failed or erred in `failed`, and
+`finished`, `measures`, the cases that failed or erred in `failed`, each once, and
 `outcome`: `fail` when any result failed or erred, else `pass`. `age_s` is the
 whole seconds since the run finished, or since it started when it records no
 finish. With no run that counts, `run` is `null`.
 
 `board call runs.trend --suite /suites/board-bench --measure median_ms --case get`
 returns one point per run that counts, newest first: its `path`, `started` and
-the measure's `value`. With `--case`, the value is that case's measure;
-without, it is the run's own. `limit` is 1 to 1,000 (default 1,000). `total`
+the measure's `value`. With `--case`, the value is that case's measure,
+taken from its lowest `trial` when the case ran several; without, it is the
+run's own. `limit` is 1 to 1,000 (default 1,000). `total`
 counts every point, `truncated` says whether the limit left some out, and
 `without_measure` counts the runs that give no number for the measure.
 

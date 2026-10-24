@@ -1,12 +1,11 @@
-"""The eval and run records, and the plugin's inputs and outputs.
+"""The eval record, and the plugin's inputs and outputs.
 
-The records' schemas, which the plugin ships, and the manifest's schemas are
+The record's schema, which the plugin ships, and the manifest's schemas are
 generated from these models.
 """
 
-import datetime
 from collections.abc import Callable
-from typing import Annotated, Any, Literal, Self, cast
+from typing import Annotated, Literal, Self, cast
 
 from board_plugin.model import Strict
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -14,7 +13,9 @@ from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
 EVAL_TYPE = "evals/eval/v1"
-RUN_TYPE = "evals/run/v1"
+# The types an eval refers to, which the runs plugin ships.
+SUITE_TYPE = "runs/suite/v1"
+RUN_TYPE = "runs/run/v1"
 
 # The statuses of an eval that is still to be done or being done; `open` lists these.
 OPEN = ("planned", "running")
@@ -23,16 +24,14 @@ OPEN = ("planned", "running")
 LIST_LIMIT = 100
 
 # Codes that depend on the tree rather than the record. An eval holding one,
-# such as a `cases_file` that reaches nothing yet, is still an eval to list.
+# such as a run that is not written yet, is still an eval to list.
 TREE_CODES = ("board::ref::dangling", "board::ref::wrong_type")
 
 # References Board resolves and checks. Each is a plain property, never an
 # `anyOf` with null, because Board does not search `anyOf` for references.
 FileRef = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
-EvalRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": EVAL_TYPE})]
-
-# What a case measures: a number, a label or a flag.
-MeasureValue = float | str | bool
+SuiteRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": SUITE_TYPE})]
+RunRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": RUN_TYPE})]
 
 # A concluded eval has a verdict. pydantic cannot emit this itself.
 CONCLUDED_NEEDS_VERDICT: JsonDict = {
@@ -41,8 +40,6 @@ CONCLUDED_NEEDS_VERDICT: JsonDict = {
 }
 # `about` asks about a subject or a repository, never both. Board checks this before the plugin runs.
 SUBJECT_OR_REPO: JsonDict = {"oneOf": [{"required": ["subject"]}, {"required": ["repo"]}]}
-# A result has an outcome, measures, or both.
-OUTCOME_OR_MEASURES: JsonDict = {"anyOf": [{"required": ["outcome"]}, {"required": ["measures"]}]}
 
 
 def shipped(extra: JsonDict | None = None) -> Callable[[JsonDict], None]:
@@ -67,34 +64,15 @@ class Record(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
 
-class Case(Record):
-    """One case of an eval. A run's result names it by `id`."""
-
-    model_config = ConfigDict(json_schema_extra=shipped())
-
-    id: str
-    input: Any = None
-    expected: Any = None
-
-
-class Measure(Record):
-    """A quantity the eval takes. Each result and each run gives its value under `name`."""
-
-    model_config = ConfigDict(json_schema_extra=shipped())
-
-    name: str
-    unit: str | SkipJsonSchema[None] = None
-    description: str | SkipJsonSchema[None] = None
-
-
 class EvalRecord(Record):
-    """`evals/eval/v1`: a question about some subjects, how it is tested, and what was concluded.
+    """`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.
 
     `subjects` are the names of what is tested, such as `crumbkit` or `clap`;
     versions go in a run's `versions`. `repos` references the mount of each
-    repository the eval concerns, such as `/repos/crumbkit`. `cases` lists the
-    cases inline, or `cases_file` references a file that does. `decision` is
-    the decision this eval informs. A `concluded` eval has a `verdict`.
+    repository the eval concerns, such as `/repos/crumbkit`. `suites`
+    references the `runs/suite/v1` records that say how it is tested, and
+    `runs` the `runs/run/v1` records its verdict rests on. `decision` is the
+    decision this eval informs. A `concluded` eval has a `verdict`.
     """
 
     model_config = ConfigDict(json_schema_extra=shipped(CONCLUDED_NEEDS_VERDICT))
@@ -106,12 +84,10 @@ class EvalRecord(Record):
         description="The names of what is tested, such as `crumbkit` or `clap`, without versions. "
         "Name a repository in `repos`, by its mount.",
     )
-    method: str
     status: Literal["planned", "running", "concluded", "abandoned"]
     repos: list[FileRef] | SkipJsonSchema[None] = None
-    cases: list[Case] | SkipJsonSchema[None] = None
-    cases_file: FileRef | SkipJsonSchema[None] = None
-    measures: list[Measure] | SkipJsonSchema[None] = None
+    suites: list[SuiteRef] | SkipJsonSchema[None] = None
+    runs: list[RunRef] | SkipJsonSchema[None] = None
     decision: str | SkipJsonSchema[None] = None
     verdict: Literal["supported", "refuted", "inconclusive"] | SkipJsonSchema[None] = None
     conclusion: str | SkipJsonSchema[None] = None
@@ -122,50 +98,6 @@ class EvalRecord(Record):
             message = "a concluded eval needs a verdict"
             raise ValueError(message)
         return self
-
-
-class Result(Record):
-    """What one case gave in a run. A scored case may give `measures` and no `outcome`.
-
-    `trial` numbers repeated trials of one case, from 1.
-    """
-
-    model_config = ConfigDict(json_schema_extra=shipped(OUTCOME_OR_MEASURES))
-
-    case: str
-    outcome: Literal["pass", "fail", "error", "skipped"] | SkipJsonSchema[None] = None
-    measures: dict[str, MeasureValue] | SkipJsonSchema[None] = None
-    trial: Annotated[int, Field(ge=1)] | SkipJsonSchema[None] = None
-    evidence: list[FileRef] | SkipJsonSchema[None] = None
-    note: str | SkipJsonSchema[None] = None
-
-    @model_validator(mode="after")
-    def _has_an_outcome_or_measures(self) -> Self:
-        if self.outcome is None and self.measures is None:
-            message = "a result needs an outcome or measures"
-            raise ValueError(message)
-        return self
-
-
-class RunRecord(Record):
-    """`evals/run/v1`: one run of an eval, by whom, when, with what versions, and what each case gave.
-
-    `versions` maps what was used, such as a model, a prompt or a library, to
-    its version. `measures` holds aggregates over the whole run.
-    """
-
-    model_config = ConfigDict(json_schema_extra=shipped())
-
-    tag: Literal["evals/run/v1"] = Field(alias="$type")
-    eval: EvalRef
-    by: str
-    started: datetime.datetime
-    results: list[Result]
-    finished: datetime.datetime | SkipJsonSchema[None] = None
-    setup: str | SkipJsonSchema[None] = None
-    versions: dict[str, str] | SkipJsonSchema[None] = None
-    measures: dict[str, MeasureValue] | SkipJsonSchema[None] = None
-    summary: str | SkipJsonSchema[None] = None
 
 
 class AboutInput(Strict):

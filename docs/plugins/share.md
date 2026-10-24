@@ -20,8 +20,8 @@ have to go as well.
 
 Because each entry keeps its path, no reference is rewritten. The set is found
 from the index, which holds every typed reference, so no relation is declared
-by hand: an eval's runs are its children, and a run's evidence is what its
-records reference. A reference to a directory reaches every entry under it.
+by hand: an eval's evidence is its children, and its suites and runs are
+what it references. A reference to a directory reaches every entry under it.
 Only references whose source is a record are followed. A Markdown file's
 links, which `refs` lists too, are not followed, so a link cannot reach a
 directory either. A copied note may link to a note the destination lacks; the

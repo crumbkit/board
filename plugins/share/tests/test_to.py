@@ -4,15 +4,24 @@ import json
 import subprocess
 from pathlib import Path
 
-from conftest import EVAL, EVAL_SCHEMA, RUN, RUN_SCHEMA, Boards, commit, experiment, git, repository
+from conftest import EVAL, EVAL_SCHEMA, RUN, RUN_SCHEMA, SUITE_SCHEMA, Boards, commit, experiment, git, repository
 
 from board_share.to import Line, same
 
-SHARED = ["/evals/x", "/evals/x/evidence/log.txt", "/evals/x/runs/1", "/notes/cases.md"]
+SHARED = ["/evals/x", "/evals/x/evidence/log.txt", "/notes/cases.md", "/suites/x", "/suites/x/runs/1"]
 FILES = sorted(
-    [EVAL_SCHEMA, RUN_SCHEMA, "evals/x.json", "evals/x/evidence/log.txt", "evals/x/runs/1.json", "notes/cases.md"]
+    [
+        EVAL_SCHEMA,
+        RUN_SCHEMA,
+        SUITE_SCHEMA,
+        "evals/x.json",
+        "evals/x/evidence/log.txt",
+        "notes/cases.md",
+        "suites/x.json",
+        "suites/x/runs/1.json",
+    ]
 )
-TYPES = ["evals/eval/v1", "evals/run/v1"]
+TYPES = ["evals/eval/v1", "runs/run/v1", "runs/suite/v1"]
 
 
 def changed(root: Path, commit: str) -> list[str]:
@@ -33,7 +42,7 @@ def test_one_call_copies_an_eval_its_runs_their_evidence_and_its_schemas_in_one_
         "commit": head,
         "types": TYPES,
         "copied": SHARED,
-        "total": 4,
+        "total": 5,
         "truncated": False,
         "unchanged": 0,
     }
@@ -57,7 +66,7 @@ def test_a_schema_the_team_holds_is_not_added_again_and_one_it_lacks_lands_with_
     before = boards.publish()
     code, document = boards.share(path="/evals/x")
     assert code == 0, document
-    assert document["data"]["output"]["types"] == ["evals/eval/v1"]
+    assert document["data"]["output"]["types"] == ["evals/eval/v1", "runs/suite/v1"]
     assert git(boards.team, "rev-list", "--count", f"{before}..HEAD") == "1"
     assert EVAL_SCHEMA in changed(boards.team, "HEAD")
     assert RUN_SCHEMA not in changed(boards.team, "HEAD")
@@ -67,18 +76,18 @@ def test_a_path_the_team_holds_differently_refuses_the_share_and_writes_nothing_
     boards: Boards,
 ) -> None:
     experiment(boards)
-    boards.write(boards.team, "evals/x/runs/1.json", json.dumps({**RUN, "by": "someone else"}))
+    boards.write(boards.team, "suites/x/runs/1.json", json.dumps({**RUN, "by": "someone else"}))
     before = boards.publish()
     code, document = boards.share(path="/evals/x")
     assert (code, document["code"]) == (1, "share::target::differs"), document
-    assert document["fields"]["paths"] == ["/evals/x/runs/1"]
+    assert document["fields"]["paths"] == ["/suites/x/runs/1"]
     assert git(boards.team, "rev-parse", "HEAD") == before
     assert not (boards.team / ".board" / "types" / "evals").exists()
-    boards.write(boards.team, "evals/x/runs/1.json", json.dumps(RUN, indent=4))
+    boards.write(boards.team, "suites/x/runs/1.json", json.dumps(RUN, indent=4))
     boards.publish()
     code, document = boards.share(path="/evals/x")
     assert code == 0, document
-    assert (document["data"]["output"]["total"], document["data"]["output"]["unchanged"]) == (3, 1)
+    assert (document["data"]["output"]["total"], document["data"]["output"]["unchanged"]) == (4, 1)
 
 
 def test_a_schema_the_team_holds_differently_refuses_the_share_and_an_equal_one_is_admitted(boards: Boards) -> None:
@@ -88,7 +97,7 @@ def test_a_schema_the_team_holds_differently_refuses_the_share_and_an_equal_one_
     before = boards.publish()
     code, document = boards.share(path="/evals/x")
     assert (code, document["code"]) == (1, "share::target::differs")
-    assert document["fields"]["paths"] == ["/.board/types/evals/run/v1.schema"]
+    assert document["fields"]["paths"] == ["/.board/types/runs/run/v1.schema"]
     assert git(boards.team, "rev-parse", "HEAD") == before
     boards.write(boards.team, RUN_SCHEMA, json.dumps(schema))
     boards.publish()
@@ -101,7 +110,7 @@ def test_sharing_again_writes_nothing(boards: Boards) -> None:
     code, document = boards.share(path="/evals/x")
     assert code == 0, document
     output = document["data"]["output"]
-    assert (output["commit"], output["copied"], output["unchanged"], output["types"]) == (None, [], 4, [])
+    assert (output["commit"], output["copied"], output["unchanged"], output["types"]) == (None, [], 5, [])
     assert git(boards.team, "rev-parse", "HEAD") == first
     assert boards.pin() == first
 
@@ -324,7 +333,7 @@ def test_a_reference_to_a_directory_copies_the_entries_under_it(boards: Boards) 
     boards.write(boards.personal, "notes/more/other.md", "# Other\n")
     code, document = boards.share(path="/evals/x")
     assert code == 0, document
-    assert document["data"]["output"]["copied"] == [*SHARED, "/notes/more/other.md"]
+    assert document["data"]["output"]["copied"] == sorted([*SHARED, "/notes/more/other.md"])
     assert (boards.team / "notes" / "more" / "other.md").read_text() == "# Other\n"
 
 
@@ -367,7 +376,7 @@ def test_the_output_lists_at_most_100_paths_and_counts_them_all(boards: Boards) 
     code, document = boards.share(path="/evals/x", dry_run=True)
     assert code == 0, document
     output = document["data"]["output"]
-    assert (len(output["copied"]), output["total"], output["truncated"]) == (100, 105, True)
+    assert (len(output["copied"]), output["total"], output["truncated"]) == (100, 106, True)
 
 
 def test_a_team_checkout_on_another_branch_refuses_the_share_and_one_on_the_followed_branch_takes_it(

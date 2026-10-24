@@ -15,7 +15,8 @@ is written.
 1. The `runs` plugin in viitta: `runs/suite/v1`, `runs/run/v1`, `latest` and
    `trend`. Built: plugins/runs/README.md describes it.
 2. `evals` refers to suites and lists runs (decisions 4 and 9). The evals
-   skill changes in the same step.
+   skill changes in the same step. Built: plugins/evals/README.md describes
+   it.
 3. `controls` gains a measure rule kind, and `controls.check` calls
    `runs.latest` (decision 5).
 4. `cargo xtask bench --record` (decision 13).
@@ -38,7 +39,9 @@ is written.
    - `runs/run/v1`: one execution of a suite. `suite` ref, `by`, `started`,
      `finished`, `versions`, `scope` (full or targeted), `dirty`, host
      (`os`, `arch`, `logical_cpus`) as an embedded value, run-level measures,
-     and results.
+     results, and `setup` and `summary` prose. `dirty` is optional, because
+     an eval's earlier runs never said; a run without it never counts as
+     clean.
    `evals` and `controls` both refer to it. `runs` knows nothing about either.
 4. **`evals/eval/v1` loses `method`, `cases` and `measures`** (they move to
    the suite) and refers to suites. It keeps the question, decision, verdict
@@ -51,7 +54,8 @@ is written.
 6. **Results.** A run records the cases that did not pass, each with a
    short curated `note`, and the cases that measured something, such as a
    bench operation, plus run-level measures `tests`, `failures`,
-   `errors` and `skipped`. Board holds curated data: raw files such as
+   `errors` and `skipped`. An eval's run may list every case. A result
+   may number its `trial` and reference `evidence` files in the board. Board holds curated data: raw files such as
    `junit.xml` stay outside the board (adopter X keeps them in its state
    directory).
 7. **Paths.** A suite is `/suites/<name>.json`. Its runs are

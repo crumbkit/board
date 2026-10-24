@@ -12,10 +12,11 @@ import pytest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
-# The evals plugin's schemas: the types the records shared in these tests have.
-EVALS = REPOSITORY / "plugins" / "evals" / "types"
+# The evals and runs plugins' schemas: the types the records shared in these tests have.
+TYPES = [REPOSITORY / "plugins" / name / "types" for name in ("evals", "runs")]
 EVAL_SCHEMA = ".board/types/evals/eval/v1.schema.json"
-RUN_SCHEMA = ".board/types/evals/run/v1.schema.json"
+RUN_SCHEMA = ".board/types/runs/run/v1.schema.json"
+SUITE_SCHEMA = ".board/types/runs/suite/v1.schema.json"
 
 
 def board_binary() -> Path:
@@ -102,16 +103,17 @@ def commit(root: Path) -> str:
 
 
 def schemas(root: Path) -> None:
-    """Give the board at `root` the evals plugin's schemas."""
-    for schema in EVALS.rglob("*.schema.json"):
-        target = root / ".board" / "types" / schema.relative_to(EVALS)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(schema.read_text())
+    """Give the board at `root` the evals and runs plugins' schemas."""
+    for types in TYPES:
+        for schema in types.rglob("*.schema.json"):
+            target = root / ".board" / "types" / schema.relative_to(types)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(schema.read_text())
 
 
 @pytest.fixture
 def boards(tmp_path: Path) -> Boards:
-    """A personal board enabling share and holding the evals schemas, which mounts an empty team board."""
+    """A personal board enabling share and holding the evals and runs schemas, which mounts an empty team board."""
     fixture = Boards(
         personal=tmp_path / "personal", team=tmp_path / "team", data=tmp_path / "data", cache=tmp_path / "cache"
     )
@@ -134,23 +136,30 @@ EVAL: dict[str, Any] = {
     "$type": "evals/eval/v1",
     "question": "Does gix resolve a ref faster than git2?",
     "subjects": ["gix", "git2"],
-    "method": "Resolve 1,000 refs and compare wall time.",
-    "cases_file": "/notes/cases.md",
+    "suites": ["/suites/x"],
+    "runs": ["/suites/x/runs/1"],
     "status": "concluded",
     "verdict": "supported",
 }
+SUITE: dict[str, Any] = {
+    "$type": "runs/suite/v1",
+    "subjects": ["gix", "git2"],
+    "method": "Resolve 1,000 refs and compare wall time.",
+}
 RUN: dict[str, Any] = {
-    "$type": "evals/run/v1",
-    "eval": "/evals/x",
+    "$type": "runs/run/v1",
+    "suite": "/suites/x",
     "by": "claude",
     "started": "2026-10-01T09:00:00Z",
+    "scope": "full",
     "results": [{"case": "cold", "outcome": "pass", "evidence": ["/evals/x/evidence/log.txt"]}],
 }
 
 
-def experiment(boards: Boards, **fields: Any) -> None:  # noqa: ANN401 - the eval's other fields, as JSON
-    """Write `/evals/x`, its run, the run's evidence and the cases file the eval names, in the personal board."""
+def experiment(boards: Boards, cases_file: str = "/notes/cases.md", **fields: Any) -> None:  # noqa: ANN401 - the eval's other fields, as JSON
+    """Write `/evals/x`, its suite and the cases file it names, its run and that run's evidence."""
     boards.write(boards.personal, "evals/x.json", json.dumps({**EVAL, **fields}))
-    boards.write(boards.personal, "evals/x/runs/1.json", json.dumps(RUN))
+    boards.write(boards.personal, "suites/x.json", json.dumps({**SUITE, "cases_file": cases_file}))
+    boards.write(boards.personal, "suites/x/runs/1.json", json.dumps(RUN))
     boards.write(boards.personal, "evals/x/evidence/log.txt", "resolved 1000 refs in 41 ms\n")
     boards.write(boards.personal, "notes/cases.md", "# Cases\n\n- cold\n")

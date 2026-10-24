@@ -107,7 +107,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "The latest qualifying run, or `null` when none qualifies.\n\n`not_counted` is how many runs of the suite were left out because they were targeted or dirty. `unreadable` is\nhow many were left out because Board marks them degraded for anything but a broken reference, or this plugin\ncannot read them.",
+        "description": "The latest qualifying run, or `null` when none qualifies.\n\n`not_counted` is how many runs of the suite were left out because they were targeted, dirty or did not say.\n`unreadable` is how many were left out because Board marks them degraded for anything but a broken reference,\nor this plugin cannot read them.",
         "properties": {
           "not_counted": {
             "title": "Not Counted",
@@ -214,7 +214,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Points, newest first.\n\n`total` counts every point and `truncated` says whether the limit left some out. `without_measure` is how many\nqualifying runs give no number for the measure. `not_counted` is how many runs were targeted or dirty, and\n`unreadable` how many Board marks degraded or this plugin cannot read.",
+        "description": "Points, newest first.\n\n`total` counts every point and `truncated` says whether the limit left some out. `without_measure` is how many\nqualifying runs give no number for the measure. `not_counted` is how many runs were targeted, dirty or did not\nsay, and `unreadable` how many Board marks degraded or this plugin cannot read.",
         "properties": {
           "not_counted": {
             "title": "Not Counted",

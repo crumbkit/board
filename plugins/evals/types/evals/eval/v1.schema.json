@@ -1,52 +1,6 @@
 {
-  "$defs": {
-    "Case": {
-      "additionalProperties": false,
-      "description": "One case of an eval. A run's result names it by `id`.",
-      "properties": {
-        "expected": {
-          "title": "Expected"
-        },
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "input": {
-          "title": "Input"
-        }
-      },
-      "required": [
-        "id"
-      ],
-      "title": "Case",
-      "type": "object"
-    },
-    "Measure": {
-      "additionalProperties": false,
-      "description": "A quantity the eval takes. Each result and each run gives its value under `name`.",
-      "properties": {
-        "description": {
-          "title": "Description",
-          "type": "string"
-        },
-        "name": {
-          "title": "Name",
-          "type": "string"
-        },
-        "unit": {
-          "title": "Unit",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "title": "Measure",
-      "type": "object"
-    }
-  },
   "additionalProperties": false,
-  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `repos` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `cases` lists the\ncases inline, or `cases_file` references a file that does. `decision` is\nthe decision this eval informs. A `concluded` eval has a `verdict`.",
+  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `repos` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `suites`\nreferences the `runs/suite/v1` records that say how it is tested, and\n`runs` the `runs/run/v1` records its verdict rests on. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.",
   "if": {
     "properties": {
       "status": {
@@ -63,35 +17,12 @@
       "title": "$Type",
       "type": "string"
     },
-    "cases": {
-      "items": {
-        "$ref": "#/$defs/Case"
-      },
-      "title": "Cases",
-      "type": "array"
-    },
-    "cases_file": {
-      "format": "board-ref",
-      "title": "Cases File",
-      "type": "string"
-    },
     "conclusion": {
       "title": "Conclusion",
       "type": "string"
     },
     "decision": {
       "title": "Decision",
-      "type": "string"
-    },
-    "measures": {
-      "items": {
-        "$ref": "#/$defs/Measure"
-      },
-      "title": "Measures",
-      "type": "array"
-    },
-    "method": {
-      "title": "Method",
       "type": "string"
     },
     "question": {
@@ -104,6 +35,15 @@
         "type": "string"
       },
       "title": "Repos",
+      "type": "array"
+    },
+    "runs": {
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": "runs/run/v1"
+      },
+      "title": "Runs",
       "type": "array"
     },
     "status": {
@@ -125,6 +65,15 @@
       "title": "Subjects",
       "type": "array"
     },
+    "suites": {
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": "runs/suite/v1"
+      },
+      "title": "Suites",
+      "type": "array"
+    },
     "verdict": {
       "enum": [
         "supported",
@@ -139,7 +88,6 @@
     "$type",
     "question",
     "subjects",
-    "method",
     "status"
   ],
   "then": {

@@ -70,6 +70,22 @@ def test_a_run_is_full_or_targeted_names_its_host_whole_and_gives_its_times_zone
     }
 
 
+def test_a_result_numbers_its_trial_from_one_and_its_evidence_must_exist(board: Board) -> None:
+    board.write("suites/a.json", suite())
+    board.write("suites/a/evidence/log.txt", "ok\n")
+    first = {"case": "a", "outcome": "pass", "trial": 1, "evidence": ["/suites/a/evidence/log.txt"]}
+    board.write("suites/a/runs/first.json", run("/suites/a", results=[first], setup="M4 Max", summary="All passed."))
+    board.write("suites/a/runs/zeroth.json", run("/suites/a", results=[{**first, "trial": 0}]))
+    board.write("suites/a/runs/lost.json", run("/suites/a", results=[{**first, "evidence": ["/suites/a/gone.txt"]}]))
+    assert checked(board) == {
+        "/suites/a": None,
+        "/suites/a/evidence/log.txt": None,
+        "/suites/a/runs/first": None,
+        "/suites/a/runs/zeroth": INVALID,
+        "/suites/a/runs/lost": "board::ref::dangling",
+    }
+
+
 def test_a_runs_suite_must_be_a_suite(board: Board) -> None:
     board.write("suites/a.json", suite())
     board.write("suites/notes.md", "# Notes\n")

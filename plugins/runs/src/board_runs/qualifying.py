@@ -14,7 +14,7 @@ LIST_SUITES = "board query \"SELECT logical FROM records WHERE type = 'runs/suit
 
 @dataclass(frozen=True)
 class Counted:
-    """The qualifying runs by path, newest first, how many runs were targeted or dirty, and how many were unreadable."""
+    """The qualifying runs by path, newest first, and how many runs were left out and why."""
 
     runs: list[tuple[str, RunRecord]]
     not_counted: int
@@ -22,7 +22,7 @@ class Counted:
 
 
 def qualifying(board: Board, suite: str) -> Counted:
-    """The runs in `<suite>/runs/` that are full and clean, newest `started` first, then by path, last first.
+    """The runs in `<suite>/runs/` that are full and say they are clean, newest first, a tie going to the last path.
 
     A suite's runs are the records of type `runs/run/v1` under its `runs/`
     directory, read by display path, so a mounted board's suite works the
@@ -56,7 +56,7 @@ def qualifying(board: Board, suite: str) -> Counted:
             # The board's own schema admits a record this plugin cannot read.
             unreadable += 1
             continue
-        if run.scope == "full" and not run.dirty:
+        if run.scope == "full" and run.dirty is False:
             runs.append((path, run))
         else:
             not_counted += 1

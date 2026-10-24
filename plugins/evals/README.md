@@ -1,14 +1,17 @@
 # evals
 
 A Board plugin for recording tests of libraries, tools, models and agents. An
-eval states a question and how it will be tested. Each run of it is a separate
-record. Both are stored in a board, so an agent can ask what has already been
+eval states a question, the suites that test it and the runs its verdict
+rests on. It is stored in a board, so an agent can ask what has already been
 tested before it tests again. `SKILL.md` says which board an eval belongs in.
+
+The suites and runs are the `runs` plugin's records, so a board that holds
+evals enables both plugins. The runs README describes them.
 
 ## The eval record
 
-An eval is a file `/evals/<name>.json`. Its runs, evidence and cases file sit
-in the directory beside it, `/evals/<name>/`.
+An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
+`/evals/<name>/evidence/`.
 
 ```json
 {
@@ -16,64 +19,34 @@ in the directory beside it, `/evals/<name>/`.
   "question": "Can gix resolve a ref faster than git2?",
   "subjects": ["gix", "git2"],
   "repos": ["/repos/viitta"],
-  "method": "Resolve 1,000 refs in a clone of this repository and compare wall time.",
-  "cases": [{"id": "cold", "input": {"refs": 1000}}],
-  "measures": [{"name": "wall_ms", "unit": "ms"}],
+  "suites": ["/suites/gix-refs"],
+  "runs": ["/suites/gix-refs/runs/20261001T090000Z-a3f9"],
   "decision": "Which git library board-tree uses.",
-  "status": "planned"
+  "status": "concluded",
+  "verdict": "supported",
+  "conclusion": "gix resolved 1,000 refs in 41 ms against 63 ms for git2."
 }
 ```
 
-- `question`, `subjects`, `method` and `status` are required.
+- `question`, `subjects` and `status` are required.
 - `subjects` are the names of what is tested, without versions, such as `gix`
   or a model family. A repository the eval concerns goes in `repos`, by its
   mount, and never as `owner/name` here. `evals.about` matches subjects
-  without regard to case. Put the versions used in a run.
+  without regard to case. A run holds the versions used.
 - `repos` references the mount of each repository the eval concerns, such as
   `/repos/viitta`, a `board/mount/v1` record at `/repos/viitta.json`. `check`
   reports `board::ref::dangling` for a path the board does not have, and
   `board refs /repos/viitta` lists the evals that name it.
-- `cases` lists the cases inline; each has an `id`, which a run's results
-  name, and optional `input` and `expected`. `cases_file` references a file
-  that lists them instead, such as `/evals/<name>/cases.jsonl`.
-- `measures` declares what each case may measure: a `name`, and optionally a
-  `unit` and a `description`.
+- `suites` references the `runs/suite/v1` records that hold the method, the
+  cases and the measures.
+- `runs` references the `runs/run/v1` records the verdict rests on. A run
+  names only its suite, so `board refs` on a run lists the evals that cite it.
+- `check` reports `board::ref::dangling` or `board::ref::wrong_type` for a
+  suite or run that reaches nothing or a record of another type.
 - `decision` is the decision this eval informs.
 - `status` is `planned`, `running`, `concluded` or `abandoned`. A `concluded`
   eval needs a `verdict` (`supported`, `refuted` or `inconclusive`); the
   schema refuses one without it. `conclusion` holds the prose.
-
-## The run record
-
-A run is a file such as `/evals/<name>/runs/<id>.json`.
-
-```json
-{
-  "$type": "evals/run/v1",
-  "eval": "/evals/<name>",
-  "by": "claude",
-  "started": "2026-10-01T09:00:00Z",
-  "versions": {"gix": "0.70.0", "git2": "0.20.0"},
-  "results": [
-    {"case": "cold", "trial": 1, "measures": {"wall_ms": 41.5}, "evidence": ["/evals/<name>/evidence/cold-1.txt"]}
-  ],
-  "measures": {"mean_wall_ms": 41.5}
-}
-```
-
-- `eval`, `by`, `started` and `results` are required. `eval` references the
-  eval, and Board reports `board::ref::dangling` or `board::ref::wrong_type`
-  in `check` when it reaches nothing or something that is not an eval.
-- `versions` maps what was used (a model, a prompt, a library) to its version.
-- Each result names a `case` and has an `outcome` (`pass`, `fail`, `error` or
-  `skipped`), `measures`, or both. A scored case that has no pass or fail
-  gives `measures` alone, so the schema does not force a made-up outcome.
-  `trial` numbers repeated trials of one case, from 1. `evidence` references
-  raw files, such as logs.
-- `measures` on the run holds aggregates. `finished`, `setup` and `summary`
-  are optional prose and time.
-
-The run has no counts of passes and failures. Count the results.
 
 ## Capabilities
 
@@ -99,9 +72,6 @@ dangling or wrong-typed reference, and leaves out one that Board marks
 degraded for any other reason. It also leaves out an eval that a board's own
 looser schema admits but the plugin's model refuses.
 
-To list the runs of an eval, ask `board refs /evals/<name>`: it names every
-record that references the eval.
-
 ## Across repositories
 
 The query reads the `records` view, which includes every mounted board, so
@@ -109,7 +79,7 @@ the capabilities answer across repositories without knowing about mounts. A
 personal board mounts each repository at `/repos/<name>`, and `about` then
 lists `/repos/<name>/evals/<eval>`. `board ls /repos` lists the mounts. A
 mounted board's own schemas govern its records, so a repository that holds
-evals must run `board plugin enable evals` and commit the result; an eval it
+evals must enable `runs` and `evals` and commit the result; an eval it
 cannot validate is not listed. A mount is pinned to a commit, so run
 `board mount update /repos/<name>` to see new commits. The
 personal board can put an eval at `/repos/<name>/evals/...` when the
@@ -121,10 +91,12 @@ The put commits in the repository and moves the pin.
 
     uv sync --frozen --no-dev
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/evals"
+    board plugin enable runs
     board plugin enable evals
 
-`board plugin enable evals` writes the two schemas to `.board/types/evals/`
-and names the plugin in `.board/board.json`.
+`board plugin enable evals` writes the eval schema to `.board/types/evals/`
+and names the plugin in `.board/board.json`. Install the `runs` plugin the
+same way first.
 
 The plugin's types stay at v1 and change in place while it has one user. After
 an update that changes a schema, Board refuses `board call evals.*` with

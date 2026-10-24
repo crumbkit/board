@@ -28,10 +28,11 @@ def trend(request: CallRequest) -> TrendOutput:
 
 
 def measured(run: RunRecord, measure: str, case: str | None) -> MeasureValue | None:
-    """The run's own value of `measure`, or the first result's for `case`; `None` when it gives none."""
+    """The run's own value of `measure`, or the lowest trial's for `case`; `None` when it gives none."""
     if case is None:
         return (run.measures or {}).get(measure)
-    for result in run.results:
-        if result.case == case:
-            return (result.measures or {}).get(measure)
-    return None
+    trials = [result for result in run.results if result.case == case]
+    if not trials:
+        return None
+    first = min(trials, key=lambda result: result.trial or 0)
+    return (first.measures or {}).get(measure)

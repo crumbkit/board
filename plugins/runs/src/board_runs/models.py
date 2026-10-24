@@ -136,7 +136,11 @@ class Host(Record):
 
 
 class Result(Record):
-    """What one case gave in a run: a case that did not pass, with a `note`, or a case's measures."""
+    """What one case gave in a run. A case that did not pass has a `note`.
+
+    `trial` numbers repeated trials of one case, from 1. `evidence` references files in the board that back the
+    result, such as a log an eval kept.
+    """
 
     model_config = ConfigDict(json_schema_extra=shipped(RESULT_RULES))
 
@@ -144,6 +148,8 @@ class Result(Record):
     outcome: Literal["pass", "fail", "error", "skipped"] | SkipJsonSchema[None] = None
     measures: dict[str, MeasureValue] | SkipJsonSchema[None] = None
     note: str | SkipJsonSchema[None] = None
+    trial: Annotated[int, Field(ge=1)] | SkipJsonSchema[None] = None
+    evidence: list[FileRef] | SkipJsonSchema[None] = None
 
     @model_validator(mode="after")
     def _rules(self) -> Self:
@@ -161,11 +167,12 @@ class RunRecord(Record):
 
     `scope` is `full` when the run ran every case and `targeted` when it ran
     some. `dirty` says whether the working tree under test had uncommitted
-    changes. `versions` maps what was used, such as a commit, a model or a
-    library, to its version. `measures` holds the run's own measures, such as
-    `tests` and `failures`. `results` lists the cases that did not pass and
-    the cases that measured something; a passing case without measures is
-    left out.
+    changes; a run that does not say is never counted as clean. `versions`
+    maps what was used, such as a commit, a model or a library, to its
+    version. `setup` says how this run was prepared, and `summary` what it
+    showed. `measures` holds the run's own measures, such as `tests` and
+    `failures`. A test suite's run lists only the cases that did not pass and
+    the cases that measured something; an eval's run may list every case.
     """
 
     model_config = ConfigDict(json_schema_extra=shipped())
@@ -175,12 +182,14 @@ class RunRecord(Record):
     by: str
     started: AwareDatetime
     scope: Literal["full", "targeted"]
-    dirty: bool
     results: list[Result]
+    dirty: bool | SkipJsonSchema[None] = None
     finished: AwareDatetime | SkipJsonSchema[None] = None
     versions: dict[str, str] | SkipJsonSchema[None] = None
     host: Host | SkipJsonSchema[None] = None
     measures: dict[str, MeasureValue] | SkipJsonSchema[None] = None
+    setup: str | SkipJsonSchema[None] = None
+    summary: str | SkipJsonSchema[None] = None
 
 
 class LatestInput(Strict):
@@ -207,9 +216,9 @@ class Latest(Strict):
 class LatestOutput(Strict):
     """The latest qualifying run, or `null` when none qualifies.
 
-    `not_counted` is how many runs of the suite were left out because they were targeted or dirty. `unreadable` is
-    how many were left out because Board marks them degraded for anything but a broken reference, or this plugin
-    cannot read them.
+    `not_counted` is how many runs of the suite were left out because they were targeted, dirty or did not say.
+    `unreadable` is how many were left out because Board marks them degraded for anything but a broken reference,
+    or this plugin cannot read them.
     """
 
     run: Latest | None
@@ -247,8 +256,8 @@ class TrendOutput(Strict):
     """Points, newest first.
 
     `total` counts every point and `truncated` says whether the limit left some out. `without_measure` is how many
-    qualifying runs give no number for the measure. `not_counted` is how many runs were targeted or dirty, and
-    `unreadable` how many Board marks degraded or this plugin cannot read.
+    qualifying runs give no number for the measure. `not_counted` is how many runs were targeted, dirty or did not
+    say, and `unreadable` how many Board marks degraded or this plugin cannot read.
     """
 
     points: list[Point]

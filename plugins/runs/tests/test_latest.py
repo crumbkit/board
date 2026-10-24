@@ -1,6 +1,7 @@
 """The `latest` capability, through the real `board`."""
 
 import datetime
+import json
 import shutil
 from pathlib import Path
 
@@ -54,11 +55,23 @@ def test_a_run_whose_only_unpassed_cases_were_skipped_passes(board: Board) -> No
     assert board.call("latest", {"suite": "/suites/a"})["run"]["outcome"] == "fail"
 
 
-def test_latest_says_no_run_qualifies_when_every_run_is_targeted_or_dirty(board: Board) -> None:
+def test_a_case_that_failed_in_several_trials_is_listed_once(board: Board) -> None:
+    board.write("suites/a.json", suite())
+    results = [{"case": "cold", "trial": trial, "outcome": "fail", "note": "timed out"} for trial in (1, 2)] + [
+        {"case": "warm", "trial": 1, "outcome": "error", "note": "crashed"}
+    ]
+    board.write("suites/a/runs/1.json", run("/suites/a", results=results))
+    assert board.call("latest", {"suite": "/suites/a"})["run"]["failed"] == ["cold", "warm"]
+
+
+def test_latest_says_no_run_qualifies_when_every_run_is_targeted_dirty_or_silent_on_dirt(board: Board) -> None:
     board.write("suites/a.json", suite())
     board.write("suites/a/runs/1.json", run("/suites/a", scope="targeted"))
     board.write("suites/a/runs/2.json", run("/suites/a", dirty=True))
-    assert board.call("latest", {"suite": "/suites/a"}) == {"run": None, "not_counted": 2, "unreadable": 0}
+    silent = json.loads(run("/suites/a", "2026-10-09T09:00:00Z"))
+    del silent["dirty"]
+    board.write("suites/a/runs/4.json", json.dumps(silent))
+    assert board.call("latest", {"suite": "/suites/a"}) == {"run": None, "not_counted": 3, "unreadable": 0}
     board.write("suites/a/runs/3.json", run("/suites/a"))
     assert board.call("latest", {"suite": "/suites/a"})["run"]["path"] == "/suites/a/runs/3"
 
