@@ -486,12 +486,13 @@ checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 [[package]]
 name = "crumbkit"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=db1fa2a50070b63bfdc274484f421627b5b9f028#db1fa2a50070b63bfdc274484f421627b5b9f028"
+source = "git+https://github.com/crumbkit/crumbkit?rev=898aed8ce8e4dec252df56404c47ad2f9cf2fd2f#898aed8ce8e4dec252df56404c47ad2f9cf2fd2f"
 dependencies = [
  "clap",
  "clap_complete",
  "humantime",
  "is-ai-agent",
+ "rustix",
  "schemars",
  "serde",
  "serde_json",
@@ -500,7 +501,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-markdown"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=db1fa2a50070b63bfdc274484f421627b5b9f028#db1fa2a50070b63bfdc274484f421627b5b9f028"
+source = "git+https://github.com/crumbkit/crumbkit?rev=898aed8ce8e4dec252df56404c47ad2f9cf2fd2f#898aed8ce8e4dec252df56404c47ad2f9cf2fd2f"
 dependencies = [
  "crumbkit",
  "serde",
@@ -510,7 +511,7 @@ dependencies = [
 [[package]]
 name = "crumbkit-test"
 version = "0.0.0"
-source = "git+https://github.com/crumbkit/crumbkit?rev=db1fa2a50070b63bfdc274484f421627b5b9f028#db1fa2a50070b63bfdc274484f421627b5b9f028"
+source = "git+https://github.com/crumbkit/crumbkit?rev=898aed8ce8e4dec252df56404c47ad2f9cf2fd2f#898aed8ce8e4dec252df56404c47ad2f9cf2fd2f"
 dependencies = [
  "clap",
  "crumbkit",
@@ -1561,9 +1562,9 @@ dependencies = [
 
 [[package]]
 name = "is-ai-agent"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce5562708736fdf9e8dcc50719e342b0ac0c3d1e365ed76bc0762d5a9e36094a"
+checksum = "2ce34f96fe3c153249008a32aa047b8ccdfadae74615af6eea7ac877c6b3df05"
 
 [[package]]
 name = "is_executable"

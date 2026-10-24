@@ -17,7 +17,9 @@ deny = [
     { crate = "gix", wrappers = ["board-scenario", "board-tree"] },
     { crate = "rusqlite", wrappers = ["board-index"] },
     { crate = "jsonschema", wrappers = ["board-validate"] },
-    { crate = "rustix", wrappers = ["board-plugin", "gix-index", "tempfile"] },
+    # crumbkit reads the terminal width with rustix; Board never asks it to,
+    # because it builds every sink with Sink::new over a buffer.
+    { crate = "rustix", wrappers = ["board-plugin", "crumbkit", "gix-index", "tempfile"] },
     { crate = "signal-hook", wrappers = ["board-plugin"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },
 ]

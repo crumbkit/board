@@ -234,14 +234,20 @@ fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
 fn a_long_listing_outside_a_board_fails_as_not_found_and_inside_one_lists() {
     let scenario = board();
     let outside = elsewhere();
-    let arguments = ["--json", "--long", "plugin", "list"];
+    let arguments = ["--long", "plugin", "list"];
     let lost = board_in(outside.workdir(), &arguments);
-    assert_eq!(lost.code, 1, "{}", text(&lost.stdout));
-    assert!(lost.stderr.is_empty(), "{}", text(&lost.stderr));
-    let error = json(&lost);
-    assert_eq!(error["schema"], "board/failure/v1");
-    assert_eq!(error["code"], "board::config::not_found");
+    assert_eq!(lost.code, 1, "{}", text(&lost.stderr));
+    assert!(lost.stdout.is_empty(), "{}", text(&lost.stdout));
+    assert!(
+        text(&lost.stderr).contains("\n  code:  board::config::not_found\n"),
+        "{}",
+        text(&lost.stderr)
+    );
     let found = board_in(scenario.workdir(), &arguments);
-    assert_eq!(found.code, 0, "{}", text(&found.stdout));
-    assert_eq!(json(&found)["schema"], "board/plugin-list-report/v2");
+    assert_eq!(found.code, 0, "{}", text(&found.stderr));
+    assert!(
+        text(&found.stdout).starts_with("STATUS"),
+        "{}",
+        text(&found.stdout)
+    );
 }

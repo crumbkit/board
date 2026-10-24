@@ -68,10 +68,10 @@ fn plugin_list_prints_its_line_per_plugin_and_long_adds_each_description() {
     assert_eq!(output.code, 1, "{}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "STATUS    CODE                          NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE                                                       SCHEMAS\n\
-         degraded  board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`  -\n\
-         degraded  board::plugin::not_installed  gone    -        true     []       -            -                                                             -\n\
-         ok        -                             tasks   0.1.0    true     [\"due\"]  Open tasks.  -                                                             -\n"
+        "STATUS    CODE                          NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE\n\
+         degraded  board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`\n\
+         degraded  board::plugin::not_installed  gone    -        true     []       -            -\n\
+         ok        -                             tasks   0.1.0    true     [\"due\"]  Open tasks.  -\n"
     );
 }
 
