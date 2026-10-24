@@ -82,8 +82,9 @@ board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 ## Finding plugins
 
 `board plugin list` prints every installed plugin, its capabilities, and
-whether the board enables it. Its columns are `status`, `code`, `name`,
-`version`, `enabled` and `offers`, the capability names. `--long` adds
+whether the board enables it. Its columns are `status`, `name`, `version`,
+`enabled` and `offers`, the capability names. In text, `status` reads `ok` or
+`degraded` and the problem's code; JSON holds that code in `code`. `--long` adds
 `description`, the plugin's description from its manifest, and the problem
 text: `message` for a refused manifest and `schemas` for schema problems. The table leaves out a column that is empty in every shown row. Text prints a line per plugin unless `--long`
 or `--fields` asks for the table. It exits 1 on a broken install

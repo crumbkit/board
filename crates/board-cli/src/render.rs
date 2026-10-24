@@ -2,6 +2,7 @@
 //! for people, or one JSON document whose `schema` is
 //! `board/<command>-report/v2` (docs/architecture.md, Commands).
 
+use std::fmt;
 use std::fmt::Write as _;
 
 use board_model::{Code, Fields, Location, LogicalPath, Refusal};
@@ -93,7 +94,7 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
     let rows = entries.into_iter().enumerate().map(|(at, entry)| {
         let path = named(&entry.path, entry.logical.as_ref(), entry.status);
         let why = entry.detail.as_ref().map(detail_text).unwrap_or_default();
-        let line = format!("{} {path}{why}", status_text(entry.status));
+        let line = format!("{} {path}{why}", Health(entry.status));
         let mut value = json!({
             "source": source_name(&entry.source),
             "path": entry.path,
@@ -346,7 +347,7 @@ pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -
             let shown = logical
                 .as_ref()
                 .map_or_else(|| name.clone(), ToString::to_string);
-            let line = format!("{} {} {shown}", kind.as_str(), status_text(*status));
+            let line = format!("{} {} {shown}", kind.as_str(), Health(*status));
             Whole::lined(value, line)
         }
     });
@@ -474,24 +475,36 @@ fn named(path: &str, logical: Option<&LogicalPath>, status: Status) -> String {
     }
 }
 
-fn status_text(status: Status) -> String {
-    match status {
-        Status::Ok => "ok".to_owned(),
-        Status::Degraded(code) => format!("degraded {code}"),
+/// Whether an entry, a reference's target or a plugin is healthy. Text reads
+/// `ok`, or `degraded` and the code of the problem. JSON reads `ok` or
+/// `degraded`, and the row holds the code in its own `code` field.
+struct Health(Status);
+
+impl fmt::Display for Health {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Status::Ok => f.write_str("ok"),
+            Status::Degraded(code) => write!(f, "degraded {code}"),
+        }
     }
 }
 
+impl crumbkit::Shown for Health {
+    fn json<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self.0 {
+            Status::Ok => "ok",
+            Status::Degraded(_) => "degraded",
+        })
+    }
+}
+
+crumbkit::shown!(Health);
+
+/// Adds a JSON row's `status`, and its `code` when it is degraded.
 fn status_fields(value: &mut Value, status: Status) {
-    if let Some(object) = value.as_object_mut() {
-        match status {
-            Status::Ok => {
-                object.insert("status".to_owned(), json!("ok"));
-            }
-            Status::Degraded(code) => {
-                object.insert("status".to_owned(), json!("degraded"));
-                object.insert("code".to_owned(), json!(code.as_str()));
-            }
-        }
+    value["status"] = json!(Health(status));
+    if let Status::Degraded(code) = status {
+        value["code"] = json!(code.as_str());
     }
 }
 

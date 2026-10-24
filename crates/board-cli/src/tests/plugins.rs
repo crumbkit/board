@@ -68,10 +68,10 @@ fn plugin_list_prints_its_line_per_plugin_and_long_adds_each_description() {
     assert_eq!(output.code, 1, "{}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "STATUS    CODE                          NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE\n\
-         degraded  board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`\n\
-         degraded  board::plugin::not_installed  gone    -        true     []       -            -\n\
-         ok        -                             tasks   0.1.0    true     [\"due\"]  Open tasks.  -\n"
+        "STATUS                                 NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE\n\
+         degraded board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`\n\
+         degraded board::plugin::not_installed  gone    -        true     []       -            -\n\
+         ok                                     tasks   0.1.0    true     [\"due\"]  Open tasks.  -\n"
     );
 }
 
@@ -88,6 +88,13 @@ fn plugin_list_fields_admits_description_and_refuses_an_unknown_field() {
         text(&output.stdout),
         "NAME   DESCRIPTION\ntasks  Open tasks.\n"
     );
+    let output = plugin(
+        &board,
+        &data,
+        &["plugin", "list", "--fields", "status,code"],
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout), "STATUS  CODE\nok      -\n");
     let output = plugin(
         &board,
         &data,
@@ -129,16 +136,13 @@ fn plugin_list_help_names_its_columns() {
     let help = text(&output.stdout);
     assert!(!help.contains("<ENTRY>"), "{help}");
     assert!(
-        help.contains(
-            "<STATUS> [<CODE>] <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]"
-        ),
+        help.contains("<STATUS> <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]"),
         "{help}"
     );
     let output = plugin(&board, &data, &["plugin", "list", "--help"]);
     let help = text(&output.stdout);
     for column in [
         "status",
-        "code",
         "name",
         "version",
         "enabled",
@@ -153,6 +157,8 @@ fn plugin_list_help_names_its_columns() {
         help.contains("`board plugin find --capability <name>` describes each"),
         "{help}"
     );
+    // The row decides its problem itself, because `code` is not a column.
+    assert!(!help.contains("Problems:"), "{help}");
 }
 
 /// A manifest for `name` offering capabilities `one` and `two`.
