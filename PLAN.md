@@ -36,13 +36,23 @@ and their runs, `evals` and `controls` refer to it, `cargo xtask bench
 repositories. [plan/runs.md](plan/runs.md) holds the decisions and the build
 order.
 
+## Then: board-ui and the effect gate
+
+Agents show records through a component catalogue that `board serve` serves,
+and plugins ask Board before they take an effect. The owner answers from the
+command line or a gate window. No answer depends on `board serve`.
+[plan/board-ui.md](plan/board-ui.md) holds the decisions and the build order.
+The `review`, `plans`, `agentic-loop` and `collab` plugins follow, each
+designed when it starts.
+
 ## Out of scope
 
-Each of these waits until a real need has its own plan: authority and external
-effects; triggers and scheduling; review accounting;
-pinned or relative references; remote mounts (a mount names a local clone); any
-query language beyond SQL; daemons and watchers; sync beyond git; Windows CI (the code
-stays portable); a web UI; and the old Board's ControlTree groups, assessments,
+Each of these waits until a real need has its own plan: effects beyond the
+first slice in plan/board-ui.md; triggers and scheduling; review accounting;
+pinned or relative references; remote mounts (a mount names a local clone);
+any query language beyond SQL; daemons and watchers other than `board serve`;
+sync beyond git; Windows CI (the code
+stays portable); and the old Board's ControlTree groups, assessments,
 paged reports and control status.
 
 ## Deferred
@@ -64,20 +74,18 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   a record and what it needs into a mounted board (docs/plugins/share.md).
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
-- **Views.** Every record type gets a view and a form derived from its schema,
-  and plugins declare views as data. The owner's acceptance test is that views
-  can express the UI of an existing tool the owner will name.
-- **Serving.** `board serve` keeps the index warm for an agent loop or a web
-  view, and no answer may depend on it. A `board mcp` adapter serves each
-  capability as an MCP tool.
+- **Views from schemas.** Every record type gets a view and a form derived
+  from its schema. The owner's acceptance test is that views can express the
+  UI of an existing tool the owner will name.
+- **Serving beyond the UI.** `board serve` keeps the index warm for an agent
+  loop, and a `board mcp` adapter serves each capability as an MCP tool.
 - **Adoption.** Board imports records from other systems, such as JIRA,
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
   a spike that imports one existing store into a scratch board.
-- **Settings and the gentle slope.** Plugins ask Board whether to act or
-  propose and how to tell the owner, and settings come in three layers:
-  mandate, the owner's preferences in a personal board, and the board's own.
-  The owner agreed the record shapes on 2026-10-05.
+- **Settings beyond the first slice.** The gentle-slope rules, offers,
+  attention levels, read gating, learning from corrections and the mandate
+  layer.
 - **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
   and docs/architecture.md has split into docs/architecture/. Still open are
   how the review of each docs change runs and a tool check that each leaf is
