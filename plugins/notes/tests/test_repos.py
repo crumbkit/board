@@ -16,7 +16,7 @@ from board_notes.models import RepoRecord
 from board_notes.notes import ATTEMPTS, HEAD_MOVED, INBOX_NAMES, STALE, append, create
 from board_notes.repo import Note, Repo
 
-example-org = "https://github.com/example-org/home.git"
+EXAMPLE_ORG = "https://github.com/example-org/home.git"
 VIITTA = "git@github.com:crumbkit/viitta.git"
 
 
@@ -57,9 +57,9 @@ def test_a_board_without_a_notes_repo_is_refused_and_one_with_its_own_daily_is_i
 
 def test_a_note_goes_to_the_one_repo_covering_the_remote_and_otherwise_to_the_personal_inbox(notes: Notes) -> None:
     work = another(notes, "notes-work")
-    cover(notes, work, ["example-org/*"])
+    cover(notes, work, ["Example-Org/*"])
     cover(notes, notes.clone, ["crumbkit/board"], personal=True)
-    code, routed = notes.call("add", "--text", "Deploy.", "--remote", example-org)
+    code, routed = notes.call("add", "--text", "Deploy.", "--remote", EXAMPLE_ORG)
     assert code == 0, routed
     assert (routed["repo"], routed["candidates"]) == ("/repos/notes-work", None)
     assert routed["path"].startswith("/repos/notes-work/daily/")
@@ -106,7 +106,7 @@ def test_daily_reads_the_note_of_the_repo_covering_the_remote_and_refuses_one_no
     work = another(notes, "notes-work")
     cover(notes, work, ["example-org/*"])
     cover(notes, notes.clone, [], personal=True)
-    code, covered = notes.call("daily", "--remote", example-org)
+    code, covered = notes.call("daily", "--remote", EXAMPLE_ORG)
     assert (code, covered["repo"]) == (0, "/repos/notes-work"), covered
     code, refused = notes.call("daily", "--remote", VIITTA)
     assert (code, refused["code"]) == (1, "notes::repo::ambiguous"), "the personal note is never read by default"
@@ -133,7 +133,7 @@ def test_the_only_repo_covering_something_refuses_a_call_without_a_remote_and_ta
     assert (code, refused["code"]) == (1, "notes::repo::ambiguous"), "no remote may be a missing origin"
     code, refused = notes.call("add", "--text", "Where?")
     assert (code, refused["code"]) == (1, "notes::repo::no_personal"), refused
-    code, daily = notes.call("daily", "--remote", example-org)
+    code, daily = notes.call("daily", "--remote", EXAMPLE_ORG)
     assert (code, daily["repo"]) == (0, "/repos/notes-personal"), daily
 
 
@@ -142,9 +142,9 @@ def test_the_only_repo_without_a_record_serves_a_call_without_a_remote_and_refus
 ) -> None:
     code, daily = notes.call("daily")
     assert (code, daily["repo"]) == (0, "/repos/notes-personal"), daily
-    code, refused = notes.call("daily", "--remote", example-org)
+    code, refused = notes.call("daily", "--remote", EXAMPLE_ORG)
     assert (code, refused["code"]) == (1, "notes::repo::ambiguous"), "a repo without a record covers nothing"
-    code, refused = notes.call("add", "--text", "Where?", "--remote", example-org)
+    code, refused = notes.call("add", "--text", "Where?", "--remote", EXAMPLE_ORG)
     assert (code, refused["code"]) == (1, "notes::repo::no_personal"), refused
 
 
@@ -166,7 +166,7 @@ def test_a_note_is_routed_by_the_origin_of_the_directory_board_runs_in_and_remot
     work = another(notes, "notes-work")
     cover(notes, work, ["example-org/*"])
     cover(notes, notes.clone, [], personal=True)
-    home = checkout(notes, example-org)
+    home = checkout(notes, EXAMPLE_ORG)
     code, routed = notes.call("add", "--text", "From home.", cwd=home)
     assert (code, routed["repo"], routed["candidates"]) == (0, "/repos/notes-work", None), routed
     code, overridden = notes.call("add", "--text", "Elsewhere.", "--remote", VIITTA, cwd=home)
@@ -180,7 +180,7 @@ def test_the_only_notes_repo_takes_a_note_it_covers_and_refuses_one_its_record_e
     code, refused = notes.call("add", "--text", "Not for work.", cwd=checkout(notes, VIITTA))
     assert (code, refused["code"]) == (1, "notes::repo::no_personal")
     assert git(notes.clone, "rev-parse", "HEAD") == head, "nothing was written"
-    code, output = notes.call("add", "--text", "For work.", cwd=checkout(notes, example-org))
+    code, output = notes.call("add", "--text", "For work.", cwd=checkout(notes, EXAMPLE_ORG))
     assert (code, output["repo"], output["candidates"]) == (0, "/repos/notes-personal", None), output
 
 

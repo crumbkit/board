@@ -28,7 +28,7 @@ def test_a_remote_is_shown_as_owner_and_name_on_github_and_elsewhere_without_its
     ("remote", "covered"),
     [
         ("https://github.com/example-org/home.git", True),
-        ("https://github.com/example-org/Home", True),
+        ("https://github.com/Example-Org/Home", True),
         ("git@github.com:example-org/home.git", True),
         ("ssh://git@github.com/example-org/home.git", True),
         ("git@github.com-work:example-org/home.git", True),
