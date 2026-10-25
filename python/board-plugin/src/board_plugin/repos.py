@@ -28,21 +28,46 @@ GITHUB = re.compile(
 )
 # The user and password of a URL, or the user of an scp-style remote, which may hold a token.
 USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)?[^/]*@")
-# Each notes repo's root, and its record's type, status, Board code and body when it has one.
+# Each notes repo's root, the commit its mount pins and the clone Board read it from (`worktree` and the
+# board's own root for `/`), and its record's type, status, Board code and body when it has one.
+COLUMNS = ("n.root", "n.source", "s.repository", "e.type", "e.status", "e.code", "r.body")
 REPOS = f"""
-SELECT DISTINCT n.root, e.type, e.status, e.code, r.body FROM (
+SELECT DISTINCT {", ".join(COLUMNS)} FROM (
   SELECT DISTINCT source, substr(logical, 1, length(logical) - length(path)) AS root FROM entries
   WHERE path GLOB 'daily/*' AND substr(logical, length(logical) - length(path) + 1) = path
 ) AS n
+LEFT JOIN sources AS s ON s.source = n.source
 LEFT JOIN entries AS e ON e.source = n.source AND e.path = {literal(RECORD)}
 LEFT JOIN records AS r ON r.source = n.source AND r.path = {literal(RECORD)}
 ORDER BY n.root
 """  # noqa: S608 - the only values interpolated are this module's constants, quoted by `literal`.
 
 
-def listed(board: Board) -> list[tuple[str, tuple[Any, ...]]]:
-    """Every notes repo the board holds, by root: its root, and its record's type, status, code and body."""
-    return [(root(str(row[0])), tuple(row[1:])) for row in board.rows(REPOS)]
+# A notes repo: its root, the commit its mount pins, the clone that holds it (both None for the board's own
+# tree), and its record's type, status, code and body (all None without one).
+Listed = tuple[str, str | None, str | None, tuple[Any, ...]]
+
+
+def listed(board: Board) -> list[Listed]:
+    """Every notes repo the board holds, by root."""
+    return parsed(board.plugin, board.rows(REPOS))
+
+
+def parsed(plugin: str, rows: list[list[Any]]) -> list[Listed]:
+    """The notes repos in the rows of `REPOS`, by root, for a caller that ran `REPOS` within a query of its own.
+
+    Board's `sources` table names the clone a commit was first read from. Board indexes a commit once, so a
+    second mount of a commit another mount already pins has no entries and is not listed at all.
+    """
+    found: list[Listed] = []
+    for path, source, repository, *row in rows:
+        at = root(str(path))
+        if source != "worktree" and repository is None:
+            why = f"Board names no clone for the mount at {at}; check the mount with `board check {at}`"
+            raise PluginError(f"{plugin}::board::refused", why, {"path": at})
+        mounted = source != "worktree"
+        found.append((at, str(source) if mounted else None, str(repository) if mounted else None, tuple(row)))
+    return sorted(found)
 
 
 def record(plugin: str, at: str, row: tuple[Any, ...]) -> dict[str, Any] | None:
@@ -88,18 +113,6 @@ class Repo:
         return str(self.board.document("mount", "update", self.root)["data"]["new"])
 
 
-def clone(board: Board, root: str) -> str | None:
-    """The clone the mount at `root` reaches; None for the board's own tree."""
-    if root == "/":
-        return None
-    answer = board.refs([root])[0]
-    location: dict[str, Any] = (answer or {}).get("location") or {}
-    if "repository" not in location:
-        why = f"board refs gave no clone for the mount at {root}; check the mount with `board check {root}`"
-        raise PluginError(f"{board.plugin}::board::refused", why, {"path": root})
-    return str(location["repository"])
-
-
 def shown_remote(remote: str) -> str:
     """`remote` as it may be shown and stored: `owner/name` for GitHub, else the URL without its user and password."""
     matched = GITHUB.fullmatch(remote)
@@ -108,9 +121,18 @@ def shown_remote(remote: str) -> str:
 
 def caller_remote() -> str | None:
     """The origin of the git repository Board was started in, from BOARD_CALLER_DIR; None outside one."""
+    return caller_origin()[0]
+
+
+def caller_origin() -> tuple[str | None, str | None]:
+    """The origin of the git repository Board was started in, and why there is none inside a repository.
+
+    Both are None outside a git repository. Inside one whose origin git did not give, the reason names why:
+    no origin is set, git failed or ran past its 10 s deadline.
+    """
     directory = os.environ.get("BOARD_CALLER_DIR")
     if not directory:
-        return None
+        return None, None
     try:
         ran = subprocess.run(  # noqa: S603 - this reads git's config only, and changes nothing
             ["git", "-C", directory, "remote", "get-url", "origin"],  # noqa: S607 - git is found on PATH
@@ -118,10 +140,18 @@ def caller_remote() -> str | None:
             text=True,
             timeout=10,
             check=False,
+            env={**os.environ, "LC_ALL": "C"},  # git's messages in English, which the check below reads
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return ran.stdout.strip() or None if ran.returncode == 0 else None
+    except subprocess.TimeoutExpired:
+        return None, f"git ran past 10 s reading the origin of {directory}"
+    except OSError as error:
+        return None, f"git cannot be run: {error}"
+    if ran.returncode == 0 and ran.stdout.strip():
+        return ran.stdout.strip(), None
+    if "not a git repository" in ran.stderr:
+        return None, None
+    failed = ran.stderr.strip().splitlines()[-1:] or [f"git exited {ran.returncode}"]
+    return None, f"git gave no origin for {directory}: {failed[0]}"
 
 
 def covers(record: dict[str, Any] | None, remote: str | None) -> bool:

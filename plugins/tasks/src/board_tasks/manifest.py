@@ -3,7 +3,18 @@
 from board_plugin.protocol import dumped
 from pydantic import JsonValue
 
-from board_tasks.models import TASK_TYPE, DueInput, DueOutput, NextInput, NextOutput, TaskRecord
+from board_tasks.models import (
+    TASK_TYPE,
+    TASK_V2_TYPE,
+    AvailableInput,
+    AvailableOutput,
+    DueInput,
+    DueOutput,
+    NextInput,
+    NextOutput,
+    TaskRecord,
+    TaskV2,
+)
 
 
 def manifest() -> dict[str, JsonValue]:
@@ -12,12 +23,22 @@ def manifest() -> dict[str, JsonValue]:
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
         "version": "0.1.0",
-        "description": "Tasks, their due dates and what each waits on.",
+        "description": "Tasks, their due dates and what each waits on, and the tasks to sweep now.",
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
-        "extract": [TASK_TYPE],
-        "types": [TASK_TYPE],
+        "extract": [TASK_TYPE, TASK_V2_TYPE],
+        "types": [TASK_TYPE, TASK_V2_TYPE],
         "capabilities": [
+            {
+                "name": "available",
+                "description": (
+                    "Sync the repos the caller's remote chooses, then list their open tasks available now, those due"
+                    " within seven days, and the stale ones."
+                ),
+                "inputSchema": AvailableInput.model_json_schema(),
+                "outputSchema": AvailableOutput.model_json_schema(),
+                "_meta": {},
+            },
             {
                 "name": "due",
                 "description": "Unfinished tasks, open or waiting, due before a date.",
@@ -42,6 +63,11 @@ def manifest() -> dict[str, JsonValue]:
 def schema() -> dict[str, JsonValue]:
     """The schema of `tasks/task/v1`, as the plugin ships it."""
     return TaskRecord.model_json_schema(by_alias=True)
+
+
+def schema_v2() -> dict[str, JsonValue]:
+    """The schema of `tasks/task/v2`, as the plugin ships it."""
+    return TaskV2.model_json_schema(by_alias=True)
 
 
 def text() -> str:

@@ -3,6 +3,247 @@
   "capabilities": [
     {
       "_meta": {},
+      "description": "Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, and the stale ones.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The tasks to sweep now, in the repos the caller's remote chooses.",
+        "properties": {
+          "context": {
+            "description": "Only tasks tagged with this context, such as errands.",
+            "title": "Context",
+            "type": "string"
+          },
+          "remote": {
+            "description": "A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repo": {
+            "description": "One repo's tasks: / for the board's own tree, or a notes repo's mount path such as /repos/notes-personal; the caller's git remote chooses the repos when left out.",
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "title": "AvailableInput",
+        "type": "object"
+      },
+      "name": "available",
+      "outputSchema": {
+        "$defs": {
+          "CrossRepo": {
+            "additionalProperties": false,
+            "description": "An `after` that names a task in another notes repo than its task's own, which is not followed.",
+            "properties": {
+              "after": {
+                "title": "After",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "after"
+            ],
+            "title": "CrossRepo",
+            "type": "object"
+          },
+          "Section": {
+            "additionalProperties": false,
+            "description": "At most 100 tasks of a section, by repo then title, and how many it holds.",
+            "properties": {
+              "tasks": {
+                "items": {
+                  "$ref": "#/$defs/SweptTask"
+                },
+                "title": "Tasks",
+                "type": "array"
+              },
+              "total": {
+                "title": "Total",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "tasks",
+              "total"
+            ],
+            "title": "Section",
+            "type": "object"
+          },
+          "SweptTask": {
+            "additionalProperties": false,
+            "description": "An open task: where it is, why it waits, and how many open tasks wait on it.",
+            "properties": {
+              "blocked_by": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Blocked By",
+                "type": "array"
+              },
+              "contexts": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Contexts",
+                "type": "array"
+              },
+              "defer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Defer"
+              },
+              "due": {
+                "anyOf": [
+                  {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Due"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              },
+              "reviewed": {
+                "anyOf": [
+                  {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Reviewed"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "waiting": {
+                "title": "Waiting",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "repo",
+              "path",
+              "title",
+              "due",
+              "defer",
+              "reviewed",
+              "contexts",
+              "blocked_by",
+              "waiting"
+            ],
+            "title": "SweptTask",
+            "type": "object"
+          },
+          "Unsynced": {
+            "additionalProperties": false,
+            "description": "A repo that did not sync, and the code why; its tasks are as its clone holds them.",
+            "properties": {
+              "code": {
+                "title": "Code",
+                "type": "string"
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo",
+              "code"
+            ],
+            "title": "Unsynced",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The sweep.\n\n`available` holds the open tasks not deferred, not blocked and past their\n`from_hour`. `due_soon` holds every open task due within seven days, or\noverdue. `stale` holds the open tasks not available or deferred that have\nno `reviewed`, or were reviewed over 14 days ago. `repos` are the repos\nread, `degraded` counts their Markdown files under `tasks/` that are not a\nreadable open `tasks/task/v2` task, or hold a date that cannot be read,\nand `unsynced` lists the repos whose sync or pin failed. `cross_repo`\nlists the `after` entries that name another repo's task, which never\nblock. `origin_unread` says why the caller's git repository gave no\norigin, when it did not, so only `/` and the personal repo were read.",
+        "properties": {
+          "available": {
+            "$ref": "#/$defs/Section"
+          },
+          "cross_repo": {
+            "items": {
+              "$ref": "#/$defs/CrossRepo"
+            },
+            "title": "Cross Repo",
+            "type": "array"
+          },
+          "degraded": {
+            "title": "Degraded",
+            "type": "integer"
+          },
+          "due_soon": {
+            "$ref": "#/$defs/Section"
+          },
+          "origin_unread": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Unread"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "stale": {
+            "$ref": "#/$defs/Section"
+          },
+          "unsynced": {
+            "items": {
+              "$ref": "#/$defs/Unsynced"
+            },
+            "title": "Unsynced",
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "due_soon",
+          "stale",
+          "repos",
+          "degraded",
+          "unsynced",
+          "cross_repo",
+          "origin_unread"
+        ],
+        "title": "AvailableOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
       "description": "Unfinished tasks, open or waiting, due before a date.",
       "inputSchema": {
         "additionalProperties": false,
@@ -184,9 +425,10 @@
       }
     }
   ],
-  "description": "Tasks, their due dates and what each waits on.",
+  "description": "Tasks, their due dates and what each waits on, and the tasks to sweep now.",
   "extract": [
-    "tasks/task/v1"
+    "tasks/task/v1",
+    "tasks/task/v2"
   ],
   "metadata": {
     "area": "planning"
@@ -202,7 +444,8 @@
     "board_tasks"
   ],
   "types": [
-    "tasks/task/v1"
+    "tasks/task/v1",
+    "tasks/task/v2"
   ],
   "version": "0.1.0"
 }

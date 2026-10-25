@@ -43,21 +43,25 @@ class Board:
     # The most paths one run is asked; more are split over several runs.
     paths_per_run: int = PATHS_PER_RUN
 
-    def document(self, *arguments: str, partial: str | None = None, stdin: bytes = b"") -> dict[str, Any]:
+    def document(
+        self, *arguments: str, partial: str | None = None, stdin: bytes = b"", timeout: float | None = None
+    ) -> dict[str, Any]:
         """The one JSON document `board --json <arguments>` prints, given `stdin`, as a put reads its input.
 
         Board's own error is `<plugin>::board::refused`, with Board's code and
         hint. Anything else that is not a document is `<plugin>::board::failed`.
         A document whose `schema` is `partial` is the answer even when Board
         exits 1, as `refs` does when a path it was asked for is refused.
+        A run still going after `timeout` seconds is left to finish on its
+        own, and is `<plugin>::board::timed_out`.
         """
-        return self._read(*arguments, partial=partial, stdin=stdin)[0]
+        return self._read(*arguments, partial=partial, stdin=stdin, timeout=timeout)[0]
 
     def _read(
-        self, *arguments: str, partial: str | None = None, stdin: bytes = b""
+        self, *arguments: str, partial: str | None = None, stdin: bytes = b"", timeout: float | None = None
     ) -> tuple[dict[str, Any], subprocess.CompletedProcess[bytes]]:
         """The document `document` reads, and the run that printed it."""
-        ran = self._run("--json", *arguments, stdin=stdin)
+        ran = self._run("--json", *arguments, stdin=stdin, timeout=timeout)
         try:
             parsed: object = json.loads(ran.stdout)
         except ValueError:
@@ -206,17 +210,35 @@ class Board:
             raise self._failed(("get",), ran, f"left every path unread as {OVER_BUDGET}")
         return read
 
-    def _run(self, *arguments: str, stdin: bytes = b"") -> subprocess.CompletedProcess[bytes]:
+    def _run(
+        self, *arguments: str, stdin: bytes = b"", timeout: float | None = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Run `board <arguments>`, given `stdin`.
+
+        A run still going after `timeout` seconds is left to finish in a session of its own, and is not
+        stopped: stopping Board mid-write would leave its lock behind, and every later write would be refused.
+        """
+        command = ["board", *arguments]
         try:
-            return subprocess.run(  # noqa: S603 - the program is Board itself, found on PATH
-                ["board", *arguments],  # noqa: S607
+            child = subprocess.Popen(  # noqa: S603 - the program is Board itself, found on PATH
+                command,
                 cwd=self.root,
-                input=stdin,
-                capture_output=True,
-                check=False,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=timeout is not None,
             )
         except OSError as error:
             raise PluginError(f"{self.plugin}::board::failed", f"board cannot be run: {error}") from error
+        try:
+            stdout, stderr = child.communicate(stdin, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            why = (
+                f"`board {' '.join(arguments)}` ran past {timeout:g} s and was left to finish on its own; "
+                "call again, or check its remote"
+            )
+            raise PluginError(f"{self.plugin}::board::timed_out", why, {"seconds": timeout}) from None
+        return subprocess.CompletedProcess(command, child.returncode, stdout, stderr)
 
     def _failed(
         self, arguments: tuple[str, ...], ran: subprocess.CompletedProcess[bytes] | None, why: str

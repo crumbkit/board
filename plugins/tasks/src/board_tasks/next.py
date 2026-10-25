@@ -6,15 +6,7 @@ from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
 from pydantic import ValidationError
 
-from board_tasks.models import TASK_TYPE, UNFINISHED, NextInput, NextOutput, NextTask, TaskRecord
-
-# Codes that depend on the tree rather than the record. A task holding one,
-# such as an `after` that names no task yet, is still a task to list, and,
-# when it is done, still done.
-TREE_CODES = ("board::ref::dangling", "board::ref::wrong_type")
-
-# What `board refs` reads from each task a task's `after` reaches, to tell whether it is done.
-FIELDS = ("/status", "/$type")
+from board_tasks.models import FIELDS, TASK_TYPE, TREE_CODES, UNFINISHED, NextInput, NextOutput, NextTask, TaskRecord
 
 
 def listed(values: tuple[str, ...]) -> str:

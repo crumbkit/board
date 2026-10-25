@@ -123,7 +123,12 @@ fn every_help_example_runs_on_a_fixture_board_and_prints_its_golden_output() {
     );
     let plugin = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/tasks");
     let plugins = Scenario::new();
-    for file in ["plugin.json", "types/tasks/task/v1.schema.json"] {
+    let files = [
+        "plugin.json",
+        "types/tasks/task/v1.schema.json",
+        "types/tasks/task/v2.schema.json",
+    ];
+    for file in files {
         let text = std::fs::read_to_string(format!("{plugin}/{file}")).unwrap();
         plugins.write(
             &format!("xdg/data/board/plugins/tasks/{file}"),

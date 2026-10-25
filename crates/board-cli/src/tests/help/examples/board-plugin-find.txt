@@ -1,2 +1,3 @@
+tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, and the stale ones.
 tasks.due disabled Unfinished tasks, open or waiting, due before a date.
 tasks.next disabled Unfinished tasks by due date then path, each blocked while a task it waits on is not done.

@@ -69,7 +69,8 @@ class Choice:
 def choose(board: Board, name: str | None, remote: str | None, *, inbox: bool) -> Choice:
     """The notes repo at `name`; else the one the remote routes to; else the personal one's (README.md, Routing)."""
     found = repos.listed(board)
-    roots = [at for at, _ in found]
+    roots = [at for at, *_ in found]
+    at_root = {at: Repo(board, at, clone) for at, _, clone, _ in found}
     name = None if name is None else repos.root(name)
     if not roots or (name is not None and name not in roots):
         listed = ", ".join(roots) or "none"
@@ -79,17 +80,17 @@ def choose(board: Board, name: str | None, remote: str | None, *, inbox: bool) -
         )
         raise PluginError("notes::repo::not_found", why, {"repos": roots})
     if name is not None:
-        return Choice(_repo(board, name), None)
-    records = {at: repos.record(board.plugin, at, row) for at, row in found}
+        return Choice(at_root[name], None)
+    records = {at: repos.record(board.plugin, at, row) for at, _, _, row in found}
     matched = [root for root, record in records.items() if repos.covers(record, remote)]
     personal = [root for root, record in records.items() if record and record.get("personal") is True]
     if len(matched) == 1:
-        return Choice(_repo(board, matched[0]), None)
+        return Choice(at_root[matched[0]], None)
     # No remote may mean a missing origin or a git that timed out, so a repo that covers something waits for one.
     if len(roots) == 1 and (personal or (remote is None and records[roots[0]] is None)):
-        return Choice(_repo(board, roots[0]), None)
+        return Choice(at_root[roots[0]], None)
     if not inbox and remote is None and len(personal) == 1:
-        return Choice(_repo(board, personal[0]), None)
+        return Choice(at_root[personal[0]], None)
     shown = "no git remote" if remote is None else shown_remote(remote)
     if not inbox:
         why = (
@@ -104,9 +105,4 @@ def choose(board: Board, name: str | None, remote: str | None, *, inbox: bool) -
             "exactly one, add the remote to one repo's covers, or name one with --repo"
         )
         raise PluginError("notes::repo::no_personal", why, {"repos": roots, "personal": personal})
-    return Choice(_repo(board, personal[0]), matched)
-
-
-def _repo(board: Board, root: str) -> Repo:
-    """The notes repo at `root`, with the clone a mount there reaches."""
-    return Repo(board, root, repos.clone(board, root))
+    return Choice(at_root[personal[0]], matched)

@@ -19,7 +19,7 @@ DEMO = Board("/b", "demo")
 def printing(monkeypatch: pytest.MonkeyPatch, stdout: bytes, code: int = 0, stderr: bytes = b"logs") -> None:
     """Make every `board` the library runs print `stdout` and `stderr` and exit with `code`."""
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(["board", *arguments], code, stdout, stderr)
 
     monkeypatch.setattr(Board, "_run", run)
@@ -83,7 +83,7 @@ def test_a_failed_board_without_an_error_document_is_a_failure(monkeypatch: pyte
 def test_rows_asks_board_for_every_row_and_query_for_at_most_its_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     asked: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         asked.append(arguments)
         return subprocess.CompletedProcess(["board", *arguments], 0, report([[1]], truncated=False), b"")
 
@@ -207,7 +207,7 @@ def test_refs_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it
     answer = {"location": {"display": "/-a"}}
     report = batch("refs", ["-a"], [answer])
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
 
@@ -222,7 +222,7 @@ def answering_each_path(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]
     """Make `board refs` answer each path after `--` with its display path, and return the runs it records."""
     runs: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
         report = batch("refs", asked, [{"location": {"display": path}} for path in asked])
@@ -257,7 +257,7 @@ def answering_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple
     """Make `board refs` answer each path until `budget` paths, then over budget, and return each run's arguments."""
     runs: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         asked = arguments[arguments.index("--") + 1 :]
         over = {"code": board.OVER_BUDGET}
@@ -326,7 +326,7 @@ def test_get_of_no_paths_starts_no_run_and_of_one_path_starts_one_that_reads_it_
     runs: list[tuple[str, ...]] = []
     report = batch("get", ["-a"], [{"text": "x"}])
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         runs.append(arguments)
         return subprocess.CompletedProcess(["board", *arguments], 0, report, b"")
 
@@ -344,7 +344,7 @@ def getting_within(monkeypatch: pytest.MonkeyPatch, budget: int) -> list[tuple[s
     """
     runs: list[tuple[str, ...]] = []
 
-    def run(_self: Board, *arguments: str, **_: bytes) -> subprocess.CompletedProcess[bytes]:
+    def run(_self: Board, *arguments: str, **_: object) -> subprocess.CompletedProcess[bytes]:
         asked = arguments[arguments.index("--") + 1 :]
         runs.append(asked)
         over = {"code": board.OVER_BUDGET}
@@ -400,6 +400,21 @@ def test_get_of_one_str_is_refused_and_of_a_list_holding_it_is_read(monkeypatch:
         DEMO.get("/ab")
     assert runs == []
     assert DEMO.get(["/ab"]) == [b"/ab"]
+
+
+def test_a_run_past_its_timeout_is_given_up_on_with_its_code_and_one_within_it_is_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = tmp_path / "board"
+    fake.write_text('#!/bin/sh\n[ "$2" = slow ] && sleep 2\necho \'{"data": 1}\'\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(tmp_path), os.environ.get("PATH", "")]))
+    demo = Board(str(tmp_path), "demo")
+    with pytest.raises(PluginError) as stopped:
+        demo.document("slow", timeout=0.2)
+    assert stopped.value.code == "demo::board::timed_out"
+    assert stopped.value.fields == {"seconds": 0.2}
+    assert demo.document("fast", timeout=5) == {"data": 1}
 
 
 def test_a_literal_doubles_its_quotes() -> None:

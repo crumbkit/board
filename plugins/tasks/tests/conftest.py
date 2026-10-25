@@ -14,6 +14,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REPOSITORY = PLUGIN.parents[1]
 SCHEMA = PLUGIN / "types" / "tasks" / "task" / "v1.schema.json"
+SCHEMA_V2 = PLUGIN / "types" / "tasks" / "task" / "v2.schema.json"
 
 
 def board_binary() -> Path:
@@ -28,6 +29,7 @@ class Board:
     root: Path
     data: Path
     cache: Path
+    config: Path
 
     def write(self, path: str, text: str) -> None:
         """Write a fixture file at `path`, relative to the board's root. Every test writes through here."""
@@ -40,8 +42,10 @@ class Board:
         config = {"$type": "board/config/v1", "commit_on_put": False, "plugins": list(plugins)}
         self.write(".board/board.json", json.dumps(config))
 
-    def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
-        """Run `board` in the board's root, with only the variables a user's shell would pass it."""
+    def run(
+        self, *arguments: str, stdin: str = "", cwd: Path | None = None, tz: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run `board` in the board's root, or with `-C` from `cwd`, with only the variables a user's shell passes."""
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
         path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
@@ -50,10 +54,12 @@ class Board:
             "HOME": os.environ.get("HOME", str(self.root)),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CACHE_HOME": str(self.cache),
-        }
+            "XDG_CONFIG_HOME": str(self.config),
+        } | ({"TZ": tz} if tz else {})
+        flags = [] if cwd is None else ["-C", str(self.root)]
         return subprocess.run(
-            [str(board_binary()), *arguments],
-            cwd=self.root,
+            [str(board_binary()), *flags, *arguments],
+            cwd=cwd or self.root,
             env=environment,
             input=stdin,
             capture_output=True,
@@ -71,7 +77,9 @@ class Board:
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
     """A board enabling digest and tasks, which `board plugin enable` gave the task schema."""
-    fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
+    fixture = Board(
+        root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache", config=tmp_path / "config"
+    )
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.enable("digest")
@@ -90,3 +98,10 @@ def task(title: str, status: str = "open", due: str | None = None, **fields: Any
     if due is not None:
         record["due"] = due
     return json.dumps(record)
+
+
+def task_v2(title: str, status: str = "open", body: str = "", **fields: Any) -> str:  # noqa: ANN401 - the frontmatter's other fields
+    """A `tasks/task/v2` Markdown task. Each value is written as JSON, which is YAML."""
+    values: dict[str, Any] = {"$type": "tasks/task/v2", "title": title, "status": status, **fields}
+    lines = [f"{key}: {json.dumps(value)}" for key, value in values.items()]
+    return "---\n" + "\n".join(lines) + "\n---\n" + body
