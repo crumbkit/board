@@ -6,6 +6,9 @@ import { PENDING_SQL } from './query'
 
 type Report = Record<string, unknown>
 
+/** What one read of the pending effects found. */
+export type Listed = Pick<Pending, 'effects' | 'truncated'>
+
 function parseJson(text: string): Report | null {
   try {
     const value: unknown = JSON.parse(text)
@@ -27,16 +30,23 @@ export const failure = (exitCode: number, stdout: string, stderr: string) =>
 
 const ID = /^[0-9a-f]{64}$/
 
-/** The query for every pending effect, or for the one with `id`; an id that is not 64 hex digits matches none. */
+// The query's filter on every pending effect, which the one-effect query
+// narrows to a single path.
+const EVERY = "logical LIKE '/effects/pending/%'"
+
+/**
+ * The query for every pending effect, or for the one with `id`, which reads
+ * that effect's record alone. An id that is not 64 hex digits matches none.
+ */
 export const pendingSql = (id?: string) =>
-  id === undefined ? PENDING_SQL : `SELECT * FROM (${PENDING_SQL}) WHERE id = '${ID.test(id) ? id : ''}'`
+  id === undefined ? PENDING_SQL : PENDING_SQL.replace(EVERY, `logical = '/effects/pending/${ID.test(id) ? id : ''}'`)
 
 /** Writes `home` at the start of `path` as `~`. */
 const tilde = (path: string, home: string | undefined) =>
   home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path
 
 /** Reads `board --json query pendingSql()`; null when it printed no query report. A row whose id is not 64 hex digits is left out. */
-export function parsePending(stdout: string, home?: string): Omit<Pending, 'failed'> | null {
+export function parsePending(stdout: string, home?: string): Listed | null {
   const report = parseJson(stdout)
   const columns = (report?.summary as { columns?: string[] } | undefined)?.columns
   if (report?.schema !== 'board/query-report/v2' || !Array.isArray(report.data) || columns === undefined) return null
@@ -76,12 +86,21 @@ export function outputText(result: unknown): string {
   return [stdout, stderr].filter(s => typeof s === 'string').join('\n')
 }
 
+// The characters Board's `shown()` escapes (crates/board-tree/src/symlink.rs):
+// controls, Unicode format characters, line and paragraph separators, and
+// backslash.
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\\]/gu
+
 /**
- * Text with each C0 and C1 control character but line feed and tab written as
- * `\xNN`. Claude Code refuses a whole drawing that holds one.
+ * Text with each character of `HIDDEN` but line feed and tab escaped, as
+ * `\\` or `\u{202e}`. A control character makes Claude Code refuse the whole
+ * drawing, and a format character such as a bidi override or a zero-width
+ * space could make a plugin's path read as another on the consent line.
  */
 export const visible = (text: string) =>
-  text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, c => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()}`)
+  text.replace(HIDDEN, c =>
+    c === '\n' || c === '\t' ? c : c === '\\' ? '\\\\' : `\\u{${(c.codePointAt(0) as number).toString(16)}}`,
+  )
 
 /** The band's line. */
 export const waitingLine = (n: number) => (n === 1 ? '1 effect waits for your answer' : `${n} effects wait for your answer`)
@@ -103,7 +122,9 @@ export function preview(e: Effect, lines = 8, chars = 600): string {
   const parts: string[] = []
   if (e.head !== null) {
     let shown = e.head.split('\n').slice(0, lines).join('\n')
-    if (shown.length > chars) shown = shown.slice(0, chars)
+    // By code point, so a surrogate pair is never split.
+    const points = [...shown]
+    if (points.length > chars) shown = points.slice(0, chars).join('')
     shown = shown.replace(/\n$/, '')
     const whole = new TextEncoder().encode(e.head).length === e.bytes && shown === e.head.replace(/\n$/, '')
     parts.push(e.replaces ? 'It replaces the file there with:' : 'It writes a new file:', visible(shown))
@@ -124,8 +145,11 @@ export function preview(e: Effect, lines = 8, chars = 600): string {
 /** The dialog's question when a put is asked. */
 export const question = (e: Effect) => `${headline(e)}. ${preview(e, 4, 300)}\nApprove it?`
 
-/** What the agent that ran the put reads once the owner answered. */
-export function told(e: Effect, answer: 'approve' | 'refuse'): string {
+/** What the agent that ran the put reads once the owner answered, or chose Later. */
+export function told(e: Effect, answer: 'approve' | 'refuse' | 'later'): string {
+  if (answer === 'later') {
+    return `The owner has not answered pending effect ${e.id} yet: ${headline(e)}. Do not retry the put; it stays asked until the owner answers.`
+  }
   return answer === 'approve'
     ? `The owner approved pending effect ${e.id}: ${headline(e)}. Run the same put again; it now writes.`
     : `The owner refused pending effect ${e.id}: ${headline(e)}. The same put is now refused with board::settings::refused, so do not retry it.`

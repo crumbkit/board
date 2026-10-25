@@ -16,12 +16,15 @@ its own.
   crates/board-cli/src/tests/effects_mod.rs runs it against a real board. It
   returns only the fields the mod shows, the first 2,000 characters of the
   record or text a put would write, and that content's size in bytes and
-  lines, so no row carries a whole body. The mod reads the list when the
-  session starts, every 60 seconds, and after each answer.
+  lines, so no row carries a whole body. The mod reads the list when a
+  session starts and after each answer. It also reads it every 60 seconds
+  from the first time the band is drawn, which a `claude -p` run never does.
 - When any are pending, the band above the prompt says how many, such as
   `2 effects wait for your answer`, with a Show button. When a read fails,
   the band keeps the last count it read, and the failure goes to the debug
-  log.
+  log. When no read has worked, the band says
+  `Board: could not read pending effects`, unless the failure is
+  `board::config::not_found`, which means there is no personal board.
 - The pane lists up to 100 effects. Each shows the plugin, the op, the path,
   the board's full root with the home directory written as `~`, and the first
   lines of what a put would write. It says when the put replaces a file. When
@@ -33,23 +36,35 @@ its own.
   `board answer <id> refuse` or `board answer <id> approve`. When a read
   fails, the pane says why in place of "No effect waits for your answer", and
   says when the list it shows is from the last read that worked.
-- Each control character other than line feed and tab in what the mod shows
-  is written as `\xNN`, because Claude Code refuses to draw a screen that
-  holds one.
+- What the mod shows escapes the characters Board's own messages escape:
+  control characters other than line feed and tab, Unicode format characters
+  such as bidi overrides and zero-width spaces, line and paragraph
+  separators, and backslash. A control character makes Claude Code refuse to
+  draw the screen, and a format character could make one path read as
+  another.
+- Before it runs `board answer`, the mod reads that one effect again. If it
+  is no longer pending, because it was answered elsewhere, a toast says no
+  answer was sent. `board answer` overwrites an earlier answer, so without
+  this check a stale row or dialog could replace a refusal with an approval.
+  A second press while an answer runs runs nothing.
 - `board answer` has 30 seconds to finish. When Board reports a failure, a
-  toast says that no answer was recorded, and the effect stays listed. When
-  the run times out or is killed, a toast says that whether the answer was
-  recorded is unknown, and the mod reads the list again.
+  toast says that Board recorded no answer and gives Board's reason. When the
+  run times out or is killed, a toast says that whether the answer was
+  recorded is unknown. Either way the mod reads the list again.
 - After a Bash call whose output holds `board::settings::asked`, the mod
   reads each effect id the output names from the personal board and asks the
   owner in a dialog with Later, Refuse and Approve, in that order, so a stray
-  Enter answers nothing. It asks about each id once per session, so parallel
-  calls that name one id open one dialog. The dialog shows the effect as
+  Enter answers nothing. It asks about each id once while the mod is loaded,
+  and parallel calls that name one id open one dialog. When the read of the
+  effect fails, the failure goes to the debug log and the id is asked about
+  the next time output names it. The dialog shows the effect as
   Board recorded it, so output that names an effect Board does not hold
   pending opens no dialog. Approve or Refuse runs `board answer`, and the
   agent that ran the call then reads a line it alone sees: after an approval,
   that it may run the same put again; after a refusal, that the put is now
-  refused. Later, or a dismissed dialog, answers nothing.
+  refused. Later answers nothing, and the agent reads that the owner has not
+  answered yet, so it should not retry the put. A dismissed dialog answers
+  nothing.
 
 The mod passes each id to `board` as its own argument, and an id is 64
 lowercase hex digits before it reaches the query. Once `board answer` removes

@@ -2,6 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Effect, Pending } from '../types'
+import type { Listed } from './effects'
 import { askedIds, boardFailure, failure, headline, outputText, parsePending, pendingSql, preview, question, told, visible, waitingLine } from './effects'
 
 // The mod lists the owner's pending effects from the personal board and
@@ -24,14 +25,26 @@ const ANSWER_MS = 30_000
 const REFRESH_MS = 60_000
 // The pane lists this many effects; past it the band says "or more".
 const LISTED = 100
+// The failure when there is no personal board, which the band does not report.
+const NO_BOARD = 'board::config::not_found'
 
 type Answer = 'approve' | 'refuse'
+
+/** What the module keeps between calls while it is loaded. */
+type Local = {
+  /** The ids a dialog has asked about, so each is asked once. */
+  asked: Set<string>
+  /** The ids whose dialog is being prepared or is open, so parallel calls open one. */
+  opening: Set<string>
+  /** The ids whose answer is running, so a second press runs nothing. */
+  answering: Set<string>
+}
 
 const board = ($: EngineInterface, args: string[], timeoutMs = READ_MS) =>
   $.process.run(['/bin/sh', '-c', RUN, 'board', '--json', ...args], { timeoutMs })
 
 /** Reads the pending effects, or the one with `id`; a string says why the read failed. */
-async function query($: EngineInterface, id?: string): Promise<Omit<Pending, 'failed'> | string> {
+async function query($: EngineInterface, id?: string): Promise<Listed | string> {
   try {
     const ran = await board($, ['--personal', 'query', pendingSql(id), '--limit', String(LISTED)])
     if (ran.isStdoutTruncated) return 'board printed more than the 4 MiB a process run keeps'
@@ -48,67 +61,104 @@ async function refresh($: EngineInterface) {
   if (typeof found === 'string') $.ui.log(`board: pending effects could not be read: ${found}`, { to: 'debug' })
   await update($, pending, last =>
     typeof found === 'string'
-      ? { effects: last?.effects ?? [], truncated: last?.truncated ?? false, failed: found }
-      : { ...found, failed: null },
+      ? { effects: last?.effects ?? [], truncated: last?.truncated ?? false, failed: found, worked: last?.worked ?? false }
+      : { ...found, failed: null, worked: true },
   )
 }
 
-/** Runs `board answer`; true when Board recorded it, else the owner is told what is known. */
-async function answer($: EngineInterface, e: Effect, said: Answer): Promise<boolean> {
+/**
+ * Runs `board answer`; true when Board recorded it, else the owner is told
+ * what is known. A second press while it runs runs nothing. The list is read
+ * again afterwards, whatever the outcome.
+ */
+async function answer($: EngineInterface, local: Local, e: Effect, said: Answer): Promise<boolean> {
+  if (local.answering.has(e.id)) return false
+  local.answering.add(e.id)
+  try {
+    return await answerOnce($, e, said)
+  } finally {
+    local.answering.delete(e.id)
+    await refresh($)
+  }
+}
+
+/**
+ * Reads the effect again and answers it if it is still pending. `board
+ * answer` overwrites a seen record, so a stale row or dialog could otherwise
+ * turn an answer given elsewhere into this one.
+ */
+async function answerOnce($: EngineInterface, e: Effect, said: Answer): Promise<boolean> {
+  const now = await query($, e.id)
+  if (typeof now === 'string') {
+    $.ui.toast(`No answer was sent, because the effect could not be read again: ${visible(now)}`)
+    return false
+  }
+  if (now.effects.length === 0) {
+    $.ui.toast(`No answer was sent, because the effect is no longer pending: ${headline(e)}`)
+    return false
+  }
   const ran = await board($, ['answer', e.id, said], ANSWER_MS).catch(() => null)
   if (ran?.exitCode === 0) {
-    await update($, pending, found => found && { ...found, effects: found.effects.filter(o => o.id !== e.id) })
     $.ui.toast(said === 'approve' ? `Approved: ${headline(e)}` : `Refused: ${headline(e)}`)
     return true
   }
   // Only Board's own failure report says nothing was written. A run that
-  // timed out or was killed may have committed, so the list is read again.
+  // timed out or was killed may have committed.
   const refused = ran === null ? null : boardFailure(ran.stdout)
-  if (refused !== null) {
-    $.ui.toast(`No answer was recorded: ${visible(refused)}`)
-  } else {
-    $.ui.toast('Whether your answer was recorded is unknown, because board answer did not finish. The list is read again.')
-    await refresh($)
-  }
+  $.ui.toast(
+    refused !== null
+      ? `Board recorded no answer: ${visible(refused)}`
+      : 'Whether your answer was recorded is unknown, because board answer did not finish. The list is read again.',
+  )
   return false
 }
 
 /**
  * Asks the owner about each effect the output names that Board still holds
- * pending and `asked` does not hold, and returns what the agent should read
- * about each answer. The dialog shows the effect as Board recorded it, never
- * the output's words.
+ * pending and no dialog has asked about, and returns what the agent should
+ * read about each. The dialog shows the effect as Board recorded it, never
+ * the output's words. A read that fails leaves the id to be asked next time.
  */
-async function askOwner($: EngineInterface, output: string, asked: Set<string>): Promise<string[]> {
+async function askOwner($: EngineInterface, local: Local, output: string): Promise<string[]> {
   const notes: string[] = []
   for (const id of askedIds(output)) {
-    if (asked.has(id)) continue
-    asked.add(id)
-    const found = await query($, id)
-    const effect = typeof found === 'string' ? undefined : found.effects[0]
-    if (effect === undefined) continue
-    let chosen: string
+    if (local.asked.has(id) || local.opening.has(id)) continue
+    local.opening.add(id)
     try {
-      // Later comes first, so a stray Enter answers nothing.
-      chosen = await $.ui.ask(question(effect), { header: 'Board', options: ['Later', 'Refuse', 'Approve'] })
-    } catch {
-      continue // dismissed, or no one to ask: the effect stays pending
+      const found = await query($, id)
+      if (typeof found === 'string') {
+        $.ui.log(`board: pending effect ${id} could not be read: ${found}`, { to: 'debug' })
+        continue
+      }
+      const effect = found.effects[0]
+      if (effect === undefined) continue
+      local.asked.add(id)
+      let chosen: string
+      try {
+        // Later comes first, so a stray Enter answers nothing.
+        chosen = await $.ui.ask(question(effect), { header: 'Board', options: ['Later', 'Refuse', 'Approve'] })
+      } catch {
+        continue // dismissed, or no one to ask: the effect stays pending
+      }
+      if (chosen === 'Later') notes.push(told(effect, 'later'))
+      const said = chosen === 'Approve' ? 'approve' : chosen === 'Refuse' ? 'refuse' : null
+      if (said !== null && (await answer($, local, effect, said))) notes.push(told(effect, said))
+    } finally {
+      local.opening.delete(id)
     }
-    const said = chosen === 'Approve' ? 'approve' : chosen === 'Refuse' ? 'refuse' : null
-    if (said !== null && (await answer($, effect, said))) notes.push(told(effect, said))
   }
   return notes
 }
 
 export const register: Register = on => {
-  // The ids the dialog asked about, so each is asked once while the module
-  // is loaded, and parallel Bash calls that name one id open one dialog.
-  const asked = new Set<string>()
+  const local: Local = { asked: new Set(), opening: new Set(), answering: new Set() }
+  // The minute's refresh starts with the first band drawn, which a `-p` run
+  // never draws, and it starts once however many sessions start.
+  let polling = false
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await refresh($)
-    $.clock.every(REFRESH_MS, () => void refresh($))
     return started
   })
 
@@ -118,9 +168,8 @@ export const register: Register = on => {
     const ran = await next(e)
     if (ran.deny !== undefined) return ran
     try {
-      const notes = await askOwner($, outputText(ran.result), asked)
+      const notes = await askOwner($, local, outputText(ran.result))
       if (notes.length === 0) return ran
-      await refresh($)
       return { ...ran, context: [...(ran.context ?? []), ...notes] }
     } catch (error) {
       $.ui.log(`board: the asked effect was not shown: ${String(error)}`, { to: 'debug' })
@@ -130,10 +179,19 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (!polling) {
+      polling = true
+      $.clock.every(REFRESH_MS, () => void refresh($))
+    }
     const found = await read($, pending)
-    if (e.props.hasSurvey || found === null || found.effects.length === 0) return below
+    if (e.props.hasSurvey || found === null) return below
+    // When no read has worked, the band says so, unless there is no personal board.
+    const unread = !found.worked && found.failed !== null && !found.failed.startsWith(NO_BOARD)
+    if (found.effects.length === 0 && !unread) return below
     const { Box, Button, Text } = $.ui.resolve(e)
-    const line = waitingLine(found.effects.length) + (found.truncated ? ' (or more)' : '')
+    const line = unread
+      ? 'Board: could not read pending effects'
+      : waitingLine(found.effects.length) + (found.truncated ? ' (or more)' : '')
     return (
       <Box flexDirection="column">
         {below.type === 'engine' ? null : below}
@@ -161,8 +219,8 @@ export const register: Register = on => {
             <Text>{headline(effect)}</Text>
             <Text dimColor>{preview(effect)}</Text>
             <Box>
-              <Button key={`${effect.id}#refuse`} label="Refuse" onPress={() => answer($, effect, 'refuse')} />
-              <Button key={`${effect.id}#approve`} label="Approve" onPress={() => answer($, effect, 'approve')} />
+              <Button key={`${effect.id}#refuse`} label="Refuse" onPress={() => answer($, local, effect, 'refuse')} />
+              <Button key={`${effect.id}#approve`} label="Approve" onPress={() => answer($, local, effect, 'approve')} />
             </Box>
           </Box>
         ))}

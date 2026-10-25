@@ -25,7 +25,7 @@ fn effect(path: &str, content: &Value) -> String {
 #[test]
 fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_start_of_its_content()
 {
-    let [a, b, c, d] = ["a", "b", "c", "d"].map(|digit| digit.repeat(64));
+    let [a, b, c, d, empty] = ["a", "b", "c", "d", "e"].map(|digit| digit.repeat(64));
     let scenario = board();
     let long = "x".repeat(2500);
     let seen = json!({"$type": "board/seen/v1", "effect": format!("/effects/pending/{c}"), "answer": "approve"});
@@ -60,6 +60,10 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
         .write(
             &format!("effects/seen/{d}.json"),
             Item::File(r#"{"$type": "lr/project/v1"}"#),
+        )
+        .write(
+            &format!("effects/pending/{empty}.json"),
+            Item::File(&effect("/notes/e.md", &json!({"text": ""}))),
         );
     let ran = board_in(
         scenario.workdir(),
@@ -98,6 +102,47 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
                 1
             ],
             [d, "/b", "notes", "put", "/notes/d.md", 0, "d", 1, 1],
+            [empty, "/b", "notes", "put", "/notes/e.md", 0, "", 0, 0],
         ])
     );
+}
+
+/// The mod's one-effect query: `pendingSql(id)` in effects.ts narrows the
+/// list's `LIKE` to the effect's own path.
+fn one_sql(id: &str) -> String {
+    let every = "logical LIKE '/effects/pending/%'";
+    assert_eq!(pending_sql().matches(every).count(), 1);
+    pending_sql().replace(every, &format!("logical = '/effects/pending/{id}'"))
+}
+
+#[test]
+fn the_effects_mods_one_effect_query_finds_that_effect_while_no_seen_record_answers_it() {
+    let [a, c] = ["a", "c"].map(|digit| digit.repeat(64));
+    let scenario = board();
+    let seen = json!({"$type": "board/seen/v1", "effect": format!("/effects/pending/{c}"), "answer": "refuse"});
+    scenario
+        .write(
+            &format!("effects/pending/{a}.json"),
+            Item::File(&effect("/notes/a.md", &json!({"text": "a\n"}))),
+        )
+        .write(
+            &format!("effects/pending/{c}.json"),
+            Item::File(&effect("/notes/c.md", &json!({"text": "c"}))),
+        )
+        .write(
+            &format!("effects/seen/{c}.json"),
+            Item::File(&seen.to_string()),
+        );
+    let ids = |id: &str| {
+        let ran = board_in(scenario.workdir(), &["--json", "query", &one_sql(id)]);
+        assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+        json(&ran)["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row[0].clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ids(&a), [json!(a)]);
+    assert!(ids(&c).is_empty());
 }

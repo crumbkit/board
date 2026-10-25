@@ -22,6 +22,8 @@ export type Pending = {
   truncated: boolean
   /** Why the latest read failed; null when it worked. */
   failed: string | null
+  /** Whether any read has worked, so `effects` is a list Board gave. */
+  worked: boolean
 }
 
 declare module 'claude-code' {
