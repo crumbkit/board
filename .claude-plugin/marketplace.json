@@ -15,7 +15,11 @@
     {
       "name": "board-plans",
       "source": "./plugins/plans/claude-code"
+    },
+    {
+      "name": "board-effects",
+      "source": "./plugins/effects/claude-code"
     }
   ],
-  "description": "Claude Code mods of the Board plugins."
+  "description": "Claude Code mods of Board and its plugins."
 }
