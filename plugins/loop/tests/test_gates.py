@@ -1,0 +1,164 @@
+"""Each phase's gate, as a pure function of the change and the records it references."""
+
+from typing import TYPE_CHECKING, Any
+
+from conftest import BASE, HEAD, PLAN
+
+from board_loop.gates import Observed, gate
+
+if TYPE_CHECKING:
+    from board_loop.change import Change
+
+PATH = "/changes/t"
+SUITE = "/suites/checks"
+RUN = f"{SUITE}/runs/1"
+
+
+def observed(
+    phase: str,
+    records: dict[str, tuple[str, dict[str, Any]]] | None = None,
+    plan: str | None = PLAN,
+    suite: str | None = SUITE,
+    **fields: Any,  # noqa: ANN401 - the change's other fields
+) -> Observed:
+    """What a gate reads for a change in `phase` with a plan at /changes/t/plan.md."""
+    change: Change = {"$type": "loop/change/v1", "title": "T", "repo": "/repos/x", "phase": phase}
+    change["plan"] = "/changes/t/plan.md"
+    change.update(fields)  # type: ignore[typeddict-item]
+    return Observed(path=PATH, change=change, records=records or {}, plan=plan, suite=suite)
+
+
+def statuses(found: Observed) -> dict[str, str]:
+    """Each check's status, by name."""
+    return {check["check"]: check["status"] for check in gate(found)}
+
+
+def run(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the run's other fields
+    """A full run of a clean tree of the check suite on the head commit, which passed."""
+    body: dict[str, Any] = {
+        "scope": "full",
+        "dirty": False,
+        "versions": {"repo": HEAD[:7]},
+        "results": [],
+    }
+    return "runs/run/v1", body | fields
+
+
+def report(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the report's other fields
+    """A review report of `base..head` that comments, with one medium finding."""
+    body: dict[str, Any] = {
+        "range": f"{BASE}..{HEAD}",
+        "patch_ids": ["p1"],
+        "findings": [{"severity": "medium", "text": "x"}],
+        "verdict": "comment",
+    }
+    return "review/report/v1", body | fields
+
+
+def test_the_shape_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_empty() -> None:
+    assert statuses(observed("shape")) == {"plan": "pass", "questions": "pass"}
+    [plan, _] = gate(observed("shape", plan="# T\n\n## Problem\n\nX.\n\n## Outcome\n\n## out of scope\nY.\n"))
+    assert (plan["status"], plan["detail"]) == ("missing", "the plan at /changes/t/plan.md has no text under: Outcome")
+
+
+def test_the_shape_gate_misses_a_plan_file_that_is_not_there() -> None:
+    [plan, _] = gate(observed("shape", plan=None))
+    assert (plan["status"], plan["detail"]) == ("missing", "no plan file is at /changes/t/plan.md")
+
+
+def test_the_shape_gate_misses_an_open_question_and_passes_an_answered_or_withdrawn_one() -> None:
+    answered = {
+        "/q/a": ("plans/question/v1", {"status": "answered"}),
+        "/q/w": ("plans/question/v1", {"status": "withdrawn"}),
+    }
+    assert statuses(observed("shape", answered))["questions"] == "pass"
+    [_, questions] = gate(observed("shape", answered | {"/q/o": ("plans/question/v1", {"status": "open"})}))
+    assert (questions["status"], questions["detail"]) == ("missing", "these questions are still open: /q/o")
+
+
+def test_the_plan_gate_needs_a_review_report_and_on_the_owner_route_nothing_else() -> None:
+    assert statuses(observed("plan", route="owner")) == {"plan-review": "missing"}
+    assert statuses(observed("plan", {"/r": report()}, route="owner")) == {"plan-review": "pass"}
+
+
+def test_the_plan_gate_misses_a_report_that_asks_for_changes_and_passes_one_that_approves() -> None:
+    [review] = gate(observed("plan", {"/r": report(verdict="changes")}, route="owner"))
+    assert (review["status"], review["detail"]) == (
+        "missing",
+        "no review/report/v1 is attached whose verdict is approve or comment",
+    )
+    assert statuses(observed("plan", {"/r": report(verdict="approve")}, route="owner")) == {"plan-review": "pass"}
+
+
+def test_on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_refs_name_the_plan_or_the_change() -> None:
+    unrelated = {"/r": report(), "/d": ("plans/decision/v1", {"refs": ["/changes/other"]})}
+    assert statuses(observed("plan", unrelated, route="ask-first"))["owner-approval"] == "missing"
+    for named in ("/changes/t/plan.md", PATH):
+        approved = {"/r": report(), "/d": ("plans/decision/v1", {"refs": [named]})}
+        assert statuses(observed("plan", approved, route="ask-first"))["owner-approval"] == "pass", named
+
+
+def test_the_build_gate_passes_with_tasks_done_or_dropped_and_a_passing_run_on_the_head() -> None:
+    records = {
+        "/t/a": ("tasks/task/v1", {"status": "done"}),
+        "/t/b": ("tasks/task/v1", {"status": "dropped"}),
+        RUN: run(),
+    }
+    assert statuses(observed("build", records, head=HEAD)) == {"tasks": "pass", "check-run": "pass"}
+
+
+def test_the_build_gate_misses_a_task_still_open_or_waiting() -> None:
+    records = {"/t/a": ("tasks/task/v1", {"status": "open"}), "/t/b": ("tasks/task/v1", {"status": "waiting"})}
+    [tasks, _] = gate(observed("build", records | {RUN: run()}, head=HEAD))
+    assert tasks["detail"] == "these tasks are not done or dropped: /t/a, /t/b"
+
+
+def test_the_build_gate_misses_a_run_that_failed_or_is_dirty_targeted_of_another_suite_or_another_commit() -> None:
+    for wrong in (
+        {"results": [{"case": "a", "outcome": "fail", "note": "x"}]},
+        {"results": [{"case": "a", "outcome": "error", "note": "x"}]},
+        {"dirty": True},
+        {"dirty": None},
+        {"scope": "targeted"},
+        {"versions": {"repo": "b4d"}},
+        {"versions": {"repo": "0000000"}},
+    ):
+        assert statuses(observed("build", {RUN: run(**wrong)}, head=HEAD))["check-run"] == "missing", wrong
+    skipped = {"results": [{"case": "a", "outcome": "skipped", "note": "x"}]}
+    assert statuses(observed("build", {RUN: run(**skipped)}, head=HEAD))["check-run"] == "pass"
+
+
+def test_a_run_belongs_to_the_suite_whose_runs_directory_holds_it_whatever_its_suite_field_says() -> None:
+    for elsewhere in ("/suites/other/runs/1", "/suites/checks-2/runs/1", "/suites/checks/1", "/runs/1"):
+        found = observed("build", {elsewhere: run(suite=SUITE)}, head=HEAD)
+        assert statuses(found)["check-run"] == "missing", elsewhere
+    assert statuses(observed("build", {RUN: run(suite="/suites/other")}, head=HEAD))["check-run"] == "pass"
+
+
+def test_the_build_gate_says_when_no_suite_is_named_or_no_head_is_recorded() -> None:
+    [_, no_suite] = gate(observed("build", {RUN: run()}, suite=None, head=HEAD))
+    assert no_suite["detail"] == "no contributing doc in /repos/x names a runs/suite/v1 path as its check suite"
+    [_, no_head] = gate(observed("build", {RUN: run()}))
+    assert no_head["detail"] == "the change records no head commit; attach one with --head"
+
+
+def test_the_review_gate_passes_a_report_on_the_head_without_a_blocking_finding() -> None:
+    assert statuses(observed("review", {"/r": report()}, head=HEAD[:12])) == {"review": "pass"}
+    for wrong in (
+        {"range": f"{BASE}..{'b' * 40}"},
+        {"range": HEAD},
+        {"verdict": "changes"},
+        {"findings": [{"severity": "high", "text": "x"}]},
+        {"findings": [{"severity": "critical", "text": "x"}]},
+    ):
+        assert statuses(observed("review", {"/r": report(**wrong)}, head=HEAD)) == {"review": "missing"}, wrong
+
+
+def test_the_review_gate_reads_the_head_from_the_right_side_of_a_three_dot_range() -> None:
+    assert statuses(observed("review", {"/r": report(range=f"{BASE}...{HEAD}")}, head=HEAD)) == {"review": "pass"}
+
+
+def test_the_land_gate_needs_the_pull_request_url_and_learn_has_no_gate() -> None:
+    assert statuses(observed("land")) == {"pull-request": "missing"}
+    assert statuses(observed("land", pull_request="https://github.com/o/r/pull/1")) == {"pull-request": "pass"}
+    assert gate(observed("learn")) == []
