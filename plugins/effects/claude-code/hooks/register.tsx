@@ -72,7 +72,10 @@ async function refresh($: EngineInterface) {
  * again afterwards, whatever the outcome.
  */
 async function answer($: EngineInterface, local: Local, e: Effect, said: Answer): Promise<boolean> {
-  if (local.answering.has(e.id)) return false
+  if (local.answering.has(e.id)) {
+    $.ui.toast(`An answer to this effect is already running: ${headline(e)}`)
+    return false
+  }
   local.answering.add(e.id)
   try {
     return await answerOnce($, e, said)
@@ -85,7 +88,8 @@ async function answer($: EngineInterface, local: Local, e: Effect, said: Answer)
 /**
  * Reads the effect again and answers it if it is still pending. `board
  * answer` overwrites a seen record, so a stale row or dialog could otherwise
- * turn an answer given elsewhere into this one.
+ * turn an answer given elsewhere into this one. The re-read is a stop-gap:
+ * it can go once Board refuses a second answer to an effect.
  */
 async function answerOnce($: EngineInterface, e: Effect, said: Answer): Promise<boolean> {
   const now = await query($, e.id)
@@ -117,14 +121,24 @@ async function answerOnce($: EngineInterface, e: Effect, said: Answer): Promise<
  * Asks the owner about each effect the output names that Board still holds
  * pending and no dialog has asked about, and returns what the agent should
  * read about each. The dialog shows the effect as Board recorded it, never
- * the output's words. A read that fails leaves the id to be asked next time.
+ * the output's words. A read that fails leaves the ids to be asked next time.
  */
 async function askOwner($: EngineInterface, local: Local, output: string): Promise<string[]> {
+  const ids = askedIds(output).filter(id => !local.asked.has(id) && !local.opening.has(id))
+  if (ids.length === 0) return []
+  for (const id of ids) local.opening.add(id)
   const notes: string[] = []
-  for (const id of askedIds(output)) {
-    if (local.asked.has(id) || local.opening.has(id)) continue
-    local.opening.add(id)
-    try {
+  try {
+    // One list read finds which ids Board holds pending, so output full of
+    // ids Board does not hold costs one query, not one per id.
+    const listed = await query($)
+    if (typeof listed === 'string') {
+      $.ui.log(`board: pending effects could not be read: ${listed}`, { to: 'debug' })
+      return []
+    }
+    const held = new Set(listed.effects.map(e => e.id))
+    for (const id of ids) {
+      if (!listed.truncated && !held.has(id)) continue
       const found = await query($, id)
       if (typeof found === 'string') {
         $.ui.log(`board: pending effect ${id} could not be read: ${found}`, { to: 'debug' })
@@ -143,9 +157,9 @@ async function askOwner($: EngineInterface, local: Local, output: string): Promi
       if (chosen === 'Later') notes.push(told(effect, 'later'))
       const said = chosen === 'Approve' ? 'approve' : chosen === 'Refuse' ? 'refuse' : null
       if (said !== null && (await answer($, local, effect, said))) notes.push(told(effect, said))
-    } finally {
-      local.opening.delete(id)
     }
+  } finally {
+    for (const id of ids) local.opening.delete(id)
   }
   return notes
 }
@@ -158,7 +172,7 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
-    await refresh($)
+    void refresh($)
     return started
   })
 
@@ -185,13 +199,16 @@ export const register: Register = on => {
     }
     const found = await read($, pending)
     if (e.props.hasSurvey || found === null) return below
-    // When no read has worked, the band says so, unless there is no personal board.
-    const unread = !found.worked && found.failed !== null && !found.failed.startsWith(NO_BOARD)
+    // A failed read is marked, unless there is no personal board.
+    const unread = found.failed !== null && !found.failed.startsWith(NO_BOARD)
     if (found.effects.length === 0 && !unread) return below
     const { Box, Button, Text } = $.ui.resolve(e)
-    const line = unread
-      ? 'Board: could not read pending effects'
-      : waitingLine(found.effects.length) + (found.truncated ? ' (or more)' : '')
+    const more = found.truncated ? ' or more' : ''
+    const line = !unread
+      ? waitingLine(found.effects.length) + (found.truncated ? ' (or more)' : '')
+      : found.worked
+        ? `Board: could not read pending effects (last read: ${found.effects.length}${more})`
+        : 'Board: could not read pending effects'
     return (
       <Box flexDirection="column">
         {below.type === 'engine' ? null : below}

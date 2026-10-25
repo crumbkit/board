@@ -10,6 +10,8 @@ export type Effect = {
   replaces: boolean
   /** The first 2,000 characters of the record or text a put would write; null for an op with no content. */
   head: string | null
+  /** Whether the content holds a NUL character, before which `head` and `lines` stop. */
+  nul: boolean
   /** The size in bytes and the number of lines of the whole content. */
   bytes: number
   lines: number

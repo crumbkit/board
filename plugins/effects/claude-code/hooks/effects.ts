@@ -60,6 +60,7 @@ export function parsePending(stdout: string, home?: string): Listed | null {
       op: String(r.op),
       path: String(r.path),
       replaces: r.replaces === 1,
+      nul: r.nul === 1,
       head: typeof r.head === 'string' ? r.head : null,
       bytes: Number(r.bytes ?? 0),
       lines: Number(r.lines ?? 0),
@@ -92,21 +93,26 @@ export function outputText(result: unknown): string {
 const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\\]/gu
 
 /**
- * Text with each character of `HIDDEN` but line feed and tab escaped, as
+ * Text with each character of `HIDDEN` escaped, as
  * `\\` or `\u{202e}`. A control character makes Claude Code refuse the whole
  * drawing, and a format character such as a bidi override or a zero-width
  * space could make a plugin's path read as another on the consent line.
+ * Line feed and tab are kept unless `keepLines` is false.
  */
-export const visible = (text: string) =>
+export const visible = (text: string, keepLines = true) =>
   text.replace(HIDDEN, c =>
-    c === '\n' || c === '\t' ? c : c === '\\' ? '\\\\' : `\\u{${(c.codePointAt(0) as number).toString(16)}}`,
+    keepLines && (c === '\n' || c === '\t')
+      ? c
+      : c === '\\'
+        ? '\\\\'
+        : `\\u{${(c.codePointAt(0) as number).toString(16)}}`,
   )
 
 /** The band's line. */
 export const waitingLine = (n: number) => (n === 1 ? '1 effect waits for your answer' : `${n} effects wait for your answer`)
 
-/** One line naming who asks for what, where. */
-export const headline = (e: Effect) => visible(`${e.plugin} asks to ${e.op} ${e.path} in ${e.board}`)
+/** One line naming who asks for what, where; a line feed or tab in it is escaped too. */
+export const headline = (e: Effect) => visible(`${e.plugin} asks to ${e.op} ${e.path} in ${e.board}`, false)
 
 /** The command that prints an effect whole. */
 export const getCommand = (e: Effect) => `board --personal get /effects/pending/${e.id}`
@@ -128,7 +134,13 @@ export function preview(e: Effect, lines = 8, chars = 600): string {
     shown = shown.replace(/\n$/, '')
     const whole = new TextEncoder().encode(e.head).length === e.bytes && shown === e.head.replace(/\n$/, '')
     parts.push(e.replaces ? 'It replaces the file there with:' : 'It writes a new file:', visible(shown))
-    if (!whole) {
+    if (e.nul) {
+      // SQLite's text functions stop at a NUL, so the head and the line count
+      // cover only the part before it.
+      parts.push(
+        `… The content holds a NUL character, so only the part before it is shown. It is ${size(e.bytes)} in all. ${getCommand(e)} prints it whole.`,
+      )
+    } else if (!whole) {
       const more = e.lines - shown.split('\n').length
       const left = more > 0 ? `and ${more} more line${more === 1 ? '' : 's'}` : 'and the rest of the line'
       parts.push(`… ${left}, ${size(e.bytes)} in all. ${getCommand(e)} prints it whole.`)
@@ -148,7 +160,7 @@ export const question = (e: Effect) => `${headline(e)}. ${preview(e, 4, 300)}\nA
 /** What the agent that ran the put reads once the owner answered, or chose Later. */
 export function told(e: Effect, answer: 'approve' | 'refuse' | 'later'): string {
   if (answer === 'later') {
-    return `The owner has not answered pending effect ${e.id} yet: ${headline(e)}. Do not retry the put; it stays asked until the owner answers.`
+    return `The owner has not answered pending effect ${e.id} yet: ${headline(e)}. Do not retry the put, and do not answer it yourself; it stays asked until the owner answers.`
   }
   return answer === 'approve'
     ? `The owner approved pending effect ${e.id}: ${headline(e)}. Run the same put again; it now writes.`

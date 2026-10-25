@@ -72,7 +72,7 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
     assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
     let report = json(&ran);
     let columns = [
-        "id", "board", "plugin", "op", "path", "replaces", "head", "bytes", "lines",
+        "id", "board", "plugin", "op", "path", "replaces", "head", "bytes", "nul", "lines",
     ];
     assert_eq!(report["summary"]["columns"], json!(columns));
     let record = format!(r#"{{"$type":"lr/task/v1","title":"{long}"}}"#);
@@ -88,6 +88,7 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
                 1,
                 "one\ntwo\n",
                 8,
+                0,
                 2
             ],
             [
@@ -99,10 +100,11 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
                 0,
                 &record[..2000],
                 record.len(),
+                0,
                 1
             ],
-            [d, "/b", "notes", "put", "/notes/d.md", 0, "d", 1, 1],
-            [empty, "/b", "notes", "put", "/notes/e.md", 0, "", 0, 0],
+            [d, "/b", "notes", "put", "/notes/d.md", 0, "d", 1, 0, 1],
+            [empty, "/b", "notes", "put", "/notes/e.md", 0, "", 0, 0, 0],
         ])
     );
 }
@@ -145,4 +147,39 @@ fn the_effects_mods_one_effect_query_finds_that_effect_while_no_seen_record_answ
     };
     assert_eq!(ids(&a), [json!(a)]);
     assert!(ids(&c).is_empty());
+}
+
+#[test]
+fn the_effects_mod_query_says_when_content_holds_a_nul_before_which_its_head_stops() {
+    let id = "f".repeat(64);
+    let scenario = board();
+    scenario.write(
+        &format!("effects/pending/{id}.json"),
+        Item::File(&effect(
+            "/notes/f.md",
+            &json!({"text": "harmless config\n\u{0}\nrm -rf /\nmore\n"}),
+        )),
+    );
+    let ran = board_in(
+        scenario.workdir(),
+        &["--json", "query", pending_sql(), "--limit", "100"],
+    );
+    assert_eq!(ran.code, 0, "{}", text(&ran.stdout));
+    // SQLite's text functions stop at the NUL, so `head` and `lines` cover
+    // only "harmless config\n" while `bytes` counts all 32 bytes.
+    assert_eq!(
+        json(&ran)["data"],
+        json!([[
+            id,
+            "/b",
+            "notes",
+            "put",
+            "/notes/f.md",
+            0,
+            "harmless config\n",
+            32,
+            1,
+            1
+        ]])
+    );
 }

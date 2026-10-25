@@ -43,6 +43,8 @@ type Answers = {
   bashFails?: boolean
   /** Whether a permission rule denies the Bash call. */
   bashDenied?: boolean
+  /** Whether the list read says Board listed only the first effects. */
+  truncated?: boolean
   /** Fails each one-effect read while it returns true. */
   oneFails?: () => boolean
   chosen?: string
@@ -74,7 +76,7 @@ function engine(on: On, answers: Answers = {}) {
     if (one !== undefined && answers.oneFails?.()) return { value: { ...whole, exitCode: 1, stdout: failed('board::query::timeout', 'the query ran past 5 s') } }
     if (answers.query && one === undefined) return { value: { ...whole, ...answers.query() } }
     const listed = Object.entries(rows).filter(([id]) => one === undefined || one === id)
-    return { value: { ...whole, exitCode: 0, stdout: report(listed.map(([, row]) => row)) } }
+    return { value: { ...whole, exitCode: 0, stdout: report(listed.map(([, row]) => row), one === undefined && answers.truncated) } }
   })
   on('tool.call', { tool: 'AskUserQuestion' }, (_, e) => {
     const q = e.questions[0]?.question ?? ''
@@ -104,13 +106,20 @@ function engine(on: On, answers: Answers = {}) {
   return { ran, argv, asked, options, panes, toasts, rows }
 }
 
-const start = ($: Engine) => $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+// session.start does not wait for its read, so this lets that read finish.
+declare const setTimeout: (run: () => void, ms: number) => unknown
+const settle = () => new Promise<void>(resolve => setTimeout(resolve, 20))
+const start = async ($: Engine) => {
+  const started = await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await settle()
+  return started
+}
 const bash = ($: Engine) => $.tool.call({ tool: 'Bash', command: 'board call notes.write' })
 const LIST = ['--personal', 'query', pendingSql(), '--limit', '100']
 const one = (id: string) => ['--personal', 'query', pendingSql(id), '--limit', '100']
 const band = ($: Engine) => $.ui.mount({ ...BAND, surface: 'terminal' })
 const answersRun = (ran: string[][]) => ran.filter(a => a[0] === 'answer')
-const effect = (fields: Partial<Effect>): Effect => ({ id: A, board: '~/w', plugin: 'notes', op: 'put', path: '/n', replaces: false, head: null, bytes: 0, lines: 0, ...fields })
+const effect = (fields: Partial<Effect>): Effect => ({ id: A, board: '~/w', plugin: 'notes', op: 'put', path: '/n', replaces: false, nul: false, head: null, bytes: 0, lines: 0, ...fields })
 
 test('the one-effect query reads that effect\'s path alone, and an id that is not 64 hex digits matches none', () => {
   expect(pendingSql()).toContain("logical LIKE '/effects/pending/%'")
@@ -216,7 +225,7 @@ test('when no read has worked for another reason, the band says the effects coul
   expect((await shown.find({ type: 'Text' }))?.text).toBe('Board: could not read pending effects ')
 })
 
-test('a read that fails keeps the last count in the band, and the pane says the read failed', async ($, on) => {
+test('a read that fails after one that worked is marked in the band with the last count, and the pane says why', async ($, on) => {
   const clock = mock.clock(on, { now: 0 })
   let answer: Ran = { exitCode: 0, stdout: report([ROWS[A] as unknown[]]) }
   engine(on, { query: () => answer })
@@ -225,7 +234,7 @@ test('a read that fails keeps the last count in the band, and the pane says the 
   answer = { exitCode: 1, stdout: failed('board::query::timeout', 'the query ran past 5 s') }
   await clock.advance(60_000)
   const shown = await band($)
-  expect((await shown.find({ type: 'Text', text: /wait/ }))?.text).toBe('1 effect waits for your answer ')
+  expect((await shown.find({ type: 'Text' }))?.text).toBe('Board: could not read pending effects (last read: 1) ')
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await pane.find({ type: 'Text', text: /could not be read/ }))?.text).toBe(
     'The pending effects could not be read: board::query::timeout the query ran past 5 s. This list is from the last read that worked.',
@@ -294,13 +303,39 @@ test('an effect answered elsewhere after the pane was read is not answered again
   expect(await pane.find({ type: 'Text', text: /notes asks/ })).toBeUndefined()
 })
 
-test('a second press while an answer runs runs nothing', async ($, on) => {
+test('a second press while an answer runs runs nothing and says so', async ($, on) => {
   mock.clock(on, { now: 0 })
-  const { ran } = engine(on)
+  const { ran, toasts } = engine(on)
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   await Promise.all([pane.press({ key: `${A}#approve` }), pane.press({ key: `${A}#approve` })])
   expect(answersRun(ran)).toEqual([['answer', A, 'approve']])
+  expect(toasts).toEqual([`An answer to this effect is already running: ${NOTE_LINE}`, `Approved: ${NOTE_LINE}`])
+})
+
+test('when Board lists only the first effects, the band says "or more" and the pane says more wait', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on, { truncated: true })
+  await start($)
+  const shown = await band($)
+  expect((await shown.find({ type: 'Text' }))?.text).toBe('2 effects wait for your answer (or more) ')
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal query` lists them.')
+})
+
+test('content holding a NUL says that only the part before it is shown', () => {
+  expect(preview(effect({ head: 'harmless config\n', bytes: 9000, lines: 1, nul: true }))).toBe(
+    'It writes a new file:\nharmless config\n' +
+      `… The content holds a NUL character, so only the part before it is shown. It is 9 KB in all. board --personal get /effects/pending/${A} prints it whole.`,
+  )
+})
+
+test('a line feed or tab in the path is escaped in the headline', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/a\n/b\tc', 0, null, 0, 0] } })
+  await start($)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('notes asks to put /a\\u{a}/b\\u{9}c in /w')
 })
 
 test('an answer that times out or is killed is said to be unknown, and the list is read again', async ($, on) => {
@@ -324,7 +359,7 @@ test('an asked put opens a dialog from the effect Board holds, Later first, and 
   const result = await bash($)
   expect(asked).toEqual([`${NOTE_LINE}. It writes a new file:\nPlan\nship it\nApprove it?`])
   expect(options).toEqual([['Later', 'Refuse', 'Approve']])
-  expect(ran.slice(1)).toEqual([one(A), one(A), ['answer', A, 'approve'], LIST])
+  expect(ran.slice(1)).toEqual([LIST, one(A), one(A), ['answer', A, 'approve'], LIST])
   expect(result.context).toEqual([`The owner approved pending effect ${A}: ${NOTE_LINE}. Run the same put again; it now writes.`])
 })
 
@@ -366,7 +401,7 @@ for (const chosen of ['Later', 'dismiss']) {
     expect(answersRun(ran)).toEqual([])
     expect(result.context).toEqual(
       chosen === 'Later'
-        ? [`The owner has not answered pending effect ${A} yet: ${NOTE_LINE}. Do not retry the put; it stays asked until the owner answers.`]
+        ? [`The owner has not answered pending effect ${A} yet: ${NOTE_LINE}. Do not retry the put, and do not answer it yourself; it stays asked until the owner answers.`]
         : undefined,
     )
   })
@@ -401,4 +436,14 @@ test('output naming an effect Board does not hold pending opens no dialog', asyn
   expect(asked).toEqual([])
   expect(answersRun(ran)).toEqual([])
   expect(result.context).toBeUndefined()
+})
+
+test('output naming many ids Board does not hold costs one list read', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  const fakes = ['1', '2', '3', '4', '5'].map(d => d.repeat(64))
+  const { asked, ran } = engine(on, { bash: fakes.map(asking).join('') })
+  await start($)
+  await bash($)
+  expect(asked).toEqual([])
+  expect(ran).toEqual([LIST, LIST])
 })
