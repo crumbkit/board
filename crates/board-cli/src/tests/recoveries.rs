@@ -849,17 +849,14 @@ fn effects(starts: &mut Starts) {
         );
         (effect.id(), serde_json::to_string(&effect).unwrap())
     };
-    let ((exact, exact_text), (starred, starred_text)) = (effect("/x"), effect("/s*"));
+    // An answer removes its pending effect, so each admitted answer has its
+    // own.
     let personal = enabling("");
-    personal
-        .write(
-            &format!("effects/pending/{exact}.json"),
-            Item::File(&exact_text),
-        )
-        .write(
-            &format!("effects/pending/{starred}.json"),
-            Item::File(&starred_text),
-        );
+    let [exact, starred, widened, plugged] = ["/x", "/s*", "/w", "/v"].map(|path| {
+        let (id, text) = effect(path);
+        personal.write(&format!("effects/pending/{id}.json"), Item::File(&text));
+        id
+    });
     let xdg = Scenario::new();
     let known = json!({"boards": [personal.path()], "personal": personal.path()});
     xdg.write(
@@ -892,11 +889,11 @@ fn effects(starts: &mut Starts) {
     starts.add(&answering, Code::SettingsBadPattern, &saving);
     let admitted = format!("answer {starred} refuse");
     starts.pair(&answering, Code::SettingsBadPattern, &saving, &admitted);
-    let widening = format!("answer {exact} approve --save-rule");
+    let widening = format!("answer {widened} approve --save-rule");
     starts.add(&answering, Code::SettingsCannotWiden, &widening);
-    let admitted = format!("answer {exact} refuse --save-rule");
+    let admitted = format!("answer {widened} refuse --save-rule");
     starts.pair(&answering, Code::SettingsCannotWiden, &widening, &admitted);
-    let line = format!("answer {exact} approve");
+    let line = format!("answer {plugged} approve");
     starts.add(&place, Code::SettingsFromPlugin, &line);
     starts.variable(&place, Code::SettingsFromPlugin, &line, "BOARD_PLUGIN");
     let line = "decide --op review.comment --path /y";

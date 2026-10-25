@@ -1,18 +1,18 @@
 //! `board decide` and `board answer`.
 
 use board_model::{
-    Answer, Authority, Decision, Digest, Effect, LogicalPath, PUT_OP, Pattern, Preference, Request,
-    Seen, canonical_json, is_effect_id,
+    Answer, Authority, BINARY_NAME, Decision, Digest, Effect, LogicalPath, PUT_OP, Pattern,
+    Preference, Request, Seen, canonical_json, is_effect_id,
 };
 use serde_json::json;
 
-use board_tree::WriteError;
+use board_tree::{LOCK_WAIT, WriteError};
 
 use super::{
-    Asker, EFFECT_TYPE, EffectError, PENDING, PREFERENCES, SEEN, hold, read_record, root, seen,
+    Asker, EFFECT_TYPE, EffectError, PENDING, PREFERENCES, SEEN, hold, read_held, root, seen,
 };
 use crate::board::Board;
-use crate::put::PutReport;
+use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
 
 /// The authority for an op at a path, the rules that gave it, and the
 /// pending effect or answer that changes it.
@@ -145,7 +145,8 @@ impl Board {
 
 /// Writes the owner's `answer` to the pending effect `id` in the personal
 /// board, with a preference for the effect's op, exact path, plugin and
-/// board when `save_rule` is set, in one batch. A plugin may not answer.
+/// board when `save_rule` is set, and removes the pending effect, in one
+/// commit. A plugin may not answer.
 pub fn answer(
     asker: &Asker,
     id: &str,
@@ -165,13 +166,13 @@ pub fn answer(
     if !is_effect_id(id) {
         return Err(not_found());
     }
-    let value = read_record(&personal, &format!("{PENDING}/{id}"), EFFECT_TYPE)?;
+    let held = read_held(&personal, &format!("{PENDING}/{id}"), EFFECT_TYPE)?;
+    let (value, blob) = held.ok_or_else(not_found)?;
     let forged = |why: String| EffectError::Forged {
         id: id.to_owned(),
         why,
     };
-    let effect = Effect::from_value(&value.ok_or_else(not_found)?)
-        .map_err(|error| forged(error.to_string()))?;
+    let effect = Effect::from_value(&value).map_err(|error| forged(error.to_string()))?;
     if effect.id() != id {
         return Err(forged(format!("its request has the id {}", effect.id())));
     }
@@ -204,18 +205,24 @@ pub fn answer(
         })
         .transpose()?;
     let seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
-    let mut lines = vec![json!({"path": format!("/{SEEN}/{id}"), "record": seen})];
+    let mut records = vec![(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
     let saved = rule.map(|pattern| {
         let mut preference = Preference::new(effect.op.clone(), pattern, answer.authority());
         preference.plugin = Some(effect.plugin.clone());
         preference.board = Some(effect.board.clone());
         let at = format!("/{PREFERENCES}/{id}");
-        lines.push(json!({"path": at, "record": preference}));
+        records.push((at.clone(), json!(preference), Expect::Any));
         at
     });
-    let batch: String = lines.iter().map(|line| line.to_string() + "\n").collect();
+    let pending = Removal {
+        path: format!("/{PENDING}/{id}")
+            .parse()
+            .map_err(|_| not_found())?,
+        file: format!("{PENDING}/{id}.json"),
+        blob,
+    };
     let put = personal
-        .put_batch(&mut batch.as_bytes())
+        .write_answer(&records, &pending, &format!("{BINARY_NAME} answer {id}"))
         .map_err(|source| EffectError::Write {
             source: Box::new(source),
         })?;
@@ -225,4 +232,35 @@ pub fn answer(
         rule: saved,
         put,
     })
+}
+
+impl Board {
+    /// Writes each of `records`, by logical path, if its file is as it
+    /// expects, and removes `pending`, if it still holds its blob, under one
+    /// lock and in one commit.
+    fn write_answer(
+        &self,
+        records: &[(String, serde_json::Value, Expect)],
+        pending: &Removal,
+        message: &str,
+    ) -> Result<PutReport, PutError> {
+        let lock = self.repository().lock(LOCK_WAIT)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
+        let mut schemas = Schemas::default();
+        let mut prepared = Vec::with_capacity(records.len());
+        for (at, record, expect) in records {
+            let path: LogicalPath = at.parse().expect("an answer writes well-formed paths");
+            let bytes = canonical_json(record);
+            prepared.push(self.prepare(
+                &lock,
+                &mut view,
+                &mut schemas,
+                &path,
+                *expect,
+                bytes.as_bytes(),
+            )?);
+        }
+        self.write_all(lock, &prepared, std::slice::from_ref(pending), message)
+            .map_err(Failure::one)
+    }
 }

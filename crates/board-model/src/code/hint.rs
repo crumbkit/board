@@ -505,7 +505,7 @@ fn generic(code: Code) -> &'static str {
             "only the owner, outside a plugin, writes `/preferences/` and `/effects/` in the personal board, `.board/` in any board apart from a new schema in a `put --batch` line, links, mounts and preference, effect and seen records in any board, runs init, type add and plugin enable, and answers pending effects; ask the owner"
         }
         Code::SettingsNotFound => {
-            "no pending effect with that id reads as the effect its id names; `board --personal ls /effects/pending` lists the pending effects"
+            "no pending effect with that id reads as the effect its id names: the owner already answered it, and `/effects/seen/<id>` holds the answer, or it was never asked; `board --personal ls /effects/pending` lists the pending effects"
         }
         Code::SettingsBadPattern => {
             "a saved rule names the effect's path exactly, which a path holding *, ?, [, ], {, } or \\, or an empty, `.` or `..` segment, cannot; answer without `--save-rule`"

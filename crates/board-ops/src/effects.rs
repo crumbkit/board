@@ -7,8 +7,8 @@ use std::path::PathBuf;
 
 use board_model::{
     Answer, Authority, Code, Digest, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, Layer, LogicalPath,
-    MAX_RECORD_BYTES, PREFERENCE_TYPE, PUT_OP, Preference, Refusal, Request, Rule, SEEN_TYPE, Seen,
-    canonical_json, parse_json,
+    MAX_RECORD_BYTES, ObjectId, PREFERENCE_TYPE, PUT_OP, Preference, Refusal, Request, Rule,
+    SEEN_TYPE, Seen, canonical_json, parse_json,
 };
 use board_tree::{GitError, Repository, Target, Working, WriteError};
 use serde_json::Value;
@@ -244,6 +244,15 @@ fn read_record(
     relative: &str,
     record_type: &str,
 ) -> Result<Option<Value>, EffectError> {
+    Ok(read_held(board, relative, record_type)?.map(|(value, _)| value))
+}
+
+/// [`read_record`], with the blob the file holds.
+fn read_held(
+    board: &Board,
+    relative: &str,
+    record_type: &str,
+) -> Result<Option<(Value, ObjectId)>, EffectError> {
     let read = board.repository().read_working(format!("{relative}.json"));
     let failed = |source| EffectError::Read {
         directory: relative.to_owned(),
@@ -252,7 +261,8 @@ fn read_record(
     Ok(match read.map_err(failed)? {
         Working::Read(contents) => parse_json(&contents.bytes)
             .ok()
-            .filter(|value| value.get("$type").and_then(Value::as_str) == Some(record_type)),
+            .filter(|value| value.get("$type").and_then(Value::as_str) == Some(record_type))
+            .map(|value| (value, contents.blob)),
         Working::Missing => None,
         Working::TooLarge => {
             return Err(EffectError::TooLarge {
@@ -286,10 +296,12 @@ fn seen(personal: &Board, id: &str) -> Result<Option<Answer>, EffectError> {
 }
 
 /// Writes `effect` at its id in the personal board, unless an effect is
-/// already there.
+/// already there or the owner has answered it, which they may have done
+/// since the put read the answer.
 fn hold(personal: &Board, effect: &Effect) -> Result<String, EffectError> {
     let id = effect.id();
-    if read_record(personal, &format!("{PENDING}/{id}"), EFFECT_TYPE)?.is_none() {
+    let answered = read_record(personal, &format!("{SEEN}/{id}"), SEEN_TYPE)?.is_some();
+    if !answered && read_record(personal, &format!("{PENDING}/{id}"), EFFECT_TYPE)?.is_none() {
         let path: LogicalPath = format!("/{PENDING}/{id}")
             .parse()
             .expect("an effect id is 64 hex digits, so the path is well formed");

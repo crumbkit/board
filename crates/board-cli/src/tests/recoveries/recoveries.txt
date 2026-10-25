@@ -750,11 +750,11 @@ board answer 11a05552f7a7afc2026731771c02f6418f4f7a5a94b21b49a69debbcf88fb9e1 re
   fails with board::settings::bad_pattern
   hint
 
-board answer 27bcc217a66b922af2810fc1217db8a4c20c8abb60432cc048b2d7d90192763c approve --save-rule
+board answer 9b0ed3aee377e913394bcf334559e506cfc5c0607883d933fdeae9cb31e61db9 approve --save-rule
   fails with board::settings::cannot_widen
   hint
 
-board answer 27bcc217a66b922af2810fc1217db8a4c20c8abb60432cc048b2d7d90192763c approve (with BOARD_PLUGIN=tasks)
+board answer 9a44d25ced5cd0ddd2c346de95bdde8f0d3441a73bf9106a8448172d7846e82c approve (with BOARD_PLUGIN=tasks)
   fails with board::settings::from_plugin
   hint
 

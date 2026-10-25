@@ -298,8 +298,9 @@ Examples:
     },
     /// Answer a pending effect.
     #[command(after_help = "\
-`board --personal ls /effects/pending` lists the pending effects. A plugin may
-not answer.
+`board --personal ls /effects/pending` lists the pending effects. An answer
+removes the pending effect in the commit that writes the seen record. A plugin
+may not answer.
 
 Examples:
   board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve

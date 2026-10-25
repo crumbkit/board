@@ -6,7 +6,7 @@ use board_scenario::seed::mount_of;
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
-use super::{Asker, EffectError, answer};
+use super::{Asker, EffectError, answer, hold};
 use crate::Board;
 use crate::put::{Expect, PutError, PutReport};
 use crate::tests::{TASK_SCHEMA, task};
@@ -599,6 +599,92 @@ fn an_answer_with_save_rule_writes_the_seen_record_and_a_preference_for_its_boar
     );
     let deciding = &decided.decision.matching[decided.decision.deciding.unwrap()];
     assert_eq!(deciding.at, format!("/preferences/{id}"));
+}
+
+#[test]
+fn an_answer_removes_its_pending_effect_in_the_commit_that_writes_the_seen_record_and_an_unanswered_one_stays()
+ {
+    let scenario = board();
+    let mine = Scenario::new();
+    mine.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1"}"#),
+    )
+    .write(
+        ".git/config",
+        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+    );
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let answered = asked(put(&board, "/tasks/a", &task("")));
+    let unanswered = asked(put(&board, "/tasks/b", &task("")));
+    let pending = |id: &str| format!("effects/pending/{id}.json");
+    let before = mine.head().unwrap();
+    let owner = asker(None, Some(&mine));
+    let report = answer(&owner, &answered, Answer::Approve, None, false).unwrap();
+    let head = mine.head().unwrap();
+    assert_eq!(report.put.commit, Some(head.id));
+    assert_eq!(head.parents, [before.id]);
+    assert_eq!(head.message, format!("board answer {answered}"));
+    assert!(
+        head.files
+            .contains_key(&format!("effects/seen/{answered}.json"))
+    );
+    assert!(!head.files.contains_key(&pending(&answered)));
+    assert!(!exists(&mine, &pending(&answered)));
+    assert!(head.files.contains_key(&pending(&unanswered)));
+    assert!(exists(&mine, &pending(&unanswered)));
+    // The approved put finds the seen record by its id and writes.
+    put(&board, "/tasks/a", &task("")).unwrap();
+}
+
+#[test]
+fn a_second_answer_to_the_same_effect_is_refused_as_not_found_and_the_first_is_admitted() {
+    let (scenario, mine) = (board(), personal());
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let id = asked(put(&board, "/tasks/a", &task("")));
+    let owner = asker(None, Some(&mine));
+    answer(&owner, &id, Answer::Refuse, None, false).unwrap();
+    let again = answer(&owner, &id, Answer::Approve, None, false);
+    assert_eq!(code(again), Code::SettingsNotFound);
+    assert_eq!(
+        read(&mine, &format!("effects/seen/{id}.json"))["answer"],
+        "refuse"
+    );
+}
+
+/// A put reads no answer, the owner refuses, and then the put holds its
+/// effect: the hold writes nothing, and a pending effect left over from
+/// before cannot turn the refusal into an approval.
+#[test]
+fn a_hold_after_the_owner_answers_writes_no_pending_effect_and_a_hold_before_writes_one() {
+    let (scenario, mine) = (board(), personal());
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let owner = asker(None, Some(&mine));
+    let id = asked(put(&board, "/tasks/a", &task("")));
+    let file = format!("effects/pending/{id}.json");
+    let text = std::fs::read_to_string(mine.workdir().join(&file)).unwrap();
+    let effect = Effect::from_value(&serde_json::from_str(&text).unwrap()).unwrap();
+    let personal = Board::open(mine.workdir(), None).unwrap();
+    answer(&owner, &id, Answer::Refuse, None, false).unwrap();
+    hold(&personal, &effect).unwrap();
+    assert!(!exists(&mine, &file));
+    mine.write(&file, Item::File(&text));
+    let again = answer(&owner, &id, Answer::Approve, None, false);
+    assert_eq!(code(again), Code::PutStale);
+    assert_eq!(
+        read(&mine, &format!("effects/seen/{id}.json"))["answer"],
+        "refuse"
+    );
+    let unanswered = asked(put(&board, "/tasks/b", &task("")));
+    let file = format!("effects/pending/{unanswered}.json");
+    let text = std::fs::read_to_string(mine.workdir().join(&file)).unwrap();
+    let effect = Effect::from_value(&serde_json::from_str(&text).unwrap()).unwrap();
+    mine.write(&file, Item::Deleted);
+    hold(&personal, &effect).unwrap();
+    assert!(exists(&mine, &file));
 }
 
 #[test]

@@ -118,7 +118,22 @@ Each is a Board type, checked by its Rust type, with no schema file.
   - For another op under a plugin, the owner's answer replaces the
     authority, and an ask with no answer writes a pending effect.
 - `board answer <id> approve|refuse [--reason <text>] [--save-rule]` writes
-  the seen record.
+  the seen record and removes the pending effect, in one commit.
+  - The records under `/effects/pending/` are the open effects. Git history
+    keeps an answered one.
+  - A repeated put or decide finds the seen record by the id and writes no
+    new pending effect. A put with other content or over another blob has
+    another id and asks again.
+  - Answering the same id again is refused with `not_found`, whose hint
+    says the effect was answered or never asked. A stale client therefore
+    cannot turn a refusal into an approval. The owner changes an answer by
+    editing or deleting its seen record.
+  - The seen record is written only where none is, and the pending effect
+    is removed only if it is unchanged. Of two answers at once, the second
+    is refused with `board::put::stale`, as is an answer to a pending
+    effect whose seen record exists.
+  - A put holds its pending effect after it releases the lock, and writes
+    none if the owner answered in between.
   - `--save-rule` also writes `/preferences/<id>` for the effect's op,
     exact path, plugin and board, in the same commit. A path holding `*`,
     `?` or `[` is refused with `board::settings::bad_pattern`.
@@ -157,4 +172,4 @@ Each is a Board type, checked by its Rust type, with no schema file.
   the board moves.
 - A seen record over the record size limit is refused as
   `board::json::too_large`.
-- Pending effects and seen records stay in the personal board after use.
+- Seen records stay in the personal board after use.
