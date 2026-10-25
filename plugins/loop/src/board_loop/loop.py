@@ -19,7 +19,8 @@ INSTRUCTIONS = {
     "and attach the run.",
     "review": "Review the head commit with clean context and attach the review/report/v1. Fix blocking findings, "
     "record the new head and review again.",
-    "land": "Open the pull request and record its URL with --pull-request. Merging happens outside Board.",
+    "land": "Draft the pull request with `board call loop.pr`, open it with the command it returns, and record its "
+    "URL with --pull-request. Merging happens outside Board.",
     "learn": "Record what to improve as notes or tasks and attach them, or decide there is nothing, then advance.",
     "done": "Nothing is left to do.",
     "dropped": "Nothing is left to do.",
@@ -30,25 +31,53 @@ INSTRUCTIONS = {
 READS_RECORDS = ("shape", "plan", "build", "review")
 
 
+def referenced(board: Board, refs: list[str]) -> tuple[dict[str, tuple[str, dict[str, Any]]], dict[str, str]]:
+    """Each entry `refs` reaches as (type, body), in their order, and each unreadable one with the code that says why.
+
+    A file that is not a record is of type `file`; a path Board resolves to a
+    directory is of type `directory`.
+    """
+    records: dict[str, tuple[str, dict[str, Any]]] = {}
+    unreadable = dict.fromkeys(refs, "board::path::not_found")
+    if not refs:
+        return records, unreadable
+    listed = ", ".join(literal(ref) for ref in refs)
+    rows = board.rows(
+        "SELECT e.logical, e.type, e.code, r.body FROM entries AS e"  # noqa: S608 - values are quoted by literal()
+        " LEFT JOIN records AS r ON r.logical = e.logical AND r.blob = e.blob"
+        f" WHERE e.logical IN ({listed})"
+    )
+    for logical, type_name, code, text in rows:
+        if code is not None and code not in TREE_CODES:
+            unreadable[logical] = str(code)
+        else:
+            body = cast("dict[str, Any]", json.loads(text)) if text is not None else {}
+            records[logical] = (str(type_name or "file"), body)
+            unreadable.pop(logical, None)
+    unfound = [ref for ref, code in unreadable.items() if code == "board::path::not_found"]
+    for ref, answer in zip(unfound, board.refs(unfound), strict=True):
+        if answer is not None:
+            records[ref] = ("directory", {})
+            del unreadable[ref]
+    return {ref: records[ref] for ref in refs if ref in records}, unreadable
+
+
+def plan_text(board: Board, change: Change) -> str | None:
+    """The text of the change's plan, or `None` when it names none or nothing is there."""
+    if "plan" not in change:
+        return None
+    [text] = board.get([change["plan"]])
+    return None if isinstance(text, PluginError) else text.decode(errors="replace")
+
+
 def observe(board: Board, path: str, change: Change) -> Observed:
     """What the change's gate reads: references where the gate uses them, the plan in `shape`, docs in `build`."""
     phase = change["phase"]
     cited = change.get("records", []) if phase in READS_RECORDS else []
-    records: dict[str, tuple[str, dict[str, Any]]] = {}
-    if cited:
-        listed = ", ".join(literal(ref) for ref in cited)
-        rows = board.rows(f"SELECT logical, type, code, body FROM records WHERE logical IN ({listed})")  # noqa: S608 - values are quoted by literal()
-        found = {row[0]: row for row in rows if row[2] is None or row[2] in TREE_CODES}
-        for ref in cited:
-            if ref in found:
-                _, type_name, _, body = found[ref]
-                records[ref] = (str(type_name), cast("dict[str, Any]", json.loads(body)))
-    plan = None
-    if phase == "shape" and "plan" in change:
-        [text] = board.get([change["plan"]])
-        plan = None if isinstance(text, PluginError) else text.decode(errors="replace")
+    records, unreadable = referenced(board, cited)
+    plan = plan_text(board, change) if phase == "shape" else None
     suite = check_suite(board, change["repo"]) if phase == "build" else None
-    return Observed(path=path, change=change, records=records, plan=plan, suite=suite)
+    return Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
 
 
 def next_step(request: CallRequest) -> dict[str, object]:

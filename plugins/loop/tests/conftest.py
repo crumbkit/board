@@ -144,8 +144,8 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with loop enabled and a loose schema for each type a change cites."""
-    fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
+    """A board that does not commit, at a root holding a space, with loop and a loose schema for each cited type."""
+    fixture = Board(root=tmp_path / "a board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     git(fixture.root, "init", "-q")
     fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
@@ -196,7 +196,8 @@ def report(head: str = HEAD, verdict: str = "approve", **fields: Any) -> str:  #
 
 def change(phase: str = "shape", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """An `loop/change/v1` record in `phase`."""
-    return record("loop/change/v1", title="Let a suite declare a timeout", repo="/repos/x", phase=phase, **fields)
+    defaults: dict[str, Any] = {"title": "Let a suite declare a timeout", "repo": "/repos/x", "phase": phase}
+    return record("loop/change/v1", **(defaults | fields))
 
 
 PLAN = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n"

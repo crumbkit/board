@@ -6,9 +6,10 @@ from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_loop.loop import advance, attach, next_step
 from board_loop.open import open_changes
+from board_loop.pr import pr
 from board_loop.start import start
 
-CAPABILITIES = {"start": start, "next": next_step, "attach": attach, "advance": advance, "open": open_changes}
+CAPABILITIES = {"start": start, "next": next_step, "attach": attach, "advance": advance, "open": open_changes, "pr": pr}
 
 
 def call(request: CallRequest) -> dict[str, object]:

@@ -16,6 +16,7 @@ from board_loop.models import (
     OpenInput,
     OpenOutput,
     PathInput,
+    PrOutput,
     StartInput,
     StartOutput,
 )
@@ -88,6 +89,14 @@ def manifest() -> dict[str, JsonValue]:
                 OpenInput,
                 OpenOutput,
                 read_only=True,
+            ),
+            capability(
+                "pr",
+                "Write pr.md in the change's directory, a pull request body that says what changes, why, what the"
+                " tests prove and do not prove, and the evidence, and return the gh command that would use it.",
+                PathInput,
+                PrOutput,
+                read_only=False,
             ),
         ],
     }

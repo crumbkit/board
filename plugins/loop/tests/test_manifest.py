@@ -37,7 +37,7 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
     report = board.json("plugin", "list")
     plugin = next(plugin for plugin in report["data"] if plugin["name"] == "loop")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
-    assert plugin["offers"] == ["start", "next", "attach", "advance", "open"]
+    assert plugin["offers"] == ["start", "next", "attach", "advance", "open", "pr"]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
 
@@ -82,6 +82,7 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("attach", "pull_request"),
         ("advance", "path"),
         ("open", "limit"),
+        ("pr", "path"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

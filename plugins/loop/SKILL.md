@@ -39,7 +39,13 @@ The gate is the contract. `next` says what the current phase still lacks;
 - **review**: review the head commit with clean context and attach the
   report. Fix every critical or high finding, record the new head, and
   review again.
-- **land**: open the pull request and record its URL. Merging happens
+- **land**: add `## What the tests prove` and `## What the tests do not
+  prove` sections to the plan with what the runs cannot show on their own.
+  Run `board -C <board> call loop.pr --path /changes/<name>`, read
+  `/changes/<name>/pr.md` and edit it if it is wrong. Fix each path in
+  `unreadable` and run `pr` again, or say why in the body. Run `command`
+  yourself, in a POSIX shell, from a checkout of the repository on the
+  change's `head`, then record the pull request's URL. Merging happens
   outside Board.
 - **learn**: record what to improve as notes or tasks and attach them, or
   decide there is nothing to record.

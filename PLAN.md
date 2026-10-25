@@ -43,8 +43,7 @@ and plugins ask Board before they take an effect. The owner answers from the
 command line or a gate window. No answer depends on `board serve`.
 [plan/board-ui.md](plan/board-ui.md) holds the decisions and the build order.
 The `review` plugin follows, designed in [plan/review.md](plan/review.md),
-which brings review accounting into scope. The `plans`, `loop` and
-`collab` plugins are each designed when they start.
+which brings review accounting into scope.
 
 ## Out of scope
 

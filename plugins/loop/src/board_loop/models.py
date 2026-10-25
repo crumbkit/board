@@ -208,4 +208,21 @@ class OpenOutput(Strict):
     unreadable: int
 
 
+class PrOutput(Strict):
+    """The pull request drafted for a change.
+
+    `path` is the logical path of `pr.md`, which holds the body. `command` is
+    the `gh pr create` line, for a POSIX shell, that would open the pull
+    request with that body; loop never runs it. When the change already
+    records a pull request, `command` is `null`, `pull_request` holds its
+    URL and `pr.md` is not written. `unreadable` lists the references that reach nothing or that Board
+    marks degraded.
+    """
+
+    path: str
+    command: str | None
+    pull_request: str | None
+    unreadable: list[str]
+
+
 CHANGE_SCHEMA_PATH = f"{CHANGE_TYPE}.schema.json"

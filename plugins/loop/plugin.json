@@ -558,6 +558,79 @@
         "title": "OpenOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Write pr.md in the change's directory, a pull request body that says what changes, why, what the tests prove and do not prove, and the evidence, and return the gh command that would use it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One change, by path.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathInput",
+        "type": "object"
+      },
+      "name": "pr",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The pull request drafted for a change.\n\n`path` is the logical path of `pr.md`, which holds the body. `command` is\nthe `gh pr create` line, for a POSIX shell, that would open the pull\nrequest with that body; loop never runs it. When the change already\nrecords a pull request, `command` is `null`, `pull_request` holds its\nURL and `pr.md` is not written. `unreadable` lists the references that reach nothing or that Board\nmarks degraded.",
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "pull_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pull Request"
+          },
+          "unreadable": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "command",
+          "pull_request",
+          "unreadable"
+        ],
+        "title": "PrOutput",
+        "type": "object"
+      }
     }
   ],
   "description": "Walk one change to a repository from shaping the request to learning from it, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call loop.start --repo /repos/<name> --title '<title>'`, then call `loop.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",

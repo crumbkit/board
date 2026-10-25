@@ -1,7 +1,7 @@
 """Each phase's gate, computed only from the change and the records it references."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
 from board_loop.change import Change
@@ -33,7 +33,11 @@ class Observed:
     """What a gate reads: the change, its records by logical path as (type, body), the plan's text and the suite.
 
     A referenced record Board marks degraded is left out of `records`, so it
-    satisfies nothing. `plan` is `None` when no file is at the plan's path.
+    satisfies nothing; `unreadable` maps each reference left out to the code
+    that explains it, `board::path::not_found` when nothing is there. A file
+    that is not a record has type `file` and a directory type `directory`,
+    each with an empty body. `plan` is `None` when no file is at the plan's
+    path.
     `suite` is the repository's check suite, or `None` when its contributing
     docs name none; only the build gate reads it.
     """
@@ -43,6 +47,7 @@ class Observed:
     records: dict[str, tuple[str, dict[str, Any]]]
     plan: str | None
     suite: str | None
+    unreadable: dict[str, str] = field(default_factory=dict[str, str])
 
 
 def check(name: str, missing: str | None) -> Check:

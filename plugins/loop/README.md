@@ -57,6 +57,11 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 - `open [--limit <n>]`: read-only. Changes not `done` or `dropped`, by path,
   at most 100 by default, with `total`, `truncated` and `unreadable`.
 
+- `pr --path /changes/<name>` drafts the pull request. It writes the body
+  to `/changes/<name>/pr.md`, replacing an earlier one, and returns `path`,
+  `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
+  `gh` or git, and makes no model calls. See "The pull request body".
+
 A path that holds no change is `loop::change::not_found`; a degraded
 change is `loop::change::degraded`.
 
@@ -75,6 +80,44 @@ Board marks degraded satisfies nothing.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.
+
+## The pull request body
+
+`pr` returns:
+
+- `command`: `gh pr create --title '<title>' --body-file '<file on disk>'`,
+  quoted for a POSIX shell. Run it from a checkout of the repository on the
+  change's `head`. The title is the change's `title` with its whitespace
+  collapsed to single spaces.
+- `pull_request`: when the change records one, its URL. `command` is then
+  `null` and `pr.md` is not written.
+- `unreadable`: the references that reach nothing or that Board marks
+  degraded.
+
+`pr` reads every reference, in any phase. A reference degraded only by a
+broken reference of its own is still read.
+
+| Section | From |
+| --- | --- |
+| (first) | The plan's Outcome. |
+| Why | The plan's Problem. |
+| Out of scope | The plan's Out of scope, when it has text. |
+| What the tests prove | The plan's section of that name, then each attached `runs/run/v1`: suite, scope, results by outcome, summary. |
+| What the tests do not prove | The plan's section of that name, then each run's limits: targeted, not clean, not on `head`, and each case that failed, errored or was skipped. Says so when no run is attached. |
+| Review | Each attached `review/report/v1`: verdict, author, range, findings by severity. |
+| Evidence | The change, the plan, and every reference with its type (`file` for a file that is not a record, `directory` for a directory), or the code that hid it. |
+| `Closes <issue>` | The change's `issue`, when set. |
+
+Plan headings match without case. A plan section holds its subsections, and
+a `#` line inside a code fence is not a heading. An empty plan section
+becomes a line that names it. The plan's sections are copied as written.
+Text from a referenced record is put on one line, so it cannot add a heading
+or a list item. Paths and free text (a run's suite and summary, a case and
+its note, a report's author) go in inline code; empty text shows as
+`(empty)`. Each run names at most 20 failed, errored or skipped cases and
+counts the rest. `Closes` is left out when the
+issue holds whitespace. Evidence is listed by logical path, since a board path
+has no URL.
 
 ## Installing
 
