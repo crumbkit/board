@@ -1,0 +1,9 @@
+{
+  "name": "board-effects",
+  "version": "0.1.0",
+  "description": "Shows the owner the Board effects that wait for an answer, and approves or refuses one with board answer, from the band above the prompt, a pane, or a dialog when a put is asked.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luke Randall"
+  }
+}

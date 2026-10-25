@@ -11,6 +11,11 @@ command, as an agent would. Board itself never runs a mod, and a mod has no
 process of its own, so mods add no trigger or daemon to Board. Mods share data
 only through Board records.
 
+Board's own effects have no plugin, so their mod, `board-effects`, lives in
+`plugins/effects/claude-code/`, where the `mods` workflow and the marketplace
+find it. `plugins/effects/` holds nothing else and is not a Board plugin.
+[effects-claude-code.md](effects-claude-code.md) says what it shows and runs.
+
 Claude Code loads a mod with `claude --plugin-dir plugins/<name>/claude-code`,
 or from the folders `CLAUDE_CODE_PLUGIN_DIRS` names. `claude plugin validate`
 checks it and `claude plugin test` runs its `tests/*.test.ts`, which stand in

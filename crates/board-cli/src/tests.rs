@@ -1402,6 +1402,7 @@ mod cli;
 mod complete;
 mod consistency;
 mod directory;
+mod effects_mod;
 mod flags;
 mod get;
 mod help;
