@@ -1,0 +1,41 @@
+# Runs the tests of each Claude Code mod, `plugins/<name>/claude-code/`, when a
+# pull request or a push to main changes a file under a `claude-code/`
+# directory, or this file. The tests stand in for board and need no credential.
+name: mods
+
+on:
+  pull_request:
+    paths:
+      - "**/claude-code/**"
+      - .github/workflows/mods.yml
+  push:
+    branches: [main]
+    paths:
+      - "**/claude-code/**"
+      - .github/workflows/mods.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mods-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # The exact version the mods' tests were last run with locally. The
+      # controls mod needs `$.session.append`, which 2.1.289 lacks.
+      - run: npm install --global @anthropic-ai/claude-code@2.1.308 # zizmor: ignore[adhoc-packages]
+      - name: claude plugin test, for each mod
+        run: |
+          for mod in plugins/*/claude-code; do
+            echo "::group::$mod"
+            claude plugin test "$mod"
+            echo "::endgroup::"
+          done
