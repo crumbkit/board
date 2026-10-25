@@ -7,7 +7,7 @@ use std::path::Path;
 use board_model::{ObjectId, canonical_json};
 use serde_json::{Value, json};
 
-use crate::call::{CallError, Context, exchange};
+use crate::call::{CallError, Child, Context, exchange};
 use crate::manifest::Manifest;
 use crate::process::Limits;
 use crate::protocol::{BadOutput, EXTRACT_RESULT_TYPE, EXTRACT_TYPE, RawExtractResult};
@@ -62,7 +62,7 @@ pub fn extract(
             directory,
             request,
             context,
-            depth,
+            Child { depth, pass: &[] },
             EXTRACT_RESULT_TYPE,
             |result: RawExtractResult| handled(&sent, result.blobs),
         );

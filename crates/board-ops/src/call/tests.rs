@@ -89,6 +89,22 @@ impl Fixture {
         fixture
     }
 
+    /// Installs `tasks` offering `due`, answering with `script`, with each of
+    /// `extra`'s fields added to the capability.
+    fn tasks_with(script: &str, extra: &Value) -> Self {
+        let fixture = Self::tasks(script);
+        let file = fixture.plugin("tasks").join("plugin.json");
+        let mut manifest: Value =
+            serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        let capability = manifest["capabilities"][0].as_object_mut().unwrap();
+        capability.extend(extra.as_object().unwrap().clone());
+        fixture.data.write(
+            "plugins/tasks/plugin.json",
+            Item::File(&manifest.to_string()),
+        );
+        fixture
+    }
+
     fn plugin(&self, name: &str) -> PathBuf {
         self.data.workdir().join("plugins").join(name)
     }
@@ -962,4 +978,63 @@ fn without_a_cache_the_database_is_a_temporary_file_for_the_run() {
     let database = PathBuf::from(request["board"]["database"].as_str().unwrap());
     assert!(database.ends_with("tasks@0.1.0.sqlite"));
     assert!(!database.parent().unwrap().exists(), "{database:?}");
+}
+
+#[test]
+fn a_capability_s_timeout_replaces_board_s_limit_in_both_directions() {
+    let short = Limits {
+        time: Duration::from_millis(500),
+        ..Limits::default()
+    };
+    let sleeping = format!("#!/bin/sh\ncat > /dev/null\nsleep 1\nprintf '%s' '{RESULT}'\n");
+    let refused =
+        Fixture::tasks(&sleeping).call_with("tasks.due", r#"{"n": 1}"#, &environment(), short);
+    assert_eq!(
+        refused.unwrap_err().refusal().code,
+        Board(Code::PluginTimeout)
+    );
+    let admitted = Fixture::tasks_with(&sleeping, &json!({"timeout": 3})).call_with(
+        "tasks.due",
+        r#"{"n": 1}"#,
+        &environment(),
+        short,
+    );
+    assert_eq!(admitted.unwrap().output, json!({"count": 2}));
+    // It writes finished.txt only if it is left to run to its end.
+    let slow = "#!/bin/sh\ncat > /dev/null\nsleep 10\ntouch finished.txt\n";
+    let fixture = Fixture::tasks_with(slow, &json!({"timeout": 1}));
+    let started = std::time::Instant::now();
+    let error = fixture.call("tasks.due", r#"{"n": 1}"#).unwrap_err();
+    assert_eq!(error.refusal().code, Board(Code::PluginTimeout));
+    assert!(started.elapsed() < Duration::from_secs(5));
+    assert!(!fixture.plugin("tasks").join("finished.txt").exists());
+}
+
+#[test]
+fn a_capability_also_sees_the_variables_its_manifest_names_and_no_others() {
+    let inherited = Environment {
+        inherited: [
+            ("REVIEW_TOKEN", "secret"),
+            ("OTHER_TOKEN", "other"),
+            ("BOARD_CALL_DEPTH", "5"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (OsString::from(name), OsString::from(value)))
+        .collect(),
+        ..environment()
+    };
+    let named = json!({"env": ["REVIEW_TOKEN", "UNSET_TOKEN"]});
+    let seen = |fixture: &Fixture| {
+        fixture
+            .call_with("tasks.due", r#"{"n": 1}"#, &inherited, Limits::default())
+            .unwrap();
+        std::fs::read_to_string(fixture.plugin("tasks").join("environment.txt")).unwrap()
+    };
+    let passed = seen(&Fixture::tasks_with(RECORDING, &named));
+    let lines: Vec<&str> = passed.lines().collect();
+    assert!(lines.contains(&"REVIEW_TOKEN=secret"), "{passed}");
+    assert!(lines.contains(&"BOARD_CALL_DEPTH=1"), "{passed}");
+    assert!(!passed.contains("OTHER_TOKEN") && !passed.contains("UNSET_TOKEN"));
+    let unnamed = seen(&Fixture::tasks(RECORDING));
+    assert!(!unnamed.contains("REVIEW_TOKEN"), "{unnamed}");
 }

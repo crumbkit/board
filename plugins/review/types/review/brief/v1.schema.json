@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "`review/brief/v1`, at /reviews/<id>/brief: what a change's author asks a review to look at.\n\n`range` is the commits under review as `base..head`, both full commit ids.\n`focus` says what matters and what to check first, `questions` what the\nauthor wants answered, and `follows` the report this brief continues from.",
+  "properties": {
+    "$type": {
+      "const": "review/brief/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "focus": {
+      "minLength": 1,
+      "title": "Focus",
+      "type": "string"
+    },
+    "follows": {
+      "format": "board-ref",
+      "title": "Follows",
+      "type": "string",
+      "x-board-type": "review/report/v1"
+    },
+    "questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "range": {
+      "pattern": "^[0-9a-f]{40,64}\\.\\.[0-9a-f]{40,64}$",
+      "title": "Range",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "range",
+    "focus"
+  ],
+  "title": "BriefRecord",
+  "type": "object"
+}

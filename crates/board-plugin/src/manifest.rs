@@ -4,6 +4,7 @@
 use std::fmt;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 
 pub use board_model::MANIFEST_TYPE;
 use board_model::{Code, JsonError, RecordType, parse_json};
@@ -80,6 +81,104 @@ name!(
 #[error("{text:?} is not a name: use lowercase ASCII letters, digits and hyphens")]
 pub struct NameError {
     text: String,
+}
+
+/// The variables Board sets for every plugin. A capability's `env` may name
+/// none of them.
+pub(crate) const PASSED: [&str; 12] = [
+    "PATH",
+    "HOME",
+    "LANG",
+    "TZ",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CONFIG_HOME",
+    "BOARD_TIMINGS",
+    "BOARD_CALLER_DIR",
+    "BOARD_DAY_START",
+    "BOARD_CALL_DEPTH",
+    "BOARD_PLUGIN",
+];
+
+/// An environment variable's name: ASCII letters, digits and underscores,
+/// not starting with a digit, and none Board sets for every plugin.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct VariableName(String);
+
+impl VariableName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for VariableName {
+    type Error = VariableNameError;
+
+    fn try_from(text: String) -> Result<Self, VariableNameError> {
+        let mut bytes = text.bytes();
+        let first = bytes.next();
+        if !(first.is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+            && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'))
+        {
+            Err(VariableNameError::Shape { text })
+        } else if PASSED.contains(&text.as_str()) {
+            Err(VariableNameError::Board { text })
+        } else {
+            Ok(Self(text))
+        }
+    }
+}
+
+impl FromStr for VariableName {
+    type Err = VariableNameError;
+
+    fn from_str(text: &str) -> Result<Self, VariableNameError> {
+        Self::try_from(text.to_owned())
+    }
+}
+
+impl From<VariableName> for String {
+    fn from(name: VariableName) -> Self {
+        name.0
+    }
+}
+
+/// The longest `timeout` a capability may set, in seconds: an hour.
+const MAX_TIMEOUT: u32 = 3600;
+
+/// A capability's time limit: whole seconds from 1 to [`MAX_TIMEOUT`].
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(try_from = "u32")]
+struct Timeout(u32);
+
+impl TryFrom<u32> for Timeout {
+    type Error = String;
+
+    fn try_from(seconds: u32) -> Result<Self, String> {
+        if (1..=MAX_TIMEOUT).contains(&seconds) {
+            Ok(Self(seconds))
+        } else {
+            Err(format!(
+                "a timeout of {seconds} seconds is outside 1 to {MAX_TIMEOUT}; set one in that range, \
+                 or split the capability's work into calls that each finish within an hour"
+            ))
+        }
+    }
+}
+
+/// Text that is not an environment variable's name, or names one Board sets.
+#[derive(Debug, thiserror::Error)]
+pub enum VariableNameError {
+    #[error(
+        "{text:?} is not a variable name: use ASCII letters, digits and underscores, not starting with a digit"
+    )]
+    Shape { text: String },
+    #[error(
+        "{text:?} is a variable Board sets for every plugin; remove it from env, since the plugin \
+         already sees Board's value"
+    )]
+    Board { text: String },
 }
 
 /// `MAJOR.MINOR.PATCH`, each part ASCII digits.
@@ -163,6 +262,10 @@ struct RawCapability {
     annotations: Option<Annotations>,
     #[serde(default, rename = "_meta")]
     meta: Map<String, Value>,
+    #[serde(default)]
+    timeout: Option<Timeout>,
+    #[serde(default)]
+    env: Vec<VariableName>,
 }
 
 /// MCP's `ToolAnnotations`: hints Board stores and acts on none of.
@@ -205,6 +308,10 @@ pub struct Capability {
     pub output: Schema,
     pub annotations: Option<Annotations>,
     pub meta: Map<String, Value>,
+    /// How long a call may run, in place of Board's default limit.
+    pub timeout: Option<Duration>,
+    /// The variables of Board's environment that a call also receives.
+    pub env: Vec<VariableName>,
 }
 
 impl Manifest {
@@ -277,6 +384,10 @@ impl Manifest {
                 description: capability.description,
                 annotations: capability.annotations,
                 meta: capability.meta,
+                timeout: capability
+                    .timeout
+                    .map(|Timeout(seconds)| Duration::from_secs(seconds.into())),
+                env: capability.env,
             });
         }
         Ok(Self {

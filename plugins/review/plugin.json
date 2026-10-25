@@ -1,0 +1,153 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "description": "Review the range a brief names with the agent the BOARD_REVIEW_AGENT variable names, and write the report beside the brief.",
+      "env": [
+        "BOARD_REVIEW_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Review the range a brief names with the agent BOARD_REVIEW_AGENT names.",
+        "properties": {
+          "brief": {
+            "description": "The brief to run, by its logical path, such as /reviews/fix-sync/brief.",
+            "format": "board-path",
+            "pattern": "^/reviews/[^/]+/brief$",
+            "title": "Brief",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brief"
+        ],
+        "title": "RunInput",
+        "type": "object"
+      },
+      "name": "run",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The report written, the commits covered, the verdict and how many findings.",
+        "properties": {
+          "findings": {
+            "title": "Findings",
+            "type": "integer"
+          },
+          "range": {
+            "title": "Range",
+            "type": "string"
+          },
+          "report": {
+            "title": "Report",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "approve",
+              "changes",
+              "comment"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report",
+          "range",
+          "verdict",
+          "findings"
+        ],
+        "title": "RunOutput",
+        "type": "object"
+      },
+      "timeout": 1800
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The reports in the board's own tree that cover every commit from the merge base of a base and a head to the head, each by a report's range or patch ids, after skipping commits that only add review records. A report asking for changes never covers. Fails when a commit is uncovered.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Whether a committed report covers the commits a pull request adds to its base.",
+        "properties": {
+          "base": {
+            "description": "The commit the pull request merges into, in any form git resolves, such as its base commit.",
+            "minLength": 1,
+            "title": "Base",
+            "type": "string"
+          },
+          "head": {
+            "description": "The commit to check, in any form git resolves, such as a pull request's head commit; HEAD when left out.",
+            "minLength": 1,
+            "title": "Head",
+            "type": "string"
+          }
+        },
+        "required": [
+          "base"
+        ],
+        "title": "CoveredInput",
+        "type": "object"
+      },
+      "name": "covered",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The commit checked, its merge base with the base, and the reports that cover the commits between.\n\n`skipped` counts the commits that only add review records and need no\nreport, `commits` the rest, and `reports` lists the reports that cover at\nleast one of them.",
+        "properties": {
+          "commits": {
+            "title": "Commits",
+            "type": "integer"
+          },
+          "head": {
+            "title": "Head",
+            "type": "string"
+          },
+          "merge_base": {
+            "title": "Merge Base",
+            "type": "string"
+          },
+          "reports": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reports",
+            "type": "array"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "head",
+          "merge_base",
+          "skipped",
+          "commits",
+          "reports"
+        ],
+        "title": "CoveredOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.covered --base <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in the plugin's directory says more.",
+  "metadata": {
+    "area": "review"
+  },
+  "name": "review",
+  "run": [
+    ".venv/bin/python",
+    "-m",
+    "board_review"
+  ],
+  "types": [
+    "review/brief/v1",
+    "review/report/v1"
+  ],
+  "version": "0.1.0"
+}

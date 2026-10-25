@@ -478,7 +478,7 @@ fn generic(code: Code) -> &'static str {
             "check that the program the plugin's `run` names exists and can be executed; a name without a `/` is looked up on `PATH`"
         }
         Code::PluginTimeout => {
-            "the plugin ran for more than 30 seconds; narrow its input or report it to the plugin's author"
+            "the plugin ran past its time limit, 30 seconds unless its capability's `timeout` in plugin.json sets another; narrow its input or report it to the plugin's author"
         }
         Code::PluginTooLarge => {
             "the plugin wrote more than 16 MiB; narrow its input or report it to the plugin's author"

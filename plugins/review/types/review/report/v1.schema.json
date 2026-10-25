@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "Cost": {
+      "additionalProperties": false,
+      "description": "What a review took: its seconds, and its tokens when a model ran and said.",
+      "properties": {
+        "input_tokens": {
+          "minimum": 0,
+          "title": "Input Tokens",
+          "type": "integer"
+        },
+        "output_tokens": {
+          "minimum": 0,
+          "title": "Output Tokens",
+          "type": "integer"
+        },
+        "seconds": {
+          "minimum": 0,
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "title": "Cost",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "One thing a review found, at a file and line when it has one.",
+      "properties": {
+        "file": {
+          "title": "File",
+          "type": "string"
+        },
+        "line": {
+          "minimum": 1,
+          "title": "Line",
+          "type": "integer"
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "text"
+      ],
+      "title": "Finding",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`review/report/v1`, at /reviews/<id>/report: what one review of a range found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. `brief` is absent for\na review a person wrote. `by` names the models the agent reported, else the\nprogram the agent command starts, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
+  "properties": {
+    "$type": {
+      "const": "review/report/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "brief": {
+      "format": "board-ref",
+      "title": "Brief",
+      "type": "string",
+      "x-board-type": "review/brief/v1"
+    },
+    "by": {
+      "minLength": 1,
+      "title": "By",
+      "type": "string"
+    },
+    "cost": {
+      "$ref": "#/$defs/Cost"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "follows": {
+      "format": "board-ref",
+      "title": "Follows",
+      "type": "string",
+      "x-board-type": "review/report/v1"
+    },
+    "patch_ids": {
+      "items": {
+        "pattern": "^[0-9a-f]{40,64}$",
+        "type": "string"
+      },
+      "title": "Patch Ids",
+      "type": "array"
+    },
+    "range": {
+      "pattern": "^[0-9a-f]{40,64}\\.\\.[0-9a-f]{40,64}$",
+      "title": "Range",
+      "type": "string"
+    },
+    "source": {
+      "pattern": "^https?://",
+      "title": "Source",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "approve",
+        "changes",
+        "comment"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "range",
+    "patch_ids",
+    "findings",
+    "verdict",
+    "by"
+  ],
+  "title": "ReportRecord",
+  "type": "object"
+}

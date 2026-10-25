@@ -222,19 +222,23 @@ fn plugin_list_json_is_a_tagged_report_holding_the_manifest() {
 }
 
 #[test]
-fn plugin_list_json_prints_a_capabilitys_title_annotations_and_meta() {
+fn plugin_list_json_prints_a_capabilitys_title_annotations_meta_timeout_and_env() {
     let (board, data) = installed();
     let full = TASKS.replace(
         r#""description": "Open tasks due before a date.","#,
         r#""title": "Due tasks",
     "description": "Open tasks due before a date.",
     "annotations": {"readOnlyHint": true},
-    "_meta": {"area": "dates"},"#,
+    "_meta": {"area": "dates"},
+    "timeout": 60,
+    "env": ["TASKS_TOKEN"],"#,
     );
     data.write("plugins/tasks/plugin.json", Item::File(&full));
     let report = json(&plugin(&board, &data, &["--json", "plugin", "list"]));
     let due = &report["data"][0]["capabilities"][0];
     assert_eq!(due["title"], "Due tasks");
+    assert_eq!(due["timeout"], 60);
+    assert_eq!(due["env"], serde_json::json!(["TASKS_TOKEN"]));
     assert_eq!(
         due["annotations"],
         serde_json::json!({"readOnlyHint": true})
@@ -350,8 +354,8 @@ fn plugin_find_json_names_the_plugin_and_capability() {
     );
 }
 
-/// The tasks manifest with a capability that has a title, annotations and
-/// `_meta`.
+/// The tasks manifest with a capability that has a title, annotations,
+/// `_meta`, a timeout and variables it reads.
 fn titled() -> (Scenario, Scenario) {
     let (board, data) = installed();
     let full = TASKS.replace(
@@ -359,14 +363,17 @@ fn titled() -> (Scenario, Scenario) {
         r#""title": "Due tasks",
     "description": "Open tasks due before a date.",
     "annotations": {"readOnlyHint": true, "destructiveHint": false},
-    "_meta": {"area": "dates"},"#,
+    "_meta": {"area": "dates"},
+    "timeout": 60,
+    "env": ["TASKS_TOKEN"],"#,
     );
     data.write("plugins/tasks/plugin.json", Item::File(&full));
     (board, data)
 }
 
 #[test]
-fn plugin_find_prints_its_line_per_capability_and_long_adds_title_version_and_annotations() {
+fn plugin_find_prints_its_line_per_capability_and_long_adds_title_version_annotations_timeout_and_env()
+ {
     let (board, data) = titled();
     let output = plugin(&board, &data, &["plugin", "find"]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
@@ -378,8 +385,8 @@ fn plugin_find_prints_its_line_per_capability_and_long_adds_title_version_and_an
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "PLUGIN  CAPABILITY  ENABLED  DESCRIPTION                    TITLE      VERSION  ANNOTATIONS\n\
-         tasks   due         true     Open tasks due before a date.  Due tasks  0.1.0    {\"destructiveHint\":false,\"readOnlyHint\":true}\n"
+        "PLUGIN  CAPABILITY  ENABLED  DESCRIPTION                    TITLE      VERSION  ANNOTATIONS                                    TIMEOUT  ENV\n\
+         tasks   due         true     Open tasks due before a date.  Due tasks  0.1.0    {\"destructiveHint\":false,\"readOnlyHint\":true}  60       [\"TASKS_TOKEN\"]\n"
     );
 }
 
@@ -407,7 +414,7 @@ fn plugin_find_fields_admits_its_fields_and_refuses_an_unknown_field() {
     assert_eq!(
         text(&output.stderr),
         "error: --fields names an unknown field 'summary'\n  \
-         help:  use the valid fields: _meta, annotations, capability, description, enabled, inputSchema, outputSchema, plugin, title, version\n  \
+         help:  use the valid fields: _meta, annotations, capability, description, enabled, env, inputSchema, outputSchema, plugin, timeout, title, version\n  \
          code:  board::cli::usage\n"
     );
 }
@@ -425,7 +432,7 @@ fn plugin_find_json_prints_each_capability_whole_in_key_order() {
         text(&output.stdout),
         concat!(
             r#"{"schema":"board/plugin-find-report/v2","data":["#,
-            r#"{"_meta":{"area":"dates"},"annotations":{"destructiveHint":false,"readOnlyHint":true},"capability":"due","description":"Open tasks due before a date.","enabled":true,"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"tasks","title":"Due tasks","version":"0.1.0"},"#,
+            r#"{"_meta":{"area":"dates"},"annotations":{"destructiveHint":false,"readOnlyHint":true},"capability":"due","description":"Open tasks due before a date.","enabled":true,"env":["TASKS_TOKEN"],"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"tasks","timeout":60,"title":"Due tasks","version":"0.1.0"},"#,
             r#"{"_meta":{},"capability":"one","description":"one.","enabled":false,"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"zeta","version":"0.1.0"},"#,
             r#"{"_meta":{},"capability":"two","description":"two.","enabled":false,"inputSchema":{"type":"object"},"outputSchema":{"type":"object"},"plugin":"zeta","version":"0.1.0"}"#,
             r#"],"total":3,"truncated":false}"#,
@@ -455,6 +462,8 @@ fn plugin_find_help_names_its_columns() {
         "title",
         "version",
         "annotations",
+        "timeout",
+        "env",
     ] {
         assert!(help.contains(&format!("  {column}")), "{column}: {help}");
     }

@@ -194,9 +194,11 @@ pub(crate) fn plugin_find(printer: Printer, report: &PluginFindReport, page: &Pa
             capability: offered.name.to_string(),
             description: offered.description.clone(),
             enabled: found.enabled,
+            env: env(offered),
             input_schema: offered.input.document().clone(),
             output_schema: offered.output.document().clone(),
             plugin: manifest.name.to_string(),
+            timeout: timeout(offered),
             title: offered.title.clone(),
             version: manifest.version.to_string(),
         })
@@ -223,6 +225,9 @@ struct Found {
     description: String,
     /// Whether this board's configuration enables the plugin.
     enabled: bool,
+    /// The variables of Board's environment the capability also receives.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    env: Option<Vec<String>>,
     /// The JSON Schema of the input the capability takes.
     #[serde(rename = "inputSchema")]
     input_schema: Value,
@@ -231,6 +236,9 @@ struct Found {
     output_schema: Value,
     /// The plugin that offers the capability.
     plugin: String,
+    /// The capability's time limit in seconds, when it sets its own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    timeout: Option<u64>,
     /// The capability's title for people.
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
@@ -243,7 +251,8 @@ struct Found {
 /// table.
 impl Row for Found {
     const COLUMNS: &'static [&'static str] = &["plugin", "capability", "enabled", "description"];
-    const LONG_COLUMNS: &'static [&'static str] = &["title", "version", "annotations"];
+    const LONG_COLUMNS: &'static [&'static str] =
+        &["title", "version", "annotations", "timeout", "env"];
     const WHOLE: bool = true;
     const LINE: Option<&'static str> = Some("<PLUGIN>.<CAPABILITY> <ENABLED> <DESCRIPTION>");
 
@@ -286,7 +295,27 @@ fn capability(capability: &Capability) -> Value {
     if let Some(annotations) = &capability.annotations {
         value["annotations"] = json!(annotations);
     }
+    if let Some(seconds) = timeout(capability) {
+        value["timeout"] = json!(seconds);
+    }
+    if let Some(names) = env(capability) {
+        value["env"] = json!(names);
+    }
     value
+}
+
+/// A capability's own time limit in seconds, when it sets one.
+fn timeout(capability: &Capability) -> Option<u64> {
+    capability.timeout.map(|limit| limit.as_secs())
+}
+
+/// The variables a capability's `env` names, when it names any.
+fn env(capability: &Capability) -> Option<Vec<String>> {
+    (!capability.env.is_empty()).then(|| {
+        (capability.env.iter())
+            .map(|name| name.as_str().to_owned())
+            .collect()
+    })
 }
 
 /// `call`: the output as canonical JSON, and as `data` with `--json`.

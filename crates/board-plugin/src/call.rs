@@ -1,6 +1,7 @@
 //! Calling a capability (docs/plugins.md, Calling a capability).
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -12,7 +13,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
 use crate::installed::{DiscoveryError, Installed};
-use crate::manifest::{Capability, CapabilityName, Manifest, ManifestError, NameError, PluginName};
+use crate::manifest::{
+    Capability, CapabilityName, Manifest, ManifestError, NameError, PluginName, VariableName,
+};
 use crate::process::{self, Limits, Scope, Spawned, Stopped};
 use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallResult, Reply};
 
@@ -86,6 +89,30 @@ pub struct Environment {
     pub day_start: Option<OsString>,
     /// `BOARD_PLUGIN`, set when Board runs inside a plugin.
     pub plugin: Option<OsString>,
+    /// Every variable Board inherited, which a capability's `env` may name.
+    pub inherited: Inherited,
+}
+
+/// Every variable of Board's own environment whose name is UTF-8. Its
+/// `Debug` shows only the names, since the values may be secrets.
+#[derive(Clone, Default)]
+pub struct Inherited(BTreeMap<String, OsString>);
+
+impl FromIterator<(OsString, OsString)> for Inherited {
+    fn from_iter<I: IntoIterator<Item = (OsString, OsString)>>(variables: I) -> Self {
+        Self(
+            variables
+                .into_iter()
+                .filter_map(|(name, value)| Some((name.into_string().ok()?, value)))
+                .collect(),
+        )
+    }
+}
+
+impl fmt::Debug for Inherited {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_set().entries(self.0.keys()).finish()
+    }
 }
 
 impl Environment {
@@ -278,12 +305,22 @@ pub fn invoke(
         })?;
     let request = protocol::request(&capability.name, &input, context.root, context.database);
     let plugin = &chosen.manifest.name;
+    let context = Context {
+        limits: Limits {
+            time: capability.timeout.unwrap_or(context.limits.time),
+            ..context.limits
+        },
+        ..*context
+    };
     let output = exchange(
         &chosen.manifest,
         &chosen.directory,
         request,
-        context,
-        depth,
+        &context,
+        Child {
+            depth,
+            pass: &capability.env,
+        },
         CALL_RESULT_TYPE,
         |result: RawCallResult| {
             capability
@@ -312,7 +349,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     directory: &Path,
     request: Vec<u8>,
     context: &Context<'_>,
-    depth: u32,
+    child: Child<'_>,
     expected: &'static str,
     check: impl FnOnce(T) -> Result<U, BadOutput>,
 ) -> Result<U, CallError> {
@@ -329,7 +366,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     // A nested Board leaves its plugin in the outermost plugin's group. A
     // new group there would escape the outermost Board's signals after they
     // stopped the nested Board that enforces this plugin's limits.
-    let scope = if depth == 0 {
+    let scope = if child.depth == 0 {
         Scope::Group
     } else {
         Scope::Process
@@ -338,7 +375,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
         &program,
         arguments,
         directory,
-        &environment(context.environment, depth + 1, &plugin),
+        &environment(context.environment, child.pass, child.depth + 1, &plugin),
         request,
         context.limits,
         scope,
@@ -395,16 +432,30 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     }
 }
 
-/// The only variables a plugin sees. `BOARD_PLUGIN` names the plugin, so a
-/// Board it runs knows who asks, or keeps naming the outer plugin when this
-/// Board already runs inside one, so a plugin cannot shed its name by calling
+/// Where a plugin runs: the depth of the call that runs it, and the variables
+/// its capability's `env` names, which an extraction leaves empty.
+#[derive(Clone, Copy)]
+pub(crate) struct Child<'a> {
+    pub(crate) depth: u32,
+    pub(crate) pass: &'a [VariableName],
+}
+
+/// The only variables a plugin sees. Board's own come last, so a name in
+/// `pass` cannot replace one. `BOARD_PLUGIN` names the plugin, so a Board it
+/// runs knows who asks, or keeps naming the outer plugin when this Board
+/// already runs inside one, so a plugin cannot shed its name by calling
 /// another (docs/architecture/writes/effects.md).
-fn environment(
-    inherited: &Environment,
+fn environment<'a>(
+    inherited: &'a Environment,
+    pass: &'a [VariableName],
     depth: u32,
     plugin: &PluginName,
-) -> Vec<(&'static str, OsString)> {
-    [
+) -> Vec<(&'a str, OsString)> {
+    let passed = pass.iter().filter_map(|name| {
+        let value = inherited.inherited.0.get(name.as_str())?;
+        Some((name.as_str(), value.clone()))
+    });
+    let own = [
         ("PATH", &inherited.path),
         ("HOME", &inherited.home),
         ("LANG", &inherited.lang),
@@ -417,15 +468,17 @@ fn environment(
         ("BOARD_DAY_START", &inherited.day_start),
     ]
     .into_iter()
-    .filter_map(|(key, value)| Some((key, value.clone()?)))
-    .chain([
-        (DEPTH_VARIABLE, OsString::from(depth.to_string())),
-        (
-            PLUGIN_VARIABLE,
-            (inherited.plugin.clone()).unwrap_or_else(|| OsString::from(plugin.as_str())),
-        ),
-    ])
-    .collect()
+    .filter_map(|(key, value)| Some((key, value.clone()?)));
+    passed
+        .chain(own)
+        .chain([
+            (DEPTH_VARIABLE, OsString::from(depth.to_string())),
+            (
+                PLUGIN_VARIABLE,
+                (inherited.plugin.clone()).unwrap_or_else(|| OsString::from(plugin.as_str())),
+            ),
+        ])
+        .collect()
 }
 
 /// A call Board refuses, or the plugin's own refusal.

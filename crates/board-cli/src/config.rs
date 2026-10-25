@@ -73,6 +73,7 @@ impl Context {
                 caller: current.map(PathBuf::into_os_string),
                 day_start: None,
                 plugin: std::env::var_os(board_plugin::PLUGIN_VARIABLE),
+                inherited: std::env::vars_os().collect(),
             },
             complete: std::env::var_os("BOARD_COMPLETE"),
             terminal: std::io::stdin().is_terminal(),

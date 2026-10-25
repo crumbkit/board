@@ -351,3 +351,78 @@ fn shipping(name: &str, types: &[&str]) -> Value {
     manifest["types"] = json!(types);
     manifest
 }
+
+/// The manifest with its capability's `key` set to `value`.
+fn capability_with(key: &str, value: Value) -> Value {
+    let mut manifest = manifest();
+    manifest["capabilities"][0]
+        .as_object_mut()
+        .unwrap()
+        .insert(key.to_owned(), value);
+    manifest
+}
+
+#[test]
+fn a_capability_without_a_timeout_or_variables_has_neither() {
+    let manifest = parse(&manifest()).unwrap();
+    assert_eq!(manifest.capabilities[0].timeout, None);
+    assert!(manifest.capabilities[0].env.is_empty());
+}
+
+#[test]
+fn a_timeout_outside_one_second_to_an_hour_is_refused_and_one_at_either_end_admitted() {
+    for seconds in [json!(0), json!(1.5)] {
+        let error = refused(&capability_with("timeout", seconds.clone()));
+        assert!(matches!(error, ManifestError::Shape { .. }), "{seconds}");
+        assert_eq!(error.code().as_str(), "board::plugin::bad_manifest");
+    }
+    let over = refused(&capability_with("timeout", json!(3601)));
+    assert_eq!(over.code().as_str(), "board::plugin::bad_manifest");
+    assert!(
+        over.to_string()
+            .contains("outside 1 to 3600; set one in that range"),
+        "{over}"
+    );
+    for seconds in [1, 3600] {
+        let manifest = parse(&capability_with("timeout", json!(seconds))).unwrap();
+        assert_eq!(
+            manifest.capabilities[0].timeout,
+            Some(std::time::Duration::from_secs(seconds))
+        );
+    }
+}
+
+#[test]
+fn a_variable_name_that_is_not_a_shell_name_is_refused_and_one_that_is_admitted() {
+    for name in ["", "1TOKEN", "A-B", "A B", "A=B"] {
+        let error = refused(&capability_with("env", json!([name])));
+        assert!(matches!(error, ManifestError::Shape { .. }), "{name:?}");
+        assert_eq!(error.code().as_str(), "board::plugin::bad_manifest");
+    }
+    let manifest = parse(&capability_with("env", json!(["ANTHROPIC_API_KEY", "_x1"]))).unwrap();
+    let names: Vec<&str> = manifest.capabilities[0]
+        .env
+        .iter()
+        .map(VariableName::as_str)
+        .collect();
+    assert_eq!(names, ["ANTHROPIC_API_KEY", "_x1"]);
+}
+
+#[test]
+fn a_variable_board_sets_is_refused_in_env_and_one_it_does_not_admitted() {
+    for name in ["BOARD_DAY_START", "BOARD_PLUGIN", "PATH", "XDG_CONFIG_HOME"] {
+        let error = refused(&capability_with("env", json!([name])));
+        assert_eq!(error.code().as_str(), "board::plugin::bad_manifest");
+        assert!(
+            error
+                .to_string()
+                .contains("a variable Board sets for every plugin"),
+            "{error}"
+        );
+    }
+    let manifest = parse(&capability_with("env", json!(["BOARD_REVIEW_AGENT"]))).unwrap();
+    assert_eq!(
+        manifest.capabilities[0].env[0].as_str(),
+        "BOARD_REVIEW_AGENT"
+    );
+}

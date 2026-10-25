@@ -1,0 +1,160 @@
+"""The review records, and the plugin's inputs and outputs.
+
+Board validates each call's input and output, and every record, so the plugin
+only types them. manifest.py generates the schemas from these shapes, and is
+the only module that imports pydantic (STANDARDS.md P3).
+"""
+
+from collections.abc import Callable
+from typing import Annotated, Literal, NotRequired, TypedDict
+
+BRIEF_TYPE = "review/brief/v1"
+REPORT_TYPE = "review/report/v1"
+
+# The variable that holds the agent `review.run` starts, as a JSON array of strings.
+AGENT_VARIABLE = "BOARD_REVIEW_AGENT"
+# How long `review.run` may take, in seconds: an agent reading a large change takes minutes.
+RUN_TIMEOUT = 1800
+
+Verdict = Literal["approve", "changes", "comment"]
+Severity = Literal["high", "medium", "low"]
+
+
+class Extra:
+    """JSON Schema keywords added to the schema generated for the type it annotates."""
+
+    def __init__(self, **keywords: object) -> None:
+        """Hold the keywords."""
+        self.keywords = keywords
+
+    def __get_pydantic_json_schema__(
+        self, core_schema: object, handler: Callable[[object], dict[str, object]]
+    ) -> dict[str, object]:
+        """The schema pydantic generates, with the keywords added."""
+        return handler(core_schema) | self.keywords
+
+
+def _ref(record_type: str) -> object:
+    return Extra(format="board-ref", **{"x-board-type": record_type})
+
+
+# A range of full commit ids, so a record names exactly which commits it means and cannot pass git an option.
+Commits = Annotated[str, Extra(pattern=r"^[0-9a-f]{40,64}\.\.[0-9a-f]{40,64}$")]
+PatchId = Annotated[str, Extra(pattern="^[0-9a-f]{40,64}$")]
+
+BriefRecord = TypedDict(
+    "BriefRecord",
+    {
+        "$type": Literal["review/brief/v1"],
+        "range": Commits,
+        "focus": Annotated[str, Extra(minLength=1)],
+        "questions": NotRequired[list[str]],
+        "follows": NotRequired[Annotated[str, _ref(REPORT_TYPE)]],
+    },
+)
+BriefRecord.__doc__ = """`review/brief/v1`, at /reviews/<id>/brief: what a change's author asks a review to look at.
+
+`range` is the commits under review as `base..head`, both full commit ids.
+`focus` says what matters and what to check first, `questions` what the
+author wants answered, and `follows` the report this brief continues from."""
+
+
+class Finding(TypedDict):
+    """One thing a review found, at a file and line when it has one."""
+
+    severity: Severity
+    text: Annotated[str, Extra(minLength=1)]
+    file: NotRequired[str]
+    line: NotRequired[Annotated[int, Extra(minimum=1)]]
+
+
+class Cost(TypedDict):
+    """What a review took: its seconds, and its tokens when a model ran and said."""
+
+    seconds: Annotated[float, Extra(minimum=0)]
+    input_tokens: NotRequired[Annotated[int, Extra(minimum=0)]]
+    output_tokens: NotRequired[Annotated[int, Extra(minimum=0)]]
+
+
+ReportRecord = TypedDict(
+    "ReportRecord",
+    {
+        "$type": Literal["review/report/v1"],
+        "brief": NotRequired[Annotated[str, _ref(BRIEF_TYPE)]],
+        "range": Commits,
+        "patch_ids": list[PatchId],
+        "findings": list[Finding],
+        "verdict": Verdict,
+        "by": Annotated[str, Extra(minLength=1)],
+        "cost": NotRequired[Cost],
+        "source": NotRequired[Annotated[str, Extra(pattern="^https?://")]],
+        "follows": NotRequired[Annotated[str, _ref(REPORT_TYPE)]],
+    },
+)
+ReportRecord.__doc__ = """`review/report/v1`, at /reviews/<id>/report: what one review of a range found.
+
+`range` holds the full commit ids reviewed, and `patch_ids` the
+`git patch-id --verbatim` of each commit in it that has a diff, oldest first,
+so the review still covers the commits after a rebase. `brief` is absent for
+a review a person wrote. `by` names the models the agent reported, else the
+program the agent command starts, or the person. `source` is a URL, such as
+a GitHub review. `follows` is the previous report."""
+
+
+class RunInput(TypedDict):
+    """Review the range a brief names with the agent BOARD_REVIEW_AGENT names."""
+
+    brief: Annotated[
+        str,
+        Extra(
+            pattern="^/reviews/[^/]+/brief$",
+            format="board-path",
+            description="The brief to run, by its logical path, such as /reviews/fix-sync/brief.",
+        ),
+    ]
+
+
+class RunOutput(TypedDict):
+    """The report written, the commits covered, the verdict and how many findings."""
+
+    report: str
+    range: str
+    verdict: Verdict
+    findings: int
+
+
+class CoveredInput(TypedDict):
+    """Whether a committed report covers the commits a pull request adds to its base."""
+
+    base: Annotated[
+        str,
+        Extra(
+            minLength=1,
+            description="The commit the pull request merges into, in any form git resolves, such as its base commit.",
+        ),
+    ]
+    head: NotRequired[
+        Annotated[
+            str,
+            Extra(
+                minLength=1,
+                description="The commit to check, in any form git resolves, such as a pull request's head commit;"
+                " HEAD when left out.",
+            ),
+        ]
+    ]
+
+
+class CoveredOutput(TypedDict):
+    """The commit checked, its merge base with the base, and the reports that cover the commits between.
+
+    `skipped` counts the commits that only add review records and need no
+    report, `commits` the rest, and `reports` lists the reports that cover at
+    least one of them.
+    """
+
+    head: str
+    merge_base: str
+    skipped: int
+    commits: int
+    reports: list[str]

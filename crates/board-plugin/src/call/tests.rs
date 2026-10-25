@@ -60,8 +60,9 @@ fn a_plugin_inherits_board_timings_when_it_is_set_and_not_when_it_is_not() {
         timings: Some(OsString::from("0")),
         ..Environment::default()
     };
-    assert!(environment(&off, 1, &tasks()).contains(&("BOARD_TIMINGS", OsString::from("0"))));
-    let unset = environment(&Environment::default(), 1, &tasks());
+    assert!(environment(&off, &[], 1, &tasks()).contains(&("BOARD_TIMINGS", OsString::from("0"))));
+    let empty = Environment::default();
+    let unset = environment(&empty, &[], 1, &tasks());
     assert!(!unset.iter().any(|(key, _)| *key == "BOARD_TIMINGS"));
 }
 
@@ -71,8 +72,11 @@ fn a_plugin_inherits_tz_when_it_is_set_and_not_when_it_is_not() {
         tz: Some(OsString::from("Pacific/Kiritimati")),
         ..Environment::default()
     };
-    assert!(environment(&far, 1, &tasks()).contains(&("TZ", OsString::from("Pacific/Kiritimati"))));
-    let unset = environment(&Environment::default(), 1, &tasks());
+    assert!(
+        environment(&far, &[], 1, &tasks()).contains(&("TZ", OsString::from("Pacific/Kiritimati")))
+    );
+    let empty = Environment::default();
+    let unset = environment(&empty, &[], 1, &tasks());
     assert!(!unset.iter().any(|(key, _)| *key == "TZ"));
 }
 
@@ -83,10 +87,11 @@ fn a_plugin_inherits_the_caller_s_directory_and_day_start_when_set_and_not_when_
         day_start: Some(OsString::from("07:00")),
         ..Environment::default()
     };
-    let passed = environment(&set, 1, &tasks());
+    let passed = environment(&set, &[], 1, &tasks());
     assert!(passed.contains(&("BOARD_CALLER_DIR", OsString::from("/work/home"))));
     assert!(passed.contains(&("BOARD_DAY_START", OsString::from("07:00"))));
-    let unset = environment(&Environment::default(), 1, &tasks());
+    let empty = Environment::default();
+    let unset = environment(&empty, &[], 1, &tasks());
     let keys = ["BOARD_CALLER_DIR", "BOARD_DAY_START"];
     assert!(!unset.iter().any(|(key, _)| keys.contains(key)));
 }
@@ -97,10 +102,11 @@ fn a_plugin_sees_its_name_in_board_plugin_and_inherits_xdg_config_home_only_when
         config: Some(OsString::from("/config")),
         ..Environment::default()
     };
-    let seen = environment(&set, 1, &tasks());
+    let seen = environment(&set, &[], 1, &tasks());
     assert!(seen.contains(&("BOARD_PLUGIN", OsString::from("tasks"))));
     assert!(seen.contains(&("XDG_CONFIG_HOME", OsString::from("/config"))));
-    let unset = environment(&Environment::default(), 1, &tasks());
+    let empty = Environment::default();
+    let unset = environment(&empty, &[], 1, &tasks());
     assert!(!unset.iter().any(|(key, _)| *key == "XDG_CONFIG_HOME"));
 }
 
@@ -110,7 +116,7 @@ fn a_plugin_called_from_inside_another_plugin_keeps_the_outer_plugins_name() {
         plugin: Some(OsString::from("review")),
         ..Environment::default()
     };
-    let seen = environment(&inside, 2, &tasks());
+    let seen = environment(&inside, &[], 2, &tasks());
     let named: Vec<_> = (seen.iter())
         .filter(|(key, _)| *key == "BOARD_PLUGIN")
         .collect();
@@ -656,4 +662,28 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
     assert!(board.hint.is_some());
     assert_eq!(board.stderr, b"a log line");
     assert_eq!(board.fields["stderr"], "a log line");
+}
+
+#[test]
+fn every_variable_board_passes_a_plugin_is_one_a_capability_s_env_may_not_name() {
+    let set = Some(OsString::from("x"));
+    let full = Environment {
+        path: set.clone(),
+        home: set.clone(),
+        lang: set.clone(),
+        tz: set.clone(),
+        cache: set.clone(),
+        data: set.clone(),
+        config: set.clone(),
+        timings: set.clone(),
+        caller: set.clone(),
+        day_start: set,
+        ..Environment::default()
+    };
+    for (key, _) in environment(&full, &[], 1, &tasks()) {
+        assert!(
+            crate::manifest::PASSED.contains(&key),
+            "{key} is passed to every plugin but a capability's env may name it"
+        );
+    }
 }

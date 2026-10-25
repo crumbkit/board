@@ -68,8 +68,8 @@ to run with its input, and where to learn more.
 Plugin and capability names are lowercase ASCII letters, digits and hyphens.
 The plugin's `metadata` is any JSON object, which `board plugin find` can
 match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
-`inputSchema` and `outputSchema` are required, and `title`, `annotations` and
-`_meta` are optional. Each schema's root is `"type": "object"`. `annotations`
+`inputSchema` and `outputSchema` are required, and `title`, `annotations`,
+`_meta`, `timeout` and `env` are optional. Each schema's root is `"type": "object"`. `annotations`
 holds only MCP's five hint keys, which Board ignores. `_meta`
 is any JSON object. `icons` and `execution` are refused. `extract`
 lists the record types the plugin reads (see Extraction and databases). `types` lists the
@@ -126,7 +126,7 @@ Then Board:
    found from there, any other through `PATH`), with an environment holding only
    `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, `BOARD_CALLER_DIR`,
    and `TZ`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `BOARD_TIMINGS` and
-   `BOARD_DAY_START` when set;
+   `BOARD_DAY_START` when set, plus those its capability's `env` names;
 4. writes one request to the plugin's stdin:
 
    ```json
@@ -152,14 +152,10 @@ of the plugin's stderr; Board adds no other key. Any other answer
 on stdout is `board::plugin::bad_output`; a non-zero exit without an error
 document, or a signal, is `board::plugin::failed`. A `run` program that
 cannot be started is `board::plugin::not_started`. Stderr is for logs; Board
-shows its last 64 KiB when the call fails. A call has 30 seconds and 16 MiB of
+shows its last 64 KiB when the call fails. A call has 30 seconds, or its capability's `timeout`, and 16 MiB of
 stdout; past either, Board stops the plugin with `board::plugin::timeout` or
-`board::plugin::too_large`.
-
-On Unix the plugin leads a new process group, which Board signals past a limit
-or when Board itself is interrupted; a `run` command must `exec` its final
-program or forward SIGTERM. [plugins/processes.md](plugins/processes.md) has
-the detail.
+`board::plugin::too_large`. A `run` command must `exec` its final program or
+forward SIGTERM. [plugins/processes.md](plugins/processes.md) has the detail.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory
@@ -186,8 +182,8 @@ and how Board keeps each database.
 ## Writing a plugin in Python
 
 The plugins here are written in Python through the shared library in
-`python/board-plugin/`. There are eight: `controls`, `tasks`, `evals`,
-`runs`, `share`, `notes`, `plans` and `loop`. The README in each `plugins/<name>/` describes its records and
+`python/board-plugin/`. There are nine: `controls`, `tasks`, `evals`,
+`runs`, `share`, `notes`, `plans`, `loop` and `review`. The README in each `plugins/<name>/` describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains the design of
 `share`, [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
 the controls mod, and [plugins/plans-claude-code.md](plugins/plans-claude-code.md)
