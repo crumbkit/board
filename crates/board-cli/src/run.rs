@@ -44,7 +44,6 @@ A path is logical and omits .json; without a leading / it is relative to
 the current directory.
 A record is a JSON object whose `$type`, such as tasks/task/v1, names its
 schema at .board/types/tasks/task/v1.schema.json.
-Run `board <command> --help` for a command's arguments and examples.
 
 Tab completion: in fish, add `BOARD_COMPLETE=fish board | source` to
 ~/.config/fish/config.fish; in bash, add `eval \"$(BOARD_COMPLETE=bash board)\"`
@@ -202,7 +201,7 @@ their digest and writes a board/attachment/v1 record.")]
         /// batch through a mount commits in the mounted board and moves the mount's pin.
         #[arg(long, conflicts_with_all = ["path", "expect"])]
         batch: bool,
-        /// Write stdin as a file, as given, at a path that is the file's whole name, such as /notes/plan.md.
+        /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
         #[arg(long, conflicts_with = "batch")]
         file: bool,
         /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
