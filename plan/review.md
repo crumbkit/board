@@ -13,7 +13,8 @@ file is deleted.
 2. `review/brief/v1`, `review/report/v1` and `review.run`.
 3. `review.post` posts a report as a pull request comment through the effect
    check.
-4. A control that checks a pull request's head is covered by a report.
+4. `review.covered`, which CI calls to check a pull request is covered by
+   reports.
 
 The trial runs on the owner's own repositories, viitta first. Other Rust
 repositories join as it proves itself.
@@ -48,11 +49,16 @@ repositories join as it proves itself.
 7. **Posting is an effect.** `review.post` asks `board decide --op
    review.comment --path <pull request URL>`. With no rule the answer is
    ask (plan/board-ui.md decision 9).
-8. **The control** is a `controls` rule in each repository that uses review.
-   It passes when a report covers the pull request's head, directly or by
-   patch id.
-   - CI reads reports committed to the repository's own board.
+8. **The coverage check** is `review.covered --base <sha> --head <sha>`,
+   which CI runs on each pull request.
+   - It passes when reports cover every commit from the merge base to the
+     head, by range or by patch id.
+   - A report whose verdict is `changes` does not count.
+   - It reads reports committed to the repository's own board.
    - It skips commits that only add review records, so committing a report
      does not make a new head that no report covers.
+   - Each repository that uses review states this as a written control, so
+     `controls.check` names it. A controls rule would fail every session
+     start on an unreviewed branch.
 9. **The agent command.** `review.run` starts the command named in the
    board's settings. The documented example is `claude -p`.
