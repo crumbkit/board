@@ -342,6 +342,8 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     let project = r#"{"$type": "lr/project/v1"}"#;
     let untyped = fixture.clone().stdin(r#"{"name": "no type"}"#);
     starts.untwinned(&untyped, Code::PutInvalid, "put /projects/p", PUT_INVALID);
+    let nul = fixture.clone().stdin("a\0b");
+    starts.untwinned(&nul, Code::PutNul, "put /notes/n.md --file", PUT_NUL);
     if !starts.twins {
         // Following these hints runs `mount update` or a put that succeeds.
         let writing: [(Code, &str); 4] = [
@@ -394,7 +396,8 @@ fn refused_puts(starts: &mut Starts, fixture: &RuntimePlace) {
     let binding = |slot: &str| {
         format!(r#"{{"$type": "ui/binding/v1", "view": "/ui/view", "slots": {{{slot}}}}}"#)
     };
-    let puts: [(Code, &str, &str); 17] = [
+    let puts: [(Code, &str, &str); 18] = [
+        (Code::PutNul, "put /notes/n.md --file", "a\0b"),
         (Code::PathCaseCollision, "put /projects/P", project),
         (Code::PutNotAFile, "put /projects/p --file", project),
         (Code::ResolveCycle, "put /cycle/a/new", project),
@@ -982,6 +985,7 @@ const SLOT: &str = "the binding on stdin does not fit its view, and no word of t
 const NOT_A_BINDING: &str = "the admitted twin would start a server and a browser; a_page_for_a_record_that_is_not_a_binding_is_refused_and_one_for_a_binding_is_drawn in board-ops/src/ui/tests.rs pairs the code";
 const PUT_FAILED: &str = "init fails because a directory stands where board.json goes, and no word of the line names that; init_refuses_a_directory_where_board_json_goes_and_admits_a_file in board-ops/src/init/tests.rs pairs the code";
 const PUT_INVALID: &str = "the record on stdin has no $type, and no word of the line names the record; input_that_is_not_one_object_with_a_type_is_refused_and_its_twin_is_admitted in board-ops/src/put/tests.rs pairs the code";
+const PUT_NUL: &str = "the text on stdin holds NUL, and no word of the line names the text; a_text_holding_nul_is_refused_naming_its_offset_and_the_same_text_without_it_is_admitted in board-ops/src/put/tests/file.rs pairs the code";
 const PUT_LOCKED: &str = "a merge is under way in the repository, and no word of the line names that; a_commit_during_a_merge_or_rebase_is_refused_and_a_clean_one_is_admitted in board-tree/src/tests/commits.rs pairs the code";
 const NOT_ANCESTOR: &str = "the mounted repository's HEAD does not descend from the pin, and no word of the line names that; a_mounted_head_that_does_not_descend_from_the_pin_is_refused_and_one_that_does_is_admitted in board-ops/src/put/tests/through.rs pairs the code";
 const MOUNT_STALE: &str = "the record changed in the mounted repository since the pin, and no word of the line names that; a_record_changed_in_the_mounted_repository_since_the_pin_is_refused_and_an_unchanged_one_is_admitted in board-ops/src/put/tests/through.rs pairs the code";

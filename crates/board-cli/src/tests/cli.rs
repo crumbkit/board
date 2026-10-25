@@ -218,6 +218,7 @@ fn every_command_a_hint_names_parses() {
         found: Some(board_model::Found::Blob(ObjectId::Sha1([1; 20]))),
         target: Some("../x.json".to_owned()),
         effect: Some("0123456789abcdef".to_owned()),
+        offset: Some(2),
         refusals: Vec::new(),
     };
     let no_blob = Fields {
@@ -354,23 +355,70 @@ fn a_bare_group_in_json_names_its_subcommands_and_with_one_runs() {
 }
 
 /// A zero-width space or a right-to-left override in a name would hide
-/// what the name is, so text escapes it and JSON keeps the name.
+/// what the name is, so the file has no logical path, and `check` text
+/// escapes the name while JSON keeps it. A plain name beside them is ok.
 #[test]
-fn ls_text_escapes_format_characters_in_a_name_and_json_keeps_them() {
+fn check_degrades_a_name_with_a_format_character_and_text_escapes_it() {
     let scenario = board();
     scenario.write("a\u{200b}b.md", Item::File("x"));
     scenario.write("c\u{202e}d.md", Item::File("y"));
+    scenario.write("d\u{2028}ir/f.md", Item::File("w"));
+    scenario.write("café.md", Item::File("z"));
+    let checked = board_in(scenario.workdir(), &["check"]);
+    assert_eq!(checked.code, 1);
+    let (out, err) = (text(&checked.stdout), text(&checked.stderr));
+    for printed in [&out, &err] {
+        let raw = ['\u{200b}', '\u{202e}', '\u{2028}'];
+        assert!(!printed.contains(raw), "{printed}");
+        assert!(printed.contains("a\\u{200b}b.md"), "{printed}");
+        assert!(printed.contains("c\\u{202e}d.md"), "{printed}");
+        assert!(printed.contains("d\\u{2028}ir/f.md"), "{printed}");
+    }
+    assert!(err.contains("hint: c\\u{202e}d.md: "), "{err}");
+    assert!(!err.contains("café"), "{err}");
+    let checked = json(&board_in(scenario.workdir(), &["check", "--json"]));
+    let codes: Vec<(&str, &str)> = (checked["data"].as_array().unwrap().iter())
+        .filter_map(|entry| {
+            Some((
+                entry["path"].as_str()?,
+                entry["code"].as_str().unwrap_or("ok"),
+            ))
+        })
+        .collect();
+    assert!(
+        codes.contains(&("a\u{200b}b.md", "board::path::malformed")),
+        "{codes:?}"
+    );
+    assert!(
+        codes.contains(&("c\u{202e}d.md", "board::path::malformed")),
+        "{codes:?}"
+    );
+    assert!(codes.contains(&("café.md", "ok")), "{codes:?}");
+}
+
+/// A directory whose name is not a valid segment is listed as degraded
+/// with its name escaped, beside a directory with a plain name.
+#[test]
+fn ls_lists_a_directory_with_a_format_character_as_degraded_and_escaped() {
+    let scenario = board();
+    scenario.write("d\u{202e}ir/f.md", Item::File("x"));
+    scenario.write("café/f.md", Item::File("y"));
     let listed = board_in(scenario.workdir(), &["ls", "/"]);
     assert_eq!(listed.code, 0);
-    let text = text(&listed.stdout);
-    assert!(text.contains("file ok /a\\u{200b}b.md\n"), "{text}");
-    assert!(text.contains("file ok /c\\u{202e}d.md\n"), "{text}");
+    let out = text(&listed.stdout);
+    assert!(!out.contains('\u{202e}'), "{out}");
+    assert!(
+        out.contains("directory degraded board::path::malformed d\\u{202e}ir/\n"),
+        "{out}"
+    );
+    assert!(out.contains("directory /café/\n"), "{out}");
     let listed = json(&board_in(scenario.workdir(), &["ls", "/", "--json"]));
-    let names: Vec<&str> = (listed["data"].as_array().unwrap().iter())
-        .filter_map(|entry| entry["logical"].as_str())
-        .collect();
-    assert!(names.contains(&"/a\u{200b}b.md"), "{names:?}");
-    assert!(names.contains(&"/c\u{202e}d.md"), "{names:?}");
+    let rows = listed["data"].as_array().unwrap();
+    let row = |name: &str| rows.iter().find(|row| row["name"] == name).unwrap().clone();
+    assert_eq!(row("d\u{202e}ir")["code"], "board::path::malformed");
+    assert_eq!(row("d\u{202e}ir")["logical"], serde_json::Value::Null);
+    assert_eq!(row("café")["logical"], "/café");
+    assert_eq!(row("café").get("code"), None);
 }
 
 #[test]

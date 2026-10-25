@@ -84,9 +84,50 @@ fn a_segment_may_not_hold_a_control_character() {
         pair(
             "/a b",
             &format!("/a{control}b"),
-            Malformation::ControlCharacter,
+            Malformation::HiddenCharacter { char: control },
         );
     }
+}
+
+#[test]
+fn a_segment_may_not_hold_a_bidi_control_a_zero_width_character_or_a_separator() {
+    let hidden = [
+        '\u{202a}', '\u{202e}', '\u{2066}', '\u{2069}', '\u{200b}', '\u{200f}', '\u{feff}',
+        '\u{2028}', '\u{2029}', '\u{115f}', '\u{1160}', '\u{3164}', '\u{ffa0}',
+    ];
+    for char in hidden {
+        pair(
+            "/notes/café",
+            &format!("/notes/caf{char}é"),
+            Malformation::HiddenCharacter { char },
+        );
+    }
+}
+
+#[test]
+fn a_segment_may_hold_a_zero_width_joiner_or_non_joiner_and_not_a_zero_width_space() {
+    for name in ["/👨\u{200d}👩\u{200d}👧.md", "/می\u{200c}خواهم.md"] {
+        assert_eq!(name.parse::<LogicalPath>().unwrap().as_str(), name);
+    }
+    pair(
+        "/می\u{200c}خواهم.md",
+        "/می\u{200b}خواهم.md",
+        Malformation::HiddenCharacter { char: '\u{200b}' },
+    );
+}
+
+#[test]
+fn escaping_shows_each_hidden_character_and_keeps_a_joiner() {
+    assert_eq!(escaped("a\u{202e}b\u{3164}c"), "a\\u{202e}b\\u{3164}c");
+    assert_eq!(escaped("👨\u{200d}👩 café"), "👨\u{200d}👩 café");
+}
+
+#[test]
+fn a_hidden_character_is_named_by_its_code_point() {
+    let error = "/notes/a\u{202e}b".parse::<LogicalPath>().unwrap_err();
+    assert!(error.to_string().contains("U+202E"), "{error}");
+    let error = "/notes/a\tb".parse::<LogicalPath>().unwrap_err();
+    assert!(error.to_string().contains("U+0009"), "{error}");
 }
 
 #[test]
@@ -200,10 +241,12 @@ fn one_trailing_slash_on_a_relative_path_is_dropped_and_two_are_an_empty_segment
     joined("/", "./lib/", "/lib", "/lib/", Malformation::EmptySegment);
 }
 
-/// A segment that keeps every rule: no `/`, no control character, not `.` or
+/// A segment that keeps every rule: no `/`, no hidden character, not `.` or
 /// `..`, and short enough that sixteen of them fit in one path.
 fn segment() -> impl Strategy<Value = String> {
-    "[^/\\p{Cc}]{1,64}".prop_filter("dot segment", |segment| segment != "." && segment != "..")
+    "[^/\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}]{1,64}".prop_filter("dot or hidden", |segment| {
+        segment != "." && segment != ".." && !segment.chars().any(is_hidden)
+    })
 }
 
 proptest! {

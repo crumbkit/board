@@ -250,6 +250,9 @@ is the file's whole name, such as `/notes/plan.md`. It takes steps 1, 3, 4, 5
 and 6, checks the size and frontmatter claiming a `$type`, and follows
 Markdown links for the report. A path that names a directory,
 or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
+Bytes that are UTF-8 are text, and text holding NUL is `board::put::nul`,
+whose hint gives the first NUL's byte offset; a file already in the tree that
+holds NUL is read as before.
 With a `store` in `.board/board.json`, a file over 1 MiB or not UTF-8 is
 uploaded under its digest and a `board/attachment/v1` record is written in
 its place, as [architecture/attachments.md](architecture/attachments.md)

@@ -164,6 +164,21 @@ fn a_line_with_both_record_and_text_or_neither_is_refused_and_a_line_with_one_is
 }
 
 #[test]
+fn a_text_line_holding_nul_is_refused_and_the_same_line_without_it_is_admitted() {
+    let scenario = board();
+    let (_, refusals) = refused(batch(&scenario, &text_line("/n.md", "a\0b")));
+    assert_eq!(refusals, [(1, Code::PutNul)]);
+    assert!(file(&scenario, "n.md").is_none());
+    assert_eq!(
+        batch(&scenario, &text_line("/n.md", "ab"))
+            .unwrap()
+            .writes
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn a_batch_with_one_invalid_record_writes_nothing_and_its_twin_writes_all() {
     let scenario = board();
     let valid = line("/tasks/a", None, &task(""));

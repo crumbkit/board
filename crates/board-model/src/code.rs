@@ -56,6 +56,7 @@ pub enum Code {
     PutSymlink,
     PutInvalid,
     PutNotAFile,
+    PutNul,
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
@@ -110,7 +111,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 98] = [
+    pub const ALL: [Code; 99] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -159,6 +160,7 @@ impl Code {
         Self::PutSymlink,
         Self::PutInvalid,
         Self::PutNotAFile,
+        Self::PutNul,
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
@@ -216,6 +218,10 @@ impl Code {
         Self::ALL.into_iter().find(|code| code.as_str() == text)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one line per code; splitting the table would hide a spelling"
+    )]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::JsonParse => "board::json::parse",
@@ -266,6 +272,7 @@ impl Code {
             Self::PutSymlink => "board::put::symlink",
             Self::PutInvalid => "board::put::invalid",
             Self::PutNotAFile => "board::put::not_a_file",
+            Self::PutNul => "board::put::nul",
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
@@ -334,6 +341,7 @@ mod tests {
     use crate::{Fields, LogicalPath, MAX_SYMLINKS};
 
     /// Fails to compile when a variant is added, so `ALL` stays complete.
+    #[expect(clippy::too_many_lines, reason = "one line per code")]
     fn listed(code: Code) {
         match code {
             Code::JsonParse
@@ -384,6 +392,7 @@ mod tests {
             | Code::PutSymlink
             | Code::PutInvalid
             | Code::PutNotAFile
+            | Code::PutNul
             | Code::PutNoIdentity
             | Code::PutHeadMoved
             | Code::PutFailed

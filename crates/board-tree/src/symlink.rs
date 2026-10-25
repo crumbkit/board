@@ -6,8 +6,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use board_model::{Code, MAX_SYMLINKS, ObjectId};
-use unicode_general_category::{GeneralCategory, get_general_category};
+use board_model::{Code, MAX_SYMLINKS, ObjectId, is_hidden};
 
 use crate::git::GitError;
 use crate::tree::{Kind, RawEntry, Tree};
@@ -355,10 +354,9 @@ const SHOWN_CHARS: usize = 100;
 /// [`SHOWN_CHARS`] characters, else its start and its length, and only its
 /// length when it is `None`, longer than [`MAX_TEXT_BYTES`] and not loaded,
 /// so that a long text cannot swell what Board prints. A name that is not
-/// UTF-8 is shown lossily, and a control character, a Unicode format
-/// character, a line or paragraph separator or a backslash escaped, so that
-/// a text cannot forge a line, a terminal escape or a reordering of the
-/// message around it.
+/// UTF-8 is shown lossily, and a backslash or a character that
+/// [`is_hidden`] names escaped, so that a text cannot forge a line, a
+/// terminal escape or a reordering of the message around it.
 pub(crate) fn shown(text: Option<&[u8]>) -> String {
     let Some(text) = text else {
         return format!("… (over {MAX_TEXT_BYTES} bytes)");
@@ -367,13 +365,7 @@ pub(crate) fn shown(text: Option<&[u8]>) -> String {
     let mut chars = lossy.chars();
     let mut shown = String::new();
     for char in chars.by_ref().take(SHOWN_CHARS) {
-        let format = matches!(
-            get_general_category(char),
-            GeneralCategory::Format
-                | GeneralCategory::LineSeparator
-                | GeneralCategory::ParagraphSeparator
-        );
-        if char.is_control() || format || char == '\\' {
+        if is_hidden(char) || char == '\\' {
             shown.extend(char.escape_default());
         } else {
             shown.push(char);

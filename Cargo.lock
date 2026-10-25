@@ -154,6 +154,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+ "unicode-general-category",
 ]
 
 [[package]]
@@ -226,7 +227,6 @@ dependencies = [
  "proptest",
  "tempfile",
  "thiserror",
- "unicode-general-category",
 ]
 
 [[package]]

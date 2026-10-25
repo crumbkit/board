@@ -526,6 +526,10 @@ board mount update /projects/zz
   run board ls /projects
     exits 0
 
+board put /notes/n.md --file
+  fails with board::put::nul
+  hint
+
 board put /projects/P
   fails with board::path::case_collision
   hint

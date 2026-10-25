@@ -67,10 +67,9 @@ one of these codes. The hint names the symlink's text, which an error carries
 as `target`. A text longer than 100 characters is shown as its first 100
 characters and its length, and one longer than 4,096 bytes as that limit
 alone, without being loaded, so a long text cannot make a report large. A
-control character, a Unicode format character such as U+202E, a line or
-paragraph separator (U+2028, U+2029) or a backslash in the text is shown
-escaped, as `\n` or `\u{202e}`, so a text cannot forge a line, a terminal
-escape or a reordering of Board's output.
+backslash, or a character that a logical path may not hold
+(docs/architecture/paths.md), is shown escaped, as `\n` or `\u{202e}`, so a
+text cannot forge a line, a terminal escape or a reordering of Board's output.
 
 | Code | When |
 | --- | --- |

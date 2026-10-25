@@ -567,6 +567,8 @@ pub enum PutError {
     TooManyLines,
     #[error("{path} cannot be written: {bytes} bytes is over {MAX_RECORD_BYTES}")]
     TooLarge { path: LogicalPath, bytes: usize },
+    #[error("{path} cannot be written: its text holds NUL at byte offset {offset}")]
+    Nul { path: LogicalPath, offset: usize },
     #[error("the batch cannot be read: {source}")]
     Input { source: std::io::Error },
     #[error("{path} cannot be uploaded to {location}: {source}")]
@@ -601,6 +603,7 @@ impl PutError {
             Self::Batch { code, .. } | Self::Line { code, .. } => *code,
             Self::TooManyLines => Code::PutInvalid,
             Self::TooLarge { .. } => Code::JsonTooLarge,
+            Self::Nul { .. } => Code::PutNul,
             Self::Input { .. } => Code::RepoUnreadable,
             Self::Upload { .. } => Code::PutFailed,
             Self::Write(error) => error.code(),
@@ -628,6 +631,10 @@ impl PutError {
                 ..Fields::default()
             },
             Self::TooLarge { path, .. } | Self::Upload { path, .. } => Fields::at(path),
+            Self::Nul { path, offset } => Fields {
+                offset: Some(*offset),
+                ..Fields::at(path)
+            },
             Self::Write(error) => error.fields(),
             Self::Mount(error) => error.fields(),
             Self::Type(error) => error.fields(),

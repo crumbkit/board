@@ -9,7 +9,6 @@ publish.workspace = true
 board-model.workspace = true
 gix.workspace = true
 thiserror.workspace = true
-unicode-general-category.workspace = true
 
 [dev-dependencies]
 board-scenario.workspace = true

@@ -7,9 +7,26 @@ write refuses.
 ## Logical paths
 
 A logical path is `/` alone, the board's root, or `/` followed by segments
-separated by `/`. A segment is non-empty UTF-8 of at most 255 bytes, without
-`/`, NUL or control characters, and is not `.` or `..`. A path is at most 4,096
-bytes. A record's file name adds `.json`, so its segment is at most 250 bytes.
+separated by `/`. A segment is non-empty UTF-8 of at most 255 bytes, and is
+not `.` or `..`. It holds no `/` and no character that can make a path look
+like another:
+
+- no control character, such as NUL;
+- no Unicode format character, such as a bidi control (U+202E) or a
+  zero-width space (U+200B);
+- no line or paragraph separator (U+2028, U+2029);
+- no Hangul filler (U+115F, U+1160, U+3164, U+FFA0).
+
+The zero-width joiner and non-joiner (U+200D, U+200C) are allowed, because
+emoji sequences and scripts such as Persian and Hindi need them.
+
+A path typed on the command line or sent in a put is refused with a message
+that names the first such character as U+XXXX. A file already in the tree
+with such a name is degraded with `board::path::malformed`, and `check` and
+`ls` print its name with each such character escaped, as `\u{202e}`.
+
+A path is at most 4,096 bytes. A record's file name adds `.json`, so its
+segment is at most 250 bytes.
 Paths are absolute and are read against the root of the board that holds them.
 The working tree must also fit the OS's `PATH_MAX` (1,024 bytes on macOS, 4,096
 on Linux) with its checkout prefix; Board keeps its own limit because paths

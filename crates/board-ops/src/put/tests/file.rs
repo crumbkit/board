@@ -148,6 +148,47 @@ fn a_file_over_the_size_limit_is_refused_and_one_at_the_limit_is_admitted() {
     assert!(put_file(&scenario, "/big.bin", Expect::Any, &bytes[1..]).is_ok());
 }
 
+#[test]
+fn a_text_holding_nul_is_refused_naming_its_offset_and_the_same_text_without_it_is_admitted() {
+    let scenario = board();
+    let error = put_file(&scenario, "/notes/a.md", Expect::Any, b"ab\0c").unwrap_err();
+    assert_eq!(error.code(), Code::PutNul);
+    assert_eq!(
+        error.fields(),
+        Fields {
+            offset: Some(2),
+            ..Fields::at(&path("/notes/a.md"))
+        }
+    );
+    assert_eq!(
+        error.code().hint(&error.fields()),
+        "remove the NUL byte at byte offset 2 and put the text again"
+    );
+    assert_eq!(file(&scenario, "notes/a.md"), None);
+    assert!(put_file(&scenario, "/notes/a.md", Expect::Any, b"abc").is_ok());
+}
+
+#[test]
+fn bytes_that_are_not_utf8_may_hold_nul_and_the_same_bytes_as_text_may_not() {
+    let scenario = board();
+    let text = put_file(&scenario, "/data/a.bin", Expect::Any, b"a\0b").unwrap_err();
+    assert_eq!(text.code(), Code::PutNul);
+    assert!(put_file(&scenario, "/data/a.bin", Expect::Any, b"a\0b\xff").is_ok());
+}
+
+#[test]
+fn a_file_that_already_holds_nul_is_indexed_and_not_degraded() {
+    let scenario = board();
+    scenario.write("notes/a.md", Item::File("ab\0c"));
+    let checked = open(&scenario).check(None, None).unwrap();
+    let entry = checked
+        .entries
+        .iter()
+        .find(|entry| entry.path == "notes/a.md")
+        .unwrap();
+    assert_eq!(entry.status, board_tree::Status::Ok);
+}
+
 /// The code `put --file` reports `text` degraded with at `at`.
 fn degraded(scenario: &Scenario, at: &str, text: &str) -> Option<Code> {
     let report = put_file(scenario, at, Expect::Any, text.as_bytes()).unwrap();

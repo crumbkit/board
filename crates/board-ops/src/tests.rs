@@ -1183,7 +1183,7 @@ fn ls_lists_one_level_with_directories_kinds_and_statuses() {
             },
             crate::Listed::Directory {
                 name: "sub".to_owned(),
-                logical: path("/work/sub"),
+                logical: Some(path("/work/sub")),
             },
             crate::Listed::Entry {
                 name: "t.json".to_owned(),

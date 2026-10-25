@@ -150,7 +150,7 @@ mod tests {
         );
         assert_eq!(
             Code::PathMalformed.hint(&at),
-            "a logical path starts with `/`, leaves out `.json`, and has no empty, `.` or `..` segment"
+            "a logical path starts with `/`, leaves out `.json`, has no empty, `.` or `..` segment, and holds no invisible character such as U+202E"
         );
     }
 

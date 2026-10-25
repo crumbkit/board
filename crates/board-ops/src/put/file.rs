@@ -119,6 +119,16 @@ impl Board {
                 bytes: bytes.len(),
             });
         }
+        // Bytes that are not UTF-8 are binary, where NUL is ordinary.
+        let nul = std::str::from_utf8(bytes)
+            .ok()
+            .and_then(|text| text.find('\0'));
+        if let Some(offset) = nul {
+            return Err(PutError::Nul {
+                path: path.clone(),
+                offset,
+            });
+        }
         let target = view.file_target(path)?;
         // Read from where the file lands, as `check` reads it, and not from
         // a path through a link.

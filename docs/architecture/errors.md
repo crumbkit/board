@@ -24,7 +24,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `query` | `timeout`: the statement ran longer than 1 s |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
-| `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `no_identity`, `head_moved`, `failed` (the file could not be written) |
+| `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `nul` (a file's text holds NUL), `no_identity`, `head_moved`, `failed` (the file could not be written) |
 | `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`; see docs/architecture/writes.md |
 | `attachment` | `missing`: `get --fetch` found nothing at the record's location; `mismatch`: the bytes there hash to another digest |
 | `plugin` | see docs/plugins.md |
@@ -63,8 +63,9 @@ plugin's own code carries.
 | `tables` | array of strings | `query::invalid` for a missing table | every table and view, and each attached plugin database |
 | `columns` | object of string arrays | `query::invalid` for a missing column | each table or view the statement names, mapped to its columns; `{}` when it names none |
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |
-| `target` | string | a `symlink` code | the symlink's text, cut to 100 characters and its length when longer, with control characters and backslashes escaped |
+| `target` | string | a `symlink` code | the symlink's text, cut to 100 characters and its length when longer, with backslashes and the characters a logical path may not hold escaped |
 | `effect` | string | `settings::asked`, `settings::refused` | the pending effect's id, which `board answer` takes |
+| `offset` | number | `put::nul` | the byte offset of the first NUL in the text, which the hint names |
 | `refusals` | array of objects | `put::invalid` and `put::stale` for a batch | each refused line, in order, with its `line` (from 1), `code`, `message` and, when it names any, its own `fields` |
 
 A stale put's hint gives the `--expect` that matches. When `columns` is `{}`,

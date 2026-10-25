@@ -355,10 +355,27 @@ pub(crate) fn init(printer: Printer, report: &InitReport) -> Output {
 
 pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -> Output {
     let rows = report.listed.iter().map(|listed| match listed {
-        Listed::Directory { name, logical } => Whole::lined(
+        Listed::Directory {
+            name,
+            logical: Some(logical),
+        } => Whole::lined(
             json!({"name": name, "logical": logical.to_string(), "kind": "directory"}),
             format!("directory {logical}/"),
         ),
+        Listed::Directory {
+            name,
+            logical: None,
+        } => {
+            let status = Status::Degraded(board_model::Code::PathMalformed);
+            let mut value = json!({"name": name, "logical": null, "kind": "directory"});
+            status_fields(&mut value, status);
+            let line = format!(
+                "directory {} {}/",
+                Health(status),
+                board_model::escaped(name)
+            );
+            Whole::lined(value, line)
+        }
         Listed::Entry {
             name,
             logical,
@@ -373,7 +390,7 @@ pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -
             status_fields(&mut value, *status);
             let shown = logical
                 .as_ref()
-                .map_or_else(|| name.clone(), ToString::to_string);
+                .map_or_else(|| board_model::escaped(name), ToString::to_string);
             let line = format!("{} {} {shown}", kind.as_str(), Health(*status));
             Whole::lined(value, line)
         }
@@ -492,13 +509,14 @@ fn location(location: &Location, display: &str) -> Value {
 }
 
 /// How a text listing names an entry: by the logical path every command
-/// takes, or by its file when it has none or shares it with another file.
+/// takes, or by its file, escaped, when it has none or shares it with
+/// another file.
 fn named(path: &str, logical: Option<&LogicalPath>, status: Status) -> String {
     match logical {
         Some(logical) if status != Status::Degraded(board_model::Code::PathShadowed) => {
             logical.to_string()
         }
-        _ => path.to_owned(),
+        _ => board_model::escaped(path),
     }
 }
 

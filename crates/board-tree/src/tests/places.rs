@@ -77,7 +77,7 @@ fn refused(name: &std::ffi::OsStr) -> Option<board_model::Malformation> {
 
 #[test]
 fn a_directory_whose_name_holds_a_control_character_is_within_a_refused_path() {
-    let reason = board_model::Malformation::ControlCharacter;
+    let reason = board_model::Malformation::HiddenCharacter { char: '\t' };
     assert_eq!(refused("a\tb".as_ref()), Some(reason));
     assert_eq!(refused("ab".as_ref()), None);
 }

@@ -5,6 +5,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::code::Code;
 
@@ -21,7 +22,8 @@ pub const MAX_SYMLINKS: usize = 32;
 
 /// An absolute logical path: `/` alone (the board root), or `/` followed by
 /// segments separated by `/`. A segment is non-empty, at most
-/// [`MAX_SEGMENT_BYTES`], holds no control character and is not `.` or `..`.
+/// [`MAX_SEGMENT_BYTES`], holds no character that [`is_hidden`] names and is
+/// not `.` or `..`.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct LogicalPath(String);
@@ -122,12 +124,47 @@ fn malformation(path: &str) -> Option<Malformation> {
             Some(Malformation::SegmentTooLong {
                 bytes: segment.len(),
             })
-        } else if segment.chars().any(char::is_control) {
-            Some(Malformation::ControlCharacter)
         } else {
-            None
+            let char = segment.chars().find(|char| is_hidden(*char))?;
+            Some(Malformation::HiddenCharacter { char })
         }
     })
+}
+
+/// Whether `char` can change how a text reads without showing as itself: a
+/// control character, a Unicode format character such as a bidi control
+/// (U+202E) or a zero-width space (U+200B), a line or paragraph separator
+/// (U+2028, U+2029), or a Hangul filler. The zero-width joiner and
+/// non-joiner (U+200D, U+200C) are admitted, because emoji sequences and
+/// scripts such as Persian and Hindi need them in real names.
+pub fn is_hidden(char: char) -> bool {
+    match char {
+        '\u{200c}' | '\u{200d}' => false,
+        '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}' => true,
+        _ => {
+            char.is_control()
+                || matches!(
+                    get_general_category(char),
+                    GeneralCategory::Format
+                        | GeneralCategory::LineSeparator
+                        | GeneralCategory::ParagraphSeparator
+                )
+        }
+    }
+}
+
+/// `text` with each character that [`is_hidden`] names escaped, as
+/// `\u{202e}`, so that printing it cannot hide or reorder what it says.
+pub fn escaped(text: &str) -> String {
+    let mut shown = String::with_capacity(text.len());
+    for char in text.chars() {
+        if is_hidden(char) {
+            shown.extend(char.escape_default());
+        } else {
+            shown.push(char);
+        }
+    }
+    shown
 }
 
 /// Why a logical path is malformed.
@@ -138,7 +175,7 @@ pub enum Malformation {
     EmptySegment,
     DotSegment,
     SegmentTooLong { bytes: usize },
-    ControlCharacter,
+    HiddenCharacter { char: char },
     NotUtf8,
 }
 
@@ -155,7 +192,11 @@ impl fmt::Display for Malformation {
                 formatter,
                 "it has a segment of {bytes} bytes, over {MAX_SEGMENT_BYTES}"
             ),
-            Self::ControlCharacter => formatter.write_str("it holds a control character"),
+            Self::HiddenCharacter { char } => write!(
+                formatter,
+                "it holds U+{:04X}, a character that can make a path look like another",
+                u32::from(*char)
+            ),
             Self::NotUtf8 => formatter.write_str("it is not UTF-8"),
         }
     }

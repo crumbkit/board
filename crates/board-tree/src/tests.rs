@@ -302,6 +302,26 @@ fn a_name_that_is_not_a_segment_is_malformed_with_everything_beneath() {
 }
 
 #[test]
+fn a_name_that_holds_a_hidden_character_is_degraded_as_malformed_and_its_plain_twin_is_admitted() {
+    let scenario = Scenario::new();
+    let commit = scenario.commit(&[
+        ("café.json", "{}"),
+        ("caf\u{202e}é.json", "{}"),
+        ("caf\u{200b}é.json", "{}"),
+        ("caf\u{2028}é.json", "{}"),
+    ]);
+    assert_eq!(
+        walk(&scenario, commit),
+        [
+            ok("café.json", "/café"),
+            degraded("caf\u{200b}é.json", None, Code::PathMalformed),
+            degraded("caf\u{2028}é.json", None, Code::PathMalformed),
+            degraded("caf\u{202e}é.json", None, Code::PathMalformed),
+        ]
+    );
+}
+
+#[test]
 fn a_name_that_is_not_utf8_is_malformed_and_shown_lossily() {
     let scenario = Scenario::new();
     let commit = scenario.commit_items(&[

@@ -183,7 +183,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             return effect(code, fields.effect.as_ref()?);
         }
         Code::UiSlotInvalid | Code::UiSlotMismatch => return ui(code, fields, pointer),
-        _ => return None,
+        _ => return at_offset(code, fields),
     })
 }
 
@@ -214,6 +214,17 @@ fn ui(code: Code, fields: &Fields, pointer: Option<&String>) -> Option<String> {
         ),
         _ => return None,
     })
+}
+
+/// The hint for `code` when `fields` names a byte offset into the input.
+fn at_offset(code: Code, fields: &Fields) -> Option<String> {
+    let offset = fields.offset?;
+    match code {
+        Code::PutNul => Some(format!(
+            "remove the NUL byte at byte offset {offset} and put the text again"
+        )),
+        _ => None,
+    }
 }
 
 /// What to do about an attachment at `path` whose bytes the store has lost
@@ -353,7 +364,7 @@ fn generic(code: Code) -> &'static str {
             "point the reference at a record of a type that the schema's `x-board-type` accepts"
         }
         Code::PathMalformed => {
-            "a logical path starts with `/`, leaves out `.json`, and has no empty, `.` or `..` segment"
+            "a logical path starts with `/`, leaves out `.json`, has no empty, `.` or `..` segment, and holds no invisible character such as U+202E"
         }
         Code::PathNotFound => {
             "run `board ls <path>` on the parent directory to see what is there; paths leave out `.json`"
@@ -438,6 +449,7 @@ fn generic(code: Code) -> &'static str {
         Code::PutInvalid => {
             "send one JSON object with a `$type` on stdin, such as `{\"$type\": \"lr/task/v1\", \"title\": \"a\"}`"
         }
+        Code::PutNul => "remove each NUL byte from the text; a text file Board writes holds none",
         Code::PutNotAFile => {
             "put a file with `--file` at its whole name, such as `/notes/plan.md`; a name ending `.json` is read as a record, and a directory holds no bytes"
         }

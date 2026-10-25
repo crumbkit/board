@@ -31,9 +31,11 @@ pub struct GetReport {
 /// `check` gives it.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Listed {
+    /// A directory, whose logical path is `None` when its name is not a
+    /// valid segment, so it is degraded with `path::malformed`.
     Directory {
         name: String,
-        logical: LogicalPath,
+        logical: Option<LogicalPath>,
     },
     Entry {
         name: String,
@@ -153,10 +155,9 @@ impl Board {
             };
             let child = |segment: &str| join(&display, segment);
             let item = if below {
-                let Some(logical) = child(name) else { continue };
                 Listed::Directory {
                     name: name.to_owned(),
-                    logical,
+                    logical: child(name),
                 }
             } else {
                 // A scoped check skips an entry whose path has no logical

@@ -38,6 +38,8 @@ pub struct Fields {
     pub target: Option<String>,
     /// The id of a pending effect that waits for the owner.
     pub effect: Option<String>,
+    /// A byte offset into the input at fault.
+    pub offset: Option<usize>,
 }
 
 /// What a put found where it would write.
@@ -116,6 +118,9 @@ impl Fields {
                 json.insert("columns".to_owned(), Value::Object(columns.collect()));
             }
             None => {}
+        }
+        if let Some(offset) = self.offset {
+            json.insert("offset".to_owned(), offset.into());
         }
         if let Some(found) = self.found {
             let found = match found {
@@ -265,6 +270,7 @@ mod tests {
             found: Some(Found::Nothing),
             target: Some("../x.json".to_owned()),
             effect: Some("0123456789abcdef".repeat(4)),
+            offset: Some(2),
             refusals: vec![Lined::new(1, Code::PutInvalid, "no", Fields::default())],
         };
         let columns = Fields {
