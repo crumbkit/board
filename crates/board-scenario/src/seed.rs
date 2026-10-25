@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 16] = [
+pub const NOT_REPRODUCED: [(Code, &str); 17] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -52,6 +52,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 16] = [
         Code::RefsTargetChanged,
         "a target must change between the check and the read of its fields; \
          board-cli/src/tests/refs.rs changes one between two answers",
+    ),
+    (
+        Code::SyncTimeout,
+        "the CLI's 60-second git limit is too slow for a test; \
+         board-tree/src/tests/syncing.rs uses a 5-second limit",
     ),
     (
         Code::PluginTimeout,
@@ -90,7 +95,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 67] = [
+pub const NOT_CHECKED: [(Code, &str); 68] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -138,6 +143,7 @@ pub const NOT_CHECKED: [(Code, &str); 67] = [
     (Code::SyncConflict, SYNC),
     (Code::SyncEdited, SYNC),
     (Code::SyncGaveUp, SYNC),
+    (Code::SyncTimeout, SYNC),
     (
         Code::SchemaDiffers,
         "type add refuses a schema with it; check compiles each schema alone",

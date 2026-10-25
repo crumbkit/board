@@ -10,6 +10,9 @@ board-model.workspace = true
 gix.workspace = true
 thiserror.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 [dev-dependencies]
 board-scenario.workspace = true
 proptest.workspace = true

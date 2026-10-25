@@ -298,6 +298,26 @@ impl Scenario {
         self.write(".git/config", Item::File(&text))
     }
 
+    /// Points `origin` at the same remote over ssh, through a stand-in for
+    /// ssh that waits `delay` seconds before it runs git there, so a fetch
+    /// can be made to stall as a hung remote does.
+    pub fn delayed_origin(&self, delay: u32) -> &Self {
+        let config = self.workdir().join(".git/config");
+        let text = fs::read_to_string(&config).unwrap();
+        let (before, after) = text.split_once("\turl = ").unwrap();
+        let (url, after) = after.split_once('\n').unwrap();
+        let ssh = self.workdir().join(".git/delayed-ssh");
+        let text = format!(
+            "{before}\turl = ssh://board.invalid{url}\n{after}\
+             [core]\n\tsshCommand = {}\n[ssh]\n\tvariant = simple\n",
+            ssh.display()
+        );
+        let script =
+            format!("#!/bin/sh\nsleep {delay}\nfor last; do :; done\nexec sh -c \"$last\"\n");
+        self.write(".git/delayed-ssh", Item::Executable(&script))
+            .write(".git/config", Item::File(&text))
+    }
+
     /// Makes the index hold the tree of `commit`, so its files are tracked.
     pub fn track(&self, commit: ObjectId) -> &Self {
         let commit = gix::ObjectId::try_from(commit.as_bytes()).unwrap();

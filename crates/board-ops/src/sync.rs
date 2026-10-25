@@ -2,7 +2,7 @@
 //! follows and pushing what it committed (docs/architecture.md, Writes).
 
 use board_model::{Code, Refusal};
-use board_tree::{LOCK_WAIT, Synced};
+use board_tree::{GIT_DEADLINE, LOCK_WAIT, Synced};
 
 use crate::board::Board;
 
@@ -16,7 +16,7 @@ impl Board {
         let lock = repository
             .lock(LOCK_WAIT)
             .map_err(board_tree::SyncError::from)?;
-        Ok(repository.sync(&lock, push)?)
+        Ok(repository.sync(&lock, push, GIT_DEADLINE)?)
     }
 }
 

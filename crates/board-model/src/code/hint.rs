@@ -477,6 +477,9 @@ fn generic(code: Code) -> &'static str {
         Code::SyncGaveUp => {
             "the remote refused every push; `board sync --no-push` brings this board up to date without pushing, and the commits stay for the next sync"
         }
+        Code::SyncTimeout => {
+            "git did not finish within 60 seconds, for example because the remote hangs, so Board stopped it; the commits here stay for the next sync. `git fetch` run by hand shows where the remote stalls"
+        }
         Code::RefsTargetChanged => {
             "the target's file changed during this run, so its values were not read; run the same board refs again. If every run refuses it, delete the board's directory under `$XDG_CACHE_HOME/board/` or `~/.cache/board/` so the index is rebuilt from the tree, and if it persists, report it"
         }

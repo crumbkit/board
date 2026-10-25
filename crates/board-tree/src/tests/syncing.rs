@@ -3,7 +3,9 @@
 
 use super::*;
 use crate::transport::rejected;
-use crate::{LOCK_WAIT, Synced};
+use std::time::{Duration, Instant};
+
+use crate::{GIT_DEADLINE, LOCK_WAIT, Synced};
 
 #[test]
 fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
@@ -16,7 +18,7 @@ fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
     clone.write("d/b.json", Item::Deleted);
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
-    let synced = repository.sync(&lock, true).unwrap();
+    let synced = repository.sync(&lock, true, GIT_DEADLINE).unwrap();
     assert_eq!(
         synced,
         Synced {
@@ -77,7 +79,10 @@ fn a_sync_removes_a_file_the_remote_deleted_and_keeps_the_rest() {
     let tip = remote.commit(&[("d/b.json", "[]")]);
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
-    assert_eq!(repository.sync(&lock, false).unwrap().new, tip);
+    assert_eq!(
+        repository.sync(&lock, false, GIT_DEADLINE).unwrap().new,
+        tip
+    );
     assert!(!clone.workdir().join("a.json").exists());
     assert!(clone.workdir().join("d/b.json").exists());
     assert_eq!(
@@ -96,7 +101,7 @@ fn a_sync_stops_at_a_path_it_cannot_read() {
     clone.write("d/x.json", Item::File("{}"));
     let repository = clone.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
-    let refused = repository.sync(&lock, false).unwrap_err();
+    let refused = repository.sync(&lock, false, GIT_DEADLINE).unwrap_err();
     assert!(
         matches!(&refused, crate::SyncError::Git(crate::git::GitError::File { path, .. }) if path.ends_with("d")),
         "{refused:?}"
@@ -113,4 +118,32 @@ fn a_sync_a_write_refuses_names_the_writes_path() {
         symlink: "x".to_owned(),
     });
     assert_eq!(refused.fields(), board_model::Fields::at(&path));
+}
+
+/// A remote that has not answered when the deadline passes stops the sync
+/// with `board::sync::timeout`: Board stops git and returns soon after the
+/// deadline, so the caller lets the lock go. The same remote answering
+/// within the deadline syncs.
+#[test]
+fn a_remote_that_stalls_past_the_deadline_times_out_and_one_that_answers_syncs() {
+    let deadline = Duration::from_secs(5);
+    let sync = |delay| {
+        let remote = Scenario::new();
+        remote.commit(&[("a.json", "{}")]);
+        let clone = Scenario::clone_of(&remote);
+        let tip = remote.commit(&[("a.json", "[]")]);
+        clone.delayed_origin(delay);
+        let repository = clone.open();
+        let lock = repository.lock(LOCK_WAIT).unwrap();
+        let started = Instant::now();
+        let synced = repository.sync(&lock, false, deadline);
+        let took = started.elapsed();
+        (synced, took, tip)
+    };
+    let (refused, took, _) = sync(30);
+    let refused = refused.unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::SyncTimeout, "{refused}");
+    assert!(took < Duration::from_secs(10), "{took:?}");
+    let (admitted, _, tip) = sync(0);
+    assert_eq!(admitted.unwrap().new, tip);
 }

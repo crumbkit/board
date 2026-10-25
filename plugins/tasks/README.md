@@ -92,12 +92,13 @@ and the personal repo, and `origin_unread` says why.
 The mounted repos in scope sync at once, without pushing, while the call reads
 the tasks at the pins it started with. A sync that runs past 5 s is left to
 finish on its own, since stopping Board mid-sync would leave its lock behind,
-and the repo is listed with `tasks::repo::sync_timeout`. Board's fetch has no
-deadline, so a remote that hangs holds the clone's lock until git gives up.
-Until then, every call whose scope holds that repo takes about 5 s and lists
-it with `tasks::repo::sync_timeout`, because Board waits 5 s for the lock, as
-long as the deadline. A notes write to that clone is refused with
-`board::put::locked`. A mount's pin moves
+and the repo is listed with `tasks::repo::sync_timeout`. Board kills a fetch
+still running after 60 s, so a remote that hangs holds the clone's lock for
+at most a minute per sync. While the remote hangs, every call whose scope
+holds that repo takes about 5 s and lists it with `tasks::repo::sync_timeout`,
+because its own sync stalls or Board waits 5 s for the lock, as long as the
+deadline. A notes write to that clone within a minute of such a call is
+refused with `board::put::locked`. A mount's pin moves
 only when its sync succeeded and the HEAD it reports differs from the pin, and
 only then are the tasks read again. So a call where nothing changed starts one
 `board query`, then the syncs beside one `board refs`. `unsynced` lists each

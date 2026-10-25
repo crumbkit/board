@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::io;
+use std::time::Duration;
 
 use board_model::{Code, Fields, LogicalPath, ObjectId};
 use gix::bstr::{BString, ByteSlice};
@@ -86,22 +87,23 @@ impl Repository {
     /// remote moved meanwhile, up to [`ATTEMPTS`] times. Then HEAD, the
     /// index and the working tree move to the result. A file the remote
     /// changed that is edited here stops the sync before it pushes or
-    /// writes. `lock` is the board lock.
-    pub fn sync(&self, lock: &Lock, push: bool) -> Result<Synced, SyncError> {
+    /// writes. `lock` is the board lock. Each fetch and push that runs past
+    /// `deadline` is stopped.
+    pub fn sync(&self, lock: &Lock, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
         let old = self.head()?;
         let old_files = self.files_of(old)?;
         let mut reason = String::new();
         let (attempts, fetched, new, replayed, pushed, changes) = 'synced: {
             for attempts in 1..=ATTEMPTS {
-                transport::fetch(self.path(), &upstream)?;
+                transport::fetch(self.path(), &upstream, deadline)?;
                 let fetched = self.tracking(&upstream)?;
                 let (new, replayed) = self.replay(old, fetched)?;
                 let changes = self.changes(&old_files, &self.files_of(Some(new))?)?;
                 if !push || new == fetched {
                     break 'synced (attempts, fetched, new, replayed, false, changes);
                 }
-                match transport::push(self.path(), &upstream, &new.to_string())? {
+                match transport::push(self.path(), &upstream, &new.to_string(), deadline)? {
                     Pushed::Done => {
                         break 'synced (attempts, fetched, new, replayed, true, changes);
                     }
@@ -402,6 +404,12 @@ pub enum SyncError {
         status: String,
         stderr: Vec<u8>,
     },
+    #[error("git did not {operation} {remote} within {} seconds, so Board stopped it", deadline.as_secs())]
+    TimedOut {
+        operation: &'static str,
+        remote: String,
+        deadline: Duration,
+    },
     #[error("{path} changed on the remote and in a commit here that is not pushed")]
     Conflict { path: String },
     #[error("{path} is edited here and changed on the remote")]
@@ -425,6 +433,7 @@ impl SyncError {
             Self::Edited { .. } => Code::SyncEdited,
             Self::Symlink { .. } => Code::PutSymlink,
             Self::GaveUp { .. } => Code::SyncGaveUp,
+            Self::TimedOut { .. } => Code::SyncTimeout,
             Self::Write(error) => error.code(),
             Self::Git(error) => error.code(),
         }

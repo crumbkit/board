@@ -19,7 +19,8 @@ deny = [
     { crate = "jsonschema", wrappers = ["board-validate"] },
     # crumbkit reads the terminal width with rustix; Board never asks it to,
     # because it builds every sink with Sink::new over a buffer.
-    { crate = "rustix", wrappers = ["board-plugin", "crumbkit", "gix-index", "tempfile"] },
+    # board-tree sends SIGTERM to the git child its transport module owns.
+    { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crumbkit", "gix-index", "tempfile"] },
     { crate = "signal-hook", wrappers = ["board-plugin"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },

@@ -829,6 +829,7 @@ codes that no start provokes:
   board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME
   board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit
   board::refs::target_changed: a target must change between the check and the read of its fields; board-cli/src/tests/refs.rs changes one between two answers
+  board::sync::timeout: the CLI's 60-second git limit is too slow for a test; board-tree/src/tests/syncing.rs uses a 5-second limit
   board::plugin::timeout: the CLI's 30-second plugin limit is too slow for a test; board-ops/src/call/tests.rs uses a 500 ms limit
   board::ui::open_failed: ui open must fail to start a server or a browser, and a test must not start one; board-serve/src/tests.rs pairs a binary that cannot start with a running server
   board::serve::host: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin

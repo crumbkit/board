@@ -225,6 +225,7 @@ dependencies = [
  "board-scenario",
  "gix",
  "proptest",
+ "rustix",
  "tempfile",
  "thiserror",
 ]

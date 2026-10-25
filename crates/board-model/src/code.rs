@@ -65,6 +65,7 @@ pub enum Code {
     SyncConflict,
     SyncEdited,
     SyncGaveUp,
+    SyncTimeout,
     RefsTargetChanged,
     AttachmentMissing,
     AttachmentMismatch,
@@ -111,7 +112,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 99] = [
+    pub const ALL: [Code; 100] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -169,6 +170,7 @@ impl Code {
         Self::SyncConflict,
         Self::SyncEdited,
         Self::SyncGaveUp,
+        Self::SyncTimeout,
         Self::RefsTargetChanged,
         Self::AttachmentMissing,
         Self::AttachmentMismatch,
@@ -281,6 +283,7 @@ impl Code {
             Self::SyncConflict => "board::sync::conflict",
             Self::SyncEdited => "board::sync::edited",
             Self::SyncGaveUp => "board::sync::gave_up",
+            Self::SyncTimeout => "board::sync::timeout",
             Self::RefsTargetChanged => "board::refs::target_changed",
             Self::AttachmentMissing => "board::attachment::missing",
             Self::AttachmentMismatch => "board::attachment::mismatch",
@@ -401,6 +404,7 @@ mod tests {
             | Code::SyncConflict
             | Code::SyncEdited
             | Code::SyncGaveUp
+            | Code::SyncTimeout
             | Code::RefsTargetChanged
             | Code::AttachmentMissing
             | Code::AttachmentMismatch

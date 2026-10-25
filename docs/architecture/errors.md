@@ -25,7 +25,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `query` | `timeout`: the statement ran longer than 1 s |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
 | `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `nul` (a file's text holds NUL), `no_identity`, `head_moved`, `failed` (the file could not be written) |
-| `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`; see docs/architecture/writes.md |
+| `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`, `timeout` (git ran past 60 s); see docs/architecture/writes.md |
 | `attachment` | `missing`: `get --fetch` found nothing at the record's location; `mismatch`: the bytes there hash to another digest |
 | `plugin` | see docs/plugins.md |
 | `settings` | `asked`, `refused`, `propose_only`, `from_plugin`, `no_personal`, `not_found`, `bad_pattern`, `cannot_widen`, `cannot_hold`, `bad_rule`; see docs/architecture/writes/effects.md |

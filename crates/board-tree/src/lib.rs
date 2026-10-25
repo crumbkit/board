@@ -27,7 +27,7 @@ pub use crate::repositories::Repositories;
 pub use crate::resolve::{Ancestor, InCommit, MAX_HOPS, ResolveError, Resolver};
 pub use crate::symlink::Refused;
 pub use crate::through::{Inside, Through};
-pub use crate::transport::Upstream;
+pub use crate::transport::{GIT_DEADLINE, Upstream};
 pub use crate::trees::{Rows, TreeRow, TreeRows, walk_stored};
 pub use crate::walk::{Beneath, Entry, Link, Name, Status};
 pub use crate::worktree::{
