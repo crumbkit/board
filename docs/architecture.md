@@ -13,9 +13,9 @@ records easy to read and write.
 ## Boards and entries
 
 A board is the working tree of a git repository whose root holds
-`.board/board.json`. Board searches upward for it from the current
-directory, as git does. Both names must match in exact spelling, so
-`.Board/board.json` holds no board even on a case-insensitive file system. No
+`.board/board.json`. Board finds it by searching upward from the current
+directory, as git does. Both names must be listed in that exact spelling, so
+`.Board/board.json` holds no board even where the file system ignores case. No
 board is `board::config::not_found`, and a `board.json` Board cannot read is
 `board::config::invalid`. A dangling `board.json` symlink is
 `board::symlink::dangling`.
@@ -24,15 +24,15 @@ When the search finds no board but the directory is in a git repository,
 Board reads the known boards in `$XDG_CONFIG_HOME/board/config.json`
 (`~/.config/board/config.json` by default), shaped
 `{"boards": ["/Users/me/Code/board"]}`. A relative path is read against the
-file's directory. A missing or empty file lists none; a file of another
-shape, or a `day_start` that is not `HH:MM`, is `board::config::invalid`.
-Board refreshes each
+file's directory. A missing or empty file lists none, and any other file
+that is not this shape is `board::config::invalid`. So is a `day_start`
+that is not `HH:MM`. Board refreshes each
 known board's index and reads the mounts in its working tree. A board
 listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the
 directory's repository, so a linked worktree matches too. With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
-joins the mount's path and the directory's path beneath the
+is the mount's path joined with the directory's path beneath the
 repository's root, such as `/repos/crumbkit/docs`, and the timing log
 records it. A directory inside the git directory has no prefix and
 matches nothing. No match is `board::config::not_found`. When the file lists
@@ -40,12 +40,12 @@ boards, the message says they were read and none mounts the repository, and
 the hint says to add a mount; otherwise the hint says to list a board. More
 than one match, counting every mount of every known board, is
 `board::config::ambiguous`; `-C` then picks a board. A known board that
-cannot be opened or refreshed is skipped, and a `not_found` message
+cannot be opened or refreshed is passed over, and a `not_found` message
 names it. `-C` into a mounted repository finds its board the same way.
 
 The same file may name the user's personal board, as in
-`{"boards": [...], "personal": "/Users/me/Code/board"}`, relative to the
-file's directory. `--personal` runs as that board from its
+`{"boards": [...], "personal": "/Users/me/Code/board"}`, read against the
+file's directory when relative. `--personal` runs as that board from its
 root, from any directory: inside another board, in a repository no board
 mounts, or outside git. Any `-C` is taken from that root. A file
 that names no personal board, or names a directory that is not a board's

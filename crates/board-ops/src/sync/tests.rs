@@ -305,6 +305,31 @@ fn a_file_the_remote_adds_beneath_a_symlinked_directory_stops_the_sync_and_one_b
 }
 
 #[test]
+fn a_file_the_remote_turns_into_a_directory_is_replaced_and_a_symlinked_directory_is_refused() {
+    for linked in [true, false] {
+        let remote = remote();
+        remote_commit(&remote, &[("notes", "plain")]);
+        let a = clone(&remote);
+        let outside = Scenario::new();
+        if linked {
+            notes(&a, &outside, true);
+        }
+        remote_commit(&remote, &[("notes/n.json", PROJECT)]);
+        if linked {
+            let (code, _) = refused(&a, true);
+            assert_eq!(code, Code::PutSymlink);
+            assert!(!outside.workdir().join("n.json").exists());
+        } else {
+            sync(&a, true).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(a.workdir().join("notes/n.json")).unwrap(),
+                PROJECT
+            );
+        }
+    }
+}
+
+#[test]
 fn a_file_the_remote_removes_beneath_a_symlinked_directory_stops_the_sync_and_one_beneath_a_directory_is_admitted()
  {
     for linked in [true, false] {

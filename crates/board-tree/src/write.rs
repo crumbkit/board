@@ -591,8 +591,9 @@ impl Repository {
 /// Writes and fsyncs the temporary file, with the target's permissions when
 /// the target exists. A symlink at `temporary`, which a commit can plant,
 /// is removed first so the write never follows it. Soft limit: a symlink
-/// made between that check and the open is still followed; opening with
-/// `O_NOFOLLOW` would close that, at the cost of rustix in this crate.
+/// made between that check and the open is still followed, and so is a
+/// hard link a local process makes there; opening with `O_NOFOLLOW`, at
+/// the cost of a direct `libc` dependency, would close the first.
 /// Anything else there is reused, which the kill test's FIFO relies on.
 fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
     if fs::symlink_metadata(temporary).is_ok_and(|metadata| metadata.is_symlink()) {

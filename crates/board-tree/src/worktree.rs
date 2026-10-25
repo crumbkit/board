@@ -541,11 +541,12 @@ pub fn discover(start: &Path) -> Option<PathBuf> {
 }
 
 /// A symlink there counts even when it leads to no file, so that opening
-/// the board names the symlink.
+/// the board names the symlink; one that leads to a directory does not.
 fn holds_config(directory: &Path) -> bool {
     let board = directory.join(".board");
-    let config = fs::symlink_metadata(board.join("board.json"));
-    config.is_ok_and(|config| config.is_file() || config.is_symlink())
+    let config = board.join("board.json");
+    fs::symlink_metadata(&config)
+        .is_ok_and(|found| found.is_file() || (found.is_symlink() && !config.is_dir()))
         && lists(directory, ".board")
         && lists(&board, "board.json")
 }

@@ -312,7 +312,17 @@ impl Repository {
             };
             let (was, now) = (blob(was), blob(now));
             let path = path.to_string();
-            if let Some(symlink) = self.symlink_on_way(&path)? {
+            // A prefix that is still a file here, which the remote turned
+            // into a directory, holds no symlink; check_out removes it first.
+            let symlink = match self.symlink_on_way(&path) {
+                Err(GitError::File { source, .. })
+                    if source.kind() == io::ErrorKind::NotADirectory =>
+                {
+                    None
+                }
+                other => other?,
+            };
+            if let Some(symlink) = symlink {
                 return Err(SyncError::Symlink { path, symlink });
             }
             let held = match self.read_working(&path)? {
