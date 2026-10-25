@@ -43,12 +43,13 @@ and plugins ask Board before they take an effect. The owner answers from the
 command line or a gate window. No answer depends on `board serve`.
 [plan/board-ui.md](plan/board-ui.md) holds the decisions and the build order.
 The `review`, `plans`, `agentic-loop` and `collab` plugins follow, each
-designed when it starts.
+designed when it starts. [plan/review.md](plan/review.md) holds review's
+design, which brings review accounting into scope.
 
 ## Out of scope
 
 Each of these waits until a real need has its own plan: effects beyond the
-first slice in plan/board-ui.md; triggers and scheduling; review accounting;
+first slice in plan/board-ui.md; triggers and scheduling;
 pinned or relative references; remote mounts (a mount names a local clone);
 any query language beyond SQL; daemons and watchers other than `board serve`;
 sync beyond git; Windows CI (the code
