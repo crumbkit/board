@@ -295,9 +295,9 @@ impl Repository {
     /// The paths that differ between `old` and `new`, each with the blob to
     /// write there, or `None` to remove the file. A file whose working-tree
     /// bytes are neither its old blob nor its new one is edited, and stops
-    /// the sync, as does a file beneath a directory that is a symlink on
-    /// disk, which a write would leave the tree through; a path that is not
-    /// a plain file in `new` is left alone.
+    /// the sync, as does a file that is, or lies beneath a directory that
+    /// is, a symlink on disk, which a write would follow; a path that is not
+    /// a plain file in `new` is removed.
     fn changes(&self, old: &Files, new: &Files) -> Result<Vec<Change>, SyncError> {
         let mut changes = Vec::new();
         let paths: std::collections::BTreeSet<_> = old.keys().chain(new.keys()).collect();
@@ -312,9 +312,7 @@ impl Repository {
             };
             let (was, now) = (blob(was), blob(now));
             let path = path.to_string();
-            if let Some((directory, _)) = path.rsplit_once('/')
-                && let Some(symlink) = self.symlink_on_way(directory)?
-            {
+            if let Some(symlink) = self.symlink_on_way(&path)? {
                 return Err(SyncError::Symlink { path, symlink });
             }
             let held = match self.read_working(&path)? {

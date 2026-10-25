@@ -329,3 +329,62 @@ fn a_file_the_remote_removes_beneath_a_symlinked_directory_stops_the_sync_and_on
         }
     }
 }
+
+#[test]
+fn a_sync_beside_a_symlink_at_a_files_temporary_path_writes_the_file_and_leaves_the_symlinks_target_alone()
+ {
+    for planted in [true, false] {
+        let remote = remote();
+        let a = clone(&remote);
+        let outside = Scenario::new();
+        outside.write("victim.txt", Item::File("kept"));
+        let victim = outside.workdir().join("victim.txt");
+        if planted {
+            a.write(
+                "notes/.n.json.board-tmp",
+                Item::Symlink(victim.to_str().unwrap()),
+            );
+        }
+        remote_commit(&remote, &[("notes/n.json", PROJECT)]);
+        sync(&a, true).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(a.workdir().join("notes/n.json")).unwrap(),
+            PROJECT
+        );
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "kept");
+    }
+}
+
+#[test]
+fn a_file_the_remote_changes_that_is_a_symlink_on_disk_stops_the_sync_and_one_that_is_a_file_is_admitted()
+ {
+    for linked in [true, false] {
+        let remote = remote();
+        remote_commit(&remote, &[("notes/n.json", PROJECT)]);
+        let a = clone(&remote);
+        let outside = Scenario::new();
+        outside.write("victim.json", Item::File(PROJECT));
+        let victim = outside.workdir().join("victim.json");
+        if linked {
+            a.write("notes/n.json", Item::Deleted);
+            a.write("notes/n.json", Item::Symlink(victim.to_str().unwrap()));
+        }
+        let changed = r#"{"$type": "lr/project/v1", "title": "changed"}"#;
+        remote_commit(&remote, &[("notes/n.json", changed)]);
+        if linked {
+            let (code, message) = refused(&a, true);
+            assert_eq!(code, Code::PutSymlink);
+            assert_eq!(
+                message,
+                "notes/n.json cannot be written: notes/n.json is a symlink"
+            );
+            assert_eq!(std::fs::read_to_string(&victim).unwrap(), PROJECT);
+        } else {
+            sync(&a, true).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(a.workdir().join("notes/n.json")).unwrap(),
+                changed
+            );
+        }
+    }
+}
