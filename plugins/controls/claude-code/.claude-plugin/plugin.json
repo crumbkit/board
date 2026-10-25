@@ -1,0 +1,9 @@
+{
+  "name": "board-controls",
+  "version": "0.1.0",
+  "description": "Tells each Claude Code session the board controls on its repository, and names a control on a file before an edit of it lands.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luke Randall"
+  }
+}
