@@ -111,8 +111,15 @@ export const visible = (text: string, keepLines = true) =>
 /** The band's line. */
 export const waitingLine = (n: number) => (n === 1 ? '1 effect waits for your answer' : `${n} effects wait for your answer`)
 
-/** One line naming who asks for what, where; a line feed or tab in it is escaped too. */
-export const headline = (e: Effect) => visible(`${e.plugin} asks to ${e.op} ${e.path} in ${e.board}`, false)
+/** `text` escaped and in double quotes, with a double quote in it escaped, so it reads as one value. */
+const quoted = (text: string) => `"${visible(text, false).replace(/"/g, '\\"')}"`
+
+/**
+ * One line naming where, who and what. The board comes first and the path is
+ * quoted, because a plugin chooses the path, and a path such as
+ * `/README.md in ~/Code/scratch` could otherwise name another board.
+ */
+export const headline = (e: Effect) => `In board ${quoted(e.board)}, ${visible(e.plugin, false)} asks to ${visible(e.op, false)} ${quoted(e.path)}`
 
 /** The command that prints an effect whole. */
 export const getCommand = (e: Effect) => `board --personal get /effects/pending/${e.id}`

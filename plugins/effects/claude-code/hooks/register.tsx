@@ -199,8 +199,9 @@ export const register: Register = on => {
     }
     const found = await read($, pending)
     if (e.props.hasSurvey || found === null) return below
-    // A failed read is marked, unless there is no personal board.
-    const unread = found.failed !== null && !found.failed.startsWith(NO_BOARD)
+    // A failed read is marked, unless no read has worked because there is no
+    // personal board.
+    const unread = found.failed !== null && (found.worked || !found.failed.startsWith(NO_BOARD))
     if (found.effects.length === 0 && !unread) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const more = found.truncated ? ' or more' : ''
@@ -241,7 +242,7 @@ export const register: Register = on => {
             </Box>
           </Box>
         ))}
-        {found.truncated ? <Text dimColor>More wait; `board --personal query` lists them.</Text> : null}
+        {found.truncated ? <Text dimColor>More wait; `board --personal ls /effects/pending` lists them.</Text> : null}
       </Box>
     )
   })

@@ -12,7 +12,8 @@ its own.
 
 - It lists the pending effects with one `board --personal query` over
   `/effects/pending/`, leaving out each effect with a `board/seen/v1` record
-  at the same id under `/effects/seen/`. The query is in `hooks/query.ts`, and
+  at the same id under `/effects/seen/` whose answer is `approve` or
+  `refuse`, as Board's own check reads it. The query is in `hooks/query.ts`, and
   crates/board-cli/src/tests/effects_mod.rs runs it against a real board. It
   returns only the fields the mod shows, the first 2,000 characters of the
   record or text a put would write, and that content's size in bytes and
@@ -23,11 +24,15 @@ its own.
   `2 effects wait for your answer`, with a Show button. When a read fails,
   the band says `Board: could not read pending effects`, followed by the
   count of the last read that worked, such as `(last read: 2)`, and the
-  failure goes to the debug log. The band shows nothing for the failure
-  `board::config::not_found`, which means there is no personal board.
-- The pane lists up to 100 effects. Each shows the plugin, the op, the path,
-  the board's full root with the home directory written as `~`, and the first
-  lines of what a put would write. It says when the put replaces a file. When
+  failure goes to the debug log. The band shows nothing when no read has
+  worked and the failure is `board::config::not_found`, which means there is
+  no personal board.
+- The pane lists up to 100 effects. Each starts with a line such as
+  `In board "~/work", notes asks to put "/notes/plan.md"`. The board's full
+  root comes first, with the home directory written as `~`, and the path is
+  quoted, because a plugin chooses the path and a path such as
+  `/README.md in ~/Code/scratch` could otherwise name another board. Under it
+  are the first lines of what a put would write. It says when the put replaces a file. When
   it shows only part of the content, it says how much is left out, such as
   `and 146 more lines, 12 KB in all`, and gives the command
   `board --personal get /effects/pending/<id>` that prints the effect whole.
@@ -43,7 +48,7 @@ its own.
   such as bidi overrides and zero-width spaces, line and paragraph
   separators, and backslash. A control character makes Claude Code refuse to
   draw the screen, and a format character could make one path read as
-  another. The one-line headline escapes line feed and tab too.
+  another. The headline escapes line feed and tab too.
 - Before it runs `board answer`, the mod reads that one effect again. If it
   is no longer pending, because it was answered elsewhere, a toast says no
   answer was sent. `board answer` overwrites an earlier answer, so without

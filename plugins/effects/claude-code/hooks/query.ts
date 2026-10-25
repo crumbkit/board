@@ -12,7 +12,8 @@
  *
  * `board answer` keeps the pending effect and writes a `board/seen/v1` at the
  * same id under `/effects/seen/`, so an answered effect is one with a seen
- * record. The NOT IN can go once answered effects leave `/effects/pending/`.
+ * record whose answer is approve or refuse, as Board's own check reads it.
+ * The NOT IN can go once answered effects leave `/effects/pending/`.
  * `pendingSql(id)` in effects.ts narrows the first `LIKE` to one effect's
  * path, so that text must stay as it is.
  */
@@ -33,5 +34,6 @@ SELECT substr(logical, 18) AS id,
 FROM e
 WHERE substr(logical, 18) NOT IN (
   SELECT substr(logical, 15) FROM records WHERE type = 'board/seen/v1' AND logical LIKE '/effects/seen/%'
+    AND json_extract(body, '$.answer') IN ('approve', 'refuse')
 )
 ORDER BY id`

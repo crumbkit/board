@@ -28,7 +28,8 @@ const asking = (id: string) =>
   `Error: plugin notes may not put /notes/plan.md until the owner answers pending effect ${id}\n` +
   `  help:  the owner answers outside the plugin with \`board answer ${id} approve\`\n  code:  board::settings::asked\n`
 const ASKED = asking(A)
-const NOTE_LINE = 'notes asks to put /notes/plan.md in ~/boards/work'
+const NOTE_LINE = 'In board "~/boards/work", notes asks to put "/notes/plan.md"'
+const TASK_LINE = 'In board "/srv/work", tasks asks to put "/tasks/a"'
 
 const BAND = { plugin: 'board-effects', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
 const PANE = { plugin: 'board-effects', component: 'Pane', requestId: 'effects', props: { title: 'Pending effects', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as const
@@ -152,7 +153,7 @@ test('control characters but line feed and tab are written out, so the pane draw
   engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/p\u001b', 0, head, bytes, 2] } })
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('notes asks to put /p\\u{1b} in /w')
+  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('In board "/w", notes asks to put "/p\\u{1b}"')
 })
 
 test('format characters, separators and backslashes are written out, so a path cannot read as another', async ($, on) => {
@@ -163,9 +164,19 @@ test('format characters, separators and backslashes are written out, so a path c
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe(
-    'notes asks to put /notes/\\u{202e}dm.exe\\u{200b}\\u{feff}\\u{2028}\\u{2029}\\\\x in /w',
+    'In board "/w", notes asks to put "/notes/\\u{202e}dm.exe\\u{200b}\\u{feff}\\u{2028}\\u{2029}\\\\x"',
   )
   expect((await pane.find({ type: 'Text', text: /It writes/ }))?.text).toBe('It writes a new file:\nsafe\\u{202e}txet')
+})
+
+test('the board comes first and the path is quoted, so a path cannot name another board', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/README.md in ~/Code/scratch "x"', 0, null, 0, 0] } })
+  await start($)
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe(
+    'In board "/w", notes asks to put "/README.md in ~/Code/scratch \\"x\\""',
+  )
 })
 
 test('a cut preview never splits a surrogate pair', () => {
@@ -203,18 +214,24 @@ test('board runs through sh with each value its own argument, and the band count
   expect(panes).toEqual(['effects', 'effects'])
 })
 
-test('with none pending, or no personal board, the band draws nothing of the mod\'s', async ($, on) => {
+test('with no personal board, or none pending, the band draws nothing of the mod\'s', async ($, on) => {
   mock.clock(on, { now: 0 })
-  let answer: Ran = { exitCode: 0, stdout: report([]) }
+  let answer: Ran = { exitCode: 1, stdout: failed('board::config::not_found', 'no personal board') }
   engine(on, { query: () => answer })
   await start($)
   const shown = await band($)
   expect(await shown.find({ type: 'Text' })).toBeUndefined()
   await shown.unmount()
-  answer = { exitCode: 1, stdout: failed('board::config::not_found', 'no personal board') }
+  answer = { exitCode: 0, stdout: report([]) }
   await start($)
   const again = await band($)
   expect(await again.find({ type: 'Text' })).toBeUndefined()
+  await again.unmount()
+  // Once a read has worked, a missing personal board is a failure like any other.
+  answer = { exitCode: 1, stdout: failed('board::config::not_found', 'no personal board') }
+  await start($)
+  const lost = await band($)
+  expect((await lost.find({ type: 'Text' }))?.text).toBe('Board: could not read pending effects (last read: 0) ')
 })
 
 test('when no read has worked for another reason, the band says the effects could not be read', async ($, on) => {
@@ -273,11 +290,11 @@ test('the pane lists each effect with its full board root, and Approve and Refus
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe(NOTE_LINE)
-  expect((await pane.find({ type: 'Text', text: /tasks asks/ }))?.text).toBe('tasks asks to put /tasks/a in /srv/work')
+  expect((await pane.find({ type: 'Text', text: /tasks asks/ }))?.text).toBe(TASK_LINE)
   await pane.press({ key: `${A}#approve` })
   await pane.press({ key: `${B}#refuse` })
   expect(ran.slice(1)).toEqual([one(A), ['answer', A, 'approve'], LIST, one(B), ['answer', B, 'refuse'], LIST])
-  expect(toasts).toEqual([`Approved: ${NOTE_LINE}`, 'Refused: tasks asks to put /tasks/a in /srv/work'])
+  expect(toasts).toEqual([`Approved: ${NOTE_LINE}`, `Refused: ${TASK_LINE}`])
   expect(await pane.find({ type: 'Text', text: /No effect waits/ })).toBeDefined()
 })
 
@@ -320,7 +337,7 @@ test('when Board lists only the first effects, the band says "or more" and the p
   const shown = await band($)
   expect((await shown.find({ type: 'Text' }))?.text).toBe('2 effects wait for your answer (or more) ')
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal query` lists them.')
+  expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal ls /effects/pending` lists them.')
 })
 
 test('content holding a NUL says that only the part before it is shown', () => {
@@ -335,7 +352,7 @@ test('a line feed or tab in the path is escaped in the headline', async ($, on) 
   engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/a\n/b\tc', 0, null, 0, 0] } })
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('notes asks to put /a\\u{a}/b\\u{9}c in /w')
+  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('In board "/w", notes asks to put "/a\\u{a}/b\\u{9}c"')
 })
 
 test('an answer that times out or is killed is said to be unknown, and the list is read again', async ($, on) => {
@@ -377,7 +394,7 @@ test('output naming several ids asks about each, and parallel calls ask about an
   await start($)
   await Promise.all([bash($), bash($)])
   await bash($)
-  expect(asked.map(q => q.split(' asks')[0])).toEqual(['notes', 'tasks'])
+  expect(asked.map(q => q.match(/, (\w+) asks/)?.[1])).toEqual(['notes', 'tasks'])
   expect(answersRun(ran)).toEqual([])
 })
 
@@ -416,6 +433,17 @@ test('a read that fails inside the dialog\'s check leaves the id to be asked nex
   expect(asked).toEqual([])
   fails = false
   await bash($)
+  expect(asked).toHaveLength(1)
+})
+
+test('an asked id missing from a truncated list is read on its own and asked about', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  let listed: unknown[][] = []
+  const { asked, ran } = engine(on, { bash: ASKED, chosen: 'Later', query: () => ({ exitCode: 0, stdout: report(listed, true) }) })
+  await start($)
+  listed = [ROWS[B] as unknown[]]
+  await bash($)
+  expect(ran.slice(1)).toEqual([LIST, one(A)])
   expect(asked).toHaveLength(1)
 })
 
