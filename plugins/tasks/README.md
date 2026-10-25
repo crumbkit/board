@@ -223,6 +223,19 @@ push that failed; the write stays committed in the clone.
 Both are `tasks::repo::not_synced` for the board's own tree, which is never
 synced. `commit` is None when the board's own tree does not commit puts.
 
+## The sweep skill
+
+The directory also holds `SKILL.md`, the instructions an agent follows to
+sweep the person's tasks one at a time, in Claude Code or Codex. From a phone
+it works through a Claude Code session on the machine that holds the board,
+such as one under Remote Control; a cloud session has no board. Link the
+directory into the agents' shared skills to install it:
+
+    ln -s "$PWD" ~/.agents/skills/tasks
+
+Claude Code reads `~/.claude/skills`; link it there too unless that directory
+is itself a link to `~/.agents/skills`.
+
 ## Development
 
 The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,

@@ -27,7 +27,14 @@ def manifest() -> dict[str, JsonValue]:
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
         "version": "0.1.0",
-        "description": "Tasks, what each waits on, the tasks to sweep now, and the calls that write them.",
+        # SKILL.md's description, the callout an agent sees first.
+        "description": (
+            "Sweep the person's tasks one at a time, marking each done, deferring, dropping or editing it, and add a "
+            "task. Use it when the person asks to sweep, review or go through their tasks or to-do list, or to add a "
+            "task to their own list. Start with `board -C <board> call tasks.available`, run in the repository you "
+            "work in, which syncs the notes repos that repository's git remote routes to and lists the tasks to sweep. "
+            "SKILL.md and README.md in the plugin's directory say more."
+        ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
         "extract": [TASK_TYPE, TASK_V2_TYPE],

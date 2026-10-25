@@ -15,6 +15,19 @@ def test_the_committed_manifest_and_schema_are_the_ones_the_models_generate() ->
     assert SCHEMA_V2.read_text() == dumped(schema_v2())
 
 
+def skill_description() -> str:
+    """The `description` of SKILL.md's frontmatter, a single-quoted YAML scalar on one line."""
+    [line] = [line for line in (PLUGIN / "SKILL.md").read_text().splitlines() if line.startswith("description: ")]
+    quoted = line.removeprefix("description: ")
+    assert quoted.startswith("'"), quoted
+    assert quoted.endswith("'"), quoted
+    return quoted[1:-1].replace("''", "'")
+
+
+def test_the_manifest_describes_the_plugin_with_the_skills_description() -> None:
+    assert manifest()["description"] == skill_description()
+
+
 def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships(board: Board) -> None:
     report = board.json("plugin", "list")
     tasks = next(plugin for plugin in report["data"] if plugin["name"] == "tasks")
