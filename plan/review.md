@@ -24,23 +24,28 @@ repositories join as it proves itself.
 
 1. **Names.** The plugin is `review`. The author writes a review brief; a run
    produces a review report.
-2. **`review/brief/v1`**, written by the author of a change:
-   - `range`: the commits under review, as `base..head`.
+2. **`review/brief/v1`**, written by the author of a change, at
+   `/reviews/<id>/brief.json`:
+   - `range`: the commits under review, as `base..head`. The schema allows
+     only two full object ids joined by `..`, and every git call puts
+     `--end-of-options` before revisions, so a crafted range cannot pass git
+     an option such as `--output`.
    - `focus`: what matters in this change and what to check first.
    - `questions`: optional; what the author wants answered.
    - `follows`: optional; the report this brief continues from.
-3. **`review/report/v1`**, written by `review.run` or a person:
+3. **`review/report/v1`**, written by `review.run` or a person, at
+   `/reviews/<id>/report.json`:
    - `brief`: ref to the brief, absent for a human review.
    - `range` and `patch_ids`: the commits covered, and their `git patch-id`
-     values.
+     values, which the schema allows only as hex.
    - `findings`: each with severity, file, line and text.
    - `verdict`: `approve`, `changes` or `comment`.
    - `by`: the agent and model, or the person.
    - `cost`: duration, and tokens when a model ran.
    - `source`: optional URL, such as a GitHub review or the posted comment.
    - `follows`: optional ref to the previous report, so reports chain.
-4. **`review.run`** runs a brief with a clean-context agent. It writes the
-   report and a `runs/run/v1` for the run. Its timeout and the variables it
+4. **`review.run`** runs a brief with a clean-context agent and writes the
+   report, whose `by` and `cost` record the run. Its timeout and the variables it
    may read come from the manifest (build step 1). Decision 9 names the
    agent it starts.
 5. **A review carries over a rebase** when the patch ids of the covered
@@ -79,8 +84,11 @@ repositories join as it proves itself.
    manifest declares (build step 1), never a command from a board's tree,
    because mounting brings no code. No shell parses it. The agent reads an
    untrusted diff, so it starts in an empty temporary directory with the
-   brief and diff on stdin, and loads no project settings or tools. The
-   documented example is `claude -p --output-format json --setting-sources
-   user --tools ""`, whose JSON gives the token counts; the implementer
+   brief and diff on stdin, and loads no project settings, tools or MCP
+   servers. The
+   variable holds a JSON array of strings. The documented example is
+   `["claude", "-p", "--output-format", "json", "--setting-sources", "user",
+   "--tools", "", "--strict-mcp-config"]`, which loads no built-in tools and
+   no MCP servers, and whose JSON gives the token counts; the implementer
    checks those flags against `claude --help`. A verdict is no stronger
    than the agent's resistance to text in the diff.
