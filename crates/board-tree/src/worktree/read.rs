@@ -86,6 +86,24 @@ impl Repository {
         }))
     }
 
+    /// The first `/`-separated prefix of `file`, `file` itself included,
+    /// that is a symlink on disk.
+    pub(crate) fn symlink_on_way(&self, file: &str) -> Result<Option<String>, GitError> {
+        let mut at = self.path().to_path_buf();
+        let mut end = 0;
+        for segment in file.split('/') {
+            at.push(segment);
+            end += segment.len();
+            match fs::symlink_metadata(&at) {
+                Ok(metadata) if metadata.is_symlink() => return Ok(Some(file[..end].to_owned())),
+                Ok(_) => end += 1,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                Err(source) => return Err(GitError::File { path: at, source }),
+            }
+        }
+        Ok(None)
+    }
+
     /// [`Reader::read_through`] in `tree`, whose listings it shares, with
     /// `chains`, the places following has reached in `tree`, so the file a
     /// symlink leads to is found as `tree` finds it, a chain is followed

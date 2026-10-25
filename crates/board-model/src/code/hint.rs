@@ -357,7 +357,7 @@ fn generic(code: Code) -> &'static str {
             "point at the target more directly; resolution follows at most 40 pointers"
         }
         Code::RepoUnreadable => {
-            "check that git can read the repository, for example with `git fsck`"
+            "run the command again, because a file may have changed while it was read; if it fails again, check that git can read the repository, for example with `git fsck`"
         }
         Code::RepoSubmodule => {
             "Board does not read submodules; mount the repository with a `board/mount/v1` record instead"

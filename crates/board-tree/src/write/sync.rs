@@ -295,7 +295,9 @@ impl Repository {
     /// The paths that differ between `old` and `new`, each with the blob to
     /// write there, or `None` to remove the file. A file whose working-tree
     /// bytes are neither its old blob nor its new one is edited, and stops
-    /// the sync; a path that is not a plain file in `new` is left alone.
+    /// the sync, as does a file that is, or lies beneath a directory that
+    /// is, a symlink on disk, which a write would follow; a path that is not
+    /// a plain file in `new` is removed.
     fn changes(&self, old: &Files, new: &Files) -> Result<Vec<Change>, SyncError> {
         let mut changes = Vec::new();
         let paths: std::collections::BTreeSet<_> = old.keys().chain(new.keys()).collect();
@@ -310,6 +312,19 @@ impl Repository {
             };
             let (was, now) = (blob(was), blob(now));
             let path = path.to_string();
+            // A prefix that is still a file here, which the remote turned
+            // into a directory, holds no symlink; check_out removes it first.
+            let symlink = match self.symlink_on_way(&path) {
+                Err(GitError::File { source, .. })
+                    if source.kind() == io::ErrorKind::NotADirectory =>
+                {
+                    None
+                }
+                other => other?,
+            };
+            if let Some(symlink) = symlink {
+                return Err(SyncError::Symlink { path, symlink });
+            }
             let held = match self.read_working(&path)? {
                 Working::Read(contents) => Some(contents.blob),
                 Working::TooLarge => Some(self.working_blob(&path)?),
@@ -391,6 +406,8 @@ pub enum SyncError {
     Conflict { path: String },
     #[error("{path} is edited here and changed on the remote")]
     Edited { path: String },
+    #[error("{path} cannot be written: {symlink} is a symlink")]
+    Symlink { path: String, symlink: String },
     #[error("the remote refused the push {attempts} times, the last time with {reason}")]
     GaveUp { attempts: u32, reason: String },
     #[error(transparent)]
@@ -406,6 +423,7 @@ impl SyncError {
             Self::NotStarted { .. } | Self::Failed { .. } => Code::SyncFailed,
             Self::Conflict { .. } => Code::SyncConflict,
             Self::Edited { .. } => Code::SyncEdited,
+            Self::Symlink { .. } => Code::PutSymlink,
             Self::GaveUp { .. } => Code::SyncGaveUp,
             Self::Write(error) => error.code(),
             Self::Git(error) => error.code(),
@@ -415,7 +433,7 @@ impl SyncError {
     /// The logical path of the file at fault, when it has one.
     pub fn fields(&self) -> Fields {
         match self {
-            Self::Conflict { path } | Self::Edited { path } => {
+            Self::Conflict { path } | Self::Edited { path } | Self::Symlink { path, .. } => {
                 let logical = path.strip_suffix(".json").unwrap_or(path);
                 format!("/{logical}")
                     .parse::<LogicalPath>()

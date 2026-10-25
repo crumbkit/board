@@ -1186,3 +1186,27 @@ fn a_batch_refusal_lists_each_line_with_its_own_fields_and_a_single_refusal_list
         Some("fix each line listed, then send the whole batch again; nothing was written")
     );
 }
+
+#[test]
+fn a_put_beside_a_symlink_at_its_temporary_path_writes_the_record_and_leaves_the_symlinks_target_alone()
+ {
+    for planted in [true, false] {
+        let scenario = board();
+        let outside = Scenario::new();
+        outside.write("victim.txt", Item::File("kept"));
+        let victim = outside.workdir().join("victim.txt");
+        if planted {
+            scenario.write(
+                "tasks/.a.json.board-tmp",
+                Item::Symlink(victim.to_str().unwrap()),
+            );
+        }
+        let record = task("");
+        put(&scenario, "/tasks/a", Expect::Any, &record).unwrap();
+        assert_eq!(file(&scenario, "tasks/a.json").unwrap(), canonical(&record));
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "kept");
+        assert!(
+            std::fs::symlink_metadata(scenario.workdir().join("tasks/.a.json.board-tmp")).is_err()
+        );
+    }
+}

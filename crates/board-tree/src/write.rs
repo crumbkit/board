@@ -287,24 +287,13 @@ impl Repository {
     /// on the way to it, is a symlink. The working-tree listing hides an
     /// ignored symlink, so resolution alone would write through one.
     fn refuse_symlink(&self, path: &LogicalPath, file: &str) -> Result<(), WriteError> {
-        let mut at = self.path().to_path_buf();
-        let mut end = 0;
-        for segment in file.split('/') {
-            at.push(segment);
-            end += segment.len();
-            match fs::symlink_metadata(&at) {
-                Ok(metadata) if metadata.is_symlink() => {
-                    return Err(WriteError::Symlink {
-                        path: path.clone(),
-                        symlink: file[..end].to_owned(),
-                    });
-                }
-                Ok(_) => end += 1,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-                Err(source) => return Err(GitError::File { path: at, source }.into()),
-            }
+        match self.symlink_on_way(file)? {
+            Some(symlink) => Err(WriteError::Symlink {
+                path: path.clone(),
+                symlink,
+            }),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     /// The git directory of this working tree, where its locks live.
@@ -600,8 +589,16 @@ impl Repository {
 }
 
 /// Writes and fsyncs the temporary file, with the target's permissions when
-/// the target exists.
+/// the target exists. A symlink at `temporary`, which a commit can plant,
+/// is removed first so the write never follows it. Soft limit: a symlink
+/// made between that check and the open is still followed, and so is a
+/// hard link a local process makes there; opening with `O_NOFOLLOW`, at
+/// the cost of a direct `libc` dependency, would close the first.
+/// Anything else there is reused, which the kill test's FIFO relies on.
 fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
+    if fs::symlink_metadata(temporary).is_ok_and(|metadata| metadata.is_symlink()) {
+        fs::remove_file(temporary)?;
+    }
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)

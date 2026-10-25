@@ -81,7 +81,8 @@ board's lock, so no put runs meanwhile, and then:
 4. moves HEAD, git's index and the working tree to the result, writing each
    file the remote changed, as a put writes. A file whose working-tree bytes
    are neither its old blob nor its new one is an edit, and the sync stops
-   before it pushes or writes, with `board::sync::edited`.
+   before it pushes or writes, with `board::sync::edited`. A symlink on disk
+   at or above a file stops it the same way, with `board::put::symlink`.
 
 A branch that follows no remote branch is `board::sync::no_remote`, and a
 fetch or push git itself refuses is `board::sync::failed`, which carries the
