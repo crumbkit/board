@@ -84,8 +84,9 @@ board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 ## Finding plugins
 
 `board plugin list` prints every installed plugin, its capabilities, and
-whether the board enables it, and exits 1 when an install or an enabled
-plugin's schema is broken. `board plugin find` lists the capabilities of
+whether the board enables it. It exits 1 when an install is broken, an
+enabled plugin is not installed, or an enabled plugin's schema is missing or
+differs. `board plugin find` lists the capabilities of
 working installs, filtered by capability name or by a `_meta` value.
 [plugins/finding.md](plugins/finding.md) gives their columns, filters and
 exit codes.
