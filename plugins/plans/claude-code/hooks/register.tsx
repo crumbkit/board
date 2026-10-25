@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { Open, Question } from '../types'
-import { answerBatch, answerText, failure, openLine, parseOpen, parseRows, project, questionSql, report, REPORT_LIMIT, REPORT_SQL } from './plans'
+import { answerBatch, answerText, failure, openLine, parseOpen, parseRows, project, questionSql, refusal, report, REPORT_LIMIT, REPORT_SQL } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -37,7 +37,7 @@ function board($: EngineInterface, options: PluginOptions, args: string[], stdin
   })
 }
 
-/** Reads the open questions again. A failure clears them, so the band draws nothing, and is logged. */
+/** Reads the open questions again. A failure is logged and keeps the last count read. */
 async function refresh($: EngineInterface, options: PluginOptions) {
   let found: Open | null = null
   try {
@@ -47,42 +47,50 @@ async function refresh($: EngineInterface, options: PluginOptions) {
   } catch (error) {
     $.ui.log(`board: plans.open did not run: ${String(error)}`, { to: 'debug' })
   }
-  await update($, open, () => found)
+  if (found !== null) await update($, open, () => found)
+}
+
+/** Reads the question and its answers; undefined when board fails. */
+async function held($: EngineInterface, options: PluginOptions, path: string) {
+  const ran = await board($, options, ['query', questionSql(path)])
+  return ran.exitCode === 0 ? parseRows(ran.stdout)?.rows : undefined
 }
 
 /**
  * Records the owner's answer and the question's new status in one batch, then
- * sends the answer to the session that asked. A question that is no longer
- * open is refused before the put; one that changes between the read and the
- * put is refused by the put's `expect`.
+ * tries to send the answer to the session that asked. A question that is no
+ * longer open, or that already has an answer at any id, is refused before the
+ * put; one that changes between the read and the put is refused by the put's
+ * `expect`, and is read again to say why.
  *
- * The send addresses the asking session's `local_` id as the SendMessage tool
- * spells a recipient, a string, because `{ sessionId }` takes only a
- * `$.session.id()` transcript id and refuses a `local_` one. Outside the
- * desktop app the string is refused too; the asking session then finds the
- * answer by polling Board, which it already does.
+ * The answer is recorded in Board either way; the send is best effort. It
+ * names the asking session's `local_` id as a string, the SendMessage tool's
+ * spelling of a recipient, because `{ sessionId }` refuses a `local_` id.
  */
 async function answer($: EngineInterface, options: PluginOptions, q: Question, choice: string, words: string) {
   try {
-    const held = await board($, options, ['query', questionSql(q.path)])
-    const row = parseRows(held.stdout)?.rows[0]
-    if (held.exitCode !== 0 || row === undefined) return $.ui.toast(`${q.path} could not be read, so nothing was recorded`)
-    const status = (JSON.parse(String(row.body)) as { status?: unknown }).status
-    if (status !== 'open') return $.ui.toast(`${q.path} is ${String(status)} now, so nothing was recorded`)
+    const rows = await held($, options, q.path)
+    const refused = refusal(q.path, rows)
+    const row = rows?.find(r => r.kind === 'question')
+    if (refused !== null || row === undefined) return $.ui.toast(refused ?? `${q.path} could not be read, so nothing was recorded`)
     // The desktop app names this session's `local_` id, the form questions use.
     const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
     const by = host?.startsWith('local_') ? host : undefined
     const batch = answerBatch(q.path, String(row.blob), String(row.body), choice, words, by, await $.clock.now())
     const put = await board($, options, ['put', '--batch', '--wait', LOCK_WAIT], batch)
-    if (put.exitCode !== 0) return $.ui.toast(`No answer was recorded: ${failure(put.exitCode, put.stdout, put.stderr)}`)
+    if (put.exitCode !== 0) {
+      const why = failure(put.exitCode, put.stdout, put.stderr)
+      const since = why.startsWith('board::put::stale') ? refusal(q.path, await held($, options, q.path)) : null
+      return $.ui.toast(since ?? `No answer was recorded: ${why}`)
+    }
     await update($, open, found => found && { questions: found.questions.filter(o => o.path !== q.path), total: found.total - 1 })
     let sent = false
     try {
       sent = (await $.session.send({ to: q.session, text: answerText(q.path, choice, words) })).isDelivered
     } catch {
-      // A send that rejects is a send refused: the session reads Board.
+      // A send that rejects is a send refused; the answer is in Board all the same.
     }
-    $.ui.toast(sent ? `Answered, and sent to ${q.session}` : `Answered. ${q.session} picks the answer up from Board`)
+    $.ui.toast(sent ? `Answered, and sent to ${q.session}` : `Answered and recorded in Board. The message to ${q.session} was not delivered`)
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }
@@ -94,17 +102,24 @@ const age = (asked: string, now: number) => {
 }
 
 export const register: Register = (on, options) => {
+  // The minute's refresh starts with the first band drawn, which a `-p` run
+  // never draws. Desktop sessions report `isInteractive: false`, so that flag
+  // cannot gate it.
+  let polling = false
+
   on('session.start', async ($, e, next) => {
     const started = await next(e)
     await $.command.register({ name: 'yesterday', description: "Show the morning report of yesterday's Board records, from 07:00" })
     await refresh($, options)
-    // A non-interactive session draws no band, so it reads Board only once.
-    if (e.isInteractive) $.clock.every(REFRESH_MS, () => void refresh($, options))
     return started
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const below = await next(e)
+    if (!polling) {
+      polling = true
+      $.clock.every(REFRESH_MS, () => void refresh($, options))
+    }
     const found = await read($, open)
     if (e.props.hasSurvey || found === null || found.total === 0) return below
     const { Box, Button, Text } = $.ui.resolve(e)

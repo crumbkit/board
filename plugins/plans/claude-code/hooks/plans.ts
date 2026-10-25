@@ -43,8 +43,28 @@ export function parseRows(stdout: string): { rows: Record<string, unknown>[]; tr
 
 const quoted = (text: string) => `'${text.replaceAll("'", "''")}'`
 
-/** The query for the question's blob and body, which the answer's batch rewrites with its status answered. */
-export const questionSql = (path: string) => `SELECT blob, body FROM records WHERE logical = ${quoted(path)}`
+/**
+ * The query for the question's blob and body, which the answer's batch
+ * rewrites with its status answered, and for every answer already naming the
+ * question, at its own id or another.
+ */
+export const questionSql = (path: string) =>
+  `SELECT 'question' AS kind, logical AS path, blob, body FROM records WHERE logical = ${quoted(path)} ` +
+  `UNION ALL SELECT 'answer', logical, blob, NULL FROM records ` +
+  `WHERE type = 'plans/answer/v1' AND json_extract(body, '$.question') = ${quoted(path)}`
+
+/**
+ * Why the owner's answer to `path` must not be recorded, or null when it may:
+ * the question could not be read, already has an answer, or is no longer open.
+ */
+export function refusal(path: string, rows: readonly Record<string, unknown>[] | undefined): string | null {
+  const question = rows?.find(r => r.kind === 'question')
+  if (question === undefined) return `${path} could not be read, so nothing was recorded`
+  const answers = (rows ?? []).filter(r => r.kind === 'answer').map(r => String(r.path))
+  if (answers.length > 0) return `${path} already has an answer at ${answers.join(', ')}, so nothing was recorded`
+  const status = (JSON.parse(String(question.body)) as { status?: unknown }).status
+  return status === 'open' ? null : `${path} is ${String(status)} now, so nothing was recorded`
+}
 
 /** The project a question's path names, `/projects/<project>/questions/<id>`. */
 export const project = (path: string) => path.split('/')[2] ?? path

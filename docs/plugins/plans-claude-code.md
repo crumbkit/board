@@ -18,11 +18,15 @@ debug log gives the code, such as `board::plugin::not_installed`.
 
 ## Open questions
 
-When the session starts, and every minute after in an interactive session, the mod runs
+When the session starts, the mod runs
 `board --json call plans.open --limit 100`. The band above the prompt then
 says how many questions are open, such as "3 open questions for you", with a
 Show button. With none open, or while a survey holds the band, it draws
-nothing. The band is drawn on the terminal and the desktop app only.
+nothing. From the first time the band is drawn, the mod runs the call again
+every minute, so a `-p` run, which draws no band, reads Board once. The
+refresh does not depend on `isInteractive`, because desktop sessions run
+through the Agent SDK and report it as false. A failed refresh is logged and
+keeps the last count read. The band is drawn on the terminal and the desktop app only.
 
 Show opens the `questions` pane. It lists each question with its project, its
 age and what it blocks, and each option as a button; the recommended option is
@@ -31,15 +35,18 @@ does not, the owner may answer in words instead. Pressing an option records
 that option's `id` as `choice` and its text as `words`. Words typed in the
 field record `choice: "none"` and the words verbatim.
 
-Before it writes, the mod reads the question. If its `status` is no longer
-`open`, because it was withdrawn or answered elsewhere, the mod writes nothing
-and the toast says the question's status.
+Before it writes, the mod reads the question and every `plans/answer/v1`
+whose `question` names it, at any id. If an answer exists, the mod writes
+nothing and the toast names that answer's path. If the question's `status` is
+no longer `open`, for example because it was withdrawn, the mod writes
+nothing and the toast says the status.
 
 An answer to an open question is one `board put --batch --wait 2s` of two
 lines: a new `plans/answer/v1` at the question's id under `answers/`, which
 must not exist yet, and the question with `status: "answered"`, which must
 still hold the blob the mod read. Board writes both or neither, so a question
-that changed after the read is refused whole, and the toast gives the
+that changed after the read is refused whole. The mod then reads the question
+again, and the toast names an answer written meanwhile, or else gives Board's
 refusal. The put waits at most 2 seconds for board's lock, so a held lock is
 refused as a Board failure before the mod's 5-second process timeout.
 
@@ -49,15 +56,16 @@ also carries `by`, this session's `local_` id from
 `local_` id names the session, so `by` is left out. Answering needs no Touch
 ID, because the press is the owner's own.
 
-After the write, the mod sends the asking session a message naming the
-question, the choice, the words and the answer's path, with
+The answer is recorded in Board whether or not the asking session hears of
+it. After the write, the mod tries to send the asking session a message
+naming the question, the choice, the words and the answer's path, with
 `$.session.send({ to: session })`, the question's `local_` id as a string.
-`{ sessionId }` takes only a `$.session.id()` transcript id, and refuses a
-`local_` id as "no live session". The string is the SendMessage tool's own
-spelling of a recipient, which the desktop app resolves for `local_` ids.
-Outside the desktop app the string is refused too. When the send is refused,
-the toast says the asking session picks the answer up from Board, which it
-already polls.
+The send is best effort. `{ sessionId }` is not used, because a headless probe
+on 2.1.308 showed it refuses a live session's `local_` id. The string is the
+SendMessage tool's spelling of a recipient; it was refused in the same
+headless probe, and its delivery in the desktop app has not been tested. When
+the send is refused, the toast says the answer is recorded in Board and the
+message was not delivered.
 
 ## The morning report
 

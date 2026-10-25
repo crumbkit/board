@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { report } from '../hooks/plans'
+import { questionSql, report } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs, the batch it hands `board put`, and what the asking session is
@@ -37,7 +37,9 @@ const pane = (requestId: string) =>
 type Answers = {
   open?: () => { exitCode: number; stdout: string }
   body?: string
+  answered?: string[]
   put?: { exitCode: number; stdout: string }
+  raced?: string[]
   delivered?: boolean
   report?: string
   host?: string | null
@@ -51,6 +53,7 @@ function engine(on: On, answers: Answers = {}) {
   const sent: { to: unknown; text: string }[] = []
   const toasts: string[] = []
   let questions = [MERGE, COUNT]
+  let answered = answers.answered ?? []
   const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   mock.env(on, answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' })
   on('process.run', (_, e) => {
@@ -60,9 +63,13 @@ function engine(on: On, answers: Answers = {}) {
     if (args[0] === 'call') return { value: { ...(answers.open?.() ?? { exitCode: 0, stdout: opened(questions) }), ...whole } }
     if (args[0] === 'put') {
       questions = questions.filter(q => q.path !== MERGE.path)
+      answered = answers.raced ?? answered
       return { value: { ...(answers.put ?? { exitCode: 0, stdout: '{}' }), ...whole } }
     }
-    if (args[1]?.startsWith('SELECT blob')) return { value: { exitCode: 0, stdout: rows(['blob', 'body'], [['b10b', answers.body ?? BODY]]), ...whole } }
+    if (args[1]?.startsWith("SELECT 'question'")) {
+      const found = [['question', MERGE.path, 'b10b', answers.body ?? BODY], ...answered.map(path => ['answer', path, 'a5a5', null])]
+      return { value: { exitCode: 0, stdout: rows(['kind', 'path', 'blob', 'body'], found), ...whole } }
+    }
     return { value: { exitCode: 0, stdout: answers.report ?? rows(['kind', 'path', 'at', 'title', 'detail'], [['since', null, '2026-10-24 07:00:00', null, null]]), ...whole } }
   })
   on('ui.open', (_, e) => {
@@ -115,21 +122,37 @@ test('with no open question, or no plans plugin, the band draws nothing of the m
   expect(await again.find({ type: 'Text', text: /open question/ })).toBeUndefined()
 })
 
-test('the count is read again every minute', { options: { board: '/boards/me' } }, async ($, on) => {
+test('once the band is drawn, the count is read again every minute, in a desktop session too', { options: { board: '/boards/me' } }, async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { ran } = engine(on)
-  await start($)
+  // Desktop sessions run through the Agent SDK and report isInteractive false.
+  await $.session.start({ cwd: '/work', surface: 'desktop', isInteractive: false })
+  await (await $.ui.mount({ ...BAND, surface: 'desktop' })).unmount()
+  await (await $.ui.mount({ ...BAND, surface: 'desktop' })).unmount()
   await clock.advance(60_000)
   await clock.advance(60_000)
   expect(ran).toEqual(Array(3).fill(['-C', '/boards/me', 'call', 'plans.open', '--limit', '100']))
 })
 
-test('a non-interactive session reads the count once and does not poll', async ($, on) => {
+test('a session that never draws the band, such as a -p run, reads the count once and does not poll', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { ran } = engine(on)
-  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: false })
+  await start($)
   await clock.advance(120_000)
   expect(ran).toHaveLength(1)
+})
+
+test('a failed refresh keeps the last count read', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  let fails = false
+  const down = { exitCode: 1, stdout: JSON.stringify({ schema: 'board/failure/v1', code: 'board::lock::timeout', message: 'the board is busy' }) }
+  engine(on, { open: () => (fails ? down : { exitCode: 0, stdout: opened([MERGE, COUNT]) }) })
+  await start($)
+  await (await $.ui.mount({ ...BAND, surface: 'terminal' })).unmount()
+  fails = true
+  await clock.advance(60_000)
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect((await band.find({ type: 'Text', text: /open questions/ }))?.text).toBe('2 open questions for you ')
 })
 
 test('the pane lists each question with its options, and an option answers it in one batch sent to the asking session', async ($, on) => {
@@ -148,7 +171,7 @@ test('the pane lists each question with its options, and an option answers it in
   await ui.press({ key: `${MERGE.path}#a` })
 
   expect(ran.slice(1).map(r => r.slice(1))).toEqual([
-    ['query', `SELECT blob, body FROM records WHERE logical = '${MERGE.path}'`],
+    ['query', questionSql(MERGE.path)],
     ['put', '--batch', '--wait', '2s'],
   ])
   expect(stdins[0]?.split('\n').map(line => JSON.parse(line))).toEqual([
@@ -196,14 +219,14 @@ test('the owner answers in words where the surface has a field, and none of the 
   expect('by' in record).toBe(false)
 })
 
-test('a send the asking session cannot take still records the answer, and says the session picks it up from Board', async ($, on) => {
+test('a send the asking session cannot take still records the answer, and says the message was not delivered', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { stdins, toasts } = engine(on, { delivered: false })
   await start($)
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.press({ key: `${MERGE.path}#b` })
   expect(stdins).toHaveLength(1)
-  expect(toasts).toEqual(['Answered. local_ab12 picks the answer up from Board'])
+  expect(toasts).toEqual(['Answered and recorded in Board. The message to local_ab12 was not delivered'])
 })
 
 test('a question that is no longer open is refused before anything is written or sent', async ($, on) => {
@@ -217,6 +240,31 @@ test('a question that is no longer open is refused before anything is written or
   expect(stdins).toEqual([])
   expect(sent).toEqual([])
   expect(toasts).toEqual([`${MERGE.path} is withdrawn now, so nothing was recorded`])
+})
+
+test('a question that already has an answer under another id is refused, and the toast names that answer', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const elsewhere = '/projects/home/answers/20261024T1900Z-k3b'
+  const { stdins, sent, toasts } = engine(on, { answered: [elsewhere] })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(stdins).toEqual([])
+  expect(sent).toEqual([])
+  expect(toasts).toEqual([`${MERGE.path} already has an answer at ${elsewhere}, so nothing was recorded`])
+})
+
+test('a put refused because an answer appeared meanwhile says that answer exists', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const stale = JSON.stringify({ schema: 'board/failure/v1', code: 'board::put::stale', message: 'the batch is refused' })
+  const same = '/projects/home/answers/20261024T1830Z-k3'
+  const { ran, sent, toasts } = engine(on, { put: { exitCode: 1, stdout: stale }, raced: [same] })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(ran.map(r => r[1])).toEqual(['call', 'query', 'put', 'query'])
+  expect(sent).toEqual([])
+  expect(toasts).toEqual([`${MERGE.path} already has an answer at ${same}, so nothing was recorded`])
 })
 
 test('a question that changes between the read and the put is refused whole, and nothing is sent', async ($, on) => {
