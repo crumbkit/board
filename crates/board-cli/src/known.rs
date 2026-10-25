@@ -22,6 +22,33 @@ struct Known {
     #[serde(default)]
     boards: Vec<PathBuf>,
     personal: Option<PathBuf>,
+    /// When the person's day starts, such as `"07:00"`, which a plugin
+    /// receives as `BOARD_DAY_START`.
+    #[serde(default, deserialize_with = "hh_mm")]
+    day_start: Option<String>,
+}
+
+/// A `day_start` of the form `HH:MM`, on a 24-hour clock; `null` is unset.
+fn hh_mm<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    let Some(text) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let part = |digits: &str, below: u8| {
+        digits.len() == 2
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+            && digits.parse::<u8>().is_ok_and(|value| value < below)
+    };
+    match text.split_once(':') {
+        Some((hours, minutes)) if part(hours, 24) && part(minutes, 60) => Ok(Some(text)),
+        _ => Err(serde::de::Error::custom(format!(
+            "day_start {text:?} is not HH:MM, such as \"07:00\""
+        ))),
+    }
+}
+
+/// When the person's day starts, from the known boards file, if it says.
+pub(crate) fn day_start(context: &Context) -> Result<Option<String>, Box<Refusal>> {
+    Ok(read(context.boards.as_deref())?.day_start)
 }
 
 /// The root of the personal board the known boards file names, refused

@@ -138,8 +138,9 @@ Then Board:
 2. validates it against `inputSchema` (`board::plugin::bad_input`);
 3. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
-   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `TZ`, `XDG_CACHE_HOME`,
-   `XDG_DATA_HOME` and `BOARD_TIMINGS` when set;
+   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, `BOARD_CALLER_DIR`,
+   and `TZ`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `BOARD_TIMINGS` and
+   `BOARD_DAY_START` when set;
 4. writes one request to the plugin's stdin:
 
    ```json

@@ -1,5 +1,6 @@
 //! The commands that read stdin: `put`, `call` and `type add`.
 
+use std::ffi::OsString;
 use std::io::Read;
 use std::time::Duration;
 
@@ -10,6 +11,7 @@ use clap::Subcommand;
 use serde_json::{Map, Value};
 
 use crate::config::Context;
+use crate::known;
 use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::run::{plain, plugins};
@@ -86,7 +88,12 @@ pub(crate) fn call(
         Ok(input) => input,
         Err(refusal) => return render::refused(printer, refusal),
     };
-    match board.call(target, &input, &plugins(context), context.cache.as_deref()) {
+    let mut plugins = plugins(context);
+    plugins.environment.day_start = match known::day_start(context) {
+        Ok(start) => start.map(OsString::from),
+        Err(refusal) => return render::refused(printer, *refusal),
+    };
+    match board.call(target, &input, &plugins, context.cache.as_deref()) {
         Ok(report) => render::call(printer, &report),
         Err(error) => render::refused(printer, error.refusal()),
     }
