@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { Open, Question } from '../types'
-import { answerBatch, answerText, failure, openLine, parseOpen, parseRows, project, questionSql, report, REPORT_SQL } from './plans'
+import { answerBatch, answerText, failure, openLine, parseOpen, parseRows, project, questionSql, report, REPORT_LIMIT, REPORT_SQL } from './plans'
 
 // The mod reads the owner's open questions from Board, draws their count in
 // the band above the prompt and lists them in a pane, where the owner answers
@@ -18,6 +18,9 @@ const QUESTIONS = 'questions'
 const RUN = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" exec board "$@"'
 // A slow or hung board holds a refresh or an answer no longer than this.
 const TIMEOUT_MS = 5000
+// The put waits this long for board's lock, well inside TIMEOUT_MS, so a
+// held lock fails as `board::lock` rather than as a killed process.
+const LOCK_WAIT = '2s'
 const REFRESH_MS = 60_000
 // The pane lists this many questions; the band counts them all.
 const LISTED = 100
@@ -49,25 +52,37 @@ async function refresh($: EngineInterface, options: PluginOptions) {
 
 /**
  * Records the owner's answer and the question's new status in one batch, then
- * sends the answer to the session that asked. When the send is refused, that
- * session finds the answer by polling Board, which it already does.
+ * sends the answer to the session that asked. A question that is no longer
+ * open is refused before the put; one that changes between the read and the
+ * put is refused by the put's `expect`.
+ *
+ * The send addresses the asking session's `local_` id as the SendMessage tool
+ * spells a recipient, a string, because `{ sessionId }` takes only a
+ * `$.session.id()` transcript id and refuses a `local_` one. Outside the
+ * desktop app the string is refused too; the asking session then finds the
+ * answer by polling Board, which it already does.
  */
 async function answer($: EngineInterface, options: PluginOptions, q: Question, choice: string, words: string) {
   try {
     const held = await board($, options, ['query', questionSql(q.path)])
     const row = parseRows(held.stdout)?.rows[0]
     if (held.exitCode !== 0 || row === undefined) return $.ui.toast(`${q.path} could not be read, so nothing was recorded`)
-    const batch = answerBatch(q.path, String(row.blob), String(row.body), choice, words, await $.session.id(), await $.clock.now())
-    const put = await board($, options, ['put', '--batch'], batch)
+    const status = (JSON.parse(String(row.body)) as { status?: unknown }).status
+    if (status !== 'open') return $.ui.toast(`${q.path} is ${String(status)} now, so nothing was recorded`)
+    // The desktop app names this session's `local_` id, the form questions use.
+    const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+    const by = host?.startsWith('local_') ? host : undefined
+    const batch = answerBatch(q.path, String(row.blob), String(row.body), choice, words, by, await $.clock.now())
+    const put = await board($, options, ['put', '--batch', '--wait', LOCK_WAIT], batch)
     if (put.exitCode !== 0) return $.ui.toast(`No answer was recorded: ${failure(put.exitCode, put.stdout, put.stderr)}`)
     await update($, open, found => found && { questions: found.questions.filter(o => o.path !== q.path), total: found.total - 1 })
     let sent = false
     try {
-      sent = (await $.session.send({ to: { sessionId: q.session }, text: answerText(q.path, choice, words) })).isDelivered
+      sent = (await $.session.send({ to: q.session, text: answerText(q.path, choice, words) })).isDelivered
     } catch {
       // A send that rejects is a send refused: the session reads Board.
     }
-    $.ui.toast(sent ? `Answered, and sent to ${q.session}` : `Answered. ${q.session} could not be reached, so it reads the answer from Board`)
+    $.ui.toast(sent ? `Answered, and sent to ${q.session}` : `Answered. ${q.session} picks the answer up from Board`)
   } catch (error) {
     $.ui.toast(`No answer was recorded: ${String(error)}`)
   }
@@ -83,7 +98,8 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     await $.command.register({ name: 'yesterday', description: "Show the morning report of yesterday's Board records, from 07:00" })
     await refresh($, options)
-    $.clock.every(REFRESH_MS, () => void refresh($, options))
+    // A non-interactive session draws no band, so it reads Board only once.
+    if (e.isInteractive) $.clock.every(REFRESH_MS, () => void refresh($, options))
     return started
   })
 
@@ -148,7 +164,7 @@ export const register: Register = (on, options) => {
   // records, and a short narrative per project from `$.model.complete` with a
   // Haiku-class model may lead it.
   on('command.run', { command: 'yesterday' }, async $ => {
-    const ran = await board($, options, ['query', REPORT_SQL, '--limit', '1000'])
+    const ran = await board($, options, ['query', REPORT_SQL, '--limit', String(REPORT_LIMIT)])
     const found = ran.exitCode === 0 ? parseRows(ran.stdout) : null
     if (found === null) return { text: `board: the morning report could not be read: ${failure(ran.exitCode, ran.stdout, ran.stderr)}` }
     const built = report(found.rows, found.truncated)

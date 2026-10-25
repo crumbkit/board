@@ -18,7 +18,7 @@ debug log gives the code, such as `board::plugin::not_installed`.
 
 ## Open questions
 
-When the session starts, and every minute after, the mod runs
+When the session starts, and every minute after in an interactive session, the mod runs
 `board --json call plans.open --limit 100`. The band above the prompt then
 says how many questions are open, such as "3 open questions for you", with a
 Show button. With none open, or while a survey holds the band, it draws
@@ -31,20 +31,33 @@ does not, the owner may answer in words instead. Pressing an option records
 that option's `id` as `choice` and its text as `words`. Words typed in the
 field record `choice: "none"` and the words verbatim.
 
-An answer is one `board put --batch` of two lines: a new
-`plans/answer/v1` at the question's id under `answers/`, written with
-`--expect none`, and the question with `status: "answered"`, expected to hold
-the blob the mod read just before. Board writes both or neither, so a
-question answered elsewhere first is refused whole, and the toast gives the
-refusal. The answer carries `by`, this session's id, and
-`written_by: "plans/pane-answer"`. Answering needs no Touch ID, because the
-press is the owner's own.
+Before it writes, the mod reads the question. If its `status` is no longer
+`open`, because it was withdrawn or answered elsewhere, the mod writes nothing
+and the toast says the question's status.
+
+An answer to an open question is one `board put --batch --wait 2s` of two
+lines: a new `plans/answer/v1` at the question's id under `answers/`, which
+must not exist yet, and the question with `status: "answered"`, which must
+still hold the blob the mod read. Board writes both or neither, so a question
+that changed after the read is refused whole, and the toast gives the
+refusal. The put waits at most 2 seconds for board's lock, so a held lock is
+refused as a Board failure before the mod's 5-second process timeout.
+
+The answer carries `written_by: "plans/pane-answer"`. In the desktop app it
+also carries `by`, this session's `local_` id from
+`CLAUDE_CODE_HOST_SESSION_ID`, the same form questions use. Elsewhere no
+`local_` id names the session, so `by` is left out. Answering needs no Touch
+ID, because the press is the owner's own.
 
 After the write, the mod sends the asking session a message naming the
 question, the choice, the words and the answer's path, with
-`$.session.send({ to: { sessionId } })`. A session that is not running, or
-that this session cannot address, does not get the message; the toast says
-so, and that session finds the answer when it next reads Board.
+`$.session.send({ to: session })`, the question's `local_` id as a string.
+`{ sessionId }` takes only a `$.session.id()` transcript id, and refuses a
+`local_` id as "no live session". The string is the SendMessage tool's own
+spelling of a recipient, which the desktop app resolves for `local_` ids.
+Outside the desktop app the string is refused too. When the send is refused,
+the toast says the asking session picks the answer up from Board, which it
+already polls.
 
 ## The morning report
 
@@ -54,7 +67,8 @@ out the window from board's clock, daylight saving included. The pane lists,
 as Markdown, the decisions made, the questions asked, the questions answered
 and the runs recorded in that window, and every decision stub that still has
 an empty `why`, whenever it was written. The command's output row gives the
-totals. The report quotes record fields only and calls no model.
+totals. The query reads at most 1000 records, and when Board cuts it there,
+both the pane and the output row say so. The report quotes record fields only and calls no model.
 
 The pane is drawn by the mod's own `ui.render` hook. Once board-ui lands
 (viitta#301), it moves to board-ui view and binding records.

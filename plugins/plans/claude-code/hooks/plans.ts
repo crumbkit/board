@@ -57,16 +57,17 @@ export const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$
 /**
  * The `board put --batch` lines that record an answer: the answer, which must
  * be new, and the question with its status answered, which must still hold
- * `blob`. Board writes both or neither.
+ * `blob`. Board writes both or neither. `by` is left out when the pane cannot
+ * name its own session's `local_` id.
  */
-export function answerBatch(question: string, blob: string, body: string, choice: string, words: string, by: string, now: number): string {
+export function answerBatch(question: string, blob: string, body: string, choice: string, words: string, by: string | undefined, now: number): string {
   const answer = {
     $type: 'plans/answer/v1',
     question,
     choice,
     words,
     answered: iso(now),
-    by,
+    ...(by === undefined ? {} : { by }),
     written_by: WRITTEN_BY,
   }
   const asked = { ...(JSON.parse(body) as object), status: 'answered' }
@@ -84,13 +85,16 @@ export const answerText = (question: string, choice: string, words: string) =>
 /** The band's line. */
 export const openLine = (total: number) => `${total} open question${total === 1 ? '' : 's'} for you`
 
-// The report covers the day before the current one, from 07:00 local time,
-// the day start the personal board's config names, to 07:00 today. SQLite
+// The report covers the day before the current one, from 07:00 local time
+// to 07:00 today. The 07:00 day start is fixed here; no config changes it. SQLite
 // works out the local times, daylight saving included, from board's own clock.
 const DAY = "datetime('now', 'localtime', '-7 hours', 'start of day', '+7 hours'"
 const at = (record: string, field: string) => `julianday(json_extract(${record}.body, '$.${field}'))`
 const within = (record: string, field: string) => `${at(record, field)} >= w.since AND ${at(record, field)} < w.until`
 const field = (record: string, name: string) => `json_extract(${record}.body, '$.${name}')`
+
+/** The most rows the report reads; the line says when Board cut it there. */
+export const REPORT_LIMIT = 1000
 
 /** One query for every record of the report, with the window's start as the first row. */
 export const REPORT_SQL = [
@@ -118,7 +122,7 @@ const SECTIONS = [
   { kind: 'asked', heading: 'Questions asked', line: (r: Row) => `${r.title} (${r.detail}) \`${r.path}\`` },
   { kind: 'answered', heading: 'Questions answered', line: (r: Row) => `${r.title} Answer: ${r.detail} \`${r.path}\`` },
   { kind: 'run', heading: 'Runs recorded', line: (r: Row) => `${r.title} (${r.detail}) \`${r.path}\`` },
-  { kind: 'stub', heading: 'Pull requests whose decision stubs still want a why', line: (r: Row) => `${r.title} ${r.detail ?? 'names no pull request'} \`${r.path}\`` },
+  { kind: 'stub', heading: 'Decision stubs that still want a why', line: (r: Row) => `${r.title} ${r.detail ?? 'names no pull request'} \`${r.path}\`` },
 ] as const
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -139,6 +143,6 @@ export function report(rows: readonly Record<string, unknown>[], truncated: bool
     `board: ${plural(of('decision').length, 'decision', 'decisions')}, ` +
     `${plural(of('asked').length, 'question', 'questions')} asked, ${of('answered').length} answered, ` +
     `${plural(of('run').length, 'run', 'runs')} and ${plural(of('stub').length, 'decision stub', 'decision stubs')} ` +
-    `that want a why, since ${since}.`
+    `that want a why, since ${since}${truncated ? `, counting only the first ${REPORT_LIMIT} records` : ''}.`
   return { markdown, line }
 }

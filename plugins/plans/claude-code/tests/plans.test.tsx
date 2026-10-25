@@ -34,7 +34,14 @@ const BAND = { plugin: 'board-plans', component: 'AbovePrompt', props: { hasSurv
 const pane = (requestId: string) =>
   ({ plugin: 'board-plans', component: 'Pane', requestId, props: { title: requestId, isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } }) as const
 
-type Answers = { open?: () => { exitCode: number; stdout: string }; put?: { exitCode: number; stdout: string }; delivered?: boolean; report?: string }
+type Answers = {
+  open?: () => { exitCode: number; stdout: string }
+  body?: string
+  put?: { exitCode: number; stdout: string }
+  delivered?: boolean
+  report?: string
+  host?: string | null
+}
 
 /** Stands in for `board` and the engine: what each command answers, and what the mod ran, opened, sent and toasted. */
 function engine(on: On, answers: Answers = {}) {
@@ -45,6 +52,7 @@ function engine(on: On, answers: Answers = {}) {
   const toasts: string[] = []
   let questions = [MERGE, COUNT]
   const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+  mock.env(on, answers.host === null ? {} : { CLAUDE_CODE_HOST_SESSION_ID: answers.host ?? 'local_cd34' })
   on('process.run', (_, e) => {
     const args = e.argv.slice(e.argv.indexOf('--json') + 1)
     ran.push([...e.argv.slice(4, e.argv.indexOf('--json')), ...args])
@@ -54,7 +62,7 @@ function engine(on: On, answers: Answers = {}) {
       questions = questions.filter(q => q.path !== MERGE.path)
       return { value: { ...(answers.put ?? { exitCode: 0, stdout: '{}' }), ...whole } }
     }
-    if (args[1]?.startsWith('SELECT blob')) return { value: { exitCode: 0, stdout: rows(['blob', 'body'], [['b10b', BODY]]), ...whole } }
+    if (args[1]?.startsWith('SELECT blob')) return { value: { exitCode: 0, stdout: rows(['blob', 'body'], [['b10b', answers.body ?? BODY]]), ...whole } }
     return { value: { exitCode: 0, stdout: answers.report ?? rows(['kind', 'path', 'at', 'title', 'detail'], [['since', null, '2026-10-24 07:00:00', null, null]]), ...whole } }
   })
   on('ui.open', (_, e) => {
@@ -70,7 +78,6 @@ function engine(on: On, answers: Answers = {}) {
     return { value: undefined }
   })
   on('ui.log', () => ({ value: undefined }))
-  on('session.id', () => ({ value: 'session-9' }))
   on('command.register', (_, e) => ({ value: { command: e.name } }))
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -117,6 +124,14 @@ test('the count is read again every minute', { options: { board: '/boards/me' } 
   expect(ran).toEqual(Array(3).fill(['-C', '/boards/me', 'call', 'plans.open', '--limit', '100']))
 })
 
+test('a non-interactive session reads the count once and does not poll', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const { ran } = engine(on)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: false })
+  await clock.advance(120_000)
+  expect(ran).toHaveLength(1)
+})
+
 test('the pane lists each question with its options, and an option answers it in one batch sent to the asking session', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { ran, stdins, sent, toasts } = engine(on)
@@ -132,9 +147,9 @@ test('the pane lists each question with its options, and an option answers it in
 
   await ui.press({ key: `${MERGE.path}#a` })
 
-  expect(ran.slice(1).map(r => r.slice(1, 3))).toEqual([
+  expect(ran.slice(1).map(r => r.slice(1))).toEqual([
     ['query', `SELECT blob, body FROM records WHERE logical = '${MERGE.path}'`],
-    ['put', '--batch'],
+    ['put', '--batch', '--wait', '2s'],
   ])
   expect(stdins[0]?.split('\n').map(line => JSON.parse(line))).toEqual([
     {
@@ -146,7 +161,7 @@ test('the pane lists each question with its options, and an option answers it in
         choice: 'a',
         words: 'Merge',
         answered: '2026-10-25T09:30:00Z',
-        by: 'session-9',
+        by: 'local_cd34',
         written_by: 'plans/pane-answer',
       },
     },
@@ -166,7 +181,8 @@ test('the pane lists each question with its options, and an option answers it in
 
 test('the owner answers in words where the surface has a field, and none of the options is chosen', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { stdins } = engine(on)
+  // Outside the desktop app no `local_` id names this session, so `by` is left out.
+  const { stdins } = engine(on, { host: null })
   await start($)
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ ...pane('questions'), surface })
@@ -175,20 +191,35 @@ test('the owner answers in words where the surface has a field, and none of the 
   }
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.input({ key: `${COUNT.path}#words`, text: 'About 40; ask Kechen for the exact figure.' })
-  expect(JSON.parse(stdins[0]?.split('\n')[0] ?? '{}').record).toMatchObject({ choice: 'none', words: 'About 40; ask Kechen for the exact figure.' })
+  const record = JSON.parse(stdins[0]?.split('\n')[0] ?? '{}').record
+  expect(record).toMatchObject({ choice: 'none', words: 'About 40; ask Kechen for the exact figure.' })
+  expect('by' in record).toBe(false)
 })
 
-test('a send the asking session cannot take still records the answer, and says the session reads it from Board', async ($, on) => {
+test('a send the asking session cannot take still records the answer, and says the session picks it up from Board', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { stdins, toasts } = engine(on, { delivered: false })
   await start($)
   const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
   await ui.press({ key: `${MERGE.path}#b` })
   expect(stdins).toHaveLength(1)
-  expect(toasts).toEqual(['Answered. local_ab12 could not be reached, so it reads the answer from Board'])
+  expect(toasts).toEqual(['Answered. local_ab12 picks the answer up from Board'])
 })
 
-test('a question answered elsewhere first is refused whole, and nothing is sent', async ($, on) => {
+test('a question that is no longer open is refused before anything is written or sent', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const withdrawn = JSON.stringify({ ...JSON.parse(BODY), status: 'withdrawn' })
+  const { ran, stdins, sent, toasts } = engine(on, { body: withdrawn })
+  await start($)
+  const ui = await $.ui.mount({ ...pane('questions'), surface: 'terminal' })
+  await ui.press({ key: `${MERGE.path}#a` })
+  expect(ran.map(r => r[1])).toEqual(['call', 'query'])
+  expect(stdins).toEqual([])
+  expect(sent).toEqual([])
+  expect(toasts).toEqual([`${MERGE.path} is withdrawn now, so nothing was recorded`])
+})
+
+test('a question that changes between the read and the put is refused whole, and nothing is sent', async ($, on) => {
   mock.clock(on, { now: NOW })
   const stale = JSON.stringify({ schema: 'board/failure/v1', code: 'board::put::stale', message: 'the batch is refused' })
   const { sent, toasts } = engine(on, { put: { exitCode: 1, stdout: stale } })
@@ -222,7 +253,7 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
 })
 
 test('the report lists each kind of record under its heading, and says none where there is none', () => {
-  const { markdown } = report(
+  const { markdown, line } = report(
     [
       { kind: 'since', path: null, at: '2026-10-24 07:00:00', title: null, detail: null },
       { kind: 'asked', path: '/projects/core/questions/q1', at: '2026-10-24T09:00:00Z', title: 'Which region?', detail: 'answered' },
@@ -238,8 +269,9 @@ test('the report lists each kind of record under its heading, and says none wher
       '## Questions asked (1)\n\n- Which region? (answered) `/projects/core/questions/q1`',
       '## Questions answered (1)\n\n- Which region? Answer: eu-west-1 `/projects/core/answers/q1`',
       '## Runs recorded (0)\n\n- none',
-      '## Pull requests whose decision stubs still want a why (1)\n\n- Widgets ship in blue https://github.com/acme/widgets/pull/42 `/projects/widgets/decisions/s1`',
+      '## Decision stubs that still want a why (1)\n\n- Widgets ship in blue https://github.com/acme/widgets/pull/42 `/projects/widgets/decisions/s1`',
       'Board returned only the first rows; `board query` shows the rest.',
     ].join('\n\n'),
   )
+  expect(line).toBe('board: 0 decisions, 1 question asked, 1 answered, 0 runs and 1 decision stub that want a why, since 2026-10-24 07:00, counting only the first 1000 records.')
 })
