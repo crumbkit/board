@@ -391,7 +391,10 @@ fn refused_puts(starts: &mut Starts, fixture: &RuntimePlace) {
     let task = |fields: &str| format!(r#"{{"$type": "lr/task/v1", "title": "t"{fields}}}"#);
     let project = r#"{"$type": "lr/project/v1"}"#;
     let new = "put /projects/new";
-    let puts: [(Code, &str, &str); 14] = [
+    let binding = |slot: &str| {
+        format!(r#"{{"$type": "ui/binding/v1", "view": "/ui/view", "slots": {{{slot}}}}}"#)
+    };
+    let puts: [(Code, &str, &str); 17] = [
         (Code::PathCaseCollision, "put /projects/P", project),
         (Code::PutNotAFile, "put /projects/p --file", project),
         (Code::ResolveCycle, "put /cycle/a/new", project),
@@ -418,10 +421,32 @@ fn refused_puts(starts: &mut Starts, fixture: &RuntimePlace) {
             "put --batch",
             &format!("{}\n{{\n", task("")),
         ),
+        (
+            Code::UiUnknownKind,
+            new,
+            r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "chart"}]}"#,
+        ),
+        (Code::UiSlotMismatch, "put /ui/b", &binding("")),
+        (
+            Code::UiSlotInvalid,
+            "put /ui/b",
+            &binding(r#""s": {"data": {"text": "x"}}"#),
+        ),
     ];
     for (code, line, stdin) in puts {
-        starts.add(&fixture.clone().stdin(stdin), code, line);
+        let place = fixture.clone().stdin(stdin);
+        starts.add(&place, code, line);
+        if matches!(code, Code::UiSlotMismatch | Code::UiSlotInvalid) {
+            starts.untwinned(&place, code, line, SLOT);
+        }
     }
+    starts.add(fixture, Code::UiNotABinding, "ui open /projects/p");
+    starts.untwinned(
+        fixture,
+        Code::UiNotABinding,
+        "ui open /projects/p",
+        NOT_A_BINDING,
+    );
     let schema = fixture.clone().stdin(r#"{"type": "array"}"#);
     starts.add(&schema, Code::SchemaDiffers, "type add lr/project/v1");
     starts.add(&schema, Code::SchemaInvalid, "type add board/note/v1");
@@ -953,6 +978,8 @@ const ALLOW: &[Allow] = &[
 ];
 
 /// Why each code without a twin has none.
+const SLOT: &str = "the binding on stdin does not fit its view, and no word of the line names the binding; board-ops/src/ui/tests.rs pairs each slot refusal with an admitted twin";
+const NOT_A_BINDING: &str = "the admitted twin would start a server and a browser; a_page_for_a_record_that_is_not_a_binding_is_refused_and_one_for_a_binding_is_drawn in board-ops/src/ui/tests.rs pairs the code";
 const PUT_FAILED: &str = "init fails because a directory stands where board.json goes, and no word of the line names that; init_refuses_a_directory_where_board_json_goes_and_admits_a_file in board-ops/src/init/tests.rs pairs the code";
 const PUT_INVALID: &str = "the record on stdin has no $type, and no word of the line names the record; input_that_is_not_one_object_with_a_type_is_refused_and_its_twin_is_admitted in board-ops/src/put/tests.rs pairs the code";
 const PUT_LOCKED: &str = "a merge is under way in the repository, and no word of the line names that; a_commit_during_a_merge_or_rebase_is_refused_and_a_clean_one_is_admitted in board-tree/src/tests/commits.rs pairs the code";

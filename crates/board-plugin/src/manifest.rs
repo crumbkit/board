@@ -340,7 +340,7 @@ impl Manifest {
         }
         let own = format!("{}/", raw.name);
         for (at, record_type) in raw.types.iter().enumerate() {
-            if record_type.is_board() {
+            if record_type.is_reserved() {
                 return Err(ManifestError::BoardType {
                     record_type: record_type.clone(),
                 });

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Runs a pnpm command for board-ui inside the pinned Playwright image, after
+# installing ui/'s dependencies from its lockfile, so the app is built and
+# its screenshots are taken with the same Node, browser, fonts and platform
+# everywhere. Example: `bin/ui-container run build`.
+set -euo pipefail
+cd "$(dirname "$0")/../ui"
+# The tag matches the playwright version in ui/package.json. The platform is
+# arm64 everywhere, so a Mac runs the image natively and CI uses an arm64
+# runner: screenshots from amd64 and arm64 differ.
+image=mcr.microsoft.com/playwright:v1.64.1-noble
+pnpm="npx --yes pnpm@12.15.0"
+docker run --rm --platform linux/arm64 --ipc=host \
+  --volume "$PWD:/ui" \
+  --volume board-ui-node-modules-arm64:/ui/node_modules \
+  --volume board-ui-pnpm-store:/root/.local/share/pnpm/store \
+  --workdir /ui --env CI \
+  "$image" \
+  bash -euo pipefail -c "$pnpm install --frozen-lockfile >/dev/null && $pnpm \"\$@\"" pnpm "$@"

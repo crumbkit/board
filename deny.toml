@@ -21,6 +21,7 @@ deny = [
     # because it builds every sink with Sink::new over a buffer.
     { crate = "rustix", wrappers = ["board-plugin", "crumbkit", "gix-index", "tempfile"] },
     { crate = "signal-hook", wrappers = ["board-plugin"] },
+    { crate = "tiny_http", wrappers = ["board-serve"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },
 ]
 

@@ -21,6 +21,7 @@ mod snapshot;
 mod sync;
 mod trace;
 mod types;
+mod ui;
 mod verdict;
 
 pub use board_index::{Budget, Fallback, append_timing, source_name};
@@ -45,6 +46,7 @@ pub use crate::refs::{Absent, Fielded, Incoming, Missing, Outgoing, RefsError, R
 pub use crate::sync::SyncError;
 pub use crate::trace::{Phase, Trace};
 pub use crate::types::TypeError;
+pub use crate::ui::{BindingError, Drawn, Failed, Page, PageError};
 pub use crate::verdict::{Fault, SchemaFound};
 
 #[cfg(test)]

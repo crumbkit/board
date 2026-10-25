@@ -13,6 +13,7 @@ path = "src/main.rs"
 board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
+board-serve.workspace = true
 board-tree.workspace = true
 clap.workspace = true
 clap_complete.workspace = true

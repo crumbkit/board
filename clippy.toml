@@ -12,7 +12,7 @@ disallowed-methods = [
     { path = "std::env::vars_os", reason = "configuration is read once, by board-cli's config module" },
     { path = "std::env::set_current_dir", reason = "never mutate process-global state" },
     { path = "std::process::exit", reason = "only main chooses the exit code, by returning it" },
-    { path = "std::process::Command::new", reason = "child processes are owned by board-plugin, and the git child by board-tree's transport module" },
+    { path = "std::process::Command::new", reason = "child processes are owned by board-plugin, the git child by board-tree's transport module, and the server and browser by board-serve's launch module" },
     { path = "signal_hook::iterator::SignalsInfo::new", reason = "signal handling is owned by board-plugin's process module" },
     { path = "signal_hook::flag::register", reason = "signal handling is owned by board-plugin's process module" },
     { path = "signal_hook::flag::register_conditional_shutdown", reason = "signal handling is owned by board-plugin's process module" },

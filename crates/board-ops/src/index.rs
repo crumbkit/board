@@ -447,7 +447,7 @@ fn validate_all(
 /// parsed, with a type outside the `board` namespace.
 pub(crate) fn schema_type(record: &Indexed) -> Option<&RecordType> {
     let record_type = record.fact.record_type.as_ref()?;
-    (record.fact.code.is_none() && !record_type.is_board()).then_some(record_type)
+    (record.fact.code.is_none() && !record_type.is_reserved()).then_some(record_type)
 }
 
 /// The blob of the usable schema at `path`.

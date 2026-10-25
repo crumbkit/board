@@ -21,6 +21,8 @@ fn with_shell(
         environment: board_plugin::Environment::default(),
         complete: Some(shell.into()),
         terminal: false,
+        browser: None,
+        binary: None,
         cursor: None,
     };
     let arguments = std::iter::once(BINARY_NAME)
@@ -263,6 +265,8 @@ fn a_path_after_personal_completes_in_the_personal_board_and_without_one_named_n
             environment: board_plugin::Environment::default(),
             complete: Some("fish".into()),
             terminal: false,
+            browser: None,
+            binary: None,
             cursor: None,
         };
         let arguments = ["--", BINARY_NAME, "--personal", "get", "/ta"];

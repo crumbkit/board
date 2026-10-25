@@ -9,6 +9,7 @@ mod extract;
 mod open;
 mod query;
 mod schema;
+mod server;
 mod store;
 mod timing;
 
@@ -17,6 +18,9 @@ pub use crate::extract::Unhandled;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::{Budget, Rows};
 pub use crate::schema::INDEX_VERSION;
+pub use crate::server::{
+    read_server, remove_opener, remove_server, server_file, write_opener, write_server,
+};
 pub use crate::store::{
     BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,
 };

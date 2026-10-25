@@ -29,6 +29,27 @@ static GROUPS: Mutex<Vec<Pid>> = Mutex::new(Vec::new());
 #[cfg(unix)]
 static FORWARDER: OnceLock<Result<(), io::ErrorKind>> = OnceLock::new();
 
+/// A flag that SIGINT, SIGTERM and SIGHUP set, for a long-running command
+/// that stops on them and cleans up instead of dying at once. A second
+/// signal, once the flag is set, exits the process at once with status 1,
+/// so a command stuck before it checks the flag can still be stopped.
+#[cfg(unix)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-plugin's process module owns signal handling"
+)]
+pub fn stop_on_signals() -> io::Result<std::sync::Arc<std::sync::atomic::AtomicBool>> {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    for signal in [SIGINT, SIGTERM, SIGHUP] {
+        // Registered first, so it runs before the flag is set and the first
+        // signal never exits.
+        signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&stop))?;
+        signal_hook::flag::register(signal, std::sync::Arc::clone(&stop))?;
+    }
+    Ok(stop)
+}
+
 /// What one run of a plugin may take.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
@@ -335,4 +356,87 @@ fn kill(child: &mut Child, scope: Scope) {
     let _ = scope;
     let _ = child.kill();
     let _ = child.wait();
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test starts itself as a child process that writes to stdout, the only way to show what a signal does to a process"
+)]
+mod tests {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+
+    use rustix::process::{Pid, Signal, kill_process};
+
+    /// Set in the child this test starts, which stops on signals and then
+    /// never stops, as a command stuck before it checks the flag would.
+    const CHILD: &str = "BOARD_PLUGIN_STUCK_CHILD";
+
+    fn stuck_child() {
+        let stop = super::stop_on_signals().unwrap();
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "ready").unwrap();
+        out.flush().unwrap();
+        while !stop.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        writeln!(out, "stopping").unwrap();
+        out.flush().unwrap();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    #[test]
+    fn a_first_signal_sets_the_flag_and_a_second_exits_a_process_stuck_before_it_checks_it() {
+        if std::env::var_os(CHILD).is_some() {
+            stuck_child();
+        }
+        for signal in [Signal::INT, Signal::TERM, Signal::HUP] {
+            let mut child = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "process::tests::a_first_signal_sets_the_flag_and_a_second_exits_a_process_stuck_before_it_checks_it",
+                    "--exact",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let pid = Pid::from_child(&child);
+            let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+            let mut wait_for = |wanted: &str| {
+                let found = lines
+                    .by_ref()
+                    .map_while(Result::ok)
+                    .any(|line| line == wanted);
+                assert!(found, "{signal:?}: the child never printed {wanted}");
+            };
+            wait_for("ready");
+            kill_process(pid, signal).unwrap();
+            wait_for("stopping");
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "{signal:?}: the first signal exited the process"
+            );
+            kill_process(pid, signal).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let status = loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    break status;
+                }
+                if std::time::Instant::now() > deadline {
+                    let _ = child.kill();
+                    panic!("{signal:?}: the second signal did not exit the process");
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            assert_eq!(status.code(), Some(1), "{signal:?}: {status}");
+        }
+    }
 }

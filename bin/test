@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Every test gate. Nextest does not run doctests, so they run separately.
 # With no argument it runs every part. CI runs one part per job:
-# `bin/test rust [nextest options]`, `bin/test doc` and `bin/test python`.
+# `bin/test rust [nextest options]`, `bin/test doc`, `bin/test python` and
+# `bin/test ui`.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 part=${1:-all}
-case $part in all | rust | doc | python) ;; *) echo "usage: bin/test [rust [nextest options]|doc|python]" >&2; exit 2 ;; esac
+case $part in all | rust | doc | python | ui) ;; *) echo "usage: bin/test [rust [nextest options]|doc|python|ui]" >&2; exit 2 ;; esac
 shift || true
 
 # A test that runs board must give it a cache directory of its own, or its
@@ -32,6 +33,11 @@ fi
 
 if [ "$part" = all ] || [ "$part" = doc ]; then
   cargo test --workspace --all-features --locked --doc
+fi
+
+# board-ui's stories, each compared with its golden screenshot in both themes.
+if [ "$part" = all ] || [ "$part" = ui ]; then
+  bin/ui-goldens
 fi
 
 # The Python tests run the workspace's debug build of board. Each project's

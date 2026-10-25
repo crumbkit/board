@@ -50,4 +50,4 @@ max_lines = 800
 # The exact number of #[expect] attributes in that source. Adding one means
 # raising this in the same change; removing one means lowering it.
 [expect]
-count = 17
+count = 24

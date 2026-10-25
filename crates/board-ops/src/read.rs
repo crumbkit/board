@@ -81,7 +81,7 @@ impl Board {
     }
 
     /// One snapshot of the working tree to resolve and read in.
-    fn working_view(&self) -> Result<Resolver<'_, 'static>, ReadError> {
+    pub(crate) fn working_view(&self) -> Result<Resolver<'_, 'static>, ReadError> {
         (self.repositories().snapshot()).map_err(|source| ReadError::Resolve {
             source: ResolveError::Git(source),
         })

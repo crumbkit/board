@@ -20,6 +20,8 @@ pub use crate::manifest::{
     MetaFilterError, NameError, PluginName, Side, VariableName, VariableNameError, Version,
     VersionError,
 };
+#[cfg(unix)]
+pub use crate::process::stop_on_signals;
 pub use crate::process::{Limits, Spawned};
 pub use crate::protocol::{
     BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, EXTRACT_RESULT_TYPE, EXTRACT_TYPE,

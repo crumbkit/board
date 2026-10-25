@@ -90,6 +90,18 @@ jobs:
           export PATH="$PWD/target/debug:$PATH" XDG_DATA_HOME="$RUNNER_TEMP/data"
           board check > /dev/null
 
+  # board-ui builds and its screenshots are compared in the pinned arm64
+  # Playwright image, so this job runs on an arm64 runner.
+  ui:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: bin/lint ui
+      - run: bin/test ui
+
   supply-chain:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

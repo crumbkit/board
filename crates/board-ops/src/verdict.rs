@@ -3,8 +3,8 @@
 //! (docs/architecture.md, Records).
 
 use board_model::{
-    ATTACHMENT_TYPE, Attachment, CONFIG_TYPE, Classified, Code, Content, EFFECT_TYPES, Fields,
-    MANIFEST_TYPE, RecordType, Role, effect_record,
+    ATTACHMENT_TYPE, Attachment, BINDING_TYPE, Binding, CONFIG_TYPE, Classified, Code, Content,
+    Fields, MANIFEST_TYPE, RecordType, Role, UiError, effect_record,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::Refused;
@@ -31,6 +31,8 @@ pub enum Fault {
         record_type: RecordType,
         why: String,
     },
+    #[error(transparent)]
+    Ui(#[from] UiError),
     /// A record of a user's type with no usable schema at its schema path.
     #[error("{}", match found {
         SchemaFound::Missing => format!("no schema for {record_type} at {}", record_type.schema_path()),
@@ -52,6 +54,7 @@ impl Fault {
             Self::Schema(error) => error.code(),
             Self::Record(error) => error.code(),
             Self::Core { .. } => Code::RecordInvalid,
+            Self::Ui(error) => error.code(),
             Self::NoSchema { found, .. } => match found {
                 SchemaFound::Missing => Code::RecordUnknownType,
                 SchemaFound::Unreadable => Code::RepoUnreadable,
@@ -67,6 +70,10 @@ impl Fault {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Record(error) => error.fields(),
+            Self::Ui(error) => Fields {
+                pointer: error.pointer(),
+                ..Fields::default()
+            },
             Self::NoSchema { record_type, found } => Fields {
                 pointer: (*found == SchemaFound::Unusable).then(|| "/$type".to_owned()),
                 schema: Some(record_type.schema_path()),
@@ -93,7 +100,7 @@ impl Fault {
     pub(crate) fn reason(&self, role: Role, bytes: Option<&[u8]>) -> Option<String> {
         match self {
             Self::Code(Code::SchemaInvalid) => Some(
-                "is in the board namespace, which is Board's own, so a board cannot define a schema in it"
+                "is in a namespace Board reserves, board or ui, so a board cannot define a schema in it"
                     .to_owned(),
             ),
             Self::Code(_) => Some(format!("is invalid: {}", role.parse_error(bytes?)?.1)),
@@ -138,13 +145,14 @@ pub(crate) fn judge(classified: &Classified) -> Result<Option<Schema>, Fault> {
                 .map_err(|_| Fault::Code(Code::RecordInvalid))
         }
         Content::Record { record_type, value } => {
-            match effect_record(record_type.as_str(), value) {
-                Some(Err(why)) => Err(Fault::Core {
+            if let Some(Err(why)) = effect_record(record_type.as_str(), value) {
+                return Err(Fault::Core {
                     record_type: record_type.clone(),
                     why,
-                }),
-                Some(Ok(())) | None => Ok(None),
+                });
             }
+            board_model::check_ui(record_type.as_str(), value).transpose()?;
+            Ok(None)
         }
         _ => Ok(None),
     }
@@ -165,6 +173,15 @@ pub(crate) struct Admitted {
     pub(crate) references: Vec<Reference>,
 }
 
+impl Admitted {
+    /// The binding this record is, when it is one.
+    pub(crate) fn binding(&self) -> Option<Binding> {
+        (self.value.get("$type").and_then(Value::as_str) == Some(BINDING_TYPE))
+            .then(|| Binding::from_value(&self.value).ok())
+            .flatten()
+    }
+}
+
 /// Judges a classified record by its bytes, then a record of a user's type
 /// against the schema `find` gives for its type. Board's own types that
 /// pass `judge` need no schema.
@@ -180,12 +197,7 @@ pub(crate) fn record<'s>(
     };
     let (record_type, value) = match classified.content {
         Content::Pointer { value, .. } => return Ok(admitted(value, true)),
-        Content::Record { record_type, value }
-            if matches!(
-                record_type.as_str(),
-                CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE
-            ) || EFFECT_TYPES.contains(&record_type.as_str()) =>
-        {
+        Content::Record { record_type, value } if record_type.is_known() => {
             return Ok(admitted(value, false));
         }
         Content::Record { record_type, value } => (record_type, value),

@@ -1,6 +1,6 @@
 # Standards
 
-Rules 1 to 27 cover the Rust workspace; P1 to P6 cover Python. Each rule says
+Rules 1 to 28 cover the Rust workspace; P1 to P6 cover Python. Each rule says
 what enforces it. A rule without a gate is still a rule.
 
 ## Types
@@ -50,9 +50,9 @@ Rules 3 and 4 on change: after a release, a changed type is a new version and a 
     - Use edition 2024 and the default rustfmt settings.
     - Pin the toolchain in `rust-toolchain.toml`, and state the reason when it holds back a version.
     - Declare `[workspace.lints]`, and set `[lints] workspace = true` in every member.
-    - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`, then the Python lint gates of P2. `bin/lint rust` and `bin/lint python` run one half.
-    - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests, then each Python project's `pytest`, the projects at once. `bin/test rust [nextest options]`, `bin/test doc` and `bin/test python` run one part.
-    - The pull-request lane, `ci.yml`, runs on Linux for each pull request and push to `main`. It runs the same scripts split across parallel jobs: `lint` (`bin/lint rust`, `bin/test doc`), three `test` jobs that each run a third of nextest's tests, chosen by a hash of the test's name, and `python` (`bin/lint python`, `bin/test python`, and `board check` with the controls plugin). Each job restores the dependencies' build with `Swatinem/rust-cache`, and only `main` saves it. It also runs `cargo deny check`, `cargo shear` and `zizmor` on the workflows. `mods.yml` runs `claude plugin test` on each `plugins/<name>/claude-code/` mod, checks that `.claude-plugin/marketplace.json` lists every mod, and validates the marketplace. It runs only when a change touches a file under a `claude-code/` directory or the marketplace. The lane takes about a minute and a half when it restores the cache, and about three minutes when it builds the dependencies from scratch. A changed `Cargo.lock` still restores most of the cache. The build starts from scratch after a toolchain bump or a change to a `CARGO*` or `RUST*` variable, after GitHub evicts the cache, and on a pull request that runs before `main` has saved one.
+    - `bin/lint` runs `cargo fmt --all --check`, then `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`, then `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked` (most items are `pub(crate)`, so without the flag their docs go unchecked), then `cargo xtask lint`, then the Python lint gates of P2, then board-ui's type check and build in the pinned Playwright container, which must leave the committed `ui/dist` unchanged. `bin/lint rust`, `bin/lint python` and `bin/lint ui` run one part.
+    - `bin/test` runs nextest with the profile in `.config/nextest.toml`, then doctests, then each Python project's `pytest`, the projects at once, then `bin/ui-goldens`, which compares each board-ui story with its golden screenshot in both themes in the same container. `bin/test rust [nextest options]`, `bin/test doc`, `bin/test python` and `bin/test ui` run one part.
+    - The pull-request lane, `ci.yml`, runs on Linux for each pull request and push to `main`. It runs the same scripts split across parallel jobs: `lint` (`bin/lint rust`, `bin/test doc`), three `test` jobs that each run a third of nextest's tests, chosen by a hash of the test's name, `python` (`bin/lint python`, `bin/test python`, and `board check` with the controls plugin), and `ui` (`bin/lint ui`, `bin/test ui`) on an arm64 runner. Each job restores the dependencies' build with `Swatinem/rust-cache`, and only `main` saves it. It also runs `cargo deny check`, `cargo shear` and `zizmor` on the workflows. `mods.yml` runs `claude plugin test` on each `plugins/<name>/claude-code/` mod, checks that `.claude-plugin/marketplace.json` lists every mod, and validates the marketplace. It runs only when a change touches a file under a `claude-code/` directory or the marketplace. The lane takes about a minute and a half when it restores the cache, and about three minutes when it builds the dependencies from scratch. A changed `Cargo.lock` still restores most of the cache. The build starts from scratch after a toolchain bump or a change to a `CARGO*` or `RUST*` variable, after GitHub evicts the cache, and on a pull request that runs before `main` has saved one.
     - The slow lane, `slow.yml`, runs nightly on `main`, by hand, and before each release. It runs both scripts on macOS, fuzzing (rule 19), the timing job (rule 20), and `cargo mutants` over the Rust lines changed since a base commit. Mutants run in two passes: the first tests each mutant with its own crate's tests, and the second tests the mutants the first missed or timed out with the whole workspace's tests. The nightly base is the head of the newest scheduled run of the last 3 days whose mutants all passed, or, with none, the last commit before 00:00 UTC of the previous day; the `base` job's summary names it and says why. A hand-run may give `mutants-base`, which does not move the nightly base. Fuzzing runs every night. Linux timing and mutants are skipped when `main` has not changed since the previous scheduled run whose conclusion is not cancelled, except that a Monday run that times macOS also times Linux. A run in which a job timed out ends cancelled, as a hand-cancelled run does, so the night after either runs Linux timing and mutants again. Of the scheduled runs, only Monday's runs the scripts and the timing job on macOS, which bills ten times Linux. It skips them when `main` has not changed since the previous Monday run whose `macos` job passed. After a Monday run whose `macos` job failed or was cancelled, macOS therefore waits for the next Monday and then runs again, even on an unchanged `main`. A hand-run and a release run always run the macOS jobs. A failure that only macOS shows can therefore stay on `main` for up to a week before the slow lane reports it, and a release still checks macOS before it ships. A nightly job that fails or runs past its timeout, including a missed mutant, opens an issue titled "Slow lane failed", and later failures comment on it until someone closes it; a run cancelled by hand reports nothing. A missed mutant is fixed by the test that catches it. One nobody fixes is reported on each night `main` changes, until the newest run whose mutants all passed is more than 3 days old. After that the base falls back to the previous day, so each change is mutated on one or two nights only. A shard that runs past its timeout never passes, so the 3-day window bounds a failing streak's range to about 4 days of changes.
     - `release.yml` runs both lanes, then builds `board` for aarch64-apple-darwin, aarch64-unknown-linux-gnu and x86_64-unknown-linux-gnu, packages each plugin, runs `bin/install-check` on each platform, and attaches the archives and `SHA256SUMS` to the release the tag `v<version>` names; the tag must equal board-cli's version, which `board --version` prints. A release runs the slow lane without mutants, because the nightly runs have mutated each day's changes.
     - Every action is pinned by commit SHA and every installed tool by exact version.
@@ -152,6 +152,36 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     dropping a `Writer` rolls back. In
     `board-tree`, `lock` returns a `Lock`, `stage_commit` borrows it and returns
     `Staged`, and `finish_commit` consumes `Staged`.
+
+## Launch codes
+
+28. **A local web app is opened with a one-time launch code, never its
+    token.** A command that opens a browser on a local server passes a code
+    that the page exchanges once for the server's token. Gate: the server's
+    tests pair each refusal with an admitted twin.
+    - The code is at least 128 bits from the operating system's random
+      source and is compared in constant time, so it cannot be guessed or
+      timed.
+    - It is single use and consumed atomically, so two racing exchanges
+      cannot both succeed.
+    - It expires within 60 seconds, and the server forgets it on use or
+      expiry, keeping at most a digest to tell used and expired codes from
+      unknown ones. A code found later is worthless.
+    - It travels only in the URL fragment, never the query, so it stays out
+      of requests, server logs and `Referer` headers. Browser history may
+      keep it, which is why it is single use.
+    - It never goes in a process argument or environment variable, which
+      other users can read. It reaches the browser through a file only its
+      owner can read.
+    - The page exchanges it by `POST` with the code in the body, because
+      link previews and prefetching send `GET`s. The reply carries
+      `Cache-Control: no-store`, so no cache keeps the token.
+    - The page holds the token only in memory; no cookie or storage holds
+      it, so nothing durable leaks it.
+    - Whichever process writes a file holding the code deletes it once the
+      code is used or expired, so no copy on disk outlives it.
+    - Refusals carry distinct codes for an unknown, a used and an expired
+      code, so the reader knows whether to relaunch or investigate.
 
 ## Baseline lints
 

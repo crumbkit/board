@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 7] = [
+pub const NOT_REPRODUCED: [(Code, &str); 16] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -58,7 +58,27 @@ pub const NOT_REPRODUCED: [(Code, &str); 7] = [
         "the CLI's 30-second plugin limit is too slow for a test; \
          board-ops/src/call/tests.rs uses a 500 ms limit",
     ),
+    (
+        Code::UiOpenFailed,
+        "ui open must fail to start a server or a browser, and a test must not start one; \
+         board-serve/src/tests.rs pairs a binary that cannot start with a running server",
+    ),
+    (Code::ServeHost, SERVED),
+    (Code::ServeOrigin, SERVED),
+    (Code::ServeToken, SERVED),
+    (Code::ServeCodeUnknown, SERVED),
+    (Code::ServeCodeUsed, SERVED),
+    (Code::ServeCodeExpired, SERVED),
+    (Code::ServeUnknownRoute, SERVED),
+    (
+        Code::ServeFailed,
+        "serve fails only when the system refuses a port, a file or random bytes; \
+         board-serve/src/tests.rs runs the server",
+    ),
 ];
+
+const SERVED: &str = "the server gives it to an HTTP request, never to a command line; \
+     board-serve/src/tests.rs pairs each refused request with an admitted twin";
 
 const PUT: &str = "put refuses a write with it; check writes nothing";
 const PLUGIN: &str = "a plugin command gives it; check runs no plugin";
@@ -66,10 +86,11 @@ const QUERY: &str = "query gives it; check runs no query";
 const SETTINGS: &str =
     "put, decide or answer gives it for a plugin's effect; check asks for no effect";
 const SYNC: &str = "sync gives it; check reads no remote";
+const OPEN: &str = "ui open or the server gives it; check opens and serves nothing";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 54] = [
+pub const NOT_CHECKED: [(Code, &str); 66] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -160,6 +181,18 @@ pub const NOT_CHECKED: [(Code, &str); 54] = [
         Code::CliUsage,
         "the command line is refused before any board is read",
     ),
+    (Code::UiSlotMismatch, PUT),
+    (Code::UiSlotInvalid, PUT),
+    (Code::UiNotABinding, OPEN),
+    (Code::UiOpenFailed, OPEN),
+    (Code::ServeHost, OPEN),
+    (Code::ServeOrigin, OPEN),
+    (Code::ServeToken, OPEN),
+    (Code::ServeCodeUnknown, OPEN),
+    (Code::ServeCodeUsed, OPEN),
+    (Code::ServeCodeExpired, OPEN),
+    (Code::ServeUnknownRoute, OPEN),
+    (Code::ServeFailed, OPEN),
 ];
 
 /// The seed board, and the board it mounts at `/mount/m`, which must outlive it.
@@ -199,7 +232,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 28] = [
+const TEXT: [(&str, &str, Option<Code>); 30] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -235,6 +268,8 @@ const TEXT: [(&str, &str, Option<Code>); 28] = [
     // Only `.board/board.json` configures the board, but any file of its type must read as one.
     ("config/stray.json", r#"{"$type": "board/config/v1", "colour": "red"}"#, Some(Code::ConfigInvalid)),
     ("plugins/broken/plugin.json", r#"{"$type": "board/plugin-manifest/v1"}"#, Some(Code::PluginBadManifest)),
+    ("ui/view.json", r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "markdown"}]}"#, None),
+    ("ui/unknown.json", r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "chart"}]}"#, Some(Code::UiUnknownKind)),
 ];
 
 /// Exhibits in the root board that are symlinks: path, text and code. A

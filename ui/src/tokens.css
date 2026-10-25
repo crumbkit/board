@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* board-ui's own tokens. Every colour, size and font the app uses is named
+   here, in a light and a dark set. */
+:root {
+  color-scheme: light dark;
+  --paper: #f7f6f2;
+  --surface: #ffffff;
+  --ink: #1d2126;
+  --ink-muted: #5b636d;
+  --rule: #dcd9d0;
+  --accent: #2f6f62;
+  --accent-soft: #e2efeb;
+  --warn: #9a3b1c;
+  --warn-soft: #f8e6dd;
+  --code-bg: #f0eee8;
+  --font-text: ui-serif, Georgia, "Iowan Old Style", serif;
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --measure: 68ch;
+  --radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #15181b;
+    --surface: #1c2024;
+    --ink: #e4e2dc;
+    --ink-muted: #9aa2ab;
+    --rule: #30363c;
+    --accent: #7cc4b3;
+    --accent-soft: #1f3530;
+    --warn: #f0a07f;
+    --warn-soft: #3a2219;
+    --code-bg: #111416;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--ink-muted);
+  --color-rule: var(--rule);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-code: var(--code-bg);
+  --font-text: var(--font-text);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --radius-board: var(--radius);
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+
+/* Shiki gives each token a light and a dark colour as CSS variables. */
+.shiki span {
+  color: var(--shiki-light);
+}
+@media (prefers-color-scheme: dark) {
+  .shiki span {
+    color: var(--shiki-dark);
+  }
+}
+
+.prose-board {
+  font-family: var(--font-text);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  max-width: var(--measure);
+}
+.prose-board h1,
+.prose-board h2,
+.prose-board h3,
+.prose-board h4 {
+  font-family: var(--font-ui);
+  line-height: 1.25;
+  margin: 1.6em 0 0.5em;
+}
+.prose-board h1 { font-size: 1.6rem; }
+.prose-board h2 { font-size: 1.3rem; }
+.prose-board h3 { font-size: 1.1rem; }
+.prose-board > :first-child { margin-top: 0; }
+.prose-board a { color: var(--accent); }
+.prose-board .anchor { color: var(--ink-muted); text-decoration: none; margin-left: 0.4em; opacity: 0; }
+.prose-board :is(h1, h2, h3, h4):hover .anchor { opacity: 1; }
+.prose-board code { font-family: var(--font-mono); font-size: 0.875em; background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; }
+.prose-board pre { background: var(--code-bg); padding: 0.9em 1em; border-radius: var(--radius); overflow-x: auto; line-height: 1.45; }
+.prose-board pre code { background: none; padding: 0; }
+.prose-board ul.contains-task-list { list-style: none; padding-left: 1.2em; }
+.prose-board table { border-collapse: collapse; font-family: var(--font-ui); font-size: 0.9375rem; }
+.prose-board th, .prose-board td { border: 1px solid var(--rule); padding: 0.3em 0.7em; text-align: left; }
+.prose-board blockquote { margin: 0; padding-left: 1em; border-left: 3px solid var(--rule); color: var(--ink-muted); }
+.prose-board section.footnotes { font-size: 0.875rem; color: var(--ink-muted); border-top: 1px solid var(--rule); margin-top: 2em; }

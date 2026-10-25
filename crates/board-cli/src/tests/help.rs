@@ -58,6 +58,9 @@ const NO_CALL: &str = "the tasks plugin runs only from a symbolic link to its ch
 /// A pending effect's id hashes the directory of the board that asked, so
 /// no fixture holds one with the id an example names.
 const NO_ANSWER: &str = "a pending effect's id hashes the asking board's directory, so no fixture holds the example's id";
+/// `serve` runs until it is idle, and `ui open` starts a server and a
+/// browser; board-serve/src/tests.rs and the ui tests here run both.
+const SERVES: &str = "the command starts a server that outlives the example's time limit";
 const ALLOW: &[Allow] = &[
     Allow::example(
         "answer",
@@ -86,6 +89,9 @@ const ALLOW: &[Allow] = &[
         ],
         NO_ANSWER,
     ),
+    Allow::example("serve", &[], SERVES),
+    Allow::example("serve", &["--idle", "2m"], SERVES),
+    Allow::example("ui open", &["/bindings/review"], SERVES),
     Allow::example("call", &["tasks.due"], NO_CALL),
     Allow::example("call", &["--capability", "due"], NO_CALL),
     Allow::example(
@@ -200,8 +206,8 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 /// such as `plugin` and 1,200 for each other command.
 const BUDGETS: Budgets = Budgets::new()
     .root(
-        2_150,
-        "The root page lists all fourteen commands, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
+        2_300,
+        "The root page lists all sixteen commands, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
     )
     .nodes(&[
         Budget::new(

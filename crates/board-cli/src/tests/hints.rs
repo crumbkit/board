@@ -447,7 +447,7 @@ fn check_says_why_json_does_not_parse_and_json_that_parses_is_ok() {
         "degraded board::json::parse /bad is invalid: json does not parse: key must be a string at line 1 column 2",
         r#"degraded board::json::duplicate_key /dup is invalid: json repeats the key "a" in one object"#,
         "degraded board::schema::invalid /.board/types/board/x/v1.schema \
-         is in the board namespace, which is Board's own, so a board cannot define a schema in it",
+         is in a namespace Board reserves, board or ui, so a board cannot define a schema in it",
         "ok /good",
     ] {
         assert!(

@@ -53,7 +53,7 @@ impl Board {
         bytes: &[u8],
     ) -> Result<(Option<Prepared>, Schema), TypeError> {
         let record_type = record_type.clone();
-        if record_type.is_board() {
+        if record_type.is_reserved() {
             return Err(TypeError::Reserved { record_type });
         }
         let schema = match parse_json(bytes) {

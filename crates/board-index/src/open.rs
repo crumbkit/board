@@ -25,7 +25,7 @@ pub fn location(cache: &Path, root: &Path) -> PathBuf {
 }
 
 /// The directory under `cache` that holds the cache of the board at `root`.
-fn board(cache: &Path, root: &Path) -> PathBuf {
+pub(crate) fn board(cache: &Path, root: &Path) -> PathBuf {
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
     cache.join("board").join(hex(&digest))
 }

@@ -27,6 +27,10 @@ pub(crate) struct Context {
     pub(crate) complete: Option<OsString>,
     /// Whether stdin is a terminal, which `call` does not wait to read.
     pub(crate) terminal: bool,
+    /// `BROWSER`, the command `board ui open` opens a page with.
+    pub(crate) browser: Option<OsString>,
+    /// The running `board` binary, which `board ui open` starts the server with.
+    pub(crate) binary: Option<PathBuf>,
     /// `_CLAP_COMPLETE_INDEX`: which word the bash or zsh cursor is on.
     /// `clap_complete` reads it, `_CLAP_IFS` and its other `_CLAP_*`
     /// variables from the environment itself, the one exception to this
@@ -77,6 +81,8 @@ impl Context {
             },
             complete: std::env::var_os("BOARD_COMPLETE"),
             terminal: std::io::stdin().is_terminal(),
+            browser: std::env::var_os("BROWSER"),
+            binary: std::env::current_exe().ok(),
             cursor: std::env::var("_CLAP_COMPLETE_INDEX")
                 .ok()
                 .and_then(|index| index.parse().ok()),

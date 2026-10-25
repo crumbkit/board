@@ -1,0 +1,8 @@
+node_modules/
+.vitest/
+__traces__/
+__screenshots__/
+storybook-static/
+tsconfig.tsbuildinfo
+# A global ignore of dist/ must not hide the committed build.
+!dist/

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Every lint gate, in the order CI runs them. STANDARDS.md 21.
-# With no argument it runs every part; CI runs `bin/lint rust` and
-# `bin/lint python` in separate jobs.
+# With no argument it runs every part; CI runs `bin/lint rust`,
+# `bin/lint python` and `bin/lint ui` in separate jobs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 part=${1:-all}
-case $part in all | rust | python) ;; *) echo "usage: bin/lint [rust|python]" >&2; exit 2 ;; esac
+case $part in all | rust | python | ui) ;; *) echo "usage: bin/lint [rust|python|ui]" >&2; exit 2 ;; esac
 
-if [ "$part" != python ]; then
+if [ "$part" = all ] || [ "$part" = rust ]; then
   cargo fmt --all --check
   cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
   RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
@@ -15,7 +15,7 @@ if [ "$part" != python ]; then
 fi
 
 # The Python gates, STANDARDS.md P2. uv syncs each project from its lockfile.
-if [ "$part" != rust ]; then
+if [ "$part" = all ] || [ "$part" = python ]; then
   for project in python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/runs plugins/share plugins/notes plugins/plans plugins/loop plugins/review; do
     (
       cd "$project"
@@ -24,4 +24,16 @@ if [ "$part" != rust ]; then
       uv run --locked pyright
     )
   done
+fi
+
+# board-ui type-checks and builds in the pinned container. The board binary
+# embeds ui/dist, so the build must leave the committed bundle unchanged.
+if [ "$part" = all ] || [ "$part" = ui ]; then
+  bin/ui-container run build
+  # --ignored and -uall also report a built file that git would not track.
+  if [ -n "$(git status --porcelain --ignored --untracked-files=all -- ui/dist)" ]; then
+    echo "error: ui/dist is stale; commit the bundle bin/ui-container run build wrote:" >&2
+    git status --short --ignored --untracked-files=all -- ui/dist >&2
+    exit 1
+  fi
 fi

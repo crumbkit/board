@@ -14,6 +14,7 @@ mod pointer;
 mod record;
 mod refusal;
 mod stat;
+mod ui;
 
 pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
@@ -35,8 +36,12 @@ pub use crate::pointer::{
     MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer, repinned,
 };
 pub use crate::record::{
-    CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RecordType, RecordTypeError, Role,
-    TYPES_DIRECTORY, classify, is_json_file,
+    CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RESERVED_NAMESPACES, RecordType,
+    RecordTypeError, Role, TYPES_DIRECTORY, classify, is_json_file,
 };
 pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::stat::{Change, Stat};
+pub use crate::ui::{
+    BINDING_TYPE, Binding, ComponentKind, DERIVED_TYPE, Fill, Slot, UiError, VIEW_TYPE, View,
+    check as check_ui,
+};

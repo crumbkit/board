@@ -1,0 +1,3 @@
+NAME      DRAWS          DESCRIPTION                                                                                                  SCHEMA
+markdown  ui/derived/v1  GitHub-flavoured Markdown with highlighted code, heading anchors, a contents rail, footnotes and task lists  {"properties":{"markdown":{"type":"string"}},"required":["markdown"],"type":"object"}
+record    *              any record as a definition list, with nested values folded and references as links                           {"type":"object"}

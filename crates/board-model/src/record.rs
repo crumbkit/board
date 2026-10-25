@@ -14,6 +14,7 @@ use crate::effect::EFFECT_TYPES;
 use crate::frontmatter::frontmatter;
 use crate::json::parse_json;
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
+use crate::ui::{BINDING_TYPE, DERIVED_TYPE, VIEW_TYPE};
 
 /// The `$type` of `.board/board.json`.
 pub const CONFIG_TYPE: &str = "board/config/v1";
@@ -23,6 +24,10 @@ pub const MANIFEST_TYPE: &str = "board/plugin-manifest/v1";
 
 /// The directory that holds schemas.
 pub const TYPES_DIRECTORY: &str = ".board/types/";
+
+/// The namespaces of Board's own record types, in which no board or plugin
+/// may define a type.
+pub const RESERVED_NAMESPACES: [&str; 2] = ["board", "ui"];
 
 /// A record's `$type`: `<namespace>/<kind>/v<n>`, where namespace and kind
 /// are lowercase ASCII letters, digits and hyphens, and `n` is a positive
@@ -36,10 +41,22 @@ impl RecordType {
         &self.0
     }
 
-    /// Whether the type is in the `board` namespace, reserved for Board's own
-    /// documents.
-    pub fn is_board(&self) -> bool {
-        self.0.starts_with("board/")
+    /// Whether the type is in a namespace reserved for Board's own records:
+    /// `board`, or `ui` for the pages `board serve` draws.
+    pub fn is_reserved(&self) -> bool {
+        RESERVED_NAMESPACES.iter().any(|namespace| {
+            self.0
+                .strip_prefix(namespace)
+                .is_some_and(|rest| rest.starts_with('/'))
+        })
+    }
+
+    /// Whether Board reads this type by its Rust type, needing no schema.
+    pub fn is_known(&self) -> bool {
+        matches!(
+            self.0.as_str(),
+            CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE | VIEW_TYPE | BINDING_TYPE | DERIVED_TYPE
+        ) || EFFECT_TYPES.contains(&self.0.as_str())
     }
 
     /// Where a board holds this type's schema, relative to its root.
@@ -184,7 +201,7 @@ impl Kind {
 pub enum Role {
     Json,
     Schema,
-    /// A schema in the reserved `board` namespace, which no board may define.
+    /// A schema in a namespace Board reserves, which no board may define.
     ReservedSchema,
     /// A Markdown file, a file whose links are references, and a record
     /// when its frontmatter names a `$type`.
@@ -203,7 +220,10 @@ impl Role {
         if !(path.starts_with(TYPES_DIRECTORY) && path.ends_with(".schema.json")) {
             return Some(Self::Json);
         }
-        if path.starts_with(&format!("{TYPES_DIRECTORY}board/")) {
+        let reserved = RESERVED_NAMESPACES
+            .iter()
+            .any(|namespace| path.starts_with(&format!("{TYPES_DIRECTORY}{namespace}/")));
+        if reserved {
             Some(Self::ReservedSchema)
         } else {
             Some(Self::Schema)
@@ -270,13 +290,8 @@ impl Role {
                 Err(error) => Classified::unparsed(Kind::Pointer, error.code()),
             },
             _ => Classified {
-                code: (record_type.is_board()
-                    && !matches!(
-                        record_type.as_str(),
-                        CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE
-                    )
-                    && !EFFECT_TYPES.contains(&record_type.as_str()))
-                .then_some(Code::RecordUnknownType),
+                code: (record_type.is_reserved() && !record_type.is_known())
+                    .then_some(Code::RecordUnknownType),
                 content: Content::Record { record_type, value },
             },
         }
@@ -330,7 +345,7 @@ impl Classified {
             return Self::unparsed(Kind::Record, Code::RecordBadType);
         };
         Self {
-            code: record_type.is_board().then_some(Code::RecordUnknownType),
+            code: record_type.is_reserved().then_some(Code::RecordUnknownType),
             content: Content::Record { record_type, value },
         }
     }

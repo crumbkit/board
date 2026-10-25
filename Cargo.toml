@@ -6,6 +6,7 @@ members = [
     "crates/board-ops",
     "crates/board-plugin",
     "crates/board-scenario",
+    "crates/board-serve",
     "crates/board-tree",
     "crates/board-validate",
     "xtask",
@@ -26,6 +27,7 @@ board-ops = { path = "crates/board-ops", version = "0.0.0" }
 board-model = { path = "crates/board-model", version = "0.0.0" }
 board-plugin = { path = "crates/board-plugin", version = "0.0.0" }
 board-scenario = { path = "crates/board-scenario", version = "0.0.0" }
+board-serve = { path = "crates/board-serve", version = "0.0.0" }
 board-tree = { path = "crates/board-tree", version = "0.0.0" }
 board-validate = { path = "crates/board-validate", version = "0.0.0" }
 # unstable-dynamic: completion that asks the binary, so paths complete from the
@@ -38,6 +40,10 @@ clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "5589a9099cb1fa7f9ae8e77113fd08c45af6cb62", version = "0.0.0", default-features = false }
 crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "5589a9099cb1fa7f9ae8e77113fd08c45af6cb62", version = "0.0.0", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
+# board serve compares the per-launch token in constant time.
+constant_time_eq = "0.6.1"
+# board serve's per-launch token. gix already brings this version in.
+getrandom = "0.3.4"
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
@@ -71,6 +77,8 @@ saphyr-parser = "=0.1.2"
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache", "hooks", "limits", "modern_sqlite"] }
 # process: ask a plugin to stop with SIGTERM without unsafe code.
 rustix = { version = "1.1.5", default-features = false, features = ["process", "std"] }
+# board serve holds its per-launch token as a secret that Debug redacts.
+secrecy = "0.10.3"
 serde = { version = "1.0.228", features = ["derive"] }
 # derive: the rows crumbkit prints describe their own JSON Schema.
 schemars = { version = "1.2.2", default-features = false, features = ["derive", "std"] }
@@ -85,6 +93,8 @@ sha2 = "0.11.0"
 strsim = "0.11.1"
 tempfile = "3.20.0"
 thiserror = "2.0.18"
+# board serve's HTTP server: synchronous, with no async runtime and no TLS.
+tiny_http = { version = "0.12.0", default-features = false }
 toml = { version = "1.1.6", default-features = false, features = ["parse", "serde", "std"] }
 
 [workspace.lints.rust]

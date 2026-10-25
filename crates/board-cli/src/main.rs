@@ -7,11 +7,13 @@ mod config;
 mod effects;
 mod graft;
 mod known;
+mod plugin;
 mod render;
 mod report;
 mod run;
 mod stdin;
 mod timing;
+mod ui;
 
 #[cfg(test)]
 mod tests;

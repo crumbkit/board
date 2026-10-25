@@ -1,0 +1,1 @@
+{"schema":"board/ui-template-report/v2","data":{"fill":{"ref":"/tasks/a"},"kind":"record"},"failures":[]}

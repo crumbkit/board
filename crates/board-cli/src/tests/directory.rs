@@ -211,6 +211,8 @@ fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
         environment: board_plugin::Environment::default(),
         complete: None,
         terminal: false,
+        browser: None,
+        binary: None,
         cursor: None,
     };
     let arguments = [

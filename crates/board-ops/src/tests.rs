@@ -924,7 +924,7 @@ fn check_says_why_a_file_or_schema_is_degraded_and_a_healthy_one_has_no_reason()
     assert_eq!(
         reason(".board/types/board/x/v1.schema.json").as_deref(),
         Some(
-            "is in the board namespace, which is Board's own, so a board cannot define a schema in it"
+            "is in a namespace Board reserves, board or ui, so a board cannot define a schema in it"
         )
     );
     assert_eq!(

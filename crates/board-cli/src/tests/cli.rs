@@ -261,7 +261,15 @@ fn every_command_a_hint_names_parses() {
 /// command is named here as not listing, so a new one has to be placed.
 #[test]
 fn every_listing_command_takes_limit_and_all() {
-    let listing = ["check", "ls", "refs", "plugin list", "plugin find", "query"];
+    let listing = [
+        "check",
+        "ls",
+        "refs",
+        "plugin list",
+        "plugin find",
+        "query",
+        "ui kinds",
+    ];
     let other = [
         "init",
         "get",
@@ -273,6 +281,9 @@ fn every_listing_command_takes_limit_and_all() {
         "sync",
         "decide",
         "answer",
+        "serve",
+        "ui template",
+        "ui open",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {
@@ -1098,7 +1109,7 @@ fn every_command_line_the_docs_show_parses() {
 #[test]
 fn a_documented_command_that_does_not_exist_does_not_parse_and_one_that_does_parses() {
     assert_eq!(
-        parses(&filled("board serve")),
+        parses(&filled("board watch")),
         Err(ErrorKind::InvalidSubcommand)
     );
     assert_eq!(parses(&filled("board check [path]")), Ok(()));

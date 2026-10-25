@@ -81,7 +81,7 @@ fn keeps_the_rule(role: Role, bytes: &str) -> bool {
         Err(_) => {
             schema
                 || matches!(&classified.content,
-                    Content::Record { record_type, .. } if record_type.is_board())
+                    Content::Record { record_type, .. } if record_type.is_reserved())
         }
         Ok(compiled) => compiled.is_some() == schema,
     }

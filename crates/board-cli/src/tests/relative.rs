@@ -105,6 +105,8 @@ fn relative_into(
         },
         complete: None,
         terminal: false,
+        browser: None,
+        binary: None,
         cursor: None,
     };
     let arguments = std::iter::once(BINARY_NAME)

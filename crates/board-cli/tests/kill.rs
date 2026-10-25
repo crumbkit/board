@@ -1,5 +1,6 @@
 //! A put killed while it writes its temporary file leaves the old version
-//! of the record (docs/architecture.md, Writes).
+//! of the record (docs/architecture.md, Writes), and a server stopped by a
+//! signal removes its server file (docs/architecture/ui/serve.md).
 #![cfg(test)]
 #![expect(
     clippy::disallowed_methods,
@@ -101,4 +102,63 @@ fn a_put_killed_while_writing_its_temporary_file_leaves_the_old_version() {
         panic!("the put exited without writing its temporary file; its stderr:\n{stderr}");
     }
     assert_eq!(std::fs::read(root.join("note.json")).unwrap(), old);
+}
+
+/// Starts `board serve` in a new board, and returns it with its server file.
+fn serve(scenario: &Scenario) -> (Child, std::path::PathBuf) {
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1"}"#),
+    );
+    let cache = scenario.workdir().join(".git/cache");
+    let mut server = Command::new(env!("CARGO_BIN_EXE_board"))
+        .args(["serve", "--idle", "10m"])
+        .current_dir(scenario.workdir())
+        .env("XDG_CACHE_HOME", &cache)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let file = server_file(&cache, &mut server);
+    (server, file)
+}
+
+/// Sends `signal`, such as `TERM`, to `process`.
+fn kill(signal: &str, process: &Child) {
+    let killed = Command::new("kill")
+        .args(["-s", signal, &process.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+}
+
+/// The server file under `cache`, once a server has written it.
+fn server_file(cache: &Path, server: &mut Child) -> std::path::PathBuf {
+    let boards = cache.join("board");
+    for _ in 0..1000 {
+        assert!(server.try_wait().unwrap().is_none(), "board serve exited");
+        let found = std::fs::read_dir(&boards).ok().and_then(|boards| {
+            boards
+                .flatten()
+                .map(|board| board.path().join("server.json"))
+                .find(|file| file.exists())
+        });
+        if let Some(file) = found {
+            return file;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("board serve wrote no server file within ten seconds");
+}
+
+#[test]
+fn a_server_stopped_by_sigint_sigterm_or_sighup_removes_its_server_file_and_exits_cleanly() {
+    for signal in ["INT", "TERM", "HUP"] {
+        let scenario = Scenario::new();
+        let (mut server, file) = serve(&scenario);
+        kill(signal, &server);
+        let status = server.wait().unwrap();
+        assert!(status.success(), "SIG{signal}: {status}");
+        assert!(!file.exists(), "SIG{signal} left the server file");
+    }
 }

@@ -35,8 +35,13 @@ fn a_record_type_names_its_schema_path() {
         record_type.schema_path(),
         ".board/types/lr/task/v2.schema.json"
     );
-    assert!(!record_type.is_board());
-    assert!("board/mount/v1".parse::<RecordType>().unwrap().is_board());
+    assert!(!record_type.is_reserved());
+    assert!(
+        "board/mount/v1"
+            .parse::<RecordType>()
+            .unwrap()
+            .is_reserved()
+    );
 }
 
 #[test]
@@ -213,6 +218,19 @@ fn a_board_type_board_does_not_define_is_unknown() {
 }
 
 #[test]
+fn a_ui_type_board_does_not_define_is_unknown_and_one_it_defines_is_a_record() {
+    assert_eq!(
+        classified("x.json", r#"{"$type": "ui/chart/v1"}"#),
+        (Kind::Record, Some(Code::RecordUnknownType))
+    );
+    assert_eq!(
+        classified("x.json", r#"{"$type": "ui/view/v1"}"#),
+        (Kind::Record, None)
+    );
+    assert!(!"uix/view/v1".parse::<RecordType>().unwrap().is_reserved());
+}
+
+#[test]
 fn a_pointer_record_is_a_pointer_and_an_invalid_one_is_degraded() {
     let link = classify(
         "l.json",
@@ -316,6 +334,14 @@ fn a_path_gives_the_role_its_bytes_are_read_in() {
     assert_eq!(
         Role::of(".board/types/board/x/v1.schema.json"),
         Some(Role::ReservedSchema)
+    );
+    assert_eq!(
+        Role::of(".board/types/ui/x/v1.schema.json"),
+        Some(Role::ReservedSchema)
+    );
+    assert_eq!(
+        Role::of(".board/types/uix/x/v1.schema.json"),
+        Some(Role::Schema)
     );
 }
 

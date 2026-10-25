@@ -28,12 +28,14 @@ mod kit;
 mod page;
 mod plugins;
 mod refs;
+mod ui;
 
 pub(crate) use effects::{answer, decide};
 pub(crate) use get::{GET_HELP, get};
 use page::Shown;
 pub(crate) use plugins::{CALL_REPORT, call, plugin_find, plugin_list};
 pub(crate) use refs::{REFS_HELP, refs};
+pub(crate) use ui::{serve, ui_kinds, ui_open, ui_template};
 
 /// The leaf of each command, with the document it prints.
 pub(crate) const LEAVES: &[Leaf] = &[
@@ -53,6 +55,10 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["query"]).document(QUERY),
     Leaf::new(&["decide"]).document(effects::DECIDE),
     Leaf::new(&["answer"]).document(effects::ANSWER),
+    ui::LEAVES[0],
+    ui::LEAVES[1],
+    ui::LEAVES[2],
+    ui::LEAVES[3],
 ];
 
 /// The bytes of stdout one run prints before crumbkit cuts a listing or

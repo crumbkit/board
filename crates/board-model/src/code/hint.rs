@@ -112,7 +112,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "fix the schema at `{}` so it compiles as JSON Schema 2020-12; `board check /.board/types` says what failed",
             fields.schema.as_ref()?
         ),
-        Code::RecordInvalid => match fields.record_type.as_ref().filter(|kind| kind.is_board()) {
+        Code::RecordInvalid => match fields.record_type.as_ref().filter(|kind| kind.is_known()) {
             Some(kind) => format!(
                 "fix the value the message names; {kind} is Board's own type, checked with no schema in `.board/types/`, and docs/architecture/writes/effects.md lists its fields"
             ),
@@ -179,13 +179,38 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             capability?
         ),
         Code::QueryInvalid => query(fields.known.as_ref()?),
+        Code::SettingsAsked | Code::SettingsRefused => {
+            return effect(code, fields.effect.as_ref()?);
+        }
+        Code::UiSlotInvalid | Code::UiSlotMismatch => return ui(code, fields, pointer),
+        _ => return None,
+    })
+}
+
+/// The hint for a `settings` code that names the pending effect `id`.
+fn effect(code: Code, id: &String) -> Option<String> {
+    Some(match code {
         Code::SettingsAsked => format!(
-            "the owner answers outside the plugin with `board answer {id} approve` or `board answer {id} refuse`; then put again",
-            id = fields.effect.as_ref()?
+            "the owner answers outside the plugin with `board answer {id} approve` or `board answer {id} refuse`; then put again"
         ),
         Code::SettingsRefused => format!(
-            "the owner refused pending effect {id}; outside the plugin, `board answer {id} approve` replaces that answer",
-            id = fields.effect.as_ref()?
+            "the owner refused pending effect {id}; outside the plugin, `board answer {id} approve` replaces that answer"
+        ),
+        _ => return None,
+    })
+}
+
+/// The hint for a `ui` code with the values in `fields`, when it names one
+/// and `fields` holds it; `pointer` is the slot's place in the binding.
+fn ui(code: Code, fields: &Fields, pointer: Option<&String>) -> Option<String> {
+    Some(match code {
+        Code::UiSlotInvalid => format!(
+            "change the binding at `{}` so the slot holds `ref` or `data` that satisfies its kind; `board ui kinds --long --json` shows each kind's schema",
+            pointer?
+        ),
+        Code::UiSlotMismatch => format!(
+            "fill exactly the slots the view `{0}` names, each with `ref` or `data`; `board get {0}` shows its slots",
+            fields.target.as_ref()?
         ),
         _ => return None,
     })
@@ -521,6 +546,43 @@ fn generic(code: Code) -> &'static str {
         }
         Code::SettingsBadRule => {
             "a file among the rules does not read as a board/preference/v1 record, so a plugin's put is refused until the owner, outside the plugin, fixes or removes the file the message names"
+        }
+        Code::UiUnknownKind => {
+            "name a kind from the catalogue in each slot's `kind`; `board ui kinds` lists them"
+        }
+        Code::UiSlotMismatch => {
+            "fill exactly the slots the binding's view names, each with `ref` or `data`; `board get <view>` shows its slots"
+        }
+        Code::UiSlotInvalid => {
+            "make the slot's data, or the record it references, satisfy its kind's schema; `board ui kinds --long --json` shows each schema and `board ui template markdown` prints an example"
+        }
+        Code::UiNotABinding => {
+            "open a `ui/binding/v1` record under /bindings; `board ls /bindings` lists them"
+        }
+        Code::UiOpenFailed => {
+            "run `board serve` to see why the server does not start, or set `BROWSER` to the command that opens a URL"
+        }
+        Code::ServeHost => {
+            "open the server at 127.0.0.1 and its port, as `board ui open` does; any other host name is refused"
+        }
+        Code::ServeOrigin => {
+            "open the page with `board ui open`; the server takes launch codes only from its own page or a client that names no other site"
+        }
+        Code::ServeToken => {
+            "open the page with `board ui open`, which adds this server's token; a token from an earlier server is refused"
+        }
+        Code::ServeCodeUnknown => {
+            "open the page with `board ui open`, which makes a launch code this server knows; a code from an earlier server is unknown"
+        }
+        Code::ServeCodeUsed => {
+            "run `board ui open` again; a launch code opens one page once, so a reload or a second tab needs a new one"
+        }
+        Code::ServeCodeExpired => "run `board ui open` again; a launch code lasts 60 seconds",
+        Code::ServeUnknownRoute => {
+            "the server answers `GET /`, its assets, `GET /api/bindings/<name>`, `POST /api/codes` and `POST /api/session`; open a page with `board ui open`"
+        }
+        Code::ServeFailed => {
+            "check that the board's cache directory can be written and that 127.0.0.1 accepts a listener, then run `board serve` again"
         }
         Code::CliUsage => {
             "run `board --help` for the commands, or `board <command> --help` for one command's arguments"

@@ -388,6 +388,11 @@ board check /symlinked
   fails with board::json::parse
   hint
 
+board check /ui/unknown
+  fails with board::ui::unknown_kind
+  run board ui kinds
+    exits 0
+
 board check /mount/m/A
   fails with board::path::case_collision
   hint
@@ -581,6 +586,28 @@ board put /tasks/t
 board put --batch
   fails with board::put::invalid
   hint
+
+board put /projects/new
+  fails with board::ui::unknown_kind
+  run board ui kinds
+    exits 0
+
+board put /ui/b
+  fails with board::ui::slot_mismatch
+  run board get /ui/view
+    exits 0
+
+board put /ui/b
+  fails with board::ui::slot_invalid
+  run board ui kinds --long --json
+    exits 0
+
+board ui open /projects/p
+  fails with board::ui::not_a_binding
+  run board ls /bindings
+    fails with board::path::not_found
+    run board ls /
+      exits 0
 
 board type add lr/project/v1
   fails with board::schema::differs
@@ -799,6 +826,15 @@ codes that no start provokes:
   board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit
   board::refs::target_changed: a target must change between the check and the read of its fields; board-cli/src/tests/refs.rs changes one between two answers
   board::plugin::timeout: the CLI's 30-second plugin limit is too slow for a test; board-ops/src/call/tests.rs uses a 500 ms limit
+  board::ui::open_failed: ui open must fail to start a server or a browser, and a test must not start one; board-serve/src/tests.rs pairs a binary that cannot start with a running server
+  board::serve::host: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::origin: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::token: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::code_unknown: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::code_used: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::code_expired: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::unknown_route: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
+  board::serve::failed: serve fails only when the system refuses a port, a file or random bytes; board-serve/src/tests.rs runs the server
   board::settings::cannot_hold: it needs a file put whose bytes are not UTF-8, which a start's stdin, a string, cannot carry; a_file_put_that_asks_with_bytes_that_are_not_utf8_is_refused_as_cannot_hold_and_text_asks in board-ops/src/effects/tests.rs pairs the code
   board::settings::asked: its hint names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_lets_the_same_put_write_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and puts again
 

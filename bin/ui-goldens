@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Runs board-ui's story tests, which compare each story with its golden
+# screenshot in both themes, in the pinned Playwright image (bin/ui-container).
+# Arguments go to vitest: `bin/ui-goldens --update` rewrites the goldens.
+set -euo pipefail
+exec "$(dirname "$0")/ui-container" exec vitest run "$@"

@@ -203,6 +203,8 @@ fn a_terminal_on_stdin_is_not_read() {
         },
         complete: None,
         terminal,
+        browser: None,
+        binary: None,
         cursor: None,
     };
     let arguments = || ["board", "call", "tasks.due"].map(OsString::from);

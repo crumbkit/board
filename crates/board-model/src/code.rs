@@ -92,12 +92,25 @@ pub enum Code {
     SettingsCannotWiden,
     SettingsCannotHold,
     SettingsBadRule,
+    UiUnknownKind,
+    UiSlotMismatch,
+    UiSlotInvalid,
+    UiNotABinding,
+    UiOpenFailed,
+    ServeHost,
+    ServeOrigin,
+    ServeToken,
+    ServeCodeUnknown,
+    ServeCodeUsed,
+    ServeCodeExpired,
+    ServeUnknownRoute,
+    ServeFailed,
     CliUsage,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 85] = [
+    pub const ALL: [Code; 98] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -182,6 +195,19 @@ impl Code {
         Self::SettingsCannotWiden,
         Self::SettingsCannotHold,
         Self::SettingsBadRule,
+        Self::UiUnknownKind,
+        Self::UiSlotMismatch,
+        Self::UiSlotInvalid,
+        Self::UiNotABinding,
+        Self::UiOpenFailed,
+        Self::ServeHost,
+        Self::ServeOrigin,
+        Self::ServeToken,
+        Self::ServeCodeUnknown,
+        Self::ServeCodeUsed,
+        Self::ServeCodeExpired,
+        Self::ServeUnknownRoute,
+        Self::ServeFailed,
         Self::CliUsage,
     ];
 
@@ -276,6 +302,19 @@ impl Code {
             Self::SettingsCannotWiden => "board::settings::cannot_widen",
             Self::SettingsCannotHold => "board::settings::cannot_hold",
             Self::SettingsBadRule => "board::settings::bad_rule",
+            Self::UiUnknownKind => "board::ui::unknown_kind",
+            Self::UiSlotMismatch => "board::ui::slot_mismatch",
+            Self::UiSlotInvalid => "board::ui::slot_invalid",
+            Self::UiNotABinding => "board::ui::not_a_binding",
+            Self::UiOpenFailed => "board::ui::open_failed",
+            Self::ServeHost => "board::serve::host",
+            Self::ServeOrigin => "board::serve::origin",
+            Self::ServeToken => "board::serve::token",
+            Self::ServeCodeUnknown => "board::serve::code_unknown",
+            Self::ServeCodeUsed => "board::serve::code_used",
+            Self::ServeCodeExpired => "board::serve::code_expired",
+            Self::ServeUnknownRoute => "board::serve::unknown_route",
+            Self::ServeFailed => "board::serve::failed",
             Self::CliUsage => "board::cli::usage",
         }
     }
@@ -381,6 +420,19 @@ mod tests {
             | Code::SettingsCannotWiden
             | Code::SettingsCannotHold
             | Code::SettingsBadRule
+            | Code::UiUnknownKind
+            | Code::UiSlotMismatch
+            | Code::UiSlotInvalid
+            | Code::UiNotABinding
+            | Code::UiOpenFailed
+            | Code::ServeHost
+            | Code::ServeOrigin
+            | Code::ServeToken
+            | Code::ServeCodeUnknown
+            | Code::ServeCodeUsed
+            | Code::ServeCodeExpired
+            | Code::ServeUnknownRoute
+            | Code::ServeFailed
             | Code::CliUsage => {}
         }
     }

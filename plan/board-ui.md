@@ -39,7 +39,7 @@ listener, so they also get an adversarial security review.
      slot with `{ "ref": <record path> }` or `{ "data": … }`.
    - Content derived for a page, such as a model-written summary, is its own
      record. It lists the records it came from and names the agent and model
-     that wrote it. The binding cites it by `ref`. Step 3 names its type.
+     that wrote it. The binding cites it by `ref`. Its type is `ui/derived/v1`.
    - `put` checks every slot's data or referenced record against its kind's
      schema and refuses a mismatch with a `board::ui::` code.
 4. **Commands.**
@@ -52,8 +52,8 @@ listener, so they also get an adversarial security review.
    - It binds 127.0.0.1 on a random port and writes the port to a file in
      the board's cache directory, where `board ui open` finds it. It exits
      after 30 minutes without a request.
-   - Every request carries a per-launch token, which `board ui open` puts in
-     the URL it opens.
+   - Every API request carries the launch's bearer token, got for a
+     one-time launch code (STANDARDS.md 28).
    - It refuses a request whose Host header is not `127.0.0.1:<port>`. This
      stops a web page reaching it through a DNS name that resolves to
      localhost.
@@ -61,19 +61,18 @@ listener, so they also get an adversarial security review.
      returns the binding and its view with every `ref` resolved, and diffs
      computed through `board-tree`; `POST /api/gate/<id>` takes the owner's
      answer to a pending effect and is the only write route.
-6. **The built app is committed** and embedded with `include_dir!`, so
+6. **The built app is committed** and embedded with `include_bytes!`, so
    viitta builds with only Rust installed. CI fails when the committed bundle
    is stale.
-7. **Toolchain.** React 19, Vite, Tailwind 4, shadcn/ui, Shiki, Storybook,
+7. **Toolchain.** React 19, Vite, Tailwind 4, shadcn/ui once a kind needs it, Shiki, Storybook,
    Vitest, Playwright and pnpm, with stable TypeScript. board-ui has its own
    tokens and look. Goldens: Storybook's Vitest addon with
    `toMatchScreenshot`, one test per story, light and dark projects, traces
-   kept on failure, run only in the pinned Playwright container. Step 3
-   spikes the addon; the fallback is Playwright `toHaveScreenshot`.
+   kept on failure, run only in the pinned arm64 Playwright container.
 8. **Each kind ships** a JSON Schema, a React component, a Storybook story
    with fixtures, and a golden screenshot in both themes. The first catalogue:
    - `markdown`: GitHub-flavoured Markdown, Shiki code, heading anchors with a
-     contents rail, footnotes, task lists, Mermaid, a 68-character measure.
+     contents rail, footnotes, task lists, a 68-character measure. Mermaid waits for a smaller bundle.
    - `record`: any record as a definition list, nested objects folded, refs as
      links.
    - `diff`: a commit range or patch; unified and split views, word-level

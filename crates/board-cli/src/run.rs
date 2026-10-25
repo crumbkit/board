@@ -10,7 +10,7 @@ use board_model::{
     Refusal,
 };
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
-use board_plugin::{CapabilityName, Limits, MetaFilter, PluginName, Target};
+use board_plugin::{CapabilityName, Limits, Target};
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -252,7 +252,7 @@ Examples:
   board plugin find --capability due
   board plugin enable tasks"
     )]
-    Plugin(PluginCommand),
+    Plugin(crate::plugin::PluginCommand),
     /// Add types.
     #[command(
         subcommand,
@@ -315,6 +315,16 @@ Examples:
         #[command(flatten)]
         page: Page,
     },
+    /// Serve this board's pages on 127.0.0.1 until it is idle.
+    #[command(after_help = crate::ui::SERVE_HELP)]
+    Serve {
+        /// How long to wait for a request before exiting, with a unit: 500ms, 30s, 2m or 1h.
+        #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "30m")]
+        idle: Duration,
+    },
+    /// List kinds, print a slot, or open a page.
+    #[command(subcommand, after_help = crate::ui::UI_HELP)]
+    Ui(crate::ui::UiCommand),
 }
 
 #[derive(Debug, Subcommand)]
@@ -329,53 +339,15 @@ Examples:
     },
 }
 
-#[derive(Debug, Subcommand)]
-enum PluginCommand {
-    /// List the installed plugins, their capabilities and whether this board enables them.
-    #[command(after_help = "\
-Examples:
-  board plugin list
-  board plugin list --long
-  board plugin list --json")]
-    List {
-        #[command(flatten)]
-        page: Page,
-    },
-    /// List the installed plugins' capabilities, or those that match every filter.
-    #[command(after_help = "\
-Examples:
-  board plugin find
-  board plugin find --capability due
-  board plugin find --capability due --long
-  board plugin find --meta category=tasks --json")]
-    Find {
-        /// Only capabilities of this name.
-        #[arg(long)]
-        capability: Option<CapabilityName>,
-        /// `<key>=<value>`: the capability's metadata, or else its plugin's, holds this string.
-        #[arg(long = "meta")]
-        filters: Vec<MetaFilter>,
-        #[command(flatten)]
-        page: Page,
-    },
-    /// Enable an installed plugin: write the schemas it ships, then name it in .board/board.json.
-    #[command(after_help = "\
-Examples:
-  board plugin enable tasks
-  board plugin enable tasks --json")]
-    Enable {
-        /// The installed plugin's name, as `board plugin list` shows it.
-        name: PluginName,
-    },
-}
-
 impl Command {
     /// Whether the command writes where the put check does not reach, so
     /// only the owner runs it.
     fn owner_only(&self) -> bool {
         matches!(
             self,
-            Command::Init | Command::Type(_) | Command::Plugin(PluginCommand::Enable { .. })
+            Command::Init
+                | Command::Type(_)
+                | Command::Plugin(crate::plugin::PluginCommand::Enable { .. })
         )
     }
 }
@@ -613,26 +585,7 @@ fn command(
             }
         }
         Command::Type(command) => crate::stdin::type_add(command, board, printer, stdin),
-        Command::Plugin(PluginCommand::Enable { name }) => {
-            match board.plugin_enable(context.plugins.as_deref(), context.cache.as_deref(), &name) {
-                Ok(report) => render::plugin_enable(printer, &report),
-                Err(error) => render::refused(printer, plain(error.code(), &error)),
-            }
-        }
-        Command::Plugin(PluginCommand::List { page }) => {
-            match board.plugin_list(context.plugins.as_deref()) {
-                Ok(report) => render::plugin_list(printer, &report, &page),
-                Err(error) => render::refused(printer, plain(error.code(), &error)),
-            }
-        }
-        Command::Plugin(PluginCommand::Find {
-            capability,
-            filters,
-            page,
-        }) => match board.plugin_find(context.plugins.as_deref(), capability.as_ref(), &filters) {
-            Ok(report) => render::plugin_find(printer, &report, &page),
-            Err(error) => render::refused(printer, plain(error.code(), &error)),
-        },
+        Command::Plugin(command) => crate::plugin::plugin(command, board, context, printer),
         Command::Call { target, capability } => {
             let target = match (target, capability) {
                 (Some(target), _) => target,
@@ -641,6 +594,8 @@ fn command(
             };
             call(board, context, printer, &target, None, stdin)
         }
+        Command::Serve { idle } => crate::ui::serve(board, context, printer, idle),
+        Command::Ui(command) => crate::ui::ui(command, board, context, printer, prefix),
         Command::Ls { path, page } => {
             let path =
                 or_refuse!(path.map_or(Ok(LogicalPath::root()), |path| read(prefix, &path, "ls")));
