@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Records what a Claude Code session delegates as Board runs, and each pull request it opens as a decision stub, with no effort from the agent.",
   "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luke Randall"
+  },
   "userConfig": {
     "board": {
       "type": "string",
