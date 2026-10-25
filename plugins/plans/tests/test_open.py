@@ -1,5 +1,9 @@
 """`plans.open`: the questions still waiting for the owner."""
 
+import json
+import subprocess
+from pathlib import Path
+
 from conftest import Board, question
 
 
@@ -66,3 +70,39 @@ def test_a_question_asked_at_a_time_python_cannot_read_is_unreadable_and_one_wit
     output = board.call("open", {})
     assert paths(output) == ["/projects/a/questions/lower"]
     assert output["unreadable"] == 1
+
+
+def mounted(root: Path, questions: dict[str, str]) -> str:
+    """A mount pointer to a new board at `root` whose question schema admits any object, holding `questions`."""
+    files = {
+        ".board/board.json": json.dumps({"$type": "board/config/v1"}),
+        ".board/types/plans/question/v1.schema.json": json.dumps({"type": "object"}),
+        **{f"projects/m/questions/{name}.json": text for name, text in questions.items()},
+    }
+    for path, text in files.items():
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(text)
+    git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+    subprocess.run([*git, "add", "."], cwd=root, check=True)
+    subprocess.run([*git, "commit", "-qm", "questions"], cwd=root, check=True)
+    commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    return json.dumps({"$type": "board/mount/v1", "repo": str(root), "follow": "main", "commit": commit})
+
+
+def test_a_mounted_question_of_another_shape_is_unreadable_and_a_mounted_question_of_this_shape_is_listed(
+    board: Board, tmp_path: Path
+) -> None:
+    misshapen = {
+        "naive": question(asked="2026-10-01T09:00:00"),
+        "dated": question(asked="2026-10-01"),
+        "offset": question(asked="2026-10-01T09:00:00+0000"),
+        "strings": question(options=["a", "b"]),
+        "number": question(question=5),
+    }
+    board.write("lib.json", mounted(tmp_path / "lib", {"fits": question(), **misshapen}))
+    output = board.call("open", {})
+    assert paths(output) == ["/lib/projects/m/questions/fits"]
+    assert output["unreadable"] == len(misshapen)
