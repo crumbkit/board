@@ -156,7 +156,7 @@ export function preview(e: Effect, lines = 8, chars = 600): string {
     parts.push('It replaces the file there.')
   }
   if (e.op !== 'put') {
-    parts.push(visible(`An approval lets ${e.plugin} ${e.op} ${e.path} again until /effects/seen/${e.id} is removed.`))
+    parts.push(`An approval lets ${visible(e.plugin, false)} ${visible(e.op, false)} ${quoted(e.path)} again until /effects/seen/${e.id} is removed.`)
   }
   return parts.join('\n')
 }

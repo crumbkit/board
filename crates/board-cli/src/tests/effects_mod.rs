@@ -70,6 +70,8 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
 {
     let [a, b, c, d, empty, malformed] =
         ["a", "b", "c", "d", "e", "f"].map(|digit| digit.repeat(64));
+    let [no_effect, extra_key, bad_reason, reasoned] =
+        ["1", "2", "3", "4"].map(|digit| digit.repeat(64));
     let scenario = board();
     let long = "x".repeat(2500);
     pend(
@@ -93,6 +95,24 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
     // Nor does a seen record whose answer Board does not read.
     pend(&scenario, &malformed, "/notes/f.md", &json!({"text": "f"}));
     see(&scenario, &malformed, &seen(&malformed, "maybe"));
+    let mut no_effect_seen = seen(&no_effect, "approve");
+    no_effect_seen.as_object_mut().unwrap().remove("effect");
+    let mut extra_key_seen = seen(&extra_key, "approve");
+    extra_key_seen["note"] = json!("x");
+    let mut bad_reason_seen = seen(&bad_reason, "refuse");
+    bad_reason_seen["reason"] = json!(7);
+    // A string reason is an answer, so that effect is not listed.
+    let mut reasoned_seen = seen(&reasoned, "refuse");
+    reasoned_seen["reason"] = json!("not now");
+    for (id, record) in [
+        (&no_effect, no_effect_seen),
+        (&extra_key, extra_key_seen),
+        (&bad_reason, bad_reason_seen),
+        (&reasoned, reasoned_seen),
+    ] {
+        pend(&scenario, id, "/notes/g.md", &json!({"text": "g"}));
+        see(&scenario, id, &record);
+    }
     let (columns, rows) = query(&scenario, pending_sql());
     let names = [
         "id", "board", "plugin", "op", "path", "replaces", "head", "bytes", "nul", "lines",
@@ -102,6 +122,9 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
     assert_eq!(
         rows,
         json!([
+            row(&no_effect, "/notes/g.md", 0, "g", 1, 0, 1),
+            row(&extra_key, "/notes/g.md", 0, "g", 1, 0, 1),
+            row(&bad_reason, "/notes/g.md", 0, "g", 1, 0, 1),
             row(&a, "/notes/a.md", 1, "one\ntwo\n", 8, 0, 2),
             row(&b, "/tasks/b", 0, &record[..2000], record.len(), 0, 1),
             row(&d, "/notes/d.md", 0, "d", 1, 0, 1),

@@ -186,7 +186,7 @@ test('a cut preview never splits a surrogate pair', () => {
 
 test('an op other than put says that an approval stands until its seen record is removed', () => {
   expect(preview(effect({ op: 'review.comment', path: '/pulls/7' }))).toBe(
-    `An approval lets notes review.comment /pulls/7 again until /effects/seen/${A} is removed.`,
+    `An approval lets notes review.comment "/pulls/7" again until /effects/seen/${A} is removed.`,
   )
 })
 
@@ -337,7 +337,7 @@ test('when Board lists only the first effects, the band says "or more" and the p
   const shown = await band($)
   expect((await shown.find({ type: 'Text' }))?.text).toBe('2 effects wait for your answer (or more) ')
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal ls /effects/pending` lists them.')
+  expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal ls /effects/pending` lists them, with the effects already answered.')
 })
 
 test('content holding a NUL says that only the part before it is shown', () => {

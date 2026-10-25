@@ -242,7 +242,7 @@ export const register: Register = on => {
             </Box>
           </Box>
         ))}
-        {found.truncated ? <Text dimColor>More wait; `board --personal ls /effects/pending` lists them.</Text> : null}
+        {found.truncated ? <Text dimColor>More wait; `board --personal ls /effects/pending` lists them, with the effects already answered.</Text> : null}
       </Box>
     )
   })
