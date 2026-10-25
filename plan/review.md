@@ -39,7 +39,8 @@ repositories join as it proves itself.
    - `follows`: optional ref to the previous report, so reports chain.
 4. **`review.run`** runs a brief with a clean-context agent. It writes the
    report and a `runs/run/v1` for the run. Its timeout and the variables it
-   may read come from the manifest (build step 1).
+   may read come from the manifest (build step 1). Decision 9 names the
+   agent it starts.
 5. **A review carries over a rebase** when the patch ids of the covered
    commits match the new commits.
 6. **Anyone may post a report.** A person's GitHub review counts as review
@@ -50,9 +51,8 @@ repositories join as it proves itself.
 8. **The control** is a `controls` rule in each repository that uses review.
    It passes when a report covers the pull request's head, directly or by
    patch id.
-
-## Open
-
-- Where CI reads reports from: the repository's own board, or the posted
-  comment. The control needs one source.
-- Which agent command `review.run` starts, and how the owner configures it.
+   - CI reads reports committed to the repository's own board.
+   - It skips commits that only add review records, so committing a report
+     does not make a new head that no report covers.
+9. **The agent command.** `review.run` starts the command named in the
+   board's settings. The documented example is `claude -p`.
