@@ -47,6 +47,9 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 - `status` is `planned`, `running`, `concluded` or `abandoned`. A `concluded`
   eval needs a `verdict` (`supported`, `refuted` or `inconclusive`); the
   schema refuses one without it. `conclusion` holds the prose.
+- `written_by` names the plugin and hook that wrote the eval, such as
+  `runs/test-run`, when a hook wrote it without an agent. An eval an agent or a
+  person wrote leaves it out.
 
 ## Capabilities
 

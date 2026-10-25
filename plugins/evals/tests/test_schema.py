@@ -121,3 +121,10 @@ def test_board_refs_on_a_repositorys_mount_lists_the_evals_that_name_it_and_no_o
 
     assert naming("/repos/crumbkit") == [("/evals/a", ["/repos/0"]), ("/evals/b", ["/repos/1"])]
     assert naming("/repos/clap") == [("/evals/b", ["/repos/0"]), ("/evals/c", ["/repos/0"])]
+
+
+def test_an_eval_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else(board: Board) -> None:
+    board.write("evals/hooked.json", experiment("H?", written_by="runs/test-run"))
+    board.write("evals/prose.json", experiment("P?", written_by="the test hook"))
+    board.write("evals/empty.json", experiment("E?", written_by=""))
+    assert checked(board) == {"/evals/hooked": None, "/evals/prose": INVALID, "/evals/empty": INVALID}

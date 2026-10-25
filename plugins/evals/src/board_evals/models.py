@@ -33,6 +33,16 @@ FileRef = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
 SuiteRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": SUITE_TYPE})]
 RunRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": RUN_TYPE})]
 
+# The plugin and hook that wrote a record, such as runs/test-run. A record a person or agent wrote leaves it out.
+WrittenBy = Annotated[
+    str,
+    Field(
+        pattern="^[a-z0-9-]+/[a-z0-9-]+$",
+        description="The plugin and hook that wrote this record, such as runs/test-run; absent when an agent "
+        "or a person wrote it.",
+    ),
+]
+
 # A concluded eval has a verdict. pydantic cannot emit this itself.
 CONCLUDED_NEEDS_VERDICT: JsonDict = {
     "if": {"properties": {"status": {"const": "concluded"}}, "required": ["status"]},
@@ -73,6 +83,7 @@ class EvalRecord(Record):
     references the `runs/suite/v1` records that say how it is tested, and
     `runs` the `runs/run/v1` records its verdict rests on. `decision` is the
     decision this eval informs. A `concluded` eval has a `verdict`.
+    `written_by` names the plugin and hook that wrote an eval without an agent.
     """
 
     model_config = ConfigDict(json_schema_extra=shipped(CONCLUDED_NEEDS_VERDICT))
@@ -91,6 +102,7 @@ class EvalRecord(Record):
     decision: str | SkipJsonSchema[None] = None
     verdict: Literal["supported", "refuted", "inconclusive"] | SkipJsonSchema[None] = None
     conclusion: str | SkipJsonSchema[None] = None
+    written_by: WrittenBy | SkipJsonSchema[None] = None
 
     @model_validator(mode="after")
     def _concluded_has_a_verdict(self) -> Self:
