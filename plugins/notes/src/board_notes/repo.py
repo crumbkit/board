@@ -3,9 +3,7 @@
 Discovery and remote matching are shared with the tasks plugin, in `board_plugin.repos`.
 """
 
-import json
 from dataclasses import dataclass
-from typing import Any
 
 from board_plugin import repos
 from board_plugin.board import Board
@@ -17,45 +15,17 @@ NOT_SYNCED = "notes::repo::not_synced"
 
 
 @dataclass(frozen=True)
-class Note:
-    """A note's text, and the blob that holds it, at the pin; both None when there is no note."""
-
-    text: str | None
-    blob: str | None
-
-
-@dataclass(frozen=True)
 class Repo(repos.Repo):
     """A notes repo whose notes a call reads and writes."""
 
-    def logical(self, path: str) -> str:
-        """The logical path of `path`, relative to the repo's root."""
-        return self.root.rstrip("/") + "/" + path
-
-    def read(self, path: str) -> Note:
-        """The note at `path` in the repo, at the pin."""
-        logical = self.logical(path)
-        report = self.board.document("get", "--", logical, partial="board/get-report/v2")
-        failures: list[dict[str, Any]] = report["failures"]
-        found: list[dict[str, Any]] = report["data"]
-        if failures:
-            if failures[0].get("code") == "board::path::not_found":
-                return Note(None, None)
-            failure = failures[0]
-            raise PluginError("notes::board::refused", str(failure.get("message")), {"code": failure.get("code")})
-        if len(found) != 1:
-            raise PluginError("notes::board::refused", f"board get printed {len(found)} answers for {logical}")
-        if "text" not in found[0]:
+    def read(self, path: str) -> repos.File:
+        """The note at `path` in the repo, at the pin, refused when it is not UTF-8 text."""
+        note = super().read(path)
+        if note.text is None and note.blob is not None:
+            logical = self.logical(path)
             why = f"{logical} is not UTF-8 text, so no section can be appended to it; nothing was written"
             raise PluginError("notes::note::not_text", why, {"path": logical})
-        return Note(str(found[0]["text"]), str(found[0]["blob"]))
-
-    def write(self, path: str, text: str, expect: str | None) -> str | None:
-        """Write `text` at `path` if it still holds `expect`: the commit that holds it, None when uncommitted."""
-        line = {"path": self.logical(path), "expect": expect or "none", "text": text}
-        report = self.board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
-        commit = report["data"]["commit"]
-        return None if commit is None else str(commit)
+        return note
 
 
 @dataclass(frozen=True)
@@ -81,13 +51,11 @@ def choose(board: Board, name: str | None, remote: str | None, *, inbox: bool) -
         raise PluginError("notes::repo::not_found", why, {"repos": roots})
     if name is not None:
         return Choice(at_root[name], None)
-    records = {at: repos.record(board.plugin, at, row) for at, _, _, row in found}
-    matched = [root for root, record in records.items() if repos.covers(record, remote)]
-    personal = [root for root, record in records.items() if record and record.get("personal") is True]
+    matched, personal = repos.covering(board.plugin, found, remote)
     if len(matched) == 1:
         return Choice(at_root[matched[0]], None)
     # No remote may mean a missing origin or a git that timed out, so a repo that covers something waits for one.
-    if len(roots) == 1 and (personal or (remote is None and records[roots[0]] is None)):
+    if len(roots) == 1 and (personal or (remote is None and repos.record(board.plugin, roots[0], found[0][3]) is None)):
         return Choice(at_root[roots[0]], None)
     if not inbox and remote is None and len(personal) == 1:
         return Choice(at_root[personal[0]], None)

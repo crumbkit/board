@@ -244,6 +244,573 @@
     },
     {
       "_meta": {},
+      "description": "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "A new open task, and the fields it starts with.",
+        "properties": {
+          "after": {
+            "description": "The paths, in the task's own repo, of the tasks it waits on, such as /tasks/agree-scope.md.",
+            "items": {
+              "type": "string"
+            },
+            "title": "After",
+            "type": "array"
+          },
+          "contexts": {
+            "description": "Tags of where it can be done, such as errands.",
+            "items": {
+              "pattern": "^[a-z0-9-]+$",
+              "type": "string"
+            },
+            "title": "Contexts",
+            "type": "array"
+          },
+          "defer": {
+            "description": "A date, YYYY-MM-DD, or a horizon from today: not-today (1 day), not-this-week (6), soon (20) or someday (90). The task is written with the date.",
+            "title": "Defer",
+            "type": "string"
+          },
+          "due": {
+            "description": "The date, YYYY-MM-DD, the task is due by.",
+            "title": "Due",
+            "type": "string"
+          },
+          "ephemeral": {
+            "description": "Whether a missed day of a repeating task is dropped.",
+            "title": "Ephemeral",
+            "type": "boolean"
+          },
+          "from_hour": {
+            "description": "The hour of the person's day, 0 to 23, the task is available from.",
+            "ge": 0,
+            "le": 23,
+            "title": "From Hour",
+            "type": "integer"
+          },
+          "remote": {
+            "description": "A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repeat": {
+            "description": "When it comes back once done: daily, weekdays, weekly-mon, monthly-15 or annually-10-25.",
+            "title": "Repeat",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The repo to write the task to: / for the board's own tree, or a notes repo's mount path; the caller's git remote chooses it when left out.",
+            "title": "Repo",
+            "type": "string"
+          },
+          "text": {
+            "description": "The task's prose, written as its body.",
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "description": "The task's title, which also names its file.",
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "AddInput",
+        "type": "object"
+      },
+      "name": "add",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as a write call left it.\n\n`commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of\na sync before the write that left the clone where it was, and `unpushed` the code of a push after it\nthat failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "defer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "status",
+          "defer",
+          "reviewed",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's repo first and pushes after, and sets reviewed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The task to act on.",
+        "properties": {
+          "path": {
+            "description": "The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "TaskPath",
+        "type": "object"
+      },
+      "name": "done",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as a write call left it.\n\n`commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of\na sync before the write that left the clone where it was, and `unpushed` the code of a push after it\nthat failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "defer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "status",
+          "defer",
+          "reviewed",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Defer a task until a date or a horizon from today, written as a date. It syncs the task's repo first and pushes after, and sets reviewed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The task to defer, and until when.",
+        "properties": {
+          "path": {
+            "description": "The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          },
+          "until": {
+            "description": "A date, YYYY-MM-DD, or a horizon from today: not-today (1 day), not-this-week (6), soon (20) or someday (90). The task is written with the date.",
+            "pattern": "^([0-9]{4}-[0-9]{2}-[0-9]{2}|not-today|not-this-week|soon|someday)$",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "until"
+        ],
+        "title": "DeferInput",
+        "type": "object"
+      },
+      "name": "defer",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as a write call left it.\n\n`commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of\na sync before the write that left the clone where it was, and `unpushed` the code of a push after it\nthat failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "defer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "status",
+          "defer",
+          "reviewed",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Mark a task dropped. It syncs the task's repo first and pushes after, and sets reviewed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The task to act on.",
+        "properties": {
+          "path": {
+            "description": "The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "TaskPath",
+        "type": "object"
+      },
+      "name": "drop",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as a write call left it.\n\n`commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of\na sync before the write that left the clone where it was, and `unpushed` the code of a push after it\nthat failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "defer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "status",
+          "defer",
+          "reviewed",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Mark a task reviewed today. It syncs the task's repo first and pushes after, and sets reviewed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The task to act on.",
+        "properties": {
+          "path": {
+            "description": "The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "TaskPath",
+        "type": "object"
+      },
+      "name": "reviewed",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as a write call left it.\n\n`commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of\na sync before the write that left the clone where it was, and `unpushed` the code of a push after it\nthat failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "defer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "status",
+          "defer",
+          "reviewed",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
       "description": "Unfinished tasks, open or waiting, due before a date.",
       "inputSchema": {
         "additionalProperties": false,
@@ -425,7 +992,7 @@
       }
     }
   ],
-  "description": "Tasks, their due dates and what each waits on, and the tasks to sweep now.",
+  "description": "Tasks, what each waits on, the tasks to sweep now, and the calls that write them.",
   "extract": [
     "tasks/task/v1",
     "tasks/task/v2"

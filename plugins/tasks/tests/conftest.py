@@ -1,5 +1,6 @@
 """Fixture boards that run the real `board` binary with this plugin installed."""
 
+import datetime as dt
 import json
 import os
 import shutil
@@ -15,6 +16,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REPOSITORY = PLUGIN.parents[1]
 SCHEMA = PLUGIN / "types" / "tasks" / "task" / "v1.schema.json"
 SCHEMA_V2 = PLUGIN / "types" / "tasks" / "task" / "v2.schema.json"
+NOTES_SCHEMA = PLUGIN.parent / "notes" / "types" / "notes" / "repo" / "v1.schema.json"
 
 
 def board_binary() -> Path:
@@ -105,3 +107,66 @@ def task_v2(title: str, status: str = "open", body: str = "", **fields: Any) -> 
     values: dict[str, Any] = {"$type": "tasks/task/v2", "title": title, "status": status, **fields}
     lines = [f"{key}: {json.dumps(value)}" for key, value in values.items()]
     return "---\n" + "\n".join(lines) + "\n---\n" + body
+
+
+# The furthest ahead of UTC a time zone runs, in hours.
+LATEST_OFFSET = 14
+
+
+def zone_at_one_in_the_morning() -> str:
+    """A fixed-offset time zone whose local time is now between 01:00 and 01:59."""
+    offset = (1 - dt.datetime.now(dt.UTC).hour) % 24
+    offset = offset - 24 if offset > LATEST_OFFSET else offset
+    # Etc/GMT's sign is POSIX's, the opposite of ISO's: Etc/GMT-3 is three hours ahead of UTC.
+    return "Etc/GMT" if offset == 0 else f"Etc/GMT{-offset:+d}"
+
+
+def git(root: Path, *arguments: str) -> str:
+    """Run git in `root` and return what it printed, stripped."""
+    ran = subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@t", *arguments],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return ran.stdout.strip()
+
+
+def notes_repo(
+    board: Board, name: str, record: dict[str, Any] | None, tasks: dict[str, str], *, daily: bool = True
+) -> Path:
+    """A notes repo pushed to a bare remote, holding `tasks` and `record`, mounted at /repos/<name>: its clone.
+
+    Without `daily` it has no daily/, so it is a mount that is not a notes repo.
+    """
+    parent = board.root.parent
+    remote, clone = parent / f"{name}.git", parent / name
+    git(parent, "init", "-q", "--bare", "-b", "main", str(remote))
+    git(parent, "init", "-q", "-b", "main", str(clone))
+    git(clone, "config", "user.name", "t")
+    git(clone, "config", "user.email", "t@t")
+    files = {
+        ".board/board.json": '{"$type": "board/config/v1"}',
+        ".board/types/tasks/task/v2.schema.json": SCHEMA_V2.read_text(),
+        ".board/types/notes/repo/v1.schema.json": NOTES_SCHEMA.read_text(),
+        **({"daily/.gitkeep": ""} if daily else {}),
+        "repo.txt": name,
+        **({"notes-repo.json": json.dumps({"$type": "notes/repo/v1", **record})} if record else {}),
+        **{f"tasks/{slug}.md": text for slug, text in tasks.items()},
+    }
+    for path, text in files.items():
+        (clone / path).parent.mkdir(parents=True, exist_ok=True)
+        (clone / path).write_text(text)
+    git(clone, "add", ".")
+    git(clone, "commit", "-qm", "fixture")
+    git(clone, "remote", "add", "origin", str(remote))
+    git(clone, "push", "-qu", "origin", "main")
+    pointer = {
+        "$type": "board/mount/v1",
+        "repo": str(clone),
+        "follow": "main",
+        "commit": git(clone, "rev-parse", "HEAD"),
+    }
+    board.write(f"repos/{name}.json", json.dumps(pointer))
+    return clone

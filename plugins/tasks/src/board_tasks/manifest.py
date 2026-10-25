@@ -6,14 +6,18 @@ from pydantic import JsonValue
 from board_tasks.models import (
     TASK_TYPE,
     TASK_V2_TYPE,
+    AddInput,
     AvailableInput,
     AvailableOutput,
+    DeferInput,
     DueInput,
     DueOutput,
     NextInput,
     NextOutput,
+    TaskPath,
     TaskRecord,
     TaskV2,
+    Written,
 )
 
 
@@ -23,7 +27,7 @@ def manifest() -> dict[str, JsonValue]:
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
         "version": "0.1.0",
-        "description": "Tasks, their due dates and what each waits on, and the tasks to sweep now.",
+        "description": "Tasks, what each waits on, the tasks to sweep now, and the calls that write them.",
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
         "extract": [TASK_TYPE, TASK_V2_TYPE],
@@ -39,6 +43,7 @@ def manifest() -> dict[str, JsonValue]:
                 "outputSchema": AvailableOutput.model_json_schema(),
                 "_meta": {},
             },
+            *writes(),
             {
                 "name": "due",
                 "description": "Unfinished tasks, open or waiting, due before a date.",
@@ -58,6 +63,27 @@ def manifest() -> dict[str, JsonValue]:
             },
         ],
     }
+
+
+def writes() -> list[dict[str, JsonValue]]:
+    """The write calls, each of which syncs the task's repo, writes the task with `reviewed` today, and pushes."""
+    calls = [
+        ("add", AddInput, "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to."),
+        ("done", TaskPath, "Mark a task done, or defer a repeating one to its next occurrence."),
+        ("defer", DeferInput, "Defer a task until a date or a horizon from today, written as a date."),
+        ("drop", TaskPath, "Mark a task dropped."),
+        ("reviewed", TaskPath, "Mark a task reviewed today."),
+    ]
+    return [
+        {
+            "name": name,
+            "description": description + " It syncs the task's repo first and pushes after, and sets reviewed.",
+            "inputSchema": model.model_json_schema(),
+            "outputSchema": Written.model_json_schema(),
+            "_meta": {},
+        }
+        for name, model, description in calls
+    ]
 
 
 def schema() -> dict[str, JsonValue]:

@@ -88,12 +88,56 @@ def record(plugin: str, at: str, row: tuple[Any, ...]) -> dict[str, Any] | None:
 
 
 @dataclass(frozen=True)
+class File:
+    """A file at the pin: its text, its blob, the record Board reads from it, and its location.
+
+    The text is None when the file is not UTF-8. The location is as `board get` gives it, with the clone that
+    holds the file, `repository`, and its `source`.
+
+    All four are None when there is no file.
+    """
+
+    text: str | None
+    blob: str | None
+    record: dict[str, Any] | None = None
+    location: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
 class Repo:
     """The notes repo at `root`, `/` or a mount's path; `clone` is None for the board's own tree, never synced."""
 
     board: Board
     root: str
     clone: str | None
+
+    def logical(self, path: str) -> str:
+        """The logical path of `path`, relative to the repo's root."""
+        return self.root.rstrip("/") + "/" + path
+
+    def read(self, path: str) -> File:
+        """The file at `path` in the repo, at the pin."""
+        logical = self.logical(path)
+        report = self.board.document("get", "--", logical, partial="board/get-report/v2")
+        failures: list[dict[str, Any]] = report["failures"]
+        found: list[dict[str, Any]] = report["data"]
+        refused = f"{self.board.plugin}::board::refused"
+        if failures:
+            if failures[0].get("code") == "board::path::not_found":
+                return File(None, None)
+            failure = failures[0]
+            raise PluginError(refused, str(failure.get("message")), {"code": failure.get("code")})
+        if len(found) != 1:
+            raise PluginError(refused, f"board get printed {len(found)} answers for {logical}")
+        text, blob = found[0].get("text"), str(found[0]["blob"])
+        return File(None if text is None else str(text), blob, found[0].get("record"), found[0].get("location"))
+
+    def write(self, path: str, text: str, expect: str | None) -> str | None:
+        """Write `text` at `path` if it still holds `expect`: the commit that holds it, None when uncommitted."""
+        line = {"path": self.logical(path), "expect": expect or "none", "text": text}
+        report = self.board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
+        commit = report["data"]["commit"]
+        return None if commit is None else str(commit)
 
     def sync(self, *, push: bool) -> str | None:
         """Sync the clone with its remote: None, or the code of a refusal that left HEAD where it was."""
@@ -152,6 +196,13 @@ def caller_origin() -> tuple[str | None, str | None]:
         return None, None
     failed = ran.stderr.strip().splitlines()[-1:] or [f"git exited {ran.returncode}"]
     return None, f"git gave no origin for {directory}: {failed[0]}"
+
+
+def covering(plugin: str, found: list[Listed], remote: str | None) -> tuple[list[str], list[str]]:
+    """The roots of the listed repos whose record covers `remote`, and of those whose record says `personal: true`."""
+    records = {at: record(plugin, at, row) for at, _, _, row in found}
+    covered = [at for at, each in records.items() if covers(each, remote)]
+    return covered, [at for at, each in records.items() if (each or {}).get("personal") is True]
 
 
 def covers(record: dict[str, Any] | None, remote: str | None) -> bool:

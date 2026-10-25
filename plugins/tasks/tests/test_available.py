@@ -7,45 +7,19 @@ that crosses midnight answers the same. test_sweep.py holds the clock rules.
 import datetime as dt
 import json
 import shutil
-import subprocess
 import time
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
-from conftest import SCHEMA_V2, Board, task_v2
+from conftest import Board, git, notes_repo, task_v2, zone_at_one_in_the_morning
 
-NOTES_SCHEMA = Path(__file__).resolve().parents[2] / "notes" / "types" / "notes" / "repo" / "v1.schema.json"
 TODAY = dt.date.today()  # noqa: DTZ011 - the plugin reads the local day too
 SOON = (TODAY + dt.timedelta(days=3)).isoformat()
 LATER = (TODAY + dt.timedelta(days=30)).isoformat()
 PAST = (TODAY - dt.timedelta(days=3)).isoformat()
 RECENT = TODAY.isoformat()
-
-
-# The furthest ahead of UTC a time zone runs, in hours.
-LATEST_OFFSET = 14
-
-
-def zone_at_one_in_the_morning() -> str:
-    """A fixed-offset time zone whose local time is now between 01:00 and 01:59."""
-    offset = (1 - dt.datetime.now(dt.UTC).hour) % 24
-    offset = offset - 24 if offset > LATEST_OFFSET else offset
-    # Etc/GMT's sign is POSIX's, the opposite of ISO's: Etc/GMT-3 is three hours ahead of UTC.
-    return "Etc/GMT" if offset == 0 else f"Etc/GMT{-offset:+d}"
-
-
-def git(root: Path, *arguments: str) -> str:
-    """Run git in `root` and return what it printed, stripped."""
-    ran = subprocess.run(
-        ["git", "-c", "commit.gpgsign=false", "-c", "user.name=t", "-c", "user.email=t@t", *arguments],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return ran.stdout.strip()
 
 
 def call(board: Board, *flags: str, cwd: Path | None = None, tz: str | None = None) -> tuple[int, dict[str, Any]]:
@@ -63,40 +37,6 @@ def call(board: Board, *flags: str, cwd: Path | None = None, tz: str | None = No
 def titles(output: dict[str, Any], section: str = "available") -> list[str]:
     """The titles in one section of `available`'s output."""
     return [item["title"] for item in output[section]["tasks"]]
-
-
-def notes_repo(board: Board, name: str, record: dict[str, Any] | None, tasks: dict[str, str]) -> Path:
-    """A notes repo pushed to a bare remote, holding `tasks` and `record`, mounted at /repos/<name>: its clone."""
-    parent = board.root.parent
-    remote, clone = parent / f"{name}.git", parent / name
-    git(parent, "init", "-q", "--bare", "-b", "main", str(remote))
-    git(parent, "init", "-q", "-b", "main", str(clone))
-    git(clone, "config", "user.name", "t")
-    git(clone, "config", "user.email", "t@t")
-    files = {
-        ".board/board.json": '{"$type": "board/config/v1"}',
-        ".board/types/tasks/task/v2.schema.json": SCHEMA_V2.read_text(),
-        ".board/types/notes/repo/v1.schema.json": NOTES_SCHEMA.read_text(),
-        "daily/.gitkeep": "",
-        "repo.txt": name,
-        **({"notes-repo.json": json.dumps({"$type": "notes/repo/v1", **record})} if record else {}),
-        **{f"tasks/{slug}.md": text for slug, text in tasks.items()},
-    }
-    for path, text in files.items():
-        (clone / path).parent.mkdir(parents=True, exist_ok=True)
-        (clone / path).write_text(text)
-    git(clone, "add", ".")
-    git(clone, "commit", "-qm", "fixture")
-    git(clone, "remote", "add", "origin", str(remote))
-    git(clone, "push", "-qu", "origin", "main")
-    pointer = {
-        "$type": "board/mount/v1",
-        "repo": str(clone),
-        "follow": "main",
-        "commit": git(clone, "rev-parse", "HEAD"),
-    }
-    board.write(f"repos/{name}.json", json.dumps(pointer))
-    return clone
 
 
 @pytest.fixture

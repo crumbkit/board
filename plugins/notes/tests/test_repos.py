@@ -9,13 +9,16 @@ from zoneinfo import ZoneInfo
 import pytest
 from board_plugin.board import Board
 from board_plugin.protocol import PluginError
+from board_plugin.repos import File
+from board_plugin.writing import ATTEMPTS, HEAD_MOVED, STALE, create
 from conftest import Notes, another, checkout, commit, cover, dates, git, layout, mount, notes_repo
 from pydantic import ValidationError
 
 from board_notes.models import RepoRecord
-from board_notes.notes import ATTEMPTS, HEAD_MOVED, INBOX_NAMES, STALE, append, create
-from board_notes.repo import Note, Repo
+from board_notes.notes import INBOX_NAMES, append
+from board_notes.repo import Repo
 
+BUSY = "notes::note::busy"
 EXAMPLE_ORG = "https://github.com/example-org/home.git"
 VIITTA = "git@github.com:crumbkit/viitta.git"
 
@@ -246,10 +249,10 @@ class Refusing(Repo):
         """A pin that never moves."""
         return None
 
-    def read(self, path: str) -> Note:
+    def read(self, path: str) -> File:
         """No note at `path`."""
         del path
-        return Note(None, None)
+        return File(None, None)
 
     def write(self, path: str, text: str, expect: str | None) -> str | None:
         """Refuse the put of `path`, as Board does after writing the file when HEAD moved."""
@@ -263,7 +266,7 @@ def test_a_put_to_the_boards_own_tree_whose_head_moved_is_written_once_and_one_t
     own = Refusing(Board("/board", "notes"), "/", None)
     assert append(own, "daily/d.md", "", "## 01:00\n\nOnce.\n") == (None, None), "written, not committed"
     assert own.puts == ["daily/d.md"]
-    assert create(own, "inbox/i", "Once.\n") == ("inbox/i.md", None)
+    assert create(own, "inbox/i", "Once.\n", names=INBOX_NAMES, busy=BUSY) == ("inbox/i.md", None)
     mounted = Refusing(Board("/board", "notes"), "/repos/n", "/clone")
     assert append(mounted, "daily/d.md", "", "## 01:00\n\nAgain.\n") == (HEAD_MOVED, None)
     assert len(mounted.puts) == ATTEMPTS
@@ -271,14 +274,18 @@ def test_a_put_to_the_boards_own_tree_whose_head_moved_is_written_once_and_one_t
 
 def test_an_inbox_put_through_a_mount_whose_head_moved_retries_its_name_and_only_ten_taken_names_are_busy() -> None:
     landed = Refusing(Board("/board", "notes"), "/repos/n", "/clone", (HEAD_MOVED, STALE))
-    assert create(landed, "inbox/i", "Once.\n") == ("inbox/i.md", None), "the stale put found its own file"
+    assert create(landed, "inbox/i", "Once.\n", names=INBOX_NAMES, busy=BUSY) == ("inbox/i.md", None), (
+        "the stale put found its own file"
+    )
     assert landed.puts == ["inbox/i.md", "inbox/i.md"]
     moving = Refusing(Board("/board", "notes"), "/repos/n", "/clone")
-    assert create(moving, "inbox/i", "Uncommitted.\n") == ("inbox/i.md", None), "written, not committed"
+    assert create(moving, "inbox/i", "Uncommitted.\n", names=INBOX_NAMES, busy=BUSY) == ("inbox/i.md", None), (
+        "written, not committed"
+    )
     assert moving.puts == ["inbox/i.md"] * ATTEMPTS
     taken = Refusing(Board("/board", "notes"), "/repos/n", "/clone", (STALE,))
     with pytest.raises(PluginError) as busy:
-        create(taken, "inbox/i", "Never.\n")
+        create(taken, "inbox/i", "Never.\n", names=INBOX_NAMES, busy=BUSY)
     assert (busy.value.code, len(taken.puts)) == ("notes::note::busy", INBOX_NAMES)
     assert "call again" in busy.value.message
 

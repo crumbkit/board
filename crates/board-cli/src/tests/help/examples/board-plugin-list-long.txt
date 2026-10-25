@@ -1,2 +1,2 @@
-STATUS  NAME   VERSION  ENABLED  OFFERS                      DESCRIPTION
-ok      tasks  0.1.0    false    ["available","due","next"]  Tasks, their due dates and what each waits on, and the tasks to sweep now.
+STATUS  NAME   VERSION  ENABLED  OFFERS                                                             DESCRIPTION
+ok      tasks  0.1.0    false    ["available","add","done","defer","drop","reviewed","due","next"]  Tasks, what each waits on, the tasks to sweep now, and the calls that write them.

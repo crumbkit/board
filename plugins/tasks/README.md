@@ -2,11 +2,11 @@
 
 A Board plugin for tasks. It reads `tasks/task/v1` JSON records and
 `tasks/task/v2` Markdown tasks, and extracts each task's fields into its
-database. It offers three capabilities: `available` sorts the v2 tasks of the
-repos in scope into the tasks to work on now, those due soon and the stale
-ones; `due` lists the unfinished v1 tasks due before a date; and `next` lists
-every unfinished v1 task in the order to work on them, marking each one that is
-blocked.
+database. `available` sorts the v2 tasks of the repos in scope into the tasks
+to work on now, those due soon and the stale ones. `add`, `done`, `defer`,
+`drop` and `reviewed` write v2 tasks. `due` lists the unfinished v1 tasks due
+before a date, and `next` lists every unfinished v1 task in the order to work
+on them, marking each one that is blocked.
 
 Install it from this checkout:
 
@@ -53,7 +53,7 @@ The plan covers ...
 - `repeat` is `daily`, `weekdays`, `weekly-<mon..sun>`, `monthly-<1..31>` or
   `annually-<MM-DD>`. `ephemeral: true`, which needs `repeat`, marks a
   repeating task whose missed days roll forward to one instance today, with no
-  backlog. No capability acts on either yet.
+  backlog. `done` acts on both, as Writing tasks says.
 - `from_hour`, from 0 to 23, is the hour of the person's day from which the
   task is available. An hour before `BOARD_DAY_START` falls on the next date.
 - `contexts` are lowercase tags, `[a-z0-9-]+`.
@@ -164,6 +164,64 @@ whose own schema admits more fields still has its tasks listed.
 for v2 `p_tasks.tasks_v2` (`blob`, `title`, `status`, `due`, `defer`,
 `from_hour`, `reviewed`, `contexts` as a JSON list, and `waits`, how many
 entries `after` holds), with `entries` on `blob`.
+
+## Writing tasks
+
+`board call tasks.add --title <title>` writes a new open task to
+`tasks/<slug>.md`, its slug derived from the title as notes derives a note's,
+with `-2` and on added when the name is taken. It takes `--text` for the body,
+and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`; `after`
+and `contexts`, which are lists, come as JSON on stdin. `--repo` names the
+repo. Otherwise it is the one repo whose record covers the remote, from
+`--remote` or the caller's `origin`, else the personal repo, else `/`. Two
+repos that could each hold it are refused with `tasks::repo::ambiguous`. A
+caller inside a git repository whose origin git does not give is refused with
+`tasks::repo::origin_unread`, since the task may belong to a work repo; pass
+`--remote` or `--repo`.
+
+`done`, `defer --until`, `drop` and `reviewed` take the task's `--path` in the
+board, such as `/repos/personal/tasks/call-the-bank.md`. The path is not
+checked against the caller's scope, so any task in the board can be edited by
+its path. `done` sets `status: done`. A task with `repeat` stays open instead,
+deferred to its next occurrence, never earlier than the date its `defer`
+ends. That date is a dated `defer` as it is, or a horizon counted from
+`reviewed`, as `tasks.available` counts it. The occurrence counts from that
+date, so a missed day comes back, or from today without one. An `ephemeral`
+task counts from the later of that date and today, so a missed day is not
+kept.
+`monthly-31` falls on the month's last day when it is shorter, and
+`annually-02-29` on 28 February.
+`defer --until` takes a date or a horizon, and writes a horizon as the date it
+ends, counted from today. `drop` sets `status: dropped`. `done`, `defer` and
+`drop` refuse a task that is not open with `tasks::task::finished`; `reviewed`
+marks any task.
+
+Each call sets `reviewed` to today. Today is the person's day, which starts at
+`BOARD_DAY_START`, so a call at 01:00 with a day that starts at 07:00 writes
+yesterday's date. The calls edit the frontmatter's lines in place. Each sets
+the line of a key it writes, or adds one before the closing `---`, as
+`key: "value"`, and keeps every other byte. A key whose line is not one plain
+scalar, such as a block or a list, or a key given twice, is refused with
+`tasks::task::not_plain`. A path with no file is refused with
+`tasks::task::not_found`. One that is not a valid v2 task under a `tasks/`
+directory, such as one with `repeat: fortnightly`, is refused with
+`tasks::task::not_task`, and `board check` says what is wrong. A task in a
+mount without `daily/`, which is not a notes repo, is refused with
+`tasks::repo::not_found`.
+
+A call syncs a mounted repo, pushing, before it writes. It writes after any
+sync failure, such as an unreachable remote, and `unsynced` holds the failure's
+code, such as `board::sync::failed`. The write is committed in the clone and
+pushed by a later call. A clone left in `board::sync::conflict` stays there
+until it is mended by hand: run `git pull --rebase` in the clone, resolve the
+conflict, then run `board mount update <mount>`. The call writes with `board put` and the blob it read, reads again and retries when the
+task or the clone moved, and refuses with `tasks::task::busy` when the task
+holds an edit not committed in its clone or kept changing. A new read that
+finds the text the refused write sent counts as that write. It then pushes and
+moves the mount's pin to the pushed commit, and `unpushed` holds the code of a
+push that failed; the write stays committed in the clone.
+Both are `tasks::repo::not_synced` for the board's own tree, which is never
+synced. `commit` is None when the board's own tree does not commit puts.
 
 ## Development
 

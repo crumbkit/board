@@ -202,9 +202,10 @@ credential helper, such as `gh auth setup-git`.
   `candidates` lists those covering it and `repos` all of them.
 - `notes::repo::invalid_record`: a notes repo's record is not a valid
   `notes/repo/v1`; `path` names it, and `code` and `status` say why.
-- `notes::note::busy`: the `.agent.md` file also holds an edit not
-  committed, or kept changing, or ten inbox names were taken; `path` names
-  it, and nothing was written, so call again.
+- `notes::note::busy`: the `.agent.md` file also changed after it was read,
+  or ten inbox names were taken; `path` names it, and nothing was written.
+  Call again, and if the refusal persists, commit or discard the edit not
+  committed in the clone.
 - `notes::note::not_text`: the note is not UTF-8 text, so nothing can be
   appended to it; `path` names it.
 - `notes::board::refused`: Board refused, with Board's code in `code`.

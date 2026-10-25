@@ -2,33 +2,19 @@
 
 import datetime as dt
 import json
-import re
-import unicodedata
-from typing import cast
 
 from board_plugin.board import Board
 from board_plugin.day import day_start, today
 from board_plugin.protocol import CallRequest, PluginError
 from board_plugin.repos import caller_remote, shown_remote
+from board_plugin.slug import slug
+from board_plugin.writing import ATTEMPTS, EDITED, HEAD_MOVED, MOVED, create, landed, refused
 
 from board_notes.repo import NOT_SYNCED, Repo, choose
 
 PLUGIN = "notes"
-STALE = "board::put::stale"
-# A put to the board's own tree refused because HEAD moved while it wrote: the file is written, and not committed.
-HEAD_MOVED = "board::put::head_moved"
-# Refusals of a write because the note or the clone moved after the read; the write is tried again on a new read.
-MOVED = (STALE, HEAD_MOVED)
-# The refusal of a write over an edit not committed in the clone, which no new read clears.
-EDITED = "board::mount::stale"
-ATTEMPTS = 3
 # How many names an inbox note tries, `<time>.md`, then `<time>-2.md` and on, when notes share a second.
 INBOX_NAMES = 10
-# Reflect's slugForTitle (packages/core/src/markdown/slug.ts), whose golden corpus freezes it.
-SLUG_CHARS = 60
-# JavaScript's `\s`, which differs from Python's: it holds U+FEFF, and not U+001C to U+001F or U+0085.
-SEPARATOR = re.compile("[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff_-]+")
-RESERVED = {"con", "prn", "aux", "nul", *(f"com{n}" for n in range(1, 10)), *(f"lpt{n}" for n in range(1, 10))}
 # The values of `private` that plainly show a note; any other value hides it.
 FALSE = ("false", "no", "off", "0")
 
@@ -46,7 +32,8 @@ def add(request: CallRequest) -> dict[str, object]:
     parked = None
     if choice.candidates is not None:
         # An inbox note is a new file, which nothing else writes, so it is never parked.
-        path, commit = create(repo, f"inbox/{now:%Y-%m-%d-%H%M%S}", inbox(remote, choice.candidates, topic) + section)
+        stem, text = f"inbox/{now:%Y-%m-%d-%H%M%S}", inbox(remote, choice.candidates, topic) + section
+        path, commit = create(repo, stem, text, names=INBOX_NAMES, busy="notes::note::busy")
     else:
         path = f"notes/{slug(topic)}.md" if topic else f"daily/{today(now, day_start()).isoformat()}.md"
         parked, commit = (synced, None) if synced else append(repo, path, f"# {topic}\n\n" if topic else "", section)
@@ -55,24 +42,20 @@ def add(request: CallRequest) -> dict[str, object]:
             # The sibling takes no title, so Reflect never finds two notes of one title.
             busy, commit = append(repo, path, "", section)
             if busy:
-                why = f"{repo.logical(path)} also holds an edit not committed, or kept changing; nothing was written"
+                why = (
+                    f"{repo.logical(path)} also changed after it was read, so the note was not added; call again, "
+                    "and if this persists, commit or discard the edit not committed in its clone"
+                )
                 raise PluginError("notes::note::busy", why, {"path": repo.logical(path)})
+    commit, unpushed = landed(repo, commit)
     return {
         "repo": repo.root,
         "path": repo.logical(path),
-        "commit": None if commit is None else repo.pin() or commit,
+        "commit": commit,
         "candidates": choice.candidates,
         "parked": parked,
-        "unpushed": NOT_SYNCED if own else push(repo),
+        "unpushed": unpushed,
     }
-
-
-def push(repo: Repo) -> str | None:
-    """Push the clone: None, or the code of the refusal. The note is committed, so a retry would add it twice."""
-    try:
-        return repo.sync(push=True)
-    except PluginError as error:
-        return str(error.fields.get("code", error.code))
 
 
 def append(repo: Repo, path: str, first: str, section: str) -> tuple[str | None, str | None]:
@@ -99,46 +82,12 @@ def append(repo: Repo, path: str, first: str, section: str) -> tuple[str | None,
     return str(moved), None
 
 
-def create(repo: Repo, stem: str, text: str) -> tuple[str, str | None]:
-    """Write `text` to a new note at `<stem>.md`, or at `<stem>-2.md` and on when one is there: its path and commit."""
-    number, moved = 1, 0
-    while number <= INBOX_NAMES:
-        path = f"{stem}.md" if number == 1 else f"{stem}-{number}.md"
-        repo.pin()
-        try:
-            return path, repo.write(path, text, None)
-        except PluginError as error:
-            code = refused(error)
-            if code == STALE and moved:
-                # The put whose HEAD moved wrote this file, so it is this note.
-                return path, None
-            if code == HEAD_MOVED:
-                moved += 1
-                if repo.clone is None or moved == ATTEMPTS:
-                    # Board wrote the file before HEAD moved, so the note is in the working tree, uncommitted.
-                    return path, None
-            elif code == STALE:
-                number += 1
-            else:
-                raise
-    why = f"{repo.logical(stem)}.md and the {INBOX_NAMES - 1} names after it are taken; nothing was written; call again"
-    raise PluginError("notes::note::busy", why, {"path": repo.logical(f"{stem}.md")})
-
-
 def inbox(remote: str | None, candidates: list[str], topic: str | None) -> str:
     """The frontmatter of a note in the inbox: the remote it came from, the repos it may belong to, and its topic."""
     fields = {"remote": None if remote is None else shown_remote(remote), "candidates": candidates, "topic": topic}
     # JSON is YAML, so each value is written as JSON and needs no quoting rules of its own.
     lines = [f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in fields.items() if value is not None]
     return "---\n" + "\n".join(lines) + "\n---\n\n"
-
-
-def refused(error: PluginError) -> object:
-    """The code Board refused a write with. A batch reports its one line's refusal in `refusals`."""
-    refusals = error.fields.get("refusals")
-    if isinstance(refusals, list) and len(cast("list[object]", refusals)) == 1:
-        return cast("list[dict[str, object]]", refusals)[0].get("code")
-    return error.fields.get("code")
 
 
 def daily(request: CallRequest) -> dict[str, object]:
@@ -161,20 +110,6 @@ def daily(request: CallRequest) -> dict[str, object]:
         "commit": commit,
         "unsynced": unsynced,
     }
-
-
-def slug(title: str) -> str:
-    """The file name Reflect gives a note titled `title`, without `.md`.
-
-    It drops a letter or number newer than this Python's Unicode database
-    knows, where Reflect's JavaScript, on a newer database, keeps it.
-    """
-    folded = unicodedata.normalize("NFC", title).lower()
-    kept = "".join(c for c in folded if unicodedata.category(c)[0] in "LN" or SEPARATOR.match(c))
-    capped = SEPARATOR.sub("-", kept).strip("-")[:SLUG_CHARS].strip("-")
-    if not capped:
-        return "untitled"
-    return f"{capped}-note" if capped in RESERVED else capped
 
 
 def private(text: str) -> bool:

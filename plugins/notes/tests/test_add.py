@@ -129,6 +129,7 @@ def test_a_note_and_its_sibling_both_holding_uncommitted_edits_are_busy_and_noth
     head = git(notes.clone, "rev-parse", "HEAD")
     code, refused = notes.call("add", "--text", "Third.")
     assert (code, refused["code"]) == (1, "notes::note::busy")
+    assert "call again" in refused["message"], refused
     assert refused["fields"]["path"] == f"/repos/notes-personal/{sibling(path)}"
     assert git(notes.clone, "rev-parse", "HEAD") == head
     assert "Third." not in (notes.clone / path).read_text() + (notes.clone / sibling(path)).read_text()

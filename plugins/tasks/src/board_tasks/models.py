@@ -5,7 +5,7 @@ generated from these models.
 """
 
 import datetime
-from typing import Annotated, Literal, cast
+from typing import Annotated, Any, Literal, cast
 
 from board_plugin.model import Strict
 from pydantic import BaseModel, ConfigDict, Field
@@ -267,3 +267,79 @@ class AvailableOutput(Strict):
     unsynced: list[Unsynced]
     cross_repo: list[CrossRepo]
     origin_unread: str | None
+
+
+# A string, so that `board call` offers it as a flag: a date or a horizon.
+UNTIL = r"^([0-9]{4}-[0-9]{2}-[0-9]{2}|not-today|not-this-week|soon|someday)$"
+UNTIL_HELP = (
+    "A date, YYYY-MM-DD, or a horizon from today: not-today (1 day), not-this-week (6), soon (20) or someday (90). "
+    "The task is written with the date."
+)
+
+
+class TaskPath(Strict):
+    """The task to act on."""
+
+    path: str = Field(
+        pattern=r"^/.*\.md$",
+        description="The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+    )
+
+
+class DeferInput(TaskPath):
+    """The task to defer, and until when."""
+
+    until: str = Field(pattern=UNTIL, description=UNTIL_HELP)
+
+
+def optional(description: str, **constraints: Any) -> Any:  # noqa: ANN401 - a pydantic Field, typed Any as Field is
+    """The field of a value the caller may leave out, with its description and pydantic `constraints`."""
+    return Field(default=None, json_schema_extra=unset, description=description, **constraints)
+
+
+class AddInput(Strict):
+    """A new open task, and the fields it starts with."""
+
+    title: str = Field(min_length=1, description="The task's title, which also names its file.")
+    text: str | SkipJsonSchema[None] = optional("The task's prose, written as its body.")
+    due: str | SkipJsonSchema[None] = optional(
+        "The date, YYYY-MM-DD, the task is due by.", pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    )
+    defer: str | SkipJsonSchema[None] = optional(UNTIL_HELP, pattern=UNTIL)
+    after: list[str] | SkipJsonSchema[None] = optional(
+        "The paths, in the task's own repo, of the tasks it waits on, such as /tasks/agree-scope.md."
+    )
+    repeat: str | SkipJsonSchema[None] = optional(
+        "When it comes back once done: daily, weekdays, weekly-mon, monthly-15 or annually-10-25.", pattern=REPEAT
+    )
+    ephemeral: bool | SkipJsonSchema[None] = optional("Whether a missed day of a repeating task is dropped.")
+    from_hour: int | SkipJsonSchema[None] = optional(
+        "The hour of the person's day, 0 to 23, the task is available from.", ge=0, le=23
+    )
+    contexts: list[Annotated[str, Field(pattern=r"^[a-z0-9-]+$")]] | SkipJsonSchema[None] = optional(
+        "Tags of where it can be done, such as errands."
+    )
+    repo: str | SkipJsonSchema[None] = optional(
+        "The repo to write the task to: / for the board's own tree, or a notes repo's mount path; the caller's git "
+        "remote chooses it when left out.",
+        pattern="^/",
+    )
+    remote: str | SkipJsonSchema[None] = SCOPE["remote"]
+
+
+class Written(Strict):
+    """The task as a write call left it.
+
+    `commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of
+    a sync before the write that left the clone where it was, and `unpushed` the code of a push after it
+    that failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.
+    """
+
+    repo: str
+    path: str
+    status: str
+    defer: str | None
+    reviewed: str
+    commit: str | None
+    unsynced: str | None
+    unpushed: str | None
