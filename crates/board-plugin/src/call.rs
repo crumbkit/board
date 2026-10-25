@@ -58,7 +58,7 @@ impl FromStr for Target {
 /// Text that is not `<plugin>.<capability>`.
 #[derive(Debug, thiserror::Error)]
 pub enum TargetError {
-    #[error("{text:?} is not <plugin>.<capability>, such as tasks.due")]
+    #[error("{text:?} is not <plugin>.<capability>, such as tasks.available")]
     Form { text: String },
     #[error(transparent)]
     Name(#[from] NameError),

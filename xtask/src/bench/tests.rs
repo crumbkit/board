@@ -53,7 +53,7 @@ fn a_skipped_operation_passes_and_its_report_line_says_why() {
     assert!(skipped.passed());
     assert_eq!(
         crate::report::render_bench(&[skipped]),
-        "skip  uv is not on PATH  `board call tasks.next`, warm\n"
+        "skip  uv is not on PATH  `board call tasks.available --repo /`, warm\n"
     );
 }
 
@@ -78,7 +78,7 @@ fn a_generated_board_holds_valid_open_tasks_and_one_in_five_waits_on_the_first()
     generate(root.path(), 0).unwrap();
     let cache = tempfile::tempdir().unwrap();
     let sql = "SELECT count(*), count(json_extract(body, '$.after')) FROM records \
-        WHERE type = 'tasks/task/v1' AND code IS NULL \
+        WHERE type = 'tasks/task/v2' AND code IS NULL \
         AND json_extract(body, '$.status') = 'open'";
     let report = Board::open(root.path(), None)
         .unwrap()
@@ -104,7 +104,7 @@ fn the_median_is_the_middle_time_once_sorted() {
 /// running `script`.
 fn host(fixture: &Fixture, script: &str) -> Host {
     let manifest = r#"{"$type": "board/plugin-manifest/v1", "name": "tasks", "version": "0.1.0",
-        "description": "", "run": ["sh", "./run"], "capabilities": [{"name": "next",
+        "description": "", "run": ["sh", "./run"], "capabilities": [{"name": "available",
         "description": "", "inputSchema": {"type": "object"}, "outputSchema": {"type": "object"}}]}"#;
     fixture
         .write("bin/uv", "")

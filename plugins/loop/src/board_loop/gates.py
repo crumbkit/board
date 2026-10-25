@@ -6,7 +6,7 @@ from typing import Any, Literal, TypedDict
 
 from board_loop.change import Change
 
-TASK_TYPE = "tasks/task/v1"
+TASK_TYPE = "tasks/task/v2"
 RUN_TYPE = "runs/run/v1"
 QUESTION_TYPE = "plans/question/v1"
 DECISION_TYPE = "plans/decision/v1"

@@ -1,1 +1,1 @@
-"""A Board plugin for `tasks/task/v1` tasks: extracts their status and due date, and offers `due` and `next`."""
+"""A Board plugin for `tasks/task/v2` tasks: it lists the tasks to sweep and writes each change to its notes repo."""

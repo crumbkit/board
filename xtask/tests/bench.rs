@@ -25,7 +25,7 @@ fn bench_times_a_generated_board_and_skips_the_plugin_call_without_uv() {
         "{stdout}"
     );
     assert!(
-        stdout.contains("skip  uv is not on PATH  `board call tasks.next`, warm\n"),
+        stdout.contains("skip  uv is not on PATH  `board call tasks.available --repo /`, warm\n"),
         "{stdout}"
     );
 }

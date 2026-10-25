@@ -94,6 +94,6 @@
     "title",
     "status"
   ],
-  "title": "TaskV2",
+  "title": "Task",
   "type": "object"
 }

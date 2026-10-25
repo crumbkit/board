@@ -92,8 +92,8 @@ const ALLOW: &[Allow] = &[
     Allow::example("serve", &[], SERVES),
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),
-    Allow::example("call", &["tasks.due"], NO_CALL),
-    Allow::example("call", &["--capability", "due"], NO_CALL),
+    Allow::example("call", &["tasks.available"], NO_CALL),
+    Allow::example("call", &["--capability", "available"], NO_CALL),
     Allow::example(
         "put",
         &["/tasks/a", "--expect", "none"],
@@ -159,11 +159,7 @@ fn every_help_example_runs_on_a_fixture_board_and_prints_its_golden_output() {
     );
     let plugin = concat!(env!("CARGO_MANIFEST_DIR"), "/../../plugins/tasks");
     let plugins = Scenario::new();
-    let files = [
-        "plugin.json",
-        "types/tasks/task/v1.schema.json",
-        "types/tasks/task/v2.schema.json",
-    ];
+    let files = ["plugin.json", "types/tasks/task/v2.schema.json"];
     for file in files {
         let text = std::fs::read_to_string(format!("{plugin}/{file}")).unwrap();
         plugins.write(

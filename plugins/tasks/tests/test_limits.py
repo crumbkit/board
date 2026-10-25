@@ -14,7 +14,7 @@ def running(pid: str) -> bool:
 
 def test_a_call_past_its_stdout_limit_leaves_no_python_running_under_uv(board: Board) -> None:
     (board.data / "board" / "plugins" / "sleeper").symlink_to(FIXTURES / "sleeper")
-    board.enable("tasks", "digest", "sleeper")
+    board.enable("tasks", "sleeper")
     error = board.json("call", "sleeper.sleep", stdin="{}")
     assert error["code"] == "board::plugin::too_large", error
     pid = error["fields"]["stderr"].split()[-1]

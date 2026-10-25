@@ -179,7 +179,7 @@ fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
         "description": "",
         "run": ["sh", "./run"],
         "capabilities": [{
-            "name": "next",
+            "name": "available",
             "description": "",
             "inputSchema": {"type": "object"},
             "outputSchema": {"type": "object"}
@@ -198,7 +198,7 @@ fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
     )
     .write("input.json", Item::File("{}"));
     let home = tempfile::tempdir().unwrap();
-    let called = command(&scenario, home.path(), &["call", "tasks.next"])
+    let called = command(&scenario, home.path(), &["call", "tasks.available"])
         .env("PATH", "/usr/bin:/bin")
         .env("XDG_DATA_HOME", data.workdir())
         .stdin(std::fs::File::open(data.workdir().join("input.json")).unwrap())

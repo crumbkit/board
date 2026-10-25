@@ -134,5 +134,5 @@ decided for. A target that resolved to another blob, or whose file changed
 after the check, has `refs::target_changed` and no `values`, and the run counts it as `target_changed` in the timing log; run
 `refs` again. `get` instead reads a file that changed during its run as it
 is now, with the blob of the bytes it read. A pointer that is not RFC
-6901 refuses the run as `board::cli::usage`. `tasks.next` asks for `/status`
+6901 refuses the run as `board::cli::usage`. `tasks.available` asks for `/status`
 and `/$type` this way to tell which waits are over.

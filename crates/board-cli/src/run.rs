@@ -43,8 +43,8 @@ Start here:
 
 A path is logical and omits .json; without a leading / it is relative to
 the current directory.
-A record is a JSON object whose `$type`, such as tasks/task/v1, names its
-schema at .board/types/tasks/task/v1.schema.json.
+A record is a JSON object whose `$type`, such as runs/suite/v1, names its
+schema at .board/types/runs/suite/v1.schema.json.
 
 Tab completion: in fish, add `BOARD_COMPLETE=fish board | source` to
 ~/.config/fish/config.fish; in bash, add `eval \"$(BOARD_COMPLETE=bash board)\"`
@@ -65,7 +65,7 @@ row past 64 MiB is refused with that code.
 
 Examples:
   board query \"SELECT logical, code FROM entries WHERE status = 'degraded'\"
-  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v1'\" --limit 20
+  board query \"SELECT logical FROM records WHERE type = 'tasks/task/v2'\" --limit 20
   board query 'SELECT name, sql FROM sqlite_master'";
 
 #[derive(Debug, Parser)]
@@ -249,7 +249,7 @@ Examples:
         after_help = "\
 Examples:
   board plugin list
-  board plugin find --capability due
+  board plugin find --capability available
   board plugin enable tasks"
     )]
     Plugin(crate::plugin::PluginCommand),
@@ -266,11 +266,11 @@ Examples:
 Board reads stdin only when no flag is given.
 
 Examples:
-  board call tasks.due < input.json
-  board call --capability due < input.json
-  board call tasks.due -h")]
+  board call tasks.available < input.json
+  board call --capability available < input.json
+  board call tasks.available -h")]
     Call {
-        /// `<plugin>.<capability>`, such as tasks.due.
+        /// `<plugin>.<capability>`, such as tasks.available.
         target: Option<Target>,
         /// The capability of the one enabled plugin that offers it.
         #[arg(long)]

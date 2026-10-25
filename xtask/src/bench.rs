@@ -22,14 +22,14 @@ const RECORDS: usize = 10_000;
 /// Tasks per directory in a generated board.
 const PER_DIRECTORY: usize = 100;
 
-/// The tasks plugin's tasks in a generated board: as many as `tasks.next`
-/// shows at once.
+/// The tasks plugin's tasks in a generated board: as many as one section of
+/// `tasks.available` shows.
 const TASKS: usize = 100;
 /// The schema the tasks plugin ships, which `board plugin enable` writes.
-const TASK_SCHEMA: &str = include_str!("../../plugins/tasks/types/tasks/task/v1.schema.json");
+const TASK_SCHEMA: &str = include_str!("../../plugins/tasks/types/tasks/task/v2.schema.json");
 
 /// The operation that times a call to a Python plugin.
-pub(crate) const CALL: &str = "`board call tasks.next`, warm";
+pub(crate) const CALL: &str = "`board call tasks.available --repo /`, warm";
 /// The operation that times a put, which writes a record into the board.
 pub(crate) const PUT: &str = "`board put` of a small record, warm";
 
@@ -269,7 +269,8 @@ pub(crate) fn run(
         .collect()
 }
 
-/// The median of `RUNS` calls of `tasks.next` with the index in `warm`,
+/// The median of `RUNS` calls of `tasks.available` on the board's own tree,
+/// which syncs no mount and reads no git remote, with the index in `warm`,
 /// after one call whose time is discarded: it extracts, and Python compiles
 /// the plugin's bytecode.
 fn call(board: &Board, warm: &Path, path: OsString, host: &Host) -> Result<Duration, BenchError> {
@@ -285,10 +286,10 @@ fn call(board: &Board, warm: &Path, path: OsString, host: &Host) -> Result<Durat
         },
         limits: Limits::default(),
     };
-    let target: Target = "tasks.next".parse().map_err(|error| failed(&error))?;
+    let target: Target = "tasks.available".parse().map_err(|error| failed(&error))?;
     let once = || {
         board
-            .call(&target, b"{}", &plugins, Some(warm))
+            .call(&target, br#"{"repo": "/"}"#, &plugins, Some(warm))
             .map(drop)
             .map_err(|error| failed(&error))
     };
@@ -319,7 +320,7 @@ fn failed(error: &dyn std::fmt::Display) -> BenchError {
 /// directory so that `root` is a repository's working tree, and an identity
 /// so that a put can commit. The board
 /// enables the tasks plugin and holds `TASKS` of its open tasks; one in five
-/// waits on the first, so `tasks.next` asks Board what blocks it.
+/// waits on the first, so `tasks.available` asks Board what blocks it.
 #[expect(
     clippy::disallowed_methods,
     reason = "bench writes the board it measures, and nothing else"
@@ -357,18 +358,16 @@ pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
         ".board/types/bench/project/v1.schema.json",
         r#"{"type": "object"}"#,
     )?;
-    write(".board/types/tasks/task/v1.schema.json", TASK_SCHEMA)?;
+    write(".board/types/tasks/task/v2.schema.json", TASK_SCHEMA)?;
     for task in 0..TASKS {
         let after = if task % 5 == 4 {
-            r#", "after": ["/todo/t0"]"#
+            "after: [\"/todo/tasks/t0.md\"]\n"
         } else {
             ""
         };
         write(
-            &format!("todo/t{task}.json"),
-            &format!(
-                r#"{{"$type": "tasks/task/v1", "title": "task {task}", "status": "open"{after}}}"#
-            ),
+            &format!("todo/tasks/t{task}.md"),
+            &format!("---\n$type: tasks/task/v2\ntitle: task {task}\nstatus: open\n{after}---\n"),
         )?;
     }
     for project in 0..100 {

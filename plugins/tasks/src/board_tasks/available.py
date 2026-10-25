@@ -12,7 +12,7 @@ from board_plugin.day import day_start, today
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_tasks import tables
-from board_tasks.models import FIELDS, TASK_V2_TYPE, TREE_CODES
+from board_tasks.models import FIELDS, TASK_TYPE, TREE_CODES
 
 HORIZONS = {"not-today": 1, "not-this-week": 6, "soon": 20, "someday": 90}
 DUE_SOON = dt.timedelta(days=7)
@@ -161,7 +161,7 @@ def blockers(report: dict[str, Any], repo: str) -> tuple[list[str], list[str]]:
         display = display if repo == "/" else repo + display
         values = {value["pointer"]: value.get("value") for value in outgoing.get("values", [])}
         code = outgoing.get("target_code")
-        done = values.get("/$type") == TASK_V2_TYPE and values.get("/status") == "done" and code in (None, *TREE_CODES)
+        done = values.get("/$type") == TASK_TYPE and values.get("/status") == "done" and code in (None, *TREE_CODES)
         if not done and display not in found:
             found.append(display)
     return found, across

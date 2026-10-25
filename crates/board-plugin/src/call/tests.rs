@@ -26,11 +26,11 @@ fn a_target_is_a_plugin_and_capability_joined_by_a_dot() {
 fn a_target_without_a_dot_is_refused_naming_the_form_it_needs() {
     assert_eq!(
         "tasks".parse::<Target>().unwrap_err().to_string(),
-        r#""tasks" is not <plugin>.<capability>, such as tasks.due"#
+        r#""tasks" is not <plugin>.<capability>, such as tasks.available"#
     );
     assert_eq!(
         "tasks.".parse::<Target>().unwrap_err().to_string(),
-        r#""tasks." is not <plugin>.<capability>, such as tasks.due"#
+        r#""tasks." is not <plugin>.<capability>, such as tasks.available"#
     );
     assert_eq!(
         "Tasks.due".parse::<Target>().unwrap_err().to_string(),

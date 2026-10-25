@@ -33,7 +33,7 @@ git config user.name "Install Check"
 git config user.email "install-check@example.com"
 board init
 board plugin enable "$plugin"
-echo '{"$type": "tasks/task/v1", "title": "Install the release", "status": "open", "due": "2026-01-01"}' | board put /tasks/install
-board call tasks.due --before 2027-01-01 --json | grep -q '"Install the release"'
+printf -- '---\n$type: tasks/task/v2\ntitle: Install the release\nstatus: open\n---\n' | board put /tasks/install.md --file
+board call tasks.available --repo / --json | grep -q '"Install the release"'
 echo "installed board and $plugin from their archives, and put and call ran"
 rm -r "$home"

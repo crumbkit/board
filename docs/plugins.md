@@ -41,16 +41,16 @@ An equal schema is left, so enabling again writes nothing.
   "$type": "board/plugin-manifest/v1",
   "name": "tasks",
   "version": "0.1.0",
-  "description": "Open tasks and their due dates.",
+  "description": "Open tasks to sweep, and the calls that change them.",
   "run": ["uv", "run", "--frozen", "python", "-m", "board_tasks"],
   "metadata": { "area": "planning" },
-  "extract": ["tasks/task/v1"],
-  "types": ["tasks/task/v1"],
+  "extract": ["tasks/task/v2"],
+  "types": ["tasks/task/v2"],
   "capabilities": [
     {
-      "name": "due",
-      "title": "Due tasks",
-      "description": "Open tasks due before a date.",
+      "name": "available",
+      "title": "Available tasks",
+      "description": "Open tasks available now, due soon or stale.",
       "inputSchema": { "type": "object" },
       "outputSchema": { "type": "object" },
       "annotations": { "readOnlyHint": true },
@@ -132,8 +132,8 @@ Then Board:
    ```json
    {
      "$type": "board/call/v1",
-     "capability": "due",
-     "input": { "before": "2026-11-01" },
+     "capability": "available",
+     "input": { "repo": "/" },
      "board": { "root": "/Users/me/board", "database": "/Users/me/.cache/board/…/tasks@0.1.0.sqlite" }
    }
    ```

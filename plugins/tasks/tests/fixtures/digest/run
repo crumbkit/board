@@ -1,8 +1,0 @@
-#!/bin/sh
-# Calls whichever enabled plugin offers `due`, from the board's root, and
-# wraps its output. The request is canonical JSON, so its root is one line.
-request=$(cat)
-root=$(printf '%s\n' "$request" | sed -n 's/^    "root": "\(.*\)",\{0,1\}$/\1/p')
-before=$(printf '%s\n' "$request" | sed -n 's/^    "before": "\(.*\)",\{0,1\}$/\1/p')
-due=$(cd "$root" && printf '{"before": "%s"}' "$before" | board call --capability due) || exit 2
-printf '{"$type": "board/call-result/v1", "output": {"overdue": %s}}' "$due"

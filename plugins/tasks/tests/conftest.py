@@ -14,8 +14,7 @@ import pytest
 PLUGIN = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 REPOSITORY = PLUGIN.parents[1]
-SCHEMA = PLUGIN / "types" / "tasks" / "task" / "v1.schema.json"
-SCHEMA_V2 = PLUGIN / "types" / "tasks" / "task" / "v2.schema.json"
+SCHEMA = PLUGIN / "types" / "tasks" / "task" / "v2.schema.json"
 NOTES_SCHEMA = PLUGIN.parent / "notes" / "types" / "notes" / "repo" / "v1.schema.json"
 
 
@@ -78,28 +77,19 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board enabling digest and tasks, which `board plugin enable` gave the task schema."""
+    """A board enabling tasks, which `board plugin enable` gave the task schema."""
     fixture = Board(
         root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache", config=tmp_path / "config"
     )
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
-    fixture.enable("digest")
+    fixture.enable()
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
     (plugins / "tasks").symlink_to(PLUGIN)
-    (plugins / "digest").symlink_to(FIXTURES / "digest")
     enabled = fixture.run("plugin", "enable", "tasks")
     assert enabled.returncode == 0, enabled.stderr
     return fixture
-
-
-def task(title: str, status: str = "open", due: str | None = None, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """A `tasks/task/v1` record."""
-    record: dict[str, Any] = {"$type": "tasks/task/v1", "title": title, "status": status, **fields}
-    if due is not None:
-        record["due"] = due
-    return json.dumps(record)
 
 
 def task_v2(title: str, status: str = "open", body: str = "", **fields: Any) -> str:  # noqa: ANN401 - the frontmatter's other fields
@@ -148,7 +138,7 @@ def notes_repo(
     git(clone, "config", "user.email", "t@t")
     files = {
         ".board/board.json": '{"$type": "board/config/v1"}',
-        ".board/types/tasks/task/v2.schema.json": SCHEMA_V2.read_text(),
+        ".board/types/tasks/task/v2.schema.json": SCHEMA.read_text(),
         ".board/types/notes/repo/v1.schema.json": NOTES_SCHEMA.read_text(),
         **({"daily/.gitkeep": ""} if daily else {}),
         "repo.txt": name,

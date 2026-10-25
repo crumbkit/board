@@ -5,18 +5,12 @@ from pydantic import JsonValue
 
 from board_tasks.models import (
     TASK_TYPE,
-    TASK_V2_TYPE,
     AddInput,
     AvailableInput,
     AvailableOutput,
     DeferInput,
-    DueInput,
-    DueOutput,
-    NextInput,
-    NextOutput,
+    Task,
     TaskPath,
-    TaskRecord,
-    TaskV2,
     Written,
 )
 
@@ -37,8 +31,8 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
-        "extract": [TASK_TYPE, TASK_V2_TYPE],
-        "types": [TASK_TYPE, TASK_V2_TYPE],
+        "extract": [TASK_TYPE],
+        "types": [TASK_TYPE],
         "capabilities": [
             {
                 "name": "available",
@@ -51,23 +45,6 @@ def manifest() -> dict[str, JsonValue]:
                 "_meta": {},
             },
             *writes(),
-            {
-                "name": "due",
-                "description": "Unfinished tasks, open or waiting, due before a date.",
-                "inputSchema": DueInput.model_json_schema(),
-                "outputSchema": DueOutput.model_json_schema(),
-                "_meta": {},
-            },
-            {
-                "name": "next",
-                "description": (
-                    "Unfinished tasks by due date then path, each blocked while a task it waits on is not done."
-                ),
-                "inputSchema": NextInput.model_json_schema(),
-                "outputSchema": NextOutput.model_json_schema(),
-                "annotations": {"readOnlyHint": True},
-                "_meta": {},
-            },
         ],
     }
 
@@ -94,13 +71,8 @@ def writes() -> list[dict[str, JsonValue]]:
 
 
 def schema() -> dict[str, JsonValue]:
-    """The schema of `tasks/task/v1`, as the plugin ships it."""
-    return TaskRecord.model_json_schema(by_alias=True)
-
-
-def schema_v2() -> dict[str, JsonValue]:
     """The schema of `tasks/task/v2`, as the plugin ships it."""
-    return TaskV2.model_json_schema(by_alias=True)
+    return Task.model_json_schema(by_alias=True)
 
 
 def text() -> str:

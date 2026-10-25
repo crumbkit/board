@@ -4,5 +4,3 @@ tasks.done disabled Mark a task done, or defer a repeating one to its next occur
 tasks.defer disabled Defer a task until a date or a horizon from today, written as a date. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.drop disabled Mark a task dropped. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.reviewed disabled Mark a task reviewed today. It syncs the task's repo first and pushes after, and sets reviewed.
-tasks.due disabled Unfinished tasks, open or waiting, due before a date.
-tasks.next disabled Unfinished tasks by due date then path, each blocked while a task it waits on is not done.

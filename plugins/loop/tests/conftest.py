@@ -15,7 +15,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
 HEAD = "a3f9c0de1234567890abcdef1234567890abcdef"
 # Types other plugins own, which a change references. The fixture board keeps a loose schema of its own for each.
-FOREIGN_TYPES = ("tasks/task/v1", "runs/suite/v1", "runs/run/v1", "plans/question/v1", "plans/decision/v1")
+FOREIGN_TYPES = ("tasks/task/v2", "runs/suite/v1", "runs/run/v1", "plans/question/v1", "plans/decision/v1")
 REVIEW_TYPE = "review/report/v1"
 # A review report as the review plugin's design defines it: the range and patch ids covered, findings and a verdict.
 REVIEW_SCHEMA = {
@@ -180,6 +180,11 @@ def mount_repo(board: Board, files: dict[str, str], at: str = "repos/x") -> str:
 def record(type_name: str, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """A record of `type_name` holding `fields`."""
     return json.dumps({"$type": type_name, **fields})
+
+
+def task(status: str = "open") -> str:
+    """A `tasks/task/v2` Markdown task titled "A" in `status`."""
+    return f"---\n$type: tasks/task/v2\ntitle: A\nstatus: {status}\n---\n"
 
 
 def report(head: str = HEAD, verdict: str = "approve", **fields: Any) -> str:  # noqa: ANN401 - other fields

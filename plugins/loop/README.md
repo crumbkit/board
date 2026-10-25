@@ -73,7 +73,7 @@ Board marks degraded satisfies nothing.
 | --- | --- |
 | shape | Each plan section has text. No attached `plans/question/v1` is `open`. |
 | plan | A `review/report/v1` whose `verdict` is not `changes` is attached. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. |
-| build | Every attached `tasks/task/v1` is `done` or `dropped`. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
+| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
 | land | `pull_request` is set. |
 | learn | None. |

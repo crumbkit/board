@@ -87,7 +87,7 @@ def test_a_suite_in_the_repositorys_own_board_is_found_before_one_in_this_board(
 
 def test_a_named_path_that_holds_no_suite_is_not_the_check_suite(board: Board) -> None:
     repo = mount_repo(board, {"CONTRIBUTING.md": CONTRIBUTING})
-    board.write("suites/checks.json", record("tasks/task/v1", title="x", status="open"))
+    board.write("suites/checks.json", record("plans/decision/v1", refs=[]))
     assert board.call("start", {"repo": repo, "title": "T"})["suite"] is None
 
 

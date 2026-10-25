@@ -100,17 +100,17 @@ def test_on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_refs_name_t
 
 def test_the_build_gate_passes_with_tasks_done_or_dropped_and_a_passing_run_on_the_head() -> None:
     records = {
-        "/t/a": ("tasks/task/v1", {"status": "done"}),
-        "/t/b": ("tasks/task/v1", {"status": "dropped"}),
+        "/t/a.md": ("tasks/task/v2", {"status": "done"}),
+        "/t/b.md": ("tasks/task/v2", {"status": "dropped"}),
         RUN: run(),
     }
     assert statuses(observed("build", records, head=HEAD)) == {"tasks": "pass", "check-run": "pass"}
 
 
-def test_the_build_gate_misses_a_task_still_open_or_waiting() -> None:
-    records = {"/t/a": ("tasks/task/v1", {"status": "open"}), "/t/b": ("tasks/task/v1", {"status": "waiting"})}
+def test_the_build_gate_misses_each_task_still_open() -> None:
+    records = {"/t/a.md": ("tasks/task/v2", {"status": "open"}), "/t/b.md": ("tasks/task/v2", {"status": "deferred"})}
     [tasks, _] = gate(observed("build", records | {RUN: run()}, head=HEAD))
-    assert tasks["detail"] == "these tasks are not done or dropped: /t/a, /t/b"
+    assert tasks["detail"] == "these tasks are not done or dropped: /t/a.md, /t/b.md"
 
 
 def test_the_build_gate_misses_a_run_that_failed_or_is_dirty_targeted_of_another_suite_or_another_commit() -> None:

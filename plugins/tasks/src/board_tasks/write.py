@@ -19,7 +19,7 @@ from pydantic import ValidationError
 
 from board_tasks.available import HORIZONS
 from board_tasks.lines import with_fields
-from board_tasks.models import TASK_V2_TYPE, TaskV2
+from board_tasks.models import TASK_TYPE, Task
 from board_tasks.repeat import completed
 
 PLUGIN = "tasks"
@@ -39,7 +39,7 @@ def add(request: CallRequest) -> dict[str, object]:
     given: dict[str, Any] = request.input
     repo = routed(board, given.get("repo"), given.get("remote") or origin(given.get("repo")))
     day = today(dt.datetime.now().astimezone(), day_start())
-    fields: dict[str, Any] = {"$type": TASK_V2_TYPE, "title": given["title"], "status": "open"}
+    fields: dict[str, Any] = {"$type": TASK_TYPE, "title": given["title"], "status": "open"}
     fields |= {key: given[key] for key in ADDED if given.get(key) is not None}
     if "defer" in fields:
         fields["defer"] = until(str(fields["defer"]), day)
@@ -152,12 +152,12 @@ def checked(task: repos.File, repo: Repo, logical: str, *, finished: bool) -> di
         raise PluginError("tasks::repo::not_found", why, {"path": logical})
     hint = f"run `board check {logical}` to see what it holds"
     if task.text is None or "/tasks/" not in logical.removeprefix(repo.root.rstrip("/")):
-        why = f"{logical} is not a {TASK_V2_TYPE} task under a tasks/ directory; {hint}"
+        why = f"{logical} is not a {TASK_TYPE} task under a tasks/ directory; {hint}"
         raise PluginError("tasks::task::not_task", why, {"path": logical})
     try:
-        TaskV2.model_validate(task.record or {})
+        Task.model_validate(task.record or {})
     except ValidationError as error:
-        why = f"{logical} is not a valid {TASK_V2_TYPE} task ({error.error_count()} errors); {hint}"
+        why = f"{logical} is not a valid {TASK_TYPE} task ({error.error_count()} errors); {hint}"
         raise PluginError("tasks::task::not_task", why, {"path": logical}) from error
     record = task.record or {}
     status = record.get("status")

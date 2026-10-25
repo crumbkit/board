@@ -1,12 +1,9 @@
 # tasks
 
-A Board plugin for tasks. It reads `tasks/task/v1` JSON records and
-`tasks/task/v2` Markdown tasks, and extracts each task's fields into its
-database. `available` sorts the v2 tasks of the repos in scope into the tasks
-to work on now, those due soon and the stale ones. `add`, `done`, `defer`,
-`drop` and `reviewed` write v2 tasks. `due` lists the unfinished v1 tasks due
-before a date, and `next` lists every unfinished v1 task in the order to work
-on them, marking each one that is blocked.
+A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks and extracts
+each task's fields into its database. `available` sorts the tasks of the repos
+in scope into the tasks to work on now, those due soon and the stale ones.
+`add`, `done`, `defer`, `drop` and `reviewed` write tasks.
 
 Install it from this checkout:
 
@@ -14,14 +11,17 @@ Install it from this checkout:
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/tasks"
 
 Then run `board plugin enable tasks` in a board. The manifest lists
-`tasks/task/v1` and `tasks/task/v2` in `types`, so this writes the schemas the
-plugin ships under `types/tasks/task/` to `.board/types/tasks/task/`, and names
-the plugin in `.board/board.json`. A notes repo needs a copy of the v2 schema in
-its own `.board/types/tasks/task/` for its tasks to be checked.
+`tasks/task/v2` in `types`, so this writes the schema the plugin ships under
+`types/tasks/task/` to `.board/types/tasks/task/`, and names the plugin in
+`.board/board.json`. In a board enabled before this release, running
+`board plugin enable tasks` again removes `.board/types/tasks/task/v1.schema.json`,
+which the plugin no longer ships. While a `tasks/task/v1` record is left, it
+refuses with `board::plugin::type_in_use` and changes nothing. A notes repo
+needs a copy of the schema in its own `.board/types/tasks/task/` for its tasks to be checked.
 
-## The v2 task
+## The task
 
-A v2 task is a Markdown file under a `tasks/` directory of its repo, such as
+A task is a Markdown file under a `tasks/` directory of its repo, such as
 `/tasks/write-the-plan.md` or `/projects/board/tasks/write-the-plan.md`. Its
 frontmatter is the record and its body is the task's prose:
 
@@ -47,9 +47,10 @@ The plan covers ...
   `someday` (90). A horizon without `reviewed` defers nothing. A value longer
   than a date is read as a date and time, with `T` or `t`; one without an
   offset is local time. A task whose dates cannot be read counts as degraded.
-- `after` lists the v2 tasks this task waits on, by their path in the task's own
-  repo, `.md` included. `board check` reports `board::ref::dangling` and
-  `board::ref::wrong_type` as for v1.
+- `after` lists the tasks this task waits on, by their path in the task's own
+  repo, `.md` included. `board check` reports one that reaches nothing as
+  `board::ref::dangling`, and one that reaches anything but a task as
+  `board::ref::wrong_type`.
 - `repeat` is `daily`, `weekdays`, `weekly-<mon..sun>`, `monthly-<1..31>` or
   `annually-<MM-DD>`. `ephemeral: true`, which needs `repeat`, marks a
   repeating task whose missed days roll forward to one instance today, with no
@@ -62,36 +63,10 @@ A task may hold other fields, such as the `id` and `pinned` that Reflect
 writes; the plugin ignores them. So a misspelt field, such as `defr`, is
 admitted and has no effect. Its scope is the repo that holds it.
 
-## The task record
-
-```json
-{
-  "$type": "tasks/task/v1",
-  "title": "Write the plan",
-  "status": "open",
-  "due": "2026-10-20",
-  "notes": "/projects/board/plan.md",
-  "after": ["/tasks/agree-scope"]
-}
-```
-
-- `title` and `status` are required. `status` is `open`, `waiting`, `done` or
-  `dropped`. A task is unfinished while it is `open` or `waiting`.
-- `due` is a date, `YYYY-MM-DD`.
-- `notes` references a file, usually Markdown, that holds the task's prose:
-  its phase, pull request, plan and review.
-- `after` lists references to the `tasks/task/v1` records this task waits on.
-  `board check` reports one that reaches nothing as `board::ref::dangling`, and
-  one that reaches anything but a task as `board::ref::wrong_type`.
-
-The record has no other fields. A project is a directory, `/projects/<name>/`,
-holding a `README.md`, so a task names no project. Git history holds a task's
-earlier states, so a task has no id, timestamp or revision.
-
 ## Capabilities
 
 `board call tasks.available` chooses the repos in scope, syncs them, and
-returns three sections of their `open` v2 tasks:
+returns three sections of their `open` tasks:
 
 - `available`: the tasks not deferred, not waiting on an unfinished task in
   their `after`, and past their `from_hour`;
@@ -128,7 +103,7 @@ only then are the tasks read again. So a call where nothing changed starts one
 `board query`, then the syncs beside one `board refs`. `unsynced` lists each
 repo whose sync or pin failed, with its code, and the call reads that repo at
 its pin. `degraded` counts the Markdown files under a `tasks/` directory in
-scope that are not a readable open v2 task. `repos` lists the repos read.
+scope that are not a readable open task. `repos` lists the repos read.
 
 An `after` that reaches a task in another repo than its task's own, such as a
 task in `/` naming one in a mount, is not followed and never blocks;
@@ -137,31 +112,7 @@ task in `/` naming one in a mount, is not followed and never blocks;
 clock changes for daylight saving, `from_hour` is counted with the offset in
 force at the call, so it can be an hour off.
 
-`board call tasks.due --before YYYY-MM-DD` returns the `open` and `waiting`
-tasks due before that date, by due date then path.
-
-`board call tasks.next` returns at most 100 tasks; `--limit n` lists at most
-`n`, from 1 to 100. It returns the `open` and `waiting` tasks by due date, with
-undated tasks last, then by path. A task is `blocked` while any task in its
-`after` is not `done`; `blocked_by` names each one once, by its display path,
-or as written when it reaches nothing. A task waiting on a `dropped` task stays
-blocked until its `after` changes. `total` counts every unfinished task, and
-`truncated` says whether the limit left some out. `next` reads the `records`
-view through `board query`, and resolves each `after` through `board refs`, so
-a reference through a link or either of two mounts of one commit reaches the
-task it names. It lists a task whose only fault is a dangling or wrong-typed
-reference. Its one `board query` returns only unfinished tasks. It runs one
-`board refs --field /status --field /$type` that names every listed task with
-an `after`; a wait is over when its target is a task whose status is `done`
-and which check degrades for nothing but a dangling or wrong-typed reference.
-So one call starts at most two `board` runs, each bounded by the tasks shown
-however many are done.
-
-Both capabilities read a task ignoring fields they do not know, so a board
-whose own schema admits more fields still has its tasks listed.
-
-`board query` can join `p_tasks.tasks` (`blob`, `title`, `status`, `due`), and
-for v2 `p_tasks.tasks_v2` (`blob`, `title`, `status`, `due`, `defer`,
+`board query` can join `p_tasks.tasks_v2` (`blob`, `title`, `status`, `due`, `defer`,
 `from_hour`, `reviewed`, `contexts` as a JSON list, and `waits`, how many
 entries `after` holds), with `entries` on `blob`.
 
@@ -203,7 +154,7 @@ the line of a key it writes, or adds one before the closing `---`, as
 `key: "value"`, and keeps every other byte. A key whose line is not one plain
 scalar, such as a block or a list, or a key given twice, is refused with
 `tasks::task::not_plain`. A path with no file is refused with
-`tasks::task::not_found`. One that is not a valid v2 task under a `tasks/`
+`tasks::task::not_found`. One that is not a valid task under a `tasks/`
 directory, such as one with `repeat: fortnightly`, is refused with
 `tasks::task::not_task`, and `board check` says what is wrong. A task in a
 mount without `daily/`, which is not a notes repo, is refused with

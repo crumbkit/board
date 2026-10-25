@@ -353,7 +353,7 @@ fn a_flag_without_a_description_has_its_type_as_help_and_call_help_names_flags()
     assert!(text.contains("integer"), "{text}");
     let group = call(&board, &data, &["call", "-h"], "");
     let text = String::from_utf8(group.stdout).unwrap();
-    assert!(text.contains("board call tasks.due -h"), "{text}");
+    assert!(text.contains("board call tasks.available -h"), "{text}");
 }
 
 #[test]

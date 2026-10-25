@@ -4,12 +4,6 @@ import sqlite3
 from contextlib import closing
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS tasks (
-    blob TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    status TEXT NOT NULL,
-    due TEXT
-) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS tasks_v2 (
     blob TEXT PRIMARY KEY,
     title TEXT NOT NULL,

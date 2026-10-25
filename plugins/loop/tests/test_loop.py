@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from conftest import HEAD, PLAN, Board, change, mount_repo, record, report
+from conftest import HEAD, PLAN, Board, change, mount_repo, record, report, task
 
 PATH = "/changes/t"
 
@@ -119,12 +119,12 @@ def test_advance_runs_through_learn_to_done_and_refuses_to_leave_done(board: Boa
 
 def test_attach_refuses_a_reference_that_reaches_nothing_and_adds_one_that_does_once(board: Board) -> None:
     board.write("changes/t.json", change())
-    board.write("tasks/a.json", record("tasks/task/v1", status="open"))
-    refused = board.refusal("attach", {"path": PATH, "ref": "/tasks/b"})
-    assert (refused["code"], refused["fields"]["ref"]) == ("loop::ref::dangling", "/tasks/b")
-    assert board.call("attach", {"path": PATH, "ref": "/tasks/a"}) == {"path": PATH, "records": 1}
-    assert board.call("attach", {"path": PATH, "ref": "/tasks/a"}) == {"path": PATH, "records": 1}
-    assert board.read("changes/t.json")["records"] == ["/tasks/a"]
+    board.write("tasks/a.md", task())
+    refused = board.refusal("attach", {"path": PATH, "ref": "/tasks/b.md"})
+    assert (refused["code"], refused["fields"]["ref"]) == ("loop::ref::dangling", "/tasks/b.md")
+    assert board.call("attach", {"path": PATH, "ref": "/tasks/a.md"}) == {"path": PATH, "records": 1}
+    assert board.call("attach", {"path": PATH, "ref": "/tasks/a.md"}) == {"path": PATH, "records": 1}
+    assert board.read("changes/t.json")["records"] == ["/tasks/a.md"]
 
 
 def test_attach_sets_the_route_head_issue_and_pull_request(board: Board) -> None:
@@ -148,9 +148,9 @@ def test_attach_with_nothing_to_change_is_refused_by_its_input_schema_and_with_o
 
 def test_a_path_that_holds_no_change_is_refused_and_one_that_does_is_answered(board: Board) -> None:
     board.write("changes/t.json", change())
-    board.write("tasks/a.json", record("tasks/task/v1", status="open"))
+    board.write("tasks/a.md", task())
     for capability in ("next", "attach", "advance"):
-        given = {"path": "/tasks/a", "route": "owner"} if capability == "attach" else {"path": "/tasks/a"}
+        given = {"path": "/tasks/a.md", "route": "owner"} if capability == "attach" else {"path": "/tasks/a.md"}
         assert board.refusal(capability, given)["code"] == "loop::change::not_found", capability
     assert board.call("next", {"path": PATH})["phase"] == "shape"
 

@@ -33,7 +33,7 @@ The gate is the contract. `next` says what the current phase still lacks;
 - **plan**: have the plan reviewed with clean context and attach the
   `review/report/v1`. On the `ask-first` route, attach the owner's
   `plans/decision/v1` whose `refs` name the plan.
-- **build**: build test-first. Attach each `tasks/task/v1`. Run the check
+- **build**: build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
   it.
 - **review**: review the head commit with clean context and attach the

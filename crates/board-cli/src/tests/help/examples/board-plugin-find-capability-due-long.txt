@@ -1,2 +1,0 @@
-PLUGIN  CAPABILITY  ENABLED  DESCRIPTION                                            VERSION
-tasks   due         false    Unfinished tasks, open or waiting, due before a date.  0.1.0

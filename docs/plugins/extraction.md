@@ -14,7 +14,7 @@ sends batches, in display path order, of at most 1,000 records or 16 MiB:
 {
   "$type": "board/extract/v1",
   "records": [
-    { "blob": "9c1e…", "path": "/tasks/write-plan", "type": "tasks/task/v1", "record": {} }
+    { "blob": "9c1e…", "path": "/tasks/write-plan.md", "type": "tasks/task/v2", "record": {} }
   ],
   "board": { "root": "…", "database": "…" }
 }

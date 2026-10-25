@@ -123,7 +123,7 @@ def test_pr_replaces_the_pr_md_an_earlier_call_wrote(board: Board) -> None:
 def test_a_path_that_holds_another_record_is_refused_and_the_same_path_holding_a_change_is_answered(
     board: Board,
 ) -> None:
-    board.write("changes/t.json", record("tasks/task/v1", status="open"))
+    board.write("changes/t.json", record("plans/decision/v1", refs=[]))
     refused = board.refusal("pr", {"path": PATH})
     assert (refused["code"], refused["fields"]["path"]) == ("loop::change::not_found", PATH)
     assert not (board.root / "changes/t/pr.md").exists()
