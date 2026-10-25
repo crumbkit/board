@@ -2,6 +2,7 @@
 // agent read. Pure functions, so the tests can pin every word.
 
 import type { Effect, Pending } from '../types'
+import { PENDING_SQL } from './query'
 
 type Report = Record<string, unknown>
 
@@ -14,47 +15,44 @@ function parseJson(text: string): Report | null {
   }
 }
 
-/** Board's failure code and message in `stdout`, or the exit status and stderr when it printed none. */
-export function failure(exitCode: number, stdout: string, stderr: string): string {
+/** Board's failure code and message, when `stdout` holds a Board failure report. */
+export function boardFailure(stdout: string): string | null {
   const report = parseJson(stdout)
-  if (typeof report?.code === 'string') return `${report.code} ${String(report.message ?? '')}`.trim()
-  return `exit ${exitCode} ${stderr.trim().slice(0, 500)}`.trim()
+  return typeof report?.code === 'string' ? `${report.code} ${String(report.message ?? '')}`.trim() : null
 }
 
-const PENDING = '/effects/pending/'
+/** Board's failure, or the exit status and stderr when it printed none. */
+export const failure = (exitCode: number, stdout: string, stderr: string) =>
+  boardFailure(stdout) ?? `exit ${exitCode} ${stderr.trim().slice(0, 500)}`.trim()
 
-/**
- * The pending effects that no seen record answers, oldest id first, or the one
- * with `id`. Board writes a seen record at the same id under `/effects/seen/`
- * and keeps the pending effect, so an answered effect is one with a seen record.
- */
-export function pendingSql(id?: string): string {
-  const one = id === undefined ? '' : ` AND e.logical = '${PENDING}${id.replaceAll("'", "''")}'`
-  return (
-    `SELECT substr(e.logical, ${PENDING.length + 1}) AS id, e.body FROM records e ` +
-    `WHERE e.type = 'board/effect/v1' AND e.logical LIKE '${PENDING}%'${one} ` +
-    "AND NOT EXISTS (SELECT 1 FROM records s WHERE s.logical = '/effects/seen/' || " +
-    `substr(e.logical, ${PENDING.length + 1})) ORDER BY e.logical`
-  )
-}
+const ID = /^[0-9a-f]{64}$/
 
-/** Reads `board --json query pendingSql()`; null when it printed no query report. */
-export function parsePending(stdout: string): Pending | null {
+/** The query for every pending effect, or for the one with `id`; an id that is not 64 hex digits matches none. */
+export const pendingSql = (id?: string) =>
+  id === undefined ? PENDING_SQL : `SELECT * FROM (${PENDING_SQL}) WHERE id = '${ID.test(id) ? id : ''}'`
+
+/** Writes `home` at the start of `path` as `~`. */
+const tilde = (path: string, home: string | undefined) =>
+  home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path
+
+/** Reads `board --json query pendingSql()`; null when it printed no query report. A row whose id is not 64 hex digits is left out. */
+export function parsePending(stdout: string, home?: string): Omit<Pending, 'failed'> | null {
   const report = parseJson(stdout)
-  if (report?.schema !== 'board/query-report/v2' || !Array.isArray(report.data)) return null
-  const effects = (report.data as unknown[][]).flatMap(([id, body]) => {
-    const record = parseJson(String(body))
-    if (record === null) return []
-    const content =
-      typeof record.text === 'string' ? record.text : record.record === undefined ? null : JSON.stringify(record.record, null, 2)
+  const columns = (report?.summary as { columns?: string[] } | undefined)?.columns
+  if (report?.schema !== 'board/query-report/v2' || !Array.isArray(report.data) || columns === undefined) return null
+  const effects = (report.data as unknown[][]).flatMap(row => {
+    const r = Object.fromEntries(columns.map((c, i) => [c, row[i]]))
+    if (!ID.test(String(r.id))) return []
     const effect: Effect = {
-      id: String(id),
-      board: String(record.board),
-      plugin: String(record.plugin),
-      op: String(record.op),
-      path: String(record.path),
-      content,
-      replaces: typeof record.prior === 'string',
+      id: String(r.id),
+      board: tilde(String(r.board), home),
+      plugin: String(r.plugin),
+      op: String(r.op),
+      path: String(r.path),
+      replaces: r.replaces === 1,
+      head: typeof r.head === 'string' ? r.head : null,
+      bytes: Number(r.bytes ?? 0),
+      lines: Number(r.lines ?? 0),
     }
     return [effect]
   })
@@ -78,23 +76,49 @@ export function outputText(result: unknown): string {
   return [stdout, stderr].filter(s => typeof s === 'string').join('\n')
 }
 
-/** The last segment of a board's root directory. */
-export const boardName = (root: string) => root.split('/').filter(Boolean).at(-1) ?? root
+/**
+ * Text with each C0 and C1 control character but line feed and tab written as
+ * `\xNN`. Claude Code refuses a whole drawing that holds one.
+ */
+export const visible = (text: string) =>
+  text.replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, c => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase()}`)
 
 /** The band's line. */
 export const waitingLine = (n: number) => (n === 1 ? '1 effect waits for your answer' : `${n} effects wait for your answer`)
 
 /** One line naming who asks for what, where. */
-export const headline = (e: Effect) => `${e.plugin} asks to ${e.op} ${e.path} in ${boardName(e.board)}`
+export const headline = (e: Effect) => visible(`${e.plugin} asks to ${e.op} ${e.path} in ${e.board}`)
 
-/** The first lines of what a put would write, cut short, with a note when it replaces a file. */
+/** The command that prints an effect whole. */
+export const getCommand = (e: Effect) => `board --personal get /effects/pending/${e.id}`
+
+const size = (bytes: number) => (bytes < 1024 ? `${bytes} bytes` : `${Math.round(bytes / 1024)} KB`)
+
+/**
+ * What the owner reads under the headline: the first lines of what a put
+ * would write, how much is left out and how to read it whole, and, for an op
+ * other than put, that an approval stands until its seen record is removed.
+ */
 export function preview(e: Effect, lines = 8, chars = 600): string {
-  if (e.content === null) return e.replaces ? 'It replaces the file there.' : ''
-  const all = e.content.split('\n')
-  let shown = all.slice(0, lines).join('\n')
-  if (shown.length > chars) shown = shown.slice(0, chars)
-  const cut = shown.length < e.content.trimEnd().length ? '\n…' : ''
-  return `${e.replaces ? 'It replaces the file there with:' : 'It writes a new file:'}\n${shown.trimEnd()}${cut}`
+  const parts: string[] = []
+  if (e.head !== null) {
+    let shown = e.head.split('\n').slice(0, lines).join('\n')
+    if (shown.length > chars) shown = shown.slice(0, chars)
+    shown = shown.replace(/\n$/, '')
+    const whole = new TextEncoder().encode(e.head).length === e.bytes && shown === e.head.replace(/\n$/, '')
+    parts.push(e.replaces ? 'It replaces the file there with:' : 'It writes a new file:', visible(shown))
+    if (!whole) {
+      const more = e.lines - shown.split('\n').length
+      const left = more > 0 ? `and ${more} more line${more === 1 ? '' : 's'}` : 'and the rest of the line'
+      parts.push(`… ${left}, ${size(e.bytes)} in all. ${getCommand(e)} prints it whole.`)
+    }
+  } else if (e.replaces) {
+    parts.push('It replaces the file there.')
+  }
+  if (e.op !== 'put') {
+    parts.push(visible(`An approval lets ${e.plugin} ${e.op} ${e.path} again until /effects/seen/${e.id} is removed.`))
+  }
+  return parts.join('\n')
 }
 
 /** The dialog's question when a put is asked. */
