@@ -185,9 +185,10 @@ and how Board keeps each database.
 
 ## Writing a plugin in Python
 
-The Python plugins use the library in `python/board-plugin/`. There are
-six: `controls`, `tasks`, `evals`, `runs`, `share` and `notes`.
-Each `plugins/<name>/README.md` describes its records and capabilities. [plugins/share.md](plugins/share.md) explains the design of
+The plugins here are written in Python through the shared library in
+`python/board-plugin/`. There are six: `controls`, `tasks`, `evals`,
+`runs`, `share` and `notes`. The README in each `plugins/<name>/` describes its records and
+capabilities. [plugins/share.md](plugins/share.md) explains the design of
 `share`, and [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
 the controls mod.
 [plugins/python.md](plugins/python.md) says what Board validates for a plugin,

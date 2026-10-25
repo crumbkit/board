@@ -12,7 +12,8 @@ file is deleted.
    a capability may read.
 2. `review/brief/v1`, `review/report/v1` and `review.run`.
 3. `review.post` posts a report as a pull request comment through the effect
-   check.
+   check. It waits for `board decide` and settings (plan/board-ui.md build
+   step 2).
 4. `review.covered`, which CI calls to check a pull request is covered by
    reports.
 
@@ -43,22 +44,43 @@ repositories join as it proves itself.
    may read come from the manifest (build step 1). Decision 9 names the
    agent it starts.
 5. **A review carries over a rebase** when the patch ids of the covered
-   commits match the new commits.
+   commits match the new commits. A patch id is `git diff-tree -p
+   --no-renames --no-ext-diff --no-textconv --full-index <commit> | git
+   patch-id --verbatim`, run without global or system git config, so the
+   author's machine and CI agree and a whitespace-only change is a new
+   patch. `review` runs `git` itself, as `notes` does.
 6. **Anyone may post a report.** A person's GitHub review counts as review
    evidence and is recorded as a report with `source` set to its URL.
 7. **Posting is an effect.** `review.post` asks `board decide --op
-   review.comment --path <pull request URL>`. With no rule the answer is
-   ask (plan/board-ui.md decision 9).
+   review.post --path <report path>`. With no rule the answer is ask
+   (plan/board-ui.md decision 9), and the ask shows the whole comment, since
+   an agent wrote it from an untrusted diff.
 8. **The coverage check** is `review.covered --base <sha> --head <sha>`,
    which CI runs on each pull request.
    - It passes when reports cover every commit from the merge base to the
-     head, by range or by patch id.
+     head, by range or by patch id. A merge commit or an empty commit has no
+     patch id, so only a report whose range contains it covers it.
    - A report whose verdict is `changes` does not count.
    - It reads reports committed to the repository's own board.
-   - It skips commits that only add review records, so committing a report
-     does not make a new head that no report covers.
+   - It skips commits that only add valid `review/*` records under
+     `/reviews/`, so committing a report does not make a new head that no
+     report covers. A merge, or a commit that changes or deletes a file, is
+     never skipped.
+   - It proves that reports cover the head. It does not prove a review
+     happened: anyone who can add a commit to the pull request, from a fork
+     too, can commit an approving report, and the workflow that runs the
+     check is part of the pull request. The check is evidence for the owner,
+     not a merge gate.
    - Each repository that uses review states this as a written control, so
      `controls.check` names it. A controls rule would fail every session
      start on an unreviewed branch.
-9. **The agent command.** `review.run` starts the command named in the
-   board's settings. The documented example is `claude -p`.
+9. **The agent command.** `review.run` starts the argv list in
+   `BOARD_REVIEW_AGENT`, an environment variable the user sets and the
+   manifest declares (build step 1), never a command from a board's tree,
+   because mounting brings no code. No shell parses it. The agent reads an
+   untrusted diff, so it starts in an empty temporary directory with the
+   brief and diff on stdin, and loads no project settings or tools. The
+   documented example is `claude -p --output-format json --setting-sources
+   user --tools ""`, whose JSON gives the token counts; the implementer
+   checks those flags against `claude --help`. A verdict is no stronger
+   than the agent's resistance to text in the diff.
