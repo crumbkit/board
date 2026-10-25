@@ -20,7 +20,7 @@ const BAND = {
   props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
-type Answers = { check?: { exitCode: number; stdout: string }; forPath?: Record<string, object[]>; tools?: string[] }
+type Answers = { check?: { exitCode: number; stdout: string }; forPath?: Record<string, object[]> | 'fails'; tools?: string[] }
 
 /** Stands in for the engine beneath the plugin: git, board, the tool list, the status line and the transcript. */
 function engine(on: On, answers: Answers) {
@@ -38,7 +38,8 @@ function engine(on: On, answers: Answers) {
       const check = answers.check ?? { exitCode: 0, stdout: CHECK }
       return run(check.exitCode, check.stdout)
     }
-    const file = e.argv.at(-1) ?? ''
+    const file = (e.argv.at(-1) ?? '').replace(/^\.\//, '')
+    if (answers.forPath === 'fails') return run(2, '')
     events.push(`for-path ${e.init?.cwd}/${file}`)
     return run(0, report({ controls: answers.forPath?.[file] ?? [] }))
   })
@@ -103,7 +104,7 @@ test('with no board the first message carries no block and the status line stays
 })
 
 test('an edit of a file with a control the session was not told about appends a row naming it before the edit runs', async ($, on) => {
-  const { events, appended } = engine(on, { forPath: { 'listing.rs': [PARSER] } })
+  const { events, appended } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
   await start($)
   await edit($, 'src/listing.rs')
   expect(events).toEqual(['check', `for-path ${ROOT}/src/listing.rs`, 'append', 'edit'])
@@ -114,7 +115,7 @@ test('an edit of a file with a control the session was not told about appends a 
 })
 
 test('an edit of a file whose controls the session was told about appends nothing, and a file is asked about once', async ($, on) => {
-  const { events } = engine(on, { forPath: { 'AGENTS.md': [DOCS], 'listing.rs': [PARSER] } })
+  const { events } = engine(on, { forPath: { 'AGENTS.md': [DOCS], 'src/listing.rs': [PARSER] } })
   await start($)
   await edit($, 'AGENTS.md')
   await edit($, 'src/listing.rs')
@@ -147,4 +148,30 @@ test('without the attention mod the status line names the controls and the band 
   expect(statuses).toEqual(['board: 2 controls on crumbkit'])
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await band.find({ text: /controls on crumbkit/ })).toBeUndefined()
+})
+
+test('a compaction forgets the rows, so the next edit names its control again', async ($, on) => {
+  const { appended } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
+  await start($)
+  await $.prompt.context({ blocks: [] })
+  await edit($, 'src/listing.rs')
+  await $.prompt.context({ blocks: [] })
+  await edit($, 'src/listing.rs')
+  expect(appended.length).toBe(2)
+})
+
+test('a subagent is told on its own, and a file outside the repository runs nothing', async ($, on) => {
+  const { events } = engine(on, { forPath: { 'src/listing.rs': [PARSER] } })
+  await start($)
+  await edit($, 'src/listing.rs')
+  await $.tool.call({ tool: 'Edit', file_path: `${ROOT}/src/listing.rs`, old_string: 'a', new_string: 'b', replace_all: false, agentId: 'a1' })
+  await $.tool.call({ tool: 'Write', file_path: '/tmp/notes.md', content: 'x' })
+  expect(events).toEqual(['check', `for-path ${ROOT}/src/listing.rs`, 'append', 'edit', 'append', 'edit', 'edit'])
+})
+
+test('a for-path run that fails lets the edit run and appends nothing', async ($, on) => {
+  const { events } = engine(on, { forPath: 'fails' })
+  await start($)
+  await edit($, 'src/listing.rs')
+  expect(events).toEqual(['check', 'edit'])
 })

@@ -19,8 +19,8 @@ const ATTENTION = 'mcp__attention-approve__request_signature'
 
 const hasAttention = async ($: EngineInterface) => (await $.tool.list()).some(t => t.name === ATTENTION)
 
-const dirname = (file: string) => file.slice(0, Math.max(1, file.lastIndexOf('/')))
-const basename = (file: string) => file.slice(file.lastIndexOf('/') + 1)
+// A slow or hung board holds the session start or the edit no longer than this.
+const TIMEOUT_MS = 5000
 
 /** The repository the session starts in, or the directory itself outside one. */
 async function repositoryRoot($: EngineInterface, cwd: string): Promise<string> {
@@ -32,19 +32,21 @@ async function repositoryRoot($: EngineInterface, cwd: string): Promise<string> 
   }
 }
 
+/** The controls the context block names. */
+const toldBy = (answer: Checked | null) => (answer?.kind === 'read' ? answer.controls.map(c => c.control) : [])
+
 /** Runs controls.check at the repository root and keeps the answer for the session. */
 async function check($: EngineInterface, cwd: string): Promise<Checked | null> {
   const root = await repositoryRoot($, cwd)
   let answer: Checked | null
   try {
-    const ran = await $.process.run(['/bin/sh', '-c', CHECK], { cwd: root })
+    const ran = await $.process.run(['/bin/sh', '-c', CHECK], { cwd: root, timeoutMs: TIMEOUT_MS })
     answer = parseCheck(root, ran.exitCode, ran.stdout, ran.stderr)
   } catch (error) {
     answer = { kind: 'failed', root, code: 'not run', message: String(error) }
   }
   await update($, checked, () => answer)
-  const named = answer?.kind === 'read' ? answer.controls.map(c => c.control) : []
-  await update($, told, all => ({ ...all, '': named }))
+  await update($, told, all => ({ ...all, '': toldBy(answer) }))
   return answer
 }
 
@@ -54,9 +56,15 @@ async function check($: EngineInterface, cwd: string): Promise<Checked | null> {
 const forPath = new Map<string, Control[] | null>()
 
 /** Appends a hidden row naming each control on `file` the conversation was not told about. */
+// The path goes to board relative to the root, so a file in a directory that
+// does not exist yet is looked up too. A file outside the root, or a session
+// in a repository no board holds, runs nothing.
 async function beforeEdit($: EngineInterface, file: string, agentId: string | undefined) {
+  const root = (await read($, checked))?.root
+  if (root === undefined || !file.startsWith(`${root}/`)) return
   if (!forPath.has(file)) {
-    const ran = await $.process.run(['/bin/sh', '-c', FOR_PATH, 'for-path', basename(file)], { cwd: dirname(file) })
+    const relative = `./${file.slice(root.length + 1)}`
+    const ran = await $.process.run(['/bin/sh', '-c', FOR_PATH, 'for-path', relative], { cwd: root, timeoutMs: TIMEOUT_MS })
     forPath.set(file, parseForPath(ran.exitCode, ran.stdout))
   }
   const key = agentId ?? ''
@@ -86,10 +94,12 @@ export const register: Register = on => {
   })
 
   // One block, which the engine sends in the first request and again after a
-  // compaction.
+  // compaction or /clear. The rows that named other controls are gone then, so
+  // the main conversation counts as told only what the block says.
   on('prompt.context', async ($, e, next) => {
     const context = await next(e)
     const answer = await read($, checked)
+    await update($, told, all => ({ ...all, '': toldBy(answer) }))
     const text = answer === null ? null : contextText(answer)
     if (text === null) return context
     return { ...context, blocks: [...context.blocks.filter(b => b.name !== BLOCK), { name: BLOCK, text }] }

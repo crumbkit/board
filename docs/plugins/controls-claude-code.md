@@ -21,22 +21,26 @@ and the mod then adds nothing. Any other failure is said in the block, with
 the command to run by hand.
 
 The mod shows one line, such as "2 controls on crumbkit". When the attention
-mod is loaded, which the mod learns from its `request_signature` tool, the
+mod is loaded, which the mod learns from its
+`mcp__attention-approve__request_signature` tool, the
 line joins the band above the prompt that attention draws. Otherwise it goes
 to the status line.
 
 ## Before an edit
 
-A hook on `Edit` and `Write` runs `controls.for-path` for the file before the
-edit runs. When the answer names a control the conversation was not told
+A hook on `Edit` and `Write` runs `controls.for-path` at the repository root,
+with the file's path relative to it, before the edit runs. A file outside the
+repository, or one in a repository no board holds, runs nothing. When the answer names a control the conversation was not told
 about, the hook appends a hidden row that names it, so the model reads it
 before its next step. Controls from the session-start check count as told.
-Each agent, the main conversation and every subagent, has its own list.
+Each agent, the main conversation and every subagent, has its own list. A
+compaction or `/clear` drops the hidden rows, so the main conversation's list
+goes back to the controls in the block.
 
 The answer is cached per file for the session. A cache per directory was
 rejected because a pattern such as `*.rs` can match one file in a directory
-and not another. A lookup that fails lets the edit run as it would without the
-mod.
+and not another. Each board run stops after 5 seconds. A lookup that fails or
+stops lets the edit run as it would without the mod.
 
 ## Testing
 
