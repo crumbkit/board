@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "Option": {
+      "additionalProperties": false,
+      "description": "One answer the owner may give. An answer's `choice` and the question's `recommendation` name it by `id`.",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "Option",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`plans/question/v1`: a question an agent session needs the owner to answer.\n\nIt lives at `/projects/<project>/questions/<id>`, so its path names its\nproject. `<id>` is a sortable UTC time and a short random suffix, such as\n`20261024T1830Z-k3`. Its answer is a `plans/answer/v1` at\n`/projects/<project>/answers/<id>`, with the same id. `session` is the\nasking session's `local_` id, so the answer can be sent back to it. `repo`\nnames the repository, such as `crumbkit/viitta`, when there is one.\n`recommendation` is the `id` of one of `options`, and `why` gives the reason.\n`blocks` says what cannot proceed until the question is answered. `status`\nis `open` until an answer is recorded, then `answered`; `withdrawn` means\nthe question no longer matters. `context_path` references a Markdown file\nin the board that holds long background. `note` records what the asker did\nnot know, such as details nobody has written down yet. Never put a secret\nvalue in a question.",
+  "properties": {
+    "$type": {
+      "const": "plans/question/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "asked": {
+      "format": "date-time",
+      "title": "Asked",
+      "type": "string"
+    },
+    "blocks": {
+      "title": "Blocks",
+      "type": "string"
+    },
+    "context_path": {
+      "format": "board-ref",
+      "title": "Context Path",
+      "type": "string"
+    },
+    "note": {
+      "title": "Note",
+      "type": "string"
+    },
+    "options": {
+      "items": {
+        "$ref": "#/$defs/Option"
+      },
+      "title": "Options",
+      "type": "array"
+    },
+    "question": {
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "recommendation": {
+      "title": "Recommendation",
+      "type": "string"
+    },
+    "repo": {
+      "title": "Repo",
+      "type": "string"
+    },
+    "session": {
+      "pattern": "^local_[0-9a-f-]+$",
+      "title": "Session",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "open",
+        "answered",
+        "withdrawn"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "why": {
+      "title": "Why",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "question",
+    "session",
+    "asked",
+    "status"
+  ],
+  "title": "QuestionRecord",
+  "type": "object"
+}

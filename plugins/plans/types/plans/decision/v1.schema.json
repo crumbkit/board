@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "description": "`plans/decision/v1`: a decision a session made, and why.\n\n`decision` states it and `why` gives the reason; `alternatives` lists what\nwas not chosen. `session` names the session that decided and `decided` is\nwhen. `refs` names what the decision concerns, such as a pull request's URL\nor a record's path. `review` is `wanted` when the owner should look at it.\n`written_by` names the plugin and hook that wrote a stub without an agent,\nsuch as `runs/pr-create`; only such a stub may leave `why` empty, for\nthe agent to fill in.",
+  "if": {
+    "not": {
+      "required": [
+        "written_by"
+      ]
+    }
+  },
+  "properties": {
+    "$type": {
+      "const": "plans/decision/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "alternatives": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Alternatives",
+      "type": "array"
+    },
+    "decided": {
+      "format": "date-time",
+      "title": "Decided",
+      "type": "string"
+    },
+    "decision": {
+      "title": "Decision",
+      "type": "string"
+    },
+    "refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Refs",
+      "type": "array"
+    },
+    "review": {
+      "enum": [
+        "wanted",
+        "none"
+      ],
+      "title": "Review",
+      "type": "string"
+    },
+    "session": {
+      "title": "Session",
+      "type": "string"
+    },
+    "why": {
+      "title": "Why",
+      "type": "string"
+    },
+    "written_by": {
+      "description": "The plugin and hook that wrote this record, such as runs/pr-create; absent when an agent or a person wrote it.",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "title": "Written By",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "decision",
+    "why",
+    "session",
+    "decided"
+  ],
+  "then": {
+    "properties": {
+      "why": {
+        "minLength": 1
+      }
+    }
+  },
+  "title": "DecisionRecord",
+  "type": "object"
+}

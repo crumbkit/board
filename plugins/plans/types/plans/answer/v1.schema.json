@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "Where the owner gave the answer.\n\n`session` is the Claude Code session id of the transcript the owner typed\nin, `entry` is that turn's uuid, and `quote` is the owner's text exactly as\nit appears in the entry. Nothing checks it yet; it is written so that a\nlater check can.",
+      "properties": {
+        "entry": {
+          "title": "Entry",
+          "type": "string"
+        },
+        "quote": {
+          "title": "Quote",
+          "type": "string"
+        },
+        "session": {
+          "title": "Session",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "entry",
+        "quote"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`plans/answer/v1`: the owner's answer to a `plans/question/v1`.\n\nIt lives at `/projects/<project>/answers/<id>`, with its question's id, so a\nquestion has one answer. `question` references the question. `choice` is\nthe `id` of the option the owner chose, or `none` when the owner's words\nchoose no option. `words` holds the owner's words verbatim. `answered` is\nwhen the owner gave them. `by` names the session that wrote the record,\nwhich may differ from the session that asked. Never put a secret value in\nan answer.",
+  "properties": {
+    "$type": {
+      "const": "plans/answer/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "answered": {
+      "format": "date-time",
+      "title": "Answered",
+      "type": "string"
+    },
+    "by": {
+      "title": "By",
+      "type": "string"
+    },
+    "choice": {
+      "minLength": 1,
+      "title": "Choice",
+      "type": "string"
+    },
+    "evidence": {
+      "$ref": "#/$defs/Evidence"
+    },
+    "question": {
+      "format": "board-ref",
+      "title": "Question",
+      "type": "string",
+      "x-board-type": "plans/question/v1"
+    },
+    "words": {
+      "minLength": 1,
+      "title": "Words",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "question",
+    "choice",
+    "words",
+    "answered"
+  ],
+  "title": "AnswerRecord",
+  "type": "object"
+}

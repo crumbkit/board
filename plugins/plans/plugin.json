@@ -1,0 +1,177 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The questions under a path whose status is open, oldest first.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The open questions under `path`, oldest first.",
+        "properties": {
+          "limit": {
+            "default": 100,
+            "description": "The most questions to return, 1 to 10,000; 100 when left out.",
+            "maximum": 10000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "path": {
+            "default": "/",
+            "description": "Only questions below this logical path, such as /projects/board; every question when left out.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "title": "OpenInput",
+        "type": "object"
+      },
+      "name": "open",
+      "outputSchema": {
+        "$defs": {
+          "OpenQuestion": {
+            "additionalProperties": false,
+            "description": "An open question, by path, with what the owner needs to answer it.",
+            "properties": {
+              "asked": {
+                "format": "date-time",
+                "title": "Asked",
+                "type": "string"
+              },
+              "blocks": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Blocks"
+              },
+              "options": {
+                "items": {
+                  "$ref": "#/$defs/Option"
+                },
+                "title": "Options",
+                "type": "array"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "question": {
+                "title": "Question",
+                "type": "string"
+              },
+              "recommendation": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Recommendation"
+              },
+              "session": {
+                "title": "Session",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "question",
+              "asked",
+              "session",
+              "options",
+              "recommendation",
+              "blocks"
+            ],
+            "title": "OpenQuestion",
+            "type": "object"
+          },
+          "Option": {
+            "additionalProperties": false,
+            "description": "One answer the owner may give. An answer's `choice` and the question's `recommendation` name it by `id`.",
+            "properties": {
+              "id": {
+                "minLength": 1,
+                "title": "Id",
+                "type": "string"
+              },
+              "text": {
+                "minLength": 1,
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "text"
+            ],
+            "title": "Option",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Open questions, oldest first.\n\n`total` counts every open question under the path and `truncated` says\nwhether the limit left some out. `unreadable` is how many open questions\nwere left out because Board marks them degraded or this plugin cannot read\nthem.",
+        "properties": {
+          "questions": {
+            "items": {
+              "$ref": "#/$defs/OpenQuestion"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unreadable": {
+            "title": "Unreadable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "questions",
+          "total",
+          "truncated",
+          "unreadable"
+        ],
+        "title": "OpenOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Questions an agent session asks the owner, the owner's answers, and the decisions sessions record. `board call plans.open` lists the questions still waiting for an answer, oldest first. README.md in the plugin's directory says where each record lives.",
+  "metadata": {
+    "area": "planning"
+  },
+  "name": "plans",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_plans"
+  ],
+  "types": [
+    "plans/question/v1",
+    "plans/answer/v1",
+    "plans/decision/v1"
+  ],
+  "version": "0.1.0"
+}
