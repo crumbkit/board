@@ -126,7 +126,9 @@ class AnswerRecord(Record):
     the `id` of the option the owner chose, or `none` when the owner's words
     choose no option. `words` holds the owner's words verbatim. `answered` is
     when the owner gave them. `by` names the session that wrote the record,
-    which may differ from the session that asked. Never put a secret value in
+    which may differ from the session that asked. `written_by` names the
+    plugin and hook that wrote it, such as `plans/pane-answer`, when the owner
+    answered through a mod rather than to an agent. Never put a secret value in
     an answer.
     """
 
@@ -139,6 +141,7 @@ class AnswerRecord(Record):
     answered: AwareDatetime
     by: str | SkipJsonSchema[None] = None
     evidence: Evidence | SkipJsonSchema[None] = None
+    written_by: WrittenBy | SkipJsonSchema[None] = None
 
 
 class DecisionRecord(Record):

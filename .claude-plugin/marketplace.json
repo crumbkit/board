@@ -11,6 +11,10 @@
     {
       "name": "board-runs",
       "source": "./plugins/runs/claude-code"
+    },
+    {
+      "name": "board-plans",
+      "source": "./plugins/plans/claude-code"
     }
   ],
   "description": "Claude Code mods of the Board plugins."

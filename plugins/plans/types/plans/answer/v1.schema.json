@@ -27,7 +27,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`plans/answer/v1`: the owner's answer to a `plans/question/v1`.\n\nIt lives at `/projects/<project>/answers/<id>`, with its question's id, so a\nquestion has one answer. `question` references the question. `choice` is\nthe `id` of the option the owner chose, or `none` when the owner's words\nchoose no option. `words` holds the owner's words verbatim. `answered` is\nwhen the owner gave them. `by` names the session that wrote the record,\nwhich may differ from the session that asked. Never put a secret value in\nan answer.",
+  "description": "`plans/answer/v1`: the owner's answer to a `plans/question/v1`.\n\nIt lives at `/projects/<project>/answers/<id>`, with its question's id, so a\nquestion has one answer. `question` references the question. `choice` is\nthe `id` of the option the owner chose, or `none` when the owner's words\nchoose no option. `words` holds the owner's words verbatim. `answered` is\nwhen the owner gave them. `by` names the session that wrote the record,\nwhich may differ from the session that asked. `written_by` names the\nplugin and hook that wrote it, such as `plans/pane-answer`, when the owner\nanswered through a mod rather than to an agent. Never put a secret value in\nan answer.",
   "properties": {
     "$type": {
       "const": "plans/answer/v1",
@@ -60,6 +60,12 @@
     "words": {
       "minLength": 1,
       "title": "Words",
+      "type": "string"
+    },
+    "written_by": {
+      "description": "The plugin and hook that wrote this record, such as runs/pr-create; absent when an agent or a person wrote it.",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "title": "Written By",
       "type": "string"
     }
   },
