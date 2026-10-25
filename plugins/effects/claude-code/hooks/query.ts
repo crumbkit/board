@@ -12,12 +12,9 @@
  *
  * `board answer` keeps the pending effect and writes a `board/seen/v1` at the
  * same id under `/effects/seen/`, so an answered effect is one with a seen
- * record Board reads as an answer. Board reads one as `Seen` in board-model's
- * effect.rs: a string `effect`, an `answer` of approve or refuse, an
- * optional string `reason`, and no other key. The query checks the same,
- * with one limit it cannot check in SQL: in a seen record with two `answer`
- * keys, SQLite and Board's JSON parser may read different ones, so the mod
- * and Board can disagree on whether that effect was answered.
+ * record Board reads as an answer. The index parses each seen record as
+ * Board's `Seen` and marks one that fails as degraded, so `status = 'ok'`
+ * is the same check Board makes.
  * The NOT IN can go once answered effects leave `/effects/pending/`.
  * `pendingSql(id)` in effects.ts narrows the first `LIKE` to one effect's
  * path, so that text must stay as it is.
@@ -39,9 +36,6 @@ SELECT substr(logical, 18) AS id,
 FROM e
 WHERE substr(logical, 18) NOT IN (
   SELECT substr(logical, 15) FROM records WHERE type = 'board/seen/v1' AND logical LIKE '/effects/seen/%'
-    AND json_type(body, '$.effect') = 'text'
-    AND json_extract(body, '$.answer') IN ('approve', 'refuse')
-    AND (json_type(body, '$.reason') IS NULL OR json_type(body, '$.reason') = 'text')
-    AND NOT EXISTS (SELECT 1 FROM json_each(body) WHERE key NOT IN ('$type', 'effect', 'answer', 'reason'))
+    AND status = 'ok'
 )
 ORDER BY id`

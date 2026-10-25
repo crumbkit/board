@@ -70,8 +70,8 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
 {
     let [a, b, c, d, empty, malformed] =
         ["a", "b", "c", "d", "e", "f"].map(|digit| digit.repeat(64));
-    let [no_effect, extra_key, bad_reason, reasoned] =
-        ["1", "2", "3", "4"].map(|digit| digit.repeat(64));
+    let [no_effect, extra_key, bad_reason, reasoned, null_reason] =
+        ["1", "2", "3", "4", "5"].map(|digit| digit.repeat(64));
     let scenario = board();
     let long = "x".repeat(2500);
     pend(
@@ -101,14 +101,18 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
     extra_key_seen["note"] = json!("x");
     let mut bad_reason_seen = seen(&bad_reason, "refuse");
     bad_reason_seen["reason"] = json!(7);
-    // A string reason is an answer, so that effect is not listed.
+    // A string reason is an answer, so that effect is not listed, and so is
+    // a null one, which Board reads as no reason.
     let mut reasoned_seen = seen(&reasoned, "refuse");
     reasoned_seen["reason"] = json!("not now");
+    let mut null_reason_seen = seen(&null_reason, "refuse");
+    null_reason_seen["reason"] = Value::Null;
     for (id, record) in [
         (&no_effect, no_effect_seen),
         (&extra_key, extra_key_seen),
         (&bad_reason, bad_reason_seen),
         (&reasoned, reasoned_seen),
+        (&null_reason, null_reason_seen),
     ] {
         pend(&scenario, id, "/notes/g.md", &json!({"text": "g"}));
         see(&scenario, id, &record);

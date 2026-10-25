@@ -12,11 +12,9 @@ its own.
 
 - It lists the pending effects with one `board --personal query` over
   `/effects/pending/`, leaving out each effect with a `board/seen/v1` record
-  at the same id under `/effects/seen/` that Board reads as an answer: a
-  string `effect`, an `answer` of `approve` or `refuse`, an optional string
-  `reason`, and no other field. A seen record with two `answer` keys is the
-  one case the query cannot check: SQLite and Board may read different
-  ones. The query is in `hooks/query.ts`, and
+  at the same id under `/effects/seen/` that Board reads as an answer. The
+  index marks a seen record Board cannot parse as degraded, and the query
+  counts only those whose status is `ok`. The query is in `hooks/query.ts`, and
   crates/board-cli/src/tests/effects_mod.rs runs it against a real board. It
   returns only the fields the mod shows, the first 2,000 characters of the
   record or text a put would write, and that content's size in bytes and
