@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::kit::{Note, Printer, Refused};
-use super::{Shown, location, named, status_fields, status_text};
+use super::{Health, Shown, location, named, status_fields};
 use crate::report::Output;
 
 /// `board refs --help` after its options.
@@ -82,7 +82,7 @@ impl<'a> Cut<'a> {
                 "from {} {} {}{}",
                 reference.pointer,
                 reference.target,
-                status_text(reference.status),
+                Health(reference.status),
                 fields_text(reference.fields.as_ref())
             );
         }
@@ -115,6 +115,7 @@ impl<'a> Cut<'a> {
             .map(|reference| {
                 let mut value = json!({
                     "pointer": reference.pointer,
+                    "link": reference.link,
                     "target": reference.target.to_string(),
                     "location": reference.location.as_ref().map(|location| {
                         let display = location

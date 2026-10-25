@@ -52,7 +52,7 @@ fn read(board: &Scenario, path: &str) -> Vec<u8> {
 fn enable_writes_the_shipped_schema_and_names_the_plugin_in_the_config() {
     let (board, _data, plugins) = installed(SCHEMA);
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert_eq!(report.put.writes.len(), 2);
     assert_eq!(
@@ -70,10 +70,10 @@ fn enable_writes_the_shipped_schema_and_names_the_plugin_in_the_config() {
 fn enabling_twice_writes_nothing_the_second_time() {
     let (board, _data, plugins) = installed(SCHEMA);
     open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     let again = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert!(again.put.writes.is_empty());
     assert_eq!(again.put.commit, None);
@@ -88,7 +88,7 @@ fn an_enabled_plugin_whose_schema_is_missing_gets_only_the_schema() {
     );
     let config = read(&board, ".board/board.json");
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert_eq!(report.put.writes.len(), 1);
     assert_eq!(
@@ -107,7 +107,7 @@ fn a_plugin_that_ships_no_types_gets_only_the_config() {
         SCHEMA,
     );
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert_eq!(report.put.writes.len(), 1);
     assert!(!board.workdir().join(".board/types").exists());
@@ -123,7 +123,7 @@ fn a_board_that_commits_on_put_commits_the_enable_once() {
         Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
     );
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     let head = board.head().unwrap();
     assert_eq!(Some(head.id), report.put.commit);
@@ -151,7 +151,7 @@ fn a_schema_symlinked_to_a_different_one_refuses_the_enable_and_one_symlinked_to
     };
     let (board, _data, plugins) = linked(r#"{"type": "object"}"#);
     let refused = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap_err();
     assert_eq!(refused.code(), Code::PutSymlink);
     assert!(
@@ -160,7 +160,7 @@ fn a_schema_symlinked_to_a_different_one_refuses_the_enable_and_one_symlinked_to
     );
     let (board, _data, plugins) = linked(SCHEMA);
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert_eq!(report.put.writes.len(), 1, "only the config is written");
     let kept = std::fs::read_link(board.workdir().join(at)).unwrap();
@@ -175,7 +175,7 @@ fn a_different_schema_in_the_board_is_replaced_and_reported() {
         let (board, _data, plugins) = installed(SCHEMA);
         board.write(at, Item::File(other));
         let report = open(&board)
-            .plugin_enable(Some(&plugins), &notes())
+            .plugin_enable(Some(&plugins), None, &notes())
             .unwrap();
         assert_eq!(report.replaced, [at], "{other}");
         assert_eq!(report.put.writes.len(), 2, "{other}");
@@ -191,7 +191,7 @@ fn the_same_schema_in_another_layout_is_left_alone_and_not_reported() {
     let same = r#"{"required": ["title"], "type": "object"}"#;
     board.write(at, Item::File(same));
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert!(report.replaced.is_empty());
     assert_eq!(report.put.writes.len(), 1, "only the config is written");
@@ -202,7 +202,7 @@ fn the_same_schema_in_another_layout_is_left_alone_and_not_reported() {
 fn a_new_schema_is_written_but_not_reported_as_replaced() {
     let (board, _data, plugins) = installed(SCHEMA);
     let report = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
     assert!(report.replaced.is_empty());
 }
@@ -212,7 +212,7 @@ fn a_missing_or_unusable_shipped_schema_is_a_bad_manifest() {
     for schema in ["{", r#"{"type": 5}"#] {
         let (board, _data, plugins) = installed(schema);
         let refused = open(&board)
-            .plugin_enable(Some(&plugins), &notes())
+            .plugin_enable(Some(&plugins), None, &notes())
             .unwrap_err();
         assert_eq!(refused.code(), Code::PluginBadManifest, "{schema}");
     }
@@ -222,7 +222,7 @@ fn a_missing_or_unusable_shipped_schema_is_a_bad_manifest() {
         Item::Deleted,
     );
     let refused = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap_err();
     assert_eq!(refused.code(), Code::PluginBadManifest);
     assert!(
@@ -231,7 +231,11 @@ fn a_missing_or_unusable_shipped_schema_is_a_bad_manifest() {
             .contains("types/notes/note/v1.schema.json")
     );
     let (board, _data, plugins) = installed(SCHEMA);
-    assert!(open(&board).plugin_enable(Some(&plugins), &notes()).is_ok());
+    assert!(
+        open(&board)
+            .plugin_enable(Some(&plugins), None, &notes())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -243,12 +247,16 @@ fn a_plugin_whose_manifest_is_refused_cannot_be_enabled() {
         SCHEMA,
     );
     let refused = open(&board)
-        .plugin_enable(Some(&plugins), &notes())
+        .plugin_enable(Some(&plugins), None, &notes())
         .unwrap_err();
     assert!(matches!(refused, EnableError::Manifest { .. }));
     assert_eq!(refused.code(), Code::PluginBadManifest);
     let (board, _data, plugins) = installed(SCHEMA);
-    assert!(open(&board).plugin_enable(Some(&plugins), &notes()).is_ok());
+    assert!(
+        open(&board)
+            .plugin_enable(Some(&plugins), None, &notes())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -256,10 +264,14 @@ fn a_plugin_that_is_not_installed_cannot_be_enabled() {
     let (board, _data, plugins) = installed(SCHEMA);
     let other: PluginName = "other".parse().unwrap();
     let refused = open(&board)
-        .plugin_enable(Some(&plugins), &other)
+        .plugin_enable(Some(&plugins), None, &other)
         .unwrap_err();
     assert_eq!(refused.code(), Code::PluginNotInstalled);
-    assert!(open(&board).plugin_enable(Some(&plugins), &notes()).is_ok());
+    assert!(
+        open(&board)
+            .plugin_enable(Some(&plugins), None, &notes())
+            .is_ok()
+    );
 }
 
 #[test]
@@ -275,8 +287,12 @@ fn a_plugin_enabled_since_the_board_was_opened_is_kept() {
         ),
     );
     let other: PluginName = "other".parse().unwrap();
-    open(&board).plugin_enable(Some(&plugins), &other).unwrap();
-    opened.plugin_enable(Some(&plugins), &notes()).unwrap();
+    open(&board)
+        .plugin_enable(Some(&plugins), None, &other)
+        .unwrap();
+    opened
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
     assert_eq!(open(&board).config().plugins, vec![other, notes()]);
 }
 
@@ -285,7 +301,9 @@ fn a_config_broken_since_the_board_was_opened_says_to_run_the_enable_again() {
     let (board, _data, plugins) = installed(SCHEMA);
     let opened = open(&board);
     board.write(".board/board.json", Item::File("{"));
-    let refused = opened.plugin_enable(Some(&plugins), &notes()).unwrap_err();
+    let refused = opened
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap_err();
     assert_eq!(refused.code(), Code::PutStale);
     assert!(refused.to_string().contains("run the enable again"));
     assert!(
@@ -296,5 +314,156 @@ fn a_config_broken_since_the_board_was_opened_says_to_run_the_enable_again() {
         ".board/board.json",
         Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
     );
-    assert!(opened.plugin_enable(Some(&plugins), &notes()).is_ok());
+    assert!(opened.plugin_enable(Some(&plugins), None, &notes()).is_ok());
+}
+
+/// Where the board holds the schema of `notes/old/v1`, which notes no
+/// longer ships.
+const OLD: &str = ".board/types/notes/old/v1.schema.json";
+
+/// A board holding the schema of `notes/old/v1` and `records` records of it.
+fn orphaned(config: &str, records: usize) -> (Scenario, Scenario, PathBuf) {
+    let (board, data, plugins) = installed_with(config, MANIFEST, SCHEMA);
+    board.write(OLD, Item::File(r#"{"type": "object"}"#));
+    for at in 0..records {
+        let path = format!("old/{at}.json");
+        board.write(&path, Item::File(r#"{"$type": "notes/old/v1"}"#));
+    }
+    (board, data, plugins)
+}
+
+const UNCOMMITTED: &str = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+
+#[test]
+fn a_schema_the_plugin_no_longer_ships_is_refused_while_a_record_has_its_type_and_removed_once_none_does()
+ {
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 1);
+    let refused = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PluginTypeInUse);
+    let message = refused.to_string();
+    assert!(message.contains("notes/old/v1"), "{message}");
+    assert!(message.contains("/old/0"), "{message}");
+    assert!(board.workdir().join(OLD).exists(), "nothing is removed");
+    assert!(
+        open(&board).config().plugins.is_empty(),
+        "nothing is written"
+    );
+    let note = ".board/types/notes/note/v1.schema.json";
+    assert!(!board.workdir().join(note).exists(), "nothing is written");
+
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
+    assert_eq!(report.removed, [OLD]);
+    assert!(!board.workdir().join(OLD).exists());
+    assert_eq!(open(&board).config().plugins, vec![notes()]);
+}
+
+#[test]
+fn a_refusal_names_five_records_and_counts_the_rest() {
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 7);
+    let refused = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap_err();
+    let message = refused.to_string();
+    assert!(message.contains("7 record(s)"), "{message}");
+    assert!(message.contains("/old/4 and 2 more"), "{message}");
+    let query = r#"`board query "SELECT path FROM records WHERE type IN ('notes/old/v1')"`"#;
+    assert!(message.contains(query), "{message}");
+    assert!(!message.contains("/old/5"), "{message}");
+}
+
+#[test]
+fn a_removed_schema_leaves_the_commit_with_the_rest_of_the_enable() {
+    let config = r#"{"$type": "board/config/v1"}"#;
+    let (board, _data, plugins) = orphaned(config, 0);
+    board.write(
+        ".git/config",
+        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+    );
+    board.commit(&[
+        (OLD, r#"{"type": "object"}"#),
+        (".board/board.json", config),
+    ]);
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
+    let head = board.head().unwrap();
+    assert_eq!(Some(head.id), report.put.commit);
+    assert!(!head.files.contains_key(OLD));
+    assert!(
+        head.files
+            .contains_key(".board/types/notes/note/v1.schema.json")
+    );
+}
+
+#[test]
+fn a_schema_outside_the_plugins_namespace_or_symlinked_is_left_alone() {
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
+    let other = ".board/types/other/old/v1.schema.json";
+    let sibling = ".board/types/notes2/old/v1.schema.json";
+    let linked = ".board/types/notes/linked/v1.schema.json";
+    board
+        .write(other, Item::File(r#"{"type": "object"}"#))
+        .write(sibling, Item::File(r#"{"type": "object"}"#))
+        .write(linked, Item::Symlink("../../other/old/v1.schema.json"));
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
+    assert_eq!(report.removed, [OLD]);
+    assert!(board.workdir().join(other).exists());
+    assert!(board.workdir().join(sibling).exists());
+    assert!(
+        board.workdir().join(linked).exists(),
+        "the link still resolves"
+    );
+}
+
+#[test]
+fn a_warm_index_finds_the_records_a_cold_one_does() {
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 1);
+    let cache = tempfile::tempdir().unwrap();
+    let enable = || open(&board).plugin_enable(Some(&plugins), Some(cache.path()), &notes());
+    assert_eq!(enable().unwrap_err().code(), Code::PluginTypeInUse, "cold");
+    assert_eq!(enable().unwrap_err().code(), Code::PluginTypeInUse, "warm");
+    board.write("old/0.json", Item::Deleted);
+    assert_eq!(enable().unwrap().removed, [OLD], "warm, the record gone");
+}
+
+#[test]
+fn a_degraded_record_of_the_type_refuses_the_enable_and_a_valid_one_of_another_type_does_not() {
+    let strict = r#"{"type": "object", "required": ["x"]}"#;
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
+    board
+        .write(OLD, Item::File(strict))
+        .write("old/bad.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
+    let refused = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::PluginTypeInUse);
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
+    board
+        .write(OLD, Item::File(strict))
+        .write("old/bad.json", Item::File(r#"{"$type": "notes/note/v1"}"#));
+    assert!(
+        open(&board)
+            .plugin_enable(Some(&plugins), None, &notes())
+            .is_ok()
+    );
+}
+
+#[test]
+fn an_enable_of_an_enabled_plugin_only_removes_what_it_no_longer_ships() {
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false, "plugins": ["notes"]}"#;
+    let (board, _data, plugins) = orphaned(config, 0);
+    board.write(".board/types/notes/note/v1.schema.json", Item::File(SCHEMA));
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
+    assert!(report.put.writes.is_empty());
+    assert_eq!(report.removed, [OLD]);
+    assert!(!board.workdir().join(OLD).exists());
 }

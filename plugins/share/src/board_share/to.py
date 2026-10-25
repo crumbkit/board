@@ -2,7 +2,8 @@
 
 The set is the entry at the path, the entries under it, and every entry its
 records reference, followed transitively, inside this board's own tree. Only
-a record's references are followed: a Markdown file's links are not. A
+the references a record's schema declares are followed, including those in a
+Markdown file's frontmatter; a Markdown file's links are not. A
 reference to a directory reaches the entries under it. A reference that
 resolves through a mount or link is not copied, and must resolve to the same
 repository in the destination; a link inside the set is refused. The
@@ -87,8 +88,9 @@ def mount(here: Board, to: str) -> tuple[str, str]:
 def closure(here: Board, path: str) -> tuple[list[str], dict[str, str]]:
     """The paths to copy, sorted, and each reference through a mount or link with the repository it reaches.
 
-    Only records' references are followed. A copied note's links may dangle in
-    the destination, where `board check` reports them.
+    Only the references a record's schema declares are followed, and a
+    Markdown file's links are not. A copied note's links may dangle in the
+    destination, where `board check` reports them.
     """
     found = entries(here, under([path]))
     if not found:
@@ -101,7 +103,7 @@ def closure(here: Board, path: str) -> tuple[list[str], dict[str, str]]:
             references: list[dict[str, Any]] = answer["from"] if answer else []
             for reference in references:
                 location = reference.get("location")
-                if location is None:
+                if reference.get("link") or location is None:
                     continue
                 if location["pointers"] or location["source"] != "worktree":
                     mounted[str(reference["target"])] = str(location["repository"])
@@ -156,16 +158,13 @@ def read(here: Board, paths: list[str], *, local_attachments: bool) -> tuple[dic
     """Each path's batch line, a record or a text file, and the types of the records, other than Board's own."""
     listed = ", ".join(literal(path) for path in paths)
     rows = here.rows(
-        "SELECT logical, kind, type, code FROM entries"  # noqa: S608 - values are quoted by literal()
+        "SELECT logical, kind, type, code, role FROM entries"  # noqa: S608 - values are quoted by literal()
         f" WHERE source = 'worktree' AND logical IN ({listed})",
     )
-    kinds = {str(row[0]): (str(row[1]), row[2]) for row in rows}
+    kinds = {str(row[0]): (str(row[1]), row[2], row[4]) for row in rows}
     links = [str(row[0]) for row in rows if row[1] == "pointer"]
     refuse("share::link::unsupported", "a batch would write a copy of the target in place of each link", links)
-    # A broken reference is admitted by `put`, as here; any other code on a record is a refusal there.
-    invalid = sorted(
-        str(row[0]) for row in rows if row[1] == "record" and row[3] and not row[3].startswith("board::ref::")
-    )
+    invalid = sorted(str(row[0]) for row in rows if refused(str(row[1]), row[3]))
     refuse("share::record::invalid", "`board put` would refuse, as this board's index does,", invalid)
     lines: dict[str, Line] = {}
     types: set[str] = set()
@@ -174,8 +173,13 @@ def read(here: Board, paths: list[str], *, local_attachments: bool) -> tuple[dic
     for path, data in zip(paths, here.get(paths), strict=True):
         if isinstance(data, PluginError):
             raise data
-        kind, record_type = kinds[path]
-        if kind == "record":
+        kind, record_type, role = kinds[path]
+        if kind == "record" and role == "markdown":
+            # The file is copied as written, and its frontmatter is checked again by the destination's `put`.
+            lines[path] = {"text": data.decode()}
+            if isinstance(record_type, str):
+                types.add(record_type)
+        elif kind == "record":
             record = parsed(data)
             lines[path] = {"record": record}
             if record_type == ATTACHMENT and urlsplit(str(record.get("location"))).scheme in ("", "file"):
@@ -190,6 +194,18 @@ def read(here: Board, paths: list[str], *, local_attachments: bool) -> tuple[dic
     if not local_attachments:
         refuse("share::attachment::local", "other readers cannot fetch the bytes, kept on this machine, of", local)
     return lines, sorted(types)
+
+
+def refused(kind: str, code: str | None) -> bool:
+    """Whether `put` refuses an entry of `kind` that the index gives `code`.
+
+    A broken reference is admitted, as here. Any other code on a record is a
+    refusal, and so is frontmatter that claims a type and does not parse,
+    whose file is not a record.
+    """
+    if not code:
+        return False
+    return code.startswith("board::frontmatter::") or (kind == "record" and not code.startswith("board::ref::"))
 
 
 def schema_path(record_type: str) -> str:

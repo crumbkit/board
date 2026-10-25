@@ -1,7 +1,7 @@
 //! The word budgets: what an agent loads at session start, the documentation
-//! map, the documentation itself, and the plan.
+//! map, the documentation itself, the plan, and the plan's milestone leaves.
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::config::{ContextBudget, DirectoryBudget, FileBudget};
 use crate::files::{self, FilesError, Root};
@@ -68,6 +68,63 @@ pub(crate) fn docs(root: &Root, budget: &DirectoryBudget) -> Result<Vec<Check>, 
                 .in_node(root.display(&node.directory)),
         );
     }
+    Ok(checks)
+}
+
+/// One check for each milestone leaf directly in the budget's directory, and
+/// a last check that `index` links every leaf once, links no missing leaf,
+/// and that the directory holds no subdirectory.
+pub(crate) fn plan_leaves(
+    root: &Root,
+    index: &str,
+    budget: &DirectoryBudget,
+) -> Result<Vec<Check>, FilesError> {
+    let mut checks = Vec::new();
+    let mut leaves = BTreeSet::new();
+    for path in root.files_with_extension(&budget.directory, "md")? {
+        let leaf = root.display(&path);
+        let words = words::count(&files::read(&path)?);
+        checks.push(
+            Check::total(
+                CheckKind::PlanLeaf,
+                Limit::AtMost(budget.max_words),
+                vec![Part::new(leaf.clone(), words)],
+            )
+            .in_node(leaf.clone()),
+        );
+        leaves.insert(leaf);
+    }
+    let prefix = format!("{}/", budget.directory);
+    let mut links: BTreeMap<String, usize> = BTreeMap::new();
+    for target in words::link_targets(&root.read(index)?) {
+        if target.starts_with(&prefix) {
+            *links.entry(target).or_default() += 1;
+        }
+    }
+    let mut problems = Vec::new();
+    for leaf in leaves.iter().filter(|leaf| !links.contains_key(*leaf)) {
+        problems.push(format!("{leaf} is not linked from {index}"));
+    }
+    for (link, times) in &links {
+        if !leaves.contains(link) {
+            problems.push(format!("{index} links {link}, which does not exist"));
+        } else if *times > 1 {
+            problems.push(format!("{index} links {link} {times} times"));
+        }
+    }
+    if root.path().join(&budget.directory).is_dir() {
+        for node in root.markdown_nodes(&budget.directory)?.iter().skip(1) {
+            problems.push(format!(
+                "{} is a subdirectory; the plan holds one flat file per milestone",
+                root.display(&node.directory)
+            ));
+        }
+    }
+    let parts = problems
+        .into_iter()
+        .map(|problem| Part::new(problem, 1))
+        .collect();
+    checks.push(Check::total(CheckKind::PlanLinks, Limit::Exactly(0), parts));
     Ok(checks)
 }
 

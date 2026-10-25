@@ -271,3 +271,97 @@ fn docs_refuses_a_missing_directory() {
     let error = docs(&fixture.root(), &docs_budget(5)).unwrap_err();
     assert_eq!(error.code(), "xtask::files::unreadable");
 }
+
+fn leaves_budget(max_words: usize) -> DirectoryBudget {
+    DirectoryBudget {
+        directory: "plan".to_owned(),
+        max_words,
+    }
+}
+
+/// The plan's checks for a repository whose PLAN.md is `index`.
+fn plan_checks(fixture: &Fixture, index: &str, max_words: usize) -> Vec<Check> {
+    fixture.write("PLAN.md", index);
+    plan_leaves(&fixture.root(), "PLAN.md", &leaves_budget(max_words)).unwrap()
+}
+
+/// The labels of the plan's index check, which comes last.
+fn index_problems(checks: &[Check]) -> Vec<&str> {
+    let index = checks.last().unwrap();
+    assert_eq!(index.kind, CheckKind::PlanLinks);
+    labels(index)
+}
+
+#[test]
+fn a_plan_leaf_at_its_budget_passes_and_one_word_over_fails_naming_the_leaf() {
+    let fixture = Fixture::new();
+    fixture.write("plan/a.md", &words(3));
+    let within = plan_checks(&fixture, "[a](plan/a.md)", 3);
+    assert_eq!(nodes(&within), [("plan/a.md", 3), ("plan-links", 0)]);
+    assert!(within.iter().all(Check::passed));
+
+    let over = plan_checks(&fixture, "[a](plan/a.md)", 2);
+    assert!(!over[0].passed());
+    let text = render(&Report {
+        checks: over,
+        controls: Vec::new(),
+    });
+    assert!(text.contains("split plan/a.md"), "{text}");
+}
+
+#[test]
+fn a_plan_leaf_that_plan_md_does_not_link_fails_and_its_linked_twin_passes() {
+    let fixture = Fixture::new();
+    fixture.write("plan/a.md", "");
+    let unlinked = plan_checks(&fixture, "no links", 5);
+    assert_eq!(
+        index_problems(&unlinked),
+        ["plan/a.md is not linked from PLAN.md"]
+    );
+    let linked = plan_checks(&fixture, "[a](plan/a.md#goal)", 5);
+    assert!(index_problems(&linked).is_empty());
+}
+
+#[test]
+fn a_plan_link_to_a_missing_leaf_fails_and_its_twin_naming_a_leaf_passes() {
+    let fixture = Fixture::new();
+    fixture.write("plan/a.md", "");
+    let missing = plan_checks(&fixture, "[a](plan/a.md) [b](plan/b.md)", 5);
+    assert_eq!(
+        index_problems(&missing),
+        ["PLAN.md links plan/b.md, which does not exist"]
+    );
+    let present = plan_checks(&fixture, "[a](plan/a.md) [c](docs/c.md)", 5);
+    assert!(index_problems(&present).is_empty());
+}
+
+#[test]
+fn a_plan_leaf_linked_twice_fails_and_its_twin_linked_once_passes() {
+    let fixture = Fixture::new();
+    fixture.write("plan/a.md", "");
+    let twice = plan_checks(&fixture, "[a](plan/a.md) [again](plan/a.md)", 5);
+    assert_eq!(index_problems(&twice), ["PLAN.md links plan/a.md 2 times"]);
+    let once = plan_checks(&fixture, "[a](plan/a.md)", 5);
+    assert!(index_problems(&once).is_empty());
+}
+
+#[test]
+fn a_subdirectory_in_the_plan_directory_fails_and_its_flat_twin_passes() {
+    let fixture = Fixture::new();
+    fixture.write("plan/a.md", "").write("plan/deeper/b.md", "");
+    assert_eq!(
+        index_problems(&plan_checks(&fixture, "[a](plan/a.md)", 5)),
+        ["plan/deeper is a subdirectory; the plan holds one flat file per milestone"]
+    );
+    let flat = Fixture::new();
+    flat.write("plan/a.md", "").write("plan/b.md", "");
+    let checks = plan_checks(&flat, "[a](plan/a.md) [b](plan/b.md)", 5);
+    assert!(index_problems(&checks).is_empty());
+}
+
+#[test]
+fn a_repository_without_a_plan_directory_has_no_leaves() {
+    let fixture = Fixture::new();
+    let checks = plan_checks(&fixture, "no links", 5);
+    assert_eq!(nodes(&checks), [("plan-links", 0)]);
+}

@@ -86,11 +86,14 @@ fn lint(root: &Path) -> Result<Report, LintError> {
         budgets::file(&root, CheckKind::DocsIndex, &config.docs_index)?,
     ];
     checks.extend(budgets::docs(&root, &config.docs)?);
-    checks.extend([
-        budgets::file(&root, CheckKind::Plan, &config.plan)?,
-        lines,
-        expects,
-    ]);
+    checks.extend([budgets::file(&root, CheckKind::Plan, &config.plan)?]);
+    checks.extend(budgets::plan_leaves(
+        &root,
+        &config.plan.file,
+        &config.plan_leaves,
+    )?);
+    checks.push(lines);
+    checks.push(expects);
     Ok(Report {
         checks,
         controls: controls::check(&root, &config)?,

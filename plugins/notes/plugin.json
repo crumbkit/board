@@ -1,0 +1,229 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "description": "Sync the notes repo, append text under a `## HH:MM` heading to today's daily note or a topic's note, commit it and push it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Append text under a `## HH:MM` heading to today's daily note, or to a topic's note.",
+        "properties": {
+          "remote": {
+            "description": "A git remote, or owner/name, to route by in place of the origin of the directory board was started in.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The notes repo: / for the board's own tree, or a mount's path such as /repos/notes-personal; chosen by the caller's git remote when left out.",
+            "title": "Repo",
+            "type": "string"
+          },
+          "text": {
+            "description": "The Markdown to append; not only whitespace.",
+            "pattern": "\\S",
+            "title": "Text",
+            "type": "string"
+          },
+          "topic": {
+            "description": "The title of the note to append to, at notes/<slug>.md; today's daily note when left out.",
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AddInput",
+        "type": "object"
+      },
+      "name": "add",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "Where the text went.\n\n`path` is the logical path written and `commit` the repo's commit that\nholds it: the mount's pin, or the board's commit for the board's own tree,\nnull when the note was left uncommitted.\n`candidates` is null, or the notes repos covering the remote when the note\nwent to the personal repo's `inbox/` because not exactly one covers it.\n`parked` is null, or the Board code that kept the text out of the note: it\nwent to the sibling `<name>.agent.md` instead. `unpushed` is null when the\ncommit reached the repo's remote, or the code of the sync that did not\npush it: `notes::repo::not_synced` for the board's own tree.",
+        "properties": {
+          "candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidates"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "parked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parked"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "commit",
+          "candidates",
+          "parked",
+          "unpushed"
+        ],
+        "title": "AddOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Sync the notes repo and print a day's daily note, unless the note is private.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The daily note of one day, as the repo's remote holds it.",
+        "properties": {
+          "date": {
+            "description": "The day, as YYYY-MM-DD; today when left out, by the caller's time zone and day_start.",
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "remote": {
+            "description": "A git remote, or owner/name, to route by in place of the origin of the directory board was started in.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The notes repo: / for the board's own tree, or a mount's path such as /repos/notes-personal; chosen by the caller's git remote when left out.",
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "title": "DailyInput",
+        "type": "object"
+      },
+      "name": "daily",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The daily note.\n\n`text` is null when the note does not exist, or when it is private:\nits frontmatter has a `private` key whose value is not plainly false\n(`false`, `no`, `off` or `0`), as Reflect keeps private notes from AI. A read\ncreates no note. `commit` is the repo's commit read, null for the board's\nown tree, which is read from its working tree. `unsynced` is null when the\nrepo synced first, or the code of the sync that failed, and the note is\nthen as this clone holds it: `notes::repo::not_synced` for the board's own\ntree.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "exists": {
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "exists",
+          "private",
+          "text",
+          "commit",
+          "unsynced"
+        ],
+        "title": "DailyOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Append a note to today's daily note, or to a topic's note, in a notes repo in Reflect's layout, and read a day's daily note. Use it when the person asks you to note something down or asks what their daily note says. Start with `board -C <board> call notes.daily`, run in the repository you work in, which syncs the notes repo that repository's git remote routes to and prints today's note. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "notes"
+  },
+  "name": "notes",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_notes"
+  ],
+  "types": [
+    "notes/repo/v1"
+  ],
+  "version": "0.1.0"
+}

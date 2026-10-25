@@ -118,7 +118,7 @@ fn lossy_number(text: &str) -> Option<&str> {
 }
 
 /// Whether the number written `lexeme` is held exactly; see [`lossy_number`].
-fn exact(lexeme: &str) -> bool {
+pub(crate) fn exact(lexeme: &str) -> bool {
     if !lexeme.contains(['.', 'e', 'E']) {
         return lexeme.parse::<i64>().is_ok() || lexeme.parse::<u64>().is_ok();
     }

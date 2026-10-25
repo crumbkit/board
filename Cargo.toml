@@ -35,8 +35,8 @@ clap_complete = { version = "=4.6.11", features = ["unstable-dynamic"] }
 # crumbkit prints every command's reports, failures and help; crumbkit-test's convention
 # checks run against the built binary. Unreleased, so pinned by rev; the
 # version satisfies deny.toml's wildcards.
-crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "db1fa2a50070b63bfdc274484f421627b5b9f028", version = "0.0.0", default-features = false }
-crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "db1fa2a50070b63bfdc274484f421627b5b9f028", version = "0.0.0", default-features = false }
+crumbkit = { git = "https://github.com/crumbkit/crumbkit", rev = "5589a9099cb1fa7f9ae8e77113fd08c45af6cb62", version = "0.0.0", default-features = false }
+crumbkit-test = { git = "https://github.com/crumbkit/crumbkit", rev = "5589a9099cb1fa7f9ae8e77113fd08c45af6cb62", version = "0.0.0", default-features = false }
 clap = { version = "4.6.7", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
@@ -57,6 +57,15 @@ regex = "1.12.2"
 # A symlink text in a refusal escapes Unicode format characters, such as
 # U+202E, which reorder text. jsonschema already brings this crate in.
 unicode-general-category = "1.1.0"
+# Markdown files hold YAML frontmatter, which Board reads as a record. A
+# YAML 1.2 event parser in pure Rust, with no unsafe code, that brings only
+# arraydeque; Board builds the JSON value from its events, so it decides
+# which YAML is inside the JSON-compatible subset. The index keys each
+# Markdown blob's fact by blob, so an upgrade that changes what parses must
+# also bump INDEX_VERSION in board-index/src/schema.rs.
+# Its events decide each Markdown record's indexed value, so a bump needs
+# an INDEX_VERSION review (crates/board-index).
+saphyr-parser = "=0.1.2"
 # bundled: every platform runs the same SQLite, built from source.
 # modern_sqlite: a refresh asks whether its transaction took the write lock.
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache", "hooks", "limits", "modern_sqlite"] }

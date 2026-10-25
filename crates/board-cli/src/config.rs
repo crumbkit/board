@@ -52,8 +52,10 @@ impl Context {
         let plugins = base("XDG_DATA_HOME", ".local/share").map(|data| data.join("board/plugins"));
         let boards =
             base("XDG_CONFIG_HOME", ".config").map(|config| config.join("board/config.json"));
+        let current = std::env::current_dir().ok();
+        let start = current.clone().unwrap_or_else(|| PathBuf::from("."));
         Self {
-            start: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            start: start.clone(),
             home,
             cache,
             plugins,
@@ -62,10 +64,13 @@ impl Context {
                 path: std::env::var_os("PATH"),
                 home: std::env::var_os("HOME"),
                 lang: std::env::var_os("LANG"),
+                tz: std::env::var_os("TZ"),
                 cache: std::env::var_os("XDG_CACHE_HOME"),
                 data: std::env::var_os("XDG_DATA_HOME"),
                 depth: std::env::var_os("BOARD_CALL_DEPTH"),
                 timings: std::env::var_os("BOARD_TIMINGS"),
+                caller: current.map(PathBuf::into_os_string),
+                day_start: None,
             },
             complete: std::env::var_os("BOARD_COMPLETE"),
             terminal: std::io::stdin().is_terminal(),

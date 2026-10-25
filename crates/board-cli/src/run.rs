@@ -533,7 +533,7 @@ fn command(
         }
         Command::Type(command) => crate::stdin::type_add(command, board, printer, stdin),
         Command::Plugin(PluginCommand::Enable { name }) => {
-            match board.plugin_enable(context.plugins.as_deref(), &name) {
+            match board.plugin_enable(context.plugins.as_deref(), context.cache.as_deref(), &name) {
                 Ok(report) => render::plugin_enable(printer, &report),
                 Err(error) => render::refused(printer, plain(error.code(), &error)),
             }

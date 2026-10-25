@@ -287,8 +287,7 @@
     "board_evals"
   ],
   "types": [
-    "evals/eval/v1",
-    "evals/run/v1"
+    "evals/eval/v1"
   ],
   "version": "0.1.0"
 }

@@ -2,8 +2,10 @@
 
 This file holds what comes next and the decisions that still constrain work.
 docs/architecture.md and docs/plugins.md describe what is built, and
-STANDARDS.md holds the code standards. When a milestone lands, its design moves
-into docs/ and leaves this file. `lint.toml` limits this file's length.
+STANDARDS.md holds the code standards. A milestone whose design does not fit
+here keeps it in one flat leaf, `plan/<milestone>.md`, linked once below. When
+a milestone lands, its design moves into docs/ and leaves this file and its
+leaf. `lint.toml` limits the length of this file and of each leaf.
 
 The principles are the rules in AGENTS.md, plus one: a record's path is its
 identity, and its type is the `$type` field inside it.
@@ -26,14 +28,31 @@ After M7, real numbers decide whether to land the three measured warm-check
 speedups (#33; warm `check` is about 20 µs per entry). The long-chain numbers
 are in #57 and viitta-stress-test 9d557d1.
 
+## Then: runs
+
+Board records test, perf and eval results. A new `runs` plugin holds suites
+and their runs, `evals` and `controls` refer to it, `cargo xtask bench
+--record` writes runs, and a `github` plugin imports CI timings across
+repositories. [plan/runs.md](plan/runs.md) holds the decisions and the build
+order.
+
+## Then: board-ui and the effect gate
+
+Agents show records through a component catalogue that `board serve` serves,
+and plugins ask Board before they take an effect. The owner answers from the
+command line or a gate window. No answer depends on `board serve`.
+[plan/board-ui.md](plan/board-ui.md) holds the decisions and the build order.
+The `review`, `plans`, `agentic-loop` and `collab` plugins follow, each
+designed when it starts.
+
 ## Out of scope
 
-Each of these waits until a real need has its own plan: authority and external
-effects; triggers and scheduling; review accounting;
-pinned or relative references; remote mounts (a mount names a local clone); any
-query language beyond SQL; daemons and watchers; Markdown as a record format
-(Markdown is a file a record points at); sync beyond git; Windows CI (the code
-stays portable); a web UI; and the old Board's ControlTree groups, assessments,
+Each of these waits until a real need has its own plan: effects beyond the
+first slice in plan/board-ui.md; triggers and scheduling; review accounting;
+pinned or relative references; remote mounts (a mount names a local clone);
+any query language beyond SQL; daemons and watchers other than `board serve`;
+sync beyond git; Windows CI (the code
+stays portable); and the old Board's ControlTree groups, assessments,
 paged reports and control status.
 
 ## Deferred
@@ -55,20 +74,18 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   a record and what it needs into a mounted board (docs/plugins/share.md).
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
-- **Views.** Every record type gets a view and a form derived from its schema,
-  and plugins declare views as data. The owner's acceptance test is that views
-  can express the UI of an existing tool the owner will name.
-- **Serving.** `board serve` keeps the index warm for an agent loop or a web
-  view, and no answer may depend on it. A `board mcp` adapter serves each
-  capability as an MCP tool.
+- **Views from schemas.** Every record type gets a view and a form derived
+  from its schema. The owner's acceptance test is that views can express the
+  UI of an existing tool the owner will name.
+- **Serving beyond the UI.** `board serve` keeps the index warm for an agent
+  loop, and a `board mcp` adapter serves each capability as an MCP tool.
 - **Adoption.** Board imports records from other systems, such as JIRA,
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
   a spike that imports one existing store into a scratch board.
-- **Settings and the gentle slope.** Plugins ask Board whether to act or
-  propose and how to tell the owner, and settings come in three layers:
-  mandate, the owner's preferences in a personal board, and the board's own.
-  The owner agreed the record shapes on 2026-10-05.
+- **Settings beyond the first slice.** The gentle-slope rules, offers,
+  attention levels, read gating, learning from corrections and the mandate
+  layer.
 - **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
   and docs/architecture.md has split into docs/architecture/. Still open are
   how the review of each docs change runs and a tool check that each leaf is
@@ -76,8 +93,11 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 
 ## Settled decisions
 
-1. The name stays `board`: the binary, the `board-*` crates, `board::` codes
-   and the reserved `board` namespace. `viitta` is only the repository's name.
+1. The name stays `board` for now: the binary and its help, the `board-*`
+   crates, `board::` codes, record types, plugin ids, config and the reserved
+   `board` namespace. `viitta` is the repository's name and a stable
+   identifier kept as a hedge. If a rename is ever needed, internal and public
+   naming are split then (2026-10-24).
 2. The code is proprietary and unpublished.
 3. A limit that refuses a write, such as a file-size limit, is a setting that
    `put` and `check` apply. A requirement on files is a control (2026-10-05).

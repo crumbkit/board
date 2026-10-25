@@ -35,6 +35,14 @@ max_words = 5500
 file = "PLAN.md"
 max_words = 1075
 
+# Q: the plan's milestone leaves. Each .md file directly in `directory` holds
+# one milestone's design and holds at most max_words; PLAN.md links each leaf
+# once and the directory has no subdirectories. Added on 2026-10-24 for the
+# runs milestone, set at its leaf's length (1,128 words) plus about 15%.
+[plan_leaves]
+directory = "plan"
+max_words = 1300
+
 # Every Rust source file outside tests.rs files and tests/ directories.
 [source]
 max_lines = 800

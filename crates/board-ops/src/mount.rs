@@ -74,7 +74,7 @@ impl Board {
             target,
             admitted,
         };
-        self.write_all(lock, &[prepared], message)
+        self.write_all(lock, &[prepared], &[], message)
             .map_err(|failure| match failure {
                 Failure::Stale(mut stale) => stale.remove(0).1,
                 Failure::Error(error) => error,

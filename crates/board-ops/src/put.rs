@@ -7,8 +7,9 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use board_model::{
-    BINARY_NAME, Code, Fields, Found, JsonError, Lined, Location, LogicalPath, MAX_RECORD_BYTES,
-    Object, ObjectId, RecordType, Refusal, Role, canonical_json, classify, parse_json,
+    BINARY_NAME, Classified, Code, Fields, Found, FrontmatterError, JsonError, Lined, Location,
+    LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Refusal, Role, canonical_json,
+    classify, parse_json,
 };
 use board_tree::{
     Directory, GitError, LOCK_WAIT, Lock, PinError, Reader, ResolveError, Resolver, Working,
@@ -63,6 +64,15 @@ pub(crate) struct Prepared {
     pub(crate) canonical: Vec<u8>,
     pub(crate) target: board_tree::Target,
     pub(crate) admitted: Admitted,
+}
+
+/// A working-tree file a put removes, only if it still holds `blob`.
+#[derive(Debug)]
+pub(crate) struct Removal {
+    pub(crate) path: LogicalPath,
+    /// The `/`-separated path in the working tree.
+    pub(crate) file: String,
+    pub(crate) blob: ObjectId,
 }
 
 /// Each record type's schema, or what is there instead, read and compiled
@@ -136,7 +146,7 @@ impl Board {
             prepared => prepared?,
         };
         let message = format!("{BINARY_NAME} put {path}");
-        self.write_all(lock, &[prepared], &message)
+        self.write_all(lock, &[prepared], &[], &message)
             .map_err(Failure::one)
     }
 
@@ -175,13 +185,15 @@ impl Board {
     }
 
     /// Compares every expect under `lock`, the lock the records were
-    /// prepared under, and writes every prepared record in order, with one
-    /// commit when `commit_on_put` is set. Writes nothing unless every
-    /// expect holds.
+    /// prepared under, and writes every prepared record in order, then
+    /// removes each of `removed`, with one commit when `commit_on_put` is
+    /// set. Writes nothing unless every expect holds and every file to
+    /// remove holds its blob.
     pub(crate) fn write_all(
         &self,
         lock: Lock,
         prepared: &[Prepared],
+        removed: &[Removal],
         message: &str,
     ) -> Result<PutReport, Failure> {
         let _timed = self.timed("put.write");
@@ -229,15 +241,22 @@ impl Board {
                 degraded: None,
             });
         }
+        for (at, removal) in removed.iter().enumerate() {
+            let found = repository.working_blob(&removal.file).ok();
+            if found != Some(removal.blob) {
+                let path = removal.path.clone();
+                stale.push((prepared.len() + at, PutError::Stale { path, found }));
+            }
+        }
         if !stale.is_empty() {
             return Err(Failure::Stale(stale));
         }
         // The commit is made ready before anything is renamed, so a put
         // with no identity to commit as writes nothing.
         let staged = if self.config().commit_on_put {
-            let files: Vec<(&str, &[u8])> = prepared
-                .iter()
-                .map(|item| (item.target.path.as_str(), item.canonical.as_slice()))
+            let files: Vec<_> = (prepared.iter())
+                .map(|item| (item.target.path.as_str(), Some(item.canonical.as_slice())))
+                .chain(removed.iter().map(|removal| (removal.file.as_str(), None)))
                 .collect();
             repository
                 .stage_commit(&lock, &files, message)
@@ -248,6 +267,11 @@ impl Board {
         for item in prepared {
             repository
                 .write_file(&lock, &item.target.path, &item.canonical)
+                .map_err(|error| Failure::Error(error.into()))?;
+        }
+        for removal in removed {
+            repository
+                .remove_file(&lock, &removal.file)
                 .map_err(|error| Failure::Error(error.into()))?;
         }
         let commit = match staged {
@@ -293,6 +317,16 @@ impl Board {
         if !object.contains_key("$type") {
             return Err(Refused::NoType);
         }
+        Ok(self.admit(schemas, Role::Json.classify(Some(bytes)))?)
+    }
+
+    /// Judges `classified` as a record, against the schema of its type that
+    /// `schemas` reads once.
+    pub(crate) fn admit<'b>(
+        &'b self,
+        schemas: &mut Schemas<'b>,
+        classified: Classified,
+    ) -> Result<Admitted, Fault> {
         let find = move |record_type: &RecordType| {
             // Moving the borrow out makes this `FnOnce`, so it can lend the schema.
             let Schemas {
@@ -311,7 +345,7 @@ impl Board {
             };
             schema.as_ref().map_err(SchemaFound::clone)
         };
-        Ok(verdict::record(Role::Json.classify(Some(bytes)), find)?)
+        verdict::record(classified, find)
     }
 
     /// Reads and compiles the schema of `record_type` from the working tree.
@@ -394,6 +428,8 @@ pub enum Refused {
     #[error(transparent)]
     Json(#[from] JsonError),
     #[error(transparent)]
+    Frontmatter(#[from] FrontmatterError),
+    #[error(transparent)]
     Fault(#[from] Fault),
     #[error("it is empty")]
     Empty,
@@ -407,6 +443,7 @@ impl Refused {
     pub fn code(&self) -> Code {
         match self {
             Self::Json(error) => error.code(),
+            Self::Frontmatter(error) => error.code(),
             Self::Fault(fault) => fault.code(),
             Self::Empty => Code::JsonParse,
             Self::NotAnObject | Self::NoType => Code::PutInvalid,
@@ -418,7 +455,11 @@ impl Refused {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Fault(fault) => fault.fields(),
-            Self::Json(_) | Self::Empty | Self::NotAnObject | Self::NoType => Fields::default(),
+            Self::Json(_)
+            | Self::Frontmatter(_)
+            | Self::Empty
+            | Self::NotAnObject
+            | Self::NoType => Fields::default(),
         }
     }
 }

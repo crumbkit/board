@@ -20,7 +20,9 @@ use crate::resolve::{ResolveError, Resolver};
 use crate::through::{Inside, Through};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
+use entries::{stage_entry, unstage_entry};
 
+mod entries;
 pub(crate) mod outside;
 pub(crate) mod sync;
 
@@ -127,7 +129,7 @@ impl Resolver<'_, '_> {
                 Object::Blob(_) => not_a_record(path, reached),
             });
         };
-        if board_model::needs_bytes(&physical) {
+        if board_model::is_json_file(&physical) {
             return Err(WriteError::NotAFile {
                 path: path.clone(),
                 file: Some(physical),
@@ -400,7 +402,8 @@ impl Staged {
 
 impl Repository {
     /// Makes a commit of `writes`, each a `/`-separated path and the bytes it
-    /// will hold, onto HEAD as `git commit <paths>` would, without moving
+    /// will hold, or `None` when it is removed, onto HEAD as `git commit
+    /// <paths>` would, without moving
     /// HEAD: checks there is an identity to commit as, takes git's
     /// `index.lock` without waiting, and writes the blobs, trees and commit
     /// object. The board lock must be held, so HEAD is read under it.
@@ -408,7 +411,7 @@ impl Repository {
     pub fn stage_commit(
         &self,
         _lock: &Lock,
-        writes: &[(&str, &[u8])],
+        writes: &[(&str, Option<&[u8]>)],
         message: &str,
     ) -> Result<Option<Staged>, WriteError> {
         use gix::state::InProgress as Op;
@@ -445,6 +448,13 @@ impl Repository {
             gix::ObjectId::try_from(base.as_bytes()).map_err(|error| failed(error.into()))?;
         let mut editor = git.edit_tree(base).map_err(|error| failed(error.into()))?;
         for (path, bytes) in writes {
+            let Some(bytes) = bytes else {
+                editor
+                    .remove_leaf(*path)
+                    .map_err(|error| failed(error.into()))?;
+                unstage_entry(&mut staged.index, path);
+                continue;
+            };
             let blob = git
                 .write_blob(bytes)
                 .map_err(|error| failed(error.into()))?
@@ -578,27 +588,6 @@ impl Repository {
     }
 }
 
-/// Points the index entry for `path` at `blob`, adding it when new. Its
-/// stat is cleared, so git hashes the file again before trusting it.
-fn stage_entry(index: &mut gix::index::File, path: &str, blob: gix::ObjectId) {
-    use gix::bstr::ByteSlice;
-    index.remove_tree();
-    if let Ok(at) = index.entry_index_by_path(path.as_bytes().as_bstr()) {
-        let entry = &mut index.entries_mut()[at];
-        entry.id = blob;
-        entry.stat = gix::index::entry::Stat::default();
-    } else {
-        index.dangerously_push_entry(
-            gix::index::entry::Stat::default(),
-            blob,
-            gix::index::entry::Flags::empty(),
-            gix::index::entry::Mode::FILE,
-            path.as_bytes().as_bstr(),
-        );
-        index.sort_entries();
-    }
-}
-
 /// Writes and fsyncs the temporary file, with the target's permissions when
 /// the target exists.
 fn write_temporary(temporary: &Path, target: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -632,7 +621,7 @@ fn lock_refused(error: gix::Exn, lock: PathBuf) -> WriteError {
 /// or the root.
 fn record_file(location: &Location) -> Option<String> {
     match location.object {
-        Object::Blob(_) => board_model::needs_bytes(&location.path).then(|| location.path.clone()),
+        Object::Blob(_) => board_model::is_json_file(&location.path).then(|| location.path.clone()),
         Object::Directory if location.path.is_empty() => None,
         Object::Directory => Some(format!("{}.json", location.path)),
     }

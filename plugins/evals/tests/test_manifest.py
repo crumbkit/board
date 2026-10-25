@@ -10,13 +10,13 @@ from typing import Any, cast
 from board_plugin.protocol import dumped
 from conftest import PLUGIN, SCHEMAS, Board, board_binary
 
-from board_evals.manifest import eval_schema, manifest, run_schema
+from board_evals.manifest import eval_schema, manifest
 
 
 def test_the_committed_manifest_and_schemas_are_the_ones_the_models_generate() -> None:
     assert (PLUGIN / "plugin.json").read_text() == dumped(manifest())
     assert (SCHEMAS / "eval" / "v1.schema.json").read_text() == dumped(eval_schema())
-    assert (SCHEMAS / "run" / "v1.schema.json").read_text() == dumped(run_schema())
+    assert sorted(path.name for path in SCHEMAS.iterdir()) == ["eval"]
 
 
 def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships(board: Board) -> None:
@@ -26,7 +26,6 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_shi
     assert plugin["enabled"] is True
     types = board.root / ".board" / "types" / "evals"
     assert json.loads((types / "eval" / "v1.schema.json").read_text()) == eval_schema()
-    assert json.loads((types / "run" / "v1.schema.json").read_text()) == run_schema()
 
 
 def request(root: Path, capability: str) -> dict[str, Any]:

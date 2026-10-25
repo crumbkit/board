@@ -13,8 +13,9 @@ import pytest
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
 SCHEMAS = PLUGIN / "types" / "evals"
+# The runs plugin, whose suites and runs an eval refers to.
+RUNS = REPOSITORY / "plugins" / "runs"
 EVAL_TYPE = "evals/eval/v1"
-RUN_TYPE = "evals/run/v1"
 
 
 def board_binary() -> Path:
@@ -77,7 +78,7 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with evals installed and enabled through `board plugin enable`."""
+    """A board that does not commit, with evals and runs installed and enabled through `board plugin enable`."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
@@ -85,8 +86,10 @@ def board(tmp_path: Path) -> Board:
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
     (plugins / "evals").symlink_to(PLUGIN)
-    enabled = fixture.run("plugin", "enable", "evals")
-    assert enabled.returncode == 0, enabled.stderr
+    (plugins / "runs").symlink_to(RUNS)
+    for name in ("evals", "runs"):
+        enabled = fixture.run("plugin", "enable", name)
+        assert enabled.returncode == 0, enabled.stderr
     return fixture
 
 
@@ -96,34 +99,39 @@ def experiment(question: str, subjects: list[str] | None = None, status: str = "
         "$type": EVAL_TYPE,
         "question": question,
         "subjects": ["gix"] if subjects is None else subjects,
-        "method": "Run it.",
         "status": status,
         **fields,
     }
     return json.dumps(record)
 
 
-def trial(eval_path: str, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """An `evals/run/v1` record with one passing result."""
+def suite() -> str:
+    """A `runs/suite/v1` record."""
+    return json.dumps({"$type": "runs/suite/v1", "subjects": ["gix"], "method": "Run it."})
+
+
+def run(suite_path: str) -> str:
+    """A `runs/run/v1` record of `suite_path` with one passing result."""
     record: dict[str, Any] = {
-        "$type": RUN_TYPE,
-        "eval": eval_path,
+        "$type": "runs/run/v1",
+        "suite": suite_path,
         "by": "claude",
         "started": "2026-10-01T09:00:00Z",
+        "scope": "full",
         "results": [{"case": "one", "outcome": "pass"}],
-        **fields,
     }
     return json.dumps(record)
 
 
 def repository(parent: Path, name: str, records: dict[str, str]) -> tuple[Path, str]:
-    """A board in a git repository that enables evals, holding `records` by path, and its one commit."""
+    """A board in a git repository that enables evals and runs, holding `records` by path, and its one commit."""
     root = parent / name
-    for schema in SCHEMAS.rglob("*.schema.json"):
-        target = root / ".board" / "types" / schema.relative_to(PLUGIN / "types")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(schema.read_text())
-    config = {"$type": "board/config/v1", "plugins": ["evals"]}
+    for plugin in (PLUGIN, RUNS):
+        for schema in (plugin / "types").rglob("*.schema.json"):
+            target = root / ".board" / "types" / schema.relative_to(plugin / "types")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(schema.read_text())
+    config = {"$type": "board/config/v1", "plugins": ["evals", "runs"]}
     (root / ".board" / "board.json").write_text(json.dumps(config))
     for path, text in records.items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)

@@ -3,12 +3,14 @@
 use board_model::{Code, canonical_json};
 use board_ops::{Called, Plugin, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{Capability, PluginName};
+use board_tree::Status;
 use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose, Row};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 
+use super::Health;
 use super::kit::{Note, Printer, Refused, Said};
 use crate::report::Output;
 use crate::run::Page;
@@ -61,8 +63,9 @@ struct Listed {
     /// differently, as its `type`, `path` and `code`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     schemas: Vec<Value>,
-    /// `ok`, or `degraded` when the plugin has a problem.
-    status: &'static str,
+    /// `ok`, or `degraded` when the plugin has a problem. Text adds the
+    /// problem's code, which JSON holds in `code`.
+    status: Health,
     /// An installed plugin's version.
     #[serde(skip_serializing_if = "Option::is_none")]
     version: Option<String>,
@@ -73,6 +76,7 @@ struct Listed {
 impl Listed {
     fn of(plugin: &Plugin) -> Self {
         let code = plugin.code();
+        let status = Health(code.map_or(Status::Ok, Status::Degraded));
         let manifest = match &plugin.state {
             PluginState::Installed(manifest) => Some(manifest),
             PluginState::BadManifest(_) | PluginState::NotInstalled => None,
@@ -83,8 +87,7 @@ impl Listed {
             .collect();
         let version = manifest.map(|manifest| manifest.version.to_string());
         let line = format!(
-            "{} {}{} {}{}{}",
-            code.map_or_else(|| "ok".to_owned(), |code| format!("degraded {code}")),
+            "{status} {}{} {}{}{}",
             plugin.name,
             version
                 .as_ref()
@@ -125,7 +128,7 @@ impl Listed {
                         "path": problem.path, "code": problem.code.as_str()})
                 })
                 .collect(),
-            status: if code.is_some() { "degraded" } else { "ok" },
+            status,
             version,
             line,
         }
@@ -136,13 +139,17 @@ impl Listed {
 /// prints its own line in text unless `--long` or `--fields` asks for the
 /// table.
 impl Row for Listed {
-    const COLUMNS: &'static [&'static str] =
-        &["status", "code", "name", "version", "enabled", "offers"];
+    const COLUMNS: &'static [&'static str] = &["status", "name", "version", "enabled", "offers"];
     const LONG_COLUMNS: &'static [&'static str] = &["description", "message", "schemas"];
     const WHOLE: bool = true;
     const LINE: Option<&'static str> =
-        Some("<STATUS> [<CODE>] <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]");
-    const PROBLEM: Option<&'static str> = Some("code");
+        Some("<STATUS> <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]");
+
+    /// A row with a `code` reports a problem. `code` is not a column, because
+    /// the text of `status` holds it, so the row says so itself (ADR-0096).
+    fn is_problem(&self) -> bool {
+        self.code.is_some()
+    }
 
     fn text_line(&self) -> Option<String> {
         Some(self.line.clone())

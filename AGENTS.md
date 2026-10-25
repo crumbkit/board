@@ -32,8 +32,8 @@ rules they cannot.
 7. **Pair refusals.** A test that something is refused has an otherwise
    identical twin that is admitted, and asserts the exact code.
 8. **Docs say what exists.** docs/ describes the design and says what is built.
-   PLAN.md holds what comes next; when a milestone lands, its settled design
-   moves into docs/ and leaves PLAN.md.
+   PLAN.md and its leaves in plan/ hold what comes next; when a milestone
+   lands, its settled design moves into docs/ and its plan text is deleted.
 9. **The CLI serves agents and people equally.** Output is bounded by default
    and says what it left out. Help lets a reader start from one line per
    command and drill down to examples. Every error carries its code, says what
@@ -46,6 +46,12 @@ The owner decides scope, budgets, repositories and merges. The owner wants lean,
 owner's own. The owner writes Ruby, Rust and sometimes Elixir, and prefers
 error codes named after the domain. When you report a test, explain what it
 proves and what it does not.
+
+All code, identifiers and docs are named board for now: the crates, error
+codes, record types, plugin ids, config, the `board` binary and its help.
+Viitta is the repository's name and a stable identifier kept as a hedge; if a
+rename is ever needed, for example for trademark reasons, internal and public
+naming are split at that point.
 
 ## Writing
 

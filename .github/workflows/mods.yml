@@ -1,0 +1,57 @@
+# Runs the tests of each Claude Code mod, `plugins/<name>/claude-code/`, when a
+# pull request or a push to main changes a file under a `claude-code/`
+# directory, the marketplace or this file. The tests stand in for board and
+# need no credential. It also checks that the marketplace lists every mod.
+name: mods
+
+on:
+  pull_request:
+    paths:
+      - "**/claude-code/**"
+      - .claude-plugin/marketplace.json
+      - .github/workflows/mods.yml
+  push:
+    branches: [main]
+    paths:
+      - "**/claude-code/**"
+      - .claude-plugin/marketplace.json
+      - .github/workflows/mods.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mods-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # The exact version the mods' tests were last run with locally. The
+      # controls mod needs `$.session.append`, which 2.1.289 lacks.
+      - run: npm install --global @anthropic-ai/claude-code@2.1.308 # zizmor: ignore[adhoc-packages]
+      - name: claude plugin test, for each mod
+        run: |
+          for mod in plugins/*/claude-code; do
+            echo "::group::$mod"
+            claude plugin test "$mod"
+            echo "::endgroup::"
+          done
+      # Every mod has an entry whose name is its plugin.json name and whose
+      # source is its directory, so `claude plugin install <name>@board`
+      # finds it.
+      - name: the marketplace lists every mod
+        run: |
+          for mod in plugins/*/claude-code; do
+            name=$(jq -r .name "$mod/.claude-plugin/plugin.json")
+            jq -e --arg name "$name" --arg source "./$mod" \
+              'any(.plugins[]; .name == $name and .source == $source)' \
+              .claude-plugin/marketplace.json >/dev/null \
+              || { echo "::error::.claude-plugin/marketplace.json has no entry for $name at ./$mod"; exit 1; }
+          done
+      - run: claude plugin validate .

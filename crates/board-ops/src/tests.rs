@@ -8,6 +8,7 @@ use board_tree::{Entry, Status};
 use crate::{Board, CheckReport, OpenError};
 
 mod complete;
+mod frontmatter;
 mod markdown;
 mod symlinks;
 pub(crate) mod verdicts;

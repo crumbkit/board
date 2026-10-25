@@ -4,6 +4,7 @@ mod app;
 mod attachment;
 mod code;
 mod fields;
+mod frontmatter;
 mod json;
 mod location;
 mod markdown;
@@ -17,6 +18,7 @@ pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
 pub use crate::code::Code;
 pub use crate::fields::{Fields, Found, Known, Lined};
+pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};
 pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::markdown::{links, reached};
@@ -28,7 +30,7 @@ pub use crate::pointer::{
 };
 pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RecordType, RecordTypeError, Role,
-    classify, needs_bytes,
+    TYPES_DIRECTORY, classify, is_json_file,
 };
 pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::stat::{Change, Stat};

@@ -207,7 +207,7 @@ impl Board {
         let commit = if committed {
             head
         } else {
-            self.write_all(lock, &prepared, &message)
+            self.write_all(lock, &prepared, &[], &message)
                 .map_err(Failure::one)?
                 .commit
                 .unwrap_or(head)

@@ -54,6 +54,14 @@ board refs /cycle/b
   fails with board::resolve::cycle
   hint
 
+board check /frontmatter/parse.md
+  fails with board::frontmatter::parse
+  hint
+
+board check /frontmatter/unsupported.md
+  fails with board::frontmatter::unsupported
+  hint
+
 board check /hops/h0
   fails with board::resolve::too_many_hops
   hint
@@ -691,6 +699,10 @@ board call notes.due
   fails with board::plugin::schema_differs
   run board plugin enable notes
     exits 0
+
+board plugin enable notes
+  fails with board::plugin::type_in_use
+  hint
 
 board plugin list
   fails with board::plugin::schema_missing

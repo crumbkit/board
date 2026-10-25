@@ -71,7 +71,9 @@ fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
         | Code::JsonMergeConflict
         | Code::JsonDuplicateKey
         | Code::JsonNotUtf8
-        | Code::JsonLossyNumber => format!(
+        | Code::JsonLossyNumber
+        | Code::FrontmatterParse
+        | Code::FrontmatterUnsupported => format!(
             "{} is {repository}, which Board cannot write; fix the file there as the message says, then run `board mount update {mount}`",
             fields.path.as_ref()?
         ),
@@ -273,6 +275,12 @@ fn generic(code: Code) -> &'static str {
         Code::JsonLossyNumber => {
             "write the number as a string; it does not fit a 64-bit integer or a double exactly"
         }
+        Code::FrontmatterParse => {
+            "fix the YAML between the `---` lines at the line the message gives; each key appears once in a mapping"
+        }
+        Code::FrontmatterUnsupported => {
+            "write the value as JSON could hold it: no anchors, aliases or tags, string keys, and a number that is too big or not finite quoted as a string"
+        }
         Code::RecordBadType => {
             "set `$type` to `<namespace>/<kind>/v<n>` in lowercase, such as `lr/task/v1`"
         }
@@ -434,6 +442,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PluginSchemaDiffers => {
             "run `board plugin enable <name>`, which replaces the board's copy with the schema the plugin ships"
+        }
+        Code::PluginTypeInUse => {
+            "delete each record the message lists, for example with `git rm`, or put it again as a type the plugin ships; then enable the plugin again"
         }
         Code::PluginAmbiguous => {
             "name the plugin as well, as in `board call <plugin>.<capability>`; `board plugin find --capability <name>` lists the plugins that offer it"

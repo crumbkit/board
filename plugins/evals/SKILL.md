@@ -16,8 +16,8 @@ for its path. An eval goes in the personal board unless one of these applies:
   Write it there.
 - The eval tests the code of the repository you are in, and its cases should
   change with that code, as an agent's regression suite does. Write it in
-  the repository's board if that board enables the evals plugin. It does
-  when `board plugin list`, run in the repository, shows `evals` as
+  the repository's board if that board enables the evals and runs plugins.
+  It does when `board plugin list`, run in the repository, shows both as
   `enabled`. Otherwise write it in the personal board.
 
 A decision, such as whether to adopt a library, never goes in a repository's
@@ -66,20 +66,42 @@ of the repository you are in before you test.
    running.
 2. Run the remaining steps in the board you chose. Before gathering
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.
-   Give the question, the subjects, the method, the cases and the measures,
-   and `status: planned`. The subjects are the names of what is tested, such
-   as `crumbkit` or `clap`. Put `repos: ["/repos/<name>"]` with the mount of
-   each repository the eval concerns, so an agent working there finds it.
-   A `repos` path is read in the board that holds the eval, and `board check`
-   reports `board::ref::dangling` when that board has no such mount. In the
+   Give the question, the subjects and `status: planned`. The subjects are
+   the names of what is tested, such as `crumbkit` or `clap`. Put
+   `repos: ["/repos/<name>"]` with the mount of each repository the eval
+   concerns, so an agent working there finds it. A `repos` path is read in
+   the board that holds the eval, and `board check` reports
+   `board::ref::dangling` when that board has no such mount. In the
    repository's own board, or a shared board without the mount, leave
    `repos` out.
-3. Write one `evals/run/v1` at `/evals/<name>/runs/<id>` per run, with each
-   case's outcome or measures and the versions used. Save raw files, such as
-   logs, under `evals/<name>/evidence/` in that board's git repository,
-   commit them, and reference them from the results.
-4. Set `status: running` at the first run.
+3. Say how it is tested in a `runs/suite/v1` at `/suites/<suite>`: the
+   subjects, the method, the cases and the measures, each with its unit.
+   `board ls /suites` lists the suites; reuse one that already tests this.
+   List the suite in the eval's `suites`.
+4. Write one `runs/run/v1` per run at `/suites/<suite>/runs/<id>`, where the
+   id is a UTC timestamp and a short random suffix, such as
+   `20261018T101500Z-a3f9`. Give `by`, `started`, `scope` (`full` when every
+   case ran), `dirty` when you know whether the tree under test had
+   uncommitted changes, the versions used and any `setup`. List each case's
+   outcome or measures, numbering repeated trials of a case with `trial`
+   from 1. A case that did not pass needs a `note` saying why. Save raw
+   files, such as logs, under `evals/<name>/evidence/` in that board's git
+   repository, commit them, and reference them from the results. Add the
+   run to the eval's `runs`, and set `status: running` at the first run.
 5. Conclude with `verdict` and `conclusion`, and set `status: concluded`.
+   The eval's `runs` lists the runs the verdict rests on. If you stop
+   before concluding, set `status: abandoned` and say why in `conclusion`.
+6. After an `inconclusive` verdict, the `conclusion` says what would make
+   the question conclusive, such as more trials, fixing a cause of error,
+   blind scoring or a threshold set in advance. Keep `status: concluded`
+   and choose one:
+   - Write a narrower eval that tests one of those changes now, with
+     `status: planned` (step 2), and give its path in this eval's
+     `conclusion`. Give it a new suite whose `method` states the thresholds
+     for `supported` and `refuted`, so the earlier runs keep their method.
+   - Say in the `conclusion` why the question is not worth pursuing.
+
+   Tell the owner which you chose, because the owner may choose the other.
 
 A personal board that mounts a repository at `/repos/<name>` lists that
 repository's evals in `about` and `open`. The plugin's README says how to

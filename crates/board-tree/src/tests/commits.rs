@@ -19,7 +19,7 @@ fn head_moved_since_staging_leaves_the_commit_unmade_and_the_index_alone() {
     let repository = scenario.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
-        .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     let moved = scenario.commit(&[("a.json", "{}"), ("c.json", "{}")]);
@@ -42,7 +42,7 @@ fn head_unmoved_since_staging_takes_the_commit_and_the_index_follows() {
     let parent = scenario.head().unwrap().id;
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
-        .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     let commit = repository.finish_commit(&lock, staged).unwrap();
@@ -54,6 +54,24 @@ fn head_unmoved_since_staging_takes_the_commit_and_the_index_follows() {
 }
 
 #[test]
+fn a_removal_leaves_the_path_out_of_the_commit_and_the_index() {
+    let scenario = identified();
+    let repository = scenario.open();
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    for bytes in [Some(&b"{}\n"[..]), None] {
+        let staged = repository
+            .stage_commit(&lock, &[("b.json", bytes)], "board put")
+            .unwrap()
+            .unwrap();
+        repository.finish_commit(&lock, staged).unwrap();
+        assert_eq!(scenario.index().contains_key("b.json"), bytes.is_some());
+    }
+    let head = scenario.head().unwrap();
+    assert!(!head.files.contains_key("b.json"));
+    assert_eq!(head.files["a.json"], b"{}", "the rest of HEAD is kept");
+}
+
+#[test]
 fn a_detached_head_takes_the_commit_on_itself() {
     let scenario = identified();
     let parent = scenario.head().unwrap().id;
@@ -61,7 +79,7 @@ fn a_detached_head_takes_the_commit_on_itself() {
     let repository = scenario.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
-        .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     let commit = repository.finish_commit(&lock, staged).unwrap();
@@ -88,7 +106,7 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     let parent = scenario.head().unwrap().id;
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
-        .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     let error = repository.finish_commit(&lock, staged).unwrap_err();
@@ -99,7 +117,7 @@ fn a_held_branch_lock_is_a_failure_and_not_head_moved() {
     assert!(!repository.git_dir().join("index.lock").exists());
     scenario.write(&lock_file, Item::Deleted);
     let staged = repository
-        .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     assert!(repository.finish_commit(&lock, staged).is_ok());
@@ -111,7 +129,7 @@ fn an_index_that_cannot_be_written_after_head_moved_names_the_commit() {
     let repository = scenario.open();
     let lock = repository.lock(LOCK_WAIT).unwrap();
     let staged = repository
-        .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
         .unwrap()
         .unwrap();
     // The index is written into the held lock file, so with it gone the
@@ -148,7 +166,7 @@ fn a_commit_during_a_merge_or_rebase_is_refused_and_a_clean_one_is_admitted() {
         let repository = scenario.open();
         let lock = repository.lock(LOCK_WAIT).unwrap();
         let error = repository
-            .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+            .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
             .unwrap_err();
         assert_eq!(error.code(), Code::PutLocked, "{marker}");
         assert_eq!(
@@ -162,7 +180,7 @@ fn a_commit_during_a_merge_or_rebase_is_refused_and_a_clean_one_is_admitted() {
         scenario.write(&format!(".git/{top}"), Item::Deleted);
         assert!(
             repository
-                .stage_commit(&lock, &[("b.json", b"{}\n")], "board put /b")
+                .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
                 .is_ok(),
             "{marker}"
         );

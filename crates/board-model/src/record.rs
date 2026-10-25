@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::attachment::ATTACHMENT_TYPE;
 use crate::code::Code;
+use crate::frontmatter::frontmatter;
 use crate::json::parse_json;
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
 
@@ -20,7 +21,7 @@ pub const CONFIG_TYPE: &str = "board/config/v1";
 pub const MANIFEST_TYPE: &str = "board/plugin-manifest/v1";
 
 /// The directory that holds schemas.
-const TYPES_DIRECTORY: &str = ".board/types/";
+pub const TYPES_DIRECTORY: &str = ".board/types/";
 
 /// A record's `$type`: `<namespace>/<kind>/v<n>`, where namespace and kind
 /// are lowercase ASCII letters, digits and hyphens, and `n` is a positive
@@ -149,9 +150,9 @@ pub enum Content {
         value: Value,
     },
     File,
-    /// A `.json` entry whose bytes could not be read as its kind needs: they
-    /// do not parse, the `$type` is malformed, or the pointer is invalid.
-    /// Its code says which.
+    /// A `.json` entry, or a Markdown file's frontmatter, whose bytes could
+    /// not be read as its kind needs: they do not parse, the `$type` is
+    /// malformed, or the pointer is invalid. Its code says which.
     Unparsed(Kind),
 }
 
@@ -184,7 +185,8 @@ pub enum Role {
     Schema,
     /// A schema in the reserved `board` namespace, which no board may define.
     ReservedSchema,
-    /// A Markdown file, a file whose links are references.
+    /// A Markdown file, a file whose links are references, and a record
+    /// when its frontmatter names a `$type`.
     Markdown,
 }
 
@@ -216,12 +218,26 @@ impl Role {
         }
     }
 
+    /// Why `bytes` do not parse in this role, with the code: the JSON
+    /// parser's message, or for a Markdown file its frontmatter's. `None`
+    /// when they parse.
+    pub fn parse_error(self, bytes: &[u8]) -> Option<(Code, String)> {
+        match self {
+            Self::Markdown => frontmatter(bytes)
+                .err()
+                .map(|error| (error.code(), error.to_string())),
+            _ => parse_json(bytes)
+                .err()
+                .map(|error| (error.code(), error.to_string())),
+        }
+    }
+
     /// Classifies `bytes` read in this role, or `None` when they are over
     /// the size limit. Board's own types are checked here; other records
-    /// wait for their schema. A Markdown file is a file whatever it holds.
+    /// wait for their schema.
     pub fn classify(self, bytes: Option<&[u8]>) -> Classified {
         if self == Self::Markdown {
-            return Classified::ok(Content::File);
+            return markdown(bytes);
         }
         let parsed_kind = if self == Self::Json {
             Kind::Json
@@ -265,6 +281,16 @@ impl Role {
     }
 }
 
+/// Classifies a Markdown file: a record when it has frontmatter that claims
+/// a `$type`, else a file. A file over the size limit is a file.
+fn markdown(bytes: Option<&[u8]>) -> Classified {
+    match bytes.map(frontmatter) {
+        None | Some(Ok(None)) => Classified::ok(Content::File),
+        Some(Err(error)) => Classified::unparsed(Kind::File, error.code()),
+        Some(Ok(Some(value))) => Classified::frontmatter(value),
+    }
+}
+
 impl Content {
     pub fn kind(&self) -> Kind {
         match self {
@@ -292,6 +318,21 @@ impl Classified {
         self.content.kind()
     }
 
+    /// Classifies a Markdown file whose frontmatter, a block that claims a
+    /// `$type`, reads as `value`: a record of that type, or `bad_type` when
+    /// it is not a mapping with a well-formed `$type`. Board's own types are
+    /// JSON documents, so one named here is unknown.
+    pub fn frontmatter(value: Value) -> Self {
+        let tag = value.get("$type").and_then(Value::as_str);
+        let Some(record_type) = tag.and_then(|tag| tag.parse::<RecordType>().ok()) else {
+            return Self::unparsed(Kind::Record, Code::RecordBadType);
+        };
+        Self {
+            code: record_type.is_board().then_some(Code::RecordUnknownType),
+            content: Content::Record { record_type, value },
+        }
+    }
+
     fn ok(content: Content) -> Self {
         Self {
             content,
@@ -307,9 +348,8 @@ impl Classified {
     }
 }
 
-/// Whether classifying the entry at `path` needs its bytes: only `.json`
-/// files are read.
-pub fn needs_bytes(path: &str) -> bool {
+/// Whether the entry at `path` is a `.json` file, which Board reads as JSON.
+pub fn is_json_file(path: &str) -> bool {
     Role::of(path).is_some_and(|role| role != Role::Markdown)
 }
 

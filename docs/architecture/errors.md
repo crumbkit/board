@@ -10,6 +10,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | Area | Reasons |
 | --- | --- |
 | `json` | `parse`, `merge_conflict`, `duplicate_key`, `too_large`, `not_utf8`, `lossy_number` |
+| `frontmatter` | `parse`, `unsupported`; see docs/architecture/records/frontmatter.md |
 | `record` | `bad_type`, `unknown_type`, `invalid`, `not_a_record` |
 | `config` | `not_found`, `invalid`, `ambiguous` |
 | `schema` | `invalid`, `differs` |

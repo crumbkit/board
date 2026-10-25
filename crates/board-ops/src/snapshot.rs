@@ -257,6 +257,8 @@ struct Decisions {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Reached {
     pub(crate) pointer: String,
+    /// Whether it is a Markdown link, whose `pointer` is its destination.
+    pub(crate) link: bool,
     pub(crate) target: LogicalPath,
     /// Where it resolved, or `None` when it dangles.
     pub(crate) location: Option<Location>,
@@ -285,7 +287,7 @@ impl Decisions {
         let fact = decide.facts.get(&entry.path);
         let role = Role::of(&entry.path);
         let kind = match (role, fact) {
-            (None | Some(Role::Markdown), _) => Kind::File,
+            (None, _) | (Some(Role::Markdown), None) => Kind::File,
             (Some(_), Some(fact)) => fact.fact.kind,
             (Some(_), None) => Kind::Json,
         };
@@ -447,7 +449,14 @@ impl Decide<'_> {
                         }),
                     )
                 }))),
-            Kind::Record => self.record(fact, schema, reached),
+            // A Markdown record's links are followed after its references,
+            // so its first failure is in its frontmatter; a JSON record has
+            // no links.
+            Kind::Record => {
+                let judged = self.record(fact, schema, reached)?;
+                let links = self.links(entry, &fact.fact.links, reached);
+                Ok(judged.map(|failure| failure.or(links)))
+            }
             Kind::File => Ok(Ok(self.links(entry, &fact.fact.links, reached))),
             Kind::Schema | Kind::Json => Ok(Ok(None)),
         }
@@ -475,6 +484,7 @@ impl Decide<'_> {
             tally.add(link, failure.as_ref());
             reached.push(Reached {
                 pointer: link.clone(),
+                link: true,
                 target,
                 location,
                 code: failure.map(|(code, _)| code),
@@ -541,6 +551,7 @@ impl Decide<'_> {
             tally.add(&reference.pointer, failure.as_ref());
             reached.push(Reached {
                 pointer: reference.pointer,
+                link: false,
                 target: reference.target,
                 location,
                 code: failure.map(|(code, _)| code),

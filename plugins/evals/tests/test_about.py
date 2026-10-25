@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
-from conftest import Board, experiment, mount, repository
+from conftest import Board, experiment, mount, repository, run, suite
 
 
 def test_about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_question_and_verdict(
@@ -82,10 +82,11 @@ def test_board_refuses_the_call_when_its_eval_schema_is_looser_and_answers_with_
     assert refused["fields"]["schema"] == ".board/types/evals/eval/v1.schema.json"
 
 
-def test_an_eval_whose_cases_file_reaches_nothing_is_still_listed(board: Board) -> None:
-    board.write("evals/ok.json", experiment("Ok?", cases_file="/evals/ok/cases.jsonl"))
-    board.write("evals/ok/cases.jsonl", "{}\n")
-    board.write("evals/lost.json", experiment("Lost?", cases_file="/evals/lost/cases.jsonl"))
+def test_an_eval_whose_run_reaches_nothing_is_still_listed(board: Board) -> None:
+    board.write("suites/s.json", suite())
+    board.write("suites/s/runs/1.json", run("/suites/s"))
+    board.write("evals/ok.json", experiment("Ok?", runs=["/suites/s/runs/1"]))
+    board.write("evals/lost.json", experiment("Lost?", runs=["/suites/s/runs/2"]))
     assert board.paths("about", {"subject": "gix"}) == ["/evals/lost", "/evals/ok"]
 
 

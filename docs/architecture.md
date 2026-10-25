@@ -25,7 +25,8 @@ Board reads the known boards in `$XDG_CONFIG_HOME/board/config.json`
 (`~/.config/board/config.json` by default), shaped
 `{"boards": ["/Users/me/Code/board"]}`. A relative path is read against the
 file's directory. A missing or empty file lists none, and any other file
-that is not this shape is `board::config::invalid`. Board refreshes each
+that is not this shape is `board::config::invalid`. So is a `day_start`
+that is not `HH:MM`. Board refreshes each
 known board's index and reads the mounts in its working tree. A board
 listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the
@@ -73,7 +74,7 @@ kind and a status.
 
 | Kind | What it is |
 | --- | --- |
-| record | a `.json` file whose top-level object has a `$type` string; `.board/board.json` is one |
+| record | a `.json` file whose top-level object has a `$type` string, or [typed Markdown](architecture/records/frontmatter.md); `.board/board.json` is one |
 | pointer | a record of type `board/mount/v1` (a link or a mount) |
 | schema | a file under `.board/types/` ending `.schema.json` |
 | json | any other `.json` file |
@@ -245,8 +246,8 @@ tables and views, how a refresh decides what to redo, and `board query` and
 
 `board put <path> --file` writes stdin as a file, as given, at the path that
 is the file's whole name, such as `/notes/plan.md`. It takes steps 1, 3, 4, 5
-and 6, and its only check is the 16 MiB limit; a Markdown file's links are
-followed for the report. A path that names a directory,
+and 6, checks the size and frontmatter claiming a `$type`, and follows
+Markdown links for the report. A path that names a directory,
 or ends `.json`, which Board reads as a record, is `board::put::not_a_file`.
 With a `store` in `.board/board.json`, a file over 1 MiB or not UTF-8 is
 uploaded under its digest and a `board/attachment/v1` record is written in

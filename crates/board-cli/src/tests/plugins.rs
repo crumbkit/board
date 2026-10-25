@@ -68,10 +68,10 @@ fn plugin_list_prints_its_line_per_plugin_and_long_adds_each_description() {
     assert_eq!(output.code, 1, "{}", text(&output.stderr));
     assert_eq!(
         text(&output.stdout),
-        "STATUS    CODE                          NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE                                                       SCHEMAS\n\
-         degraded  board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`  -\n\
-         degraded  board::plugin::not_installed  gone    -        true     []       -            -                                                             -\n\
-         ok        -                             tasks   0.1.0    true     [\"due\"]  Open tasks.  -                                                             -\n"
+        "STATUS                                 NAME    VERSION  ENABLED  OFFERS   DESCRIPTION  MESSAGE\n\
+         degraded board::plugin::bad_manifest   broken  -        false    []       -            the manifest is not a plugin manifest: missing field `$type`\n\
+         degraded board::plugin::not_installed  gone    -        true     []       -            -\n\
+         ok                                     tasks   0.1.0    true     [\"due\"]  Open tasks.  -\n"
     );
 }
 
@@ -88,6 +88,13 @@ fn plugin_list_fields_admits_description_and_refuses_an_unknown_field() {
         text(&output.stdout),
         "NAME   DESCRIPTION\ntasks  Open tasks.\n"
     );
+    let output = plugin(
+        &board,
+        &data,
+        &["plugin", "list", "--fields", "status,code"],
+    );
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    assert_eq!(text(&output.stdout), "STATUS  CODE\nok      -\n");
     let output = plugin(
         &board,
         &data,
@@ -129,16 +136,13 @@ fn plugin_list_help_names_its_columns() {
     let help = text(&output.stdout);
     assert!(!help.contains("<ENTRY>"), "{help}");
     assert!(
-        help.contains(
-            "<STATUS> [<CODE>] <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]"
-        ),
+        help.contains("<STATUS> <NAME> [<VERSION>] <ENABLED>[: <PROBLEMS>][ offers <OFFERS>]"),
         "{help}"
     );
     let output = plugin(&board, &data, &["plugin", "list", "--help"]);
     let help = text(&output.stdout);
     for column in [
         "status",
-        "code",
         "name",
         "version",
         "enabled",
@@ -153,6 +157,8 @@ fn plugin_list_help_names_its_columns() {
         help.contains("`board plugin find --capability <name>` describes each"),
         "{help}"
     );
+    // The row decides its problem itself, because `code` is not a column.
+    assert!(!help.contains("Problems:"), "{help}");
 }
 
 /// A manifest for `name` offering capabilities `one` and `two`.
@@ -778,6 +784,41 @@ fn plugin_enable_reports_a_schema_it_replaced_and_none_when_the_schema_is_the_sa
     let again = plugin(&board, &data, &["plugin", "enable", "tasks"]);
     assert_eq!(text(&again.stdout), "tasks is already enabled\n");
     assert_eq!(text(&again.stderr), "");
+}
+
+#[test]
+fn plugin_enable_refuses_while_a_record_has_a_type_the_plugin_dropped_and_removes_its_schema_once_none_does()
+ {
+    let (board, data) = shipping();
+    let old = ".board/types/notes/old/v1.schema.json";
+    board
+        .write(old, Item::File(r#"{"type": "object"}"#))
+        .write("old.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
+    let refused = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+    assert_eq!(refused.code, 1);
+    let report = json(&refused);
+    assert_eq!(report["code"], "board::plugin::type_in_use");
+    let message = report["message"].as_str().unwrap();
+    assert!(
+        message.contains("notes/old/v1") && message.contains("/old"),
+        "{message}"
+    );
+    assert!(
+        report["recovery"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("git rm")
+    );
+
+    board.write("old.json", Item::Deleted);
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    assert_eq!(json(&enabled)["data"]["removed"], serde_json::json!([old]));
+    assert_eq!(
+        text(&enabled.stderr),
+        format!("note: removed {old}, which the notes plugin no longer ships\n")
+    );
+    assert!(!board.workdir().join(old).exists());
 }
 
 /// A board naming notes in its configuration without its schema.

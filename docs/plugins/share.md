@@ -20,10 +20,12 @@ have to go as well.
 
 Because each entry keeps its path, no reference is rewritten. The set is found
 from the index, which holds every typed reference, so no relation is declared
-by hand: an eval's runs are its children, and a run's evidence is what its
-records reference. A reference to a directory reaches every entry under it.
-Only references whose source is a record are followed. A Markdown file's
-links, which `refs` lists too, are not followed, so a link cannot reach a
+by hand: an eval's evidence is its children, and its suites and runs are
+what it references. A reference to a directory reaches every entry under it.
+Only the references a record's schema declares are followed, including
+those in a Markdown record's frontmatter, which is copied as text with its
+type's schema and checked again by the destination's `put`. A Markdown
+file's links, which `refs` marks `link`, are not followed, so a link cannot reach a
 directory either. A copied note may link to a note the destination lacks; the
 link dangles there, and `board check` reports it. The owner chose this on
 2026-10-21, so a share copies what records name and no more. A

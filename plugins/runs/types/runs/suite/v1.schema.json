@@ -1,0 +1,106 @@
+{
+  "$defs": {
+    "Case": {
+      "additionalProperties": false,
+      "description": "One case of a suite. A run's result names it by `id`.",
+      "properties": {
+        "expected": {
+          "title": "Expected"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "input": {
+          "title": "Input"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Case",
+      "type": "object"
+    },
+    "Measure": {
+      "additionalProperties": false,
+      "description": "A quantity a run takes, in `unit`. A result or a run gives its value under `name`.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "unit"
+      ],
+      "title": "Measure",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`runs/suite/v1`: what gets run, how, and what a run of it measures.\n\nA suite's name is its path: the suite at `/suites/<name>.json` is\n`<name>`, and its runs sit in `/suites/<name>/runs/`. `subjects` are the\nnames of what is tested. `cases` lists the cases inline, or `cases_file`\nreferences a file that does; a suite whose cases are found when it runs,\nsuch as a test suite, has neither.",
+  "not": {
+    "required": [
+      "cases",
+      "cases_file"
+    ]
+  },
+  "properties": {
+    "$type": {
+      "const": "runs/suite/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/Case"
+      },
+      "title": "Cases",
+      "type": "array"
+    },
+    "cases_file": {
+      "format": "board-ref",
+      "title": "Cases File",
+      "type": "string"
+    },
+    "command": {
+      "title": "Command",
+      "type": "string"
+    },
+    "measures": {
+      "items": {
+        "$ref": "#/$defs/Measure"
+      },
+      "title": "Measures",
+      "type": "array"
+    },
+    "method": {
+      "title": "Method",
+      "type": "string"
+    },
+    "subjects": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Subjects",
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "subjects",
+    "method"
+  ],
+  "title": "SuiteRecord",
+  "type": "object"
+}

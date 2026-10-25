@@ -401,9 +401,9 @@ fn commit(root: &Path, files: &[(String, String)]) -> std::io::Result<()> {
     let lock = repository
         .lock(board_tree::LOCK_WAIT)
         .map_err(std::io::Error::other)?;
-    let writes: Vec<(&str, &[u8])> = files
+    let writes: Vec<(&str, Option<&[u8]>)> = files
         .iter()
-        .map(|(path, text)| (path.as_str(), text.as_bytes()))
+        .map(|(path, text)| (path.as_str(), Some(text.as_bytes())))
         .collect();
     let staged = repository
         .stage_commit(&lock, &writes, "generated")

@@ -14,6 +14,8 @@ pub enum Code {
     JsonTooLarge,
     JsonNotUtf8,
     JsonLossyNumber,
+    FrontmatterParse,
+    FrontmatterUnsupported,
     RecordBadType,
     RecordUnknownType,
     RecordInvalid,
@@ -70,6 +72,7 @@ pub enum Code {
     PluginNotEnabled,
     PluginSchemaMissing,
     PluginSchemaDiffers,
+    PluginTypeInUse,
     PluginAmbiguous,
     PluginBadInput,
     PluginBadOutput,
@@ -84,13 +87,15 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 72] = [
+    pub const ALL: [Code; 75] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
         Self::JsonTooLarge,
         Self::JsonNotUtf8,
         Self::JsonLossyNumber,
+        Self::FrontmatterParse,
+        Self::FrontmatterUnsupported,
         Self::RecordBadType,
         Self::RecordUnknownType,
         Self::RecordInvalid,
@@ -147,6 +152,7 @@ impl Code {
         Self::PluginNotEnabled,
         Self::PluginSchemaMissing,
         Self::PluginSchemaDiffers,
+        Self::PluginTypeInUse,
         Self::PluginAmbiguous,
         Self::PluginBadInput,
         Self::PluginBadOutput,
@@ -172,6 +178,8 @@ impl Code {
             Self::JsonTooLarge => "board::json::too_large",
             Self::JsonNotUtf8 => "board::json::not_utf8",
             Self::JsonLossyNumber => "board::json::lossy_number",
+            Self::FrontmatterParse => "board::frontmatter::parse",
+            Self::FrontmatterUnsupported => "board::frontmatter::unsupported",
             Self::RecordBadType => "board::record::bad_type",
             Self::RecordUnknownType => "board::record::unknown_type",
             Self::RecordInvalid => "board::record::invalid",
@@ -228,6 +236,7 @@ impl Code {
             Self::PluginNotEnabled => "board::plugin::not_enabled",
             Self::PluginSchemaMissing => "board::plugin::schema_missing",
             Self::PluginSchemaDiffers => "board::plugin::schema_differs",
+            Self::PluginTypeInUse => "board::plugin::type_in_use",
             Self::PluginAmbiguous => "board::plugin::ambiguous",
             Self::PluginBadInput => "board::plugin::bad_input",
             Self::PluginBadOutput => "board::plugin::bad_output",
@@ -264,6 +273,8 @@ mod tests {
             | Code::JsonTooLarge
             | Code::JsonNotUtf8
             | Code::JsonLossyNumber
+            | Code::FrontmatterParse
+            | Code::FrontmatterUnsupported
             | Code::RecordBadType
             | Code::RecordUnknownType
             | Code::RecordInvalid
@@ -320,6 +331,7 @@ mod tests {
             | Code::PluginNotEnabled
             | Code::PluginSchemaMissing
             | Code::PluginSchemaDiffers
+            | Code::PluginTypeInUse
             | Code::PluginAmbiguous
             | Code::PluginBadInput
             | Code::PluginBadOutput

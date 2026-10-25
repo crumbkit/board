@@ -64,13 +64,97 @@ fn a_record_type_deserializes_under_the_same_rules() {
 
 #[test]
 fn only_json_files_are_read() {
-    assert!(needs_bytes("work/x.json"));
-    assert!(!needs_bytes("notes.md"));
-    assert!(!needs_bytes("x.JSON"));
+    assert!(is_json_file("work/x.json"));
+    assert!(!is_json_file("notes.md"));
+    assert!(!is_json_file("x.JSON"));
     assert_eq!(classify("notes.md", None), Classified::ok(Content::File));
     assert_eq!(
         classify("notes.md", Some(b"[a](a.md)")),
         Classified::ok(Content::File)
+    );
+}
+
+#[test]
+fn markdown_with_a_type_in_its_frontmatter_is_a_record() {
+    let record = classify(
+        "tasks/a.md",
+        Some(b"---\n$type: lr/task/v1\ndue: 2026-10-26\n---\n# A\n"),
+    );
+    assert_eq!(record.code, None);
+    let Content::Record { record_type, value } = record.content else {
+        panic!("{record:?} is not a record");
+    };
+    assert_eq!(record_type.as_str(), "lr/task/v1");
+    assert_eq!(
+        value,
+        serde_json::json!({"$type": "lr/task/v1", "due": "2026-10-26"})
+    );
+}
+
+#[test]
+fn markdown_without_a_type_in_its_frontmatter_is_a_file() {
+    for text in [
+        "# A\n",
+        "---\ntitle: A\n---\n",
+        "---\n- a\n---\n",
+        "---\n---\n",
+        "---\n$type: lr/task/v1\n",
+    ] {
+        assert_eq!(classified("a.md", text), (Kind::File, None), "{text:?}");
+    }
+}
+
+#[test]
+fn typed_markdown_frontmatter_that_does_not_parse_degrades_the_file_and_untyped_is_ok() {
+    assert_eq!(
+        classified("a.md", "---\n$type: lr/task/v1\ntitle: [\n---\n"),
+        (Kind::File, Some(Code::FrontmatterParse))
+    );
+    assert_eq!(
+        classified("a.md", "---\ntitle: [\n---\n"),
+        (Kind::File, None)
+    );
+    assert_eq!(
+        classified("a.md", "---\n$type: lr/task/v1\nn: .inf\n---\n"),
+        (Kind::File, Some(Code::FrontmatterUnsupported))
+    );
+    assert_eq!(
+        Role::Markdown
+            .parse_error(b"---\n$type: lr/task/v1\na: 1\na: 1\n---\n")
+            .map(|(code, _)| code),
+        Some(Code::FrontmatterParse)
+    );
+    assert_eq!(
+        Role::Markdown.parse_error(b"---\n$type: lr/task/v1\na: 1\n---\n"),
+        None
+    );
+}
+
+#[test]
+fn markdown_with_a_bad_or_board_type_is_a_degraded_record() {
+    assert_eq!(
+        classified("a.md", "---\n$type: task\n---\n"),
+        (Kind::Record, Some(Code::RecordBadType))
+    );
+    assert_eq!(
+        classified("a.md", "---\n$type: board/mount/v1\npath: /x\n---\n"),
+        (Kind::Record, Some(Code::RecordUnknownType))
+    );
+}
+
+#[test]
+fn claimed_frontmatter_without_a_type_key_is_a_bad_type_and_its_typed_twin_is_a_record() {
+    // `$type:` with no space is a plain scalar, and `|` makes the block one string.
+    for text in ["---\n$type:lr/task/v1\n---\n", "---\n|\n$type: x\n---\n"] {
+        assert_eq!(
+            classified("a.md", text),
+            (Kind::Record, Some(Code::RecordBadType)),
+            "{text:?}"
+        );
+    }
+    assert_eq!(
+        classified("a.md", "---\n$type: lr/task/v1\n---\n"),
+        (Kind::Record, None)
     );
 }
 
@@ -209,9 +293,11 @@ fn the_board_configuration_is_a_record() {
 #[test]
 fn bolero_classifying_any_bytes_never_panics_and_unparsed_content_has_a_code() {
     bolero::check!().for_each(|bytes: &[u8]| {
-        let classified = classify("x.json", Some(bytes));
-        if matches!(classified.content, Content::Unparsed(_)) {
-            assert!(classified.code.is_some());
+        for path in ["x.json", "x.md"] {
+            let classified = classify(path, Some(bytes));
+            if matches!(classified.content, Content::Unparsed(_)) {
+                assert!(classified.code.is_some());
+            }
         }
     });
 }

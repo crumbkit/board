@@ -1,5 +1,6 @@
 //! `put --file`: bytes written as given at a path that is the file's whole
-//! name, with no check beyond the size limit.
+//! name, checked for size and, in a Markdown file, for frontmatter that
+//! parses and a record its schema admits.
 
 use board_model::{Code, Fields, MAX_RECORD_BYTES};
 use board_scenario::{Item, Scenario};
@@ -195,4 +196,106 @@ fn a_note_written_through_a_link_reads_its_links_from_where_it_lands() {
         Some(Code::RefDangling)
     );
     assert_eq!(checked(), board_tree::Status::Degraded(Code::RefDangling));
+}
+
+#[test]
+fn a_markdown_record_its_schema_refuses_is_not_written_and_its_valid_twin_is() {
+    let scenario = board();
+    let error = put_file(
+        &scenario,
+        "/tasks/a.md",
+        Expect::Any,
+        b"---\n$type: lr/task/v1\ntitle: 1\n---\n# A\n",
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), Code::RecordInvalid);
+    assert_eq!(file(&scenario, "tasks/a.md"), None);
+    let twin = b"---\n$type: lr/task/v1\ntitle: A\n---\n# A\n";
+    let report = put_file(&scenario, "/tasks/a.md", Expect::Any, twin).unwrap();
+    assert_eq!(report.writes[0].degraded, None);
+    assert_eq!(file(&scenario, "tasks/a.md").unwrap(), twin);
+}
+
+#[test]
+fn typed_frontmatter_that_does_not_parse_is_not_written_and_each_twin_is() {
+    let scenario = board();
+    let typed = |rest: &str| format!("---\n$type: lr/task/v1\n{rest}---\n");
+    for (at, refused, code_of, admitted) in [
+        (
+            "/a.md",
+            "title: [\n",
+            Code::FrontmatterParse,
+            "title: '['\n",
+        ),
+        (
+            "/b.md",
+            "title: a\ntitle: b\n",
+            Code::FrontmatterParse,
+            "title: a\n",
+        ),
+        (
+            "/c.md",
+            "title: .nan\n",
+            Code::FrontmatterUnsupported,
+            "title: '.nan'\n",
+        ),
+    ] {
+        let (refused, admitted) = (typed(refused), typed(admitted));
+        assert_eq!(
+            code(put_file(&scenario, at, Expect::Any, refused.as_bytes())),
+            code_of,
+            "{refused}"
+        );
+        assert_eq!(file(&scenario, &at[1..]), None);
+        assert!(
+            put_file(&scenario, at, Expect::Any, admitted.as_bytes()).is_ok(),
+            "{admitted}"
+        );
+    }
+    let bad = b"---\n$type: task\ntitle: A\n---\n";
+    assert_eq!(
+        code(put_file(&scenario, "/d.md", Expect::Any, bad)),
+        Code::RecordBadType
+    );
+    assert_eq!(file(&scenario, "d.md"), None);
+    let twin = b"---\n$type: lr/task/v1\ntitle: A\n---\n";
+    assert!(put_file(&scenario, "/d.md", Expect::Any, twin).is_ok());
+}
+
+#[test]
+fn untyped_frontmatter_that_does_not_parse_is_written_as_a_file() {
+    let scenario = board();
+    let notes = b"---\ntitle: [draft\n---\n# Draft\n";
+    let report = put_file(&scenario, "/n.md", Expect::Any, notes).unwrap();
+    assert_eq!(report.writes[0].degraded, None);
+    assert_eq!(file(&scenario, "n.md").unwrap(), notes);
+}
+
+#[test]
+fn a_markdown_record_with_a_dangling_reference_is_written_and_reported_degraded() {
+    let scenario = board();
+    assert_eq!(
+        degraded(
+            &scenario,
+            "/tasks/a.md",
+            "---\n$type: lr/task/v1\ntitle: A\nproject: /projects/q\n---\n"
+        ),
+        Some(Code::RefDangling)
+    );
+    assert_eq!(
+        degraded(
+            &scenario,
+            "/tasks/a.md",
+            "---\n$type: lr/task/v1\ntitle: A\nproject: /projects/p\n---\n[gone](gone.md)"
+        ),
+        Some(Code::RefDangling)
+    );
+    assert_eq!(
+        degraded(
+            &scenario,
+            "/tasks/a.md",
+            "---\n$type: lr/task/v1\ntitle: A\nproject: /projects/p\n---\n"
+        ),
+        None
+    );
 }

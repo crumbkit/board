@@ -26,10 +26,11 @@ design and the reasons for it; this file says how to call it.
 
 The set is the entry at `path`, every entry under `path/`, and every entry a
 record in the set references, followed until nothing new is reached. Sharing
-`/evals/x` copies the eval, its runs under `/evals/x/runs/`, the evidence
-under `/evals/x/evidence/` and a cases file it references elsewhere, such as
+`/evals/x` copies the eval, the evidence under `/evals/x/evidence/`, the
+suites and runs it references, and a cases file a suite references, such as
 `/notes/cases.md`. A reference to a directory reaches every entry under it.
-Only records' references are followed. A copied Markdown file's links are
+Only the references a record's schema declares are followed, including a
+Markdown record's frontmatter references. A copied Markdown file's links are
 not, so a note it links to stays behind, and `board check` reports the link
 as dangling in the destination.
 Each entry lands at the same path in the destination, so no
