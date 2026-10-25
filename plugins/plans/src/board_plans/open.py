@@ -39,16 +39,18 @@ def open_questions(request: CallRequest) -> dict[str, object]:
         f" WHERE type = {literal(QUESTION_TYPE)} AND json_extract(body, '$.status') = 'open'"
         f" AND substr(logical, 1, length({literal(prefix)})) = {literal(prefix)}",
     )
-    found: list[OpenQuestion] = []
+    found: list[tuple[dt.datetime, OpenQuestion]] = []
     unreadable = 0
     for path, code, body in rows:
         if code is not None and code not in TREE_CODES:
             unreadable += 1
             continue
-        # Board refuses a call when the board's schema differs from the plugin's, so the record matches it.
-        record = cast("dict[str, Any]", json.loads(body))
-        found.append(
-            OpenQuestion(
+        # A mounted board validates against its own schemas, and Python reads fewer
+        # RFC 3339 times than Board admits, such as a leap second, so a record may still fail here.
+        try:
+            record = cast("dict[str, Any]", json.loads(body))
+            when = dt.datetime.fromisoformat(record["asked"].upper())
+            entry = OpenQuestion(
                 path=path,
                 question=record["question"],
                 asked=record["asked"],
@@ -57,11 +59,15 @@ def open_questions(request: CallRequest) -> dict[str, object]:
                 recommendation=record.get("recommendation"),
                 blocks=record.get("blocks"),
             )
-        )
-    found.sort(key=lambda question: (dt.datetime.fromisoformat(question["asked"]), question["path"]))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            unreadable += 1
+            continue
+        found.append((when, entry))
+    found.sort(key=lambda pair: (pair[0], pair[1]["path"]))
+    listed = [entry for _, entry in found]
     return {
-        "questions": found[:limit],
-        "total": len(found),
-        "truncated": len(found) > limit,
+        "questions": listed[:limit],
+        "total": len(listed),
+        "truncated": len(listed) > limit,
         "unreadable": unreadable,
     }

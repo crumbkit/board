@@ -17,8 +17,8 @@ the full meaning of every field.
   `none`; `words` holds the owner's words verbatim; `answered` is when.
 - `plans/decision/v1`, wherever the writer keeps decisions, such as
   `/projects/<project>/decisions/<id>`. `decision`, `why`, `session` and
-  `decided` are required; `alternatives`, `refs` and `review` (`wanted` or
-  `none`) are optional.
+  `decided` are required; `alternatives`, `refs`, `review` (`wanted` or
+  `none`) and `written_by` are optional.
 
 ```json
 {
@@ -40,8 +40,8 @@ Such a stub names its plugin and hook in `written_by`, such as
 `board call plans.open [--path /projects/<project>] [--limit <n>]` lists the
 questions below the path whose `status` is `open`, oldest first, with their options,
 recommendation and what each blocks. It returns at most 100 by default, with
-`total` and `truncated`. `unreadable` counts open questions Board marks
-degraded or this plugin cannot read.
+`total`, which counts the readable ones, and `truncated`. `unreadable` counts
+open questions Board marks degraded or this plugin cannot read.
 
 ## Installing
 

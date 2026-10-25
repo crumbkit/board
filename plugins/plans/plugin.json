@@ -121,7 +121,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Open questions, oldest first.\n\n`total` counts every open question under the path and `truncated` says\nwhether the limit left some out. `unreadable` is how many open questions\nwere left out because Board marks them degraded or this plugin cannot read\nthem.",
+        "description": "Open questions, oldest first.\n\n`total` counts every readable open question under the path and `truncated` says\nwhether the limit left some out. `unreadable` is how many open questions\nwere left out because Board marks them degraded or this plugin cannot read\nthem.",
         "properties": {
           "questions": {
             "items": {

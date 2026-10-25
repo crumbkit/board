@@ -50,17 +50,19 @@ def test_open_returns_at_most_the_limit_and_says_how_many_it_left_out(board: Boa
     assert (output["total"], output["truncated"]) == (3, True)
 
 
-def test_a_question_board_marks_degraded_is_counted_as_unreadable_and_a_valid_one_is_listed(board: Board) -> None:
-    board.write("projects/a/questions/bad.json", question(session="someone"))
-    board.write("projects/a/questions/good.json", question())
-    output = board.call("open", {})
-    assert paths(output) == ["/projects/a/questions/good"]
-    assert output["unreadable"] == 1
-
-
 def test_a_question_whose_only_fault_is_a_dangling_reference_is_listed_and_an_invalid_one_is_not(board: Board) -> None:
     board.write("projects/a/questions/dangling.json", question(context_path="/projects/a/missing.md"))
     board.write("projects/a/questions/bad.json", question(session="someone"))
     output = board.call("open", {})
     assert paths(output) == ["/projects/a/questions/dangling"]
+    assert output["unreadable"] == 1
+
+
+def test_a_question_asked_at_a_time_python_cannot_read_is_unreadable_and_one_with_a_lowercase_z_is_listed(
+    board: Board,
+) -> None:
+    board.write("projects/a/questions/leap.json", question(asked="2026-12-31T23:59:60Z"))
+    board.write("projects/a/questions/lower.json", question(asked="2026-10-01t09:00:00z"))
+    output = board.call("open", {})
+    assert paths(output) == ["/projects/a/questions/lower"]
     assert output["unreadable"] == 1

@@ -198,7 +198,7 @@ class OpenQuestion(Strict):
 class OpenOutput(Strict):
     """Open questions, oldest first.
 
-    `total` counts every open question under the path and `truncated` says
+    `total` counts every readable open question under the path and `truncated` says
     whether the limit left some out. `unreadable` is how many open questions
     were left out because Board marks them degraded or this plugin cannot read
     them.
