@@ -1,4 +1,4 @@
-import { atom, update } from 'claude-code'
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
 import type { Started } from '../types'
@@ -17,7 +17,8 @@ const PR_CREATE = /(^|[\s;&|(])gh\s+pr\s+create\b/
 const PR_URL = /https:\/\/[^\s/]+\/[^\s/]+\/([^\s/]+)\/pull\/(\d+)/g
 
 type Config = { board: string; suite: string; decisions: string }
-type Unit = { hook: string; key: string; by: string; summary: string | undefined; noun: string }
+type Unit = { kind: 'agent' | 'task'; id: string; by: string; summary: string | undefined; noun: string }
+const HOOK = { agent: 'subagent-stop', task: 'task-completed' }
 type Refused = { code: string; message: string }
 
 /** The last line of `text` that holds anything but spaces, trimmed. */
@@ -35,13 +36,12 @@ const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
 const stamp = (ms: number) => iso(ms).replace(/[-:]/g, '')
 const segment = (id: string) => id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-function config(options: PluginOptions): Config {
-  const text = (name: string, fallback: string) => {
-    const value = options[name]
-    return typeof value === 'string' && value !== '' ? value : fallback
-  }
-  return { board: text('board', ''), suite: text('suite', '/suites/claude-code'), decisions: text('decisions', '/decisions') }
-}
+// The options' defaults are in plugin.json, which fills them in.
+const config = (options: PluginOptions): Config => ({
+  board: String(options.board ?? ''),
+  suite: String(options.suite),
+  decisions: String(options.decisions),
+})
 
 /** Runs `board put`; resolves the refusal's code and message, or undefined once written. */
 async function put($: EngineInterface, board: string, path: string, body: object, expectNone = false): Promise<Refused | undefined> {
@@ -79,15 +79,16 @@ async function begin($: EngineInterface, key: string) {
 async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit) {
   try {
     const finished = await $.clock.now()
-    let since: number | undefined
-    await update($, started, ({ [unit.key]: begun, ...rest }) => ((since = begun), rest))
+    const key = `${unit.kind}:${unit.id}`
+    const since = (await read($, started))[key]
+    await update($, started, ({ [key]: _, ...rest }) => rest)
     if (!suiteReady) {
       const method = 'Each run is one subagent or task a Claude Code session delegated, recorded when it stopped.'
       const refusal = await put($, board, suite, { $type: 'runs/suite/v1', subjects: ['claude-code'], method }, true)
       if (refusal !== undefined && refusal.code !== 'board::put::stale') return refused($, `no suite ${suite}`, refusal)
       suiteReady = true
     }
-    const path = `${suite}/runs/${stamp(since ?? finished)}-${segment(unit.key.split(':')[1] ?? '')}`
+    const path = `${suite}/runs/${stamp(since ?? finished)}-${segment(unit.id)}`
     const run = {
       $type: 'runs/run/v1',
       suite,
@@ -98,7 +99,7 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
       results: [],
       ...(since === undefined ? {} : { measures: { duration_s: Math.round((finished - since) / 1000) } }),
       ...(unit.summary === undefined ? {} : { summary: unit.summary }),
-      written_by: `runs/${unit.hook}`,
+      written_by: `runs/${HOOK[unit.kind]}`,
     }
     const refusal = await put($, board, path, run)
     if (refusal === undefined) await counted($, `recorded the ${unit.noun} as ${path}`)
@@ -109,10 +110,10 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
 }
 
 /** Writes a decision stub for the pull request `gh pr create` printed. A failure is logged, never thrown. */
-async function stub($: EngineInterface, { board, decisions }: Config, stdout: string) {
+async function stub($: EngineInterface, { board, decisions }: Config, stdout: string, agentId: string | undefined) {
   try {
     const pr = pullRequest(stdout)
-    if (pr === undefined) return $.ui.log('board: gh pr create printed no pull request URL, so no decision stub was written')
+    if (pr === undefined) return $.ui.log('board: gh pr create printed no pull request URL, so no decision stub was written', { to: 'debug' })
     const view = await $.process.run(['gh', 'pr', 'view', pr.url, '--json', 'title', '--jq', '.title'])
     const title = view.stdout.trim()
     if (view.exitCode !== 0 || title === '') return $.ui.log(`board: gh pr view ${pr.url} gave no title, so no decision stub was written`)
@@ -134,7 +135,8 @@ async function stub($: EngineInterface, { board, decisions }: Config, stdout: st
     const ask =
       `The runs mod recorded ${pr.url} as a decision stub at ${path}. ` +
       'Its why is empty. Fill in why and alternatives: read it with board get, then board put it back.'
-    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: ask }] } })
+    // The row goes to the agent that opened the pull request, a subagent or the main one.
+    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: ask }] }, ...(agentId === undefined ? {} : { agentId }) })
   } catch (error) {
     $.ui.log(`board: no decision stub: ${String(error)}`)
   }
@@ -152,7 +154,7 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (result.block !== undefined) return result
     const noun = `${e.agent_type} subagent`
-    await writeRun($, cfg, { hook: 'subagent-stop', key: `agent:${e.agent_id}`, by: e.agent_type, summary: finalLine(e.last_assistant_message), noun })
+    await writeRun($, cfg, { kind: 'agent', id: e.agent_id, by: e.agent_type, summary: finalLine(e.last_assistant_message), noun })
     return result
   })
 
@@ -165,13 +167,13 @@ export const register: Register = (on, options) => {
     const result = await next(e)
     if (result.block !== undefined) return result
     const by = e.teammate_name ?? 'claude-code'
-    await writeRun($, cfg, { hook: 'task-completed', key: `task:${e.task_id}`, by, summary: finalLine(e.task_subject), noun: `task ${e.task_id}` })
+    await writeRun($, cfg, { kind: 'task', id: e.task_id, by, summary: e.task_subject, noun: `task ${e.task_id}` })
     return result
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
-    if (PR_CREATE.test(e.command) && ran.deny === undefined && ran.isError !== true) await stub($, cfg, ran.result.stdout)
+    if (PR_CREATE.test(e.command) && ran.deny === undefined && ran.isError !== true) await stub($, cfg, ran.result.stdout, e.agentId)
     return ran
   })
 }

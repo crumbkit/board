@@ -157,7 +157,7 @@ test('output with no pull request URL is logged and nothing is written; a refuse
   expect(puts).toEqual([])
   await $.tool.call({ tool: 'Bash', command: 'git push && gh pr create --fill' })
   expect(logs).toEqual([
-    { text: 'board: gh pr create printed no pull request URL, so no decision stub was written', to: 'transcript' },
+    { text: 'board: gh pr create printed no pull request URL, so no decision stub was written', to: 'debug' },
     { text: 'board: no decision stub for /decisions/20261025T093000Z-widgets-42: board::record::invalid written_by is not allowed', to: 'transcript' },
   ])
 })
