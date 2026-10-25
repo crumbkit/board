@@ -1,0 +1,86 @@
+{
+  "$defs": {
+    "InDirectory": {
+      "additionalProperties": false,
+      "description": "Work that starts in a directory that is not one repository.",
+      "properties": {
+        "directory": {
+          "description": "An absolute path, a path starting ~/, or an input alone or followed by /.",
+          "pattern": "^((/|~/).*|\\{[a-z][a-z0-9_]{0,31}\\}(/.*)?)$",
+          "title": "Directory",
+          "type": "string"
+        }
+      },
+      "required": [
+        "directory"
+      ],
+      "title": "InDirectory",
+      "type": "object"
+    },
+    "InRepo": {
+      "additionalProperties": false,
+      "description": "Work that starts in a clone of a GitHub repository.",
+      "properties": {
+        "repo": {
+          "description": "owner/name, or an input such as {repo}.",
+          "pattern": "^(\\{[a-z][a-z0-9_]{0,31}\\}|[^/\\s]+/[^/\\s]+)$",
+          "title": "Repo",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo"
+      ],
+      "title": "InRepo",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`prompts/prompt/v1`: the frontmatter of a Markdown prompt under `prompts/`, whose body is the text to render.\n\n`runs_in` says where the work starts. `inputs` maps each input's name to a\ndescription of its value; every declared input is required. Any other\nfield is refused, because a misspelt field in an instruction should fail.",
+  "properties": {
+    "$type": {
+      "const": "prompts/prompt/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "inputs": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z][a-z0-9_]{0,31}$": {
+          "type": "string"
+        }
+      },
+      "title": "Inputs",
+      "type": "object"
+    },
+    "purpose": {
+      "minLength": 1,
+      "title": "Purpose",
+      "type": "string"
+    },
+    "runs_in": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InRepo"
+        },
+        {
+          "$ref": "#/$defs/InDirectory"
+        }
+      ],
+      "title": "Runs In"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "title",
+    "purpose",
+    "runs_in"
+  ],
+  "title": "PromptRecord",
+  "type": "object"
+}

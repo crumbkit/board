@@ -82,7 +82,7 @@ def available(request: CallRequest) -> dict[str, object]:
         origin = pool.submit(repos.caller_origin) if name is None and given is None else None
         found, rows = listing(board)
         remote, unread = (None if given is None else str(given), None) if origin is None else origin.result()
-        roots = scope(board.plugin, found, None if name is None else str(name), remote, unread)
+        roots = repos.scope(board.plugin, found, None if name is None else str(name), remote, unread)
         mounted = [(at, commit, clone) for at, commit, clone, _ in found if at in roots and clone is not None]
         tasks, degraded = read(rows, roots)
         reports = pool.submit(resolve, board, tasks)
@@ -165,34 +165,6 @@ def blockers(report: dict[str, Any], repo: str) -> tuple[list[str], list[str]]:
         if not done and display not in found:
             found.append(display)
     return found, across
-
-
-def scope(
-    plugin: str, found: list[repos.Listed], name: str | None, remote: str | None, unread: str | None
-) -> list[str]:
-    """The repos to read, the board's own tree, `/`, among them.
-
-    They are the one named; else every repo outside a git repository; else `/`, the personal repo and the
-    repos whose record covers the remote. Inside a git repository whose origin is `unread`, no repo is
-    covered, so they are `/` and the personal repo.
-    """
-    roots = ["/", *[at for at, *_ in found if at != "/"]]
-    if name is not None:
-        if repos.root(name) not in roots:
-            why = (
-                f"no repo is at {name} (repos: {', '.join(roots)}); name the board's own tree, /, or a notes repo, "
-                "a mount whose tree has a tracked file under daily/"
-            )
-            raise PluginError("tasks::repo::not_found", why, {"repos": roots})
-        return [repos.root(name)]
-    if remote is None and unread is None:
-        return roots
-    records = {at: repos.record(plugin, at, row) for at, _, _, row in found}
-    return [
-        at
-        for at in roots
-        if at == "/" or (records[at] or {}).get("personal") is True or repos.covers(records[at], remote)
-    ]
 
 
 def sync(board: Board, clone: str) -> tuple[str | None, str | None]:

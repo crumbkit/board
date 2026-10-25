@@ -7,16 +7,9 @@ schemas, so a call loads no pydantic (STANDARDS.md P3).
 import datetime as dt
 from typing import Annotated, Literal
 
-from board_plugin.model import Strict
+from board_plugin.model import Strict, unset
 from pydantic import Field
-from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
-
-
-def unset(schema: JsonDict) -> None:
-    """Leave out the `null` default of a value the caller may leave out."""
-    schema.pop("default", None)
-
 
 REPO = Field(
     default=None,

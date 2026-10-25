@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "description": "`prompts/repos/v1`: the mounts whose prompts the board admits, at `/prompts/repos.json` in its own tree.\n\nOnly this file in the board's own working tree marks a repo, and only a mount whose pointer is in that same\ntree counts, so nothing a mounted repository commits can make its prompts admitted.",
+  "properties": {
+    "$type": {
+      "const": "prompts/repos/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "repos": {
+      "description": "The mount path of each repo whose prompts are admitted, such as /repos/notes-personal.",
+      "items": {
+        "pattern": "^/\\S*[^/]$",
+        "type": "string"
+      },
+      "title": "Repos",
+      "type": "array",
+      "uniqueItems": true
+    }
+  },
+  "required": [
+    "$type",
+    "repos"
+  ],
+  "title": "ReposRecord",
+  "type": "object"
+}

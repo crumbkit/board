@@ -215,6 +215,30 @@ def covers(record: dict[str, Any] | None, remote: str | None) -> bool:
     return any(each == owner and rest in ("*", name) for each, _, rest in patterns)
 
 
+def scope(plugin: str, found: list[Listed], name: str | None, remote: str | None, unread: str | None) -> list[str]:
+    """The repos to read, the board's own tree, `/`, among them.
+
+    They are the one named; else every repo outside a git repository; else `/`, the personal repo and the
+    repos whose record covers the remote. Inside a git repository whose origin is `unread`, no repo is
+    covered, so they are `/` and the personal repo.
+    """
+    roots = ["/", *[at for at, *_ in found if at != "/"]]
+    if name is not None:
+        if root(name) not in roots:
+            why = (
+                f"no repo is at {name} (repos: {', '.join(roots)}); name the board's own tree, /, or one of the "
+                "other repos listed"
+            )
+            raise PluginError(f"{plugin}::repo::not_found", why, {"repos": roots})
+        return [root(name)]
+    if remote is None and unread is None:
+        return roots
+    records = {at: record(plugin, at, row) for at, _, _, row in found}
+    return [
+        at for at in roots if at == "/" or (records[at] or {}).get("personal") is True or covers(records[at], remote)
+    ]
+
+
 def root(path: str) -> str:
     """`path` without a trailing `/`, except the board's root itself."""
     return path.rstrip("/") or "/"

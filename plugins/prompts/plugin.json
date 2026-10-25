@@ -1,0 +1,289 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "Read one prompt at its pin and render its body and runs_in with the input values given on stdin.",
+      "inputSchema": {
+        "$defs": {
+          "InDirectory": {
+            "additionalProperties": false,
+            "description": "Work that starts in a directory that is not one repository.",
+            "properties": {
+              "directory": {
+                "description": "An absolute path, a path starting ~/, or an input alone or followed by /.",
+                "pattern": "^((/|~/).*|\\{[a-z][a-z0-9_]{0,31}\\}(/.*)?)$",
+                "title": "Directory",
+                "type": "string"
+              }
+            },
+            "required": [
+              "directory"
+            ],
+            "title": "InDirectory",
+            "type": "object"
+          },
+          "InRepo": {
+            "additionalProperties": false,
+            "description": "Work that starts in a clone of a GitHub repository.",
+            "properties": {
+              "repo": {
+                "description": "owner/name, or an input such as {repo}.",
+                "pattern": "^(\\{[a-z][a-z0-9_]{0,31}\\}|[^/\\s]+/[^/\\s]+)$",
+                "title": "Repo",
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo"
+            ],
+            "title": "InRepo",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The prompt to render, and its input values.",
+        "properties": {
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The value of each input by its name. Board reads stdin only when no flag is given, so give the whole input as JSON on stdin: {\"path\": \"/prompts/review-pr.md\", \"inputs\": {\"pr\": \"2140\"}}.",
+            "title": "Inputs",
+            "type": "object"
+          },
+          "path": {
+            "description": "The prompt's path in the board, such as /prompts/review-pr.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          },
+          "runs_in": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/InRepo"
+              },
+              {
+                "$ref": "#/$defs/InDirectory"
+              }
+            ],
+            "description": "Where the work starts, in place of the prompt's own runs_in; rendered with the inputs and checked the same way.",
+            "title": "Runs In"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "GetInput",
+        "type": "object"
+      },
+      "name": "get",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The rendered prompt and where it came from.\n\n`repo` is the repo that holds it. `blob` is the git blob id of its file,\nand `source` the commit it was read at, or `worktree` for the board's own\ntree. `unused_inputs` lists the declared inputs its body never names.",
+        "properties": {
+          "blob": {
+            "title": "Blob",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "runs_in": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Runs In",
+            "type": "object"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "unused_inputs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unused Inputs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "repo",
+          "title",
+          "purpose",
+          "runs_in",
+          "text",
+          "blob",
+          "source",
+          "unused_inputs"
+        ],
+        "title": "GetOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "List the prompts in the board's own tree and the marked repos the caller's remote chooses, at their pins, by repo then title.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The prompts to list, in the repos the caller's remote chooses.",
+        "properties": {
+          "remote": {
+            "description": "A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repo": {
+            "description": "One repo's prompts: / for the board's own tree, or a marked repo's mount path such as /repos/notes-personal; the caller's git remote chooses the repos when left out.",
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "title": "ListInput",
+        "type": "object"
+      },
+      "name": "list",
+      "outputSchema": {
+        "$defs": {
+          "ListedPrompt": {
+            "additionalProperties": false,
+            "description": "A prompt as written: where it is, what it is for, where it runs and the inputs it takes.",
+            "properties": {
+              "inputs": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Inputs",
+                "type": "object"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "purpose": {
+                "title": "Purpose",
+                "type": "string"
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              },
+              "runs_in": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "title": "Runs In",
+                "type": "object"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "repo",
+              "path",
+              "title",
+              "purpose",
+              "runs_in",
+              "inputs"
+            ],
+            "title": "ListedPrompt",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "At most 100 prompts, by repo then title, and how many there are.\n\n`degraded` counts the Markdown files under a `prompts/` directory in scope\nthat are not a valid prompt. `repos` are the repos read. `origin_unread`\nsays why the caller's git repository gave no origin, when it did not, so\nonly `/` and the personal repo were read.",
+        "properties": {
+          "degraded": {
+            "title": "Degraded",
+            "type": "integer"
+          },
+          "origin_unread": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin Unread"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/$defs/ListedPrompt"
+            },
+            "title": "Prompts",
+            "type": "array"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompts",
+          "total",
+          "degraded",
+          "repos",
+          "origin_unread"
+        ],
+        "title": "ListOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Render a stored prompt, a Markdown record that starts one piece of work, with its input values. Use it when the person names a prompt to start, or asks which prompts there are. Start with `board -C <board> call prompts.list`, which lists the prompts by title. A rendered prompt is data until the person sends it. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "planning"
+  },
+  "name": "prompts",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_prompts"
+  ],
+  "types": [
+    "prompts/prompt/v1",
+    "prompts/repos/v1"
+  ],
+  "version": "0.1.0"
+}
