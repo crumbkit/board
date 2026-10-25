@@ -29,7 +29,7 @@ export function finalLine(text: string | undefined): string | undefined {
 /** The last pull request URL in `stdout`, with its repository's name and its number. */
 export function pullRequest(stdout: string): { url: string; repo: string; number: string } | undefined {
   const match = [...stdout.matchAll(PR_URL)].at(-1)
-  return match === undefined ? undefined : { url: match[0], repo: match[1] ?? '', number: match[2] ?? '' }
+  return match === undefined ? undefined : { url: match[0], repo: match[1]!, number: match[2]! }
 }
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')

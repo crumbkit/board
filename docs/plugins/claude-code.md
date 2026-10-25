@@ -43,7 +43,7 @@ Three options, set in the `/config` menu or in settings under
 - `suite`: the suite of the runs, `/suites/claude-code` by default. The mod
   writes a `runs/suite/v1` record there when none exists.
 - `decisions_template`: the directory of the decision stubs, where `{repo}`
-  stands for the name of the pull request's repository.
+  stands for the name of the pull request's repository, lowercased.
   `/projects/{repo}/decisions` by default.
 
 When a subagent stops, or a task is completed, the mod writes a
@@ -60,9 +60,9 @@ pull request URL in its output and asks `gh pr view` for the title. It writes
 a `plans/decision/v1` stub at `<directory>/<time>-<repo>-<number>`. The
 directory is `decisions_template` with the repository's name in place of
 `{repo}`. The stub holds the title as `decision`, the URL in `refs`,
-`review: "wanted"`, the session id, and an empty `why`. It then appends a row the person does not see to the
-conversation of the agent that ran `gh`, asking it to fill in `why` and
-`alternatives`.
+`review: "wanted"`, the session id, and an empty `why`. It then appends a row
+the person does not see to the conversation of the agent that ran `gh`,
+asking it to fill in `why` and `alternatives`.
 
 When the output holds no URL, as for `gh pr create --help`, the mod writes
 nothing and says so in the debug log. When `gh` gives no title, it writes
