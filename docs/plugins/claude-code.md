@@ -14,8 +14,16 @@ only through Board records.
 Claude Code loads a mod with `claude --plugin-dir plugins/<name>/claude-code`,
 or from the folders `CLAUDE_CODE_PLUGIN_DIRS` names. `claude plugin validate`
 checks it and `claude plugin test` runs its `tests/*.test.ts`, which stand in
-for `board` and `gh`. CI does not run them, because CI has no Claude Code.
+for `board` and `gh`. The `mods` workflow runs each mod's tests and
+validates the marketplace below.
 The release archive of a plugin does not include its mod.
+
+The repository is also a Claude Code marketplace named `board`, listed in
+`.claude-plugin/marketplace.json`. To install a mod, add the marketplace once
+with `claude plugin marketplace add crumbkit/viitta`, then run
+`claude plugin install <name>@board`, where `<name>` is the mod's name in its
+`plugin.json`, such as `board-runs` or `board-controls`. The `mods` workflow
+fails when a mod has no entry in the marketplace.
 
 ## written_by
 

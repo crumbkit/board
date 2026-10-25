@@ -1,17 +1,20 @@
 # Runs the tests of each Claude Code mod, `plugins/<name>/claude-code/`, when a
 # pull request or a push to main changes a file under a `claude-code/`
-# directory, or this file. The tests stand in for board and need no credential.
+# directory, the marketplace or this file. The tests stand in for board and
+# need no credential. It also checks that the marketplace lists every mod.
 name: mods
 
 on:
   pull_request:
     paths:
       - "**/claude-code/**"
+      - .claude-plugin/marketplace.json
       - .github/workflows/mods.yml
   push:
     branches: [main]
     paths:
       - "**/claude-code/**"
+      - .claude-plugin/marketplace.json
       - .github/workflows/mods.yml
 
 permissions:
@@ -39,3 +42,16 @@ jobs:
             claude plugin test "$mod"
             echo "::endgroup::"
           done
+      # Every mod has an entry whose name is its plugin.json name and whose
+      # source is its directory, so `claude plugin install <name>@board`
+      # finds it.
+      - name: the marketplace lists every mod
+        run: |
+          for mod in plugins/*/claude-code; do
+            name=$(jq -r .name "$mod/.claude-plugin/plugin.json")
+            jq -e --arg name "$name" --arg source "./$mod" \
+              'any(.plugins[]; .name == $name and .source == $source)' \
+              .claude-plugin/marketplace.json >/dev/null \
+              || { echo "::error::.claude-plugin/marketplace.json has no entry for $name at ./$mod"; exit 1; }
+          done
+      - run: claude plugin validate .
