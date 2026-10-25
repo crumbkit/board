@@ -19,7 +19,9 @@ Board's code. A `board query` whose report lists the plugin's own extraction as
 failed also becomes `<plugin>::board::refused`, carrying the failure's code, so
 the call fails. The client ignores another plugin's failure, and its own
 `board::plugin::no_database`, which means only that the database was not
-attached.
+attached. Its `repos` module finds the board's notes repos and matches a git
+remote to their records, and its `day` module dates the person's day by
+`BOARD_DAY_START`.
 
 Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
 `python/board-plugin/` to a commit, with its lockfile and a committed

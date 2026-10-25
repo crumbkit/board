@@ -112,7 +112,7 @@ that is not `HH:MM` as `board::config::invalid` and passes it to the plugin
 as `BOARD_DAY_START`. Without it the day starts at midnight. It is applied
 when a call runs and never stored: with a day that starts at 07:00, a note
 at 01:00 goes to yesterday's daily note under `## 01:00`, and `daily` reads
-yesterday's note. The `board_notes.day` module does the arithmetic.
+yesterday's note. The shared `board_plugin.day` module does the arithmetic.
 
 ## Capabilities
 

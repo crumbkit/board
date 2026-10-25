@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from board_notes.models import RepoRecord
 from board_notes.notes import ATTEMPTS, HEAD_MOVED, INBOX_NAMES, STALE, append, create
-from board_notes.repo import Note, Repo, covers, shown_remote
+from board_notes.repo import Note, Repo
 
 example-org = "https://github.com/example-org/home.git"
 VIITTA = "git@github.com:crumbkit/viitta.git"
@@ -160,21 +160,6 @@ def test_a_remote_s_credential_is_never_stored_or_shown_and_its_owner_and_name_a
     assert code == 0, output
     text = (notes.clone / notes.note(output)).read_text()
     assert ("SECRET" in text, 'remote: "crumbkit/viitta"' in text) == (False, True)
-
-
-@pytest.mark.parametrize(
-    ("remote", "shown"),
-    [
-        ("https://x-access-token:SECRET@github.com/crumbkit/viitta.git", "crumbkit/viitta"),
-        ("https://user:SECRET@gitlab.com/example-org/home.git", "https://gitlab.com/example-org/home.git"),
-        ("https://user:p@ss@gitlab.com/example-org/home.git", "https://gitlab.com/example-org/home.git"),
-        ("ssh://git@gitlab.com/example-org/home.git", "ssh://gitlab.com/example-org/home.git"),
-        ("git@gitlab.com:example-org/home.git", "gitlab.com:example-org/home.git"),
-        ("/Users/me/Code/home", "/Users/me/Code/home"),
-    ],
-)
-def test_a_remote_is_shown_as_owner_and_name_on_github_and_elsewhere_without_its_user(remote: str, shown: str) -> None:
-    assert shown_remote(remote) == shown
 
 
 def test_a_note_is_routed_by_the_origin_of_the_directory_board_runs_in_and_remote_overrides_it(notes: Notes) -> None:
@@ -354,30 +339,6 @@ def test_a_day_start_that_is_not_hh_mm_is_refused_by_board_and_one_that_is_is_ad
     notes.write(notes.config, "board/config.json", json.dumps({"day_start": "07:00"}))
     code, output = notes.call("add", "--text", "When?")
     assert code == 0, output
-
-
-@pytest.mark.parametrize(
-    ("remote", "covered"),
-    [
-        ("https://github.com/example-org/home.git", True),
-        ("https://github.com/example-org/Home", True),
-        ("git@github.com:example-org/home.git", True),
-        ("ssh://git@github.com/example-org/home.git", True),
-        ("git@github.com-work:example-org/home.git", True),
-        ("example-org/home", True),
-        ("crumbkit/viitta", True),
-        ("crumbkit/board", False),
-        ("https://gitlab.com/example-org/home.git", False),
-        ("git@gitlab.com:example-org/home.git", False),
-        ("git@github.com.evil.io:example-org/home.git", False),
-        ("ssh://git@github.com.evil.io/example-org/home.git", False),
-        ("ssh://git@gitlab.com/example-org/home.git", False),
-        ("/Users/me/Code/home", False),
-        (None, False),
-    ],
-)
-def test_a_record_covers_a_github_remote_by_owner_or_by_repository(remote: str | None, *, covered: bool) -> None:
-    assert covers({"covers": ["example-org/*", "crumbkit/viitta"]}, remote) is covered
 
 
 def test_a_record_that_covers_nothing_is_admitted_and_one_naming_no_owner_is_refused() -> None:

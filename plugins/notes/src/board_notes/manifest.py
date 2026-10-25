@@ -1,10 +1,10 @@
 """The plugin's manifest and the schema it ships, generated from its models (STANDARDS.md P3)."""
 
 from board_plugin.protocol import dumped
+from board_plugin.repos import RECORD_TYPE
 from pydantic import JsonValue
 
 from board_notes.models import AddInput, AddOutput, DailyInput, DailyOutput, RepoRecord
-from board_notes.repo import RECORD_TYPE
 
 
 def manifest() -> dict[str, JsonValue]:

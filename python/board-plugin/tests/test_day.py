@@ -4,7 +4,7 @@ import datetime as dt
 
 import pytest
 
-from board_notes.day import day_start, today
+from board_plugin.day import day_start, today
 
 SEVEN = dt.timedelta(hours=7)
 LONDON = dt.timezone(dt.timedelta(hours=1))

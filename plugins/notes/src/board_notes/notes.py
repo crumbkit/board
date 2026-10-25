@@ -7,10 +7,11 @@ import unicodedata
 from typing import cast
 
 from board_plugin.board import Board
+from board_plugin.day import day_start, today
 from board_plugin.protocol import CallRequest, PluginError
+from board_plugin.repos import caller_remote, shown_remote
 
-from board_notes.day import day_start, today
-from board_notes.repo import NOT_SYNCED, Repo, caller_remote, choose, shown_remote
+from board_notes.repo import NOT_SYNCED, Repo, choose
 
 PLUGIN = "notes"
 STALE = "board::put::stale"
