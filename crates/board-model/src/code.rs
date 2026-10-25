@@ -14,6 +14,8 @@ pub enum Code {
     JsonTooLarge,
     JsonNotUtf8,
     JsonLossyNumber,
+    FrontmatterParse,
+    FrontmatterUnsupported,
     RecordBadType,
     RecordUnknownType,
     RecordInvalid,
@@ -85,13 +87,15 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 73] = [
+    pub const ALL: [Code; 75] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
         Self::JsonTooLarge,
         Self::JsonNotUtf8,
         Self::JsonLossyNumber,
+        Self::FrontmatterParse,
+        Self::FrontmatterUnsupported,
         Self::RecordBadType,
         Self::RecordUnknownType,
         Self::RecordInvalid,
@@ -174,6 +178,8 @@ impl Code {
             Self::JsonTooLarge => "board::json::too_large",
             Self::JsonNotUtf8 => "board::json::not_utf8",
             Self::JsonLossyNumber => "board::json::lossy_number",
+            Self::FrontmatterParse => "board::frontmatter::parse",
+            Self::FrontmatterUnsupported => "board::frontmatter::unsupported",
             Self::RecordBadType => "board::record::bad_type",
             Self::RecordUnknownType => "board::record::unknown_type",
             Self::RecordInvalid => "board::record::invalid",
@@ -267,6 +273,8 @@ mod tests {
             | Code::JsonTooLarge
             | Code::JsonNotUtf8
             | Code::JsonLossyNumber
+            | Code::FrontmatterParse
+            | Code::FrontmatterUnsupported
             | Code::RecordBadType
             | Code::RecordUnknownType
             | Code::RecordInvalid

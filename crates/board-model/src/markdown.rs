@@ -4,17 +4,19 @@
 use percent_encoding::percent_decode_str;
 use pulldown_cmark::{CowStr, Event, LinkType, Options, Parser, Tag};
 
+use crate::frontmatter::body;
 use crate::path::LogicalPath;
 
 /// The destination of each inline, reference and image link in `bytes`, as
 /// written and in document order, that names a board path: not an autolink,
 /// whether a URL or an email address, one with a URL scheme, one starting
-/// `//`, or a fragment alone. A footnote is not a link. Bytes that are not
-/// UTF-8 have none.
+/// `//`, or a fragment alone. A footnote is not a link, and neither is
+/// text in the frontmatter. Bytes that are not UTF-8 have none.
 pub fn links(bytes: &[u8]) -> Vec<String> {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return Vec::new();
     };
+    let text = body(text);
     // Without footnotes, `[^1]: Ibid.` would define a link to `Ibid.`.
     Parser::new_ext(text, Options::ENABLE_FOOTNOTES)
         .filter_map(|event| match event {

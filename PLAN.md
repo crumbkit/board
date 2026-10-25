@@ -41,8 +41,7 @@ order.
 Each of these waits until a real need has its own plan: authority and external
 effects; triggers and scheduling; review accounting;
 pinned or relative references; remote mounts (a mount names a local clone); any
-query language beyond SQL; daemons and watchers; Markdown as a record format
-(Markdown is a file a record points at); sync beyond git; Windows CI (the code
+query language beyond SQL; daemons and watchers; sync beyond git; Windows CI (the code
 stays portable); a web UI; and the old Board's ControlTree groups, assessments,
 paged reports and control status.
 

@@ -7,7 +7,7 @@ use std::path::Path;
 use board_index::Fallback;
 use board_model::{
     BINARY_NAME, Classified, Code, Content, Fields, Kind, Location, LogicalPath, Object, Refusal,
-    Source, classify, parse_json,
+    Role, Source, classify,
 };
 use board_tree::{Contents, GitError, Reader, ResolveError, Resolver, Status};
 use serde_json::Value;
@@ -328,13 +328,15 @@ pub(crate) fn read_at(
         Classified {
             content: Content::Unparsed(_),
             code,
-        } => Err(match parse_json(&bytes) {
-            Err(error) => {
-                let message = format_args!("{display} is not a record: {error}");
-                Refusal::new(error.code(), message, &fields)
-            }
-            Ok(_) => not_a_record(code),
-        }),
+        } => Err(
+            match Role::of(&location.path).and_then(|role| role.parse_error(&bytes)) {
+                Some((code, error)) => {
+                    let message = format_args!("{display} is not a record: {error}");
+                    Refusal::new(code, message, &fields)
+                }
+                None => not_a_record(code),
+            },
+        ),
         Classified { code, .. } => Err(not_a_record(code)),
     };
     Ok(GetReport {
@@ -346,13 +348,13 @@ pub(crate) fn read_at(
 }
 
 /// An entry's kind and what parsing found, reading it only when it is a
-/// `.json` file.
+/// `.json` or Markdown file.
 pub(crate) fn classify_entry(
     reader: &mut Reader<'_>,
     source: &Source,
     entry: &board_tree::Entry,
 ) -> Classified {
-    if !board_model::needs_bytes(&entry.path) {
+    if Role::of(&entry.path).is_none() {
         return classify(&entry.path, None);
     }
     let read = entry.blob.ok_or(Code::RepoUnreadable).and_then(|blob| {

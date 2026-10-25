@@ -54,6 +54,14 @@ board refs /cycle/b
   fails with board::resolve::cycle
   hint
 
+board check /frontmatter/parse.md
+  fails with board::frontmatter::parse
+  hint
+
+board check /frontmatter/unsupported.md
+  fails with board::frontmatter::unsupported
+  hint
+
 board check /hops/h0
   fails with board::resolve::too_many_hops
   hint

@@ -726,7 +726,7 @@ fn refs_json_is_one_report_whose_answers_match_their_golden_bytes() {
 }
 
 /// `board refs /tasks/a /tasks/zz --json`, with the board's root as `<root>`.
-const GOLDEN_REFS: &str = r#"{"schema":"board/refs-report/v2","data":[{"from":[{"location":{"display":"/projects/p","path":"projects/p.json","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/project","status":"ok","target":"/projects/p"}],"location":{"display":"/tasks/a","path":"tasks/a.json","pointers":[],"repository":"<root>","source":"worktree"},"missing":null,"to":[],"total":1,"truncated":false}],"failures":[{"key":"/tasks/zz","index":1,"code":"board::path::not_found","message":"nothing is at /tasks/zz","fields":{"ancestor":"/tasks","path":"/tasks/zz"},"recovery":{"kind":"hint","text":"run `board ls /tasks` to see what is there; paths leave out `.json`"}}]}
+const GOLDEN_REFS: &str = r#"{"schema":"board/refs-report/v2","data":[{"from":[{"link":false,"location":{"display":"/projects/p","path":"projects/p.json","pointers":[],"repository":"<root>","source":"worktree"},"pointer":"/project","status":"ok","target":"/projects/p"}],"location":{"display":"/tasks/a","path":"tasks/a.json","pointers":[],"repository":"<root>","source":"worktree"},"missing":null,"to":[],"total":1,"truncated":false}],"failures":[{"key":"/tasks/zz","index":1,"code":"board::path::not_found","message":"nothing is at /tasks/zz","fields":{"ancestor":"/tasks","path":"/tasks/zz"},"recovery":{"kind":"hint","text":"run `board ls /tasks` to see what is there; paths leave out `.json`"}}]}
 "#;
 
 #[test]

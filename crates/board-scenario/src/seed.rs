@@ -187,11 +187,15 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 25] = [
+const TEXT: [(&str, &str, Option<Code>); 28] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
     ("json/lossy.json", r#"{"a": 18446744073709551616}"#, Some(Code::JsonLossyNumber)),
+    ("frontmatter/parse.md", "---\n$type: lr/task/v1\na: 1\na: 2\n---\n", Some(Code::FrontmatterParse)),
+    ("frontmatter/unsupported.md", "---\n$type: lr/task/v1\na: .inf\n---\n", Some(Code::FrontmatterUnsupported)),
+    // Markdown whose frontmatter names a `$type` is a record.
+    ("record/ok.md", "---\n$type: lr/task/v1\ntitle: t\nproject: /projects/p\n---\n# t\n", None),
     // A file with no `$type` is plain JSON, which `check` accepts.
     ("record/untyped.json", r#"{"title": "t"}"#, None),
     ("record/ok.json", r#"{"$type": "lr/task/v1", "title": "t", "project": "/projects/p"}"#, None),

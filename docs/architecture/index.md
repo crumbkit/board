@@ -19,10 +19,10 @@ directory of each other board whose recorded root it can see is gone.
 | `trees` | every entry in a tree: name, mode, object, logical segment and path code; a name that is not UTF-8 is a blob of its bytes | tree, name |
 | `worktree` | each working-tree entry's logical path, path code, blob and stat (size, times, inode, mode) | path |
 | `blobs` | parse result in the role the path gives (`json`, `schema`, `reserved_schema`, `markdown`): kind, type, code, and the parser's or compiler's reason; a schema's code says whether it compiles | blob, role |
-| `bodies` | the canonical form of each record that parses | blob |
+| `bodies` | the canonical form of each record that parses; a Markdown record's is its frontmatter | blob |
 | `validations` | schema result: code, failing JSON pointer, reason, failure count | record blob, schema blob |
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
-| `links` | a Markdown file's links to board paths, in order, as written | blob, ordinal |
+| `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
 | `extracted` | the blobs each plugin version has handled; a query sees those that are valid records now | plugin, version, blob |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
@@ -34,7 +34,7 @@ record was checked against). The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
 `body` is NULL when the record does not parse. A `code` of `board::ref::dangling` or
 `board::ref::wrong_type` marks a broken reference in a record its schema
-admits; only the first marks a Markdown file. Tables, views and columns are an
+admits; only the first marks a Markdown file that is not a record. Tables, views and columns are an
 interface for agents' SQL; changing one changes the index format. A
 commit mounted in several places appears once, with `logical` through the
 shortest display path, then the first lexically.

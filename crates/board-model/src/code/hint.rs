@@ -71,7 +71,9 @@ fn mounted(code: Code, fields: &Fields, mount: &LogicalPath) -> Option<String> {
         | Code::JsonMergeConflict
         | Code::JsonDuplicateKey
         | Code::JsonNotUtf8
-        | Code::JsonLossyNumber => format!(
+        | Code::JsonLossyNumber
+        | Code::FrontmatterParse
+        | Code::FrontmatterUnsupported => format!(
             "{} is {repository}, which Board cannot write; fix the file there as the message says, then run `board mount update {mount}`",
             fields.path.as_ref()?
         ),
@@ -272,6 +274,12 @@ fn generic(code: Code) -> &'static str {
         Code::JsonNotUtf8 => "save the file as UTF-8",
         Code::JsonLossyNumber => {
             "write the number as a string; it does not fit a 64-bit integer or a double exactly"
+        }
+        Code::FrontmatterParse => {
+            "fix the YAML between the `---` lines at the line the message gives; each key appears once in a mapping"
+        }
+        Code::FrontmatterUnsupported => {
+            "write the value as JSON could hold it: no anchors, aliases or tags, string keys, and a number that is too big or not finite quoted as a string"
         }
         Code::RecordBadType => {
             "set `$type` to `<namespace>/<kind>/v<n>` in lowercase, such as `lr/task/v1`"

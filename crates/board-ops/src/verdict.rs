@@ -4,7 +4,7 @@
 
 use board_model::{
     ATTACHMENT_TYPE, Attachment, CONFIG_TYPE, Classified, Code, Content, Fields, MANIFEST_TYPE,
-    RecordType, parse_json,
+    RecordType, Role,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::Refused;
@@ -73,17 +73,18 @@ impl Fault {
         }
     }
 
-    /// Why a blob with `bytes` fails, when Board can say more than the code:
+    /// Why a blob with `bytes`, read in `role`, fails, when Board can say
+    /// more than the code:
     /// the parser's message, which this parses `bytes` again for, that a
     /// schema is in the reserved namespace, the only schema `judge` refuses
     /// by its code, or the fault's own.
-    pub(crate) fn reason(&self, bytes: Option<&[u8]>) -> Option<String> {
+    pub(crate) fn reason(&self, role: Role, bytes: Option<&[u8]>) -> Option<String> {
         match self {
             Self::Code(Code::SchemaInvalid) => Some(
                 "is in the board namespace, which is Board's own, so a board cannot define a schema in it"
                     .to_owned(),
             ),
-            Self::Code(_) => Some(format!("is invalid: {}", parse_json(bytes?).err()?)),
+            Self::Code(_) => Some(format!("is invalid: {}", role.parse_error(bytes?)?.1)),
             fault => Some(format!("is invalid: {fault}")),
         }
     }

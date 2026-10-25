@@ -115,6 +115,7 @@ impl<'a> Cut<'a> {
             .map(|reference| {
                 let mut value = json!({
                     "pointer": reference.pointer,
+                    "link": reference.link,
                     "target": reference.target.to_string(),
                     "location": reference.location.as_ref().map(|location| {
                         let display = location

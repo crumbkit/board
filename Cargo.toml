@@ -57,6 +57,15 @@ regex = "1.12.2"
 # A symlink text in a refusal escapes Unicode format characters, such as
 # U+202E, which reorder text. jsonschema already brings this crate in.
 unicode-general-category = "1.1.0"
+# Markdown files hold YAML frontmatter, which Board reads as a record. A
+# YAML 1.2 event parser in pure Rust, with no unsafe code, that brings only
+# arraydeque; Board builds the JSON value from its events, so it decides
+# which YAML is inside the JSON-compatible subset. The index keys each
+# Markdown blob's fact by blob, so an upgrade that changes what parses must
+# also bump INDEX_VERSION in board-index/src/schema.rs.
+# Its events decide each Markdown record's indexed value, so a bump needs
+# an INDEX_VERSION review (crates/board-index).
+saphyr-parser = "=0.1.2"
 # bundled: every platform runs the same SQLite, built from source.
 # modern_sqlite: a refresh asks whether its transaction took the write lock.
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache", "hooks", "limits", "modern_sqlite"] }

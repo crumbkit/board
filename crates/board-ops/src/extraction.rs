@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use board_index::{DatabaseError, IndexError, PluginDatabase, Storage, View};
-use board_model::{Fields, RecordType, Refusal, parse_json};
+use board_model::{Content, Fields, RecordType, Refusal, classify};
 use board_plugin::{
     CallError, Context, Environment, Installed, Limits, Manifest, PluginName, Record, extract,
     installed,
@@ -96,11 +96,16 @@ impl Board {
                 let contents = (snapshot.as_mut()?)
                     .read(&board, &unhandled.path, unhandled.blob)
                     .ok()??;
+                let Content::Record { value, .. } =
+                    classify(&unhandled.path, Some(&contents.bytes)).content
+                else {
+                    return None;
+                };
                 Some(Record {
                     blob: unhandled.blob,
                     path: unhandled.logical,
                     record_type: unhandled.record_type,
-                    record: parse_json(&contents.bytes).ok()?,
+                    record: value,
                 })
             })
             .collect();

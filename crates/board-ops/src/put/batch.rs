@@ -275,7 +275,8 @@ impl Board {
         } = line;
         let bytes = match content {
             Content::File(bytes) => {
-                return Self::prepare_file(lock, view, path, *expect, bytes)
+                return self
+                    .prepare_file(lock, view, schemas, path, *expect, bytes)
                     .map(Some)
                     .map_err(|error| shown_as(error, shown));
             }

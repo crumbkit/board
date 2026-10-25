@@ -22,6 +22,8 @@ pub struct Outgoing {
     /// Where it is in the record, as a JSON pointer, or a Markdown link's
     /// destination as written.
     pub pointer: String,
+    /// Whether it is a Markdown link.
+    pub link: bool,
     pub target: LogicalPath,
     /// Where it resolved, or `None` when it dangles.
     pub location: Option<Location>,
@@ -288,6 +290,7 @@ fn answer(snapshot: &Snapshot, location: Location, path: &LogicalPath) -> RefsRe
         .filter(|referenced| same(&referenced.source, &referenced.path))
         .map(|referenced| Outgoing {
             pointer: referenced.reached.pointer.clone(),
+            link: referenced.reached.link,
             target: referenced.reached.target.clone(),
             location: referenced.reached.location.clone(),
             status: referenced.reached.code.map_or(Status::Ok, Status::Degraded),

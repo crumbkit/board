@@ -684,3 +684,23 @@ fn a_schema_line_reads_a_schema_held_through_a_symlink_and_leaves_an_equal_one_u
         2
     );
 }
+
+#[test]
+fn a_batch_with_a_markdown_record_its_schema_refuses_writes_nothing_and_its_twin_writes() {
+    let scenario = board();
+    let bad = text_line("/tasks/a.md", "---\n$type: lr/task/v1\ntitle: 1\n---\n")
+        + &text_line("/notes/b.md", "---\n$type: lr/note/v1\nb: [\n---\n")
+        + &text_line("/notes/c.md", "# c\n");
+    assert_eq!(
+        refused(batch(&scenario, &bad)),
+        (
+            Code::PutInvalid,
+            vec![(1, Code::RecordInvalid), (2, Code::FrontmatterParse)]
+        )
+    );
+    assert_eq!(file(&scenario, "notes/c.md"), None);
+    let twin = text_line("/tasks/a.md", "---\n$type: lr/task/v1\ntitle: A\n---\n")
+        + &text_line("/notes/b.md", "---\nb: []\n---\n")
+        + &text_line("/notes/c.md", "# c\n");
+    assert_eq!(batch(&scenario, &twin).unwrap().writes.len(), 3);
+}

@@ -351,6 +351,81 @@ def test_a_note_a_record_references_is_copied_and_the_notes_and_directories_it_l
     assert not (boards.team / "notes" / "other.md").exists()
 
 
+# A task written as Markdown: its frontmatter names a type, which makes it a record.
+TASK_SCHEMA = ".board/types/lr/task/v1.schema.json"
+TASK_TYPE = json.dumps(
+    {
+        "type": "object",
+        "properties": {
+            "eval": {"type": "string", "format": "board-ref"},
+            "see": {"type": "string", "format": "board-ref"},
+        },
+    }
+)
+
+
+def test_a_markdown_records_frontmatter_references_and_schema_are_copied_and_its_body_links_are_not(
+    boards: Boards,
+) -> None:
+    experiment(boards)
+    boards.write(boards.personal, TASK_SCHEMA, TASK_TYPE)
+    task = "---\n$type: lr/task/v1\neval: /evals/x\n---\n# Task\n\nSee [other](../notes/other.md).\n"
+    boards.write(boards.personal, "tasks/t.md", task)
+    boards.write(boards.personal, "notes/other.md", "# Other\n")
+    code, document = boards.share(path="/tasks/t.md")
+    assert code == 0, document
+    output = document["data"]["output"]
+    assert output["copied"] == sorted([*SHARED, "/tasks/t.md"])
+    assert output["types"] == sorted([*TYPES, "lr/task/v1"])
+    assert (boards.team / "tasks" / "t.md").read_text() == task
+    assert (boards.team / TASK_SCHEMA).exists()
+    assert not (boards.team / "notes" / "other.md").exists()
+
+
+def test_a_body_link_written_as_a_frontmatter_pointer_is_not_followed_and_the_reference_at_that_pointer_is(
+    boards: Boards,
+) -> None:
+    experiment(boards)
+    boards.write(boards.personal, TASK_SCHEMA, TASK_TYPE)
+    boards.write(boards.personal, "see/x.md", "# Linked\n")
+    boards.write(boards.personal, "other/y.md", "# Referenced\n")
+    # The reference at the pointer `/see` reaches /other, and the link written `/see` reaches /see.
+    boards.write(boards.personal, "tasks/t.md", "---\n$type: lr/task/v1\nsee: /other\n---\n[s](/see)\n")
+    code, document = boards.share(path="/tasks/t.md", dry_run=True)
+    assert code == 0, document
+    assert document["data"]["output"]["copied"] == ["/other/y.md", "/tasks/t.md"]
+    boards.write(boards.personal, "tasks/t.md", "---\n$type: lr/task/v1\nsee: /see\n---\n[s](/see)\n")
+    code, document = boards.share(path="/tasks/t.md", dry_run=True)
+    assert code == 0, document
+    assert document["data"]["output"]["copied"] == ["/see/x.md", "/tasks/t.md"]
+
+
+def test_a_markdown_record_its_schema_refuses_is_refused_before_any_write_and_its_valid_twin_is_copied(
+    boards: Boards,
+) -> None:
+    experiment(boards)
+    boards.write(boards.personal, TASK_SCHEMA, TASK_TYPE)
+    boards.write(boards.personal, "tasks/t.md", "---\n$type: lr/task/v1\neval: 1\n---\n")
+    code, document = boards.share(path="/tasks/t.md")
+    assert (code, document["code"]) == (1, "share::record::invalid"), document
+    boards.write(boards.personal, "tasks/t.md", "---\n$type: lr/task/v1\neval: /evals/x\n---\n")
+    assert boards.share(path="/tasks/t.md")[0] == 0
+
+
+def test_typed_frontmatter_that_does_not_parse_is_refused_on_a_dry_run_and_its_parsing_twin_is_listed(
+    boards: Boards,
+) -> None:
+    experiment(boards)
+    boards.write(boards.personal, TASK_SCHEMA, TASK_TYPE)
+    boards.write(boards.personal, "tasks/t.md", "---\n$type: lr/task/v1\ntitle: [\n---\n")
+    code, document = boards.share(path="/tasks/t.md", dry_run=True)
+    assert (code, document["code"]) == (1, "share::record::invalid"), document
+    boards.write(boards.personal, "tasks/t.md", "---\n$type: lr/task/v1\ntitle: '['\n---\n")
+    code, document = boards.share(path="/tasks/t.md", dry_run=True)
+    assert code == 0, document
+    assert document["data"]["output"]["copied"] == ["/tasks/t.md"]
+
+
 def test_a_json_file_without_a_type_is_refused_and_the_same_text_in_a_text_file_is_copied(boards: Boards) -> None:
     experiment(boards)
     boards.write(boards.personal, "evals/x/evidence/data.json", '{"a": 1}')

@@ -129,7 +129,7 @@ impl Resolver<'_, '_> {
                 Object::Blob(_) => not_a_record(path, reached),
             });
         };
-        if board_model::needs_bytes(&physical) {
+        if board_model::is_json_file(&physical) {
             return Err(WriteError::NotAFile {
                 path: path.clone(),
                 file: Some(physical),
@@ -632,7 +632,7 @@ fn lock_refused(error: gix::Exn, lock: PathBuf) -> WriteError {
 /// or the root.
 fn record_file(location: &Location) -> Option<String> {
     match location.object {
-        Object::Blob(_) => board_model::needs_bytes(&location.path).then(|| location.path.clone()),
+        Object::Blob(_) => board_model::is_json_file(&location.path).then(|| location.path.clone()),
         Object::Directory if location.path.is_empty() => None,
         Object::Directory => Some(format!("{}.json", location.path)),
     }

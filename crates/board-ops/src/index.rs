@@ -11,7 +11,7 @@ use board_index::{
 };
 use board_model::{
     Canonical, Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
-    canonical_json,
+    canonical_json, classify,
 };
 use board_tree::{Entry, GitError, Reader, Repository, latest};
 use board_validate::Schema;
@@ -29,7 +29,7 @@ pub struct Refreshed {
     /// Working-tree files hashed. A file the last refresh could not open is
     /// opened again but not counted, even when it can now be read.
     pub hashed: usize,
-    /// Blobs parsed. Each JSON file hashed within the size limit is parsed
+    /// Blobs parsed. Each JSON or Markdown file hashed within the size limit is parsed
     /// on the thread that hashed it, so two files with the same bytes count
     /// twice though the blob is stored once; a blob read later counts once.
     pub parsed: usize,
@@ -214,7 +214,8 @@ struct Parsed {
     /// Why the bytes did not parse, which only the bytes can say.
     reason: Option<String>,
     body: Option<Canonical>,
-    /// A Markdown file's links that name board paths, as written.
+    /// A Markdown file's links that name board paths, as written, outside
+    /// its frontmatter.
     links: Vec<String>,
 }
 
@@ -226,7 +227,7 @@ fn parse(blob: ObjectId, role: Role, bytes: Option<&[u8]>) -> Parsed {
     let classified = role.classify(bytes);
     let reason = classified
         .code
-        .and_then(|code| Fault::Code(code).reason(bytes));
+        .and_then(|code| Fault::Code(code).reason(role, bytes));
     let body = match &classified.content {
         Content::Record { value, .. } => Some(canonical_json(value)),
         _ => None,
@@ -307,7 +308,7 @@ impl Kept {
             code: judged.as_ref().err().map(Fault::code),
             reason: match &judged {
                 Ok(_) => None,
-                Err(fault) => reason.or_else(|| fault.reason(None)),
+                Err(fault) => reason.or_else(|| fault.reason(role, None)),
             },
             links,
         };
@@ -469,7 +470,7 @@ fn known(
         return Some(value.clone());
     }
     let contents = reader.read(source, path, blob).ok()??;
-    match Role::Json.classify(Some(&contents.bytes)).content {
+    match classify(path, Some(&contents.bytes)).content {
         Content::Record { value, .. } => Some(value),
         _ => None,
     }

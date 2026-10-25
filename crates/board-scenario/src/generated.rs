@@ -88,6 +88,12 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
                 "[a](./tasks/a.json) `[b](/tasks/b)`".to_owned(),
                 // Links through symlinks, to a record and to a note.
                 "[c](/tasks/c) [n](linked.md)".to_owned(),
+                // A task in its frontmatter, whose references and links are
+                // both followed, one its schema refuses, and frontmatter
+                // that does not parse.
+                "---\n$type: lr/task/v1\ntitle: t\nsee: /tasks/a\n---\n[l](/links/l)".to_owned(),
+                "---\n$type: lr/task/v1\ntitle: 5\n---\n".to_owned(),
+                "---\n$type: lr/task/v1\ntitle: [\n---\n".to_owned(),
             ],
         ),
         // Symlinks: to a record, to one in another directory, to nothing,
