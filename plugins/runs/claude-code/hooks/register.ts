@@ -16,7 +16,7 @@ const QUIET = ['board::config::not_found', 'board::record::unknown_type']
 const PR_CREATE = /(^|[\s;&|(])gh\s+pr\s+create\b/
 const PR_URL = /https:\/\/[^\s/]+\/[^\s/]+\/([^\s/]+)\/pull\/(\d+)/g
 
-type Config = { board: string; suite: string; decisions: string }
+type Config = { board: string; suite: string; decisionsTemplate: string }
 type Unit = { kind: 'agent' | 'task'; id: string; by: string; summary: string | undefined; noun: string }
 const HOOK = { agent: 'subagent-stop', task: 'task-completed' }
 type Refused = { code: string; message: string }
@@ -26,10 +26,10 @@ export function finalLine(text: string | undefined): string | undefined {
   return text?.split('\n').map(line => line.trim()).filter(line => line !== '').at(-1)
 }
 
-/** The last pull request URL in `stdout`, and a name for it: its repository and number. */
-export function pullRequest(stdout: string): { url: string; name: string } | undefined {
+/** The last pull request URL in `stdout`, with its repository's name and its number. */
+export function pullRequest(stdout: string): { url: string; repo: string; number: string } | undefined {
   const match = [...stdout.matchAll(PR_URL)].at(-1)
-  return match === undefined ? undefined : { url: match[0], name: `${match[1]}-${match[2]}` }
+  return match === undefined ? undefined : { url: match[0], repo: match[1] ?? '', number: match[2] ?? '' }
 }
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
@@ -40,7 +40,7 @@ const segment = (id: string) => id.toLowerCase().replace(/[^a-z0-9]+/g, '-').rep
 const config = (options: PluginOptions): Config => ({
   board: String(options.board ?? ''),
   suite: String(options.suite),
-  decisions: String(options.decisions),
+  decisionsTemplate: String(options.decisions_template),
 })
 
 /** Runs `board put`; resolves the refusal's code and message, or undefined once written. */
@@ -110,7 +110,7 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
 }
 
 /** Writes a decision stub for the pull request `gh pr create` printed. A failure is logged, never thrown. */
-async function stub($: EngineInterface, { board, decisions }: Config, stdout: string, agentId: string | undefined) {
+async function stub($: EngineInterface, { board, decisionsTemplate }: Config, stdout: string, agentId: string | undefined) {
   try {
     const pr = pullRequest(stdout)
     if (pr === undefined) return $.ui.log('board: gh pr create printed no pull request URL, so no decision stub was written', { to: 'debug' })
@@ -118,7 +118,8 @@ async function stub($: EngineInterface, { board, decisions }: Config, stdout: st
     const title = view.stdout.trim()
     if (view.exitCode !== 0 || title === '') return $.ui.log(`board: gh pr view ${pr.url} gave no title, so no decision stub was written`)
     const now = await $.clock.now()
-    const path = `${decisions}/${stamp(now)}-${segment(pr.name)}`
+    const repo = segment(pr.repo)
+    const path = `${decisionsTemplate.replaceAll('{repo}', repo)}/${stamp(now)}-${repo}-${pr.number}`
     const decision = {
       $type: 'plans/decision/v1',
       decision: title,

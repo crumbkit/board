@@ -16,11 +16,11 @@
       "description": "The logical path of the suite whose runs record delegated subagents and tasks.",
       "default": "/suites/claude-code"
     },
-    "decisions": {
+    "decisions_template": {
       "type": "string",
-      "title": "Decisions",
-      "description": "The logical directory that holds the decision stubs for pull requests.",
-      "default": "/decisions"
+      "title": "Decisions template",
+      "description": "The logical directory that holds the decision stubs for pull requests; {repo} stands for the pull request's repository name.",
+      "default": "/projects/{repo}/decisions"
     }
   }
 }
