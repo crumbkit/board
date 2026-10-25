@@ -121,7 +121,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.",
+  "description": "`runs/run/v1`: one run of a suite, by whom, when, on what, and what it gave.\n\n`scope` is `full` when the run ran every case and `targeted` when it ran\nsome. `dirty` says whether the working tree under test had uncommitted\nchanges; a run that does not say is never counted as clean. `versions`\nmaps what was used, such as a commit, a model or a library, to its\nversion. `setup` says how this run was prepared, and `summary` what it\nshowed. `measures` holds the run's own measures, such as `tests` and\n`failures`. A test suite's run lists only the cases that did not pass and\nthe cases that measured something; an eval's run may list every case.\n`written_by` names the plugin and hook that wrote a run without an agent.",
   "properties": {
     "$type": {
       "const": "runs/run/v1",
@@ -204,6 +204,12 @@
       },
       "title": "Versions",
       "type": "object"
+    },
+    "written_by": {
+      "description": "The plugin and hook that wrote this record, such as runs/subagent-stop; absent when an agent or a person wrote it.",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "title": "Written By",
+      "type": "string"
     }
   },
   "required": [

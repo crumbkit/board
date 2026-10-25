@@ -99,3 +99,16 @@ def test_a_runs_suite_must_be_a_suite(board: Board) -> None:
         "/suites/a/runs/wrong": "board::ref::wrong_type",
         "/suites/a/runs/gone": "board::ref::dangling",
     }
+
+
+def test_a_run_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else(board: Board) -> None:
+    board.write("suites/a.json", suite())
+    board.write("suites/a/runs/hooked.json", run("/suites/a", written_by="runs/subagent-stop"))
+    board.write("suites/a/runs/prose.json", run("/suites/a", written_by="the subagent hook"))
+    board.write("suites/a/runs/empty.json", run("/suites/a", written_by=""))
+    assert checked(board) == {
+        "/suites/a": None,
+        "/suites/a/runs/hooked": None,
+        "/suites/a/runs/prose": INVALID,
+        "/suites/a/runs/empty": INVALID,
+    }

@@ -73,6 +73,12 @@ pub struct Environment {
     pub depth: Option<OsString>,
     /// `BOARD_TIMINGS`, so a run a plugin starts records as its caller does.
     pub timings: Option<OsString>,
+    /// `BOARD_CALLER_DIR`: the directory Board was started in, which a
+    /// plugin otherwise cannot see, since it runs in its own directory.
+    pub caller: Option<OsString>,
+    /// `BOARD_DAY_START`: when the person's day starts, such as `07:00`,
+    /// from the known boards file.
+    pub day_start: Option<OsString>,
 }
 
 impl Environment {
@@ -392,6 +398,8 @@ fn environment(inherited: &Environment, depth: u32) -> Vec<(&'static str, OsStri
         ("XDG_CACHE_HOME", &inherited.cache),
         ("XDG_DATA_HOME", &inherited.data),
         ("BOARD_TIMINGS", &inherited.timings),
+        ("BOARD_CALLER_DIR", &inherited.caller),
+        ("BOARD_DAY_START", &inherited.day_start),
     ]
     .into_iter()
     .filter_map(|(key, value)| Some((key, value.clone()?)))

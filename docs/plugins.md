@@ -138,8 +138,9 @@ Then Board:
 2. validates it against `inputSchema` (`board::plugin::bad_input`);
 3. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
-   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `TZ`, `XDG_CACHE_HOME`,
-   `XDG_DATA_HOME` and `BOARD_TIMINGS` when set;
+   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, `BOARD_CALLER_DIR`,
+   and `TZ`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `BOARD_TIMINGS` and
+   `BOARD_DAY_START` when set;
 4. writes one request to the plugin's stdin:
 
    ```json
@@ -202,6 +203,8 @@ The plugins here are written in Python through the shared library in
 `python/board-plugin/`. There are seven: `controls`, `tasks`, `evals`,
 `runs`, `share`, `notes` and `plans`. The README in each `plugins/<name>/` describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains the design of
-`share`.
+`share`, and [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
+the controls mod.
 [plugins/python.md](plugins/python.md) says what Board validates for a plugin,
 what the plugin still checks, and how plugins are built and tested.
+[plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods.

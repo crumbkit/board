@@ -100,6 +100,18 @@ skills to install it:
 
     ln -s "$PWD" ~/.claude/skills/controls
 
+### The Claude Code mod
+
+`claude-code/` holds a Claude Code mod. It adds the repository's controls to
+each session's context when the session starts, and names a control on a file
+before an edit of that file runs. Load it with
+`claude --plugin-dir "$PWD/claude-code"`, or name that directory in
+`CLAUDE_CODE_PLUGIN_DIRS`. It runs `board` from `PATH`, `~/.local/bin`,
+`/opt/homebrew/bin` or `/usr/local/bin`. It needs Claude Code 2.1.308 or
+later, which has `$.session.append`.
+[docs/plugins/controls-claude-code.md](../../docs/plugins/controls-claude-code.md)
+explains the design.
+
 ## Developing
 
 The plugin talks to Board through the shared library in
@@ -112,3 +124,4 @@ the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
 from the TypedDicts in `src/board_controls/shapes.py` by
 `board_controls.manifest`, and a test checks that the committed files match.
+`claude plugin test claude-code` runs the mod's tests.

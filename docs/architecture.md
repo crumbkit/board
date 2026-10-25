@@ -24,7 +24,8 @@ Board reads the known boards in `$XDG_CONFIG_HOME/board/config.json`
 (`~/.config/board/config.json` by default), shaped
 `{"boards": ["/Users/me/Code/board"]}`. A relative path is read against the
 file's directory. A missing or empty file lists none, and any other file
-that is not this shape is `board::config::invalid`. Board refreshes each
+that is not this shape is `board::config::invalid`. So is a `day_start`
+that is not `HH:MM`. Board refreshes each
 known board's index and reads the mounts in its working tree. A board
 listed under several spellings counts once. A mount
 matches when its repository has the same git common directory as the

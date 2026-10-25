@@ -1,7 +1,7 @@
 [project]
 name = "board-notes"
 version = "0.1.0"
-description = "Append to and read notes in a Reflect vault mounted in a board, as a Board plugin."
+description = "Append to and read notes in notes repos in Reflect's layout that a board holds, as a Board plugin."
 requires-python = ">=3.12"
 dependencies = ["board-plugin", "pydantic>=2.11"]
 

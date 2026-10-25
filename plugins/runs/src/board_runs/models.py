@@ -42,6 +42,16 @@ SuitePath = Annotated[
     ),
 ]
 
+# The plugin and hook that wrote a record, such as runs/subagent-stop. A record a person or agent wrote leaves it out.
+WrittenBy = Annotated[
+    str,
+    Field(
+        pattern="^[a-z0-9-]+/[a-z0-9-]+$",
+        description="The plugin and hook that wrote this record, such as runs/subagent-stop; absent when an agent "
+        "or a person wrote it.",
+    ),
+]
+
 # What a case or a run measures: a number, a label or a flag.
 MeasureValue = int | float | str | bool
 
@@ -173,6 +183,7 @@ class RunRecord(Record):
     showed. `measures` holds the run's own measures, such as `tests` and
     `failures`. A test suite's run lists only the cases that did not pass and
     the cases that measured something; an eval's run may list every case.
+    `written_by` names the plugin and hook that wrote a run without an agent.
     """
 
     model_config = ConfigDict(json_schema_extra=shipped())
@@ -190,6 +201,7 @@ class RunRecord(Record):
     measures: dict[str, MeasureValue] | SkipJsonSchema[None] = None
     setup: str | SkipJsonSchema[None] = None
     summary: str | SkipJsonSchema[None] = None
+    written_by: WrittenBy | SkipJsonSchema[None] = None
 
 
 class LatestInput(Strict):

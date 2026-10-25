@@ -458,3 +458,29 @@ fn a_relative_personal_path_is_read_against_the_known_boards_files_directory() {
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
     assert_eq!(prefix, "/");
 }
+
+#[test]
+fn a_day_start_that_is_not_hh_mm_is_refused_and_one_that_is_or_is_null_is_admitted() {
+    let library = library();
+    let board = mounting(&library);
+    for start in ["7am", "24:00", "07:60", "7:00"] {
+        let file = json!({"boards": [board.path()], "day_start": start});
+        let (refused, _) = known(
+            library.workdir(),
+            &config(Some(&file.to_string())),
+            None,
+            &["check"],
+        );
+        assert_eq!(code(&refused), "board::config::invalid", "{start}");
+    }
+    for start in [json!("07:00"), Value::Null] {
+        let file = json!({"boards": [board.path()], "day_start": start});
+        let (admitted, _) = known(
+            library.workdir(),
+            &config(Some(&file.to_string())),
+            None,
+            &["check"],
+        );
+        assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    }
+}
