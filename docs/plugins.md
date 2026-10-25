@@ -205,3 +205,4 @@ capabilities. [plugins/share.md](plugins/share.md) explains the design of
 `share`.
 [plugins/python.md](plugins/python.md) says what Board validates for a plugin,
 what the plugin still checks, and how plugins are built and tested.
+[plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods.

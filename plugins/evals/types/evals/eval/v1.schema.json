@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `repos` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `suites`\nreferences the `runs/suite/v1` records that say how it is tested, and\n`runs` the `runs/run/v1` records its verdict rests on. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.",
+  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `repos` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `suites`\nreferences the `runs/suite/v1` records that say how it is tested, and\n`runs` the `runs/run/v1` records its verdict rests on. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.\n`written_by` names the plugin and hook that wrote an eval without an agent.",
   "if": {
     "properties": {
       "status": {
@@ -81,6 +81,12 @@
         "inconclusive"
       ],
       "title": "Verdict",
+      "type": "string"
+    },
+    "written_by": {
+      "description": "The plugin and hook that wrote this record, such as runs/test-run; absent when an agent or a person wrote it.",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "title": "Written By",
       "type": "string"
     }
   },

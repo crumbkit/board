@@ -73,6 +73,9 @@ timestamp and a short random suffix, such as `20261018T101500Z-a3f9`.
   `evidence` references raw files kept in the board, such as an eval's logs.
 - `setup` says how the run was prepared and `summary` what it showed, both
   as prose.
+- `written_by` names the plugin and hook that wrote the run, such as
+  `runs/subagent-stop`, when a hook wrote it without an agent. A run an agent
+  or a person wrote leaves it out.
 
 ## Capabilities
 
@@ -103,6 +106,12 @@ Each capability reads the records under the suite's `runs/` directory with
 one `board query`, so a run stored elsewhere is not counted. Flaky cases
 have no capability: query the `records` view with `json_each` over
 `$.results`.
+
+## The Claude Code mod
+
+`claude-code/` holds a Claude Code mod that records each subagent and task a
+session delegates as a run, and each pull request it opens as a decision
+stub. docs/plugins/claude-code.md says what it writes and how to load it.
 
 ## Installing
 
