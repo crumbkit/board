@@ -17,6 +17,7 @@ use serde_json::Value;
 use super::through::{Crossing, Sent};
 use super::{Expect, Failure, Prepared, PutError, PutReport, Schemas};
 use crate::board::Board;
+use crate::effects::Shape;
 use crate::types::TypeError;
 
 /// The most lines one batch may hold.
@@ -89,12 +90,16 @@ impl Board {
         input: &mut dyn BufRead,
         wait: Duration,
     ) -> Result<PutReport, PutError> {
+        let put = self.put_lines(input, wait);
+        self.holding(put)
+    }
+
+    /// [`Board::put_batch_waiting`], leaving the pending effects it gathers
+    /// for [`Board::holding`].
+    fn put_lines(&self, input: &mut dyn BufRead, wait: Duration) -> Result<PutReport, PutError> {
         let lines = Self::read_lines(input)?;
         if lines.is_empty() {
-            return Ok(PutReport {
-                writes: Vec::new(),
-                commit: None,
-            });
+            return Ok(PutReport::new(Vec::new(), None));
         }
         if lines.iter().all(Result::is_err) {
             return Err(PutError::Batch {
@@ -306,6 +311,15 @@ impl Board {
             TypeError::Put(error) => shown_as(error, shown),
             error => PutError::Type(Box::new(error)),
         })?;
+        if let Some(prepared) = &prepared {
+            let checked = (&prepared.admitted, Shape::Schema);
+            self.gate(
+                &mut schemas.effects,
+                &prepared.target,
+                &prepared.canonical,
+                checked,
+            )?;
+        }
         schemas.held.insert(record_type, Ok(compiled));
         schemas.compiled += 1;
         // Through a mount, an expect is compared with the pin, which may hold

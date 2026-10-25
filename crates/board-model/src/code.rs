@@ -82,12 +82,22 @@ pub enum Code {
     PluginTimeout,
     PluginTooLarge,
     PluginTooDeep,
+    SettingsAsked,
+    SettingsRefused,
+    SettingsProposeOnly,
+    SettingsFromPlugin,
+    SettingsNotFound,
+    SettingsBadPattern,
+    SettingsNoPersonal,
+    SettingsCannotWiden,
+    SettingsCannotHold,
+    SettingsBadRule,
     CliUsage,
 }
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 75] = [
+    pub const ALL: [Code; 85] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -162,6 +172,16 @@ impl Code {
         Self::PluginTimeout,
         Self::PluginTooLarge,
         Self::PluginTooDeep,
+        Self::SettingsAsked,
+        Self::SettingsRefused,
+        Self::SettingsProposeOnly,
+        Self::SettingsFromPlugin,
+        Self::SettingsNotFound,
+        Self::SettingsBadPattern,
+        Self::SettingsNoPersonal,
+        Self::SettingsCannotWiden,
+        Self::SettingsCannotHold,
+        Self::SettingsBadRule,
         Self::CliUsage,
     ];
 
@@ -246,6 +266,16 @@ impl Code {
             Self::PluginTimeout => "board::plugin::timeout",
             Self::PluginTooLarge => "board::plugin::too_large",
             Self::PluginTooDeep => "board::plugin::too_deep",
+            Self::SettingsAsked => "board::settings::asked",
+            Self::SettingsRefused => "board::settings::refused",
+            Self::SettingsProposeOnly => "board::settings::propose_only",
+            Self::SettingsFromPlugin => "board::settings::from_plugin",
+            Self::SettingsNotFound => "board::settings::not_found",
+            Self::SettingsBadPattern => "board::settings::bad_pattern",
+            Self::SettingsNoPersonal => "board::settings::no_personal",
+            Self::SettingsCannotWiden => "board::settings::cannot_widen",
+            Self::SettingsCannotHold => "board::settings::cannot_hold",
+            Self::SettingsBadRule => "board::settings::bad_rule",
             Self::CliUsage => "board::cli::usage",
         }
     }
@@ -341,6 +371,16 @@ mod tests {
             | Code::PluginTimeout
             | Code::PluginTooLarge
             | Code::PluginTooDeep
+            | Code::SettingsAsked
+            | Code::SettingsRefused
+            | Code::SettingsProposeOnly
+            | Code::SettingsFromPlugin
+            | Code::SettingsNotFound
+            | Code::SettingsBadPattern
+            | Code::SettingsNoPersonal
+            | Code::SettingsCannotWiden
+            | Code::SettingsCannotHold
+            | Code::SettingsBadRule
             | Code::CliUsage => {}
         }
     }

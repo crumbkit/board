@@ -8,8 +8,8 @@ mod process;
 mod protocol;
 
 pub use crate::call::{
-    CallError, CallReport, Chosen, Context, Environment, MAX_DEPTH, Target, TargetError, choose,
-    invoke,
+    CallError, CallReport, Chosen, Context, Environment, MAX_DEPTH, PLUGIN_VARIABLE, Target,
+    TargetError, choose, invoke,
 };
 pub use crate::extract::{Extraction, Record, extract};
 pub use crate::installed::{

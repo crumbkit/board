@@ -54,17 +54,22 @@ impl Board {
             return Err(refused(&first.path, mount, Through::Own));
         }
         let home = self.repositories().home().map(Into::into);
-        let mounted = match Board::open(&inside.repository, home) {
+        let mut mounted = match Board::open(&inside.repository, home) {
             Ok(mounted) if mounted.repository().path() == inside.repository => mounted,
             _ => return Err(refused(&first.path, mount, Through::NotABoard)),
         };
+        // The mounted board checks the put against its own settings, at the
+        // path the put lands in there.
+        mounted.ask_as(self.asker.clone());
         // Refuses a `follow` that names nothing, as `mount update` does.
         let pin = self.repositories().pin(mount)?;
         let root = match sent {
             Sent::Record(..) => Some(format!("{BINARY_NAME} put {}", first.path)),
             Sent::Batch(_) => None,
         };
-        let written = mounted.put_mounted(crossings, &pin.follow, sent, wait)?;
+        let written = mounted.put_mounted(crossings, &pin.follow, sent, wait);
+        self.pending.borrow_mut().extend(mounted.pending.take());
+        let written = written?;
         let new = written.commit;
         // Repinned even when the pointer already names `new`, so a pin moved
         // by a put killed before the root committed it is committed now.
@@ -109,7 +114,7 @@ impl Board {
                 degraded: mounted.degraded((resolve, root), item, &crossing.inside.path),
             });
         }
-        Ok(PutReport { writes, commit })
+        Ok(PutReport::new(writes, commit))
     }
 
     /// In this board, mounted where `crossings` lead, puts what `sent`

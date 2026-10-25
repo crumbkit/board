@@ -42,7 +42,13 @@ def plugin(notes: Notes, capability: str) -> tuple[int, str]:
         "board": {"root": str(notes.board), "database": str(notes.cache / "unused.sqlite")},
     }
     path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
-    environment = {**os.environ, "PATH": path, "XDG_DATA_HOME": str(notes.data), "XDG_CACHE_HOME": str(notes.cache)}
+    environment = {
+        **os.environ,
+        "PATH": path,
+        "XDG_DATA_HOME": str(notes.data),
+        "XDG_CACHE_HOME": str(notes.cache),
+        "XDG_CONFIG_HOME": str(notes.cache.parent / "config"),
+    }
     ran = subprocess.run(
         [sys.executable, "-m", "board_notes"],
         cwd=notes.board,

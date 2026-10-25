@@ -27,10 +27,7 @@ impl Board {
         let (Some(prepared), _) =
             Self::prepare_type(&lock, (&mut view, reader), record_type, bytes)?
         else {
-            return Ok(PutReport {
-                writes: Vec::new(),
-                commit: None,
-            });
+            return Ok(PutReport::new(Vec::new(), None));
         };
         let message = format!("Add the type {record_type}");
         let mut report = self

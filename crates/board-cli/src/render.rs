@@ -22,12 +22,14 @@ use crate::report::Output;
 use kit::{Flagged, Note, Refused, Said, Whole};
 pub(crate) use kit::{GUIDE, Printer};
 
+mod effects;
 mod get;
 mod kit;
 mod page;
 mod plugins;
 mod refs;
 
+pub(crate) use effects::{answer, decide};
 pub(crate) use get::{GET_HELP, get};
 use page::Shown;
 pub(crate) use plugins::{CALL_REPORT, call, plugin_find, plugin_list};
@@ -49,6 +51,8 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["type", "add"]).document(PUT),
     plugins::CALL,
     Leaf::new(&["query"]).document(QUERY),
+    Leaf::new(&["decide"]).document(effects::DECIDE),
+    Leaf::new(&["answer"]).document(effects::ANSWER),
 ];
 
 /// The bytes of stdout one run prints before crumbkit cuts a listing or
@@ -149,8 +153,14 @@ pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) ->
         let note = format!("note: {display} is written but degraded: {code} {display}{why}");
         Some(Note::Always(note))
     });
+    let proposed = report.proposed.as_ref().map(|id| {
+        Note::Text(format!(
+            "next: the owner answers with `board answer {id} approve`, or refuse"
+        ))
+    });
     let answer = said(put_json(report), put_text(report));
-    printer.noted(PUT, answer, notes.chain(note.map(Note::Text)).collect())
+    let notes = notes.chain(note.map(Note::Text)).chain(proposed);
+    printer.noted(PUT, answer, notes.collect())
 }
 
 fn put_text(report: &PutReport) -> String {
@@ -160,6 +170,9 @@ fn put_text(report: &PutReport) -> String {
     }
     if let Some(commit) = report.commit {
         let _ = writeln!(text, "committed {commit}");
+    }
+    if let Some(id) = &report.proposed {
+        let _ = writeln!(text, "proposed {id}");
     }
     text
 }
@@ -185,10 +198,14 @@ fn put_json(report: &PutReport) -> Value {
             })
         })
         .collect();
-    json!({
+    let mut value = json!({
         "writes": writes,
         "commit": report.commit.map(|commit| commit.to_string()),
-    })
+    });
+    if let Some(id) = &report.proposed {
+        value["proposed"] = json!(id);
+    }
+    value
 }
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was

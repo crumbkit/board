@@ -18,15 +18,20 @@ use crate::read::{GetReport, ReadError};
 /// file, or one that is not UTF-8, goes to the store.
 pub const MAX_INLINE_BYTES: usize = 1024 * 1024;
 
+/// An attachment record's bytes and the upload that must run before it
+/// is written.
+pub(crate) type Attached<U> = Option<(Vec<u8>, U)>;
+
 impl Board {
-    /// The record for `bytes` put with `--file` at `path`, once they are
-    /// uploaded to the store: `None` when the board has no store, or when
-    /// the bytes are UTF-8 and small enough for the tree.
+    /// The record for `bytes` put with `--file` at `path`, and the upload
+    /// of the bytes to the store that must come first: `None` when the
+    /// board has no store, or when the bytes are UTF-8 and small enough for
+    /// the tree.
     pub(crate) fn attach(
         &self,
         path: &LogicalPath,
         bytes: &[u8],
-    ) -> Result<Option<Vec<u8>>, PutError> {
+    ) -> Result<Attached<impl FnOnce() -> Result<(), PutError>>, PutError> {
         let Some(store) = &self.config().store else {
             return Ok(None);
         };
@@ -34,19 +39,10 @@ impl Board {
             return Ok(None);
         }
         let digest = Digest::of(bytes);
-        let location = match store.backend {
-            Backend::Directory => {
-                let directory = self.repository().path().join(&store.location);
-                board_tree::write_outside(&directory, &digest.hex(), bytes)
-                    .map_err(|source| PutError::Upload {
-                        path: path.clone(),
-                        location: directory.display().to_string(),
-                        source,
-                    })?
-                    .display()
-                    .to_string()
-            }
+        let directory = match store.backend {
+            Backend::Directory => self.repository().path().join(&store.location),
         };
+        let location = directory.join(digest.hex()).display().to_string();
         let name = path.segments().last().unwrap_or_default();
         let size = bytes.len() as u64;
         let attachment = Attachment::new(digest, size, media_type(name).to_owned(), location);
@@ -54,7 +50,16 @@ impl Board {
             code: Code::PutFailed,
             reason: error.to_string(),
         })?;
-        Ok(Some(canonical_json(&value).into_bytes()))
+        let upload = move || {
+            board_tree::write_outside(&directory, &digest.hex(), bytes)
+                .map(drop)
+                .map_err(|source| PutError::Upload {
+                    path: path.clone(),
+                    location: directory.display().to_string(),
+                    source,
+                })
+        };
+        Ok(Some((canonical_json(&value).into_bytes(), upload)))
     }
 
     /// `report` with the bytes its attachment record names fetched from

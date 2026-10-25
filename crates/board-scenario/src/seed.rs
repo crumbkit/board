@@ -63,11 +63,13 @@ pub const NOT_REPRODUCED: [(Code, &str); 7] = [
 const PUT: &str = "put refuses a write with it; check writes nothing";
 const PLUGIN: &str = "a plugin command gives it; check runs no plugin";
 const QUERY: &str = "query gives it; check runs no query";
+const SETTINGS: &str =
+    "put, decide or answer gives it for a plugin's effect; check asks for no effect";
 const SYNC: &str = "sync gives it; check reads no remote";
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 44] = [
+pub const NOT_CHECKED: [(Code, &str); 54] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -128,6 +130,16 @@ pub const NOT_CHECKED: [(Code, &str); 44] = [
     (Code::PutInvalid, PUT),
     (Code::PutNotAFile, PUT),
     (Code::PutNoIdentity, PUT),
+    (Code::SettingsAsked, SETTINGS),
+    (Code::SettingsRefused, SETTINGS),
+    (Code::SettingsProposeOnly, SETTINGS),
+    (Code::SettingsFromPlugin, SETTINGS),
+    (Code::SettingsNotFound, SETTINGS),
+    (Code::SettingsBadPattern, SETTINGS),
+    (Code::SettingsNoPersonal, SETTINGS),
+    (Code::SettingsCannotWiden, SETTINGS),
+    (Code::SettingsCannotHold, SETTINGS),
+    (Code::SettingsBadRule, SETTINGS),
     (Code::PutHeadMoved, PUT),
     (Code::PutFailed, PUT),
     (Code::PluginNotInstalled, PLUGIN),

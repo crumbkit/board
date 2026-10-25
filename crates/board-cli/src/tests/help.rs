@@ -55,7 +55,37 @@ pub(super) fn guide() -> Guide {
 /// installs as a symbolic link, and crumbkit copies no symbolic link into a
 /// run's XDG directories.
 const NO_CALL: &str = "the tasks plugin runs only from a symbolic link to its checkout";
+/// A pending effect's id hashes the directory of the board that asked, so
+/// no fixture holds one with the id an example names.
+const NO_ANSWER: &str = "a pending effect's id hashes the asking board's directory, so no fixture holds the example's id";
 const ALLOW: &[Allow] = &[
+    Allow::example(
+        "answer",
+        &[
+            "4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a",
+            "approve",
+        ],
+        NO_ANSWER,
+    ),
+    Allow::example(
+        "answer",
+        &[
+            "4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a",
+            "refuse",
+            "--reason",
+            "not this week",
+        ],
+        NO_ANSWER,
+    ),
+    Allow::example(
+        "answer",
+        &[
+            "4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a",
+            "approve",
+            "--save-rule",
+        ],
+        NO_ANSWER,
+    ),
     Allow::example("call", &["tasks.due"], NO_CALL),
     Allow::example("call", &["--capability", "due"], NO_CALL),
     Allow::example(
@@ -171,7 +201,7 @@ fn files_of(root: &Path) -> Vec<(String, String)> {
 const BUDGETS: Budgets = Budgets::new()
     .root(
         2_150,
-        "The root page lists all twelve commands, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
+        "The root page lists all fourteen commands, the commands a newcomer runs first, and what a logical path and a record are, which STANDARDS.md 24 requires on one page. It also lists the global flags -C and --personal, which choose the board a run uses.",
     )
     .nodes(&[
         Budget::new(

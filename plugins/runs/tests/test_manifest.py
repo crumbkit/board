@@ -51,7 +51,15 @@ def plugin(given: dict[str, Any], cwd: Path, board: Board | None = None) -> tupl
         env={
             **os.environ,
             "PATH": path,
-            **({"XDG_DATA_HOME": str(board.data), "XDG_CACHE_HOME": str(board.cache)} if board else {}),
+            **(
+                {
+                    "XDG_DATA_HOME": str(board.data),
+                    "XDG_CACHE_HOME": str(board.cache),
+                    "XDG_CONFIG_HOME": str(board.cache.parent / "config"),
+                }
+                if board
+                else {}
+            ),
         },
         input=json.dumps(given),
         capture_output=True,

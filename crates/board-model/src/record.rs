@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::attachment::ATTACHMENT_TYPE;
 use crate::code::Code;
+use crate::effect::EFFECT_TYPES;
 use crate::frontmatter::frontmatter;
 use crate::json::parse_json;
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
@@ -273,7 +274,8 @@ impl Role {
                     && !matches!(
                         record_type.as_str(),
                         CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE
-                    ))
+                    )
+                    && !EFFECT_TYPES.contains(&record_type.as_str()))
                 .then_some(Code::RecordUnknownType),
                 content: Content::Record { record_type, value },
             },

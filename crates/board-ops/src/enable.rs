@@ -106,10 +106,7 @@ impl Board {
         if prepared.is_empty() && removed.is_empty() {
             return Ok(EnableReport {
                 name: name.clone(),
-                put: PutReport {
-                    writes: Vec::new(),
-                    commit: None,
-                },
+                put: PutReport::new(Vec::new(), None),
                 replaced,
                 removed: removed_paths,
             });

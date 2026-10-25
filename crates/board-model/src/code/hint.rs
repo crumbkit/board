@@ -112,10 +112,15 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "fix the schema at `{}` so it compiles as JSON Schema 2020-12; `board check /.board/types` says what failed",
             fields.schema.as_ref()?
         ),
-        Code::RecordInvalid => format!(
-            "change the value at `{}` so the record satisfies its schema in `.board/types/`",
-            pointer?
-        ),
+        Code::RecordInvalid => match fields.record_type.as_ref().filter(|kind| kind.is_board()) {
+            Some(kind) => format!(
+                "fix the value the message names; {kind} is Board's own type, checked with no schema in `.board/types/`, and docs/architecture/writes/effects.md lists its fields"
+            ),
+            None => format!(
+                "change the value at `{}` so the record satisfies its schema in `.board/types/`",
+                pointer?
+            ),
+        },
         Code::RecordNotARecord => format!(
             "only a record is put without `--file`, and nothing is put beneath a file; `board ls {}` shows what is there",
             path?
@@ -174,6 +179,14 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             capability?
         ),
         Code::QueryInvalid => query(fields.known.as_ref()?),
+        Code::SettingsAsked => format!(
+            "the owner answers outside the plugin with `board answer {id} approve` or `board answer {id} refuse`; then put again",
+            id = fields.effect.as_ref()?
+        ),
+        Code::SettingsRefused => format!(
+            "the owner refused pending effect {id}; outside the plugin, `board answer {id} approve` replaces that answer",
+            id = fields.effect.as_ref()?
+        ),
         _ => return None,
     })
 }
@@ -478,6 +491,36 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PluginTooDeep => {
             "plugins called each other too deeply; look for a plugin that calls itself"
+        }
+        Code::SettingsAsked => {
+            "the owner answers outside the plugin with `board answer <id> approve`, naming the pending effect in the message; then put again"
+        }
+        Code::SettingsRefused => {
+            "a preference refuses this; only the owner can change it, in `/preferences/` in the personal board or in `.board/settings/` in this board"
+        }
+        Code::SettingsProposeOnly => {
+            "put the record alone with `--or-propose`, which writes a pending effect holding it for the owner to answer; `--or-propose` does not combine with `--batch`"
+        }
+        Code::SettingsFromPlugin => {
+            "only the owner, outside a plugin, writes `/preferences/` and `/effects/` in the personal board, `.board/` in any board apart from a new schema in a `put --batch` line, links, mounts and preference, effect and seen records in any board, runs init, type add and plugin enable, and answers pending effects; ask the owner"
+        }
+        Code::SettingsNotFound => {
+            "no pending effect with that id reads as the effect its id names; `board --personal ls /effects/pending` lists the pending effects"
+        }
+        Code::SettingsBadPattern => {
+            "a saved rule names the effect's path exactly, which a path holding *, ?, [, ], {, } or \\, or an empty, `.` or `..` segment, cannot; answer without `--save-rule`"
+        }
+        Code::SettingsNoPersonal => {
+            "name the personal board in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's rules and pending effects"
+        }
+        Code::SettingsCannotWiden => {
+            "a saved rule can only narrow a put, and approving one asked for would widen it, which needs overrides that are not built; answer without `--save-rule`, or the owner edits the rule that asks"
+        }
+        Code::SettingsCannotHold => {
+            "a pending effect holds the put's content as JSON in the personal board, which bytes that are not UTF-8 or near the size limit cannot fit; the owner puts it outside the plugin"
+        }
+        Code::SettingsBadRule => {
+            "a file among the rules does not read as a board/preference/v1 record, so a plugin's put is refused until the owner, outside the plugin, fixes or removes the file the message names"
         }
         Code::CliUsage => {
             "run `board --help` for the commands, or `board <command> --help` for one command's arguments"

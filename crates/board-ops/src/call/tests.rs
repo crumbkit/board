@@ -204,8 +204,18 @@ fn a_plugin_sees_only_the_variables_board_passes_and_one_more_depth() {
         .filter(|key| !["PWD", "SHLVL", "_", "OLDPWD"].contains(key))
         .collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["BOARD_CALL_DEPTH", "HOME", "PATH", "XDG_CACHE_HOME"]);
+    assert_eq!(
+        keys,
+        [
+            "BOARD_CALL_DEPTH",
+            "BOARD_PLUGIN",
+            "HOME",
+            "PATH",
+            "XDG_CACHE_HOME"
+        ]
+    );
     assert!(seen.contains("BOARD_CALL_DEPTH=4\n"), "{seen}");
+    assert!(seen.contains("BOARD_PLUGIN=tasks\n"), "{seen}");
     assert!(seen.contains("XDG_CACHE_HOME=/cache\n"), "{seen}");
 }
 

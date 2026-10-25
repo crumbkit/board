@@ -55,6 +55,7 @@ class Boards:
             "HOME": os.environ.get("HOME", str(root)),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CACHE_HOME": str(self.cache),
+            "XDG_CONFIG_HOME": str(self.cache.parent / "config"),
         }
         return subprocess.run(
             [str(board_binary()), *arguments],

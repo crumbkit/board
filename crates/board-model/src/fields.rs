@@ -36,6 +36,8 @@ pub struct Fields {
     pub refusals: Vec<Lined>,
     /// The text of a symlink: the path it names.
     pub target: Option<String>,
+    /// The id of a pending effect that waits for the owner.
+    pub effect: Option<String>,
 }
 
 /// What a put found where it would write.
@@ -97,6 +99,7 @@ impl Fields {
             ("capability", self.capability.clone()),
             ("directory", self.directory.clone()),
             ("target", self.target.clone()),
+            ("effect", self.effect.clone()),
         ];
         let mut json: Map<String, Value> = strings
             .into_iter()
@@ -261,6 +264,7 @@ mod tests {
             known: Some(Known::Tables(Vec::new())),
             found: Some(Found::Nothing),
             target: Some("../x.json".to_owned()),
+            effect: Some("0123456789abcdef".repeat(4)),
             refusals: vec![Lined::new(1, Code::PutInvalid, "no", Fields::default())],
         };
         let columns = Fields {

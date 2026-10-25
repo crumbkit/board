@@ -217,6 +217,7 @@ fn every_command_a_hint_names_parses() {
         )),
         found: Some(board_model::Found::Blob(ObjectId::Sha1([1; 20]))),
         target: Some("../x.json".to_owned()),
+        effect: Some("0123456789abcdef".to_owned()),
         refusals: Vec::new(),
     };
     let no_blob = Fields {
@@ -270,6 +271,8 @@ fn every_listing_command_takes_limit_and_all() {
         "type add",
         "call",
         "sync",
+        "decide",
+        "answer",
     ];
     for (name, command) in leaves() {
         let takes = |flag: &str| {
@@ -1073,6 +1076,9 @@ fn filled(line: &str) -> String {
         .replace("<name>", "due")
         .replace("<type>", "notes/note/v1")
         .replace("<sql>", "x")
+        .replace("<op>", "put")
+        .replace("<id>", "0123456789abcdef")
+        .replace("<answer>", "approve")
 }
 
 #[test]

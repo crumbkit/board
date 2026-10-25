@@ -60,8 +60,8 @@ fn a_plugin_inherits_board_timings_when_it_is_set_and_not_when_it_is_not() {
         timings: Some(OsString::from("0")),
         ..Environment::default()
     };
-    assert!(environment(&off, 1).contains(&("BOARD_TIMINGS", OsString::from("0"))));
-    let unset = environment(&Environment::default(), 1);
+    assert!(environment(&off, 1, &tasks()).contains(&("BOARD_TIMINGS", OsString::from("0"))));
+    let unset = environment(&Environment::default(), 1, &tasks());
     assert!(!unset.iter().any(|(key, _)| *key == "BOARD_TIMINGS"));
 }
 
@@ -71,8 +71,8 @@ fn a_plugin_inherits_tz_when_it_is_set_and_not_when_it_is_not() {
         tz: Some(OsString::from("Pacific/Kiritimati")),
         ..Environment::default()
     };
-    assert!(environment(&far, 1).contains(&("TZ", OsString::from("Pacific/Kiritimati"))));
-    let unset = environment(&Environment::default(), 1);
+    assert!(environment(&far, 1, &tasks()).contains(&("TZ", OsString::from("Pacific/Kiritimati"))));
+    let unset = environment(&Environment::default(), 1, &tasks());
     assert!(!unset.iter().any(|(key, _)| *key == "TZ"));
 }
 
@@ -83,12 +83,38 @@ fn a_plugin_inherits_the_caller_s_directory_and_day_start_when_set_and_not_when_
         day_start: Some(OsString::from("07:00")),
         ..Environment::default()
     };
-    let passed = environment(&set, 1);
+    let passed = environment(&set, 1, &tasks());
     assert!(passed.contains(&("BOARD_CALLER_DIR", OsString::from("/work/home"))));
     assert!(passed.contains(&("BOARD_DAY_START", OsString::from("07:00"))));
-    let unset = environment(&Environment::default(), 1);
+    let unset = environment(&Environment::default(), 1, &tasks());
     let keys = ["BOARD_CALLER_DIR", "BOARD_DAY_START"];
     assert!(!unset.iter().any(|(key, _)| keys.contains(key)));
+}
+
+#[test]
+fn a_plugin_sees_its_name_in_board_plugin_and_inherits_xdg_config_home_only_when_set() {
+    let set = Environment {
+        config: Some(OsString::from("/config")),
+        ..Environment::default()
+    };
+    let seen = environment(&set, 1, &tasks());
+    assert!(seen.contains(&("BOARD_PLUGIN", OsString::from("tasks"))));
+    assert!(seen.contains(&("XDG_CONFIG_HOME", OsString::from("/config"))));
+    let unset = environment(&Environment::default(), 1, &tasks());
+    assert!(!unset.iter().any(|(key, _)| *key == "XDG_CONFIG_HOME"));
+}
+
+#[test]
+fn a_plugin_called_from_inside_another_plugin_keeps_the_outer_plugins_name() {
+    let inside = Environment {
+        plugin: Some(OsString::from("review")),
+        ..Environment::default()
+    };
+    let seen = environment(&inside, 2, &tasks());
+    let named: Vec<_> = (seen.iter())
+        .filter(|(key, _)| *key == "BOARD_PLUGIN")
+        .collect();
+    assert_eq!(named, [&("BOARD_PLUGIN", OsString::from("review"))]);
 }
 
 /// An install of `name` that offers `capabilities`, each taking `input`.

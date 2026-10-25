@@ -94,8 +94,9 @@ listener, so they also get an adversarial security review.
    are `review`, which posts pull request comments, and `share`, which
    writes into another board.
    - `board/preference/v1` is a core type, kept in the owner's personal board.
-     A rule names an operation, a path pattern, an authority (act, propose or
-     ask) and how the owner is told.
+     A rule names an operation, a path pattern, an authority (act, propose,
+     ask or refuse) and how the owner is told.
+   - `refuse` is a fourth authority, added in this slice; the narrowest wins.
    - Board settings at `/.board/settings/` are defaults. Under the `refines`
      rule a preference may narrow a board default but not widen it.
    - `board decide --op <operation> --path <path>` prints the answer and the

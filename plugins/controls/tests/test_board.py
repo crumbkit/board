@@ -27,6 +27,7 @@ def logged(board: Board, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("PATH", f"{wrapper}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("XDG_DATA_HOME", str(board.data))
     monkeypatch.setenv("XDG_CACHE_HOME", str(board.cache))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(board.cache.parent / "config"))
     return log
 
 

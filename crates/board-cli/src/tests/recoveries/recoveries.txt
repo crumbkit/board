@@ -733,6 +733,43 @@ board --personal check
   fails with board::config::not_found
   hint
 
+board put /r (with BOARD_PLUGIN=tasks)
+  fails with board::settings::refused
+  hint
+
+board put /p (with BOARD_PLUGIN=tasks)
+  fails with board::settings::propose_only
+  hint
+
+board answer 0000000000000000000000000000000000000000000000000000000000000000 approve
+  fails with board::settings::not_found
+  run board --personal ls /effects/pending
+    exits 0
+
+board answer 11a05552f7a7afc2026731771c02f6418f4f7a5a94b21b49a69debbcf88fb9e1 refuse --save-rule
+  fails with board::settings::bad_pattern
+  hint
+
+board answer 27bcc217a66b922af2810fc1217db8a4c20c8abb60432cc048b2d7d90192763c approve --save-rule
+  fails with board::settings::cannot_widen
+  hint
+
+board answer 27bcc217a66b922af2810fc1217db8a4c20c8abb60432cc048b2d7d90192763c approve (with BOARD_PLUGIN=tasks)
+  fails with board::settings::from_plugin
+  hint
+
+board decide --op review.comment --path /y (with BOARD_PLUGIN=tasks)
+  fails with board::settings::no_personal
+  hint
+
+board put /y (with BOARD_PLUGIN=tasks)
+  fails with board::settings::bad_rule
+  hint
+
+board put /y (with BOARD_PLUGIN=tasks)
+  fails with board::config::invalid
+  hint
+
 board sync
   fails with board::sync::no_remote
   hint
@@ -762,5 +799,7 @@ codes that no start provokes:
   board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit
   board::refs::target_changed: a target must change between the check and the read of its fields; board-cli/src/tests/refs.rs changes one between two answers
   board::plugin::timeout: the CLI's 30-second plugin limit is too slow for a test; board-ops/src/call/tests.rs uses a 500 ms limit
+  board::settings::cannot_hold: it needs a file put whose bytes are not UTF-8, which a start's stdin, a string, cannot carry; a_file_put_that_asks_with_bytes_that_are_not_utf8_is_refused_as_cannot_hold_and_text_asks in board-ops/src/effects/tests.rs pairs the code
+  board::settings::asked: its hint names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_lets_the_same_put_write_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and puts again
 
 codes whose recoveries the check did not follow, because no declared code spells them: 0

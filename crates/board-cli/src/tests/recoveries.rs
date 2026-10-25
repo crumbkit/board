@@ -820,6 +820,106 @@ fn known_boards(starts: &mut Starts) {
         .extend([library, one, two, xdg].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
 }
 
+/// Effects a plugin asks for: puts that a board's settings make ask, refuse
+/// or only propose, answers to pending effects in the personal board, a
+/// decision that needs a personal board when none is named, and a plugin's
+/// put when the known boards file or a rule file cannot be read.
+fn effects(starts: &mut Starts) {
+    let rule = |path: &str, authority: &str| {
+        json!({"$type": "board/preference/v1", "op": "put", "path": path, "authority": authority})
+            .to_string()
+    };
+    let board = board();
+    identified(&board)
+        .write(".board/settings/ask.json", Item::File(&rule("/x", "ask")))
+        .write(
+            ".board/settings/refuse.json",
+            Item::File(&rule("/r", "refuse")),
+        )
+        .write(
+            ".board/settings/propose.json",
+            Item::File(&rule("/p", "propose")),
+        );
+    let effect = |path: &str| {
+        let effect = board_model::Effect::new(
+            "/b".to_owned(),
+            "tasks".to_owned(),
+            "put".to_owned(),
+            path.to_owned(),
+        );
+        (effect.id(), serde_json::to_string(&effect).unwrap())
+    };
+    let ((exact, exact_text), (starred, starred_text)) = (effect("/x"), effect("/s*"));
+    let personal = enabling("");
+    personal
+        .write(
+            &format!("effects/pending/{exact}.json"),
+            Item::File(&exact_text),
+        )
+        .write(
+            &format!("effects/pending/{starred}.json"),
+            Item::File(&starred_text),
+        );
+    let xdg = Scenario::new();
+    let known = json!({"boards": [personal.path()], "personal": personal.path()});
+    xdg.write(
+        "xdg/config/board/config.json",
+        Item::File(&known.to_string()),
+    );
+    let answering = starts.keep(board).xdg(xdg.workdir().join("xdg"));
+    let place =
+        (answering.clone().env("BOARD_PLUGIN", "tasks")).stdin(r#"{"$type": "lr/project/v1"}"#);
+    let unnamed = place.clone().xdg_option(None);
+    let broken = Scenario::new();
+    broken.write("xdg/config/board/config.json", Item::File("{"));
+    let unreadable = place.clone().xdg(broken.workdir().join("xdg"));
+    let lines = [
+        (Code::SettingsAsked, "put /x", "put /y"),
+        (Code::SettingsRefused, "put /r", "put /y"),
+        (Code::SettingsProposeOnly, "put /p", "put /p --or-propose"),
+    ];
+    for (code, line, admitted) in lines {
+        if code != Code::SettingsAsked {
+            starts.add(&place, code, line);
+        }
+        starts.pair(&place, code, line, admitted);
+    }
+    let unknown = format!("answer {} approve", "0".repeat(64));
+    starts.add(&answering, Code::SettingsNotFound, &unknown);
+    let admitted = format!("answer {exact} approve");
+    starts.pair(&answering, Code::SettingsNotFound, &unknown, &admitted);
+    let saving = format!("answer {starred} refuse --save-rule");
+    starts.add(&answering, Code::SettingsBadPattern, &saving);
+    let admitted = format!("answer {starred} refuse");
+    starts.pair(&answering, Code::SettingsBadPattern, &saving, &admitted);
+    let widening = format!("answer {exact} approve --save-rule");
+    starts.add(&answering, Code::SettingsCannotWiden, &widening);
+    let admitted = format!("answer {exact} refuse --save-rule");
+    starts.pair(&answering, Code::SettingsCannotWiden, &widening, &admitted);
+    let line = format!("answer {exact} approve");
+    starts.add(&place, Code::SettingsFromPlugin, &line);
+    starts.variable(&place, Code::SettingsFromPlugin, &line, "BOARD_PLUGIN");
+    let line = "decide --op review.comment --path /y";
+    starts.add(&unnamed, Code::SettingsNoPersonal, line);
+    starts.pair(
+        &unnamed,
+        Code::SettingsNoPersonal,
+        line,
+        "decide --op put --path /y",
+    );
+    let broken_rule = super::board();
+    identified(&broken_rule).write(".board/settings/broken.json", Item::File("{"));
+    let bad = (starts.keep(broken_rule).env("BOARD_PLUGIN", "tasks"))
+        .stdin(r#"{"$type": "lr/project/v1"}"#);
+    starts.add(&bad, Code::SettingsBadRule, "put /y");
+    starts.variable(&bad, Code::SettingsBadRule, "put /y", "BOARD_PLUGIN");
+    starts.add(&unreadable, Code::ConfigInvalid, "put /y");
+    starts.variable(&unreadable, Code::ConfigInvalid, "put /y", "BOARD_PLUGIN");
+    starts
+        .kept
+        .extend([personal, xdg, broken].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
+}
+
 /// Every start, or every twin, whose code `ENV` provokes.
 fn starts(twins: bool) -> Starts {
     let mut starts = Starts::new(twins);
@@ -831,6 +931,7 @@ fn starts(twins: bool) -> Starts {
     apart(&mut starts);
     through_mounts(&mut starts);
     known_boards(&mut starts);
+    effects(&mut starts);
     syncing(&mut starts);
     starts
 }
@@ -866,11 +967,19 @@ const SCHEMA_MISSING: &str = "the board lacks an enabled plugin's schema, and no
 /// a test provokes is not provoked.
 fn declared() -> (Vec<crumbkit::Code>, Vec<Unprovoked<'static>>) {
     let unprovoked = NOT_REPRODUCED.iter();
-    let unprovoked =
-        unprovoked.map(|(code, reason)| Unprovoked::from_code(crumbkit_code(*code), reason));
+    let unprovoked = unprovoked
+        .chain([&(Code::SettingsCannotHold, CANNOT_HOLD)])
+        .map(|(code, reason)| Unprovoked::from_code(crumbkit_code(*code), reason));
     let codes = Code::ALL.into_iter().map(crumbkit_code).collect();
     (codes, unprovoked.collect())
 }
+
+/// Why the chains start from no line that gives `settings::asked`, though a
+/// twin gives it.
+const ASKED: &str = "its hint names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_lets_the_same_put_write_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and puts again";
+
+/// Why no line gives `settings::cannot_hold`.
+const CANNOT_HOLD: &str = "it needs a file put whose bytes are not UTF-8, which a start's stdin, a string, cannot carry; a_file_put_that_asks_with_bytes_that_are_not_utf8_is_refused_as_cannot_hold_and_text_asks in board-ops/src/effects/tests.rs pairs the code";
 
 /// Follows the hints from `starts`, which must provoke each declared code
 /// that a test can, pins the chains in `GOLDENS`, and returns each `board
@@ -881,7 +990,12 @@ fn recover(starts: &[Failing<'_>]) -> BTreeSet<String> {
         .env(ENV)
         .allow(ALLOW)
         .failure_reader(&reader);
-    let (codes, unprovoked) = declared();
+    let (codes, mut unprovoked) = declared();
+    unprovoked.push(Unprovoked::from_code(
+        crumbkit_code(Code::SettingsAsked),
+        ASKED,
+    ));
+
     let recoveries = Recoveries::from_codes(examples, &codes)
         .starts(starts)
         .unprovoked(&unprovoked);

@@ -132,7 +132,8 @@ instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
 their schema. Board knows `board/config/v1`, `board/mount/v1`,
-`board/plugin-manifest/v1` and `board/attachment/v1` wherever they are stored. A manifest is checked by its content alone; a
+`board/plugin-manifest/v1`, `board/attachment/v1`, and the effects types
+`board/preference/v1`, `board/effect/v1` and `board/seen/v1` wherever they are stored. A manifest is checked by its content alone; a
 broken one is `plugin::bad_manifest`. Any other `board/*` type is
 `record::unknown_type`.
 
@@ -303,6 +304,8 @@ replays this clone's commits onto the branch it follows.
 | `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
 | `board type add <type>` | compile the schema on stdin and write it to `.board/types/`; see Writes |
 | `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
+| `board decide --op <op> --path <path>` | the authority an op has at a path, and its rules; see docs/architecture/writes/effects.md |
+| `board answer <id> <answer>` | the owner answers a plugin's pending effect; see docs/architecture/writes/effects.md |
 
 [architecture/records/get.md](architecture/records/get.md) says how `board get`
 prints several files, its report, and how it bounds its output.

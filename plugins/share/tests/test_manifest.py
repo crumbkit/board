@@ -41,7 +41,13 @@ def plugin(boards: Boards, capability: str, given: dict[str, Any]) -> tuple[int,
         "board": {"root": str(boards.personal), "database": str(boards.cache / "unused.sqlite")},
     }
     path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
-    environment = {**os.environ, "PATH": path, "XDG_DATA_HOME": str(boards.data), "XDG_CACHE_HOME": str(boards.cache)}
+    environment = {
+        **os.environ,
+        "PATH": path,
+        "XDG_DATA_HOME": str(boards.data),
+        "XDG_CACHE_HOME": str(boards.cache),
+        "XDG_CONFIG_HOME": str(boards.cache.parent / "config"),
+    }
     ran = subprocess.run(
         [sys.executable, "-m", "board_share"],
         cwd=boards.personal,

@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::{Expect, Failure, Prepared, PutError, PutReport, Refused, Schemas};
 use crate::board::Board;
+use crate::effects::Shape;
 use crate::verdict::Admitted;
 
 impl Board {
@@ -33,8 +34,25 @@ impl Board {
         bytes: &[u8],
         wait: Duration,
     ) -> Result<PutReport, PutError> {
-        if let Some(record) = self.attach(path, bytes)? {
-            return self.put_waiting(path, expect, &record, wait);
+        let put = self.put_file_admitted(path, expect, bytes, wait);
+        self.holding(put)
+    }
+
+    /// [`Board::put_file_waiting`], leaving any pending effect it gathers
+    /// for [`Board::holding`].
+    fn put_file_admitted(
+        &self,
+        path: &LogicalPath,
+        expect: Expect,
+        bytes: &[u8],
+        wait: Duration,
+    ) -> Result<PutReport, PutError> {
+        if let Some((record, upload)) = self.attach(path, bytes)? {
+            if self.asker.plugin.is_some() {
+                self.check_attachment(path, &record, wait)?;
+            }
+            upload()?;
+            return self.put_record(path, expect, &record, wait);
         }
         let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -43,6 +61,41 @@ impl Board {
         let message = format!("{BINARY_NAME} put {path}");
         self.write_all(lock, &[prepared], &[], &message)
             .map_err(Failure::one)
+    }
+
+    /// Checks a plugin's put of the attachment `record` at `path` before
+    /// its bytes reach the store: here, or in the mounted board the path
+    /// leads into, which the put itself reports on otherwise.
+    fn check_attachment(
+        &self,
+        path: &LogicalPath,
+        record: &[u8],
+        wait: Duration,
+    ) -> Result<(), PutError> {
+        let lock = self.repository().lock(wait)?;
+        let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
+        let schemas = &mut Schemas::default();
+        match self.prepare(&lock, &mut view, schemas, path, Expect::Any, record) {
+            Err(PutError::Write(WriteError::ThroughMount {
+                inside: Some(inside),
+                ..
+            })) => {
+                drop(lock);
+                if inside.repository == self.repository().path() {
+                    return Ok(());
+                }
+                let home = self.repositories().home().map(Into::into);
+                let Ok(mut mounted) = Board::open(&inside.repository, home) else {
+                    return Ok(());
+                };
+                mounted.ask_as(self.asker.clone());
+                let checked = mounted.check_attachment(&inside.path, record, wait);
+                self.pending.borrow_mut().extend(mounted.pending.take());
+                checked
+            }
+            Ok(_) | Err(PutError::Write(WriteError::ThroughMount { .. })) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// Finds where the file whose whole name is `path` lands in `view`, for
@@ -86,6 +139,12 @@ impl Board {
                 admitted.references.extend(references(&landed, bytes));
             }
         }
+        self.gate(
+            &mut schemas.effects,
+            &target,
+            bytes,
+            (&admitted, Shape::File),
+        )?;
         Ok(Prepared {
             path: path.clone(),
             expect,

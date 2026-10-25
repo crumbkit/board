@@ -8,7 +8,8 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, Refusal};
-use board_ops::{Board, OpenError};
+use board_ops::{Asker, Board, OpenError};
+use board_plugin::PluginName;
 use serde::Deserialize;
 
 use crate::config::Context;
@@ -54,32 +55,93 @@ pub(crate) fn day_start(context: &Context) -> Result<Option<String>, Box<Refusal
 /// The root of the personal board the known boards file names, refused
 /// unless a board's root is there.
 pub(crate) fn personal(context: &Context) -> Result<PathBuf, Box<Refusal>> {
+    named(context)?.ok_or_else(|| unnamed(context))
+}
+
+/// The root of the personal board the known boards file names, if it names
+/// one, refused unless a board's root is there.
+fn named(context: &Context) -> Result<Option<PathBuf>, Box<Refusal>> {
     let file = context.boards.as_deref();
-    let shown = shown(file);
-    let message = match read(file)?.personal.map(|root| against(file, &root)) {
-        None => format!("--personal was given and `{shown}` names no personal board"),
-        Some(root) => {
-            let canonical = root.canonicalize().ok();
-            let found = match Board::open(&root, context.home.clone()) {
-                Ok(board) => board.repository().path().canonicalize().ok(),
-                Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => None,
-                Err(error) => {
-                    let refusal = Refusal::new(error.code(), &error, &Fields::default());
-                    return Err(Box::new(refusal));
-                }
-            };
-            if canonical.is_some() && found == canonical {
-                return Ok(root);
-            }
-            let named = root.display();
-            format!("`personal` in `{shown}` names {named}, which is not the root of a board")
+    let Some(root) = read(file)?.personal.map(|root| against(file, &root)) else {
+        return Ok(None);
+    };
+    let canonical = root.canonicalize().ok();
+    let found = match Board::open(&root, context.home.clone()) {
+        Ok(board) => board.repository().path().canonicalize().ok(),
+        Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => None,
+        Err(error) => {
+            let refusal = Refusal::new(error.code(), &error, &Fields::default());
+            return Err(Box::new(refusal));
         }
     };
+    if canonical.is_some() && found == canonical {
+        return Ok(Some(root));
+    }
+    let message = format!(
+        "`personal` in `{}` names {}, which is not the root of a board",
+        shown(file),
+        root.display()
+    );
+    Err(no_personal(context, message))
+}
+
+/// The refusal when the known boards file names no personal board.
+fn unnamed(context: &Context) -> Box<Refusal> {
+    let shown = shown(context.boards.as_deref());
+    no_personal(context, format!("`{shown}` names no personal board"))
+}
+
+fn no_personal(context: &Context, message: String) -> Box<Refusal> {
+    let shown = shown(context.boards.as_deref());
     let hint = format!(
         "name the personal board in `{shown}` as {{\"personal\": \"<board directory>\"}}, the directory that holds .board/board.json"
     );
     let refusal = Refusal::new(Code::ConfigNotFound, message, &Fields::default());
-    Err(Box::new(refusal.with_hint(hint)))
+    Box::new(refusal.with_hint(hint))
+}
+
+/// Who asks for an effect in this run: the plugin `BOARD_PLUGIN` names, and
+/// the personal board when there is a plugin or `owner_rules` are wanted.
+/// A known boards file that cannot be read, a personal board that is not a
+/// board, or a `BOARD_PLUGIN` that is not a plugin's name refuses, so a
+/// plugin is never checked against fewer rules than the owner wrote.
+pub(crate) fn asker(
+    context: &Context,
+    owner_rules: bool,
+    or_propose: bool,
+) -> Result<Asker, Box<Refusal>> {
+    let plugin = plugin(context)?;
+    let wanted = plugin.is_some() || owner_rules;
+    let personal = if wanted { named(context)? } else { None };
+    Ok(Asker {
+        plugin,
+        personal,
+        home: context.home.clone(),
+        or_propose,
+    })
+}
+
+/// The plugin `BOARD_PLUGIN` names, refused unless it is a plugin's name.
+pub(crate) fn plugin(context: &Context) -> Result<Option<String>, Box<Refusal>> {
+    let Some(name) = &context.environment.plugin else {
+        return Ok(None);
+    };
+    let variable = board_plugin::PLUGIN_VARIABLE;
+    let named = name
+        .to_str()
+        .filter(|name| name.parse::<PluginName>().is_ok());
+    let Some(named) = named else {
+        let message = format!(
+            "{variable} is {:?}, which is not a plugin's name",
+            name.to_string_lossy()
+        );
+        let hint = format!(
+            "set {variable} to the plugin's name, lowercase ASCII letters, digits and hyphens such as tasks, or unset it to run as the owner"
+        );
+        let refusal = Refusal::new(Code::ConfigInvalid, message, &Fields::default());
+        return Err(Box::new(refusal.with_hint(hint)));
+    };
+    Ok(Some(named.to_owned()))
 }
 
 /// `root` read against the directory of `file`, the known boards file.

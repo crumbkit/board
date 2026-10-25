@@ -24,6 +24,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use crumbkit::{Sink, Unparsed};
 
 use crate::config::Context;
+use crate::effects;
 use crate::graft;
 use crate::known;
 use crate::render::{self, GUIDE, Printer};
@@ -204,6 +205,12 @@ their digest and writes a board/attachment/v1 record.")]
         /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
         #[arg(long, conflicts_with = "batch")]
         file: bool,
+        /// Propose where a plugin may not act.
+        ///
+        /// Under a plugin, where the put's authority is propose, write a pending effect in the
+        /// personal board in place of the record.
+        #[arg(long, conflicts_with = "batch")]
+        or_propose: bool,
         /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
         #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
         wait: Duration,
@@ -269,6 +276,36 @@ Examples:
         #[arg(long)]
         capability: Option<CapabilityName>,
     },
+    /// Print the authority an op has at a path.
+    #[command(after_help = "\
+The rules are preferences under /preferences/ in the personal board, then
+those under .board/settings/ in this board; the narrowest matching rule wins.
+With no rule, put acts and any other op asks. Decide answers for the plugin
+BOARD_PLUGIN names, or for the owner when it is unset. Under a plugin, an op
+that asks writes a pending effect in the personal board for the owner to
+answer; put writes its own when it runs, with its record.
+
+Examples:
+  board decide --op put --path /tasks/a
+  board decide --op review.comment --path /reviews/r1 --json")]
+    Decide {
+        /// `put`, or a plugin's `<plugin>.<capability>`, such as review.comment.
+        #[arg(long, value_parser = op)]
+        op: String,
+        /// The logical path the op acts on, such as /tasks/a.
+        #[arg(long)]
+        path: Given,
+    },
+    /// Answer a pending effect.
+    #[command(after_help = "\
+`board --personal ls /effects/pending` lists the pending effects. A plugin may
+not answer.
+
+Examples:
+  board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve
+  board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a refuse --reason 'not this week'
+  board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve --save-rule")]
+    Answer(effects::Answering),
     /// Run one read-only SQL statement over the index.
     #[command(after_help = QUERY_EXAMPLES)]
     Query {
@@ -331,6 +368,17 @@ Examples:
     },
 }
 
+impl Command {
+    /// Whether the command writes where the put check does not reach, so
+    /// only the owner runs it.
+    fn owner_only(&self) -> bool {
+        matches!(
+            self,
+            Command::Init | Command::Type(_) | Command::Plugin(PluginCommand::Enable { .. })
+        )
+    }
+}
+
 /// `none`, or a blob id in hex.
 fn expect(text: &str) -> Result<Expect, String> {
     if text == "none" {
@@ -339,6 +387,15 @@ fn expect(text: &str) -> Result<Expect, String> {
     ObjectId::from_hex(text)
         .map(Expect::Blob)
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
+}
+
+/// `put` or `<plugin>.<capability>`.
+fn op(text: &str) -> Result<String, String> {
+    board_model::is_op(text)
+        .then(|| text.to_owned())
+        .ok_or_else(|| {
+            "must be `put` or `<plugin>.<capability>`, such as review.comment".to_owned()
+        })
 }
 
 /// A count of milliseconds, seconds, minutes or hours with its unit.
@@ -415,6 +472,11 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     let printer = Printer { view };
+    if cli.command.owner_only()
+        && let Some(refusal) = effects::from_plugin(context, ran)
+    {
+        return render::refused(printer, *refusal);
+    }
     let base = cli.personal.then(|| known::personal(context));
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = match base.and_then(|base| entered(&base, &cli.directories)) {
@@ -433,13 +495,27 @@ pub(crate) fn run(
             }
         };
     }
+    if let Command::Answer(answering) = cli.command {
+        return effects::answer(context, printer, answering);
+    }
     let opening = Instant::now();
     let opened = open(context, &start);
     ran.trace.add("open", opening);
-    let (board, prefix) = match opened {
+    let (mut board, prefix) = match opened {
         Ok(opened) => opened,
         Err(refusal) => return render::refused(printer, *refusal),
     };
+    let asks = match cli.command {
+        Command::Put { or_propose, .. } => Some((false, or_propose)),
+        Command::Decide { .. } => Some((true, false)),
+        _ => None,
+    };
+    if let Some((owner_rules, or_propose)) = asks {
+        match known::asker(context, owner_rules, or_propose) {
+            Ok(asker) => board.ask_as(asker),
+            Err(refusal) => return render::refused(printer, *refusal),
+        }
+    }
     ran.root = Some(board.repository().path().to_path_buf());
     ran.prefix = prefix.as_ref().map(|prefix| match prefix {
         Ok(path) => path.to_string(),
@@ -451,7 +527,10 @@ pub(crate) fn run(
             graft::resolve(found.as_ref(), &mut flags, prefix);
             call(&board, context, printer, &target, Some(flags), stdin)
         }
-        None => command(cli.command, &board, context, printer, prefix, stdin),
+        None => match cli.command {
+            Command::Decide { op, path } => effects::decide(&board, printer, prefix, &op, &path),
+            command => self::command(command, &board, context, printer, prefix, stdin),
+        },
     };
     ran.trace.extend(board.take_trace());
     output
@@ -481,7 +560,9 @@ fn command(
         };
     }
     match command {
-        Command::Init => unreachable!("init runs before a board is opened"),
+        // `run` takes these before this match: init and answer open no
+        // board, and decide is matched there to keep this function short.
+        Command::Init | Command::Answer(_) | Command::Decide { .. } => unreachable!(),
         Command::Check { path, page } => {
             let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {
@@ -573,7 +654,11 @@ fn command(
 /// `given` read from `prefix`, which a relative path needs to be a logical
 /// path, or a refusal naming `given` as typed. A refused `..` that stays at
 /// or below `/` hints the absolute path it meant.
-fn read(prefix: Option<&Prefix>, given: &Given, name: &str) -> Result<LogicalPath, Box<Refusal>> {
+pub(crate) fn read(
+    prefix: Option<&Prefix>,
+    given: &Given,
+    name: &str,
+) -> Result<LogicalPath, Box<Refusal>> {
     let text = given.0.as_str();
     let from = match prefix {
         Some(prefix) if !text.starts_with('/') => prefix.clone(),

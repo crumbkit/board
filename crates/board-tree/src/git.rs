@@ -106,6 +106,36 @@ impl Repository {
         &self.path
     }
 
+    /// Where `file`, a working-tree path, lands on disk: its deepest
+    /// ancestor that exists, as the file system spells it, then the rest as
+    /// given. On a case-insensitive file system another spelling of an
+    /// existing directory lands in it, and this names that directory. A
+    /// path whose ancestor resolves outside the repository is kept as given.
+    pub fn landing(&self, file: &str) -> String {
+        let mut existing = self.path.join(file);
+        let mut rest = Vec::new();
+        while existing.starts_with(&self.path) {
+            if let Ok(canonical) = existing.canonicalize() {
+                let Ok(inside) = canonical.strip_prefix(&self.path) else {
+                    break;
+                };
+                let inside = inside
+                    .iter()
+                    .map(|part| part.to_string_lossy().into_owned());
+                return inside
+                    .chain(rest.into_iter().rev())
+                    .collect::<Vec<_>>()
+                    .join("/");
+            }
+            let Some(name) = existing.file_name() else {
+                break;
+            };
+            rest.push(name.to_string_lossy().into_owned());
+            existing.pop();
+        }
+        file.to_owned()
+    }
+
     pub(crate) fn git(&self) -> &gix::Repository {
         &self.git
     }

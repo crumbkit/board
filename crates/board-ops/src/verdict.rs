@@ -3,8 +3,8 @@
 //! (docs/architecture.md, Records).
 
 use board_model::{
-    ATTACHMENT_TYPE, Attachment, CONFIG_TYPE, Classified, Code, Content, Fields, MANIFEST_TYPE,
-    RecordType, Role,
+    ATTACHMENT_TYPE, Attachment, CONFIG_TYPE, Classified, Code, Content, EFFECT_TYPES, Fields,
+    MANIFEST_TYPE, RecordType, Role, effect_record,
 };
 use board_plugin::{Manifest, ManifestError};
 use board_tree::Refused;
@@ -24,6 +24,13 @@ pub enum Fault {
     Schema(#[from] SchemaError),
     #[error(transparent)]
     Record(#[from] RecordError),
+    /// A record of one of Board's effect types that does not read as its
+    /// Rust type, with the reason it gives.
+    #[error("it is not a valid {record_type}: {why}")]
+    Core {
+        record_type: RecordType,
+        why: String,
+    },
     /// A record of a user's type with no usable schema at its schema path.
     #[error("{}", match found {
         SchemaFound::Missing => format!("no schema for {record_type} at {}", record_type.schema_path()),
@@ -44,6 +51,7 @@ impl Fault {
             Self::Manifest(error) => error.code(),
             Self::Schema(error) => error.code(),
             Self::Record(error) => error.code(),
+            Self::Core { .. } => Code::RecordInvalid,
             Self::NoSchema { found, .. } => match found {
                 SchemaFound::Missing => Code::RecordUnknownType,
                 SchemaFound::Unreadable => Code::RepoUnreadable,
@@ -66,6 +74,10 @@ impl Fault {
                     SchemaFound::Symlink(refused) => Some(refused.target.clone()),
                     _ => None,
                 },
+                record_type: Some(record_type.clone()),
+                ..Fields::default()
+            },
+            Self::Core { record_type, .. } => Fields {
                 record_type: Some(record_type.clone()),
                 ..Fields::default()
             },
@@ -125,6 +137,15 @@ pub(crate) fn judge(classified: &Classified) -> Result<Option<Schema>, Fault> {
                 .map(|_| None)
                 .map_err(|_| Fault::Code(Code::RecordInvalid))
         }
+        Content::Record { record_type, value } => {
+            match effect_record(record_type.as_str(), value) {
+                Some(Err(why)) => Err(Fault::Core {
+                    record_type: record_type.clone(),
+                    why,
+                }),
+                Some(Ok(())) | None => Ok(None),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -163,7 +184,7 @@ pub(crate) fn record<'s>(
             if matches!(
                 record_type.as_str(),
                 CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE
-            ) =>
+            ) || EFFECT_TYPES.contains(&record_type.as_str()) =>
         {
             return Ok(admitted(value, false));
         }

@@ -224,6 +224,37 @@ fn a_pointer_and_boards_own_types_are_admitted_without_a_schema_and_their_broken
 }
 
 #[test]
+fn an_effects_record_is_admitted_without_a_schema_and_its_twin_with_a_bad_pattern_is_refused() {
+    let unasked = |_: &_| -> Result<&Schema, SchemaFound> { panic!("no schema is needed") };
+    let preference = |path: &str| {
+        format!(
+            r#"{{"$type": "board/preference/v1", "op": "put", "path": "{path}", "authority": "ask"}}"#
+        )
+    };
+    let admitted = preference("/tasks/*");
+    assert!(record(Role::Json.classify(Some(admitted.as_bytes())), unasked).is_ok());
+    let refused = preference("/tasks/[ab]");
+    let refused = record(Role::Json.classify(Some(refused.as_bytes())), unasked);
+    assert_eq!(
+        refused.err().map(|fault| fault.code()),
+        Some(Code::RecordInvalid)
+    );
+    let seen =
+        r#"{"$type": "board/seen/v1", "effect": "/effects/pending/0a", "answer": "approve"}"#;
+    assert_eq!(code(Role::Json, seen), None);
+    assert_eq!(
+        code(Role::Json, &seen.replace("approve", "yes")),
+        Some(Code::RecordInvalid)
+    );
+    let effect = r#"{"$type": "board/effect/v1", "board": "/b", "plugin": "tasks", "op": "put", "path": "/x", "authority": "ask"}"#;
+    assert_eq!(code(Role::Json, effect), None);
+    assert_eq!(
+        code(Role::Json, &effect.replace("ask", "maybe")),
+        Some(Code::RecordInvalid)
+    );
+}
+
+#[test]
 fn plain_json_is_not_a_record_and_its_typed_twin_is_admitted() {
     let plain = record(Role::Json.classify(Some(b"{}")), |_| {
         Err(SchemaFound::Missing)

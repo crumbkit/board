@@ -61,13 +61,28 @@ fn fed(
     arguments: &[&str],
     stdin: &[u8],
 ) -> (Output, Value) {
+    inside(None, directory, xdg, cache, arguments, stdin)
+}
+
+/// `fed`, inside the plugin `plugin` names when it is set.
+fn inside(
+    plugin: Option<OsString>,
+    directory: &Path,
+    xdg: &Scenario,
+    cache: Option<&Path>,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> (Output, Value) {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
         cache: cache.map(Path::to_path_buf),
         plugins: None,
         boards: Some(xdg.workdir().join("board/config.json")),
-        environment: board_plugin::Environment::default(),
+        environment: board_plugin::Environment {
+            plugin,
+            ..board_plugin::Environment::default()
+        },
         complete: None,
         terminal: false,
         cursor: None,
@@ -80,6 +95,14 @@ fn fed(
     let started = std::time::Instant::now();
     let record = crate::timing::record(started, &ran, &output, 0).unwrap();
     (output, record["prefix"].clone())
+}
+
+/// A board whose puts do not commit, so a test needs no git identity.
+fn uncommitted() -> Scenario {
+    let board = board();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    board
 }
 
 fn code(output: &Output) -> String {
@@ -483,4 +506,96 @@ fn a_day_start_that_is_not_hh_mm_is_refused_and_one_that_is_or_is_null_is_admitt
         );
         assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
     }
+}
+
+#[test]
+fn a_plugins_put_is_refused_when_the_known_boards_file_cannot_be_read_and_the_owners_is_admitted() {
+    let board = uncommitted();
+    let broken = config(Some("{"));
+    let put = |plugin: Option<&str>| {
+        let (output, _) = inside(
+            plugin.map(OsString::from),
+            board.workdir(),
+            &broken,
+            None,
+            &["put", "/notes/n"],
+            br#"{"$type": "lr/project/v1"}"#,
+        );
+        output
+    };
+    assert_eq!(code(&put(Some("tasks"))), "board::config::invalid");
+    assert!(!board.workdir().join("notes/n.json").exists());
+    assert_eq!(text(&put(None).stderr), "");
+    assert!(board.workdir().join("notes/n.json").exists());
+}
+
+#[test]
+fn a_plugin_name_that_is_empty_not_utf8_or_not_a_name_is_refused_and_a_name_is_admitted() {
+    use std::os::unix::ffi::OsStringExt;
+    let board = uncommitted();
+    let empty = config(None);
+    let put = |plugin: OsString| {
+        let record = br#"{"$type": "lr/project/v1"}"#;
+        let arguments = ["put", "/notes/n"];
+        inside(
+            Some(plugin),
+            board.workdir(),
+            &empty,
+            None,
+            &arguments,
+            record,
+        )
+        .0
+    };
+    for refused in [
+        OsString::from_vec(b"tas\xffks".to_vec()),
+        OsString::new(),
+        OsString::from("Tasks"),
+        OsString::from("../tasks"),
+    ] {
+        let output = put(refused.clone());
+        assert_eq!(code(&output), "board::config::invalid", "{refused:?}");
+        assert!(text(&output.stderr).contains("not a plugin's name"));
+    }
+    assert!(!board.workdir().join("notes/n.json").exists());
+    assert_eq!(text(&put(OsString::from("tasks")).stderr), "");
+}
+
+#[test]
+fn a_write_command_the_put_check_does_not_cover_is_refused_under_a_plugin_and_admitted_for_the_owner()
+ {
+    let board = uncommitted();
+    let empty = config(None);
+    let schema = br#"{"type": "object"}"#;
+    let run = |plugin: Option<&str>, arguments: &[&str], stdin: &[u8]| {
+        inside(
+            plugin.map(OsString::from),
+            board.workdir(),
+            &empty,
+            None,
+            arguments,
+            stdin,
+        )
+        .0
+    };
+    let add = ["type", "add", "lr/kind/v1"];
+    let refused = run(Some("tasks"), &add, schema);
+    assert_eq!(code(&refused), "board::settings::from_plugin");
+    assert!(text(&refused.stderr).contains("run board type add"));
+    assert!(!board.workdir().join(".board/types/lr/kind").exists());
+    assert_eq!(text(&run(None, &add, schema).stderr), "");
+    assert!(
+        board
+            .workdir()
+            .join(".board/types/lr/kind/v1.schema.json")
+            .exists()
+    );
+    // A plugin's sync runs as the owner's does, and this board follows no
+    // remote: sync moves commits the put check already saw.
+    let sync = ["sync", "--no-push"];
+    assert_eq!(
+        code(&run(Some("tasks"), &sync, b"")),
+        "board::sync::no_remote"
+    );
+    assert_eq!(code(&run(None, &sync, b"")), "board::sync::no_remote");
 }

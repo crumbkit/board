@@ -20,6 +20,8 @@ use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallR
 pub const MAX_DEPTH: u32 = 8;
 
 const DEPTH_VARIABLE: &str = "BOARD_CALL_DEPTH";
+/// The variable naming the plugin a Board runs inside.
+pub const PLUGIN_VARIABLE: &str = "BOARD_PLUGIN";
 
 /// What a call names: a plugin's capability, or a capability alone.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,6 +71,9 @@ pub struct Environment {
     pub tz: Option<OsString>,
     pub cache: Option<OsString>,
     pub data: Option<OsString>,
+    /// `XDG_CONFIG_HOME`, so a Board the plugin runs finds the same
+    /// personal board.
+    pub config: Option<OsString>,
     /// `BOARD_CALL_DEPTH`.
     pub depth: Option<OsString>,
     /// `BOARD_TIMINGS`, so a run a plugin starts records as its caller does.
@@ -79,6 +84,8 @@ pub struct Environment {
     /// `BOARD_DAY_START`: when the person's day starts, such as `07:00`,
     /// from the known boards file.
     pub day_start: Option<OsString>,
+    /// `BOARD_PLUGIN`, set when Board runs inside a plugin.
+    pub plugin: Option<OsString>,
 }
 
 impl Environment {
@@ -331,7 +338,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
         &program,
         arguments,
         directory,
-        &environment(context.environment, depth + 1),
+        &environment(context.environment, depth + 1, &plugin),
         request,
         context.limits,
         scope,
@@ -388,8 +395,15 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     }
 }
 
-/// The only variables a plugin sees.
-fn environment(inherited: &Environment, depth: u32) -> Vec<(&'static str, OsString)> {
+/// The only variables a plugin sees. `BOARD_PLUGIN` names the plugin, so a
+/// Board it runs knows who asks, or keeps naming the outer plugin when this
+/// Board already runs inside one, so a plugin cannot shed its name by calling
+/// another (docs/architecture/writes/effects.md).
+fn environment(
+    inherited: &Environment,
+    depth: u32,
+    plugin: &PluginName,
+) -> Vec<(&'static str, OsString)> {
     [
         ("PATH", &inherited.path),
         ("HOME", &inherited.home),
@@ -397,13 +411,20 @@ fn environment(inherited: &Environment, depth: u32) -> Vec<(&'static str, OsStri
         ("TZ", &inherited.tz),
         ("XDG_CACHE_HOME", &inherited.cache),
         ("XDG_DATA_HOME", &inherited.data),
+        ("XDG_CONFIG_HOME", &inherited.config),
         ("BOARD_TIMINGS", &inherited.timings),
         ("BOARD_CALLER_DIR", &inherited.caller),
         ("BOARD_DAY_START", &inherited.day_start),
     ]
     .into_iter()
     .filter_map(|(key, value)| Some((key, value.clone()?)))
-    .chain([(DEPTH_VARIABLE, OsString::from(depth.to_string()))])
+    .chain([
+        (DEPTH_VARIABLE, OsString::from(depth.to_string())),
+        (
+            PLUGIN_VARIABLE,
+            (inherited.plugin.clone()).unwrap_or_else(|| OsString::from(plugin.as_str())),
+        ),
+    ])
     .collect()
 }
 

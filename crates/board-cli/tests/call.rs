@@ -93,6 +93,7 @@ fn start(board: &Scenario, data: &Scenario, arguments: &[&str], input: &str) -> 
         .env("PATH", path)
         .env("XDG_DATA_HOME", data.workdir())
         .env("XDG_CACHE_HOME", data.workdir().join("cache"))
+        .env("XDG_CONFIG_HOME", data.workdir().join("config"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -12,6 +12,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
 
+use crate::effects::Asker;
 use crate::trace::Trace;
 
 /// `.board/board.json`, a `board/config/v1` record.
@@ -69,6 +70,10 @@ pub struct Board {
     repositories: Repositories,
     config: Config,
     pub(crate) trace: RefCell<Trace>,
+    pub(crate) asker: Asker,
+    /// The pending effects a put gathered, written once it releases its
+    /// locks.
+    pub(crate) pending: RefCell<Vec<board_model::Effect>>,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -113,6 +118,8 @@ impl Board {
             repositories,
             config,
             trace: RefCell::default(),
+            asker: Asker::default(),
+            pending: RefCell::default(),
         })
     }
 

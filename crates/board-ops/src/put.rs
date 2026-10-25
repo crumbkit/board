@@ -19,6 +19,8 @@ use board_validate::Schema;
 
 use crate::board::Board;
 use crate::check::{Detail, Tally, follow, unresolved};
+use crate::effects::Shape;
+use crate::effects::{EffectError, Loaded};
 use crate::snapshot::read_type;
 use crate::types::TypeError;
 use crate::verdict::{self, Admitted, Fault, SchemaFound};
@@ -53,6 +55,28 @@ pub struct Written {
 pub struct PutReport {
     pub writes: Vec<Written>,
     pub commit: Option<ObjectId>,
+    /// The pending effect a put that could only propose wrote in the
+    /// personal board, in place of the record.
+    pub proposed: Option<String>,
+}
+
+impl PutReport {
+    /// What a put wrote, and its commit.
+    pub(crate) const fn new(writes: Vec<Written>, commit: Option<ObjectId>) -> Self {
+        Self {
+            writes,
+            commit,
+            proposed: None,
+        }
+    }
+
+    pub(crate) fn proposed(id: String) -> Self {
+        Self {
+            writes: Vec::new(),
+            commit: None,
+            proposed: Some(id),
+        }
+    }
 }
 
 /// A record checked and placed, or a file placed, ready to be written.
@@ -86,6 +110,8 @@ pub(crate) struct Schemas<'r> {
     /// The working tree's reader, made by the first read, so the schemas
     /// a command reads through symlinks share one snapshot.
     reader: Option<Reader<'r>>,
+    /// What the effects check reads, once per put or batch.
+    pub(crate) effects: Option<Loaded>,
 }
 
 impl<'r> Schemas<'r> {
@@ -112,6 +138,19 @@ impl Board {
     /// [`Board::put`], waiting up to `wait` for the lock, and for a mounted
     /// board's lock.
     pub fn put_waiting(
+        &self,
+        path: &LogicalPath,
+        expect: Expect,
+        bytes: &[u8],
+        wait: Duration,
+    ) -> Result<PutReport, PutError> {
+        let put = self.put_record(path, expect, bytes, wait);
+        self.holding(put)
+    }
+
+    /// [`Board::put_waiting`], leaving any pending effect it gathers for
+    /// [`Board::holding`].
+    pub(crate) fn put_record(
         &self,
         path: &LogicalPath,
         expect: Expect,
@@ -175,10 +214,17 @@ impl Board {
             refused,
         })?;
         let target = target?;
+        let canonical = canonical_json(&admitted.value).into_bytes();
+        self.gate(
+            &mut schemas.effects,
+            &target,
+            &canonical,
+            (&admitted, Shape::Record),
+        )?;
         Ok(Prepared {
             path: path.clone(),
             expect,
-            canonical: canonical_json(&admitted.value).into_bytes(),
+            canonical,
             target,
             admitted,
         })
@@ -296,7 +342,7 @@ impl Board {
                 Err(error) => Self::unresolvable(item, error),
             };
         }
-        Ok(PutReport { writes, commit })
+        Ok(PutReport::new(writes, commit))
     }
 
     /// Checks `bytes` as `check` checks a record, with its codes, and
@@ -333,6 +379,7 @@ impl Board {
                 held,
                 compiled,
                 reader,
+                ..
             } = { schemas };
             let schema = match held.entry(record_type.clone()) {
                 Entry::Occupied(held) => held.into_mut(),
@@ -524,6 +571,14 @@ pub enum PutError {
     /// A schema line of a batch refused as `type add` refuses it.
     #[error(transparent)]
     Type(Box<TypeError>),
+    #[error(transparent)]
+    Effect(Box<EffectError>),
+}
+
+impl From<EffectError> for PutError {
+    fn from(error: EffectError) -> Self {
+        Self::Effect(Box::new(error))
+    }
 }
 
 impl PutError {
@@ -540,6 +595,7 @@ impl PutError {
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
             Self::Type(error) => error.code(),
+            Self::Effect(error) => error.code(),
         }
     }
 
@@ -564,6 +620,7 @@ impl PutError {
             Self::Write(error) => error.fields(),
             Self::Mount(error) => error.fields(),
             Self::Type(error) => error.fields(),
+            Self::Effect(error) => error.fields(),
             Self::HeadMoved { .. }
             | Self::Line { .. }
             | Self::TooManyLines
@@ -572,7 +629,10 @@ impl PutError {
     }
 
     pub fn refusal(&self) -> Refusal {
-        Refusal::new(self.code(), self, &self.fields())
+        match self {
+            Self::Effect(error) => error.refusal(),
+            _ => Refusal::new(self.code(), self, &self.fields()),
+        }
     }
 }
 
