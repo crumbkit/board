@@ -84,26 +84,12 @@ board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 ## Finding plugins
 
 `board plugin list` prints every installed plugin, its capabilities, and
-whether the board enables it. Its columns are `status`, `name`, `version`,
-`enabled` and `offers`, the capability names. In text, `status` reads `ok` or
-`degraded` and the problem's code; JSON holds that code in `code`. `--long` adds
-`description`, the plugin's description from its manifest, and the problem
-text: `message` for a refused manifest and `schemas` for schema problems. The table leaves out a column that is empty in every shown row. Text prints a line per plugin unless `--long`
-or `--fields` asks for the table. It exits 1 on a broken install
-(`board::plugin::bad_manifest`), an enabled name not installed
-(`not_installed`), or an enabled plugin's schema that the board lacks
-(`schema_missing`) or holds differently (`schema_differs`), naming the file.
-`board plugin find [--capability <name>] [--meta <key>=<value>]…` lists the
-capabilities of working installs, a line each with its description. Each filter
-narrows the list to the capabilities that match it; with none, it lists them all.
-A `--meta` filter matches a string value in the capability's `_meta`, or in the
-plugin's `metadata` when `_meta` lacks the key. Its columns are `plugin`,
-`capability`, `enabled` and `description`, what the line shows. `--long` adds
-`title`, `version` and `annotations`; the table leaves out a column that is
-empty in every shown row. The schemas are too wide for a table, so
-only `--fields` names `inputSchema`, `outputSchema` and `_meta`. `--json` prints
-each capability as its Tool object, its name as `capability`, with `plugin`,
-`version` and `enabled`.
+whether the board enables it. It exits 1 when an install is broken, an
+enabled plugin is not installed, or an enabled plugin's schema is missing or
+differs. `board plugin find` lists the capabilities of
+working installs, filtered by capability name or by a `_meta` value.
+[plugins/finding.md](plugins/finding.md) gives their columns, filters and
+exit codes.
 
 Only enabled plugins can be called: naming one that is installed but not
 enabled is `board::plugin::not_enabled`. `board call --capability <name>` calls
@@ -138,8 +124,9 @@ Then Board:
 2. validates it against `inputSchema` (`board::plugin::bad_input`);
 3. starts `run` in the plugin's directory (a program whose name holds `/` is
    found from there, any other through `PATH`), with an environment holding only
-   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, and `TZ`, `XDG_CACHE_HOME`,
-   `XDG_DATA_HOME` and `BOARD_TIMINGS` when set;
+   `PATH`, `HOME`, `LANG`, `BOARD_CALL_DEPTH`, `BOARD_CALLER_DIR`,
+   and `TZ`, `XDG_CACHE_HOME`, `XDG_DATA_HOME`, `BOARD_TIMINGS` and
+   `BOARD_DAY_START` when set;
 4. writes one request to the plugin's stdin:
 
    ```json

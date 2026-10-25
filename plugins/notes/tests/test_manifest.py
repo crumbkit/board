@@ -1,4 +1,4 @@
-"""The committed manifest is the generated one, a call loads no pydantic, and the plugin is described once."""
+"""The committed manifest and schema are generated, a call loads no pydantic, and the plugin is described once."""
 
 import json
 import os
@@ -7,13 +7,14 @@ import sys
 from typing import Any, cast
 
 from board_plugin.protocol import dumped
-from conftest import PLUGIN, Vaults, board_binary
+from conftest import PLUGIN, SCHEMA, Notes, board_binary
 
-from board_notes.manifest import manifest
+from board_notes.manifest import manifest, schema
 
 
-def test_the_committed_manifest_is_the_one_the_models_generate() -> None:
+def test_the_committed_manifest_and_schema_are_the_ones_the_models_generate() -> None:
     assert (PLUGIN / "plugin.json").read_text() == dumped(manifest())
+    assert SCHEMA.read_text() == dumped(schema())
 
 
 CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b", "database": "/d"}}'
@@ -32,19 +33,19 @@ def test_a_call_loads_no_pydantic_and_generating_the_manifest_does() -> None:
     assert loads_pydantic("board_notes.manifest")
 
 
-def plugin(vaults: Vaults, capability: str) -> tuple[int, str]:
+def plugin(notes: Notes, capability: str) -> tuple[int, str]:
     """Run the plugin once, as Board would from the board: its exit code and its error code or `$type`."""
     request = {
         "$type": "board/call/v1",
         "capability": capability,
         "input": {},
-        "board": {"root": str(vaults.board), "database": str(vaults.cache / "unused.sqlite")},
+        "board": {"root": str(notes.board), "database": str(notes.cache / "unused.sqlite")},
     }
     path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
-    environment = {**os.environ, "PATH": path, "XDG_DATA_HOME": str(vaults.data), "XDG_CACHE_HOME": str(vaults.cache)}
+    environment = {**os.environ, "PATH": path, "XDG_DATA_HOME": str(notes.data), "XDG_CACHE_HOME": str(notes.cache)}
     ran = subprocess.run(
         [sys.executable, "-m", "board_notes"],
-        cwd=vaults.board,
+        cwd=notes.board,
         env=environment,
         input=json.dumps(request),
         capture_output=True,
@@ -55,15 +56,15 @@ def plugin(vaults: Vaults, capability: str) -> tuple[int, str]:
     return ran.returncode, document.get("code", document["$type"])
 
 
-def test_a_capability_the_plugin_does_not_offer_is_refused_and_one_it_offers_is_answered(vaults: Vaults) -> None:
-    assert plugin(vaults, "find") == (1, "notes::call::unknown_capability")
-    assert plugin(vaults, "daily") == (0, "board/call-result/v1")
+def test_a_capability_the_plugin_does_not_offer_is_refused_and_one_it_offers_is_answered(notes: Notes) -> None:
+    assert plugin(notes, "find") == (1, "notes::call::unknown_capability")
+    assert plugin(notes, "daily") == (0, "board/call-result/v1")
 
 
-def test_board_lists_the_plugin_as_enabled_and_working(vaults: Vaults) -> None:
-    report = json.loads(vaults.run("--json", "plugin", "list").stdout)
-    notes = next(plugin for plugin in report["data"] if plugin["name"] == "notes")
-    assert (notes["status"], notes["enabled"], notes["offers"]) == ("ok", True, ["add", "daily"])
+def test_board_lists_the_plugin_as_enabled_and_working(notes: Notes) -> None:
+    report = json.loads(notes.run("--json", "plugin", "list").stdout)
+    listed = next(plugin for plugin in report["data"] if plugin["name"] == "notes")
+    assert (listed["status"], listed["enabled"], listed["offers"]) == ("ok", True, ["add", "daily"])
 
 
 def skill_description() -> str:
@@ -88,9 +89,11 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
     }
     assert set(descriptions) == {
         ("add", "text"),
-        ("add", "vault"),
+        ("add", "repo"),
+        ("add", "remote"),
         ("add", "topic"),
-        ("daily", "vault"),
+        ("daily", "repo"),
+        ("daily", "remote"),
         ("daily", "date"),
     }
     for key, description in descriptions.items():

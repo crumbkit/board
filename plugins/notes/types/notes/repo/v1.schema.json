@@ -1,0 +1,31 @@
+{
+  "additionalProperties": false,
+  "description": "`notes/repo/v1`, at `notes-repo.json` in a notes repo's root: which work the repo's notes are about.\n\n`covers` names GitHub repositories as `owner/name`, or all of an owner's\nas `owner/*`. A note from a checkout whose remote one notes repo covers\ngoes to that repo. `personal` marks the one notes repo that takes, in its\n`inbox/`, the notes no single repo covers.",
+  "properties": {
+    "$type": {
+      "const": "notes/repo/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "covers": {
+      "description": "GitHub repositories as owner/name, or owner/* for all of an owner's; an empty list covers none.",
+      "items": {
+        "pattern": "^[A-Za-z0-9-]+/(\\*|[A-Za-z0-9._-]+)$",
+        "type": "string"
+      },
+      "title": "Covers",
+      "type": "array"
+    },
+    "personal": {
+      "description": "Whether this repo takes, in inbox/, the notes no single repo covers.",
+      "title": "Personal",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "$type",
+    "covers"
+  ],
+  "title": "RepoRecord",
+  "type": "object"
+}

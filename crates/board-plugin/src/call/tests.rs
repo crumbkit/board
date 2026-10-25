@@ -76,6 +76,21 @@ fn a_plugin_inherits_tz_when_it_is_set_and_not_when_it_is_not() {
     assert!(!unset.iter().any(|(key, _)| *key == "TZ"));
 }
 
+#[test]
+fn a_plugin_inherits_the_caller_s_directory_and_day_start_when_set_and_not_when_not() {
+    let set = Environment {
+        caller: Some(OsString::from("/work/home")),
+        day_start: Some(OsString::from("07:00")),
+        ..Environment::default()
+    };
+    let passed = environment(&set, 1);
+    assert!(passed.contains(&("BOARD_CALLER_DIR", OsString::from("/work/home"))));
+    assert!(passed.contains(&("BOARD_DAY_START", OsString::from("07:00"))));
+    let unset = environment(&Environment::default(), 1);
+    let keys = ["BOARD_CALLER_DIR", "BOARD_DAY_START"];
+    assert!(!unset.iter().any(|(key, _)| keys.contains(key)));
+}
+
 /// An install of `name` that offers `capabilities`, each taking `input`.
 fn plugin(name: &str, capabilities: &[&str], input: &Value) -> Installed {
     let manifest = json!({

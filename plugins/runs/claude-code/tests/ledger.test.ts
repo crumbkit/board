@@ -110,7 +110,7 @@ test('gh pr create writes a decision stub and asks the agent for its why and alt
 
   await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
 
-  expect(puts.map(p => p.argv)).toEqual([['board', '--json', 'put', '/decisions/20261025T093000Z-widgets-42']])
+  expect(puts.map(p => p.argv)).toEqual([['board', '--json', 'put', '/projects/widgets/decisions/20261025T093000Z-widgets-42']])
   expect(puts[0]?.record).toEqual({
     $type: 'plans/decision/v1',
     decision: 'Widgets ship in blue',
@@ -125,11 +125,19 @@ test('gh pr create writes a decision stub and asks the agent for its why and alt
     {
       type: 'text',
       text:
-        `The runs mod recorded ${URL} as a decision stub at /decisions/20261025T093000Z-widgets-42. ` +
+        `The runs mod recorded ${URL} as a decision stub at /projects/widgets/decisions/20261025T093000Z-widgets-42. ` +
         'Its why is empty. Fill in why and alternatives: read it with board get, then board put it back.',
     },
   ]])
   expect(statuses).toEqual(['board: 1 record this session'])
+})
+
+test('the decisions template places the stub, with {repo} standing for the repository each time it appears', { options: { decisions_template: '/repos/{repo}/{repo}-decisions' } }, async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { puts } = host(on)
+  on('tool.call', () => ({ result: { stdout: `${URL}\n`, stderr: '', interrupted: false } }))
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(puts.map(p => p.argv.at(-1))).toEqual(['/repos/widgets/widgets-decisions/20261025T093000Z-widgets-42'])
 })
 
 test('a board without the plans type gets no stub, and only the debug log says so', async ($, on) => {
@@ -140,13 +148,13 @@ test('a board without the plans type gets no stub, and only the debug log says s
   await $.tool.call({ tool: 'Bash', command: 'gh pr create -t x -b y' })
   expect(appended()).toEqual([])
   expect(statuses).toEqual([])
-  expect(logs).toEqual([{ text: 'board: no decision stub for /decisions/20261025T093000Z-widgets-42: board::record::unknown_type no schema for plans/decision/v1', to: 'debug' }])
+  expect(logs).toEqual([{ text: 'board: no decision stub for /projects/widgets/decisions/20261025T093000Z-widgets-42: board::record::unknown_type no schema for plans/decision/v1', to: 'debug' }])
 })
 
 test('output with no pull request URL is logged and nothing is written; a refused put is logged where the person sees it', async ($, on) => {
   mock.clock(on, { now: NOW })
   const invalid = JSON.stringify({ code: 'board::record::invalid', message: 'written_by is not allowed' })
-  const { puts, logs } = host(on, path => (path.startsWith('/decisions/') ? { exitCode: 1, stdout: invalid } : { exitCode: 0, stdout: '{}' }))
+  const { puts, logs } = host(on, path => (path.includes('/decisions/') ? { exitCode: 1, stdout: invalid } : { exitCode: 0, stdout: '{}' }))
   let stdout = 'pull request create failed\n'
   on('tool.call', () => ({ result: { stdout, stderr: '', interrupted: false } }))
 
@@ -158,7 +166,7 @@ test('output with no pull request URL is logged and nothing is written; a refuse
   await $.tool.call({ tool: 'Bash', command: 'git push && gh pr create --fill' })
   expect(logs).toEqual([
     { text: 'board: gh pr create printed no pull request URL, so no decision stub was written', to: 'debug' },
-    { text: 'board: no decision stub for /decisions/20261025T093000Z-widgets-42: board::record::invalid written_by is not allowed', to: 'transcript' },
+    { text: 'board: no decision stub for /projects/widgets/decisions/20261025T093000Z-widgets-42: board::record::invalid written_by is not allowed', to: 'transcript' },
   ])
 })
 
@@ -166,6 +174,6 @@ test('the final line is the last line with text, and a pull request URL names it
   expect(finalLine('a\n\n  b  \n\n')).toBe('b')
   expect(finalLine('\n')).toBeUndefined()
   expect(finalLine(undefined)).toBeUndefined()
-  expect(pullRequest(`Warning: 1 uncommitted change\n${URL}\n`)).toEqual({ url: URL, name: 'widgets-42' })
+  expect(pullRequest(`Warning: 1 uncommitted change\n${URL}\n`)).toEqual({ url: URL, repo: 'widgets', number: '42' })
   expect(pullRequest('https://github.com/acme/widgets/issues/42')).toBeUndefined()
 })

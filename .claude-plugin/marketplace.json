@@ -1,0 +1,17 @@
+{
+  "name": "board",
+  "owner": {
+    "name": "Luke Randall"
+  },
+  "plugins": [
+    {
+      "name": "board-controls",
+      "source": "./plugins/controls/claude-code"
+    },
+    {
+      "name": "board-runs",
+      "source": "./plugins/runs/claude-code"
+    }
+  ],
+  "description": "Claude Code mods of the Board plugins."
+}

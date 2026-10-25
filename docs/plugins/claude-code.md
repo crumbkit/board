@@ -14,8 +14,16 @@ only through Board records.
 Claude Code loads a mod with `claude --plugin-dir plugins/<name>/claude-code`,
 or from the folders `CLAUDE_CODE_PLUGIN_DIRS` names. `claude plugin validate`
 checks it and `claude plugin test` runs its `tests/*.test.ts`, which stand in
-for `board` and `gh`. CI does not run them, because CI has no Claude Code.
+for `board` and `gh`. The `mods` workflow runs each mod's tests and
+validates the marketplace below.
 The release archive of a plugin does not include its mod.
+
+The repository is also a Claude Code marketplace named `board`, listed in
+`.claude-plugin/marketplace.json`. To install a mod, add the marketplace once
+with `claude plugin marketplace add crumbkit/viitta`, then run
+`claude plugin install <name>@board`, where `<name>` is the mod's name in its
+`plugin.json`, such as `board-runs` or `board-controls`. The `mods` workflow
+fails when a mod has no entry in the marketplace.
 
 ## written_by
 
@@ -42,7 +50,9 @@ Three options, set in the `/config` menu or in settings under
   working directory and finds the board there.
 - `suite`: the suite of the runs, `/suites/claude-code` by default. The mod
   writes a `runs/suite/v1` record there when none exists.
-- `decisions`: the directory of the decision stubs, `/decisions` by default.
+- `decisions_template`: the directory of the decision stubs, where `{repo}`
+  stands for the name of the pull request's repository, lowercased.
+  `/projects/{repo}/decisions` by default.
 
 When a subagent stops, or a task is completed, the mod writes a
 `runs/run/v1` at `<suite>/runs/<started>-<id>`, where `<id>` is the agent or
@@ -55,11 +65,12 @@ duration.
 
 After a Bash call that runs `gh pr create` succeeds, the mod reads the last
 pull request URL in its output and asks `gh pr view` for the title. It writes
-a `plans/decision/v1` stub at `<decisions>/<time>-<repo>-<number>`, holding
-the title as `decision`, the URL in `refs`, `review: "wanted"`, the session
-id, and an empty `why`. It then appends a row the person does not see to the
-conversation of the agent that ran `gh`, asking it to fill in `why` and
-`alternatives`.
+a `plans/decision/v1` stub at `<directory>/<time>-<repo>-<number>`. The
+directory is `decisions_template` with the repository's name in place of
+`{repo}`. The stub holds the title as `decision`, the URL in `refs`,
+`review: "wanted"`, the session id, and an empty `why`. It then appends a row
+the person does not see to the conversation of the agent that ran `gh`,
+asking it to fill in `why` and `alternatives`.
 
 When the output holds no URL, as for `gh pr create --help`, the mod writes
 nothing and says so in the debug log. When `gh` gives no title, it writes

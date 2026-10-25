@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Records what a Claude Code session delegates as Board runs, and each pull request it opens as a decision stub, with no effort from the agent.",
   "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luke Randall"
+  },
   "userConfig": {
     "board": {
       "type": "string",
@@ -16,11 +19,11 @@
       "description": "The logical path of the suite whose runs record delegated subagents and tasks.",
       "default": "/suites/claude-code"
     },
-    "decisions": {
+    "decisions_template": {
       "type": "string",
-      "title": "Decisions",
-      "description": "The logical directory that holds the decision stubs for pull requests.",
-      "default": "/decisions"
+      "title": "Decisions template",
+      "description": "The logical directory that holds the decision stubs for pull requests; {repo} stands for the pull request's repository name.",
+      "default": "/projects/{repo}/decisions"
     }
   }
 }
