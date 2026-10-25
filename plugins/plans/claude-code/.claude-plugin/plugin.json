@@ -1,0 +1,17 @@
+{
+  "name": "board-plans",
+  "version": "0.1.0",
+  "description": "Shows the owner's open Board questions above the prompt and answers them from a pane, and /yesterday shows the morning report of the previous day's records.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Luke Randall"
+  },
+  "userConfig": {
+    "board": {
+      "type": "string",
+      "title": "Board",
+      "description": "The directory of the board that holds the questions; the personal board when empty.",
+      "default": ""
+    }
+  }
+}

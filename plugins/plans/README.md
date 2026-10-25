@@ -15,6 +15,8 @@ the full meaning of every field.
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, or
   `none`; `words` holds the owner's words verbatim; `answered` is when.
+  `written_by` names the plugin and hook when a mod wrote the answer, such as
+  `plans/pane-answer`.
 - `plans/decision/v1`, wherever the writer keeps decisions, such as
   `/projects/<project>/decisions/<id>`. `decision`, `why`, `session` and
   `decided` are required; `alternatives`, `refs`, `review` (`wanted` or
@@ -42,6 +44,18 @@ questions below the path whose `status` is `open`, oldest first, with their opti
 recommendation and what each blocks. It returns at most 100 by default, with
 `total`, which counts the readable ones, and `truncated`. `unreadable` counts
 open questions Board marks degraded or this plugin cannot read.
+
+## The Claude Code mod
+
+`claude-code/` holds a Claude Code mod, `board-plans`. The band above the
+prompt says how many questions are open, and its Show button opens a pane
+where the owner answers each one. `/yesterday` opens a pane with the morning
+report of the previous day from 07:00. Load it with
+`claude --plugin-dir "$PWD/claude-code"`, or install it from the `board`
+marketplace. It reads the personal board unless its `board` option names
+another, and it needs this plugin enabled there.
+[docs/plugins/plans-claude-code.md](../../docs/plugins/plans-claude-code.md)
+explains the design.
 
 ## Installing
 

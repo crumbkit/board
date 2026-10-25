@@ -1,7 +1,7 @@
 # Claude Code mods
 
 This file holds detail for docs/plugins.md. It says what a plugin's Claude
-Code mod is and what the one built so far, `board-runs`, writes.
+Code mod is and what `board-runs` writes.
 
 A plugin may ship a mod in `plugins/<name>/claude-code/`. A mod is a Claude
 Code plugin of function hooks: `.claude-plugin/plugin.json`,
@@ -22,18 +22,17 @@ The repository is also a Claude Code marketplace named `board`, listed in
 `.claude-plugin/marketplace.json`. To install a mod, add the marketplace once
 with `claude plugin marketplace add crumbkit/viitta`, then run
 `claude plugin install <name>@board`, where `<name>` is the mod's name in its
-`plugin.json`, such as `board-runs` or `board-controls`. The `mods` workflow
+`plugin.json`, such as `board-runs`, `board-controls` or `board-plans`. The `mods` workflow
 fails when a mod has no entry in the marketplace.
 
 ## written_by
 
 A record a hook writes without an agent carries `written_by`, the plugin and
 hook that wrote it, such as `runs/subagent-stop`. It keeps the difference
-between what an agent wrote and what was recorded for it. `runs/run/v1` and
-`evals/eval/v1` take the field, and a board takes it once
-`board plugin enable` has installed the plugin's schemas again.
-This repository has no plans plugin yet, so a board whose
-`plans/decision/v1` schema lacks the field refuses the stub below with
+between what an agent wrote and what was recorded for it. `runs/run/v1`,
+`evals/eval/v1`, `plans/decision/v1` and `plans/answer/v1` take the field, and
+a board takes it once `board plugin enable` has installed the plugin's schemas
+again. A board whose schema lacks the field refuses the record with
 `board::record::invalid`.
 
 ## board-runs
