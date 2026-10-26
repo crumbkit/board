@@ -11,6 +11,11 @@ use serde_json::{Value, json};
 use crate::code::Code;
 use crate::path::LogicalPath;
 
+mod patch;
+
+use patch::Patch;
+pub use patch::PatchError;
+
 /// The `$type` of a view: named slots, each with a component kind.
 pub const VIEW_TYPE: &str = "ui/view/v1";
 /// The `$type` of a binding: a view, and what fills each of its slots.
@@ -24,15 +29,17 @@ pub const DERIVED_TYPE: &str = "ui/derived/v1";
 pub enum ComponentKind {
     Markdown,
     Record,
+    Diff,
 }
 
 impl ComponentKind {
-    pub const ALL: [Self; 2] = [Self::Markdown, Self::Record];
+    pub const ALL: [Self; 3] = [Self::Markdown, Self::Record, Self::Diff];
 
     pub const fn name(self) -> &'static str {
         match self {
             Self::Markdown => "markdown",
             Self::Record => "record",
+            Self::Diff => "diff",
         }
     }
 
@@ -48,6 +55,9 @@ impl ComponentKind {
             Self::Record => {
                 "any record as a definition list, with nested values folded and references as links"
             }
+            Self::Diff => {
+                "a unified diff, given as data, as its files with change counts and numbered lines that link to themselves"
+            }
         }
     }
 
@@ -60,6 +70,11 @@ impl ComponentKind {
                 "properties": {"markdown": {"type": "string"}},
             }),
             Self::Record => json!({"type": "object"}),
+            Self::Diff => json!({
+                "type": "object",
+                "required": ["patch"],
+                "properties": {"patch": {"type": "string"}},
+            }),
         }
     }
 
@@ -68,6 +83,7 @@ impl ComponentKind {
         match self {
             Self::Markdown => &[DERIVED_TYPE],
             Self::Record => &["*"],
+            Self::Diff => &[],
         }
     }
 
@@ -78,6 +94,28 @@ impl ComponentKind {
                 r##"{"data": {"markdown": "# Summary\n\nWhat changed, and why.\n\n- [x] Tests pass\n- [ ] Owner reviewed\n\n```rust\nfn main() {}\n```\n"}}"##
             }
             Self::Record => r#"{"ref": "/tasks/a"}"#,
+            Self::Diff => {
+                r#"{"data": {"patch": "diff --git a/src/retry.rs b/src/retry.rs\n--- a/src/retry.rs\n+++ b/src/retry.rs\n@@ -1,3 +1,3 @@\n fn limit() -> u32 {\n-    3\n+    5\n }\n"}}"#
+            }
+        }
+    }
+
+    /// What the app draws for a value that satisfies [`Self::schema`]: the
+    /// value itself, or for a diff, its patch read into files.
+    ///
+    /// # Panics
+    ///
+    /// Never: a patch holds only strings, numbers and lists, which always
+    /// serialize.
+    pub fn drawn(self, value: Value) -> Result<Value, PatchError> {
+        match self {
+            Self::Markdown | Self::Record => Ok(value),
+            Self::Diff => {
+                let text = value.get("patch").and_then(Value::as_str).unwrap_or("");
+                let patch = Patch::parse(text)?;
+                Ok(serde_json::to_value(patch)
+                    .expect("a patch serializes: it holds only strings, numbers and lists"))
+            }
         }
     }
 }

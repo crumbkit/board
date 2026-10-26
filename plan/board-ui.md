@@ -20,7 +20,7 @@ listener, so they also get an adversarial security review.
    tokens, and the `markdown` and `record` kinds.
 4. The `Gate` trait, `WindowGate`, the `gate` kind and Touch ID signing of
    saved rules.
-5. The `diff` kind.
+5. The rest of the `diff` kind (decision 8).
 6. The `eval`, `run` and `walkthrough` kinds.
 
 ## Decided
@@ -75,9 +75,8 @@ listener, so they also get an adversarial security review.
      contents rail, footnotes, task lists, a 68-character measure. Mermaid waits for a smaller bundle.
    - `record`: any record as a definition list, nested objects folded, refs as
      links.
-   - `diff`: a commit range or patch; unified and split views, word-level
-     changes, folded unchanged regions, a file tree with change counts,
-     linkable line anchors.
+   - `diff`, still to build: commit ranges by `ref`, the split view,
+     word-level changes, folded unchanged regions, a file tree.
    - `eval`: `evals/eval/v1` with its suites and runs; verdict, each suite's
      method, a pass/fail grid per case from the runs, the key numbers, runs
      over time.

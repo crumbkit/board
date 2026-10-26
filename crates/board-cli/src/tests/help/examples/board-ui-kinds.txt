@@ -1,3 +1,4 @@
 NAME      DRAWS          DESCRIPTION
 markdown  ui/derived/v1  GitHub-flavoured Markdown with highlighted code, heading anchors, a contents rail, footnotes and task lists
 record    *              any record as a definition list, with nested values folded and references as links
+diff                     a unified diff, given as data, as its files with change counts and numbered lines that link to themselves

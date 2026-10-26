@@ -43,6 +43,6 @@ pub use crate::record::{
 pub use crate::refusal::{Refusal, RefusalCode};
 pub use crate::stat::{Change, Stat};
 pub use crate::ui::{
-    BINDING_TYPE, Binding, ComponentKind, DERIVED_TYPE, Fill, Slot, UiError, VIEW_TYPE, View,
-    check as check_ui,
+    BINDING_TYPE, Binding, ComponentKind, DERIVED_TYPE, Fill, PatchError, Slot, UiError, VIEW_TYPE,
+    View, check as check_ui,
 };

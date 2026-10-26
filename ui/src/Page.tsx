@@ -1,4 +1,5 @@
 import type { Drawn, Failure, Page } from "./api";
+import { Diff, type DiffData } from "./kinds/Diff";
 import { Markdown, type MarkdownData } from "./kinds/Markdown";
 import { RecordView, type RecordData } from "./kinds/Record";
 
@@ -20,6 +21,8 @@ function Slot({ slot }: { slot: Drawn }) {
         return <Markdown data={slot.data as MarkdownData} />;
       case "record":
         return <RecordView data={slot.data as RecordData} />;
+      case "diff":
+        return <Diff data={slot.data as DiffData} slot={slot.name} />;
       default:
         return <p className="text-muted">This app cannot draw the {slot.kind} kind.</p>;
     }

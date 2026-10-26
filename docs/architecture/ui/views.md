@@ -20,6 +20,7 @@ JSON Schema and the record types a `ref` may name (`*` is any).
 | --- | --- | --- |
 | `markdown` | `ui/derived/v1` | `{markdown: string}` |
 | `record` | any record | any object |
+| `diff` | nothing; data only | `{patch: string}` |
 
 ## Checks
 
@@ -41,6 +42,30 @@ JSON Schema and the record types a `ref` may name (`*` is any).
   put the view in an earlier put.
 - The `record` kind links only strings that start with `/bindings/`, which
   open that binding's page; other paths show as text.
+- The `diff` kind's `patch` is a unified diff, as `git diff` or `diff -u`
+  prints it.
+  - Like `git apply`, it skips lines outside a file diff, such as a commit
+    message.
+  - `put` refuses, with `board::ui::slot_invalid` at
+    `/slots/<name>/data/patch`:
+    - a patch of more than 20,000 lines;
+    - a patch with no file diff, or a hunk before any file header;
+    - a malformed `@@` header;
+    - a hunk that ends before its header's counts, a hunk line that starts
+      with none of ` `, `+`, `-` or `\`, or a line past one side's count
+      while the other side still has lines left.
+  - A page shows such a slot as failed, with the same refusal.
+  - Each line keeps a `\r` before its `\n`, so a change to line endings
+    shows. Quoted git paths are unquoted. A combined diff of a merge
+    (`diff --cc`) is not read.
+  - The server sends the app the patch read into files, each with its old
+    and new path, change counts, a binary flag, a copy flag, old and new
+    modes, and hunks of numbered lines.
+  - The server escapes hidden characters in paths, hunk headers and line
+    text with `board_model::escaped`, as `\u{202e}`. Tabs in line text are
+    kept. A line that held one carries `hidden`, and the app marks it.
+  - The app shows a file list with change counts, then each file's
+    unified hunks. Each line number links to its line.
 
 ## Commands
 

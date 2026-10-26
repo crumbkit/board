@@ -291,7 +291,12 @@ impl Board {
         schema
             .validate(&value)
             .map_err(|error| invalid(error.reason()))?;
-        Ok(value)
+        kind.drawn(value).map_err(|error| BindingError::Invalid {
+            pointer: format!("{pointer}/patch"),
+            slot: name.to_owned(),
+            kind: kind.name(),
+            reason: error.to_string(),
+        })
     }
 
     /// The record at `target`, which must be of one of `types`, where `*`
@@ -309,6 +314,12 @@ impl Board {
             code,
             reason,
         };
+        if types.is_empty() {
+            return Err(refused(
+                Code::RefWrongType,
+                "is a reference, and this kind takes only data".to_owned(),
+            ));
+        }
         let read = self
             .locate_in(view, target)
             .and_then(|location| read_at(view, location, target, true))

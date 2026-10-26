@@ -196,3 +196,67 @@ fn a_binding_outside_bindings_is_not_opened_and_the_same_binding_under_bindings_
     assert_eq!(refused.code(), Code::UiNotABinding);
     assert!(board.binding(&path("/bindings/review")).is_ok());
 }
+
+const PATCH: &str = "--- a/src/retry.rs\n+++ b/src/retry.rs\n@@ -1,2 +1,2 @@\n-3\n+5\n }\n";
+
+fn diff_binding(fill: &Value) -> String {
+    json!({"$type": "ui/binding/v1", "view": "/views/change", "slots": {"change": fill}})
+        .to_string()
+}
+
+fn diff_scenario() -> Scenario {
+    let scenario = scenario();
+    scenario.write(
+        "views/change.json",
+        Item::File(r#"{"$type": "ui/view/v1", "slots": [{"name": "change", "kind": "diff"}]}"#),
+    );
+    scenario
+}
+
+#[test]
+fn a_diff_slot_whose_patch_does_not_parse_is_refused_and_one_that_parses_is_admitted() {
+    let scenario = diff_scenario();
+    let short = PATCH.replace(" }\n", "");
+    assert_eq!(
+        put(&scenario, &diff_binding(&json!({"data": {"patch": short}}))),
+        Err((
+            Code::UiSlotInvalid,
+            Some("/slots/change/data/patch".to_owned())
+        ))
+    );
+    assert_eq!(
+        put(&scenario, &diff_binding(&json!({"data": {"patch": PATCH}}))),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_diff_slot_given_by_reference_is_refused_and_the_same_slot_given_as_data_is_admitted() {
+    let scenario = diff_scenario();
+    assert_eq!(
+        put(&scenario, &diff_binding(&json!({"ref": "/tasks/a"}))),
+        Err((Code::RefWrongType, Some("/slots/change/ref".to_owned())))
+    );
+    assert_eq!(
+        put(&scenario, &diff_binding(&json!({"data": {"patch": PATCH}}))),
+        Ok(())
+    );
+}
+
+#[test]
+fn a_page_draws_a_diff_slot_as_its_files_with_numbered_lines() {
+    let scenario = diff_scenario();
+    put(&scenario, &diff_binding(&json!({"data": {"patch": PATCH}}))).unwrap();
+    let page = open(&scenario).page(&path("/bindings/review")).unwrap();
+    assert_eq!(
+        page.slots[0].data,
+        Some(json!({"files": [{
+            "old": "src/retry.rs", "new": "src/retry.rs", "added": 1, "removed": 1,
+            "binary": false, "hunks": [{"header": "@@ -1,2 +1,2 @@", "lines": [
+                {"change": "removed", "old": 1, "text": "3"},
+                {"change": "added", "new": 1, "text": "5"},
+                {"change": "context", "old": 2, "new": 2, "text": "}"},
+            ]}],
+        }]}))
+    );
+}

@@ -119,7 +119,10 @@ fn every_kind_reads_back_by_its_name_and_its_template_is_a_fill() {
         assert_eq!(ComponentKind::parse(kind.name()), Some(kind));
         let fill: Fill = serde_json::from_str(kind.template()).unwrap();
         assert!(kind.schema().is_object(), "{}", kind.name());
-        assert!(matches!(fill, Fill::Ref(_) | Fill::Data(_)));
+        match fill {
+            Fill::Data(data) => assert!(kind.drawn(data).is_ok(), "{}", kind.name()),
+            Fill::Ref(_) => assert!(!kind.draws().is_empty(), "{}", kind.name()),
+        }
     }
     assert_eq!(ComponentKind::parse("chart"), None);
 }
@@ -128,4 +131,18 @@ fn every_kind_reads_back_by_its_name_and_its_template_is_a_fill() {
 fn only_the_ui_types_board_knows_are_checked_here() {
     assert!(check(VIEW_TYPE, &view("markdown", "task")).unwrap().is_ok());
     assert!(check("ui/chart/v1", &json!({})).is_none());
+}
+
+#[test]
+fn a_diff_whose_patch_does_not_parse_is_refused_and_one_whose_patch_parses_is_drawn_as_files() {
+    let patch = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n";
+    let refused = ComponentKind::Diff.drawn(json!({"patch": "a\n"}));
+    assert_eq!(refused, Err(PatchError::Empty));
+    let drawn = ComponentKind::Diff.drawn(json!({"patch": patch})).unwrap();
+    assert_eq!(drawn["files"][0]["new"], "x");
+    let markdown = json!({"markdown": "a"});
+    assert_eq!(
+        ComponentKind::Markdown.drawn(markdown.clone()),
+        Ok(markdown)
+    );
 }

@@ -14,6 +14,10 @@
   --warn: #9a3b1c;
   --warn-soft: #f8e6dd;
   --code-bg: #f0eee8;
+  --added: #2d6a2f;
+  --added-soft: #e3f1e0;
+  --removed: #a2332b;
+  --removed-soft: #f9e3e0;
   --font-text: ui-serif, Georgia, "Iowan Old Style", serif;
   --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -33,6 +37,10 @@
     --warn: #f0a07f;
     --warn-soft: #3a2219;
     --code-bg: #111416;
+    --added: #8fd18a;
+    --added-soft: #1d3320;
+    --removed: #f29a90;
+    --removed-soft: #3d1f1c;
   }
 }
 
@@ -47,6 +55,10 @@
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --color-code: var(--code-bg);
+  --color-added: var(--added);
+  --color-added-soft: var(--added-soft);
+  --color-removed: var(--removed);
+  --color-removed-soft: var(--removed-soft);
   --font-text: var(--font-text);
   --font-ui: var(--font-ui);
   --font-mono: var(--font-mono);
@@ -99,3 +111,6 @@ body {
 .prose-board th, .prose-board td { border: 1px solid var(--rule); padding: 0.3em 0.7em; text-align: left; }
 .prose-board blockquote { margin: 0; padding-left: 1em; border-left: 3px solid var(--rule); color: var(--ink-muted); }
 .prose-board section.footnotes { font-size: 0.875rem; color: var(--ink-muted); border-top: 1px solid var(--rule); margin-top: 2em; }
+
+/* The line a link names is marked. */
+.diff-line:target { outline: 2px solid var(--accent); outline-offset: -2px; }
