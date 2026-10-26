@@ -31,7 +31,7 @@ pub(crate) fn decide(
 pub(crate) struct Answering {
     /// The pending effect's id, 64 hex digits.
     id: String,
-    /// approve lets the op act; refuse refuses it.
+    /// approve lets the op act, after the owner signs it with Touch ID; refuse refuses it.
     answer: Answer,
     /// Why, kept in the seen record.
     #[arg(long)]

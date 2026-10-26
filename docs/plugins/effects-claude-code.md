@@ -82,7 +82,7 @@ lowercase hex digits before it reaches the query. Once `board answer` removes
 the answered effect from `/effects/pending/`, the query no longer needs its
 seen-record check.
 
-The mod offers no way to save a rule. `board answer --save-rule` asks for no
-Touch ID today, and saving a rule must be signed with Touch ID
-(plan/board-ui.md, decision 12). When Board signs saved rules, the dialog and
-the pane can offer "Approve and save rule".
+An approval runs Board's signer, which shows the effect and waits up to 20
+seconds for the owner's Touch ID (docs/architecture/writes/effects.md, Signed
+approvals), so it fits the mod's 30-second limit. The mod offers no way to
+save a rule.

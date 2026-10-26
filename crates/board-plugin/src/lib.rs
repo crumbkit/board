@@ -6,6 +6,7 @@ mod installed;
 mod manifest;
 mod process;
 mod protocol;
+mod sign;
 
 pub use crate::call::{
     CallError, CallReport, Chosen, Context, Environment, Inherited, MAX_DEPTH, PLUGIN_VARIABLE,
@@ -27,3 +28,4 @@ pub use crate::protocol::{
     BadOutput, CALL_RESULT_TYPE, CALL_TYPE, ERROR_TYPE, EXTRACT_RESULT_TYPE, EXTRACT_TYPE,
     PluginCode, PluginFailure,
 };
+pub use crate::sign::{SignError, sign, verify};

@@ -94,6 +94,7 @@ pub enum Code {
     SettingsCannotWiden,
     SettingsCannotHold,
     SettingsBadRule,
+    SettingsUnsigned,
     UiUnknownKind,
     UiSlotMismatch,
     UiSlotInvalid,
@@ -112,7 +113,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 100] = [
+    pub const ALL: [Code; 101] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -199,6 +200,7 @@ impl Code {
         Self::SettingsCannotWiden,
         Self::SettingsCannotHold,
         Self::SettingsBadRule,
+        Self::SettingsUnsigned,
         Self::UiUnknownKind,
         Self::UiSlotMismatch,
         Self::UiSlotInvalid,
@@ -312,6 +314,7 @@ impl Code {
             Self::SettingsCannotWiden => "board::settings::cannot_widen",
             Self::SettingsCannotHold => "board::settings::cannot_hold",
             Self::SettingsBadRule => "board::settings::bad_rule",
+            Self::SettingsUnsigned => "board::settings::unsigned",
             Self::UiUnknownKind => "board::ui::unknown_kind",
             Self::UiSlotMismatch => "board::ui::slot_mismatch",
             Self::UiSlotInvalid => "board::ui::slot_invalid",
@@ -433,6 +436,7 @@ mod tests {
             | Code::SettingsCannotWiden
             | Code::SettingsCannotHold
             | Code::SettingsBadRule
+            | Code::SettingsUnsigned
             | Code::UiUnknownKind
             | Code::UiSlotMismatch
             | Code::UiSlotInvalid

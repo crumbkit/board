@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::io::IsTerminal as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use board_plugin::Environment;
 
@@ -21,6 +21,12 @@ pub(crate) struct Context {
     /// The file naming the user's known boards:
     /// `$XDG_CONFIG_HOME/board/config.json`, or `~/.config/board/config.json`.
     pub(crate) boards: Option<PathBuf>,
+    /// The program that signs an approval: `.local/bin/attention-sign` in
+    /// the home the passwd entry names, which no variable moves.
+    pub(crate) signer: Option<OsString>,
+    /// The allowed signers file an approval's signature must verify against:
+    /// `.config/board/allowed_signers` in the same home.
+    pub(crate) allowed_signers: Option<PathBuf>,
     /// What a called plugin inherits.
     pub(crate) environment: Environment,
     /// `BOARD_COMPLETE`, which names a shell to ask for completion.
@@ -54,8 +60,10 @@ impl Context {
         };
         let cache = base("XDG_CACHE_HOME", ".cache");
         let plugins = base("XDG_DATA_HOME", ".local/share").map(|data| data.join("board/plugins"));
-        let boards =
-            base("XDG_CONFIG_HOME", ".config").map(|config| config.join("board/config.json"));
+        let config = base("XDG_CONFIG_HOME", ".config").map(|config| config.join("board"));
+        let boards = config.map(|config| config.join("config.json"));
+        let (signer, allowed_signers) = owner_home().as_deref().map(trust).unzip();
+        let path = std::env::var_os("PATH");
         let current = std::env::current_dir().ok();
         let start = current.clone().unwrap_or_else(|| PathBuf::from("."));
         Self {
@@ -64,8 +72,10 @@ impl Context {
             cache,
             plugins,
             boards,
+            signer,
+            allowed_signers,
             environment: Environment {
-                path: std::env::var_os("PATH"),
+                path,
                 home: std::env::var_os("HOME"),
                 lang: std::env::var_os("LANG"),
                 tz: std::env::var_os("TZ"),
@@ -89,3 +99,20 @@ impl Context {
         }
     }
 }
+
+/// The home directory the passwd entry of this process's user names.
+/// `HOME` and the XDG variables are the caller's to set, so they never
+/// decide what an approval trusts.
+fn owner_home() -> Option<PathBuf> {
+    let user = nix::unistd::User::from_uid(nix::unistd::getuid()).ok()??;
+    Some(user.dir).filter(|dir| dir.is_absolute())
+}
+
+/// The signer and the allowed signers file in the owner's `home`.
+fn trust(home: &Path) -> (OsString, PathBuf) {
+    let signer = home.join(".local/bin/attention-sign").into_os_string();
+    (signer, home.join(".config/board/allowed_signers"))
+}
+
+#[cfg(test)]
+mod tests;

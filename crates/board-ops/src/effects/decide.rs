@@ -8,8 +8,11 @@ use serde_json::json;
 
 use board_tree::{LOCK_WAIT, WriteError};
 
+use std::path::Path;
+
 use super::{
-    Asker, EFFECT_TYPE, EffectError, PENDING, PREFERENCES, SEEN, hold, read_held, root, seen,
+    Asker, EFFECT_TYPE, EffectError, PENDING, PREFERENCES, SEEN, Signing, hold, read_held, root,
+    seen,
 };
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
@@ -133,7 +136,7 @@ impl Board {
                 what: format!("{op} {path} needs a pending effect in the personal board"),
             })?;
         let effect = Effect::new(board, plugin.to_owned(), op.to_owned(), landed.to_owned());
-        report.seen = seen(personal, &effect.id())?;
+        report.seen = seen(personal, &effect, self.asker.signing.allowed.as_deref())?;
         match report.seen {
             Some(answer) => report.decision.authority = answer.authority(),
             None if authority == Authority::Ask => report.effect = Some(hold(personal, &effect)?),
@@ -162,11 +165,70 @@ pub fn answer(
         });
     }
     let personal = asker.personal(|| "an answer is written in the personal board".to_owned())?;
+    let (effect, blob) = read_pending(&personal, id)?;
+    let not_found = || EffectError::NotFound { id: id.to_owned() };
+    if save_rule && answer == Answer::Approve && effect.op == PUT_OP {
+        return Err(EffectError::CannotWiden { id: id.to_owned() });
+    }
+    let rule = save_rule
+        .then(|| {
+            let exact = |pattern: &Pattern| pattern.is_exact();
+            match effect.path.parse::<Pattern>() {
+                Ok(pattern) if exact(&pattern) => Ok(pattern),
+                Ok(_) => Err("it holds * or ?".to_owned()),
+                Err(why) => Err(why),
+            }
+            .map_err(|why| EffectError::BadPattern {
+                id: id.to_owned(),
+                path: effect.path.clone(),
+                why,
+            })
+        })
+        .transpose()?;
+    let saved = rule.is_some().then(|| format!("/{PREFERENCES}/{id}"));
+    let mut seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
+    seen.rule.clone_from(&saved);
+    if answer == Answer::Approve {
+        seen.signature = Some(signed(asker, &personal, &effect, saved.is_some())?);
+    }
+    let mut records = vec![(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
+    if let (Some(pattern), Some(at)) = (rule, &saved) {
+        let mut preference = Preference::new(effect.op.clone(), pattern, answer.authority());
+        preference.plugin = Some(effect.plugin.clone());
+        preference.board = Some(effect.board.clone());
+        records.push((at.clone(), json!(preference), Expect::Any));
+    }
+    let pending = Removal {
+        path: format!("/{PENDING}/{id}")
+            .parse()
+            .map_err(|_| not_found())?,
+        file: format!("{PENDING}/{id}.json"),
+        blob,
+    };
+    let put = personal
+        .write_answer(&records, &pending, &format!("{BINARY_NAME} answer {id}"))
+        .map_err(|source| EffectError::Write {
+            source: Box::new(source),
+        })?;
+    Ok(AnswerReport {
+        id: id.to_owned(),
+        answer,
+        rule: saved,
+        put,
+    })
+}
+
+/// The pending effect `id` and the blob that holds it, refused unless its
+/// request has that id and its digest is that of the content it shows.
+fn read_pending(
+    personal: &Board,
+    id: &str,
+) -> Result<(Effect, board_model::ObjectId), EffectError> {
     let not_found = || EffectError::NotFound { id: id.to_owned() };
     if !is_effect_id(id) {
         return Err(not_found());
     }
-    let held = read_held(&personal, &format!("{PENDING}/{id}"), EFFECT_TYPE)?;
+    let held = read_held(personal, &format!("{PENDING}/{id}"), EFFECT_TYPE)?;
     let (value, blob) = held.ok_or_else(not_found)?;
     let forged = |why: String| EffectError::Forged {
         id: id.to_owned(),
@@ -186,52 +248,39 @@ pub fn answer(
             "its digest is not that of the record or text it shows".to_owned(),
         ));
     }
-    if save_rule && answer == Answer::Approve && effect.op == PUT_OP {
-        return Err(EffectError::CannotWiden { id: id.to_owned() });
-    }
-    let rule = save_rule
-        .then(|| {
-            let exact = |pattern: &Pattern| pattern.is_exact();
-            match effect.path.parse::<Pattern>() {
-                Ok(pattern) if exact(&pattern) => Ok(pattern),
-                Ok(_) => Err("it holds * or ?".to_owned()),
-                Err(why) => Err(why),
-            }
-            .map_err(|why| EffectError::BadPattern {
-                id: id.to_owned(),
-                path: effect.path.clone(),
-                why,
-            })
-        })
-        .transpose()?;
-    let seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
-    let mut records = vec![(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
-    let saved = rule.map(|pattern| {
-        let mut preference = Preference::new(effect.op.clone(), pattern, answer.authority());
-        preference.plugin = Some(effect.plugin.clone());
-        preference.board = Some(effect.board.clone());
-        let at = format!("/{PREFERENCES}/{id}");
-        records.push((at.clone(), json!(preference), Expect::Any));
-        at
-    });
-    let pending = Removal {
-        path: format!("/{PENDING}/{id}")
-            .parse()
-            .map_err(|_| not_found())?,
-        file: format!("{PENDING}/{id}.json"),
-        blob,
-    };
-    let put = personal
-        .write_answer(&records, &pending, &format!("{BINARY_NAME} answer {id}"))
-        .map_err(|source| EffectError::Write {
-            source: Box::new(source),
-        })?;
-    Ok(AnswerReport {
-        id: id.to_owned(),
-        answer,
-        rule: saved,
-        put,
+    Ok((effect, blob))
+}
+
+/// The owner's signature of `effect`'s approval, made by the signer after
+/// Touch ID and checked before it is written.
+fn signed(
+    asker: &Asker,
+    personal: &Board,
+    effect: &Effect,
+    saves_rule: bool,
+) -> Result<String, EffectError> {
+    let root = root(personal);
+    let statement = effect.approval(saves_rule);
+    signature(&asker.signing, Path::new(&root), &statement).map_err(|why| EffectError::Unsigned {
+        id: effect.id(),
+        why,
     })
+}
+
+/// The owner's signature of `statement`, which the signer shows them from a
+/// file in the cache under `root`'s name, checked against the allowed
+/// signers file. `Err` says why there is none.
+pub(super) fn signature(signing: &Signing, root: &Path, statement: &str) -> Result<String, String> {
+    let signer =
+        (signing.signer.as_ref()).ok_or("no signer is found: the owner's home is not known")?;
+    let cache = (signing.cache.as_ref()).ok_or("no cache directory is named for the statement")?;
+    let allowed = (signing.allowed.as_deref()).ok_or("no allowed signers file is named")?;
+    let file = board_index::write_statement(cache, root, statement.as_bytes())
+        .map_err(|error| format!("the statement cannot be written: {error}"))?;
+    let signature = board_plugin::sign(signer, &file, &signing.environment)
+        .map_err(|error| error.to_string())?;
+    board_plugin::verify(allowed, statement, &signature).map_err(|error| error.to_string())?;
+    Ok(signature)
 }
 
 impl Board {

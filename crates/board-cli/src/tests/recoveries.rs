@@ -880,11 +880,12 @@ fn effects(starts: &mut Starts) {
     // An answer removes its pending effect, so each admitted answer has its
     // own.
     let personal = enabling("");
-    let [exact, starred, widened, plugged] = ["/x", "/s*", "/w", "/v"].map(|path| {
-        let (id, text) = effect(path);
-        personal.write(&format!("effects/pending/{id}.json"), Item::File(&text));
-        id
-    });
+    let [exact, starred, widened, plugged, unsigned] =
+        ["/x", "/s*", "/w", "/v", "/u"].map(|path| {
+            let (id, text) = effect(path);
+            personal.write(&format!("effects/pending/{id}.json"), Item::File(&text));
+            id
+        });
     let xdg = Scenario::new();
     let known = json!({"boards": [personal.path()], "personal": personal.path()});
     xdg.write(
@@ -909,9 +910,10 @@ fn effects(starts: &mut Starts) {
         }
         starts.pair(&place, code, line, admitted);
     }
-    let unknown = format!("answer {} approve", "0".repeat(64));
+    // No signer is on these runs' PATH, so only a refusal is admitted.
+    let unknown = format!("answer {} refuse", "0".repeat(64));
     starts.add(&answering, Code::SettingsNotFound, &unknown);
-    let admitted = format!("answer {exact} approve");
+    let admitted = format!("answer {exact} refuse");
     starts.pair(&answering, Code::SettingsNotFound, &unknown, &admitted);
     let saving = format!("answer {starred} refuse --save-rule");
     starts.add(&answering, Code::SettingsBadPattern, &saving);
@@ -921,7 +923,11 @@ fn effects(starts: &mut Starts) {
     starts.add(&answering, Code::SettingsCannotWiden, &widening);
     let admitted = format!("answer {widened} refuse --save-rule");
     starts.pair(&answering, Code::SettingsCannotWiden, &widening, &admitted);
-    let line = format!("answer {plugged} approve");
+    let approving = format!("answer {unsigned} approve");
+    starts.add(&answering, Code::SettingsUnsigned, &approving);
+    let admitted = format!("answer {unsigned} refuse");
+    starts.pair(&answering, Code::SettingsUnsigned, &approving, &admitted);
+    let line = format!("answer {plugged} refuse");
     starts.add(&place, Code::SettingsFromPlugin, &line);
     starts.variable(&place, Code::SettingsFromPlugin, &line, "BOARD_PLUGIN");
     let line = "decide --op review.comment --path /y";

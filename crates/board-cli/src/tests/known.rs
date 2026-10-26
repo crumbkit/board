@@ -79,6 +79,8 @@ fn inside(
         cache: cache.map(Path::to_path_buf),
         plugins: None,
         boards: Some(xdg.workdir().join("board/config.json")),
+        signer: None,
+        allowed_signers: None,
         environment: board_plugin::Environment {
             plugin,
             ..board_plugin::Environment::default()

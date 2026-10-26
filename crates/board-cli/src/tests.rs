@@ -86,6 +86,8 @@ fn board_environment(
         cache: cache.map(Path::to_path_buf),
         plugins: plugins.map(Path::to_path_buf),
         boards: None,
+        signer: None,
+        allowed_signers: None,
         environment,
         complete: None,
         terminal: false,

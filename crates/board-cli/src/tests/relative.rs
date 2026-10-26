@@ -99,6 +99,8 @@ fn relative_into(
         cache: cache.map(Path::to_path_buf),
         plugins: Some(data.workdir().join("plugins")),
         boards: Some(xdg.workdir().join("board/config.json")),
+        signer: None,
+        allowed_signers: None,
         environment: board_plugin::Environment {
             path: Some("/usr/bin:/bin".into()),
             ..board_plugin::Environment::default()

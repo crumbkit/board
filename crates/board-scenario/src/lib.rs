@@ -21,6 +21,7 @@ use tempfile::TempDir;
 
 pub mod generated;
 pub mod seed;
+pub mod signer;
 
 #[cfg(test)]
 mod tests;

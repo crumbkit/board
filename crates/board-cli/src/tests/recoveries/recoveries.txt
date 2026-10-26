@@ -772,7 +772,7 @@ board put /p (with BOARD_PLUGIN=tasks)
   fails with board::settings::propose_only
   hint
 
-board answer 0000000000000000000000000000000000000000000000000000000000000000 approve
+board answer 0000000000000000000000000000000000000000000000000000000000000000 refuse
   fails with board::settings::not_found
   run board --personal ls /effects/pending
     exits 0
@@ -785,7 +785,11 @@ board answer 9b0ed3aee377e913394bcf334559e506cfc5c0607883d933fdeae9cb31e61db9 ap
   fails with board::settings::cannot_widen
   hint
 
-board answer 9a44d25ced5cd0ddd2c346de95bdde8f0d3441a73bf9106a8448172d7846e82c approve (with BOARD_PLUGIN=tasks)
+board answer 8ad7c232a7b9636598d29eb351cb4c2597255d96dbc5403b535d5f055a6d20fd approve
+  fails with board::settings::unsigned
+  hint
+
+board answer 9a44d25ced5cd0ddd2c346de95bdde8f0d3441a73bf9106a8448172d7846e82c refuse (with BOARD_PLUGIN=tasks)
   fails with board::settings::from_plugin
   hint
 

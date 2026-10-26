@@ -22,6 +22,8 @@ deny = [
     # board-tree sends SIGTERM to the git child its transport module owns.
     { crate = "rustix", wrappers = ["board-plugin", "board-tree", "crumbkit", "gix-index", "tempfile"] },
     { crate = "signal-hook", wrappers = ["board-plugin"] },
+    # board-cli's config module reads the passwd entry's home.
+    { crate = "nix", wrappers = ["board-cli"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },
 ]

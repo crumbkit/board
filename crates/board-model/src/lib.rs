@@ -20,9 +20,9 @@ pub use crate::app::{BINARY_NAME, DISPLAY_NAME};
 pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
 pub use crate::code::Code;
 pub use crate::effect::{
-    Answer, Authority, Decision, EFFECT_TYPE, EFFECT_TYPES, Effect, Layer, PREFERENCE_TYPE, PUT_OP,
-    Pattern, Preference, Request, Rule, SEEN_TYPE, Seen, Tell, decide, effect_record, is_effect_id,
-    is_op,
+    APPROVAL_HEADER, Answer, Authority, Decision, EFFECT_TYPE, EFFECT_TYPES, Effect, Layer,
+    PREFERENCE_TYPE, PUT_OP, Pattern, Preference, Request, Rule, SEEN_TYPE, SIGNATURE_NAMESPACE,
+    Seen, Tell, WRITE_HEADER, decide, effect_record, is_effect_id, is_op,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};

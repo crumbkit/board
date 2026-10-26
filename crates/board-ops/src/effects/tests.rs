@@ -1,12 +1,17 @@
 //! The effects check on puts, `decide` and `answer`, each refusal beside an
 //! admitted twin.
 
-use board_model::{Answer, Authority, Code, Digest, Effect, Layer, LogicalPath, canonical_json};
+use std::path::{Path, PathBuf};
+
+use board_model::{
+    Answer, Authority, Code, Digest, Effect, Layer, LogicalPath, Seen, canonical_json,
+};
 use board_scenario::seed::mount_of;
+use board_scenario::signer::Signer;
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
-use super::{Asker, EffectError, answer, hold};
+use super::{Asker, EffectError, Signing, answer, hold};
 use crate::Board;
 use crate::put::{Expect, PutError, PutReport};
 use crate::tests::{TASK_SCHEMA, task};
@@ -45,10 +50,30 @@ fn setting<'s>(scenario: &'s Scenario, name: &str, path: &str, authority: &str) 
     )
 }
 
+thread_local! {
+    /// One signer for each test thread: a software key in place of Touch ID.
+    static SIGNER: &'static Signer = Box::leak(Box::new(Signer::new()));
+}
+
+fn signer() -> &'static Signer {
+    SIGNER.with(|signer| *signer)
+}
+
+/// How the test signer signs, and the allowed signers file that lists it.
+fn signing() -> Signing {
+    Signing {
+        signer: Some(signer().program().into_os_string()),
+        allowed: Some(signer().allowed()),
+        cache: Some(signer().directory().join("cache")),
+        environment: Vec::new(),
+    }
+}
+
 fn asker(plugin: Option<&str>, personal: Option<&Scenario>) -> Asker {
     Asker {
         plugin: plugin.map(str::to_owned),
         personal: personal.map(|personal| personal.workdir().to_path_buf()),
+        signing: signing(),
         ..Asker::default()
     }
 }
@@ -245,7 +270,7 @@ fn a_plugins_put_into_settings_is_refused_whatever_its_type_and_a_task_elsewhere
 }
 
 #[test]
-fn a_plugins_put_into_preferences_or_effects_is_refused_in_the_personal_board_and_admitted_elsewhere()
+fn a_plugins_put_into_preferences_or_effects_is_refused_in_the_personal_board_and_another_and_a_put_elsewhere_is_admitted()
  {
     let (scenario, mine) = (board(), personal());
     mine.write("preferences/x.json", Item::File(&preference("/*", "act")));
@@ -259,7 +284,11 @@ fn a_plugins_put_into_preferences_or_effects_is_refused_in_the_personal_board_an
     }
     put(&inside, "/notes/x", &task("")).unwrap();
     let elsewhere = opened(&scenario, Some("tasks"), Some(&mine));
-    put(&elsewhere, "/preferences/x", &task("")).unwrap();
+    assert_eq!(
+        code(put(&elsewhere, "/preferences/x", &task(""))),
+        Code::SettingsFromPlugin
+    );
+    put(&elsewhere, "/notes/x", &task("")).unwrap();
 }
 
 #[test]
@@ -280,10 +309,7 @@ fn a_plugins_put_of_a_preference_effect_or_seen_record_is_refused_in_any_board_a
     ];
     let plugin = opened(&scenario, Some("tasks"), Some(&mine));
     let owner = opened(&scenario, None, Some(&mine));
-    for (at, record) in ["/notes/a", "/notes/b", "/effects/seen/c"]
-        .iter()
-        .zip(&records)
-    {
+    for (at, record) in ["/notes/a", "/notes/b", "/notes/c"].iter().zip(&records) {
         let refused = put(&plugin, at, record).unwrap_err();
         assert_eq!(refused.code(), Code::SettingsFromPlugin, "{at}");
         assert!(refused.to_string().contains("record"), "{refused}");
@@ -949,4 +975,317 @@ fn a_batch_schema_line_under_a_plugin_meets_the_rules_at_its_schema_file_and_its
     assert!(exists(&scenario, ".board/types/lr/new/v1.schema.json"));
     let config = put(&plugin, "/.board/board", r#"{"$type": "board/config/v1"}"#);
     assert_eq!(code(config), Code::SettingsFromPlugin);
+}
+
+/// The pending effect `id` in `mine`.
+fn pending_effect(mine: &Scenario, id: &str) -> Effect {
+    Effect::from_value(&read(mine, &format!("effects/pending/{id}.json"))).unwrap()
+}
+
+/// An approval of `id` written straight into `mine`, as an agent with the
+/// owner's shell could write it, carrying `signature`.
+fn approve_by_hand(mine: &Scenario, id: &str, signature: Option<String>) {
+    let mut seen = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    seen.signature = signature;
+    let text = json!(seen).to_string();
+    mine.write(&format!("effects/seen/{id}.json"), Item::File(&text));
+}
+
+/// The effect a refusal names, with its code.
+fn named<T: std::fmt::Debug>(result: Result<T, EffectError>) -> (Code, Option<String>) {
+    let error = result.unwrap_err();
+    (error.code(), error.fields().effect)
+}
+
+#[test]
+fn an_approval_without_the_owners_signature_or_by_another_key_is_refused_as_unsigned_and_the_owners_is_admitted()
+ {
+    let (scenario, mine) = (board(), personal());
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let id = asked(put(&board, "/tasks/a", &task("")));
+    let approval = pending_effect(&mine, &id).approval(false);
+    let unsigned = (Code::SettingsUnsigned, Some(id.clone()));
+    approve_by_hand(&mine, &id, None);
+    assert_eq!(named(put(&board, "/tasks/a", &task(""))), unsigned);
+    approve_by_hand(&mine, &id, Some(Signer::new().sign(&approval)));
+    assert_eq!(named(put(&board, "/tasks/a", &task(""))), unsigned);
+    let mut moved = pending_effect(&mine, &id);
+    moved.path = "/tasks/b".to_owned();
+    approve_by_hand(&mine, &id, Some(signer().sign(&moved.approval(false))));
+    assert_eq!(named(put(&board, "/tasks/a", &task(""))), unsigned);
+    approve_by_hand(&mine, &id, Some(signer().sign(&approval)));
+    put(&board, "/tasks/a", &task("")).unwrap();
+    assert!(exists(&scenario, "tasks/a.json"));
+}
+
+#[test]
+fn deciding_an_op_whose_owner_approval_is_unsigned_is_refused_as_unsigned_and_a_signed_one_acts() {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let id = board
+        .authority("review.comment", &path("/y"))
+        .unwrap()
+        .effect
+        .unwrap();
+    let effect = pending_effect(&mine, &id);
+    let approval = effect.approval(false);
+    approve_by_hand(&mine, &id, None);
+    assert_eq!(
+        named(board.authority("review.comment", &path("/y"))),
+        (Code::SettingsUnsigned, Some(id.clone()))
+    );
+    // A seen record that claims a saved rule the signed statement did not
+    // show is refused too.
+    let mut claims = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    (claims.signature, claims.rule) = (
+        Some(signer().sign(&approval)),
+        Some(format!("/preferences/{id}")),
+    );
+    let claims = json!(claims).to_string();
+    mine.write(&format!("effects/seen/{id}.json"), Item::File(&claims));
+    assert_eq!(
+        named(board.authority("review.comment", &path("/y"))),
+        (Code::SettingsUnsigned, Some(id.clone()))
+    );
+    let mut saves = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    (saves.signature, saves.rule) = (
+        Some(signer().sign(&effect.approval(true))),
+        Some(format!("/preferences/{id}")),
+    );
+    let saves = json!(saves).to_string();
+    mine.write(&format!("effects/seen/{id}.json"), Item::File(&saves));
+    board.authority("review.comment", &path("/y")).unwrap();
+    approve_by_hand(&mine, &id, Some(signer().sign(&approval)));
+    let decided = board.authority("review.comment", &path("/y")).unwrap();
+    assert_eq!(
+        (decided.decision.authority, decided.seen),
+        (Authority::Act, Some(Answer::Approve))
+    );
+}
+
+#[test]
+fn approving_with_no_signer_is_refused_as_unsigned_and_writes_nothing_and_refusing_needs_no_signature()
+ {
+    let (scenario, mine) = (board(), personal());
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let unsigned_owner = Asker {
+        signing: Signing::default(),
+        ..asker(None, Some(&mine))
+    };
+    let id = asked(put(&board, "/tasks/a", &task("")));
+    assert_eq!(
+        named(answer(&unsigned_owner, &id, Answer::Approve, None, false)),
+        (Code::SettingsUnsigned, Some(id.clone()))
+    );
+    assert!(exists(&mine, &format!("effects/pending/{id}.json")));
+    assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
+    answer(&asker(None, Some(&mine)), &id, Answer::Approve, None, false).unwrap();
+    let seen = read(&mine, &format!("effects/seen/{id}.json"));
+    let signature = seen["signature"].as_str().unwrap();
+    assert!(signature.starts_with("-----BEGIN SSH SIGNATURE-----"));
+    let refused = asked(put(&board, "/tasks/r", &task("")));
+    answer(&unsigned_owner, &refused, Answer::Refuse, None, false).unwrap();
+    let seen = read(&mine, &format!("effects/seen/{refused}.json"));
+    assert_eq!(
+        (seen["answer"].as_str(), seen.get("signature")),
+        (Some("refuse"), None)
+    );
+}
+
+#[test]
+fn approving_when_the_owner_declines_to_sign_is_refused_as_unsigned_with_their_feedback_and_signing_is_admitted()
+ {
+    let (scenario, mine, tools) = (board(), personal(), Scenario::new());
+    tools.write(
+        "decline",
+        Item::Executable("#!/bin/sh\necho 'wrong path'\nexit 3\n"),
+    );
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let mut declining = asker(None, Some(&mine));
+    declining.signing.signer = Some(tools.workdir().join("decline").into_os_string());
+    let id = asked(put(&board, "/tasks/a", &task("")));
+    let error = answer(&declining, &id, Answer::Approve, None, false).unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned);
+    assert!(error.to_string().contains("wrong path"), "{error}");
+    assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
+    answer(&asker(None, Some(&mine)), &id, Answer::Approve, None, false).unwrap();
+    assert!(exists(&mine, &format!("effects/seen/{id}.json")));
+}
+
+/// `scenario` opened by the owner, whose puts to a rule or an effect are
+/// signed by `signer`, or by the test signer.
+fn owned(scenario: &Scenario, mine: &Scenario, signer: Option<&Path>) -> Board {
+    let mut owner = asker(None, Some(mine));
+    owner.sign_owner_writes = true;
+    if let Some(signer) = signer {
+        owner.signing.signer = Some(signer.as_os_str().to_owned());
+    }
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.ask_as(owner);
+    board
+}
+
+/// A signer that declines, and one that keeps the statement it is shown
+/// at `shown` before the test signer signs it.
+fn owner_signers() -> (Scenario, PathBuf, PathBuf) {
+    let tools = Scenario::new();
+    let shown = tools.workdir().join("shown");
+    tools
+        .write(
+            "decline",
+            Item::Executable("#!/bin/sh\necho 'not this rule'\nexit 3\n"),
+        )
+        .write(
+            "keep",
+            Item::Executable(&format!(
+                "#!/bin/sh\ncp \"$2\" '{}'\nexec '{}' \"$@\"\n",
+                shown.display(),
+                signer().program().display()
+            )),
+        );
+    let (decline, keep) = (
+        tools.workdir().join("decline"),
+        tools.workdir().join("keep"),
+    );
+    (tools, decline, keep)
+}
+
+#[test]
+fn an_owners_put_to_a_rule_or_an_effect_is_refused_unless_they_sign_it_and_a_put_elsewhere_needs_no_signature()
+ {
+    let (scenario, mine) = (board(), personal());
+    let (tools, decline, keep) = owner_signers();
+    let declining = owned(&mine, &mine, Some(&decline));
+    let rule = preference("/tasks/*", "act");
+    for (at, file) in [
+        ("/preferences/r", "preferences/r.json"),
+        ("/Preferences/r", "Preferences/r.json"),
+        ("/effects/seen/s", "effects/seen/s.json"),
+    ] {
+        let error = put(&declining, at, &rule).unwrap_err();
+        assert_eq!(error.code(), Code::SettingsUnsigned, "{at}");
+        assert!(matches!(error, EffectError::OwnerUnsigned { .. }), "{at}");
+        assert!(error.to_string().contains("not this rule"), "{error}");
+        assert!(!exists(&mine, file), "{at}");
+    }
+    put(&declining, "/tasks/a", &task("")).unwrap();
+    assert!(exists(&mine, "tasks/a.json"));
+    let other = owned(&scenario, &mine, Some(&decline));
+    let error = put(&other, "/.board/settings/r", &rule).unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned);
+    assert!(!exists(&scenario, ".board/settings/r.json"));
+    let signing = owned(&scenario, &mine, Some(&keep));
+    put(&signing, "/.board/settings/r", &rule).unwrap();
+    assert!(exists(&scenario, ".board/settings/r.json"));
+    let shown = std::fs::read_to_string(tools.workdir().join("shown")).unwrap();
+    let root = scenario.workdir().canonicalize().unwrap();
+    assert!(
+        shown.starts_with(&format!(
+            "board/write/v1\nop: put\npath: /.board/settings/r\nboard: {}\ncontent: ",
+            root.display()
+        )),
+        "{shown}"
+    );
+    assert!(shown.contains("\"authority\": \"act\""), "{shown}");
+}
+
+#[test]
+fn an_owners_file_put_to_a_rule_needs_their_signature_and_a_signed_one_writes() {
+    let mine = personal();
+    let (_tools, decline, _keep) = owner_signers();
+    let bytes = b"why the rules are as they are\n";
+    let declining = owned(&mine, &mine, Some(&decline));
+    let refused = declining.put_file(&path("/preferences/why.md"), Expect::Any, bytes);
+    assert_eq!(effect(refused).unwrap_err().code(), Code::SettingsUnsigned);
+    assert!(!exists(&mine, "preferences/why.md"));
+    let signing = owned(&mine, &mine, None);
+    (signing.put_file(&path("/preferences/why.md"), Expect::Any, bytes)).unwrap();
+    assert!(exists(&mine, "preferences/why.md"));
+}
+
+#[test]
+fn boards_own_writes_of_a_pending_effect_and_an_answer_need_no_owner_signature() {
+    let (scenario, mine) = (board(), personal());
+    let (_tools, decline, _keep) = owner_signers();
+    setting(&scenario, "tasks", "/tasks/*", "ask");
+    let mut plugin = asker(Some("tasks"), Some(&mine));
+    plugin.sign_owner_writes = true;
+    plugin.signing.signer = Some(decline.clone().into_os_string());
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.ask_as(plugin);
+    let id = asked(put(&board, "/tasks/a", &task("")));
+    assert!(exists(&mine, &format!("effects/pending/{id}.json")));
+    let mut owner = asker(None, Some(&mine));
+    owner.sign_owner_writes = true;
+    owner.signing.signer = Some(decline.into_os_string());
+    answer(&owner, &id, Answer::Refuse, None, false).unwrap();
+    assert!(exists(&mine, &format!("effects/seen/{id}.json")));
+}
+
+#[test]
+fn the_owner_signs_a_put_under_settings_preferences_or_effects_in_any_case_or_a_first_directory_that_is_not_ascii()
+ {
+    for (given, on_disk, signs) in [
+        (".board/settings/r.json", ".board/settings/r.json", true),
+        (".BOARD/Settings/r.json", ".BOARD/Settings/r.json", true),
+        (
+            ".board/types/a.schema.json",
+            ".board/types/a.schema.json",
+            false,
+        ),
+        (".board/board.json", ".board/board.json", false),
+        (
+            ".board/s\u{0131}ttings/r.json",
+            ".board/s\u{0131}ttings/r.json",
+            true,
+        ),
+        ("preferences/r.json", "preferences/r.json", true),
+        ("effects/pending/e.json", "effects/pending/e.json", true),
+        ("pref/r.json", "preferences/r.json", true),
+        ("preferences.json", "preferences.json", false),
+        ("tasks/a.json", "tasks/a.json", false),
+        ("preferenc\u{017f}/r.json", "preferenc\u{017f}/r.json", true),
+        ("\u{00f1}.json", "\u{00f1}.json", false),
+    ] {
+        assert_eq!(
+            super::owner_signs(given, on_disk),
+            signs,
+            "{given} at {on_disk}"
+        );
+    }
+}
+
+proptest::proptest! {
+    #[test]
+    fn an_ascii_path_outside_settings_preferences_and_effects_needs_no_owner_signature(
+        first in "[a-z0-9._-]{1,12}",
+        rest in "[a-z0-9._/-]{0,20}",
+    ) {
+        proptest::prop_assume!(!matches!(first.as_str(), ".board" | "preferences" | "effects"));
+        let file = format!("{first}/{rest}");
+        proptest::prop_assert!(!super::owner_signs(&file, &file));
+    }
+}
+
+#[test]
+fn a_plugins_put_under_preferences_or_effects_is_refused_in_a_board_that_is_not_the_personal_one_and_a_put_elsewhere_acts()
+ {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let rule = preference("/tasks/*", "act");
+    let file = board.put_file(&path("/preferences/w.md"), Expect::Any, b"text\n");
+    assert_eq!(effect(file).unwrap_err().code(), Code::SettingsFromPlugin);
+    for at in ["/Preferences/w", "/effects/seen/s"] {
+        assert_eq!(
+            code(put(&board, at, &rule)),
+            Code::SettingsFromPlugin,
+            "{at}"
+        );
+    }
+    assert!(!exists(&scenario, "preferences/w.json"));
+    put(&board, "/tasks/a", &task("")).unwrap();
+    assert!(exists(&scenario, "tasks/a.json"));
 }

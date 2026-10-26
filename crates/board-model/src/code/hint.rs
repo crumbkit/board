@@ -191,7 +191,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
 fn effect(code: Code, id: &String) -> Option<String> {
     Some(match code {
         Code::SettingsAsked => format!(
-            "the owner answers outside the plugin with `board answer {id} approve` or `board answer {id} refuse`; then put again"
+            "the owner answers outside the plugin with `board answer {id} approve`, which asks for Touch ID, or `board answer {id} refuse`; then put again"
         ),
         Code::SettingsRefused => format!(
             "the owner refused pending effect {id}; outside the plugin, `board answer {id} approve` replaces that answer"
@@ -561,6 +561,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::SettingsBadRule => {
             "a file among the rules does not read as a board/preference/v1 record, so a plugin's put is refused until the owner, outside the plugin, fixes or removes the file the message names"
+        }
+        Code::SettingsUnsigned => {
+            "when an answer or an owner's put to a rule or an effect fails: install attention-sign at ~/.local/bin/attention-sign, list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's put or a decide fails: delete the seen record from /effects/seen/ in the personal board, so the put asks again"
         }
         Code::UiUnknownKind => {
             "name a kind from the catalogue in each slot's `kind`; `board ui kinds` lists them"

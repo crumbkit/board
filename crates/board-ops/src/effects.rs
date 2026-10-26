@@ -3,7 +3,8 @@
 //! `.board/settings/`, and the pending effects and answers the personal
 //! board holds (docs/architecture/writes/effects.md).
 
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
 use board_model::{
     Answer, Authority, Code, Digest, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, Layer, LogicalPath,
@@ -30,6 +31,27 @@ pub struct Asker {
     /// `put --or-propose`: a put whose authority is propose writes a pending
     /// effect in place of the record.
     pub or_propose: bool,
+    /// How an approval is signed and checked.
+    pub signing: Signing,
+    /// Whether the owner's own put to a rule or an effect needs their
+    /// signature (docs/architecture/writes/effects.md). `board put` sets
+    /// it; Board's own writes of pending effects and answers do not.
+    pub sign_owner_writes: bool,
+}
+
+/// How the owner signs an approval, and the keys a signature must verify
+/// against (docs/architecture/writes/effects.md, Signed approvals).
+#[derive(Clone, Debug, Default)]
+pub struct Signing {
+    /// The program run as `<signer> approve <statement-file>`, which shows
+    /// the statement and prints an SSH signature after Touch ID.
+    pub signer: Option<OsString>,
+    /// The allowed signers file that lists the owner's key.
+    pub allowed: Option<PathBuf>,
+    /// The cache, where the statement file is written.
+    pub cache: Option<PathBuf>,
+    /// All the signer sees of the environment.
+    pub environment: Vec<(&'static str, OsString)>,
 }
 
 /// The directory of a board's own rules.
@@ -46,7 +68,6 @@ const SEEN: &str = "effects/seen";
 #[derive(Debug)]
 pub(crate) struct Loaded {
     personal: Option<Board>,
-    mine: bool,
     rules: Vec<Rule>,
     broken: Option<String>,
 }
@@ -113,6 +134,12 @@ pub enum EffectError {
         path: String,
         why: String,
     },
+    #[error("pending effect {id} has no good approval signature: {why}")]
+    Unsigned { id: String, why: String },
+    #[error(
+        "the owner's put of {path} changes a rule or an effect and has no good signature: {why}"
+    )]
+    OwnerUnsigned { path: String, why: String },
     #[error("the rules in {} cannot be read: {source}", directory)]
     Read { directory: String, source: GitError },
     #[error("the personal board cannot be opened: {source}")]
@@ -136,6 +163,7 @@ impl EffectError {
             Self::Resolve { source } => source.code(),
             Self::NotFound { .. } | Self::Forged { .. } => Code::SettingsNotFound,
             Self::BadPattern { .. } => Code::SettingsBadPattern,
+            Self::Unsigned { .. } | Self::OwnerUnsigned { .. } => Code::SettingsUnsigned,
             Self::Read { source, .. } => source.code(),
             Self::Open { source } => source.code(),
             Self::Write { source } => source.code(),
@@ -171,8 +199,13 @@ impl EffectError {
             | Self::Forged { id, .. }
             | Self::BadPattern { id, .. }
             | Self::CannotWiden { id }
+            | Self::Unsigned { id, .. }
             | Self::Proposed { id } => Fields {
                 effect: Some(id.clone()),
+                ..Fields::default()
+            },
+            Self::OwnerUnsigned { path, .. } => Fields {
+                path: path.parse().ok(),
                 ..Fields::default()
             },
             Self::Open { source } => source.fields(),
@@ -287,12 +320,43 @@ impl Asker {
     }
 }
 
-/// The owner's answer to the effect with `id`, if they gave one.
-fn seen(personal: &Board, id: &str) -> Result<Option<Answer>, EffectError> {
+/// The owner's answer to `effect`, if they gave one. An approval counts
+/// only with the owner's signature of it, checked against `allowed`.
+fn seen(
+    personal: &Board,
+    effect: &Effect,
+    allowed: Option<&Path>,
+) -> Result<Option<Answer>, EffectError> {
+    let id = effect.id();
     let value = read_record(personal, &format!("{SEEN}/{id}"), SEEN_TYPE)?;
-    Ok(value
-        .and_then(|value| Seen::from_value(&value).ok())
-        .map(|seen| seen.answer))
+    let Some(seen) = value.and_then(|value| Seen::from_value(&value).ok()) else {
+        return Ok(None);
+    };
+    if seen.answer == Answer::Approve {
+        let signature = seen.signature.as_deref().unwrap_or_default();
+        verified(effect, seen.rule.is_some(), allowed, signature)?;
+    }
+    Ok(Some(seen.answer))
+}
+
+/// Checks that `signature` is the owner's signature of `effect`'s
+/// approval, by a key the allowed signers file lists.
+fn verified(
+    effect: &Effect,
+    saves_rule: bool,
+    allowed: Option<&Path>,
+    signature: &str,
+) -> Result<(), EffectError> {
+    let unsigned = |why: String| EffectError::Unsigned {
+        id: effect.id(),
+        why,
+    };
+    if signature.is_empty() {
+        return Err(unsigned("the answer holds no signature".to_owned()));
+    }
+    let allowed = allowed.ok_or_else(|| unsigned("no allowed signers file is named".to_owned()))?;
+    board_plugin::verify(allowed, &effect.approval(saves_rule), signature)
+        .map_err(|error| unsigned(error.to_string()))
 }
 
 /// Writes `effect` at its id in the personal board, unless an effect is
@@ -362,13 +426,12 @@ fn contain(
 /// or put a preference, effect or seen record in any board.
 fn owners(
     (given, on_disk, path): (&str, &str, &LogicalPath),
-    mine: bool,
     (admitted, shape): (&Admitted, Shape),
 ) -> Option<String> {
     if !given.is_ascii() {
         return Some(format!("write /{given}, whose path is not ASCII"));
     }
-    if let Some(area) = protected(on_disk, mine, shape) {
+    if let Some(area) = protected(on_disk, shape) {
         return Some(format!("write {path}, in {area}"));
     }
     if admitted.pointer {
@@ -379,20 +442,50 @@ fn owners(
         .map(|kind| format!("put {path}, a {kind} record"))
 }
 
+/// The logical path of the file at `on_disk`, a working-tree path, put as
+/// `shape`: a record's file without its `.json`.
+fn landed(on_disk: &str, shape: Shape) -> String {
+    let record = on_disk
+        .strip_suffix(".json")
+        .filter(|_| shape != Shape::File);
+    format!("/{}", record.unwrap_or(on_disk))
+}
+
+/// Whether the owner's put of the file given as `given`, which lands at
+/// `on_disk`, both working-tree paths, changes what the effects check
+/// decides, and so needs their signature: a file under `.board/settings/`,
+/// `preferences/` or `effects/`, in any case, or one whose first directory,
+/// or second under `.board/`, is not ASCII, which a file system may fold to
+/// one of those. It holds in every board, because which board is the
+/// personal one is named by a file the caller chooses.
+fn owner_signs(given: &str, on_disk: &str) -> bool {
+    [given, on_disk].into_iter().any(|file| {
+        let file = file.to_ascii_lowercase();
+        let mut parts = file.split('/');
+        let first = parts.next().unwrap_or_default();
+        let second = parts.next();
+        match first {
+            _ if !first.is_ascii() => second.is_some(),
+            ".board" => second.is_some_and(|second| second == "settings" || !second.is_ascii()),
+            PREFERENCES | "effects" => second.is_some(),
+            _ => false,
+        }
+    })
+}
+
 /// Where only the owner writes, when the file at `file`, a working-tree
 /// path, lies there: `.board/` in any board, which holds its settings,
 /// types and plugins, apart from a new schema a batch line adds to
-/// `.board/types/`, and `preferences/` and `effects/` when the board is the
-/// personal one. `None` elsewhere.
-fn protected(file: &str, mine: bool, shape: Shape) -> Option<&'static str> {
-    let file = file.to_ascii_lowercase();
-    let under = |directory: &str| file.starts_with(&format!("{directory}/"));
+/// `.board/types/`, and `preferences/` and `effects/` in any board, as
+/// [`owner_signs`] matches them, because which board is the personal one is
+/// named by a file the caller chooses. `None` elsewhere.
+fn protected(file: &str, shape: Shape) -> Option<&'static str> {
+    let lower = file.to_ascii_lowercase();
+    let under = |directory: &str| lower.starts_with(&format!("{directory}/"));
     if under(".board") && !(shape == Shape::Schema && under(".board/types")) {
         Some(".board")
-    } else if mine && under(PREFERENCES) {
-        Some("preferences, in the personal board")
-    } else if mine && under("effects") {
-        Some("effects, in the personal board")
+    } else if owner_signs(file, file) {
+        Some("preferences or effects, which hold the owner's rules and answers")
     } else {
         None
     }
@@ -424,10 +517,8 @@ impl Board {
             Layer::Board,
             &mut broken,
         )?);
-        let mine = (personal.as_ref()).is_some_and(|personal| root(personal) == root(self));
         Ok(Loaded {
             personal,
-            mine,
             rules,
             broken,
         })
@@ -439,7 +530,7 @@ impl Board {
     /// path spelled in another case reaches the rules of the file it
     /// writes. An ask or propose gathers its pending effect for
     /// [`Board::holding`] to write once the lock is released. Without a
-    /// plugin the put writes.
+    /// plugin the put writes, once the owner signs it if [`owner_signs`].
     pub(crate) fn gate(
         &self,
         loaded: &mut Option<Loaded>,
@@ -448,13 +539,10 @@ impl Board {
         (admitted, shape): (&Admitted, Shape),
     ) -> Result<(), EffectError> {
         let Some(plugin) = &self.asker.plugin else {
-            return Ok(());
+            return self.owner_put(target, canonical, (admitted, shape));
         };
         let on_disk = self.repository().landing(&target.path);
-        let landed = on_disk
-            .strip_suffix(".json")
-            .filter(|_| shape != Shape::File);
-        let landed = format!("/{}", landed.unwrap_or(&on_disk));
+        let landed = landed(&on_disk, shape);
         let Ok(path) = landed.parse::<LogicalPath>() else {
             return Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
@@ -467,7 +555,7 @@ impl Board {
             None => loaded.insert(self.load()?),
         };
         let landing = (target.path.as_str(), on_disk.as_str(), &path);
-        if let Some(what) = owners(landing, loaded.mine, (admitted, shape)) {
+        if let Some(what) = owners(landing, (admitted, shape)) {
             return Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
                 path: Some(path),
@@ -515,7 +603,7 @@ impl Board {
         effect.prior = self.prior(&target.path)?;
         contain(&mut effect, canonical, (admitted, shape), &path)?;
         let id = effect.id();
-        match seen(personal, &id)? {
+        match seen(personal, &effect, self.asker.signing.allowed.as_deref())? {
             Some(Answer::Approve) => return Ok(()),
             Some(Answer::Refuse) => return Err(refused(None, Some(id))),
             None => {}
@@ -535,6 +623,44 @@ impl Board {
             },
             _ => EffectError::Proposed { id },
         })
+    }
+
+    /// Checks the owner's own put of `canonical`, admitted as `admitted`,
+    /// to `target`. One that [`owner_signs`] needs the owner to sign
+    /// [`Effect::owner_write`] now, with Touch ID, while the put holds the
+    /// lock; Board keeps no signature of it.
+    fn owner_put(
+        &self,
+        target: &Target,
+        canonical: &[u8],
+        (admitted, shape): (&Admitted, Shape),
+    ) -> Result<(), EffectError> {
+        if !self.asker.sign_owner_writes {
+            return Ok(());
+        }
+        let on_disk = self.repository().landing(&target.path);
+        if !owner_signs(&target.path, &on_disk) {
+            return Ok(());
+        }
+        let landed = landed(&on_disk, shape);
+        let unsigned = |why: String| EffectError::OwnerUnsigned {
+            path: landed.clone(),
+            why,
+        };
+        let mut effect = Effect::new(root(self), String::new(), PUT_OP.to_owned(), landed.clone());
+        effect.digest = Some(Digest::of(canonical));
+        if shape == Shape::File {
+            let text = std::str::from_utf8(canonical).map_err(|_| {
+                unsigned("its bytes are not UTF-8, so no statement can show them".to_owned())
+            })?;
+            effect.text = Some(text.to_owned());
+        } else {
+            effect.record = Some(admitted.value.clone());
+        }
+        let root = root(self);
+        decide::signature(&self.asker.signing, Path::new(&root), &effect.owner_write())
+            .map(|_| ())
+            .map_err(unsigned)
     }
 
     /// The blob in the working tree at `file`, in hex, or `None` for no file.

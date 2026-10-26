@@ -18,8 +18,8 @@ listener, so they also get an adversarial security review.
    and `board answer`.
 3. `board serve`, `ui/view/v1` and `ui/binding/v1`, the app skeleton with its
    tokens, and the `markdown` and `record` kinds.
-4. The `Gate` trait, `WindowGate`, the `gate` kind and Touch ID signing of
-   saved rules.
+4. Touch ID signing of every approval (decision 12). The `gate` kind and
+   `POST /api/gate/<id>` follow once a page needs them.
 5. The rest of the `diff` kind (decision 8).
 6. The `eval`, `run` and `walkthrough` kinds.
 
@@ -86,7 +86,7 @@ listener, so they also get an adversarial security review.
      highlight), observation and outcome. Drawn from a user-journey
      `runs/run/v1` (`note`, `evidence`, linked eval) or steps an agent binds
      inline, citing screenshots by path.
-   - `gate`: a pending effect and a drafted rule (decision 11).
+   - `gate`: a pending effect, deferred until a page needs it (decision 11).
 9. **Effects, first slice.** A plugin asks Board whether it may take an
    effect on a path, and Board answers act, propose or ask. The first users
    are `review`, which posts pull request comments, and `share`, which
@@ -104,10 +104,10 @@ listener, so they also get an adversarial security review.
      a proposal when the answer is propose. The check binds plugins; it
      cannot stop a local process that writes files itself.
    - When the answer is ask, Board writes a pending effect at
-     `/effects/pending/<id>`. Until step 4 the `put` fails with a code that
-     names it. `board answer <id>` records the owner's answer as a
-     `board/seen/v1` record, optionally with a rule to save, and a repeated
-     `put` then proceeds. A refusal fails the `put` with
+     `/effects/pending/<id>`, and the `put` fails with a code that names it.
+     `board answer <id>` records the owner's answer as a `board/seen/v1`
+     record, optionally with a rule to save, and a repeated `put` then
+     proceeds. A refusal fails the `put` with
      `board::settings::refused`.
    - Left for the next slice: `required` and `overrides`, conditions beyond
      operation and path, batch `decide`, and the mandate layer.
@@ -119,31 +119,16 @@ listener, so they also get an adversarial security review.
     - `refines` crosses layers and only narrows; the sketch let the owner
       replace a default freely.
     - `board/seen/v1` holds the answer to a pending effect, not to an offer.
-11. **The gate is a trait.**
-
-    ```rust
-    pub trait Gate {
-        fn ask(&self, effect: &PendingEffect) -> Result<Answer, GateError>;
-    }
-
-    pub enum Answer {
-        Approve { rule: Option<Preference> },
-        Propose,
-        Refuse { reason: Option<String>, rule: Option<Preference> },
-    }
-    ```
-
-    `rule: Some` also saves that preference. `WindowGate` comes first: it
-    opens the `gate` view through `board serve` and waits. `TerminalGate`
-    comes later. Because a Claude Code mod built outside viitta is a third
-    implementation, the pending-effect, preference and seen records stay
-    stable and documented.
-12. **The gate window** shows the operation, the target, who asked and why no
-    rule covers it, and a drafted rule whose parts the owner can narrow before
-    saving. Its answers are approve once, approve and save the rule, and
-    refuse. Saving a rule is signed through the attention plugin's Touch ID
-    helper, so a process that only holds the token cannot widen the owner's
-    authority. Without a signer, saving fails with a code and approving once
-    still works; tests use a stub signer. A one-off approval, from the
-    window, a Claude Code dialog or the phone, needs no Touch ID (decided
-    2026-10-25).
+11. **No `Gate` trait.** It would have one implementation. The signer's
+    native window is the gate. The pending-effect, preference and seen
+    records stay stable and documented for the Claude Code mod.
+12. **Every approval is signed** (decided 2026-10-25). An agent's shell
+    counts as the owner, so an unsigned approve is refused with
+    `board::settings::unsigned`. `board answer` runs attention's Touch ID
+    signer, which shows the effect and its content. A refusal is unsigned.
+    The owner's own put under `.board/settings/`, `preferences/` or
+    `effects/` is signed the same way (decided 2026-10-26). The signer and
+    the allowed signers file come from the passwd entry's home, and
+    approvals sign in their own namespace, `board/approve/v1`.
+    docs/architecture/writes/effects.md has the design. Left out: rule
+    narrowing in a window.

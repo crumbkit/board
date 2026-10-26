@@ -274,11 +274,12 @@ fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() 
     let mut extra = value;
     extra["extra"] = json!(1);
     assert!(effect_record(EFFECT_TYPE, &extra).unwrap().is_err());
-    let seen = Seen::new(
+    let mut seen = Seen::new(
         format!("/effects/pending/{}", effect.id()),
         Answer::Approve,
         None,
     );
+    seen.signature = Some("-----BEGIN SSH SIGNATURE-----".to_owned());
     let value = serde_json::to_value(&seen).unwrap();
     assert_eq!(Seen::from_value(&value).unwrap(), seen);
     let mut extra = value;
@@ -295,4 +296,94 @@ fn an_answer_reads_from_its_word_and_gives_the_authority_a_saved_rule_has() {
     assert_eq!(Answer::Refuse.authority(), Authority::Refuse);
     assert!(Authority::Act < Authority::Propose);
     assert!(Authority::Ask < Authority::Refuse);
+}
+
+#[test]
+fn an_approval_names_the_effect_by_its_id_and_shows_hidden_characters_escaped() {
+    let effect = Effect::new(
+        "/Users/o/b\u{202e}d".to_owned(),
+        "review".to_owned(),
+        "review.comment".to_owned(),
+        "/pulls/7".to_owned(),
+    );
+    assert_eq!(
+        effect.approval(false),
+        format!(
+            "board/approve/v1\neffect: {}\nplugin: review\nop: review.comment\npath: /pulls/7\nboard: /Users/o/b\\u{{202e}}d\n",
+            effect.id()
+        )
+    );
+    let mut other = effect.clone();
+    other.path = "/pulls/8".to_owned();
+    assert_ne!(other.approval(false), effect.approval(false));
+    assert_eq!(
+        effect.approval(true),
+        format!(
+            "{}saves rule: act for this plugin, op and path in this board\n",
+            effect.approval(false)
+        )
+    );
+}
+
+/// Every stored signature is checked against this text, so a change to it
+/// needs a new first line.
+#[test]
+fn an_approval_of_a_put_keeps_its_frozen_layout_byte_for_byte() {
+    let mut put = Effect::new(
+        "/b".to_owned(),
+        "tasks".to_owned(),
+        "put".to_owned(),
+        "/t/a".to_owned(),
+    );
+    put.record = Some(json!({"title": "a\u{200b}b", "$type": "lr/task/v1"}));
+    assert_eq!(
+        put.approval(false),
+        format!(
+            "board/approve/v1\neffect: {}\nplugin: tasks\nop: put\npath: /t/a\nboard: /b\ncontent: 47 bytes in 4 lines\n{{\n  \"$type\": \"lr/task/v1\",\n  \"title\": \"a\\u{{200b}}b\"\n}}\n",
+            put.id()
+        )
+    );
+}
+
+#[test]
+fn an_approval_shows_text_split_at_each_newline_so_a_carriage_return_and_a_final_newline_show() {
+    let mut file = Effect::new(
+        "/b".to_owned(),
+        "notes".to_owned(),
+        "put".to_owned(),
+        "/n/a".to_owned(),
+    );
+    file.text = Some("one\r\ntwo\u{202e}\n".to_owned());
+    assert!(
+        file.approval(false)
+            .ends_with("content: 12 bytes in 3 lines\none\\r\ntwo\\u{202e}\n\n"),
+        "{}",
+        file.approval(false)
+    );
+    let mut plain = file.clone();
+    plain.text = Some("one\ntwo\u{202e}".to_owned());
+    assert!(
+        plain
+            .approval(false)
+            .ends_with("content: 10 bytes in 2 lines\none\ntwo\\u{202e}\n"),
+        "{}",
+        plain.approval(false)
+    );
+}
+
+#[test]
+fn an_owners_write_names_its_path_and_board_and_shows_its_content_and_never_reads_as_an_approval() {
+    let mut put = Effect::new(
+        "/b".to_owned(),
+        String::new(),
+        "put".to_owned(),
+        "/preferences/r\u{202e}".to_owned(),
+    );
+    put.record = Some(json!({"authority": "act"}));
+    assert_eq!(
+        put.owner_write(),
+        "board/write/v1\nop: put\npath: /preferences/r\\u{202e}\nboard: /b\ncontent: 24 bytes in 3 lines\n{\n  \"authority\": \"act\"\n}\n"
+    );
+    assert_ne!(put.owner_write(), put.approval(false));
+    assert!(!put.owner_write().starts_with(APPROVAL_HEADER));
 }

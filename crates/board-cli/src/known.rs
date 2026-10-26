@@ -8,7 +8,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, Fields, Refusal};
-use board_ops::{Asker, Board, OpenError};
+use board_ops::{Asker, Board, OpenError, Signing};
 use board_plugin::PluginName;
 use serde::Deserialize;
 
@@ -113,11 +113,22 @@ pub(crate) fn asker(
     let plugin = plugin(context)?;
     let wanted = plugin.is_some() || owner_rules;
     let personal = if wanted { named(context)? } else { None };
+    let environment = &context.environment;
+    let passed = [("PATH", &environment.path), ("HOME", &environment.home)];
     Ok(Asker {
         plugin,
         personal,
         home: context.home.clone(),
         or_propose,
+        signing: Signing {
+            signer: context.signer.clone(),
+            allowed: context.allowed_signers.clone(),
+            cache: context.cache.clone(),
+            environment: (passed.into_iter())
+                .filter_map(|(name, value)| Some((name, value.clone()?)))
+                .collect(),
+        },
+        sign_owner_writes: true,
     })
 }
 

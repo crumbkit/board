@@ -3,6 +3,7 @@
 //! (docs/architecture/writes/effects.md).
 
 use std::fmt;
+use std::fmt::Write as _;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use serde_json::{Value, json};
 
 use crate::attachment::Digest;
 use crate::json::canonical_json;
+use crate::path::escaped;
 
 /// The `$type` of a rule saying how far a plugin may go.
 pub const PREFERENCE_TYPE: &str = "board/preference/v1";
@@ -19,6 +21,18 @@ pub const EFFECT_TYPE: &str = "board/effect/v1";
 pub const SEEN_TYPE: &str = "board/seen/v1";
 /// The effects types, which are Board's own and need no schema.
 pub const EFFECT_TYPES: [&str; 3] = [PREFERENCE_TYPE, EFFECT_TYPE, SEEN_TYPE];
+
+/// The first line of the statement an approval signs.
+pub const APPROVAL_HEADER: &str = "board/approve/v1";
+
+/// The first line of the statement the owner signs to let their own put
+/// change a rule or an effect.
+pub const WRITE_HEADER: &str = "board/write/v1";
+
+/// The SSH signature namespace of an approval and of an owner's write,
+/// which `attention-sign approve` signs in. A directive is signed in
+/// another namespace, so neither verifies as the other.
+pub const SIGNATURE_NAMESPACE: &str = "board/approve/v1";
 
 /// The op of a put, the one op Board performs itself.
 pub const PUT_OP: &str = "put";
@@ -307,10 +321,82 @@ impl Effect {
         });
         Digest::of(canonical_json(&request).as_bytes()).hex()
     }
+
+    /// The statement the owner signs to approve this effect, which the
+    /// signer shows them. Its first line keeps it from reading as any other
+    /// signed statement, and its id binds the content and the blob a put
+    /// replaces. The other lines are for the owner to read, with hidden
+    /// characters escaped: the request, whether the approval also saves a
+    /// rule that acts, the content's size, then the record, pretty-printed
+    /// with its keys sorted, or the text a put writes, split at each `\n`.
+    ///
+    /// Every stored signature is checked against this text, so its layout
+    /// is frozen: a change to it needs a new first line.
+    pub fn approval(&self, saves_rule: bool) -> String {
+        let mut statement = format!(
+            "{APPROVAL_HEADER}\neffect: {}\nplugin: {}\nop: {}\npath: {}\nboard: {}\n",
+            self.id(),
+            escaped(&self.plugin),
+            escaped(&self.op),
+            escaped(&self.path),
+            escaped(&self.board),
+        );
+        if saves_rule {
+            statement.push_str("saves rule: act for this plugin, op and path in this board\n");
+        }
+        self.show_content(&mut statement);
+        statement
+    }
+
+    /// The statement the owner signs to let their own put of this effect's
+    /// content write: its path and board, then the content as
+    /// [`Effect::approval`] shows it. Board asks for it as the put runs and
+    /// keeps no signature of it, so its layout is not frozen.
+    pub fn owner_write(&self) -> String {
+        let mut statement = format!(
+            "{WRITE_HEADER}\nop: {}\npath: {}\nboard: {}\n",
+            escaped(&self.op),
+            escaped(&self.path),
+            escaped(&self.board),
+        );
+        self.show_content(&mut statement);
+        statement
+    }
+
+    /// Appends the content's size, then the record, pretty-printed with its
+    /// keys sorted, or the text, split at each `\n`, with hidden characters
+    /// escaped.
+    fn show_content(&self, statement: &mut String) {
+        let sorted = |record: &Value| {
+            serde_json::from_slice::<Value>(canonical_json(record).as_bytes()).ok()
+        };
+        let content = match (&self.record, &self.text) {
+            (Some(record), _) => {
+                sorted(record).and_then(|record| serde_json::to_string_pretty(&record).ok())
+            }
+            (None, Some(text)) => Some(text.clone()),
+            (None, None) => None,
+        };
+        if let Some(content) = content {
+            let lines: Vec<&str> = content.split('\n').collect();
+            let _ = writeln!(
+                statement,
+                "content: {} bytes in {} lines",
+                content.len(),
+                lines.len()
+            );
+            for line in lines {
+                statement.push_str(&escaped(line));
+                statement.push('\n');
+            }
+        }
+    }
 }
 
 /// A `board/seen/v1` record: the owner's answer to the pending effect at
-/// `effect`.
+/// `effect`. An approval carries `signature`, the owner's SSH signature
+/// over [`Effect::approval`], and `rule`, the path of the rule it saved, if
+/// it saved one.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Seen {
@@ -320,6 +406,10 @@ pub struct Seen {
     pub answer: Answer,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule: Option<String>,
 }
 
 impl Seen {
@@ -329,6 +419,8 @@ impl Seen {
             effect,
             answer,
             reason,
+            signature: None,
+            rule: None,
         }
     }
 

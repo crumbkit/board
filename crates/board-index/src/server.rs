@@ -1,6 +1,7 @@
 //! The files in a board's cache that `board serve` and `board ui open`
 //! share (docs/architecture/ui/serve.md): the server file, which names the
 //! running server, and the openers, pages that send the browser to it.
+//! `board answer` writes one more: the statement an approval signs.
 //! This crate stores the bytes it is given; `board-serve` decides what they
 //! say. Both files hold the server's token, so the board's cache directory
 //! is its owner's alone and each file is readable only by its owner.
@@ -59,6 +60,21 @@ pub fn write_opener(
     file.keep()
         .map(|(_, path)| path)
         .map_err(|error| error.error)
+}
+
+/// Writes `bytes` as a statement for a signer to read, `approve-<random>.txt`
+/// in the cache directory of the board at `root`, readable only by its
+/// owner. The file is removed when the returned path drops.
+pub fn write_statement(cache: &Path, root: &Path, bytes: &[u8]) -> io::Result<tempfile::TempPath> {
+    let directory = board(cache, root);
+    let directory = private_directory(&directory)?;
+    let mut file = tempfile::Builder::new()
+        .prefix("approve-")
+        .suffix(".txt")
+        .permissions(std::fs::Permissions::from_mode(0o600))
+        .tempfile_in(directory)?;
+    file.write_all(bytes)?;
+    Ok(file.into_temp_path())
 }
 
 /// Removes the opener at `file`; one already gone is not an error.

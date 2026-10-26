@@ -7,9 +7,8 @@ import { askedIds, boardFailure, failure, headline, outputText, parsePending, pe
 
 // The mod lists the owner's pending effects from the personal board and
 // answers one with `board answer`. Board makes every decision and checks
-// every answer; the mod only draws and runs the command. It offers no way to
-// save a rule: `board answer --save-rule` asks for no Touch ID yet, and
-// plan/board-ui.md step 4 adds that signing to Board first.
+// every answer; the mod only draws and runs the command. An approval opens
+// the signer's window and waits for the owner's Touch ID.
 
 const pending = atom({ plugin: 'board-effects', key: 'pending' } as const, null as Pending | null)
 
@@ -19,8 +18,9 @@ const PANE = 'effects'
 const RUN = 'PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" exec board "$@"'
 // A slow or hung board holds a refresh no longer than this.
 const READ_MS = 5000
-// An answer waits up to 5 s for the personal board's lock and then commits,
-// so it has longer before its outcome is called unknown.
+// An approval waits up to 20 s for the owner's Touch ID and 3 s for the
+// signature check, and any answer up to 5 s for the personal board's lock,
+// so it has 30 s before its outcome is called unknown.
 const ANSWER_MS = 30_000
 const REFRESH_MS = 60_000
 // The pane lists this many effects; past it the band says "or more".

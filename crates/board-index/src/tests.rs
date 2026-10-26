@@ -748,3 +748,18 @@ fn a_validation_reads_back_with_none_one_or_many_references_in_order_and_only_it
     assert_eq!(writer.validation(blob(1), blob(8)).unwrap(), Some(many));
     assert_eq!(writer.validation(blob(2), blob(8)).unwrap(), None);
 }
+
+#[test]
+fn a_statement_is_readable_only_by_its_owner_and_removed_when_dropped() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let cache = tempfile::tempdir().unwrap();
+    let statement =
+        crate::write_statement(cache.path(), Path::new("/boards/one"), b"approve").unwrap();
+    let file = statement.to_path_buf();
+    assert_eq!(std::fs::read(&file).unwrap(), b"approve");
+    assert_eq!(file.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+    let directory = file.parent().unwrap().metadata().unwrap();
+    assert_eq!(directory.permissions().mode() & 0o777, 0o700);
+    drop(statement);
+    assert!(!file.exists(), "the statement outlived its path");
+}

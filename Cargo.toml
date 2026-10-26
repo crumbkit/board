@@ -47,6 +47,11 @@ getrandom = "0.3.4"
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
+# The owner's home from the passwd entry, which no variable a caller sets can
+# move, so the signer and allowed signers file an approval trusts stay put.
+# Without default features it brings only libc, bitflags and cfg-if; only
+# board-cli/src/config.rs uses it.
+nix = { version = "0.31.3", default-features = false, features = ["user"] }
 # A Markdown link names a path percent-encoded, as a URL does. gix already
 # brings this crate in.
 percent-encoding = "2.3.2"
