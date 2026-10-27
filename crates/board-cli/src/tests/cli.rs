@@ -275,6 +275,7 @@ fn every_listing_command_takes_limit_and_all() {
         "init",
         "get",
         "put",
+        "rm",
         "mount update",
         "plugin enable",
         "type add",

@@ -143,8 +143,8 @@ fn a_line_with_both_record_and_text_or_neither_is_refused_and_a_line_with_one_is
     assert_eq!(
         messages[..2],
         [
-            "the line is not {path, expect, record} or {path, expect, text}: it holds both record and text",
-            "the line is not {path, expect, record} or {path, expect, text}: it holds neither record nor text",
+            "the line is not {path, expect, record}, {path, expect, text} or {path, expect, remove}: it holds both record and text",
+            "the line is not {path, expect, record}, {path, expect, text} or {path, expect, remove}: it holds no record or text and does not remove",
         ]
     );
     let (code, refusals) = refused(result);
@@ -407,7 +407,8 @@ fn a_batch_compiles_each_types_schema_once_however_many_lines_use_it() {
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
-    let Ok(Checked::Here(prepared, _)) = board.check_lines(&lock, &mut view, lines, &mut schemas)
+    let Ok(Checked::Here(prepared, _, _)) =
+        board.check_lines(&lock, &mut view, lines, &mut schemas)
     else {
         panic!("the batch is not checked in this board");
     };
@@ -426,7 +427,8 @@ fn a_batch_compiles_a_schema_it_adds_once_and_its_records_use_that_schema() {
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
-    let Ok(Checked::Here(prepared, _)) = board.check_lines(&lock, &mut view, lines, &mut schemas)
+    let Ok(Checked::Here(prepared, _, _)) =
+        board.check_lines(&lock, &mut view, lines, &mut schemas)
     else {
         panic!("the batch is not checked in this board");
     };
@@ -454,7 +456,8 @@ fn listed_checking(count: usize) -> usize {
     let before = board.repository().directories_listed();
     let mut view = board.repositories().snapshot().unwrap();
     let schemas = &mut Schemas::default();
-    let Ok(Checked::Here(prepared, _)) = board.check_lines(&lock, &mut view, lines, schemas) else {
+    let Ok(Checked::Here(prepared, _, _)) = board.check_lines(&lock, &mut view, lines, schemas)
+    else {
         panic!("the batch is not checked in this board");
     };
     assert_eq!(prepared.len(), count);

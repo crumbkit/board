@@ -259,9 +259,9 @@ its place, as [architecture/attachments.md](architecture/attachments.md)
 says.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
-record}` or `{path, expect, text}`, where `text` is written as a file, then
+record}`, `{path, expect, text}` or `{path, expect, remove}`, where `text` is written as a file, then
 takes the lock with the same wait; when no line parses, it is refused without the lock. A line
-holding both `record` and `text`, or neither, is `board::put::invalid`. A
+holding both `record` and `text`, or neither and no `remove`, is `board::put::invalid`. A
 record line at a schema's path, such as `/.board/types/lr/note/v1.schema`,
 takes no expect and is checked first, as `type add` checks it; an equal schema
 is committed if HEAD lacks it, unless a symlink holds it. Every line is checked against one snapshot of
@@ -285,6 +285,11 @@ committed if HEAD lacks it, unless a symlink holds it
 because a changed type is a new version, and one that is not JSON is refused
 with its `json` code. The report is `board/put-report/v2`.
 
+`board rm <path>` removes one file and commits the removal, and a
+`put --batch` line with `"remove": true` removes one in the batch's commit.
+[architecture/writes/removing.md](architecture/writes/removing.md) holds the
+rules.
+
 [architecture/writes.md](architecture/writes.md) says how a put of one record
 or a batch writes through a mount and moves the pin, how `board mount update`
 moves a pin to the commit its `follow` ref names, and how `board sync`
@@ -300,6 +305,7 @@ replays this clone's commits onto the branch it follows.
 | `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
 | `board refs <path>...` | references to and from each object, and values in each target, all from one check of the board; see docs/architecture/index.md |
 | `board put <path>` | validate and write a record; with `--file`, write a file as given |
+| `board rm <path>` | remove one file and commit the removal; see Writes |
 | `board mount update <path>` | advance a mount to its `follow` |
 | `board sync [--no-push]` | fetch the branch this board follows, replay its own commits on top, push, and move HEAD |
 | `board query <sql>` | read-only SQL over the index |

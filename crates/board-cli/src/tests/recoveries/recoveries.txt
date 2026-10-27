@@ -643,6 +643,11 @@ board put /projects/q --expect 1111111111111111111111111111111111111111
   run board put /projects/q --expect none
     exits 0
 
+board rm /projects
+  fails with board::rm::directory
+  run board ls /projects
+    exits 0
+
 board check
   fails with board::config::not_found
   run board init

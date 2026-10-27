@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use super::{Expect, Failure, Prepared, PutError, PutReport, Refused, Schemas};
 use crate::board::Board;
-use crate::effects::Shape;
+use crate::effects::{Change, Shape};
 use crate::verdict::Admitted;
 
 impl Board {
@@ -149,12 +149,8 @@ impl Board {
                 admitted.references.extend(references(&landed, bytes));
             }
         }
-        self.gate(
-            &mut schemas.effects,
-            &target,
-            bytes,
-            (&admitted, Shape::File),
-        )?;
+        let change = Change::Put(bytes, &admitted, Shape::File);
+        self.gate(&mut schemas.effects, &target, change)?;
         Ok(Prepared {
             path: path.clone(),
             expect,

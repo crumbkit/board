@@ -2,7 +2,7 @@
 
 use std::fmt::Write as _;
 
-use board_model::{Authority, PUT_OP};
+use board_model::{Authority, is_write};
 use board_ops::{AnswerReport, DecideReport};
 use crumbkit::Document;
 use serde_json::{Value, json};
@@ -92,8 +92,8 @@ pub(crate) fn decide(printer: Printer, report: &DecideReport) -> Output {
         (Some(id), Authority::Ask) => answer.note(format!(
             "next: the owner answers with `board answer {id} approve` or `board answer {id} refuse`; then ask again"
         )),
-        (None, Authority::Ask | Authority::Propose) if report.op == PUT_OP => answer.note(
-            "a put under a plugin writes its pending effect with its record, so decide writes none"
+        (None, Authority::Ask | Authority::Propose) if is_write(&report.op) => answer.note(
+            "a put or rm under a plugin writes its own pending effect, so decide writes none"
                 .to_owned(),
         ),
         _ => answer,

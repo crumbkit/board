@@ -19,7 +19,7 @@ use board_validate::Schema;
 
 use crate::board::Board;
 use crate::check::{Detail, Tally, follow, unresolved};
-use crate::effects::Shape;
+use crate::effects::{Change, Shape};
 use crate::effects::{EffectError, Loaded};
 use crate::snapshot::read_type;
 use crate::types::TypeError;
@@ -51,10 +51,19 @@ pub struct Written {
     pub degraded: Option<(Code, Detail)>,
 }
 
-/// What a put wrote, and the commit it made.
+/// One file a put removed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Removed {
+    pub path: LogicalPath,
+    /// The blob the file held.
+    pub blob: ObjectId,
+}
+
+/// What a put wrote and removed, and the commit it made.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PutReport {
     pub writes: Vec<Written>,
+    pub removed: Vec<Removed>,
     pub commit: Option<ObjectId>,
     /// The pending effect a put that could only propose wrote in the
     /// personal board, in place of the record.
@@ -66,6 +75,7 @@ impl PutReport {
     pub(crate) const fn new(writes: Vec<Written>, commit: Option<ObjectId>) -> Self {
         Self {
             writes,
+            removed: Vec::new(),
             commit,
             proposed: None,
         }
@@ -74,6 +84,7 @@ impl PutReport {
     pub(crate) fn proposed(id: String) -> Self {
         Self {
             writes: Vec::new(),
+            removed: Vec::new(),
             commit: None,
             proposed: Some(id),
         }
@@ -98,6 +109,43 @@ pub(crate) struct Removal {
     /// The `/`-separated path in the working tree.
     pub(crate) file: String,
     pub(crate) blob: ObjectId,
+}
+
+impl Board {
+    /// Writes each prepared file, then removes each of `removed`.
+    fn apply(
+        repository: &board_tree::Repository,
+        lock: &Lock,
+        prepared: &[Prepared],
+        removed: &[Removal],
+    ) -> Result<(), WriteError> {
+        for item in prepared {
+            repository.write_file(lock, &item.target.path, &item.canonical)?;
+        }
+        for removal in removed {
+            repository.store_working(lock, &removal.file)?;
+            repository.remove_file(lock, &removal.file)?;
+        }
+        Ok(())
+    }
+}
+
+impl Removal {
+    /// `Stale` unless the file still holds the blob it held when checked.
+    fn stale(&self, repository: &board_tree::Repository) -> Option<PutError> {
+        let found = repository.working_blob(&self.file).ok();
+        (found != Some(self.blob)).then(|| PutError::Stale {
+            path: self.path.clone(),
+            found,
+        })
+    }
+
+    fn removed(&self) -> Removed {
+        Removed {
+            path: self.path.clone(),
+            blob: self.blob,
+        }
+    }
 }
 
 /// Each record type's schema, or what is there instead, read and compiled
@@ -221,12 +269,8 @@ impl Board {
         }
         let target = target?;
         let canonical = canonical_json(&admitted.value).into_bytes();
-        self.gate(
-            &mut schemas.effects,
-            &target,
-            &canonical,
-            (&admitted, Shape::Record),
-        )?;
+        let change = Change::Put(&canonical, &admitted, Shape::Record);
+        self.gate(&mut schemas.effects, &target, change)?;
         Ok(Prepared {
             path: path.clone(),
             expect,
@@ -293,13 +337,11 @@ impl Board {
                 degraded: None,
             });
         }
-        for (at, removal) in removed.iter().enumerate() {
-            let found = repository.working_blob(&removal.file).ok();
-            if found != Some(removal.blob) {
-                let path = removal.path.clone();
-                stale.push((prepared.len() + at, PutError::Stale { path, found }));
-            }
-        }
+        stale.extend(
+            removed.iter().enumerate().filter_map(|(at, removal)| {
+                Some((prepared.len() + at, removal.stale(repository)?))
+            }),
+        );
         if !stale.is_empty() {
             return Err(Failure::Stale(stale));
         }
@@ -316,16 +358,8 @@ impl Board {
         } else {
             None
         };
-        for item in prepared {
-            repository
-                .write_file(&lock, &item.target.path, &item.canonical)
-                .map_err(|error| Failure::Error(error.into()))?;
-        }
-        for removal in removed {
-            repository
-                .remove_file(&lock, &removal.file)
-                .map_err(|error| Failure::Error(error.into()))?;
-        }
+        Self::apply(repository, &lock, prepared, removed)
+            .map_err(|error| Failure::Error(error.into()))?;
         let commit = match staged {
             None => None,
             Some(staged) => match repository.finish_commit(&lock, staged) {
@@ -348,7 +382,11 @@ impl Board {
                 Err(error) => Self::unresolvable(item, error),
             };
         }
-        Ok(PutReport::new(writes, commit))
+        let removed = removed.iter().map(Removal::removed).collect();
+        Ok(PutReport {
+            removed,
+            ..PutReport::new(writes, commit)
+        })
     }
 
     /// Checks `bytes` as `check` checks a record, with its codes, and
@@ -656,6 +694,7 @@ impl PutError {
 
 mod batch;
 mod file;
+mod remove;
 mod through;
 
 pub use batch::MAX_BATCH_LINES;

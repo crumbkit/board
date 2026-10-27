@@ -194,7 +194,7 @@ their digest and writes a board/attachment/v1 record.")]
         /// The blob the file must hold, or `none` for a new file.
         #[arg(long, value_parser = expect)]
         expect: Option<Expect>,
-        /// Read JSON Lines of `{path, expect, record}` or `{path, expect, text}` and write them all or none.
+        /// Read JSON Lines of `{path, expect}` with a record, a text or `remove: true`; apply all or none.
         ///
         /// A record line at `/.board/types/<namespace>/<kind>/v<n>.schema` adds that schema and takes
         /// no expect. Schema lines are checked before the other lines, and a schema the board holds
@@ -210,6 +210,33 @@ their digest and writes a board/attachment/v1 record.")]
         /// Under a plugin, where the put's authority is propose, write a pending effect in the
         /// personal board in place of the record.
         #[arg(long, conflicts_with = "batch")]
+        or_propose: bool,
+        /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
+        #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
+        wait: Duration,
+    },
+    /// Remove the file at a path.
+    #[command(after_help = "\
+The path names one file: a record, a file such as /notes/plan.md, or a link
+or mount record itself. A path through a link removes the file it leads to.
+References to the removed file are left for check to report. Each removal is
+committed unless .board/board.json sets `commit_on_put` to false.
+
+Examples:
+  board rm /tasks/a
+  board rm /tasks/a --expect 2bb218481e3ef5fe92e9fd97979a4578cab9af2c
+  board rm /notes/plan.md")]
+    Rm {
+        /// The file's logical path, such as /tasks/a, or a from /tasks; a JSON file's leaves out .json.
+        path: Given,
+        /// The blob the file must hold.
+        #[arg(long, value_parser = expect)]
+        expect: Option<Expect>,
+        /// Propose where a plugin may not act.
+        ///
+        /// Under a plugin, where the removal's authority is propose, write a pending effect in the
+        /// personal board in place of removing the file.
+        #[arg(long)]
         or_propose: bool,
         /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
         #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
@@ -482,7 +509,9 @@ pub(crate) fn run(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     let asks = match cli.command {
-        Command::Put { or_propose, .. } => Some((false, or_propose)),
+        Command::Put { or_propose, .. } | Command::Rm { or_propose, .. } => {
+            Some((false, or_propose))
+        }
         Command::Decide { .. } => Some((true, false)),
         _ => None,
     };
@@ -567,6 +596,15 @@ fn command(
             put(board, printer, &path, expect, file, wait, stdin)
         }
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
+        Command::Rm {
+            path, expect, wait, ..
+        } => {
+            let path = or_refuse!(read(prefix, &path, "rm"));
+            match board.remove_waiting(&path, expect.unwrap_or(Expect::Any), wait) {
+                Ok(report) => render::put(printer, &report, None),
+                Err(error) => render::refused(printer, error.refusal()),
+            }
+        }
         Command::Sync { no_push } => match board.sync(!no_push) {
             Ok(report) => render::sync(printer, &report),
             Err(error) => render::refused(printer, error.refusal()),

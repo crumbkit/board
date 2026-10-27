@@ -38,7 +38,11 @@ fn personal() -> Scenario {
 }
 
 fn preference(path: &str, authority: &str) -> String {
-    json!({"$type": "board/preference/v1", "op": "put", "path": path, "authority": authority})
+    rule("put", path, authority)
+}
+
+fn rule(op: &str, path: &str, authority: &str) -> String {
+    json!({"$type": "board/preference/v1", "op": op, "path": path, "authority": authority})
         .to_string()
 }
 
@@ -91,6 +95,10 @@ fn path(text: &str) -> LogicalPath {
 
 fn put(board: &Board, at: &str, record: &str) -> Result<PutReport, EffectError> {
     effect(board.put(&path(at), Expect::Any, record.as_bytes()))
+}
+
+fn rm(board: &Board, at: &str) -> Result<PutReport, EffectError> {
+    effect(board.remove_waiting(&path(at), Expect::Any, board_tree::LOCK_WAIT))
 }
 
 /// The effects refusal of a put.
@@ -1288,4 +1296,135 @@ fn a_plugins_put_under_preferences_or_effects_is_refused_in_a_board_that_is_not_
     assert!(!exists(&scenario, "preferences/w.json"));
     put(&board, "/tasks/a", &task("")).unwrap();
     assert!(exists(&scenario, "tasks/a.json"));
+}
+
+#[test]
+fn a_plugins_removal_of_a_setting_or_a_link_is_refused_and_the_owners_and_one_elsewhere_are_admitted()
+ {
+    let scenario = board();
+    scenario
+        .write(
+            ".board/settings/a.json",
+            Item::File(&preference("/*", "act")),
+        )
+        .write("notes/l.json", Item::File(&link("/projects/p")));
+    let plugin = opened(&scenario, Some("tasks"), None);
+    let owner = opened(&scenario, None, None);
+    for at in ["/.board/settings/a", "/notes/l"] {
+        let refused = rm(&plugin, at).unwrap_err();
+        assert_eq!(refused.code(), Code::SettingsFromPlugin, "{at}");
+        assert!(refused.to_string().contains("remove"), "{refused}");
+    }
+    rm(&owner, "/notes/l").unwrap();
+    rm(&owner, "/.board/settings/a").unwrap();
+    rm(&plugin, "/projects/p").unwrap();
+    assert!(!exists(&scenario, "projects/p.json"));
+}
+
+#[test]
+fn a_removal_a_rule_asks_for_holds_a_pending_rm_until_approved_and_a_put_rule_does_not_cover_it() {
+    let (scenario, mine) = (board(), personal());
+    scenario.write("tasks/a.json", Item::File(&task("")));
+    setting(&scenario, "puts", "/tasks/*", "ask");
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    rm(&board, "/tasks/a").unwrap();
+    scenario.write("tasks/a.json", Item::File(&task(""))).write(
+        ".board/settings/rm.json",
+        Item::File(&rule("rm", "/tasks/*", "ask")),
+    );
+    let id = asked(rm(&board, "/tasks/a"));
+    let effect = read(&mine, &format!("effects/pending/{id}.json"));
+    assert_eq!(effect["op"], "rm");
+    assert_eq!(effect["path"], "/tasks/a");
+    assert!(effect["prior"].is_string(), "{effect}");
+    assert!(
+        effect.get("record").is_none() && effect.get("digest").is_none(),
+        "{effect}"
+    );
+    assert!(exists(&scenario, "tasks/a.json"));
+    answer(&asker(None, Some(&mine)), &id, Answer::Approve, None, false).unwrap();
+    rm(&board, "/tasks/a").unwrap();
+    assert!(!exists(&scenario, "tasks/a.json"));
+}
+
+#[test]
+fn an_owners_removal_of_a_rule_is_refused_unless_they_sign_it_and_one_elsewhere_needs_no_signature()
+{
+    let mine = personal();
+    mine.write("preferences/r.json", Item::File(&preference("/*", "act")))
+        .write("tasks/a.json", Item::File(&task("")));
+    let (tools, decline, keep) = owner_signers();
+    let declining = owned(&mine, &mine, Some(&decline));
+    assert_eq!(
+        code(rm(&declining, "/preferences/r")),
+        Code::SettingsUnsigned
+    );
+    assert!(exists(&mine, "preferences/r.json"));
+    rm(&declining, "/tasks/a").unwrap();
+    rm(&owned(&mine, &mine, Some(&keep)), "/preferences/r").unwrap();
+    assert!(!exists(&mine, "preferences/r.json"));
+    let shown = std::fs::read_to_string(tools.workdir().join("shown")).unwrap();
+    let root = mine.workdir().canonicalize().unwrap();
+    assert_eq!(
+        shown,
+        format!(
+            "board/write/v1\nop: rm\npath: /preferences/r\nboard: {}\n",
+            root.display()
+        )
+    );
+}
+
+#[test]
+fn deciding_an_rm_holds_no_pending_effect_and_approving_one_with_save_rule_is_refused_as_cannot_widen()
+ {
+    let (scenario, mine) = (board(), personal());
+    scenario
+        .write("tasks/a.json", Item::File(&task("")))
+        .write(
+            ".board/settings/rm.json",
+            Item::File(&rule("rm", "/tasks/*", "ask")),
+        )
+        .write(
+            ".board/settings/comment.json",
+            Item::File(&rule("review.comment", "/tasks/*", "ask")),
+        );
+    let board = opened(&scenario, Some("tasks"), Some(&mine));
+    let decided = board.authority("rm", &path("/tasks/a")).unwrap();
+    assert_eq!(
+        (decided.decision.authority, decided.effect),
+        (Authority::Ask, None)
+    );
+    assert!(!exists(&mine, "effects"));
+    let comment = board
+        .authority("review.comment", &path("/tasks/a"))
+        .unwrap();
+    assert!(comment.effect.is_some());
+    let id = asked(rm(&board, "/tasks/a"));
+    let owner = asker(None, Some(&mine));
+    let widen = answer(&owner, &id, Answer::Approve, None, true);
+    assert_eq!(code(widen), Code::SettingsCannotWiden);
+    let saved = answer(&owner, &id, Answer::Refuse, None, true).unwrap();
+    assert_eq!(saved.rule, Some(format!("/preferences/{id}")));
+}
+
+#[test]
+fn an_owners_removal_of_the_board_config_is_refused_unless_they_sign_it_and_a_put_of_it_needs_no_signature()
+ {
+    let mine = personal();
+    let (_tools, decline, keep) = owner_signers();
+    let declining = owned(&mine, &mine, Some(&decline));
+    let refused = rm(&declining, "/.board/board").unwrap_err();
+    assert_eq!(refused.code(), Code::SettingsUnsigned);
+    let said = refused.to_string();
+    assert!(
+        said.starts_with(
+            "the owner's rm of /.board/board changes a rule, an effect or the board's config"
+        ),
+        "{said}"
+    );
+    assert!(exists(&mine, ".board/board.json"));
+    let config = std::fs::read_to_string(mine.workdir().join(".board/board.json")).unwrap();
+    put(&declining, "/.board/board", &config).unwrap();
+    rm(&owned(&mine, &mine, Some(&keep)), "/.board/board").unwrap();
+    assert!(!exists(&mine, ".board/board.json"));
 }

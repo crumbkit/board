@@ -95,7 +95,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 69] = [
+pub const NOT_CHECKED: [(Code, &str); 70] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -158,6 +158,10 @@ pub const NOT_CHECKED: [(Code, &str); 69] = [
     (Code::PutNotAFile, PUT),
     (Code::PutNul, PUT),
     (Code::PutNoIdentity, PUT),
+    (
+        Code::RmDirectory,
+        "rm refuses a directory with it; check removes nothing",
+    ),
     (Code::SettingsAsked, SETTINGS),
     (Code::SettingsRefused, SETTINGS),
     (Code::SettingsProposeOnly, SETTINGS),

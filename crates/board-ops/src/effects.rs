@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 
 use board_model::{
     Answer, Authority, Code, Digest, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, Layer, LogicalPath,
-    MAX_RECORD_BYTES, ObjectId, PREFERENCE_TYPE, PUT_OP, Preference, Refusal, Request, Rule,
+    MAX_RECORD_BYTES, ObjectId, PREFERENCE_TYPE, PUT_OP, Preference, RM_OP, Refusal, Request, Rule,
     SEEN_TYPE, Seen, canonical_json, parse_json,
 };
-use board_tree::{GitError, Repository, Target, Working, WriteError};
+use board_tree::{GitError, Removes, Repository, Target, Working, WriteError};
 use serde_json::Value;
 
 use crate::board::{Board, OpenError};
@@ -137,9 +137,13 @@ pub enum EffectError {
     #[error("pending effect {id} has no good approval signature: {why}")]
     Unsigned { id: String, why: String },
     #[error(
-        "the owner's put of {path} changes a rule or an effect and has no good signature: {why}"
+        "the owner's {op} of {path} changes a rule, an effect or the board's config and has no good signature: {why}"
     )]
-    OwnerUnsigned { path: String, why: String },
+    OwnerUnsigned {
+        op: &'static str,
+        path: String,
+        why: String,
+    },
     #[error("the rules in {} cannot be read: {source}", directory)]
     Read { directory: String, source: GitError },
     #[error("the personal board cannot be opened: {source}")]
@@ -389,6 +393,40 @@ pub(crate) enum Shape {
     Schema,
 }
 
+/// What a checked write does to the file it lands in: puts `canonical`,
+/// admitted as `admitted` in `shape`, or removes the file.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Change<'a> {
+    Put(&'a [u8], &'a Admitted, Shape),
+    Remove(Removes),
+}
+
+impl Change<'_> {
+    const fn op(self) -> &'static str {
+        match self {
+            Self::Put(..) => PUT_OP,
+            Self::Remove { .. } => RM_OP,
+        }
+    }
+
+    /// The shape of the file at `on_disk`: a removed file is a record when
+    /// its name is one.
+    fn shape(self, on_disk: &str) -> Shape {
+        match self {
+            Self::Put(_, _, shape) => shape,
+            Self::Remove { .. } if board_model::is_json_file(on_disk) => Shape::Record,
+            Self::Remove { .. } => Shape::File,
+        }
+    }
+
+    const fn verb(self) -> &'static str {
+        match self {
+            Self::Put(..) => "write",
+            Self::Remove { .. } => "remove",
+        }
+    }
+}
+
 /// `effect` with the content it would write, which is `canonical` text
 /// for a file and `admitted` for a record; refused when the content is not
 /// UTF-8 or the effect would be too large to keep as a record.
@@ -420,20 +458,29 @@ fn contain(
     Ok(())
 }
 
-/// What a plugin's put would do that only the owner does, given the path
-/// it was given, the file it lands in and its logical path: write a path
-/// that is not ASCII, write where [`protected`] says, put a link or mount,
-/// or put a preference, effect or seen record in any board.
+/// What a plugin's put or removal would do that only the owner does,
+/// given the path it was given, the file it lands in and its logical path:
+/// change a path that is not ASCII, change where [`protected`] says, put or
+/// remove a link or mount, or put a preference, effect or seen record in
+/// any board.
 fn owners(
     (given, on_disk, path): (&str, &str, &LogicalPath),
-    (admitted, shape): (&Admitted, Shape),
+    change: Change<'_>,
 ) -> Option<String> {
+    let verb = change.verb();
     if !given.is_ascii() {
-        return Some(format!("write /{given}, whose path is not ASCII"));
+        return Some(format!("{verb} /{given}, whose path is not ASCII"));
     }
-    if let Some(area) = protected(on_disk, shape) {
-        return Some(format!("write {path}, in {area}"));
+    if let Some(area) = protected(on_disk, change.shape(on_disk)) {
+        return Some(format!("{verb} {path}, in {area}"));
     }
+    let (admitted, shape) = match change {
+        Change::Put(_, admitted, shape) => (admitted, shape),
+        Change::Remove(removes) => {
+            return (removes == Removes::Pointer)
+                .then(|| format!("remove the link or mount {path}"));
+        }
+    };
     if admitted.pointer {
         return Some(format!("put the link or mount {path}"));
     }
@@ -471,6 +518,16 @@ fn owner_signs(given: &str, on_disk: &str) -> bool {
             _ => false,
         }
     })
+}
+
+/// Whether `change`, to the file given as `given` that lands at `on_disk`,
+/// removes the board's config, `.board/board.json`, in any case. Without
+/// it the board no longer opens.
+fn removes_config(change: &Change<'_>, given: &str, on_disk: &str) -> bool {
+    matches!(change, Change::Remove(_))
+        && [given, on_disk]
+            .iter()
+            .any(|file| file.eq_ignore_ascii_case(".board/board.json"))
 }
 
 /// Where only the owner writes, when the file at `file`, a working-tree
@@ -524,30 +581,30 @@ impl Board {
         })
     }
 
-    /// Checks a put under `BOARD_PLUGIN` of `canonical`, admitted as
-    /// `admitted`, to `target`, the file it lands in, against the rules
-    /// `loaded` holds, read once. Where it lands is decided on disk, so a
+    /// Checks `change`, a put or removal under `BOARD_PLUGIN` of `target`,
+    /// the file it lands in, against the rules `loaded` holds, read once. Where it lands is decided on disk, so a
     /// path spelled in another case reaches the rules of the file it
     /// writes. An ask or propose gathers its pending effect for
     /// [`Board::holding`] to write once the lock is released. Without a
-    /// plugin the put writes, once the owner signs it if [`owner_signs`].
+    /// plugin the change is made, once the owner signs it if
+    /// [`owner_signs`].
     pub(crate) fn gate(
         &self,
         loaded: &mut Option<Loaded>,
         target: &Target,
-        canonical: &[u8],
-        (admitted, shape): (&Admitted, Shape),
+        change: Change<'_>,
     ) -> Result<(), EffectError> {
         let Some(plugin) = &self.asker.plugin else {
-            return self.owner_put(target, canonical, (admitted, shape));
+            return self.owner_put(target, change);
         };
         let on_disk = self.repository().landing(&target.path);
-        let landed = landed(&on_disk, shape);
+        let landed = landed(&on_disk, change.shape(&on_disk));
+        let op = change.op();
         let Ok(path) = landed.parse::<LogicalPath>() else {
             return Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
                 path: None,
-                what: format!("write {landed}, which is not a logical path"),
+                what: format!("{} {landed}, which is not a logical path", change.verb()),
             });
         };
         let loaded = match loaded {
@@ -555,7 +612,7 @@ impl Board {
             None => loaded.insert(self.load()?),
         };
         let landing = (target.path.as_str(), on_disk.as_str(), &path);
-        if let Some(what) = owners(landing, (admitted, shape)) {
+        if let Some(what) = owners(landing, change) {
             return Err(EffectError::FromPlugin {
                 plugin: plugin.clone(),
                 path: Some(path),
@@ -571,7 +628,7 @@ impl Board {
         }
         let board = root(self);
         let request = Request {
-            op: PUT_OP,
+            op,
             path: &landed,
             plugin: Some(plugin),
             board: &board,
@@ -595,13 +652,15 @@ impl Board {
             .personal
             .as_ref()
             .ok_or_else(|| EffectError::NoPersonal {
-                what: format!("put {path} needs a pending effect in the personal board"),
+                what: format!("{op} {path} needs a pending effect in the personal board"),
             })?;
-        let mut effect = Effect::new(board, plugin.clone(), PUT_OP.to_owned(), landed.clone());
+        let mut effect = Effect::new(board, plugin.clone(), op.to_owned(), landed.clone());
         effect.authority = decision.authority;
-        effect.digest = Some(Digest::of(canonical));
         effect.prior = self.prior(&target.path)?;
-        contain(&mut effect, canonical, (admitted, shape), &path)?;
+        if let Change::Put(canonical, admitted, shape) = change {
+            effect.digest = Some(Digest::of(canonical));
+            contain(&mut effect, canonical, (admitted, shape), &path)?;
+        }
         let id = effect.id();
         match seen(personal, &effect, self.asker.signing.allowed.as_deref())? {
             Some(Answer::Approve) => return Ok(()),
@@ -625,37 +684,38 @@ impl Board {
         })
     }
 
-    /// Checks the owner's own put of `canonical`, admitted as `admitted`,
-    /// to `target`. One that [`owner_signs`] needs the owner to sign
-    /// [`Effect::owner_write`] now, with Touch ID, while the put holds the
-    /// lock; Board keeps no signature of it.
-    fn owner_put(
-        &self,
-        target: &Target,
-        canonical: &[u8],
-        (admitted, shape): (&Admitted, Shape),
-    ) -> Result<(), EffectError> {
+    /// Checks the owner's own `change` to `target`. One that
+    /// [`owner_signs`] or [`removes_config`] needs the owner to sign
+    /// [`Effect::owner_write`] now,
+    /// with Touch ID, while the put holds the lock; Board keeps no
+    /// signature of it.
+    fn owner_put(&self, target: &Target, change: Change<'_>) -> Result<(), EffectError> {
         if !self.asker.sign_owner_writes {
             return Ok(());
         }
         let on_disk = self.repository().landing(&target.path);
-        if !owner_signs(&target.path, &on_disk) {
+        if !owner_signs(&target.path, &on_disk) && !removes_config(&change, &target.path, &on_disk)
+        {
             return Ok(());
         }
-        let landed = landed(&on_disk, shape);
+        let landed = landed(&on_disk, change.shape(&on_disk));
         let unsigned = |why: String| EffectError::OwnerUnsigned {
+            op: change.op(),
             path: landed.clone(),
             why,
         };
-        let mut effect = Effect::new(root(self), String::new(), PUT_OP.to_owned(), landed.clone());
-        effect.digest = Some(Digest::of(canonical));
-        if shape == Shape::File {
-            let text = std::str::from_utf8(canonical).map_err(|_| {
-                unsigned("its bytes are not UTF-8, so no statement can show them".to_owned())
-            })?;
-            effect.text = Some(text.to_owned());
-        } else {
-            effect.record = Some(admitted.value.clone());
+        let op = change.op().to_owned();
+        let mut effect = Effect::new(root(self), String::new(), op, landed.clone());
+        if let Change::Put(canonical, admitted, shape) = change {
+            effect.digest = Some(Digest::of(canonical));
+            if shape == Shape::File {
+                let text = std::str::from_utf8(canonical).map_err(|_| {
+                    unsigned("its bytes are not UTF-8, so no statement can show them".to_owned())
+                })?;
+                effect.text = Some(text.to_owned());
+            } else {
+                effect.record = Some(admitted.value.clone());
+            }
         }
         let root = root(self);
         decide::signature(&self.asker.signing, Path::new(&root), &effect.owner_write())
@@ -685,8 +745,8 @@ impl Board {
         if let Some(first) = pending.first() {
             let what = || {
                 format!(
-                    "put {} needs a pending effect in the personal board",
-                    first.path
+                    "{} {} needs a pending effect in the personal board",
+                    first.op, first.path
                 )
             };
             let personal = self.asker.personal(what)?;

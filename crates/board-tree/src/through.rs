@@ -5,10 +5,11 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use board_model::{Code, LogicalPath, ObjectId};
+use board_model::{Code, Location, LogicalPath, ObjectId, Source};
 
 use crate::git::{GitError, Repository, model_id};
 use crate::worktree::Working;
+use crate::write::WriteError;
 
 /// The most commits a put walks back from the mounted HEAD looking for the
 /// pinned commit, so a huge mounted history cannot stall a put.
@@ -160,5 +161,60 @@ impl Repository {
             Working::TooLarge => Some(self.working_blob(file)?),
         };
         Ok([at(pin)?, at(head)?, working])
+    }
+}
+
+/// The last pointer in this board's working tree on the way to `location`:
+/// the mount that `path` passes. A mount file with no logical path, such as
+/// one reached through a symlink by a path longer than a logical path may
+/// be, has no `display_path`; then it is `path`.
+pub(crate) fn mount_passed(path: &LogicalPath, location: &Location) -> LogicalPath {
+    (location.pointers.iter())
+        .take_while(|pointer| pointer.board.source == Source::WorkingTree)
+        .last()
+        .and_then(Location::display_path)
+        .unwrap_or_else(|| path.clone())
+}
+
+/// A write to `path` refused because `location`, where it leads, is in a
+/// mounted board, naming the last pointer in the working tree: the mount
+/// that leads out of it. Through one mount to the file `physical`, whose
+/// logical path drops `suffix`, it says where that file is in the mounted
+/// board, for a put to write.
+pub(crate) fn through_mount(
+    path: &LogicalPath,
+    location: &Location,
+    physical: Option<&str>,
+    suffix: &str,
+) -> WriteError {
+    let mut mounted = location
+        .pointers
+        .iter()
+        .filter(|pointer| pointer.board.source != Source::WorkingTree);
+    let one = mounted.all(|pointer| pointer.board == location.board);
+    let why = if one {
+        Through::Mounted
+    } else {
+        Through::Nested
+    };
+    let inside = match (&location.board.source, physical) {
+        (Source::Commit(commit), Some(file)) if one => file
+            .strip_suffix(suffix)
+            .and_then(|logical| format!("/{logical}").parse().ok())
+            .map(|inside| {
+                Box::new(Inside {
+                    repository: location.board.repository.clone(),
+                    commit: *commit,
+                    file: file.to_owned(),
+                    path: inside,
+                })
+            }),
+        _ => None,
+    };
+    WriteError::ThroughMount {
+        path: path.clone(),
+        mount: mount_passed(path, location),
+        why: Box::new(why),
+        inside,
     }
 }

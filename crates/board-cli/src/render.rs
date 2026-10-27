@@ -45,6 +45,7 @@ pub(crate) const LEAVES: &[Leaf] = &[
     Leaf::new(&["ls"]).document(LS),
     refs::LEAF,
     Leaf::new(&["put"]).document(PUT),
+    Leaf::new(&["rm"]).document(PUT),
     Leaf::new(&["sync"]).document(SYNC),
     Leaf::new(&["mount", "update"]).document(MOUNT_UPDATE),
     plugins::LIST,
@@ -76,7 +77,10 @@ const INIT: Document<Answer> = prose(
     "init-report",
     "Where the board is, and whether init made it.",
 );
-const PUT: Document<Answer> = prose("put-report", "What each write wrote, and its commit.");
+const PUT: Document<Answer> = prose(
+    "put-report",
+    "What each write wrote or removed, and its commit.",
+);
 const ENABLE: Document<Answer> = prose("plugin-enable-report", "What enabling a plugin wrote.");
 const MOUNT_UPDATE: Document<Answer> =
     prose("mount-update-report", "Where a mount moved from and to.");
@@ -174,6 +178,9 @@ fn put_text(report: &PutReport) -> String {
     for written in &report.writes {
         let _ = writeln!(text, "wrote {} {}", written.display, written.blob);
     }
+    for removed in &report.removed {
+        let _ = writeln!(text, "removed {} {}", removed.path, removed.blob);
+    }
     if let Some(commit) = report.commit {
         let _ = writeln!(text, "committed {commit}");
     }
@@ -208,6 +215,12 @@ fn put_json(report: &PutReport) -> Value {
         "writes": writes,
         "commit": report.commit.map(|commit| commit.to_string()),
     });
+    if !report.removed.is_empty() {
+        let removed = report.removed.iter();
+        value["removed"] = removed
+            .map(|removed| json!({"path": removed.path.to_string(), "blob": removed.blob.to_string()}))
+            .collect();
+    }
     if let Some(id) = &report.proposed {
         value["proposed"] = json!(id);
     }

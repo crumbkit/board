@@ -129,11 +129,28 @@ proptest! {
 }
 
 #[test]
-fn with_no_rule_a_put_acts_and_any_other_op_asks() {
+fn with_no_rule_a_put_or_rm_acts_and_any_other_op_asks() {
     let none = decide(&[], &request(PUT_OP, "/tasks/t1", Some("tasks")));
     assert_eq!((none.authority, none.deciding), (Authority::Act, None));
+    let removal = decide(&[], &request(RM_OP, "/tasks/t1", Some("tasks")));
+    assert_eq!(
+        (removal.authority, removal.deciding),
+        (Authority::Act, None)
+    );
     let other = decide(&[], &request("review.comment", "/tasks/t1", Some("tasks")));
     assert_eq!(other.authority, Authority::Ask);
+}
+
+#[test]
+fn a_rule_for_rm_decides_a_removal_and_leaves_a_put_to_its_own_rules() {
+    let rules = [rule(Layer::Owner, RM_OP, "/evals/*", Authority::Ask, None)];
+    let removal = decide(&rules, &request(RM_OP, "/evals/e", Some("evals")));
+    assert_eq!(
+        (removal.authority, removal.deciding),
+        (Authority::Ask, Some(0))
+    );
+    let put = decide(&rules, &request(PUT_OP, "/evals/e", Some("evals")));
+    assert_eq!((put.authority, put.deciding), (Authority::Act, None));
 }
 
 #[test]

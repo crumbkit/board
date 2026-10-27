@@ -9,6 +9,7 @@ mod mounts;
 mod places;
 mod planned;
 mod reading;
+mod removing;
 mod scoped;
 mod symlinks;
 mod syncing;

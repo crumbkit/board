@@ -333,6 +333,14 @@ impl Scenario {
         model(self.git.write_blob(text).unwrap().detach())
     }
 
+    /// The bytes of the blob `id` in the object store, or `None` when the
+    /// store does not hold it.
+    pub fn stored(&self, id: ObjectId) -> Option<Vec<u8>> {
+        let id = gix::ObjectId::try_from(id.as_bytes()).unwrap();
+        let blob = self.git.find_blob(id).ok()?;
+        Some(blob.data.clone())
+    }
+
     /// Commits a tree of text files at `/`-separated paths.
     pub fn commit(&self, files: &[(&str, &str)]) -> ObjectId {
         let items: Vec<(&[u8], Item<'_>)> = files

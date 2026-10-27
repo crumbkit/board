@@ -14,7 +14,7 @@ plugin composes `query`, `refs`, `get` and `put --batch`.
 
 The source keeps its record and the destination gets an equal one at the same
 path. Moving the record, and leaving a link at its old path, was rejected:
-Board has no delete, a plugin may not touch the working tree, and a link beside
+a plugin may not touch the working tree, and a link beside
 a record's child directory is `board::path::shadowed`, so the children would
 have to go as well.
 

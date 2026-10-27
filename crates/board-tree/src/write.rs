@@ -17,13 +17,15 @@ use gix::lock::acquire::Fail;
 use crate::git::{GitError, Repository, model_id};
 use crate::repositories::Repositories;
 use crate::resolve::{ResolveError, Resolver};
-use crate::through::{Inside, Through};
+use crate::through::{Inside, Through, through_mount};
 use crate::tree::Tree;
 use crate::walk::{Beneath, Planned, Tense, reason};
 use entries::{stage_entry, unstage_entry};
 
 mod entries;
 pub(crate) mod outside;
+mod removal;
+pub use removal::Removes;
 pub(crate) mod sync;
 
 /// How long a put waits for another put's lock.
@@ -224,55 +226,6 @@ fn said(path: &LogicalPath, source: &ResolveError) -> String {
     }
 }
 
-/// A write to `path` refused because `location`, where it leads, is in a
-/// mounted board, naming the last pointer in the working tree: the mount
-/// that leads out of it. Through one mount to the file `physical`, whose
-/// logical path drops `suffix`, it says where that file is in the mounted
-/// board, for a put to write.
-fn through_mount(
-    path: &LogicalPath,
-    location: &Location,
-    physical: Option<&str>,
-    suffix: &str,
-) -> WriteError {
-    let pointers = location.pointers.iter();
-    let mount = pointers
-        .clone()
-        .take_while(|pointer| pointer.board.source == Source::WorkingTree)
-        .last()
-        .and_then(Location::display_path);
-    let mut mounted = pointers.filter(|pointer| pointer.board.source != Source::WorkingTree);
-    let one = mounted.all(|pointer| pointer.board == location.board);
-    let why = if one {
-        Through::Mounted
-    } else {
-        Through::Nested
-    };
-    let inside = match (&location.board.source, physical) {
-        (Source::Commit(commit), Some(file)) if one => file
-            .strip_suffix(suffix)
-            .and_then(|logical| format!("/{logical}").parse().ok())
-            .map(|inside| {
-                Box::new(Inside {
-                    repository: location.board.repository.clone(),
-                    commit: *commit,
-                    file: file.to_owned(),
-                    path: inside,
-                })
-            }),
-        _ => None,
-    };
-    // A mount file with no logical path, such as one reached through a
-    // symlink by a path longer than a logical path may be, has no
-    // `display_path`; the error then names `path`.
-    WriteError::ThroughMount {
-        path: path.clone(),
-        mount: mount.unwrap_or_else(|| path.clone()),
-        why: Box::new(why),
-        inside,
-    }
-}
-
 /// A write to `path` refused because it reaches `file`, which is not a
 /// record.
 fn not_a_record(path: &LogicalPath, file: LogicalPath) -> WriteError {
@@ -369,6 +322,22 @@ impl Repository {
                 source,
             }),
         }
+    }
+
+    /// Writes the working-tree file at the `/`-separated `path` into git's
+    /// object store, so `git cat-file -p` restores the blob a removal
+    /// reports even when no commit holds it. The lock must be held.
+    pub fn store_working(&self, _lock: &Lock, path: &str) -> Result<(), WriteError> {
+        let target = self.path().join(path);
+        let stored = fs::File::open(&target).and_then(|file| {
+            (self.git().write_blob_stream(io::BufReader::new(file)))
+                .map(|_| ())
+                .map_err(io::Error::other)
+        });
+        stored.map_err(|source| WriteError::Io {
+            path: target,
+            source,
+        })
     }
 }
 
@@ -667,6 +636,21 @@ pub enum WriteError {
         why: Box<Through>,
         inside: Option<Box<Inside>>,
     },
+    /// A removal refused because `path` does not resolve to a file.
+    #[error("{path} cannot be removed: {}", said(path, source))]
+    Unremovable {
+        path: LogicalPath,
+        #[source]
+        source: Box<ResolveError>,
+    },
+    /// A removal refused because `path` is in the board mounted at `mount`.
+    #[error("{path} cannot be removed: it is in the board mounted at {mount}")]
+    RemoveThroughMount {
+        path: LogicalPath,
+        mount: LogicalPath,
+    },
+    #[error("{path} cannot be removed: it is a directory")]
+    Directory { path: LogicalPath },
     /// `file` is what the path reaches: itself, or its deepest ancestor.
     #[error("{path} cannot be written: {file} is not a record")]
     NotARecord {
@@ -739,7 +723,10 @@ impl WriteError {
     pub fn code(&self) -> Code {
         match self {
             Self::Unresolved { source, .. } => source.code(),
+            Self::Unremovable { source, .. } => source.code(),
             Self::ThroughMount { why, .. } => why.code(),
+            Self::RemoveThroughMount { .. } => Code::PutThroughMount,
+            Self::Directory { .. } => Code::RmDirectory,
             Self::NotARecord { .. } => Code::RecordNotARecord,
             Self::InGit { .. } => Code::PathMalformed,
             Self::NotAFile { .. } => Code::PutNotAFile,
@@ -765,10 +752,16 @@ impl WriteError {
                 path,
             }
             | Self::ThroughMount { mount: path, .. }
+            | Self::RemoveThroughMount { mount: path, .. }
+            | Self::Directory { path }
             | Self::InGit { path, .. }
             | Self::NotAFile { path, .. }
             | Self::Degraded { path, .. }
             | Self::Symlink { path, .. } => Fields::at(path),
+            Self::Unremovable { source, path } => match **source {
+                ResolveError::Git(_) => Fields::at(path),
+                _ => source.fields(),
+            },
             Self::Unresolved { source, .. } => source.fields(),
             Self::NotARecord { file, .. } => Fields::at(file),
             Self::Beneath { path, beneath } => Fields {

@@ -34,8 +34,10 @@ pub const WRITE_HEADER: &str = "board/write/v1";
 /// another namespace, so neither verifies as the other.
 pub const SIGNATURE_NAMESPACE: &str = "board/approve/v1";
 
-/// The op of a put, the one op Board performs itself.
+/// The op of a put, which Board performs itself.
 pub const PUT_OP: &str = "put";
+/// The op of a removal, which Board performs itself.
+pub const RM_OP: &str = "rm";
 
 /// How far a plugin may go, from widest to narrowest, so the narrowest of
 /// several is the greatest.
@@ -184,9 +186,15 @@ impl From<Pattern> for String {
     }
 }
 
-/// Whether `op` is `put` or `<plugin>.<name>`.
+/// Whether `op` is a write Board makes itself, `put` or `rm`: it acts
+/// where no rule covers it, and holds its own pending effect.
+pub fn is_write(op: &str) -> bool {
+    op == PUT_OP || op == RM_OP
+}
+
+/// Whether `op` is `put`, `rm` or `<plugin>.<name>`.
 pub fn is_op(op: &str) -> bool {
-    op == PUT_OP
+    is_write(op)
         || op
             .split_once('.')
             .is_some_and(|(plugin, name)| !plugin.is_empty() && !name.is_empty())
@@ -494,7 +502,7 @@ pub fn decide(rules: &[Rule], request: &Request<'_>) -> Decision {
         });
     let authority = match deciding {
         Some(at) => matching[at].preference.authority,
-        None if request.op == PUT_OP => Authority::Act,
+        None if is_write(request.op) => Authority::Act,
         None => Authority::Ask,
     };
     Decision {

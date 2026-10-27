@@ -60,6 +60,7 @@ pub enum Code {
     PutNoIdentity,
     PutHeadMoved,
     PutFailed,
+    RmDirectory,
     SyncNoRemote,
     SyncFailed,
     SyncConflict,
@@ -113,7 +114,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 101] = [
+    pub const ALL: [Code; 102] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -166,6 +167,7 @@ impl Code {
         Self::PutNoIdentity,
         Self::PutHeadMoved,
         Self::PutFailed,
+        Self::RmDirectory,
         Self::SyncNoRemote,
         Self::SyncFailed,
         Self::SyncConflict,
@@ -280,6 +282,7 @@ impl Code {
             Self::PutNoIdentity => "board::put::no_identity",
             Self::PutHeadMoved => "board::put::head_moved",
             Self::PutFailed => "board::put::failed",
+            Self::RmDirectory => "board::rm::directory",
             Self::SyncNoRemote => "board::sync::no_remote",
             Self::SyncFailed => "board::sync::failed",
             Self::SyncConflict => "board::sync::conflict",
@@ -402,6 +405,7 @@ mod tests {
             | Code::PutNoIdentity
             | Code::PutHeadMoved
             | Code::PutFailed
+            | Code::RmDirectory
             | Code::SyncNoRemote
             | Code::SyncFailed
             | Code::SyncConflict

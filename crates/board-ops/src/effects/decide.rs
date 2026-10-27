@@ -1,8 +1,8 @@
 //! `board decide` and `board answer`.
 
 use board_model::{
-    Answer, Authority, BINARY_NAME, Decision, Digest, Effect, LogicalPath, PUT_OP, Pattern,
-    Preference, Request, Seen, canonical_json, is_effect_id,
+    Answer, Authority, BINARY_NAME, Decision, Digest, Effect, LogicalPath, Pattern, Preference,
+    Request, Seen, canonical_json, is_effect_id, is_write,
 };
 use serde_json::json;
 
@@ -126,7 +126,7 @@ impl Board {
             });
         }
         let authority = report.decision.authority;
-        if op == PUT_OP || matches!(authority, Authority::Act | Authority::Refuse) {
+        if is_write(op) || matches!(authority, Authority::Act | Authority::Refuse) {
             return Ok(report);
         }
         let personal = loaded
@@ -167,7 +167,7 @@ pub fn answer(
     let personal = asker.personal(|| "an answer is written in the personal board".to_owned())?;
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
-    if save_rule && answer == Answer::Approve && effect.op == PUT_OP {
+    if save_rule && answer == Answer::Approve && is_write(&effect.op) {
         return Err(EffectError::CannotWiden { id: id.to_owned() });
     }
     let rule = save_rule

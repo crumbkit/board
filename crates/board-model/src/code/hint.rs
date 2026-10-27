@@ -121,6 +121,10 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
                 pointer?
             ),
         },
+        Code::RmDirectory => format!(
+            "rm removes one file; `board ls {}` lists the files to remove, one at a time or as remove lines of one put --batch",
+            path?
+        ),
         Code::RecordNotARecord => format!(
             "only a record is put without `--file`, and nothing is put beneath a file; `board ls {}` shows what is there",
             path?
@@ -461,6 +465,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
+        }
+        Code::RmDirectory => {
+            "rm removes one file; `board ls <path>` lists the files to remove, one at a time or as remove lines of one put --batch"
         }
         Code::SyncNoRemote => {
             "clone the board from its remote, or set the branch's upstream with `git push -u <remote> <branch>`, then sync again"

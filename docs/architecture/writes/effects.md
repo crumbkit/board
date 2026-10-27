@@ -22,7 +22,7 @@ owner decides what a plugin may do, and how a plugin asks.
 Each is a Board type, checked by its Rust type, with no schema file.
 
 - `board/preference/v1`: a rule.
-  - `op` is `put` or `<plugin>.<capability>`.
+  - `op` is `put`, `rm` or `<plugin>.<capability>`.
   - `path` is a pattern that starts with `/`. `*` matches any run of
     characters, `/` included, and `?` matches one. Matching folds ASCII case.
     A pattern with an empty, `.` or `..` segment, or a trailing `/`, is
@@ -60,7 +60,10 @@ Each is a Board type, checked by its Rust type, with no schema file.
 - The narrowest authority among the matching rules wins, in the order act,
   propose, ask, refuse. A rule therefore narrows another and never widens
   it. Of equal rules the owner's comes first.
-- With no matching rule, `put` acts and any other op asks.
+- With no matching rule, `put` and `rm` act and any other op asks.
+- `rm` is checked as a put is, at the file it removes. Its effect holds
+  `prior` and no content. A plugin's removal of a link or mount record is
+  refused, as its put of one is.
 
 ## A plugin's put
 
@@ -114,8 +117,8 @@ Each is a Board type, checked by its Rust type, with no schema file.
     the mounted board's settings.
   - It lists 20 rules and the deciding one, and notes those left out and
     when no personal board was read.
-  - For `put`, it reports the rules' authority and writes nothing, because a
-    put's effect holds its record.
+  - For `put` and `rm`, it reports the rules' authority and writes nothing,
+    because their effect holds the record or the prior blob.
   - For another op under a plugin, the owner's answer replaces the
     authority, and an ask with no answer writes a pending effect.
 - `board answer <id> approve|refuse [--reason <text>] [--save-rule]` writes
@@ -140,8 +143,8 @@ Each is a Board type, checked by its Rust type, with no schema file.
     `?` or `[` is refused with `board::settings::bad_pattern`.
   - The owner answers only approve or refuse. There is no answer that
     turns an ask into a proposal.
-  - Approving a put with `--save-rule` is refused with
-    `board::settings::cannot_widen`. A put asks only where a rule says so,
+  - Approving a put or rm with `--save-rule` is refused with
+    `board::settings::cannot_widen`. They ask only where a rule says so,
     and a saved `act` cannot widen that rule.
   - A plugin may not answer (`from_plugin`).
   - An id that is not 64 lowercase hex digits, names no pending effect, or
@@ -207,7 +210,9 @@ owner's signature for a file under `.board/settings/`, `preferences/` or
 that names the personal board is the caller's to choose. It matches the
 working-tree path in any ASCII case. A first directory that is not ASCII,
 or a second one under `.board/`, also needs a signature, because a file
-system may fold it to one of those names.
+system may fold it to one of those names. The owner's `rm` of
+`.board/board.json` also needs a signature, because the board does not open
+without it. A put of it does not.
 
 - The put runs `<signer> approve <file>` on the statement
   `Effect::owner_write`. The statement starts `board/write/v1` and shows the

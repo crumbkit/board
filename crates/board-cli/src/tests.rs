@@ -999,6 +999,28 @@ fn put_writes_the_record_on_stdin_and_reports_where() {
 }
 
 #[test]
+fn rm_removes_the_file_and_reports_its_path_and_blob_and_a_stale_expect_removes_nothing() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let blob = scenario.blob(r#"{"$type": "lr/project/v1"}"#);
+    let run = |args: &[&str]| board_with(scenario.workdir(), None, args, b"");
+    let stale = run(&["rm", "/projects/p", "--expect", "none"]);
+    assert_eq!(stale.code, 1);
+    assert!(scenario.workdir().join("projects/p.json").exists());
+    let report = json(&run(&["rm", "/projects/p", "--json"]));
+    assert_eq!(report["schema"], "board/put-report/v2");
+    assert_eq!(report["data"]["writes"], json!([]));
+    assert_eq!(
+        report["data"]["removed"],
+        json!([{"path": "/projects/p", "blob": blob.to_string()}])
+    );
+    assert!(!scenario.workdir().join("projects/p.json").exists());
+}
+
+#[test]
 fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
     let scenario = board();
     scenario.write(
