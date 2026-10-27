@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use super::{Asker, EffectError, Signing, answer, hold};
 use crate::Board;
-use crate::put::{Expect, PutError, PutReport};
+use crate::put::{Expect, PutError, PutReport, Removing, Unmatched};
 use crate::tests::{TASK_SCHEMA, task};
 
 const CONFIG: &str = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
@@ -98,7 +98,12 @@ fn put(board: &Board, at: &str, record: &str) -> Result<PutReport, EffectError> 
 }
 
 fn rm(board: &Board, at: &str) -> Result<PutReport, EffectError> {
-    effect(board.remove_waiting(&path(at), Expect::Any, board_tree::LOCK_WAIT))
+    effect(board.remove_waiting(
+        &path(at),
+        Removing::File(Expect::Any),
+        Unmatched::Refuse,
+        board_tree::LOCK_WAIT,
+    ))
 }
 
 /// The effects refusal of a put.

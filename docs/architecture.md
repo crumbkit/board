@@ -285,7 +285,8 @@ committed if HEAD lacks it, unless a symlink holds it
 because a changed type is a new version, and one that is not JSON is refused
 with its `json` code. The report is `board/put-report/v2`.
 
-`board rm <path>` removes one file and commits the removal, and a
+`board rm <path>` removes one file, or with `-r` every file beneath a
+directory, and commits the removal, and a
 `put --batch` line with `"remove": true` removes one in the batch's commit.
 [architecture/writes/removing.md](architecture/writes/removing.md) holds the
 rules.

@@ -64,6 +64,8 @@ pub struct Removed {
 pub struct PutReport {
     pub writes: Vec<Written>,
     pub removed: Vec<Removed>,
+    /// The paths a removal that ignores what names nothing found absent.
+    pub absent: Vec<LogicalPath>,
     pub commit: Option<ObjectId>,
     /// The pending effect a put that could only propose wrote in the
     /// personal board, in place of the record.
@@ -76,17 +78,24 @@ impl PutReport {
         Self {
             writes,
             removed: Vec::new(),
+            absent: Vec::new(),
             commit,
             proposed: None,
         }
     }
 
+    /// A removal that found `path` absent and removed nothing.
+    pub(crate) fn absent(path: LogicalPath) -> Self {
+        Self {
+            absent: vec![path],
+            ..Self::new(Vec::new(), None)
+        }
+    }
+
     pub(crate) fn proposed(id: String) -> Self {
         Self {
-            writes: Vec::new(),
-            removed: Vec::new(),
-            commit: None,
             proposed: Some(id),
+            ..Self::new(Vec::new(), None)
         }
     }
 }
@@ -699,6 +708,7 @@ mod through;
 
 pub use batch::MAX_BATCH_LINES;
 pub(crate) use batch::{Checked, ReadLine};
+pub use remove::{Removing, Unmatched};
 use through::{Crossing, Sent};
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ mod run;
 mod stdin;
 mod timing;
 mod ui;
+mod values;
 
 #[cfg(test)]
 mod tests;

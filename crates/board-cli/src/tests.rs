@@ -1021,6 +1021,40 @@ fn rm_removes_the_file_and_reports_its_path_and_blob_and_a_stale_expect_removes_
 }
 
 #[test]
+fn rm_ignore_unmatch_reports_an_absent_path_and_recursive_refuses_an_expect() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let run = |args: &[&str]| board_with(scenario.workdir(), None, args, b"");
+    let refused = run(&["rm", "/projects/zz", "--json"]);
+    assert_eq!(refused.code, 1);
+    let report = json(&run(&["rm", "/projects/zz", "--ignore-unmatch", "--json"]));
+    assert_eq!(report["data"]["absent"], json!(["/projects/zz"]));
+    assert_eq!(report["data"].get("removed"), None);
+    let removed = json(&run(&["rm", "/projects/p", "--json"]));
+    assert_eq!(removed["data"].get("absent"), None);
+    scenario.write("tasks/a.md", Item::File("a"));
+    scenario.write("tasks/b.md", Item::File("b"));
+    let conflict = run(&["rm", "-r", "/tasks", "--expect", "none"]);
+    assert_eq!(conflict.code, 2);
+    assert!(scenario.workdir().join("tasks").exists());
+    let recursive = json(&run(&["rm", "-r", "/tasks", "--json"]));
+    let paths = recursive["data"]["removed"].as_array().map(|removed| {
+        removed
+            .iter()
+            .map(|one| one["path"].clone())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(
+        paths,
+        Some(vec![json!("/tasks/a.md"), json!("/tasks/b.md")])
+    );
+    assert!(!scenario.workdir().join("tasks").exists());
+}
+
+#[test]
 fn put_notes_a_write_it_leaves_degraded_and_its_clean_twin_has_no_note() {
     let scenario = board();
     scenario.write(

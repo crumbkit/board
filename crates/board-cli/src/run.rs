@@ -6,8 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use board_model::{
-    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, ObjectId, PathError,
-    Refusal,
+    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, PathError, Refusal,
 };
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
 use board_plugin::{CapabilityName, Limits, Target};
@@ -31,6 +30,7 @@ use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::stdin::{TypeCommand, call, put};
 use crate::timing::Ran;
+use crate::values::{duration, expect, op, pointer, removal};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -219,19 +219,27 @@ their digest and writes a board/attachment/v1 record.")]
     #[command(after_help = "\
 The path names one file: a record, a file such as /notes/plan.md, or a link
 or mount record itself. A path through a link removes the file it leads to.
-References to the removed file are left for check to report. Each removal is
-committed unless .board/board.json sets `commit_on_put` to false.
+-r removes every file beneath a directory in one commit, a link as itself,
+and refuses a symlink. Check reports references to removed files. Each
+removal is committed unless .board/board.json sets `commit_on_put` to false.
 
 Examples:
   board rm /tasks/a
   board rm /tasks/a --expect 2bb218481e3ef5fe92e9fd97979a4578cab9af2c
-  board rm /notes/plan.md")]
+  board rm -r /tasks
+  board rm /tasks/zz --ignore-unmatch")]
     Rm {
         /// The file's logical path, such as /tasks/a, or a from /tasks; a JSON file's leaves out .json.
         path: Given,
         /// The blob the file must hold.
         #[arg(long, value_parser = expect)]
         expect: Option<Expect>,
+        /// Remove every file beneath a directory.
+        #[arg(short = 'r', long, conflicts_with = "expect")]
+        recursive: bool,
+        /// Report a path that names nothing as absent.
+        #[arg(long)]
+        ignore_unmatch: bool,
         /// Propose where a plugin may not act.
         ///
         /// Under a plugin, where the removal's authority is propose, write a pending effect in the
@@ -383,54 +391,6 @@ impl Command {
 }
 
 /// `none`, or a blob id in hex.
-fn expect(text: &str) -> Result<Expect, String> {
-    if text == "none" {
-        return Ok(Expect::Absent);
-    }
-    ObjectId::from_hex(text)
-        .map(Expect::Blob)
-        .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
-}
-
-/// `put` or `<plugin>.<capability>`.
-fn op(text: &str) -> Result<String, String> {
-    board_model::is_op(text)
-        .then(|| text.to_owned())
-        .ok_or_else(|| {
-            "must be `put` or `<plugin>.<capability>`, such as review.comment".to_owned()
-        })
-}
-
-/// A count of milliseconds, seconds, minutes or hours with its unit.
-fn duration(text: &str) -> Result<Duration, String> {
-    let count = text.trim_end_matches(|c: char| c.is_ascii_alphabetic());
-    let scale = match &text[count.len()..] {
-        "ms" => Some(1),
-        "s" => Some(1_000),
-        "m" => Some(60_000),
-        "h" => Some(3_600_000),
-        _ => None,
-    };
-    scale
-        .zip(count.parse::<u64>().ok())
-        .and_then(|(scale, count)| count.checked_mul(scale))
-        .map(Duration::from_millis)
-        .ok_or_else(|| "must be a whole number with a unit: 500ms, 30s, 2m or 1h".to_owned())
-}
-
-/// A JSON pointer, by RFC 6901: empty, or each token after a `/`, in which
-/// `~` is followed by `0` or `1`.
-fn pointer(text: &str) -> Result<String, String> {
-    let mut escapes = text.split('~').skip(1);
-    if (text.is_empty() || text.starts_with('/'))
-        && escapes.all(|after| after.starts_with(['0', '1']))
-    {
-        Ok(text.to_owned())
-    } else {
-        Err("must be a JSON pointer, such as /status, or /a~1b for the key a/b: empty or starting with /, with ~ only as ~0 or ~1".to_owned())
-    }
-}
-
 /// Runs one command line against the board found from `context`, reading a
 /// record from `stdin` when the command takes one, and traces it in `ran`.
 pub(crate) fn run(
@@ -597,10 +557,16 @@ fn command(
         }
         Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
         Command::Rm {
-            path, expect, wait, ..
+            path,
+            expect,
+            recursive,
+            ignore_unmatch,
+            wait,
+            ..
         } => {
             let path = or_refuse!(read(prefix, &path, "rm"));
-            match board.remove_waiting(&path, expect.unwrap_or(Expect::Any), wait) {
+            let (removing, unmatched) = removal(recursive, expect, ignore_unmatch);
+            match board.remove_waiting(&path, removing, unmatched, wait) {
                 Ok(report) => render::put(printer, &report, None),
                 Err(error) => render::refused(printer, error.refusal()),
             }

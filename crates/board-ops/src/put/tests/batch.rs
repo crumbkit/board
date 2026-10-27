@@ -407,7 +407,7 @@ fn a_batch_compiles_each_types_schema_once_however_many_lines_use_it() {
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
-    let Ok(Checked::Here(prepared, _, _)) =
+    let Ok(Checked::Here(prepared, _, _, _)) =
         board.check_lines(&lock, &mut view, lines, &mut schemas)
     else {
         panic!("the batch is not checked in this board");
@@ -427,7 +427,7 @@ fn a_batch_compiles_a_schema_it_adds_once_and_its_records_use_that_schema() {
     let lock = board.repository().lock(LOCK_WAIT).unwrap();
     let mut view = board.repositories().snapshot().unwrap();
     let mut schemas = Schemas::default();
-    let Ok(Checked::Here(prepared, _, _)) =
+    let Ok(Checked::Here(prepared, _, _, _)) =
         board.check_lines(&lock, &mut view, lines, &mut schemas)
     else {
         panic!("the batch is not checked in this board");
@@ -456,7 +456,7 @@ fn listed_checking(count: usize) -> usize {
     let before = board.repository().directories_listed();
     let mut view = board.repositories().snapshot().unwrap();
     let schemas = &mut Schemas::default();
-    let Ok(Checked::Here(prepared, _, _)) = board.check_lines(&lock, &mut view, lines, schemas)
+    let Ok(Checked::Here(prepared, _, _, _)) = board.check_lines(&lock, &mut view, lines, schemas)
     else {
         panic!("the batch is not checked in this board");
     };

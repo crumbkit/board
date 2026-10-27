@@ -15,7 +15,7 @@ use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
 use serde_json::Value;
 
 use super::through::{Crossing, Sent};
-use super::{Expect, Failure, Prepared, PutError, PutReport, Removal, Schemas};
+use super::{Expect, Failure, Prepared, PutError, PutReport, Removal, Schemas, Unmatched};
 use crate::board::Board;
 use crate::effects::{Change, Shape};
 use crate::types::TypeError;
@@ -36,6 +36,8 @@ struct RawLine {
     text: Option<String>,
     #[serde(default)]
     remove: bool,
+    #[serde(default)]
+    ignore_unmatch: bool,
 }
 
 /// A batch line read with its number, or why it is refused.
@@ -55,30 +57,33 @@ pub(crate) struct Line {
 enum Content {
     Record(Vec<u8>),
     File(Vec<u8>),
-    Remove,
+    Remove(Unmatched),
 }
 
-/// What a checked line does: writes, or removes.
+/// What a checked line does: writes, removes, or finds its path absent.
 enum Step {
     Write(Box<Prepared>),
     Remove(Removal),
+    Absent(LogicalPath),
 }
 
 impl Step {
-    /// The file in the working tree the step changes.
-    fn file(&self) -> &str {
+    /// The file in the working tree the step changes, if any.
+    fn file(&self) -> Option<&str> {
         match self {
-            Self::Write(prepared) => &prepared.target.path,
-            Self::Remove(removal) => &removal.file,
+            Self::Write(prepared) => Some(&prepared.target.path),
+            Self::Remove(removal) => Some(&removal.file),
+            Self::Absent(_) => None,
         }
     }
 }
 
-/// A batch whose every line was checked: prepared and removed in this
-/// board, with each line's number, the writes' first, or leading through
-/// one mount, with the lines as the mounted board reads them.
+/// A batch whose every line was checked: prepared, removed and found
+/// absent in this board, with each line's number, the writes' first, or
+/// leading through one mount, with the lines as the mounted board reads
+/// them.
 pub(crate) enum Checked {
-    Here(Vec<Prepared>, Vec<Removal>, Vec<usize>),
+    Here(Vec<Prepared>, Vec<Removal>, Vec<LogicalPath>, Vec<usize>),
     Through(Vec<Crossing>, Vec<ReadLine>),
 }
 
@@ -89,7 +94,7 @@ impl Line {
         let file = format!("{}.json", self.path.as_str().trim_start_matches('/'));
         match self.content {
             Content::Record(_) => RecordType::of_schema(&file),
-            Content::File(_) | Content::Remove => None,
+            Content::File(_) | Content::Remove(_) => None,
         }
     }
 }
@@ -130,15 +135,19 @@ impl Board {
         }
         let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let (prepared, removals, numbers) =
+        let (prepared, removals, absent, numbers) =
             match self.check_lines(&lock, &mut view, lines, &mut Schemas::default())? {
-                Checked::Here(prepared, removals, numbers) => (prepared, removals, numbers),
+                Checked::Here(prepared, removals, absent, numbers) => {
+                    (prepared, removals, absent, numbers)
+                }
                 Checked::Through(crossings, lines) => {
                     return self.put_through(lock, &crossings, Sent::Batch(lines), wait);
                 }
             };
         let message = message(&prepared, removals.len());
-        self.write_all(lock, &prepared, &removals, &message)
+        let report = self.write_all(lock, &prepared, &removals, &message);
+        report
+            .map(|report| PutReport { absent, ..report })
             .map_err(|failure| match failure {
                 Failure::Stale(stale) => refused_lines(
                     &stale
@@ -246,10 +255,14 @@ impl Board {
             };
             boards.push((number, board));
             let Some(item) = item else { continue };
-            match folded.entry(item.file().to_ascii_lowercase()) {
+            let Some(written) = item.file().map(str::to_owned) else {
+                steps.push((number, item));
+                continue;
+            };
+            match folded.entry(written.to_ascii_lowercase()) {
                 Entry::Occupied(first) => {
                     let (first, file, earlier) = first.get();
-                    let (code, message) = if file == item.file() {
+                    let (code, message) = if *file == written {
                         (Code::PutInvalid, "the same file as")
                     } else {
                         (Code::PathCaseCollision, "differing only in case from")
@@ -258,7 +271,7 @@ impl Board {
                     refusals.push(Lined::new(number, code, message, Fields::at(&shown)));
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert((number, item.file().to_owned(), shown));
+                    entry.insert((number, written, shown));
                 }
             }
             steps.push((number, item));
@@ -274,17 +287,18 @@ impl Board {
         // Schema lines were checked first; writes, removals and the report
         // go in input order.
         steps.sort_by_key(|(number, _)| *number);
-        let (mut prepared, mut removals) = (Vec::new(), Vec::new());
+        let (mut prepared, mut removals, mut absent) = (Vec::new(), Vec::new(), Vec::new());
         let (mut numbers, mut removed) = (Vec::new(), Vec::new());
         for (number, step) in steps {
             match step {
                 Step::Write(item) => (prepared.push(*item), numbers.push(number)),
                 Step::Remove(removal) => (removals.push(removal), removed.push(number)),
+                Step::Absent(path) => (absent.push(path), ()),
             };
         }
         numbers.extend(removed);
         Ok(if crossings.is_empty() {
-            Checked::Here(prepared, removals, numbers)
+            Checked::Here(prepared, removals, absent, numbers)
         } else {
             Checked::Through(crossings, through)
         })
@@ -312,10 +326,11 @@ impl Board {
                     .map(|item| Some(Step::Write(Box::new(item))))
                     .map_err(|error| shown_as(error, shown));
             }
-            Content::Remove => {
-                return self
-                    .prepare_removal(lock, view, schemas, path, *expect)
-                    .map(|removal| Some(Step::Remove(removal)));
+            Content::Remove(unmatched) => {
+                return match self.prepare_removal(lock, view, schemas, path, *expect) {
+                    Err(error) if unmatched.ignores(&error) => Ok(Some(Step::Absent(path.clone()))),
+                    removal => removal.map(|removal| Some(Step::Remove(removal))),
+                };
             }
             Content::Record(bytes) => bytes,
         };
@@ -385,12 +400,22 @@ impl Board {
                 .map(Expect::Blob)
                 .ok_or_else(|| invalid(format!("expect {hex:?} is not `none` or a blob id")))?,
         };
+        if raw.ignore_unmatch && !raw.remove {
+            return Err(invalid(
+                "it ignores an unmatched path and does not remove".to_owned(),
+            ));
+        }
+        let unmatched = if raw.ignore_unmatch {
+            Unmatched::Ignore
+        } else {
+            Unmatched::Refuse
+        };
         let content = match (raw.record, raw.text, raw.remove) {
             (Some(record), None, false) => Content::Record(
                 serde_json::to_vec(&record).map_err(|error| invalid(error.to_string()))?,
             ),
             (None, Some(text), false) => Content::File(text.into_bytes()),
-            (None, None, true) => Content::Remove,
+            (None, None, true) => Content::Remove(unmatched),
             (Some(_), Some(_), _) => {
                 return Err(invalid("it holds both record and text".to_owned()));
             }

@@ -157,8 +157,9 @@ impl Board {
             }
             Sent::Batch(lines) => {
                 match self.check_lines(&lock, &mut view, lines, &mut Schemas::default())? {
-                    // A removal is refused through a mount, so none is here.
-                    Checked::Here(prepared, _, numbers) => {
+                    // A removal is refused through a mount, so no removal and
+                    // no absent path is here.
+                    Checked::Here(prepared, _, _, numbers) => {
                         let by_number: HashMap<usize, &Crossing> = crossings
                             .iter()
                             .map(|crossing| (crossing.number, crossing))

@@ -311,17 +311,28 @@ impl Repository {
     }
 
     /// Removes the working-tree file at the `/`-separated `path`, and is
-    /// done when it is already gone. The lock must be held.
+    /// done when it is already gone. Then removes each directory above it
+    /// that is left empty, as `git rm` does. The lock must be held.
     pub fn remove_file(&self, _lock: &Lock, path: &str) -> Result<(), WriteError> {
         let target = self.path().join(path);
         match fs::remove_file(&target) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(WriteError::Io {
-                path: target,
-                source,
-            }),
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(WriteError::Io {
+                    path: target,
+                    source,
+                });
+            }
         }
+        let mut directory = target.parent();
+        while let Some(empty) = directory.filter(|directory| *directory != self.path()) {
+            if fs::remove_dir(empty).is_err() {
+                break;
+            }
+            directory = empty.parent();
+        }
+        Ok(())
     }
 
     /// Writes the working-tree file at the `/`-separated `path` into git's
@@ -651,6 +662,10 @@ pub enum WriteError {
     },
     #[error("{path} cannot be removed: it is a directory")]
     Directory { path: LogicalPath },
+    /// A recursive removal refused because `file`, the physical path of a
+    /// file beneath `path`, has no logical path.
+    #[error("{path} cannot be removed: {file:?} beneath it has no logical path")]
+    Unnamed { path: LogicalPath, file: String },
     /// `file` is what the path reaches: itself, or its deepest ancestor.
     #[error("{path} cannot be written: {file} is not a record")]
     NotARecord {
@@ -728,7 +743,7 @@ impl WriteError {
             Self::RemoveThroughMount { .. } => Code::PutThroughMount,
             Self::Directory { .. } => Code::RmDirectory,
             Self::NotARecord { .. } => Code::RecordNotARecord,
-            Self::InGit { .. } => Code::PathMalformed,
+            Self::Unnamed { .. } | Self::InGit { .. } => Code::PathMalformed,
             Self::NotAFile { .. } => Code::PutNotAFile,
             Self::Degraded { code, .. } => *code,
             Self::Beneath { beneath, .. } => beneath.code,
@@ -754,6 +769,7 @@ impl WriteError {
             | Self::ThroughMount { mount: path, .. }
             | Self::RemoveThroughMount { mount: path, .. }
             | Self::Directory { path }
+            | Self::Unnamed { path, .. }
             | Self::InGit { path, .. }
             | Self::NotAFile { path, .. }
             | Self::Degraded { path, .. }

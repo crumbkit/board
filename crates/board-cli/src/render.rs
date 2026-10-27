@@ -181,6 +181,9 @@ fn put_text(report: &PutReport) -> String {
     for removed in &report.removed {
         let _ = writeln!(text, "removed {} {}", removed.path, removed.blob);
     }
+    for absent in &report.absent {
+        let _ = writeln!(text, "absent {absent}");
+    }
     if let Some(commit) = report.commit {
         let _ = writeln!(text, "committed {commit}");
     }
@@ -220,6 +223,15 @@ fn put_json(report: &PutReport) -> Value {
         value["removed"] = removed
             .map(|removed| json!({"path": removed.path.to_string(), "blob": removed.blob.to_string()}))
             .collect();
+    }
+    if !report.absent.is_empty() {
+        value["absent"] = json!(
+            report
+                .absent
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        );
     }
     if let Some(id) = &report.proposed {
         value["proposed"] = json!(id);

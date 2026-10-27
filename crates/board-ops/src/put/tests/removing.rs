@@ -5,11 +5,26 @@ use board_scenario::{Item, Scenario};
 use board_tree::LOCK_WAIT;
 
 use super::{board, committing, file, path, put};
-use crate::put::{Expect, PutError, PutReport};
+use crate::put::{Expect, PutError, PutReport, Removing, Unmatched};
 use crate::tests::{open, task};
 
 fn rm(scenario: &Scenario, at: &str, expect: Expect) -> Result<PutReport, PutError> {
-    open(scenario).remove_waiting(&path(at), expect, LOCK_WAIT)
+    removing(scenario, at, Removing::File(expect), Unmatched::Refuse)
+}
+
+fn removing(
+    scenario: &Scenario,
+    at: &str,
+    removing: Removing,
+    unmatched: Unmatched,
+) -> Result<PutReport, PutError> {
+    open(scenario).remove_waiting(&path(at), removing, unmatched, LOCK_WAIT)
+}
+
+fn paths(report: &PutReport) -> Vec<String> {
+    (report.removed.iter())
+        .map(|removed| removed.path.to_string())
+        .collect()
 }
 
 fn code(result: Result<PutReport, PutError>) -> Code {
@@ -185,4 +200,94 @@ fn a_removal_line_through_a_mount_or_of_a_directory_is_refused_and_of_a_file_is_
         [(1, Code::RmDirectory), (2, Code::PutThroughMount)]
     );
     assert!(batch(&scenario, &removal("/projects/p")).is_ok());
+}
+
+#[test]
+fn a_recursive_removal_removes_every_file_beneath_in_one_commit_and_leaves_the_rest() {
+    let scenario = committing();
+    for at in ["/tasks/a", "/tasks/b", "/projects/c"] {
+        put(&scenario, at, Expect::Absent, &task("")).unwrap();
+    }
+    let report = removing(&scenario, "/tasks", Removing::Beneath, Unmatched::Refuse).unwrap();
+    assert_eq!(paths(&report), ["/tasks/a", "/tasks/b"]);
+    let head = scenario.head().unwrap();
+    assert_eq!(report.commit, Some(head.id));
+    assert_eq!(head.message, "board rm -r /tasks");
+    assert_eq!(head.files.keys().collect::<Vec<_>>(), ["projects/c.json"]);
+    let one = removing(
+        &scenario,
+        "/projects/c",
+        Removing::Beneath,
+        Unmatched::Refuse,
+    )
+    .unwrap();
+    assert_eq!(paths(&one), ["/projects/c"]);
+}
+
+#[test]
+fn a_recursive_removal_over_a_symlink_removes_nothing_and_beside_it_removes_all() {
+    let scenario = board();
+    scenario
+        .write("tasks/a.json", Item::File(&task("")))
+        .write("tasks/s.json", Item::Symlink("a.json"))
+        .write("notes/n.md", Item::File("n"));
+    let refused = removing(&scenario, "/tasks", Removing::Beneath, Unmatched::Refuse);
+    assert_eq!(code(refused), Code::PutSymlink);
+    assert!(file(&scenario, "tasks/a.json").is_some());
+    let report = removing(&scenario, "/notes", Removing::Beneath, Unmatched::Refuse).unwrap();
+    assert_eq!(paths(&report), ["/notes/n.md"]);
+}
+
+#[test]
+fn an_absent_path_with_ignore_unmatch_is_reported_absent_and_without_it_is_not_found() {
+    let scenario = board();
+    for how in [Removing::File(Expect::Any), Removing::Beneath] {
+        let report = removing(&scenario, "/tasks/zz", how, Unmatched::Ignore).unwrap();
+        assert_eq!(report.absent, [path("/tasks/zz")]);
+        assert!(report.removed.is_empty());
+        assert_eq!(report.commit, None);
+        let refused = removing(&scenario, "/tasks/zz", how, Unmatched::Refuse);
+        assert_eq!(code(refused), Code::PathNotFound);
+    }
+}
+
+#[test]
+fn ignore_unmatch_still_refuses_a_directory_or_a_stale_expect_and_removes_a_file() {
+    let scenario = board();
+    let ignore = |at: &str, how| removing(&scenario, at, how, Unmatched::Ignore);
+    let file_with = |expect| Removing::File(expect);
+    assert_eq!(
+        code(ignore("/projects", file_with(Expect::Any))),
+        Code::RmDirectory
+    );
+    assert_eq!(
+        code(ignore("/projects/p", file_with(Expect::Absent))),
+        Code::PutStale
+    );
+    let report = ignore("/projects/p", file_with(Expect::Any)).unwrap();
+    assert_eq!(paths(&report), ["/projects/p"]);
+    assert!(report.absent.is_empty());
+}
+
+#[test]
+fn a_batch_removal_line_with_ignore_unmatch_reports_an_absent_path_and_one_without_remove_is_invalid()
+ {
+    let scenario = board();
+    let ignoring =
+        |at: &str| format!(r#"{{"path": "{at}", "remove": true, "ignore_unmatch": true}}"#) + "\n";
+    let report = batch(
+        &scenario,
+        &(ignoring("/tasks/zz") + &ignoring("/projects/p")),
+    )
+    .unwrap();
+    assert_eq!(report.absent, [path("/tasks/zz")]);
+    assert_eq!(paths(&report), ["/projects/p"]);
+    let writing = format!(
+        r#"{{"path": "/tasks/a", "record": {}, "ignore_unmatch": true}}"#,
+        task("")
+    ) + "\n";
+    assert_eq!(
+        refused_lines(batch(&scenario, &(writing + &removal("/tasks/zz")))),
+        [(1, Code::PutInvalid), (2, Code::PathNotFound)]
+    );
 }
