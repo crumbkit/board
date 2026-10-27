@@ -12,7 +12,7 @@ from board_plugin import board as plugin_board
 from board_plugin.protocol import PluginError
 from conftest import Board, board_binary, control, library
 
-from board_controls.board import matched, referenced
+from board_controls.board import matched, matching, referenced
 
 
 def logged(board: Board, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -113,6 +113,21 @@ def test_matched_pages_across_mounts_and_a_pattern_anchored_in_the_own_tree_stay
         ["/controls/b", "/docs/1.md"],
     ]
     assert queries(log) == len(rows)
+
+
+def test_matched_parses_each_control_once_and_lists_each_file_once(board: Board) -> None:
+    board.write("docs/1.md", "1")
+    board.write("controls/a.json", control("Small.", paths=["docs/*"]))
+    ran = board.run("--json", "query", f"EXPLAIN QUERY PLAN {matching(('', '', ''))}")
+    plan = {row[0]: row for row in json.loads(ran.stdout)["data"]}
+
+    def within(row: list[Any]) -> str:
+        """The step `row` runs in, as the plan names it, or nothing at the top."""
+        return plan[row[1]][3] if row[1] in plan else ""
+
+    scans = {row[3]: within(row) for row in plan.values()}
+    assert scans["SCAN p VIRTUAL TABLE INDEX 3:"] == "MATERIALIZE patterns"
+    assert "MATERIALIZE files" in scans.values()
 
 
 def test_matched_names_a_symlink_named_json_and_a_json_file_by_their_file_names(

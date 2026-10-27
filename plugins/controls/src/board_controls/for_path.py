@@ -31,7 +31,7 @@ def for_path(request: CallRequest) -> list[Applying]:
         # Only an existing file has a row in `files`; anything else is matched as asked.
         place = missing if missing is not None else location
         rows = reading.rows(
-            f"WITH {board.FILES} SELECT DISTINCT r.logical FROM records r, json_each(r.body, '$.paths') p"  # noqa: S608 - values are quoted by literal()
+            f"WITH files AS {board.FILES} SELECT DISTINCT r.logical FROM records r, json_each(r.body, '$.paths') p"  # noqa: S608 - values are quoted by literal()
             f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.source = 'worktree' AND COALESCE("
             f"(SELECT full FROM files WHERE source = {literal(location['source'])}"
             f" AND path = {literal(place['path'])}),"

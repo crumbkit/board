@@ -11,11 +11,23 @@ from board_controls.shapes import CONTROL_TYPE, ControlRecord
 # Each file a pattern can match, with `full`: its display path without the
 # leading `/`, with `.json` put back when the display path dropped it. A file
 # in the own tree whose path is malformed has no display path and keeps its
-# path, so a budget never leaves it out silently.
+# path, so a budget never leaves it out silently. A query names it with
+# `files AS {FILES}`, and adds MATERIALIZED where it compares every file with
+# every pattern, so each row is computed once. Without MATERIALIZED, a lookup
+# of one file uses the index on its source and path.
 FILES = (
-    "files AS (SELECT *, COALESCE(substr(logical, 2)"
+    "(SELECT *, COALESCE(substr(logical, 2)"
     " || CASE WHEN substr(logical, -length(path) - 1) = '/' || path THEN '' ELSE '.json' END,"
     " CASE source WHEN 'worktree' THEN path END) AS full FROM entries WHERE kind != 'pointer')"
+)
+
+# Each pattern of each readable control in the board's own tree. MATERIALIZED
+# parses each control's body once, not once for every file a pattern is
+# compared with.
+PATTERNS = (
+    "patterns AS MATERIALIZED (SELECT r.logical, r.path, p.value AS pattern"  # noqa: S608 - the one value is a constant
+    " FROM records r, json_each(r.body, '$.paths') p"
+    f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree')"
 )
 
 
@@ -57,16 +69,7 @@ def matched(board: Board, page: int = LIMIT) -> list[list[Any]]:
     after = ("", "", "")
     found: list[list[Any]] = []
     while True:
-        rows, truncated = board.query(
-            f"WITH {FILES} SELECT DISTINCT"  # noqa: S608 - values are quoted by literal()
-            " r.logical, COALESCE(e.logical, e.full), e.status, e.code, r.path, e.full, e.source"
-            " FROM records r, json_each(r.body, '$.paths') p, files e"
-            f" WHERE r.type = {literal(CONTROL_TYPE)} AND r.status = 'ok' AND r.source = 'worktree'"
-            " AND e.full GLOB p.value"
-            f" AND (r.path, e.full, e.source) > ({', '.join(literal(value) for value in after)})"
-            " ORDER BY r.path, e.full, e.source",
-            page,
-        )
+        rows, truncated = board.query(matching(after), page)
         found.extend(row[:4] for row in rows)
         if not truncated:
             return found
@@ -77,6 +80,17 @@ def matched(board: Board, page: int = LIMIT) -> list[list[Any]]:
                 " check that the `board` first on PATH is this Board",
             )
         after = (rows[-1][4], rows[-1][5], rows[-1][6])
+
+
+def matching(after: tuple[str, str, str]) -> str:
+    """The SQL for one page of `matched`: the pairs after `after`, a control's path and a file's `full` and source."""
+    return (
+        f"WITH files AS MATERIALIZED {FILES}, {PATTERNS} SELECT DISTINCT"  # noqa: S608 - values are quoted by literal()
+        " c.logical, COALESCE(e.logical, e.full), e.status, e.code, c.path, e.full, e.source"
+        " FROM patterns c, files e WHERE e.full GLOB c.pattern"
+        f" AND (c.path, e.full, e.source) > ({', '.join(literal(value) for value in after)})"
+        " ORDER BY c.path, e.full, e.source"
+    )
 
 
 def referenced(board: Board, controls: list[str]) -> dict[str, set[str]]:
