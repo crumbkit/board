@@ -205,12 +205,6 @@ their digest and writes a board/attachment/v1 record.")]
         /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
         #[arg(long, conflicts_with = "batch")]
         file: bool,
-        /// Propose where a plugin may not act.
-        ///
-        /// Under a plugin, where the put's authority is propose, write a pending effect in the
-        /// personal board in place of the record.
-        #[arg(long, conflicts_with = "batch")]
-        or_propose: bool,
         /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
         #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
         wait: Duration,
@@ -240,12 +234,6 @@ Examples:
         /// Report a path that names nothing as absent.
         #[arg(long)]
         ignore_unmatch: bool,
-        /// Propose where a plugin may not act.
-        ///
-        /// Under a plugin, where the removal's authority is propose, write a pending effect in the
-        /// personal board in place of removing the file.
-        #[arg(long)]
-        or_propose: bool,
         /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
         #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
         wait: Duration,
@@ -311,20 +299,19 @@ Examples:
         #[arg(long)]
         capability: Option<CapabilityName>,
     },
-    /// Print the authority an op has at a path.
+    /// Ask the owner to admit a plugin's op.
     #[command(after_help = "\
-The rules are preferences under /preferences/ in the personal board, then
-those under .board/settings/ in this board; the narrowest matching rule wins.
-With no rule, put acts and any other op asks. Decide answers for the plugin
-BOARD_PLUGIN names, or for the owner when it is unset. Under a plugin, an op
-that asks writes a pending effect in the personal board for the owner to
-answer; put writes its own when it runs, with its record.
+Decide asks for the plugin BOARD_PLUGIN names. The owner's approval admits
+the op, and their refusal refuses it with board::settings::refused. With no
+answer, decide writes a pending effect in the personal board and refuses with
+board::settings::asked; the owner answers it with board answer. The owner's
+own op, with BOARD_PLUGIN unset, is admitted.
 
 Examples:
-  board decide --op put --path /tasks/a
+  board decide --op review.comment --path /reviews/r1
   board decide --op review.comment --path /reviews/r1 --json")]
     Decide {
-        /// `put`, or a plugin's `<plugin>.<capability>`, such as review.comment.
+        /// A plugin's `<plugin>.<capability>`, such as review.comment.
         #[arg(long, value_parser = op)]
         op: String,
         /// The logical path the op acts on, such as /tasks/a.
@@ -342,8 +329,7 @@ and checks it against ~/.config/board/allowed_signers, in the passwd home.
 
 Examples:
   board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve
-  board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a refuse --reason 'not this week'
-  board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a approve --save-rule")]
+  board answer 4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a refuse --reason 'not this week'")]
     Answer(effects::Answering),
     /// Run one read-only SQL statement over the index.
     #[command(after_help = QUERY_EXAMPLES)]
@@ -468,15 +454,14 @@ pub(crate) fn run(
         Ok(opened) => opened,
         Err(refusal) => return render::refused(printer, *refusal),
     };
+    // Only a plugin's decide writes in the personal board.
     let asks = match cli.command {
-        Command::Put { or_propose, .. } | Command::Rm { or_propose, .. } => {
-            Some((false, or_propose))
-        }
-        Command::Decide { .. } => Some((true, false)),
+        Command::Put { .. } | Command::Rm { .. } => Some(false),
+        Command::Decide { .. } => Some(context.environment.plugin.is_some()),
         _ => None,
     };
-    if let Some((owner_rules, or_propose)) = asks {
-        match known::asker(context, owner_rules, or_propose) {
+    if let Some(personal) = asks {
+        match known::asker(context, personal) {
             Ok(asker) => board.ask_as(asker),
             Err(refusal) => return render::refused(printer, *refusal),
         }

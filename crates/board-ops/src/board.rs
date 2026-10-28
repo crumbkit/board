@@ -71,9 +71,6 @@ pub struct Board {
     config: Config,
     pub(crate) trace: RefCell<Trace>,
     pub(crate) asker: Asker,
-    /// The pending effects a put gathered, written once it releases its
-    /// locks.
-    pub(crate) pending: RefCell<Vec<board_model::Effect>>,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -119,7 +116,6 @@ impl Board {
             config,
             trace: RefCell::default(),
             asker: Asker::default(),
-            pending: RefCell::default(),
         })
     }
 

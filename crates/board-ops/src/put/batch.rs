@@ -116,13 +116,6 @@ impl Board {
         input: &mut dyn BufRead,
         wait: Duration,
     ) -> Result<PutReport, PutError> {
-        let put = self.put_lines(input, wait);
-        self.holding(put)
-    }
-
-    /// [`Board::put_batch_waiting`], leaving the pending effects it gathers
-    /// for [`Board::holding`].
-    fn put_lines(&self, input: &mut dyn BufRead, wait: Duration) -> Result<PutReport, PutError> {
         let lines = Self::read_lines(input)?;
         if lines.is_empty() {
             return Ok(PutReport::new(Vec::new(), None));
@@ -327,7 +320,7 @@ impl Board {
                     .map_err(|error| shown_as(error, shown));
             }
             Content::Remove(unmatched) => {
-                return match self.prepare_removal(lock, view, schemas, path, *expect) {
+                return match self.prepare_removal(lock, view, path, *expect) {
                     Err(error) if unmatched.ignores(&error) => Ok(Some(Step::Absent(path.clone()))),
                     removal => removal.map(|removal| Some(Step::Remove(removal))),
                 };
@@ -360,7 +353,7 @@ impl Board {
         })?;
         if let Some(prepared) = &prepared {
             let change = Change::Put(&prepared.canonical, &prepared.admitted, Shape::Schema);
-            self.gate(&mut schemas.effects, &prepared.target, change)?;
+            self.gate(&prepared.target, change)?;
         }
         schemas.held.insert(record_type, Ok(compiled));
         schemas.compiled += 1;

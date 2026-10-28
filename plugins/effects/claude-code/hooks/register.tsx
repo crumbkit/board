@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Effect, Pending } from '../types'
 import type { Listed } from './effects'
-import { askedIds, boardFailure, failure, headline, outputText, parsePending, pendingSql, preview, question, told, visible, waitingLine } from './effects'
+import { askedIds, boardFailure, failure, headline, outputText, parsePending, pendingSql, question, standing, told, visible, waitingLine } from './effects'
 
 // The mod lists the owner's pending effects from the personal board and
 // answers one with `board answer`. Board makes every decision and checks
@@ -235,7 +235,7 @@ export const register: Register = on => {
         {found.effects.map(effect => (
           <Box key={effect.id} flexDirection="column" marginBottom={1}>
             <Text>{headline(effect)}</Text>
-            <Text dimColor>{preview(effect)}</Text>
+            <Text dimColor>{standing(effect)}</Text>
             <Box>
               <Button key={`${effect.id}#refuse`} label="Refuse" onPress={() => answer($, local, effect, 'refuse')} />
               <Button key={`${effect.id}#approve`} label="Approve" onPress={() => answer($, local, effect, 'approve')} />

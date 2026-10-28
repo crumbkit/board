@@ -101,25 +101,18 @@ fn no_personal(context: &Context, message: String) -> Box<Refusal> {
 }
 
 /// Who asks for an effect in this run: the plugin `BOARD_PLUGIN` names, and
-/// the personal board when there is a plugin or `owner_rules` are wanted.
-/// A known boards file that cannot be read, a personal board that is not a
-/// board, or a `BOARD_PLUGIN` that is not a plugin's name refuses, so a
-/// plugin is never checked against fewer rules than the owner wrote.
-pub(crate) fn asker(
-    context: &Context,
-    owner_rules: bool,
-    or_propose: bool,
-) -> Result<Asker, Box<Refusal>> {
+/// the personal board when `personal` says the run writes there. A known
+/// boards file that cannot be read, a personal board that is not a board,
+/// or a `BOARD_PLUGIN` that is not a plugin's name refuses.
+pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refusal>> {
     let plugin = plugin(context)?;
-    let wanted = plugin.is_some() || owner_rules;
-    let personal = if wanted { named(context)? } else { None };
+    let personal = if personal { named(context)? } else { None };
     let environment = &context.environment;
     let passed = [("PATH", &environment.path), ("HOME", &environment.home)];
     Ok(Asker {
         plugin,
         personal,
         home: context.home.clone(),
-        or_propose,
         signing: Signing {
             signer: context.signer.clone(),
             allowed: context.allowed_signers.clone(),

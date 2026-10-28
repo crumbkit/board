@@ -83,9 +83,10 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   through plugins, and a reconciler plugin settles the difference between the
   source and Board's copy. The owner agreed it on 2026-10-05; its first step is
   a spike that imports one existing store into a scratch board.
-- **Settings beyond the first slice.** The gentle-slope rules, offers,
-  attention levels, read gating, learning from corrections and the mandate
-  layer.
+- **Owner rules for effects.** Rules that make a plugin's put ask or
+  refuse, cut until two plugins need them (`git show
+  5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
+  levels, read gating, learning from corrections and the mandate layer.
 - **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
   and docs/architecture.md has split into docs/architecture/. Still open are
   how the review of each docs change runs and a tool check that each leaf is

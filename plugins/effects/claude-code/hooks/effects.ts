@@ -59,11 +59,6 @@ export function parsePending(stdout: string, home?: string): Listed | null {
       plugin: String(r.plugin),
       op: String(r.op),
       path: String(r.path),
-      replaces: r.replaces === 1,
-      nul: r.nul === 1,
-      head: typeof r.head === 'string' ? r.head : null,
-      bytes: Number(r.bytes ?? 0),
-      lines: Number(r.lines ?? 0),
     }
     return [effect]
   })
@@ -121,55 +116,19 @@ const quoted = (text: string) => `"${visible(text, false).replace(/"/g, '\\"')}"
  */
 export const headline = (e: Effect) => `In board ${quoted(e.board)}, ${visible(e.plugin, false)} asks to ${visible(e.op, false)} ${quoted(e.path)}`
 
-/** The command that prints an effect whole. */
-export const getCommand = (e: Effect) => `board --personal get /effects/pending/${e.id}`
+/** What the owner reads under the headline: how long an approval stands. */
+export const standing = (e: Effect) =>
+  `An approval lets ${visible(e.plugin, false)} ${visible(e.op, false)} ${quoted(e.path)} again until /effects/seen/${e.id} is removed.`
 
-const size = (bytes: number) => (bytes < 1024 ? `${bytes} bytes` : `${Math.round(bytes / 1024)} KB`)
+/** The dialog's question when an effect is asked. */
+export const question = (e: Effect) => `${headline(e)}. ${standing(e)}\nApprove it?`
 
-/**
- * What the owner reads under the headline: the first lines of what a put
- * would write, how much is left out and how to read it whole, and, for an op
- * other than put, that an approval stands until its seen record is removed.
- */
-export function preview(e: Effect, lines = 8, chars = 600): string {
-  const parts: string[] = []
-  if (e.head !== null) {
-    let shown = e.head.split('\n').slice(0, lines).join('\n')
-    // By code point, so a surrogate pair is never split.
-    const points = [...shown]
-    if (points.length > chars) shown = points.slice(0, chars).join('')
-    shown = shown.replace(/\n$/, '')
-    const whole = new TextEncoder().encode(e.head).length === e.bytes && shown === e.head.replace(/\n$/, '')
-    parts.push(e.replaces ? 'It replaces the file there with:' : 'It writes a new file:', visible(shown))
-    if (e.nul) {
-      // SQLite's text functions stop at a NUL, so the head and the line count
-      // cover only the part before it.
-      parts.push(
-        `… The content holds a NUL character, so only the part before it is shown. It is ${size(e.bytes)} in all. ${getCommand(e)} prints it whole.`,
-      )
-    } else if (!whole) {
-      const more = e.lines - shown.split('\n').length
-      const left = more > 0 ? `and ${more} more line${more === 1 ? '' : 's'}` : 'and the rest of the line'
-      parts.push(`… ${left}, ${size(e.bytes)} in all. ${getCommand(e)} prints it whole.`)
-    }
-  } else if (e.replaces) {
-    parts.push('It replaces the file there.')
-  }
-  if (e.op !== 'put') {
-    parts.push(`An approval lets ${visible(e.plugin, false)} ${visible(e.op, false)} ${quoted(e.path)} again until /effects/seen/${e.id} is removed.`)
-  }
-  return parts.join('\n')
-}
-
-/** The dialog's question when a put is asked. */
-export const question = (e: Effect) => `${headline(e)}. ${preview(e, 4, 300)}\nApprove it?`
-
-/** What the agent that ran the put reads once the owner answered, or chose Later. */
+/** What the agent that ran the command reads once the owner answered, or chose Later. */
 export function told(e: Effect, answer: 'approve' | 'refuse' | 'later'): string {
   if (answer === 'later') {
-    return `The owner has not answered pending effect ${e.id} yet: ${headline(e)}. Do not retry the put, and do not answer it yourself; it stays asked until the owner answers.`
+    return `The owner has not answered pending effect ${e.id} yet: ${headline(e)}. Do not run the same command again, and do not answer it yourself; it stays asked until the owner answers.`
   }
   return answer === 'approve'
-    ? `The owner approved pending effect ${e.id}: ${headline(e)}. Run the same put again; it now writes.`
-    : `The owner refused pending effect ${e.id}: ${headline(e)}. The same put is now refused with board::settings::refused, so do not retry it.`
+    ? `The owner approved pending effect ${e.id}: ${headline(e)}. Run the same command again; it is now admitted.`
+    : `The owner refused pending effect ${e.id}: ${headline(e)}. The same command is now refused with board::settings::refused, so do not run it again.`
 }

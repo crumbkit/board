@@ -163,13 +163,8 @@ pub(crate) fn put(printer: Printer, report: &PutReport, note: Option<String>) ->
         let note = format!("note: {display} is written but degraded: {code} {display}{why}");
         Some(Note::Always(note))
     });
-    let proposed = report.proposed.as_ref().map(|id| {
-        Note::Text(format!(
-            "next: the owner answers with `board answer {id} approve`, or refuse"
-        ))
-    });
     let answer = said(put_json(report), put_text(report));
-    let notes = notes.chain(note.map(Note::Text)).chain(proposed);
+    let notes = notes.chain(note.map(Note::Text));
     printer.noted(PUT, answer, notes.collect())
 }
 
@@ -186,9 +181,6 @@ fn put_text(report: &PutReport) -> String {
     }
     if let Some(commit) = report.commit {
         let _ = writeln!(text, "committed {commit}");
-    }
-    if let Some(id) = &report.proposed {
-        let _ = writeln!(text, "proposed {id}");
     }
     text
 }
@@ -232,9 +224,6 @@ fn put_json(report: &PutReport) -> Value {
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
         );
-    }
-    if let Some(id) = &report.proposed {
-        value["proposed"] = json!(id);
     }
     value
 }

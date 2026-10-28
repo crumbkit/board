@@ -10,7 +10,8 @@ use crate::report::Output;
 use crate::run::{Given, Prefix, read};
 use crate::timing::Ran;
 
-/// `board decide`: the authority `op` has at `path`, read from `prefix`.
+/// `board decide`: whether the plugin may run `op` at `path`, read from
+/// `prefix`.
 pub(crate) fn decide(
     board: &Board,
     printer: Printer,
@@ -19,7 +20,7 @@ pub(crate) fn decide(
     path: &Given,
 ) -> Output {
     let decided = read(prefix, path, "decide")
-        .and_then(|path| board.authority(op, &path).map_err(|error| refusal(&error)));
+        .and_then(|path| board.decide_op(op, &path).map_err(|error| refusal(&error)));
     match decided {
         Ok(report) => render::decide(printer, &report),
         Err(refusal) => render::refused(printer, *refusal),
@@ -36,21 +37,13 @@ pub(crate) struct Answering {
     /// Why, kept in the seen record.
     #[arg(long)]
     reason: Option<String>,
-    /// Also save a preference for the op, exact path, plugin and board; a put's approval cannot be saved.
-    #[arg(long)]
-    save_rule: bool,
 }
 
 /// `board answer`, which needs no board but the personal one.
 pub(crate) fn answer(context: &Context, printer: Printer, answering: Answering) -> Output {
-    let Answering {
-        id,
-        answer,
-        reason,
-        save_rule,
-    } = answering;
-    let answered = known::asker(context, true, false).and_then(|asker| {
-        board_ops::answer(&asker, &id, answer, reason, save_rule).map_err(|error| refusal(&error))
+    let Answering { id, answer, reason } = answering;
+    let answered = known::asker(context, true).and_then(|asker| {
+        board_ops::answer(&asker, &id, answer, reason).map_err(|error| refusal(&error))
     });
     match answered {
         Ok(report) => render::answer(printer, &report),

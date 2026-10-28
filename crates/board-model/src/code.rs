@@ -86,14 +86,9 @@ pub enum Code {
     PluginTooDeep,
     SettingsAsked,
     SettingsRefused,
-    SettingsProposeOnly,
     SettingsFromPlugin,
     SettingsNotFound,
-    SettingsBadPattern,
     SettingsNoPersonal,
-    SettingsCannotWiden,
-    SettingsCannotHold,
-    SettingsBadRule,
     SettingsUnsigned,
     UiUnknownKind,
     UiSlotMismatch,
@@ -113,7 +108,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 101] = [
+    pub const ALL: [Code; 96] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -192,14 +187,9 @@ impl Code {
         Self::PluginTooDeep,
         Self::SettingsAsked,
         Self::SettingsRefused,
-        Self::SettingsProposeOnly,
         Self::SettingsFromPlugin,
         Self::SettingsNotFound,
-        Self::SettingsBadPattern,
         Self::SettingsNoPersonal,
-        Self::SettingsCannotWiden,
-        Self::SettingsCannotHold,
-        Self::SettingsBadRule,
         Self::SettingsUnsigned,
         Self::UiUnknownKind,
         Self::UiSlotMismatch,
@@ -222,10 +212,6 @@ impl Code {
         Self::ALL.into_iter().find(|code| code.as_str() == text)
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one line per code; splitting the table would hide a spelling"
-    )]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::JsonParse => "board::json::parse",
@@ -306,14 +292,9 @@ impl Code {
             Self::PluginTooDeep => "board::plugin::too_deep",
             Self::SettingsAsked => "board::settings::asked",
             Self::SettingsRefused => "board::settings::refused",
-            Self::SettingsProposeOnly => "board::settings::propose_only",
             Self::SettingsFromPlugin => "board::settings::from_plugin",
             Self::SettingsNotFound => "board::settings::not_found",
-            Self::SettingsBadPattern => "board::settings::bad_pattern",
             Self::SettingsNoPersonal => "board::settings::no_personal",
-            Self::SettingsCannotWiden => "board::settings::cannot_widen",
-            Self::SettingsCannotHold => "board::settings::cannot_hold",
-            Self::SettingsBadRule => "board::settings::bad_rule",
             Self::SettingsUnsigned => "board::settings::unsigned",
             Self::UiUnknownKind => "board::ui::unknown_kind",
             Self::UiSlotMismatch => "board::ui::slot_mismatch",
@@ -347,7 +328,6 @@ mod tests {
     use crate::{Fields, LogicalPath, MAX_SYMLINKS};
 
     /// Fails to compile when a variant is added, so `ALL` stays complete.
-    #[expect(clippy::too_many_lines, reason = "one line per code")]
     fn listed(code: Code) {
         match code {
             Code::JsonParse
@@ -428,14 +408,9 @@ mod tests {
             | Code::PluginTooDeep
             | Code::SettingsAsked
             | Code::SettingsRefused
-            | Code::SettingsProposeOnly
             | Code::SettingsFromPlugin
             | Code::SettingsNotFound
-            | Code::SettingsBadPattern
             | Code::SettingsNoPersonal
-            | Code::SettingsCannotWiden
-            | Code::SettingsCannotHold
-            | Code::SettingsBadRule
             | Code::SettingsUnsigned
             | Code::UiUnknownKind
             | Code::UiSlotMismatch

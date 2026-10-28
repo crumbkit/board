@@ -195,7 +195,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
 fn effect(code: Code, id: &String) -> Option<String> {
     Some(match code {
         Code::SettingsAsked => format!(
-            "the owner answers outside the plugin with `board answer {id} approve`, which asks for Touch ID, or `board answer {id} refuse`; then put again"
+            "the owner answers outside the plugin with `board answer {id} approve`, which asks for Touch ID, or `board answer {id} refuse`; then decide again"
         ),
         Code::SettingsRefused => format!(
             "the owner refused pending effect {id}; outside the plugin, `board answer {id} approve` replaces that answer"
@@ -537,37 +537,22 @@ fn generic(code: Code) -> &'static str {
             "plugins called each other too deeply; look for a plugin that calls itself"
         }
         Code::SettingsAsked => {
-            "the owner answers outside the plugin with `board answer <id> approve`, naming the pending effect in the message; then put again"
+            "the owner answers outside the plugin with `board answer <id> approve`, naming the pending effect in the message; then decide again"
         }
         Code::SettingsRefused => {
-            "a preference refuses this; only the owner can change it, in `/preferences/` in the personal board or in `.board/settings/` in this board"
-        }
-        Code::SettingsProposeOnly => {
-            "put the record alone with `--or-propose`, which writes a pending effect holding it for the owner to answer; `--or-propose` does not combine with `--batch`"
+            "the owner refused the pending effect the message names; only the owner, outside the plugin, can change that answer"
         }
         Code::SettingsFromPlugin => {
-            "only the owner, outside a plugin, writes `/preferences/` and `/effects/` in the personal board, `.board/` in any board apart from a new schema in a `put --batch` line, links, mounts and preference, effect and seen records in any board, runs init, type add and plugin enable, and answers pending effects; ask the owner"
+            "only the owner, outside a plugin, writes `effects/` and `.board/` in any board, apart from a new schema in a `put --batch` line, links, mounts and effect and seen records in any board, runs init, type add and plugin enable, and answers pending effects; ask the owner"
         }
         Code::SettingsNotFound => {
             "no pending effect with that id reads as the effect its id names: the owner already answered it, and `/effects/seen/<id>` holds the answer, or it was never asked; `board --personal ls /effects/pending` lists the pending effects"
         }
-        Code::SettingsBadPattern => {
-            "a saved rule names the effect's path exactly, which a path holding *, ?, [, ], {, } or \\, or an empty, `.` or `..` segment, cannot; answer without `--save-rule`"
-        }
         Code::SettingsNoPersonal => {
-            "name the personal board in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's rules and pending effects"
-        }
-        Code::SettingsCannotWiden => {
-            "a saved rule can only narrow a put, and approving one asked for would widen it, which needs overrides that are not built; answer without `--save-rule`, or the owner edits the rule that asks"
-        }
-        Code::SettingsCannotHold => {
-            "a pending effect holds the put's content as JSON in the personal board, which bytes that are not UTF-8 or near the size limit cannot fit; the owner puts it outside the plugin"
-        }
-        Code::SettingsBadRule => {
-            "a file among the rules does not read as a board/preference/v1 record, so a plugin's put is refused until the owner, outside the plugin, fixes or removes the file the message names"
+            "name the personal board in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's pending effects and answers"
         }
         Code::SettingsUnsigned => {
-            "when an answer or an owner's put to a rule or an effect fails: install attention-sign at ~/.local/bin/attention-sign, list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's put or a decide fails: delete the seen record from /effects/seen/ in the personal board, so the put asks again"
+            "when an answer or an owner's put under `effects/` fails: install attention-sign at ~/.local/bin/attention-sign, list the owner's key as `owner` in ~/.config/board/allowed_signers, both in the home your account's passwd entry names, and sign again; a refusal needs no signature. When a plugin's decide fails: delete the seen record from /effects/seen/ in the personal board, so the decide asks again"
         }
         Code::UiUnknownKind => {
             "name a kind from the catalogue in each slot's `kind`; `board ui kinds` lists them"

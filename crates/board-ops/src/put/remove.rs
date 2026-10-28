@@ -6,7 +6,7 @@ use std::time::Duration;
 use board_model::{BINARY_NAME, Code, LogicalPath};
 use board_tree::{Lock, Removes, Resolver, Target, WriteError};
 
-use super::{Expect, Failure, PutError, PutReport, Removal, Schemas};
+use super::{Expect, Failure, PutError, PutReport, Removal};
 use crate::board::Board;
 use crate::effects::Change;
 
@@ -38,30 +38,16 @@ impl Board {
         unmatched: Unmatched,
         wait: Duration,
     ) -> Result<PutReport, PutError> {
-        let removed = self.remove_files(path, removing, unmatched, wait);
-        self.holding(removed)
-    }
-
-    /// [`Board::remove_waiting`], leaving any pending effect it gathers for
-    /// [`Board::holding`].
-    fn remove_files(
-        &self,
-        path: &LogicalPath,
-        removing: Removing,
-        unmatched: Unmatched,
-        wait: Duration,
-    ) -> Result<PutReport, PutError> {
         let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
-        let schemas = &mut Schemas::default();
         let (removals, message) = match removing {
             Removing::File(expect) => (
-                self.prepare_removal(&lock, &mut view, schemas, path, expect)
+                self.prepare_removal(&lock, &mut view, path, expect)
                     .map(|removal| vec![removal]),
                 format!("{BINARY_NAME} rm {path}"),
             ),
             Removing::Beneath => (
-                self.prepare_removals(&mut view, schemas, path),
+                self.prepare_removals(&mut view, path),
                 format!("{BINARY_NAME} rm -r {path}"),
             ),
         };
@@ -74,41 +60,38 @@ impl Board {
     }
 
     /// Finds the file `path` names in `view`, under the lock that the
-    /// removal will hold, compares it with `expect`, and checks the
-    /// removal against the effects rules. `Expect::Absent` never holds,
+    /// removal will hold, compares it with `expect`, and checks
+    /// that only the owner may remove it. `Expect::Absent` never holds,
     /// since the file is there.
     pub(crate) fn prepare_removal(
         &self,
         _lock: &Lock,
         view: &mut Resolver<'_, '_>,
-        schemas: &mut Schemas<'_>,
         path: &LogicalPath,
         expect: Expect,
     ) -> Result<Removal, PutError> {
         let (target, removes) = view.removal_target(path)?;
-        self.checked_removal(schemas, path, target, removes, expect)
+        self.checked_removal(path, target, removes, expect)
     }
 
-    /// Each file beneath the directory `path` names in `view`, checked
-    /// against the effects rules.
+    /// Each file beneath the directory `path` names in `view`, checked as
+    /// one removal is.
     fn prepare_removals(
         &self,
         view: &mut Resolver<'_, '_>,
-        schemas: &mut Schemas<'_>,
         path: &LogicalPath,
     ) -> Result<Vec<Removal>, PutError> {
         (view.removal_targets(path)?.into_iter())
             .map(|(logical, target, removes)| {
-                self.checked_removal(schemas, &logical, target, removes, Expect::Any)
+                self.checked_removal(&logical, target, removes, Expect::Any)
             })
             .collect()
     }
 
     /// The removal of `target`, which `path` names, if it holds what
-    /// `expect` says and the effects rules let it go.
+    /// `expect` says and the gate lets it go.
     fn checked_removal(
         &self,
-        schemas: &mut Schemas<'_>,
         path: &LogicalPath,
         target: Target,
         removes: Removes,
@@ -126,7 +109,7 @@ impl Board {
                 found: Some(blob),
             });
         }
-        self.gate(&mut schemas.effects, &target, Change::Remove(removes))?;
+        self.gate(&target, Change::Remove(removes))?;
         Ok(Removal {
             path: path.clone(),
             file: target.path,

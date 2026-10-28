@@ -20,14 +20,10 @@ fn one_sql(id: &str) -> String {
     pending_sql().replace(every, &format!("logical = '/effects/pending/{id}'"))
 }
 
-/// Writes a pending put of `path` at `id`, with `content`'s fields added.
-fn pend(scenario: &Scenario, id: &str, path: &str, content: &Value) {
-    let mut effect = json!({"$type": "board/effect/v1", "board": "/b", "plugin": "notes",
-        "op": "put", "path": path, "authority": "ask", "digest": format!("sha256:{}", "0".repeat(64))});
-    effect
-        .as_object_mut()
-        .unwrap()
-        .extend(content.as_object().unwrap().clone());
+/// Writes a pending effect at `id` on `path`.
+fn pend(scenario: &Scenario, id: &str, path: &str) {
+    let effect = json!({"$type": "board/effect/v1", "board": "/b", "plugin": "notes",
+        "op": "notes.publish", "path": path});
     scenario.write(
         &format!("effects/pending/{id}.json"),
         Item::File(&effect.to_string()),
@@ -59,41 +55,25 @@ fn query(scenario: &Scenario, sql: &str) -> (Value, Value) {
 }
 
 /// A row as the query returns it for an effect `pend` wrote.
-fn row(id: &str, path: &str, replaces: u8, head: &str, bytes: usize, nul: u8, lines: u8) -> Value {
-    json!([
-        id, "/b", "notes", "put", path, replaces, head, bytes, nul, lines
-    ])
+fn row(id: &str, path: &str) -> Value {
+    json!([id, "/b", "notes", "notes.publish", path])
 }
 
 #[test]
-fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_start_of_its_content()
-{
-    let [a, b, c, d, empty, malformed] =
-        ["a", "b", "c", "d", "e", "f"].map(|digit| digit.repeat(64));
+fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers() {
+    let [a, b, c, d, malformed] = ["a", "b", "c", "d", "f"].map(|digit| digit.repeat(64));
     let [no_effect, extra_key, bad_reason, reasoned, null_reason] =
         ["1", "2", "3", "4", "5"].map(|digit| digit.repeat(64));
     let scenario = board();
-    let long = "x".repeat(2500);
-    pend(
-        &scenario,
-        &a,
-        "/notes/a.md",
-        &json!({"text": "one\ntwo\n", "prior": "f00d"}),
-    );
-    pend(
-        &scenario,
-        &b,
-        "/tasks/b",
-        &json!({"record": {"$type": "lr/task/v1", "title": long}}),
-    );
-    pend(&scenario, &c, "/notes/c.md", &json!({"text": "c"}));
+    pend(&scenario, &a, "/notes/a.md");
+    pend(&scenario, &b, "/tasks/b");
+    pend(&scenario, &c, "/notes/c.md");
     see(&scenario, &c, &seen(&c, "approve"));
     // A record of another type where a seen record would be answers nothing.
-    pend(&scenario, &d, "/notes/d.md", &json!({"text": "d"}));
+    pend(&scenario, &d, "/notes/d.md");
     see(&scenario, &d, &json!({"$type": "lr/project/v1"}));
-    pend(&scenario, &empty, "/notes/e.md", &json!({"text": ""}));
     // Nor does a seen record whose answer Board does not read.
-    pend(&scenario, &malformed, "/notes/f.md", &json!({"text": "f"}));
+    pend(&scenario, &malformed, "/notes/f.md");
     see(&scenario, &malformed, &seen(&malformed, "maybe"));
     let mut no_effect_seen = seen(&no_effect, "approve");
     no_effect_seen.as_object_mut().unwrap().remove("effect");
@@ -114,26 +94,21 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
         (&reasoned, reasoned_seen),
         (&null_reason, null_reason_seen),
     ] {
-        pend(&scenario, id, "/notes/g.md", &json!({"text": "g"}));
+        pend(&scenario, id, "/notes/g.md");
         see(&scenario, id, &record);
     }
     let (columns, rows) = query(&scenario, pending_sql());
-    let names = [
-        "id", "board", "plugin", "op", "path", "replaces", "head", "bytes", "nul", "lines",
-    ];
-    assert_eq!(columns, json!(names));
-    let record = format!(r#"{{"$type":"lr/task/v1","title":"{long}"}}"#);
+    assert_eq!(columns, json!(["id", "board", "plugin", "op", "path"]));
     assert_eq!(
         rows,
         json!([
-            row(&no_effect, "/notes/g.md", 0, "g", 1, 0, 1),
-            row(&extra_key, "/notes/g.md", 0, "g", 1, 0, 1),
-            row(&bad_reason, "/notes/g.md", 0, "g", 1, 0, 1),
-            row(&a, "/notes/a.md", 1, "one\ntwo\n", 8, 0, 2),
-            row(&b, "/tasks/b", 0, &record[..2000], record.len(), 0, 1),
-            row(&d, "/notes/d.md", 0, "d", 1, 0, 1),
-            row(&empty, "/notes/e.md", 0, "", 0, 0, 0),
-            row(&malformed, "/notes/f.md", 0, "f", 1, 0, 1),
+            row(&no_effect, "/notes/g.md"),
+            row(&extra_key, "/notes/g.md"),
+            row(&bad_reason, "/notes/g.md"),
+            row(&a, "/notes/a.md"),
+            row(&b, "/tasks/b"),
+            row(&d, "/notes/d.md"),
+            row(&malformed, "/notes/f.md"),
         ])
     );
 }
@@ -142,22 +117,10 @@ fn the_effects_mod_lists_each_pending_effect_no_seen_record_answers_with_the_sta
 fn the_effects_mods_one_effect_query_finds_that_effect_while_no_seen_record_answers_it() {
     let [a, c] = ["a", "c"].map(|digit| digit.repeat(64));
     let scenario = board();
-    pend(&scenario, &a, "/notes/a.md", &json!({"text": "a\n"}));
-    pend(&scenario, &c, "/notes/c.md", &json!({"text": "c"}));
+    pend(&scenario, &a, "/notes/a.md");
+    pend(&scenario, &c, "/notes/c.md");
     see(&scenario, &c, &seen(&c, "refuse"));
-    let found = json!([row(&a, "/notes/a.md", 0, "a\n", 2, 0, 1)]);
+    let found = json!([row(&a, "/notes/a.md")]);
     assert_eq!(query(&scenario, &one_sql(&a)).1, found);
     assert_eq!(query(&scenario, &one_sql(&c)).1, json!([]));
-}
-
-#[test]
-fn the_effects_mod_query_says_when_content_holds_a_nul_before_which_its_head_stops() {
-    let id = "f".repeat(64);
-    let scenario = board();
-    let text = "harmless config\n\u{0}\nrm -rf /\nmore\n";
-    pend(&scenario, &id, "/notes/f.md", &json!({"text": text}));
-    // SQLite's text functions stop at the NUL, so `head` and `lines` cover
-    // only "harmless config\n" while `bytes` counts all 32 bytes.
-    let found = json!([row(&id, "/notes/f.md", 0, "harmless config\n", 32, 1, 1)]);
-    assert_eq!(query(&scenario, pending_sql()).1, found);
 }

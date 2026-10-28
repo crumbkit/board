@@ -12,8 +12,7 @@ file is deleted.
    a capability may read.
 2. `review/brief/v1`, `review/report/v1` and `review.run`.
 3. `review.post` posts a report as a pull request comment through the effect
-   check. It waits for `board decide` and settings (plan/board-ui.md build
-   step 2).
+   check, asking with `board decide`.
 4. `review.covered`, which CI calls to check a pull request is covered by
    reports.
 
@@ -57,9 +56,8 @@ repositories join as it proves itself.
 6. **Anyone may post a report.** A person's GitHub review counts as review
    evidence and is recorded as a report with `source` set to its URL.
 7. **Posting is an effect.** `review.post` asks `board decide --op
-   review.post --path <report path>`. With no rule the answer is ask
-   (plan/board-ui.md decision 9), and the ask shows the whole comment, since
-   an agent wrote it from an untrusted diff.
+   review.post --path <report path>`, and the ask shows the whole comment,
+   since an agent wrote it from an untrusted diff.
 8. **The coverage check** is `review.covered --base <sha> --head <sha>`,
    which CI runs on each pull request.
    - It passes when reports cover every commit from the merge base to the

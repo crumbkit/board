@@ -839,31 +839,17 @@ fn known_boards(starts: &mut Starts) {
         .extend([library, one, two, xdg].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
 }
 
-/// Effects a plugin asks for: puts that a board's settings make ask, refuse
-/// or only propose, answers to pending effects in the personal board, a
-/// decision that needs a personal board when none is named, and a plugin's
-/// put when the known boards file or a rule file cannot be read.
+/// Effects a plugin asks for: a decide the owner has not answered or
+/// refused, answers to pending effects in the personal board, and a decide
+/// when no personal board is named or the known boards file cannot be read.
 fn effects(starts: &mut Starts) {
-    let rule = |path: &str, authority: &str| {
-        json!({"$type": "board/preference/v1", "op": "put", "path": path, "authority": authority})
-            .to_string()
-    };
     let board = board();
-    identified(&board)
-        .write(".board/settings/ask.json", Item::File(&rule("/x", "ask")))
-        .write(
-            ".board/settings/refuse.json",
-            Item::File(&rule("/r", "refuse")),
-        )
-        .write(
-            ".board/settings/propose.json",
-            Item::File(&rule("/p", "propose")),
-        );
-    let effect = |path: &str| {
+    identified(&board);
+    let effect = |board: &str, plugin: &str, op: &str, path: &str| {
         let effect = board_model::Effect::new(
-            "/b".to_owned(),
-            "tasks".to_owned(),
-            "put".to_owned(),
+            board.to_owned(),
+            plugin.to_owned(),
+            op.to_owned(),
             path.to_owned(),
         );
         (effect.id(), serde_json::to_string(&effect).unwrap())
@@ -871,12 +857,19 @@ fn effects(starts: &mut Starts) {
     // An answer removes its pending effect, so each admitted answer has its
     // own.
     let personal = enabling("");
-    let [exact, starred, widened, plugged, unsigned] =
-        ["/x", "/s*", "/w", "/v", "/u"].map(|path| {
-            let (id, text) = effect(path);
-            personal.write(&format!("effects/pending/{id}.json"), Item::File(&text));
-            id
-        });
+    let [exact, plugged, unsigned] = ["/x", "/v", "/u"].map(|path| {
+        let (id, text) = effect("/b", "tasks", "put", path);
+        personal.write(&format!("effects/pending/{id}.json"), Item::File(&text));
+        id
+    });
+    // The owner refused the plugin's comment on /r in this board.
+    let root = board.workdir().canonicalize().unwrap();
+    let (refused, _) = effect(&root.display().to_string(), "tasks", "review.comment", "/r");
+    let seen = json!({"$type": "board/seen/v1", "effect": format!("/effects/pending/{refused}"), "answer": "refuse"});
+    personal.write(
+        &format!("effects/seen/{refused}.json"),
+        Item::File(&seen.to_string()),
+    );
     let xdg = Scenario::new();
     let known = json!({"boards": [personal.path()], "personal": personal.path()});
     xdg.write(
@@ -884,36 +877,26 @@ fn effects(starts: &mut Starts) {
         Item::File(&known.to_string()),
     );
     let answering = starts.keep(board).xdg(xdg.workdir().join("xdg"));
-    let place =
-        (answering.clone().env("BOARD_PLUGIN", "tasks")).stdin(r#"{"$type": "lr/project/v1"}"#);
+    let place = answering.clone().env("BOARD_PLUGIN", "tasks");
     let unnamed = place.clone().xdg_option(None);
     let broken = Scenario::new();
     broken.write("xdg/config/board/config.json", Item::File("{"));
     let unreadable = place.clone().xdg(broken.workdir().join("xdg"));
-    let lines = [
-        (Code::SettingsAsked, "put /x", "put /y"),
-        (Code::SettingsRefused, "put /r", "put /y"),
-        (Code::SettingsProposeOnly, "put /p", "put /p --or-propose"),
-    ];
-    for (code, line, admitted) in lines {
-        if code != Code::SettingsAsked {
-            starts.add(&place, code, line);
-        }
-        starts.pair(&place, code, line, admitted);
+    // Each message names the pending effect's id, so neither starts a chain.
+    for (code, line) in [
+        (Code::SettingsAsked, "decide --op review.comment --path /y"),
+        (
+            Code::SettingsRefused,
+            "decide --op review.comment --path /r",
+        ),
+    ] {
+        starts.variable(&place, code, line, "BOARD_PLUGIN");
     }
     // No signer is on these runs' PATH, so only a refusal is admitted.
     let unknown = format!("answer {} refuse", "0".repeat(64));
     starts.add(&answering, Code::SettingsNotFound, &unknown);
     let admitted = format!("answer {exact} refuse");
     starts.pair(&answering, Code::SettingsNotFound, &unknown, &admitted);
-    let saving = format!("answer {starred} refuse --save-rule");
-    starts.add(&answering, Code::SettingsBadPattern, &saving);
-    let admitted = format!("answer {starred} refuse");
-    starts.pair(&answering, Code::SettingsBadPattern, &saving, &admitted);
-    let widening = format!("answer {widened} approve --save-rule");
-    starts.add(&answering, Code::SettingsCannotWiden, &widening);
-    let admitted = format!("answer {widened} refuse --save-rule");
-    starts.pair(&answering, Code::SettingsCannotWiden, &widening, &admitted);
     let approving = format!("answer {unsigned} approve");
     starts.add(&answering, Code::SettingsUnsigned, &approving);
     let admitted = format!("answer {unsigned} refuse");
@@ -923,20 +906,9 @@ fn effects(starts: &mut Starts) {
     starts.variable(&place, Code::SettingsFromPlugin, &line, "BOARD_PLUGIN");
     let line = "decide --op review.comment --path /y";
     starts.add(&unnamed, Code::SettingsNoPersonal, line);
-    starts.pair(
-        &unnamed,
-        Code::SettingsNoPersonal,
-        line,
-        "decide --op put --path /y",
-    );
-    let broken_rule = super::board();
-    identified(&broken_rule).write(".board/settings/broken.json", Item::File("{"));
-    let bad = (starts.keep(broken_rule).env("BOARD_PLUGIN", "tasks"))
-        .stdin(r#"{"$type": "lr/project/v1"}"#);
-    starts.add(&bad, Code::SettingsBadRule, "put /y");
-    starts.variable(&bad, Code::SettingsBadRule, "put /y", "BOARD_PLUGIN");
-    starts.add(&unreadable, Code::ConfigInvalid, "put /y");
-    starts.variable(&unreadable, Code::ConfigInvalid, "put /y", "BOARD_PLUGIN");
+    starts.variable(&unnamed, Code::SettingsNoPersonal, line, "BOARD_PLUGIN");
+    starts.add(&unreadable, Code::ConfigInvalid, line);
+    starts.variable(&unreadable, Code::ConfigInvalid, line, "BOARD_PLUGIN");
     starts
         .kept
         .extend([personal, xdg, broken].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
@@ -992,19 +964,15 @@ const SCHEMA_MISSING: &str = "the board lacks an enabled plugin's schema, and no
 /// a test provokes is not provoked.
 fn declared() -> (Vec<crumbkit::Code>, Vec<Unprovoked<'static>>) {
     let unprovoked = NOT_REPRODUCED.iter();
-    let unprovoked = unprovoked
-        .chain([&(Code::SettingsCannotHold, CANNOT_HOLD)])
-        .map(|(code, reason)| Unprovoked::from_code(crumbkit_code(*code), reason));
+    let unprovoked =
+        unprovoked.map(|(code, reason)| Unprovoked::from_code(crumbkit_code(*code), reason));
     let codes = Code::ALL.into_iter().map(crumbkit_code).collect();
     (codes, unprovoked.collect())
 }
 
-/// Why the chains start from no line that gives `settings::asked`, though a
-/// twin gives it.
-const ASKED: &str = "its hint names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_lets_the_same_put_write_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and puts again";
-
-/// Why no line gives `settings::cannot_hold`.
-const CANNOT_HOLD: &str = "it needs a file put whose bytes are not UTF-8, which a start's stdin, a string, cannot carry; a_file_put_that_asks_with_bytes_that_are_not_utf8_is_refused_as_cannot_hold_and_text_asks in board-ops/src/effects/tests.rs pairs the code";
+/// Why the chains start from no line that gives `settings::asked` or
+/// `settings::refused`, though a twin gives each.
+const NAMES_AN_ID: &str = "its message names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_admits_the_same_decide_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and decides again";
 
 /// Follows the hints from `starts`, which must provoke each declared code
 /// that a test can, pins the chains in `GOLDENS`, and returns each `board
@@ -1016,10 +984,9 @@ fn recover(starts: &[Failing<'_>]) -> BTreeSet<String> {
         .allow(ALLOW)
         .failure_reader(&reader);
     let (codes, mut unprovoked) = declared();
-    unprovoked.push(Unprovoked::from_code(
-        crumbkit_code(Code::SettingsAsked),
-        ASKED,
-    ));
+    for code in [Code::SettingsAsked, Code::SettingsRefused] {
+        unprovoked.push(Unprovoked::from_code(crumbkit_code(code), NAMES_AN_ID));
+    }
 
     let recoveries = Recoveries::from_codes(examples, &codes)
         .starts(starts)

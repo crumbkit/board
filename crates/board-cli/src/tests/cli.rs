@@ -1136,7 +1136,6 @@ fn filled(line: &str) -> String {
         .replace("<name>", "due")
         .replace("<type>", "notes/note/v1")
         .replace("<sql>", "x")
-        .replace("<op>", "put")
         .replace("<id>", "0123456789abcdef")
         .replace("<answer>", "approve")
 }

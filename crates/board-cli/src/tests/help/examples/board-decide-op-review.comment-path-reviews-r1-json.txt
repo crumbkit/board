@@ -1,1 +1,1 @@
-{"schema":"board/decide-report/v2","data":{"authority":"ask","effect":null,"op":"review.comment","owner_rules":false,"path":"/reviews/r1","rules":[],"rules_left":0,"seen":null,"tell":null},"failures":[]}
+{"schema":"board/decide-report/v2","data":{"effect":null,"op":"review.comment","path":"/reviews/r1"},"failures":[]}

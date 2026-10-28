@@ -19,8 +19,7 @@ use board_validate::Schema;
 
 use crate::board::Board;
 use crate::check::{Detail, Tally, follow, unresolved};
-use crate::effects::{Change, Shape};
-use crate::effects::{EffectError, Loaded};
+use crate::effects::{Change, EffectError, Shape};
 use crate::snapshot::read_type;
 use crate::types::TypeError;
 use crate::ui::BindingError;
@@ -67,9 +66,6 @@ pub struct PutReport {
     /// The paths a removal that ignores what names nothing found absent.
     pub absent: Vec<LogicalPath>,
     pub commit: Option<ObjectId>,
-    /// The pending effect a put that could only propose wrote in the
-    /// personal board, in place of the record.
-    pub proposed: Option<String>,
 }
 
 impl PutReport {
@@ -80,7 +76,6 @@ impl PutReport {
             removed: Vec::new(),
             absent: Vec::new(),
             commit,
-            proposed: None,
         }
     }
 
@@ -88,13 +83,6 @@ impl PutReport {
     pub(crate) fn absent(path: LogicalPath) -> Self {
         Self {
             absent: vec![path],
-            ..Self::new(Vec::new(), None)
-        }
-    }
-
-    pub(crate) fn proposed(id: String) -> Self {
-        Self {
-            proposed: Some(id),
             ..Self::new(Vec::new(), None)
         }
     }
@@ -168,8 +156,6 @@ pub(crate) struct Schemas<'r> {
     /// The working tree's reader, made by the first read, so the schemas
     /// a command reads through symlinks share one snapshot.
     reader: Option<Reader<'r>>,
-    /// What the effects check reads, once per put or batch.
-    pub(crate) effects: Option<Loaded>,
 }
 
 impl<'r> Schemas<'r> {
@@ -196,19 +182,6 @@ impl Board {
     /// [`Board::put`], waiting up to `wait` for the lock, and for a mounted
     /// board's lock.
     pub fn put_waiting(
-        &self,
-        path: &LogicalPath,
-        expect: Expect,
-        bytes: &[u8],
-        wait: Duration,
-    ) -> Result<PutReport, PutError> {
-        let put = self.put_record(path, expect, bytes, wait);
-        self.holding(put)
-    }
-
-    /// [`Board::put_waiting`], leaving any pending effect it gathers for
-    /// [`Board::holding`].
-    pub(crate) fn put_record(
         &self,
         path: &LogicalPath,
         expect: Expect,
@@ -279,7 +252,7 @@ impl Board {
         let target = target?;
         let canonical = canonical_json(&admitted.value).into_bytes();
         let change = Change::Put(&canonical, &admitted, Shape::Record);
-        self.gate(&mut schemas.effects, &target, change)?;
+        self.gate(&target, change)?;
         Ok(Prepared {
             path: path.clone(),
             expect,

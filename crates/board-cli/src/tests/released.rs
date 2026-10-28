@@ -144,7 +144,10 @@ fn reports() -> BTreeMap<String, BTreeSet<String>> {
         (&["get", "/projects/p", "/tasks/a"], b""),
         (&["ls", "/"], b""),
         (&["refs", "/tasks/a", "/tasks/b"], b""),
-        (&["decide", "--op", "put", "--path", "/tasks/a"], b""),
+        (
+            &["decide", "--op", "review.comment", "--path", "/tasks/a"],
+            b"",
+        ),
         (&["mount", "update", "/vendor/lib"], b""),
         (&["plugin", "list"], b""),
         (&["plugin", "find"], b""),

@@ -67,9 +67,7 @@ impl Board {
             Sent::Record(..) => Some(format!("{BINARY_NAME} put {}", first.path)),
             Sent::Batch(_) => None,
         };
-        let written = mounted.put_mounted(crossings, &pin.follow, sent, wait);
-        self.pending.borrow_mut().extend(mounted.pending.take());
-        let written = written?;
+        let written = mounted.put_mounted(crossings, &pin.follow, sent, wait)?;
         let new = written.commit;
         // Repinned even when the pointer already names `new`, so a pin moved
         // by a put killed before the root committed it is committed now.

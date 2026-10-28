@@ -80,15 +80,6 @@ const ALLOW: &[Allow] = &[
         ],
         NO_ANSWER,
     ),
-    Allow::example(
-        "answer",
-        &[
-            "4b2e0c8a9d1f37b6e5a0c2d84f9b1e7a3c6d0f8b2a5e9c1d4f7a0b3e6c9d2f5a",
-            "approve",
-            "--save-rule",
-        ],
-        NO_ANSWER,
-    ),
     Allow::example("serve", &[], SERVES),
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),

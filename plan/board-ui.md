@@ -13,9 +13,8 @@ Each step is one pull request. Steps 2, 3 and 4 change authority or open a
 listener, so they also get an adversarial security review.
 
 1. This leaf and the scope change in PLAN.md.
-2. Effects without UI: `board/preference/v1`, board settings, `board decide`,
-   the check in `put`, `put --or-propose`, pending effects, `board/seen/v1`
-   and `board answer`.
+2. Effects without UI: `board decide`, the check in `put`, pending effects,
+   `board/seen/v1` and `board answer`.
 3. `board serve`, `ui/view/v1` and `ui/binding/v1`, the app skeleton with its
    tokens, and the `markdown` and `record` kinds.
 4. Touch ID signing of every approval (decision 12). The `gate` kind and
@@ -87,49 +86,24 @@ listener, so they also get an adversarial security review.
      `runs/run/v1` (`note`, `evidence`, linked eval) or steps an agent binds
      inline, citing screenshots by path.
    - `gate`: a pending effect, deferred until a page needs it (decision 11).
-9. **Effects, first slice.** A plugin asks Board whether it may take an
-   effect on a path, and Board answers act, propose or ask. The first users
-   are `review`, which posts pull request comments, and `share`, which
-   writes into another board.
-   - `board/preference/v1` is a core type, kept in the owner's personal board.
-     A rule names an operation, a path pattern, an authority (act, propose,
-     ask or refuse) and how the owner is told.
-   - `refuse` is a fourth authority, added in this slice; the narrowest wins.
-   - Board settings at `/.board/settings/` are defaults. Under the `refines`
-     rule a preference may narrow a board default but not widen it.
-   - `board decide --op <operation> --path <path>` prints the answer and the
-     rule that produced it. Board sets `BOARD_PLUGIN` in each plugin's
-     environment, so it knows who asks.
-   - Every `put` from a plugin runs the same check. `put --or-propose` writes
-     a proposal when the answer is propose. The check binds plugins; it
-     cannot stop a local process that writes files itself.
-   - When the answer is ask, Board writes a pending effect at
-     `/effects/pending/<id>`, and the `put` fails with a code that names it.
-     `board answer <id>` records the owner's answer as a `board/seen/v1`
-     record, optionally with a rule to save, and a repeated `put` then
-     proceeds. A refusal fails the `put` with
-     `board::settings::refused`.
-   - Left for the next slice: `required` and `overrides`, conditions beyond
-     operation and path, batch `decide`, and the mandate layer.
-10. **Changes to the 2026-10-05 sketch** ("Settings and the gentle slope" in
-    `git show 226829b:PLAN.md`), which is otherwise background:
-    - Authority gains ask, and attention is the rule's "how the owner is told".
-    - A rule is a fixed operation, path pattern, authority and attention,
-      not `where` and `set` over settings that manifests declare.
-    - `refines` crosses layers and only narrows; the sketch let the owner
-      replace a default freely.
-    - `board/seen/v1` holds the answer to a pending effect, not to an offer.
+9. **Effects.** A plugin asks the owner with `board decide` before an op,
+   and a plugin's put is refused only where the owner alone writes.
+   docs/architecture/writes/effects.md has the design. Owner rules that make
+   a put ask were cut on 2026-10-28 until two plugins need them.
+10. **No rules yet.** The 2026-10-05 sketch ("Settings and the gentle slope"
+    in `git show 226829b:PLAN.md`) and the first slice's rules are
+    background; the rules are in
+    `git show 5a34ac92:docs/architecture/writes/effects.md`.
 11. **No `Gate` trait.** It would have one implementation. The signer's
-    native window is the gate. The pending-effect, preference and seen
-    records stay stable and documented for the Claude Code mod.
+    native window is the gate. The pending-effect and seen records stay
+    stable and documented for the Claude Code mod.
 12. **Every approval is signed** (decided 2026-10-25). An agent's shell
     counts as the owner, so an unsigned approve is refused with
     `board::settings::unsigned`. `board answer` runs attention's Touch ID
     signer, which shows the effect and its content. A refusal is unsigned.
-    The owner's own put under `.board/settings/`, `preferences/` or
-    `effects/` is signed the same way (decided 2026-10-26). The signer and
+    The owner's own put under `effects/` is signed the same way (decided
+    2026-10-26; `.board/settings/` and `preferences/` left with the rules). The signer and
     the allowed signers file come from the passwd entry's home, and
     approvals sign in `board/approve/v1` and the owner's puts in
     `board/write/v1`.
-    docs/architecture/writes/effects.md has the design. Left out: rule
-    narrowing in a window.
+    docs/architecture/writes/effects.md has the design.

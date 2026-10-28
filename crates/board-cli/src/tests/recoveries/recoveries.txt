@@ -765,26 +765,10 @@ board --personal check
   fails with board::config::not_found
   hint
 
-board put /r (with BOARD_PLUGIN=tasks)
-  fails with board::settings::refused
-  hint
-
-board put /p (with BOARD_PLUGIN=tasks)
-  fails with board::settings::propose_only
-  hint
-
 board answer 0000000000000000000000000000000000000000000000000000000000000000 refuse
   fails with board::settings::not_found
   run board --personal ls /effects/pending
     exits 0
-
-board answer 11a05552f7a7afc2026731771c02f6418f4f7a5a94b21b49a69debbcf88fb9e1 refuse --save-rule
-  fails with board::settings::bad_pattern
-  hint
-
-board answer 9b0ed3aee377e913394bcf334559e506cfc5c0607883d933fdeae9cb31e61db9 approve --save-rule
-  fails with board::settings::cannot_widen
-  hint
 
 board answer 8ad7c232a7b9636598d29eb351cb4c2597255d96dbc5403b535d5f055a6d20fd approve
   fails with board::settings::unsigned
@@ -798,11 +782,7 @@ board decide --op review.comment --path /y (with BOARD_PLUGIN=tasks)
   fails with board::settings::no_personal
   hint
 
-board put /y (with BOARD_PLUGIN=tasks)
-  fails with board::settings::bad_rule
-  hint
-
-board put /y (with BOARD_PLUGIN=tasks)
+board decide --op review.comment --path /y (with BOARD_PLUGIN=tasks)
   fails with board::config::invalid
   hint
 
@@ -845,7 +825,7 @@ codes that no start provokes:
   board::serve::code_expired: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::unknown_route: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::failed: serve fails only when the system refuses a port, a file or random bytes; board-serve/src/tests.rs runs the server
-  board::settings::cannot_hold: it needs a file put whose bytes are not UTF-8, which a start's stdin, a string, cannot carry; a_file_put_that_asks_with_bytes_that_are_not_utf8_is_refused_as_cannot_hold_and_text_asks in board-ops/src/effects/tests.rs pairs the code
-  board::settings::asked: its hint names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_lets_the_same_put_write_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and puts again
+  board::settings::asked: its message names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_admits_the_same_decide_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and decides again
+  board::settings::refused: its message names the pending effect's id, which hashes the board's temporary directory, so a golden chain cannot pin it; an_approved_effect_admits_the_same_decide_and_a_refused_one_is_refused_naming_it in board-ops/src/effects/tests.rs answers the effect the hint names and decides again
 
 codes whose recoveries the check did not follow, because no declared code spells them: 0

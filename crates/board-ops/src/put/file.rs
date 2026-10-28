@@ -34,25 +34,12 @@ impl Board {
         bytes: &[u8],
         wait: Duration,
     ) -> Result<PutReport, PutError> {
-        let put = self.put_file_admitted(path, expect, bytes, wait);
-        self.holding(put)
-    }
-
-    /// [`Board::put_file_waiting`], leaving any pending effect it gathers
-    /// for [`Board::holding`].
-    fn put_file_admitted(
-        &self,
-        path: &LogicalPath,
-        expect: Expect,
-        bytes: &[u8],
-        wait: Duration,
-    ) -> Result<PutReport, PutError> {
         if let Some((record, upload)) = self.attach(path, bytes)? {
             if self.asker.plugin.is_some() {
                 self.check_attachment(path, &record, wait)?;
             }
             upload()?;
-            return self.put_record(path, expect, &record, wait);
+            return self.put_waiting(path, expect, &record, wait);
         }
         let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -89,9 +76,7 @@ impl Board {
                     return Ok(());
                 };
                 mounted.ask_as(self.asker.clone());
-                let checked = mounted.check_attachment(&inside.path, record, wait);
-                self.pending.borrow_mut().extend(mounted.pending.take());
-                checked
+                mounted.check_attachment(&inside.path, record, wait)
             }
             Ok(_) | Err(PutError::Write(WriteError::ThroughMount { .. })) => Ok(()),
             Err(error) => Err(error),
@@ -150,7 +135,7 @@ impl Board {
             }
         }
         let change = Change::Put(bytes, &admitted, Shape::File);
-        self.gate(&mut schemas.effects, &target, change)?;
+        self.gate(&target, change)?;
         Ok(Prepared {
             path: path.clone(),
             expect,

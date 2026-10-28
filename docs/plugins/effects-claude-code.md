@@ -7,8 +7,7 @@ effects themselves.
 
 The mod lets the owner answer a plugin's pending effects without leaving
 Claude Code. Board makes every decision and checks every answer. The mod only
-lists effects and runs `board answer` for the owner, so it holds no rule of
-its own.
+lists effects and runs `board answer` for the owner.
 
 - It lists the pending effects with one `board --personal query` over
   `/effects/pending/`, leaving out each effect with a `board/seen/v1` record
@@ -16,9 +15,7 @@ its own.
   index marks a seen record Board cannot parse as degraded, and the query
   counts only those whose status is `ok`. The query is in `hooks/query.ts`, and
   crates/board-cli/src/tests/effects_mod.rs runs it against a real board. It
-  returns only the fields the mod shows, the first 2,000 characters of the
-  record or text a put would write, and that content's size in bytes and
-  lines, so no row carries a whole body. The mod reads the list when a
+  returns the board, plugin, op and path of each. The mod reads the list when a
   session starts and after each answer. It also reads it every 60 seconds
   from the first time the band is drawn, which a `claude -p` run never does.
 - When any are pending, the band above the prompt says how many, such as
@@ -29,18 +26,12 @@ its own.
   worked and the failure is `board::config::not_found`, which means there is
   no personal board.
 - The pane lists up to 100 effects. Each starts with a line such as
-  `In board "~/work", notes asks to put "/notes/plan.md"`. The board's full
+  `In board "~/work", notes asks to notes.publish "/notes/plan.md"`. The board's full
   root comes first, with the home directory written as `~`, and the path is
   quoted, because a plugin chooses the path and a path such as
-  `/README.md in ~/Code/scratch` could otherwise name another board. Under it
-  are the first lines of what a put would write. It says when the put replaces a file. When
-  it shows only part of the content, it says how much is left out, such as
-  `and 146 more lines, 12 KB in all`, and gives the command
-  `board --personal get /effects/pending/<id>` that prints the effect whole.
-  SQLite's text functions stop at a NUL character, so when the content holds
-  one, the pane says so and that only the part before it is shown. For an op
-  other than put, it says that an approval stands until the seen
-  record is removed. Its Refuse and Approve buttons run
+  `/README.md in ~/Code/scratch` could otherwise name another board. Under it the
+  pane says that an approval stands until the seen record is removed. Its
+  Refuse and Approve buttons run
   `board answer <id> refuse` or `board answer <id> approve`. When a read
   fails, the pane says why in place of "No effect waits for your answer", and
   says when the list it shows is from the last read that worked.
@@ -72,9 +63,10 @@ its own.
   Board recorded it, so output that names an effect Board does not hold
   pending opens no dialog. Approve or Refuse runs `board answer`, and the
   agent that ran the call then reads a line it alone sees: after an approval,
-  that it may run the same put again; after a refusal, that the put is now
-  refused. Later answers nothing, and the agent reads that the owner has not
-  answered yet, so it should not retry the put or answer it itself. A dismissed dialog answers
+  that it may run the same command again; after a refusal, that the command
+  is now refused. Later answers nothing, and the agent reads that the owner
+  has not answered yet, so it should not run the command again or answer it
+  itself. A dismissed dialog answers
   nothing.
 
 The mod passes each id to `board` as its own argument, and an id is 64
@@ -84,5 +76,4 @@ seen-record check.
 
 An approval runs Board's signer, which shows the effect and waits up to 20
 seconds for the owner's Touch ID (docs/architecture/writes/effects.md, Signed
-approvals), so it fits the mod's 30-second limit. The mod offers no way to
-save a rule.
+approvals), so it fits the mod's 30-second limit.

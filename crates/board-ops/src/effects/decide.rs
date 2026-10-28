@@ -1,8 +1,7 @@
 //! `board decide` and `board answer`.
 
 use board_model::{
-    Answer, Authority, BINARY_NAME, Decision, Digest, Effect, LogicalPath, Pattern, Preference,
-    Request, Seen, canonical_json, is_effect_id, is_write,
+    Answer, BINARY_NAME, Digest, Effect, LogicalPath, Seen, canonical_json, is_effect_id,
 };
 use serde_json::json;
 
@@ -10,29 +9,17 @@ use board_tree::{LOCK_WAIT, WriteError};
 
 use std::path::Path;
 
-use super::{
-    Asker, EFFECT_TYPE, EffectError, PENDING, PREFERENCES, SEEN, Signing, hold, read_held, root,
-    seen,
-};
+use super::{Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen};
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
 
-/// The authority for an op at a path, the rules that gave it, and the
-/// pending effect or answer that changes it.
+/// A plugin's op at a path that `board decide` admitted, and the pending
+/// effect whose approval admitted it, if the op needed one.
 #[derive(Debug)]
 pub struct DecideReport {
     pub op: String,
     pub path: LogicalPath,
-    /// What the rules decide. Its authority is replaced by the owner's
-    /// answer, when `seen` holds one.
-    pub decision: Decision,
-    /// The pending effect an ask wrote or found.
     pub effect: Option<String>,
-    /// The owner's answer, which gave the authority.
-    pub seen: Option<Answer>,
-    /// Whether the owner's rules were read: false when no personal board
-    /// is named.
-    pub owner_rules: bool,
 }
 
 /// What `board answer` wrote in the personal board.
@@ -40,19 +27,16 @@ pub struct DecideReport {
 pub struct AnswerReport {
     pub id: String,
     pub answer: Answer,
-    /// The preference saved, by its logical path.
-    pub rule: Option<String>,
     pub put: PutReport,
 }
 
 impl Board {
-    /// The authority that `op` at `path` has for whoever asks, decided as a
-    /// put to `path` would be: at the path where it lands, after links, and
-    /// through a mount in the mounted board. Under a plugin, for an op other
-    /// than put, an answer the owner gave decides, and an ask with no answer
-    /// writes its pending effect. A put asks with its content, so only `put`
-    /// itself writes its pending effect.
-    pub fn authority(&self, op: &str, path: &LogicalPath) -> Result<DecideReport, EffectError> {
+    /// Whether the plugin `BOARD_PLUGIN` names may run its own `op` at
+    /// `path`, named as a put to `path` would land: after links, and through
+    /// a mount in the mounted board. The owner's approval admits it, their
+    /// refusal refuses it, and with no answer its pending effect is written
+    /// and it is refused as asked. The owner's own op is admitted.
+    pub fn decide_op(&self, op: &str, path: &LogicalPath) -> Result<DecideReport, EffectError> {
         let mut view = (self.repositories().snapshot()).map_err(|source| EffectError::Read {
             directory: path.to_string(),
             source,
@@ -70,7 +54,7 @@ impl Board {
                 let mut mounted = Board::open(&inside.repository, home)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
-                let mut report = mounted.authority(op, &inside.path)?;
+                let mut report = mounted.decide_op(op, &inside.path)?;
                 report.path = path.clone();
                 return Ok(report);
             }
@@ -90,72 +74,65 @@ impl Board {
         self.decide_at(op, path, &landed)
     }
 
-    /// [`Board::authority`] for `op` at `landed`, the path in this board
-    /// where `path` lands.
+    /// [`Board::decide`] for `op` at `landed`, the path in this board where
+    /// `path` lands.
     fn decide_at(
         &self,
         op: &str,
         path: &LogicalPath,
         landed: &str,
     ) -> Result<DecideReport, EffectError> {
-        let loaded = self.load()?;
-        let plugin = self.asker.plugin.as_deref();
-        let board = root(self);
-        let request = Request {
-            op,
-            path: landed,
-            plugin,
-            board: &board,
-        };
         let mut report = DecideReport {
             op: op.to_owned(),
             path: path.clone(),
-            decision: board_model::decide(&loaded.rules, &request),
             effect: None,
-            seen: None,
-            owner_rules: loaded.personal.is_some(),
         };
-        let Some(plugin) = plugin else {
+        let Some(plugin) = self.asker.plugin.as_deref() else {
             return Ok(report);
         };
-        if let Some(file) = loaded.broken {
-            return Err(EffectError::BadRule {
-                plugin: plugin.to_owned(),
-                path: path.clone(),
-                file,
-            });
+        let personal = self
+            .asker
+            .personal(|| format!("{op} {path} needs a pending effect in the personal board"))?;
+        let effect = Effect::new(
+            root(self),
+            plugin.to_owned(),
+            op.to_owned(),
+            landed.to_owned(),
+        );
+        let id = effect.id();
+        let (plugin, op, path) = (plugin.to_owned(), op.to_owned(), path.clone());
+        match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
+            Some(Answer::Approve) => {
+                report.effect = Some(id);
+                Ok(report)
+            }
+            Some(Answer::Refuse) => Err(EffectError::Refused {
+                plugin,
+                op,
+                path,
+                id,
+            }),
+            None => {
+                hold(&personal, &effect)?;
+                Err(EffectError::Asked {
+                    plugin,
+                    op,
+                    path,
+                    id,
+                })
+            }
         }
-        let authority = report.decision.authority;
-        if is_write(op) || matches!(authority, Authority::Act | Authority::Refuse) {
-            return Ok(report);
-        }
-        let personal = loaded
-            .personal
-            .as_ref()
-            .ok_or_else(|| EffectError::NoPersonal {
-                what: format!("{op} {path} needs a pending effect in the personal board"),
-            })?;
-        let effect = Effect::new(board, plugin.to_owned(), op.to_owned(), landed.to_owned());
-        report.seen = seen(personal, &effect, self.asker.signing.allowed.as_deref())?;
-        match report.seen {
-            Some(answer) => report.decision.authority = answer.authority(),
-            None if authority == Authority::Ask => report.effect = Some(hold(personal, &effect)?),
-            None => {}
-        }
-        Ok(report)
     }
 }
 
 /// Writes the owner's `answer` to the pending effect `id` in the personal
-/// board, with a preference for the effect's op, exact path, plugin and
-/// board when `save_rule` is set, and removes the pending effect, in one
-/// commit. A plugin may not answer.
+/// board and removes the pending effect, in one commit. A plugin may not
+/// answer.
 pub fn answer(
     asker: &Asker,
     id: &str,
     answer: Answer,
     reason: Option<String>,
-    save_rule: bool,
 ) -> Result<AnswerReport, EffectError> {
     if let Some(plugin) = &asker.plugin {
         return Err(EffectError::FromPlugin {
@@ -167,37 +144,11 @@ pub fn answer(
     let personal = asker.personal(|| "an answer is written in the personal board".to_owned())?;
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
-    if save_rule && answer == Answer::Approve && is_write(&effect.op) {
-        return Err(EffectError::CannotWiden { id: id.to_owned() });
-    }
-    let rule = save_rule
-        .then(|| {
-            let exact = |pattern: &Pattern| pattern.is_exact();
-            match effect.path.parse::<Pattern>() {
-                Ok(pattern) if exact(&pattern) => Ok(pattern),
-                Ok(_) => Err("it holds * or ?".to_owned()),
-                Err(why) => Err(why),
-            }
-            .map_err(|why| EffectError::BadPattern {
-                id: id.to_owned(),
-                path: effect.path.clone(),
-                why,
-            })
-        })
-        .transpose()?;
-    let saved = rule.is_some().then(|| format!("/{PREFERENCES}/{id}"));
     let mut seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
-    seen.rule.clone_from(&saved);
     if answer == Answer::Approve {
-        seen.signature = Some(signed(asker, &personal, &effect, saved.is_some())?);
+        seen.signature = Some(signed(asker, &personal, &effect)?);
     }
-    let mut records = vec![(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
-    if let (Some(pattern), Some(at)) = (rule, &saved) {
-        let mut preference = Preference::new(effect.op.clone(), pattern, answer.authority());
-        preference.plugin = Some(effect.plugin.clone());
-        preference.board = Some(effect.board.clone());
-        records.push((at.clone(), json!(preference), Expect::Any));
-    }
+    let records = [(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
     let pending = Removal {
         path: format!("/{PENDING}/{id}")
             .parse()
@@ -213,7 +164,6 @@ pub fn answer(
     Ok(AnswerReport {
         id: id.to_owned(),
         answer,
-        rule: saved,
         put,
     })
 }
@@ -253,14 +203,9 @@ fn read_pending(
 
 /// The owner's signature of `effect`'s approval, made by the signer after
 /// Touch ID and checked before it is written.
-fn signed(
-    asker: &Asker,
-    personal: &Board,
-    effect: &Effect,
-    saves_rule: bool,
-) -> Result<String, EffectError> {
+fn signed(asker: &Asker, personal: &Board, effect: &Effect) -> Result<String, EffectError> {
     let root = root(personal);
-    let statement = effect.approval(saves_rule);
+    let statement = effect.approval();
     signature(&asker.signing, Path::new(&root), &statement).map_err(|why| EffectError::Unsigned {
         id: effect.id(),
         why,

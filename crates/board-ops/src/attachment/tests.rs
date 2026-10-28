@@ -303,18 +303,16 @@ fn a_store_setting_names_a_backend_board_offers_and_a_location_and_any_other_is_
 }
 
 #[test]
-fn a_plugins_file_put_that_a_rule_refuses_uploads_nothing_and_its_twin_uploads() {
+fn a_plugins_file_put_where_only_the_owner_writes_uploads_nothing_and_its_twin_uploads() {
     let scenario = stored(Path::new("store"));
-    let rule = json!({"$type": "board/preference/v1", "op": "put", "path": "/files/no*", "authority": "refuse"});
-    scenario.write(".board/settings/no.json", Item::File(&rule.to_string()));
     let mut board = open(&scenario);
     board.ask_as(crate::Asker {
         plugin: Some("tasks".to_owned()),
         ..crate::Asker::default()
     });
     let bytes = b"\xff\xfe";
-    let refused = board.put_file(&path("/files/no.bin"), Expect::Any, bytes);
-    assert_eq!(refused.unwrap_err().code(), Code::SettingsRefused);
+    let refused = board.put_file(&path("/effects/no.bin"), Expect::Any, bytes);
+    assert_eq!(refused.unwrap_err().code(), Code::SettingsFromPlugin);
     assert!(!exists(&scenario, "store"));
     board
         .put_file(&path("/files/yes.bin"), Expect::Any, bytes)

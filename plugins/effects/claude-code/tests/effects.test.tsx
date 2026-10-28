@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { askedIds, parsePending, pendingSql, preview } from '../hooks/effects'
+import { askedIds, parsePending, pendingSql, standing } from '../hooks/effects'
 import type { Effect } from '../types'
 
 // These prove what the band, the pane and the dialog show, and which `board`
@@ -14,22 +14,22 @@ const A = 'a'.repeat(64)
 const B = 'b'.repeat(64)
 const C = 'c'.repeat(64)
 const HOME = '/Users/me'
-const COLUMNS = ['id', 'board', 'plugin', 'op', 'path', 'replaces', 'head', 'bytes', 'lines']
+const COLUMNS = ['id', 'board', 'plugin', 'op', 'path']
 // Rows as the query returns them, by id.
 const ROWS: Record<string, unknown[]> = {
-  [A]: [A, `${HOME}/boards/work`, 'notes', 'put', '/notes/plan.md', 0, 'Plan\nship it\n', 13, 2],
-  [B]: [B, '/srv/work', 'tasks', 'put', '/tasks/a', 1, '{"$type":"tasks/task/v1","title":"Ship"}', 40, 1],
+  [A]: [A, `${HOME}/boards/work`, 'notes', 'notes.publish', '/notes/plan.md'],
+  [B]: [B, '/srv/work', 'tasks', 'tasks.close', '/tasks/a'],
 }
 const report = (data: unknown[][], truncated = false) =>
   JSON.stringify({ schema: 'board/query-report/v2', data, truncated, summary: { columns: COLUMNS, plugins: [] } })
 const failed = (code: string, message: string) => JSON.stringify({ schema: 'board/failure/v1', code, message })
-// What board prints when a plugin's put asks, as the agent's Bash call sees it.
+// What board prints when a plugin's decide asks, as the agent's Bash call sees it.
 const asking = (id: string) =>
-  `Error: plugin notes may not put /notes/plan.md until the owner answers pending effect ${id}\n` +
+  `Error: plugin notes may not notes.publish /notes/plan.md until the owner answers pending effect ${id}\n` +
   `  help:  the owner answers outside the plugin with \`board answer ${id} approve\`\n  code:  board::settings::asked\n`
 const ASKED = asking(A)
-const NOTE_LINE = 'In board "~/boards/work", notes asks to put "/notes/plan.md"'
-const TASK_LINE = 'In board "/srv/work", tasks asks to put "/tasks/a"'
+const NOTE_LINE = 'In board "~/boards/work", notes asks to notes.publish "/notes/plan.md"'
+const TASK_LINE = 'In board "/srv/work", tasks asks to tasks.close "/tasks/a"'
 
 const BAND = { plugin: 'board-effects', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as const
 const PANE = { plugin: 'board-effects', component: 'Pane', requestId: 'effects', props: { title: 'Pending effects', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 30 }, view: {} } } as const
@@ -120,7 +120,7 @@ const LIST = ['--personal', 'query', pendingSql(), '--limit', '100']
 const one = (id: string) => ['--personal', 'query', pendingSql(id), '--limit', '100']
 const band = ($: Engine) => $.ui.mount({ ...BAND, surface: 'terminal' })
 const answersRun = (ran: string[][]) => ran.filter(a => a[0] === 'answer')
-const effect = (fields: Partial<Effect>): Effect => ({ id: A, board: '~/w', plugin: 'notes', op: 'put', path: '/n', replaces: false, nul: false, head: null, bytes: 0, lines: 0, ...fields })
+const effect = (fields: Partial<Effect>): Effect => ({ id: A, board: '~/w', plugin: 'notes', op: 'notes.publish', path: '/n', ...fields })
 
 test('the one-effect query reads that effect\'s path alone, and an id that is not 64 hex digits matches none', () => {
   expect(pendingSql()).toContain("logical LIKE '/effects/pending/%'")
@@ -135,63 +135,43 @@ test('a row whose id is not 64 hex digits is left out, and the home directory is
   expect(found?.effects.map(e => [e.id, e.board])).toEqual([[A, '~/boards/work']])
 })
 
-test('a put shows the start of what it writes, how much is left out, and how to read it whole', () => {
-  expect(preview(effect({ head: 'Plan\nship it\n', bytes: 13, lines: 2 }))).toBe('It writes a new file:\nPlan\nship it')
-  const long = Array.from({ length: 154 }, (_, i) => `line ${i}`).join('\n')
-  expect(preview(effect({ head: long.slice(0, 2000), bytes: 12_288, lines: 154, replaces: true }))).toBe(
-    'It replaces the file there with:\nline 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\n' +
-      `… and 146 more lines, 12 KB in all. board --personal get /effects/pending/${A} prints it whole.`,
-  )
-  expect(preview(effect({ head: 'x'.repeat(2000), bytes: 5_000_000, lines: 1 }))).toContain('… and the rest of the line, 4883 KB in all.')
-})
-
 test('control characters but line feed and tab are written out, so the pane draws', async ($, on) => {
   mock.clock(on, { now: 0 })
-  const head = 'a\u001b[2Jb\u0007c\u0000d\u009be\tf\ng'
-  const bytes = new TextEncoder().encode(head).length
-  expect(preview(effect({ head, bytes, lines: 2 }))).toBe('It writes a new file:\na\\u{1b}[2Jb\\u{7}c\\u{0}d\\u{9b}e\tf\ng')
-  engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/p\u001b', 0, head, bytes, 2] } })
+  engine(on, { rows: { [A]: [A, '/w', 'notes', 'notes.publish', '/p\u001b\u0007\u009b'] } })
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('In board "/w", notes asks to put "/p\\u{1b}"')
+  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('In board "/w", notes asks to notes.publish "/p\\u{1b}\\u{7}\\u{9b}"')
 })
 
 test('format characters, separators and backslashes are written out, so a path cannot read as another', async ($, on) => {
   mock.clock(on, { now: 0 })
   const path = '/notes/\u202Edm.exe\u200B\uFEFF\u2028\u2029\\x'
-  const head = 'safe\u202Etxet'
-  engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', path, 0, head, new TextEncoder().encode(head).length, 1] } })
+  engine(on, { rows: { [A]: [A, '/w', 'notes', 'notes.publish', path] } })
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe(
-    'In board "/w", notes asks to put "/notes/\\u{202e}dm.exe\\u{200b}\\u{feff}\\u{2028}\\u{2029}\\\\x"',
+    'In board "/w", notes asks to notes.publish "/notes/\\u{202e}dm.exe\\u{200b}\\u{feff}\\u{2028}\\u{2029}\\\\x"',
   )
-  expect((await pane.find({ type: 'Text', text: /It writes/ }))?.text).toBe('It writes a new file:\nsafe\\u{202e}txet')
 })
 
 test('the board comes first and the path is quoted, so a path cannot name another board', async ($, on) => {
   mock.clock(on, { now: 0 })
-  engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/README.md in ~/Code/scratch "x"', 0, null, 0, 0] } })
+  engine(on, { rows: { [A]: [A, '/w', 'notes', 'notes.publish', '/README.md in ~/Code/scratch "x"'] } })
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe(
-    'In board "/w", notes asks to put "/README.md in ~/Code/scratch \\"x\\""',
+    'In board "/w", notes asks to notes.publish "/README.md in ~/Code/scratch \\"x\\""',
   )
 })
 
-test('a cut preview never splits a surrogate pair', () => {
-  const head = `${'😀'.repeat(10)}`
-  expect(preview(effect({ head, bytes: 40, lines: 1 }), 8, 3)).toMatch(/^It writes a new file:\n😀😀😀\n… and the rest of the line/)
-})
-
-test('an op other than put says that an approval stands until its seen record is removed', () => {
-  expect(preview(effect({ op: 'review.comment', path: '/pulls/7' }))).toBe(
-    `An approval lets notes review.comment "/pulls/7" again until /effects/seen/${A} is removed.`,
+test('an effect says that an approval stands until its seen record is removed', () => {
+  expect(standing(effect({ op: 'notes.publish', path: '/pulls/7' }))).toBe(
+    `An approval lets notes notes.publish "/pulls/7" again until /effects/seen/${A} is removed.`,
   )
 })
 
-test('an asked put is found in text and JSON output, each id once, and other output asks nothing', () => {
-  const json = JSON.stringify({ code: 'board::settings::asked', message: `plugin notes may not put /x until the owner answers pending effect ${B}` })
+test('an asked effect is found in text and JSON output, each id once, and other output asks nothing', () => {
+  const json = JSON.stringify({ code: 'board::settings::asked', message: `plugin notes may not notes.publish /x until the owner answers pending effect ${B}` })
   expect(askedIds(ASKED + ASKED)).toEqual([A])
   expect(askedIds(json)).toEqual([B])
   expect(askedIds(`pending effect ${A}`)).toEqual([])
@@ -340,19 +320,12 @@ test('when Board lists only the first effects, the band says "or more" and the p
   expect((await pane.find({ type: 'Text', text: /More wait/ }))?.text).toBe('More wait; `board --personal ls /effects/pending` lists them, with the effects already answered.')
 })
 
-test('content holding a NUL says that only the part before it is shown', () => {
-  expect(preview(effect({ head: 'harmless config\n', bytes: 9000, lines: 1, nul: true }))).toBe(
-    'It writes a new file:\nharmless config\n' +
-      `… The content holds a NUL character, so only the part before it is shown. It is 9 KB in all. board --personal get /effects/pending/${A} prints it whole.`,
-  )
-})
-
 test('a line feed or tab in the path is escaped in the headline', async ($, on) => {
   mock.clock(on, { now: 0 })
-  engine(on, { rows: { [A]: [A, '/w', 'notes', 'put', '/a\n/b\tc', 0, null, 0, 0] } })
+  engine(on, { rows: { [A]: [A, '/w', 'notes', 'notes.publish', '/a\n/b\tc'] } })
   await start($)
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('In board "/w", notes asks to put "/a\\u{a}/b\\u{9}c"')
+  expect((await pane.find({ type: 'Text', text: /notes asks/ }))?.text).toBe('In board "/w", notes asks to notes.publish "/a\\u{a}/b\\u{9}c"')
 })
 
 test('an answer that times out or is killed is said to be unknown, and the list is read again', async ($, on) => {
@@ -369,15 +342,15 @@ test('an answer that times out or is killed is said to be unknown, and the list 
   expect(ran).toEqual([LIST, one(A), ['answer', A, 'approve'], LIST, one(A), ['answer', A, 'approve'], LIST])
 })
 
-test('an asked put opens a dialog from the effect Board holds, Later first, and an approval tells the agent to retry', async ($, on) => {
+test('an asked effect opens a dialog from the effect Board holds, Later first, and an approval tells the agent to retry', async ($, on) => {
   mock.clock(on, { now: 0 })
   const { ran, asked, options } = engine(on, { bash: ASKED, chosen: 'Approve' })
   await start($)
   const result = await bash($)
-  expect(asked).toEqual([`${NOTE_LINE}. It writes a new file:\nPlan\nship it\nApprove it?`])
+  expect(asked).toEqual([`${NOTE_LINE}. An approval lets notes notes.publish "/notes/plan.md" again until /effects/seen/${A} is removed.\nApprove it?`])
   expect(options).toEqual([['Later', 'Refuse', 'Approve']])
   expect(ran.slice(1)).toEqual([LIST, one(A), one(A), ['answer', A, 'approve'], LIST])
-  expect(result.context).toEqual([`The owner approved pending effect ${A}: ${NOTE_LINE}. Run the same put again; it now writes.`])
+  expect(result.context).toEqual([`The owner approved pending effect ${A}: ${NOTE_LINE}. Run the same command again; it is now admitted.`])
 })
 
 test('a failing Bash call, whose result is its error text, opens the dialog too', async ($, on) => {
@@ -403,7 +376,7 @@ test('a refusal tells the agent not to retry', async ($, on) => {
   const { ran } = engine(on, { bash: ASKED, chosen: 'Refuse' })
   await start($)
   expect((await bash($)).context).toEqual([
-    `The owner refused pending effect ${A}: ${NOTE_LINE}. The same put is now refused with board::settings::refused, so do not retry it.`,
+    `The owner refused pending effect ${A}: ${NOTE_LINE}. The same command is now refused with board::settings::refused, so do not run it again.`,
   ])
   expect(answersRun(ran)).toEqual([['answer', A, 'refuse']])
 })
@@ -418,7 +391,7 @@ for (const chosen of ['Later', 'dismiss']) {
     expect(answersRun(ran)).toEqual([])
     expect(result.context).toEqual(
       chosen === 'Later'
-        ? [`The owner has not answered pending effect ${A} yet: ${NOTE_LINE}. Do not retry the put, and do not answer it yourself; it stays asked until the owner answers.`]
+        ? [`The owner has not answered pending effect ${A} yet: ${NOTE_LINE}. Do not run the same command again, and do not answer it yourself; it stays asked until the owner answers.`]
         : undefined,
     )
   })

@@ -513,24 +513,24 @@ fn a_day_start_that_is_not_hh_mm_is_refused_and_one_that_is_or_is_null_is_admitt
 }
 
 #[test]
-fn a_plugins_put_is_refused_when_the_known_boards_file_cannot_be_read_and_the_owners_is_admitted() {
+fn a_plugins_decide_is_refused_when_the_known_boards_file_cannot_be_read_and_the_owners_is_admitted()
+ {
     let board = uncommitted();
     let broken = config(Some("{"));
-    let put = |plugin: Option<&str>| {
+    let decide = |plugin: Option<&str>| {
         let (output, _) = inside(
             plugin.map(OsString::from),
             board.workdir(),
             &broken,
             None,
-            &["put", "/notes/n"],
-            br#"{"$type": "lr/project/v1"}"#,
+            &["decide", "--op", "review.comment", "--path", "/notes/n"],
+            b"",
         );
         output
     };
-    assert_eq!(code(&put(Some("tasks"))), "board::config::invalid");
-    assert!(!board.workdir().join("notes/n.json").exists());
-    assert_eq!(text(&put(None).stderr), "");
-    assert!(board.workdir().join("notes/n.json").exists());
+    assert_eq!(code(&decide(Some("tasks"))), "board::config::invalid");
+    let admitted = decide(None);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
 
 #[test]

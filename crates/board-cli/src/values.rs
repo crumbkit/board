@@ -33,13 +33,11 @@ pub(crate) fn expect(text: &str) -> Result<Expect, String> {
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
 }
 
-/// `put` or `<plugin>.<capability>`.
+/// A plugin's own op, `<plugin>.<capability>`.
 pub(crate) fn op(text: &str) -> Result<String, String> {
     board_model::is_op(text)
         .then(|| text.to_owned())
-        .ok_or_else(|| {
-            "must be `put` or `<plugin>.<capability>`, such as review.comment".to_owned()
-        })
+        .ok_or_else(|| "must be `<plugin>.<capability>`, such as review.comment".to_owned())
 }
 
 /// A count of milliseconds, seconds, minutes or hours with its unit.
