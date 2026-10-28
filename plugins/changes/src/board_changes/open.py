@@ -6,7 +6,7 @@ from typing import Any, cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
 
-from board_loop.change import CHANGE_TYPE, FINAL, PLUGIN, TREE_CODES
+from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, TREE_CODES
 
 # The default `limit` (STANDARDS 23).
 OPEN_LIMIT = 100

@@ -6,12 +6,11 @@ from typing import Any, Required, TypedDict, cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import PluginError
 
-PLUGIN = "loop"
-CHANGE_TYPE = "loop/change/v1"
+PLUGIN = "changes"
+CHANGE_TYPE = "changes/change/v1"
 # The phases a change passes through, in order. `dropped` ends a change outside this order.
-PHASES = ("shape", "plan", "build", "review", "land", "learn", "done")
+PHASES = ("plan", "build", "review", "land", "done")
 FINAL = ("done", "dropped")
-ROUTES = ("owner", "ask-first", "proactive")
 # Codes that depend on the tree rather than the record. A record holding one is still a record to read.
 TREE_CODES = ("board::ref::dangling", "board::ref::wrong_type")
 
@@ -36,24 +35,24 @@ Change = TypedDict(
 def read(board: Board, path: str) -> tuple[Change, str]:
     """The change at the logical `path` and the blob that holds it.
 
-    A path that holds no change is `loop::change::not_found`. A change
+    A path that holds no change is `changes::change::not_found`. A change
     Board marks degraded for anything but a broken reference is
-    `loop::change::degraded`, since its fields cannot be trusted.
+    `changes::change::degraded`, since its fields cannot be trusted.
     """
     rows = board.rows(
         f"SELECT blob, code, body FROM records WHERE logical = {literal(path)} AND type = {literal(CHANGE_TYPE)}"  # noqa: S608 - values are quoted by literal()
     )
     if not rows:
         raise PluginError(
-            "loop::change::not_found",
+            "changes::change::not_found",
             f"no {CHANGE_TYPE} record is at {path}; name a change by its logical path, such as /changes/<name>, "
-            "and list the open ones with `board call loop.open`",
+            "and list the open ones with `board call changes.open`",
             {"path": path},
         )
     [[blob, code, body]] = rows
     if code is not None and code not in TREE_CODES:
         raise PluginError(
-            "loop::change::degraded",
+            "changes::change::degraded",
             f"the change at {path} is degraded with {code}; run `board check {path}` and fix it",
             {"path": path, "code": code},
         )

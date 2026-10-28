@@ -1,13 +1,13 @@
-"""The `start` capability: a new change in `shape`, its plan to fill in, its route and the repository's brief."""
+"""The `start` capability: a new change in `plan`, its plan to fill in, its route and the repository's brief."""
 
 import re
 
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_loop.change import CHANGE_TYPE, PLUGIN, Change, write
-from board_loop.gates import SECTIONS
-from board_loop.repo import CODEOWNERS, DOCS, ask_first, exists, files, owners, route, suite_in
+from board_changes.change import CHANGE_TYPE, PLUGIN, Change, write
+from board_changes.gates import SECTIONS
+from board_changes.repo import CODEOWNERS, DOCS, ask_first, exists, files, owners, route, suite_in
 
 # The longest name a title is shortened to.
 NAME_MAX = 60
@@ -30,16 +30,16 @@ def start(request: CallRequest) -> dict[str, object]:
     held = board.get([path, plan])
     if not isinstance(held[0], PluginError):
         raise PluginError(
-            "loop::change::exists",
+            "changes::change::exists",
             f"a change is already at {path}; give another --name, or resume it with "
-            f"`board call loop.next --path {path}`",
+            f"`board call changes.next --path {path}`",
             {"path": path},
         )
     codeowners = files(board, repo, CODEOWNERS)
     rules = owners(next(iter(codeowners.values()), ""))
     asking = ask_first(rules, handle if isinstance(handle, str) else None)
     docs = files(board, repo, DOCS)
-    change: Change = {"$type": CHANGE_TYPE, "title": title, "repo": repo, "phase": "shape", "plan": plan}
+    change: Change = {"$type": CHANGE_TYPE, "title": title, "repo": repo, "phase": "plan", "plan": plan}
     change["route"] = route(rules, asking)
     lines: list[dict[str, object]] = [{"path": path, "expect": "none", "record": change}]
     if isinstance(held[1], PluginError):

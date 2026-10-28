@@ -1,4 +1,4 @@
-"""`loop.open` and the change schema."""
+"""`changes.open` and the change schema."""
 
 import json
 
@@ -16,7 +16,7 @@ def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -
             "path": "/changes/a",
             "title": "Let a suite declare a timeout",
             "repo": "/repos/x",
-            "phase": "shape",
+            "phase": "plan",
             "route": None,
         },
         {

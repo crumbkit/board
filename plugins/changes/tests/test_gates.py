@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Any
 
 from conftest import BASE, HEAD, PLAN
 
-from board_loop.gates import Observed, gate
+from board_changes.gates import Observed, gate
 
 if TYPE_CHECKING:
-    from board_loop.change import Change
+    from board_changes.change import Change
 
 PATH = "/changes/t"
 SUITE = "/suites/checks"
@@ -22,7 +22,7 @@ def observed(
     **fields: Any,  # noqa: ANN401 - the change's other fields
 ) -> Observed:
     """What a gate reads for a change in `phase` with a plan at /changes/t/plan.md."""
-    change: Change = {"$type": "loop/change/v1", "title": "T", "repo": "/repos/x", "phase": phase}
+    change: Change = {"$type": "changes/change/v1", "title": "T", "repo": "/repos/x", "phase": phase}
     change["plan"] = "/changes/t/plan.md"
     change.update(fields)  # type: ignore[typeddict-item]
     return Observed(path=PATH, change=change, records=records or {}, plan=plan, suite=suite)
@@ -55,46 +55,35 @@ def report(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the r
     return "review/report/v1", body | fields
 
 
-def test_the_shape_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_empty() -> None:
-    assert statuses(observed("shape")) == {"plan": "pass", "questions": "pass"}
-    [plan, _] = gate(observed("shape", plan="# T\n\n## Problem\n\nX.\n\n## Outcome\n\n## out of scope\nY.\n"))
+def test_the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_empty() -> None:
+    assert statuses(observed("plan", route="owner")) == {"plan": "pass", "route": "pass"}
+    [plan, _] = gate(
+        observed("plan", plan="# T\n\n## Problem\n\nX.\n\n## Outcome\n\n## out of scope\nY.\n", route="owner")
+    )
     assert (plan["status"], plan["detail"]) == ("missing", "the plan at /changes/t/plan.md has no text under: Outcome")
 
 
-def test_the_shape_gate_misses_a_plan_file_that_is_not_there() -> None:
-    [plan, _] = gate(observed("shape", plan=None))
+def test_the_plan_gate_misses_a_plan_file_that_is_not_there_and_passes_one_with_text() -> None:
+    [plan, _] = gate(observed("plan", plan=None, route="owner"))
     assert (plan["status"], plan["detail"]) == ("missing", "no plan file is at /changes/t/plan.md")
+    assert statuses(observed("plan", plan=PLAN, route="owner"))["plan"] == "pass"
 
 
-def test_the_shape_gate_misses_an_open_question_and_passes_an_answered_or_withdrawn_one() -> None:
-    answered = {
-        "/q/a": ("plans/question/v1", {"status": "answered"}),
-        "/q/w": ("plans/question/v1", {"status": "withdrawn"}),
-    }
-    assert statuses(observed("shape", answered))["questions"] == "pass"
-    [_, questions] = gate(observed("shape", answered | {"/q/o": ("plans/question/v1", {"status": "open"})}))
-    assert (questions["status"], questions["detail"]) == ("missing", "these questions are still open: /q/o")
-
-
-def test_the_plan_gate_needs_a_review_report_and_on_the_owner_route_nothing_else() -> None:
-    assert statuses(observed("plan", route="owner")) == {"plan-review": "missing"}
-    assert statuses(observed("plan", {"/r": report()}, route="owner")) == {"plan-review": "pass"}
-
-
-def test_the_plan_gate_misses_a_report_that_asks_for_changes_and_passes_one_that_approves() -> None:
-    [review] = gate(observed("plan", {"/r": report(verdict="changes")}, route="owner"))
-    assert (review["status"], review["detail"]) == (
+def test_the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() -> None:
+    [_, route] = gate(observed("plan"))
+    assert (route["status"], route["detail"]) == (
         "missing",
-        "no review/report/v1 is attached whose verdict is approve or comment",
+        "the change records no route; set one with `board call changes.attach --path /changes/t --route <route>`",
     )
-    assert statuses(observed("plan", {"/r": report(verdict="approve")}, route="owner")) == {"plan-review": "pass"}
+    for named in ("owner", "ask-first", "unowned"):
+        assert statuses(observed("plan", route=named))["route"] == "pass", named
 
 
 def test_on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_refs_name_the_plan_or_the_change() -> None:
-    unrelated = {"/r": report(), "/d": ("plans/decision/v1", {"refs": ["/changes/other"]})}
+    unrelated = {"/d": ("plans/decision/v1", {"refs": ["/changes/other"]})}
     assert statuses(observed("plan", unrelated, route="ask-first"))["owner-approval"] == "missing"
     for named in ("/changes/t/plan.md", PATH):
-        approved = {"/r": report(), "/d": ("plans/decision/v1", {"refs": [named]})}
+        approved = {"/d": ("plans/decision/v1", {"refs": [named]})}
         assert statuses(observed("plan", approved, route="ask-first"))["owner-approval"] == "pass", named
 
 
@@ -158,7 +147,7 @@ def test_the_review_gate_reads_the_head_from_the_right_side_of_a_three_dot_range
     assert statuses(observed("review", {"/r": report(range=f"{BASE}...{HEAD}")}, head=HEAD)) == {"review": "pass"}
 
 
-def test_the_land_gate_needs_the_pull_request_url_and_learn_has_no_gate() -> None:
+def test_the_land_gate_needs_the_pull_request_url_and_done_has_no_gate() -> None:
     assert statuses(observed("land")) == {"pull-request": "missing"}
     assert statuses(observed("land", pull_request="https://github.com/o/r/pull/1")) == {"pull-request": "pass"}
-    assert gate(observed("learn")) == []
+    assert gate(observed("done")) == []

@@ -30,7 +30,7 @@ listener, so they also get an adversarial security review.
    give.
 2. **`ui` is core.** `board serve` and `board ui` are in the board binary, so
    `ui` is a reserved namespace beside `board`. The first users of views are
-   `review` and `loop`.
+   `review` and `changes`.
 3. **Views and bindings are records.** Every UI an agent puts together is
    recorded, so the compositions agents choose can be studied later.
    - `ui/view/v1` at `/views/<name>.json` holds only the composition: a list

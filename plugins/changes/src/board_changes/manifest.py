@@ -5,8 +5,8 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_loop.change import CHANGE_TYPE
-from board_loop.models import (
+from board_changes.change import CHANGE_TYPE
+from board_changes.models import (
     CHANGE_SCHEMA_PATH,
     AdvanceOutput,
     AttachInput,
@@ -40,23 +40,23 @@ def manifest() -> dict[str, JsonValue]:
     """`board/plugin-manifest/v1` for this plugin."""
     return {
         "$type": "board/plugin-manifest/v1",
-        "name": "loop",
+        "name": "changes",
         "version": "0.1.0",
         # SKILL.md's description, the callout an agent sees first.
         "description": (
-            "Walk one change to a repository from shaping the request to learning from it, and gather every "
+            "Walk one change to a repository from its plan to its pull request, and gather every "
             "record it produces. Use it when you start a change to a repository mounted in the board, and whenever "
-            "you resume one. Start with `board -C <board> call loop.start --repo /repos/<name> --title "
-            "'<title>'`, then call `loop.next --path /changes/<name>` for the next step. SKILL.md and "
+            "you resume one. Start with `board -C <board> call changes.start --repo /repos/<name> --title "
+            "'<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and "
             "README.md in the plugin's directory say more."
         ),
-        "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_loop"],
+        "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},
         "types": [CHANGE_TYPE],
         "capabilities": [
             capability(
                 "start",
-                "Create a change in shape with a plan to fill in, set its route from CODEOWNERS, and return the "
+                "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the "
                 "repository's owners, contributing docs and check suite.",
                 StartInput,
                 StartOutput,

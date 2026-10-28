@@ -6,10 +6,10 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Create a change in shape with a plan to fill in, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
+      "description": "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "Create a change in `shape` for a mounted repository.",
+        "description": "Create a change in `plan` for a mounted repository.",
         "properties": {
           "handle": {
             "description": "Whose change this is, as CODEOWNERS names people, such as @luke; sets the route.",
@@ -116,7 +116,7 @@
             "enum": [
               "owner",
               "ask-first",
-              "proactive"
+              "unowned"
             ],
             "title": "Route",
             "type": "string"
@@ -224,12 +224,10 @@
           },
           "phase": {
             "enum": [
-              "shape",
               "plan",
               "build",
               "review",
               "land",
-              "learn",
               "done",
               "dropped"
             ],
@@ -242,7 +240,7 @@
                 "enum": [
                   "owner",
                   "ask-first",
-                  "proactive"
+                  "unowned"
                 ],
                 "type": "string"
               },
@@ -334,11 +332,11 @@
             "type": "string"
           },
           "route": {
-            "description": "The route: owner, ask-first or proactive.",
+            "description": "The route: owner, ask-first or unowned.",
             "enum": [
               "owner",
               "ask-first",
-              "proactive"
+              "unowned"
             ],
             "title": "Route",
             "type": "string"
@@ -403,12 +401,10 @@
         "properties": {
           "from": {
             "enum": [
-              "shape",
               "plan",
               "build",
               "review",
               "land",
-              "learn",
               "done",
               "dropped"
             ],
@@ -421,12 +417,10 @@
           },
           "to": {
             "enum": [
-              "shape",
               "plan",
               "build",
               "review",
               "land",
-              "learn",
               "done",
               "dropped"
             ],
@@ -478,12 +472,10 @@
               },
               "phase": {
                 "enum": [
-                  "shape",
                   "plan",
                   "build",
                   "review",
                   "land",
-                  "learn",
                   "done",
                   "dropped"
                 ],
@@ -500,7 +492,7 @@
                     "enum": [
                       "owner",
                       "ask-first",
-                      "proactive"
+                      "unowned"
                     ],
                     "type": "string"
                   },
@@ -586,7 +578,7 @@
       "name": "pr",
       "outputSchema": {
         "additionalProperties": false,
-        "description": "The pull request drafted for a change.\n\n`path` is the logical path of `pr.md`, which holds the body. `command` is\nthe `gh pr create` line, for a POSIX shell, that would open the pull\nrequest with that body; loop never runs it. When the change already\nrecords a pull request, `command` is `null`, `pull_request` holds its\nURL and `pr.md` is not written. `unreadable` lists the references that reach nothing or that Board\nmarks degraded.",
+        "description": "The pull request drafted for a change.\n\n`path` is the logical path of `pr.md`, which holds the body. `command` is\nthe `gh pr create` line, for a POSIX shell, that would open the pull\nrequest with that body; the plugin never runs it. When the change already\nrecords a pull request, `command` is `null`, `pull_request` holds its\nURL and `pr.md` is not written. `unreadable` lists the references that reach nothing or that Board\nmarks degraded.",
         "properties": {
           "command": {
             "anyOf": [
@@ -633,11 +625,11 @@
       }
     }
   ],
-  "description": "Walk one change to a repository from shaping the request to learning from it, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call loop.start --repo /repos/<name> --title '<title>'`, then call `loop.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --repo /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "delivery"
   },
-  "name": "loop",
+  "name": "changes",
   "run": [
     "uv",
     "run",
@@ -645,10 +637,10 @@
     "--no-dev",
     "python",
     "-m",
-    "board_loop"
+    "board_changes"
   ],
   "types": [
-    "loop/change/v1"
+    "changes/change/v1"
   ],
   "version": "0.1.0"
 }

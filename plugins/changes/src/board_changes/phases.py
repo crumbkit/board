@@ -6,29 +6,26 @@ from typing import Any, cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_loop.change import FINAL, PHASES, PLUGIN, TREE_CODES, Change, read, write
-from board_loop.gates import Observed, gate
-from board_loop.repo import check_suite
+from board_changes.change import FINAL, PHASES, PLUGIN, TREE_CODES, Change, read, write
+from board_changes.gates import Observed, gate
+from board_changes.repo import check_suite
 
 INSTRUCTIONS = {
-    "shape": "Interview the owner and fill in the plan's Problem, Outcome and Out of scope sections. Record each "
-    "question for the owner as a plans/question/v1 and attach it.",
-    "plan": "Have the plan reviewed with clean context and attach the review/report/v1. On the ask-first route, "
-    "attach the owner's plans/decision/v1 whose refs name the plan.",
+    "plan": "Interview the owner and fill in the plan's Problem, Outcome and Out of scope sections. On the "
+    "ask-first route, attach the owner's plans/decision/v1 whose refs name the plan.",
     "build": "Build test-first. Attach each task, record the head commit with --head, run the check suite on it "
     "and attach the run.",
     "review": "Review the head commit with clean context and attach the review/report/v1. Fix blocking findings, "
     "record the new head and review again.",
-    "land": "Draft the pull request with `board call loop.pr`, open it with the command it returns, and record its "
+    "land": "Draft the pull request with `board call changes.pr`, open it with the command it returns, and record its "
     "URL with --pull-request. Merging happens outside Board.",
-    "learn": "Record what to improve as notes or tasks and attach them, or decide there is nothing, then advance.",
     "done": "Nothing is left to do.",
     "dropped": "Nothing is left to do.",
 }
 
 
 # The phases whose gates read the records a change references.
-READS_RECORDS = ("shape", "plan", "build", "review")
+READS_RECORDS = ("plan", "build", "review")
 
 
 def referenced(board: Board, refs: list[str]) -> tuple[dict[str, tuple[str, dict[str, Any]]], dict[str, str]]:
@@ -71,11 +68,11 @@ def plan_text(board: Board, change: Change) -> str | None:
 
 
 def observe(board: Board, path: str, change: Change) -> Observed:
-    """What the change's gate reads: references where the gate uses them, the plan in `shape`, docs in `build`."""
+    """What the change's gate reads: references where the gate uses them, the plan in `plan`, docs in `build`."""
     phase = change["phase"]
     cited = change.get("records", []) if phase in READS_RECORDS else []
     records, unreadable = referenced(board, cited)
-    plan = plan_text(board, change) if phase == "shape" else None
+    plan = plan_text(board, change) if phase == "plan" else None
     suite = check_suite(board, change["repo"]) if phase == "build" else None
     return Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
 
@@ -89,7 +86,7 @@ def next_step(request: CallRequest) -> dict[str, object]:
     phase = change["phase"]
     instruction = INSTRUCTIONS[phase]
     if phase not in FINAL and all(found["status"] == "pass" for found in checks):
-        instruction = f"The gate passes: run `board call loop.advance --path {path}`."
+        instruction = f"The gate passes: run `board call changes.advance --path {path}`."
     return {"path": path, "phase": phase, "route": change.get("route"), "gate": checks, "instruction": instruction}
 
 
@@ -104,7 +101,7 @@ def attach(request: CallRequest) -> dict[str, object]:
         [answer] = board.refs([ref])
         if answer is None:
             raise PluginError(
-                "loop::ref::dangling",
+                "changes::ref::dangling",
                 f"nothing is at {ref}, so it cannot be attached; check the path with `board ls`",
                 {"ref": ref},
             )
@@ -127,18 +124,18 @@ def advance(request: CallRequest) -> dict[str, object]:
     phase = change["phase"]
     if phase in FINAL:
         raise PluginError(
-            "loop::phase::final",
+            "changes::phase::final",
             f"the change at {path} is {phase}, which has no next phase; list the open changes with "
-            "`board call loop.open`, or start one with `board call loop.start`",
+            "`board call changes.open`, or start one with `board call changes.start`",
             {"path": path, "phase": phase},
         )
     missing = [found for found in gate(observe(board, path, change)) if found["status"] == "missing"]
     if missing:
         raise PluginError(
-            "loop::gate::unmet",
+            "changes::gate::unmet",
             f"the {phase} gate of {path} is unmet: "
             + "; ".join(f"{found['check']}: {found['detail']}" for found in missing)
-            + f"; run `board call loop.next --path {path}` for the next step",
+            + f"; run `board call changes.next --path {path}` for the next step",
             {"path": path, "phase": phase, "missing": [found["check"] for found in missing]},
         )
     change["phase"] = PHASES[PHASES.index(phase) + 1]

@@ -49,9 +49,9 @@ def ask_first(rules: list[Rule], handle: str | None) -> list[str]:
 
 
 def route(rules: list[Rule], asking: list[str]) -> str:
-    """`proactive` when nothing names owners, `owner` when nobody else owns a pattern, else `ask-first`."""
+    """`unowned` when nothing names owners, `owner` when nobody else owns a pattern, else `ask-first`."""
     if not any(rule["owners"] for rule in rules):
-        return "proactive"
+        return "unowned"
     return "ask-first" if asking else "owner"
 
 
@@ -75,11 +75,11 @@ def check_suite(board: Board, repo: str) -> str | None:
 
 
 def exists(board: Board, repo: str) -> None:
-    """Refuse a repository path that holds nothing with `loop::repo::not_found`."""
+    """Refuse a repository path that holds nothing with `changes::repo::not_found`."""
     [answer] = board.refs([repo])
     if answer is None:
         raise PluginError(
-            "loop::repo::not_found",
+            "changes::repo::not_found",
             f"nothing is at {repo}; name the repository by the logical path of its mount, such as /repos/<name>, "
             "and see what is mounted with `board ls /repos`",
             {"repo": repo},

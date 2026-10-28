@@ -15,7 +15,7 @@ PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
 HEAD = "a3f9c0de1234567890abcdef1234567890abcdef"
 # Types other plugins own, which a change references. The fixture board keeps a loose schema of its own for each.
-FOREIGN_TYPES = ("tasks/task/v2", "runs/suite/v1", "runs/run/v1", "plans/question/v1", "plans/decision/v1")
+FOREIGN_TYPES = ("tasks/task/v2", "runs/suite/v1", "runs/run/v1", "plans/decision/v1")
 REVIEW_TYPE = "review/report/v1"
 # A review report as the review plugin's design defines it: the range and patch ids covered, findings and a verdict.
 REVIEW_SCHEMA = {
@@ -107,15 +107,15 @@ class Board:
         return document
 
     def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
-        """The output of `board call loop.<capability>`."""
-        report = self.json("call", f"loop.{capability}", stdin=json.dumps(given))
+        """The output of `board call changes.<capability>`."""
+        report = self.json("call", f"changes.{capability}", stdin=json.dumps(given))
         assert report.get("schema") == "board/call-report/v2", report
         output: dict[str, Any] = report["data"]["output"]
         return output
 
     def refusal(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
-        """The failure `board call loop.<capability>` prints when the plugin refuses."""
-        ran = self.run("--json", "call", f"loop.{capability}", stdin=json.dumps(given))
+        """The failure `board call changes.<capability>` prints when the plugin refuses."""
+        ran = self.run("--json", "call", f"changes.{capability}", stdin=json.dumps(given))
         assert ran.returncode != 0, ran.stdout
         failure: dict[str, Any] = json.loads(ran.stdout)
         return failure
@@ -130,7 +130,7 @@ class Board:
         }
         path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
         ran = subprocess.run(
-            [sys.executable, "-m", "board_loop"],
+            [sys.executable, "-m", "board_changes"],
             cwd=self.root,
             env={**os.environ, "PATH": path, "XDG_DATA_HOME": str(self.data), "XDG_CACHE_HOME": str(self.cache)},
             input=json.dumps(request),
@@ -144,7 +144,7 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, at a root holding a space, with loop and a loose schema for each cited type."""
+    """A board that does not commit, at a root holding a space, with changes and a loose schema for each cited type."""
     fixture = Board(root=tmp_path / "a board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     git(fixture.root, "init", "-q")
@@ -154,8 +154,8 @@ def board(tmp_path: Path) -> Board:
     fixture.write(f".board/types/{REVIEW_TYPE}.schema.json", json.dumps(REVIEW_SCHEMA))
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
-    (plugins / "loop").symlink_to(PLUGIN)
-    enabled = fixture.run("plugin", "enable", "loop")
+    (plugins / "changes").symlink_to(PLUGIN)
+    enabled = fixture.run("plugin", "enable", "changes")
     assert enabled.returncode == 0, enabled.stderr
     return fixture
 
@@ -199,10 +199,10 @@ def report(head: str = HEAD, verdict: str = "approve", **fields: Any) -> str:  #
     return record(REVIEW_TYPE, **(body | fields))
 
 
-def change(phase: str = "shape", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """An `loop/change/v1` record in `phase`."""
+def change(phase: str = "plan", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
+    """An `changes/change/v1` record in `phase`."""
     defaults: dict[str, Any] = {"title": "Let a suite declare a timeout", "repo": "/repos/x", "phase": phase}
-    return record("loop/change/v1", **(defaults | fields))
+    return record("changes/change/v1", **(defaults | fields))
 
 
 PLAN = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n"

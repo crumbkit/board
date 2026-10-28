@@ -8,7 +8,7 @@ from typing import Any, cast
 from board_plugin.protocol import dumped
 from conftest import PLUGIN, Board
 
-from board_loop.manifest import manifest, schemas
+from board_changes.manifest import manifest, schemas
 
 
 def test_the_committed_manifest_and_schema_are_the_ones_the_models_generate() -> None:
@@ -29,13 +29,13 @@ def loads_pydantic(module: str) -> bool:
 
 
 def test_a_call_loads_no_pydantic_and_generating_the_manifest_does() -> None:
-    assert not loads_pydantic("board_loop")
-    assert loads_pydantic("board_loop.manifest")
+    assert not loads_pydantic("board_changes")
+    assert loads_pydantic("board_changes.manifest")
 
 
 def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships(board: Board) -> None:
     report = board.json("plugin", "list")
-    plugin = next(plugin for plugin in report["data"] if plugin["name"] == "loop")
+    plugin = next(plugin for plugin in report["data"] if plugin["name"] == "changes")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
     assert plugin["offers"] == ["start", "next", "attach", "advance", "open", "pr"]
     for path, schema in schemas().items():
@@ -44,7 +44,7 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
 
 def test_a_capability_the_plugin_does_not_offer_is_refused_and_one_it_offers_is_answered(board: Board) -> None:
     code, document = board.plugin("close", {})
-    assert (code, document["code"]) == (1, "loop::call::unknown_capability")
+    assert (code, document["code"]) == (1, "changes::call::unknown_capability")
     assert board.plugin("open", {}) == (0, {"$type": "board/call-result/v1", "output": board.call("open", {})})
 
 

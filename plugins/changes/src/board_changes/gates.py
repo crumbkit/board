@@ -4,14 +4,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
-from board_loop.change import Change
+from board_changes.change import Change
 
 TASK_TYPE = "tasks/task/v2"
 RUN_TYPE = "runs/run/v1"
-QUESTION_TYPE = "plans/question/v1"
 DECISION_TYPE = "plans/decision/v1"
 REPORT_TYPE = "review/report/v1"
-# The plan's sections the shape gate requires, by heading, compared without case.
+# The plan's sections the plan gate requires, by heading, compared without case.
 SECTIONS = ("Problem", "Outcome", "Out of scope")
 # Findings at these severities block the review gate.
 BLOCKING = ("critical", "high")
@@ -58,12 +57,10 @@ def check(name: str, missing: str | None) -> Check:
 
 
 def gate(observed: Observed) -> list[Check]:
-    """The checks for leaving the change's phase. `learn`, `done` and `dropped` have none."""
+    """The checks for leaving the change's phase. `done` and `dropped` have none."""
     phase = observed.change["phase"]
-    if phase == "shape":
-        return [check("plan", plan_missing(observed)), check("questions", questions_missing(observed))]
     if phase == "plan":
-        checks = [check("plan-review", plan_review_missing(observed))]
+        checks = [check("plan", plan_missing(observed)), check("route", route_missing(observed))]
         if observed.change.get("route") == "ask-first":
             checks.append(check("owner-approval", approval_missing(observed)))
         return checks
@@ -99,17 +96,13 @@ def plan_missing(observed: Observed) -> str | None:
     return f"the plan at {plan} has no text under: {', '.join(empty)}" if empty else None
 
 
-def questions_missing(observed: Observed) -> str | None:
-    """The attached questions still open."""
-    open_ = [path for path, body in of_type(observed, QUESTION_TYPE) if body.get("status") == "open"]
-    return f"these questions are still open: {', '.join(open_)}" if open_ else None
-
-
-def plan_review_missing(observed: Observed) -> str | None:
-    """Whether a review report whose verdict does not ask for changes is attached."""
-    if any(body.get("verdict") != "changes" for _, body in of_type(observed, REPORT_TYPE)):
+def route_missing(observed: Observed) -> str | None:
+    """Whether the change records a route."""
+    if observed.change.get("route"):
         return None
-    return "no review/report/v1 is attached whose verdict is approve or comment"
+    return (
+        f"the change records no route; set one with `board call changes.attach --path {observed.path} --route <route>`"
+    )
 
 
 def approval_missing(observed: Observed) -> str | None:

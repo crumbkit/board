@@ -12,14 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_loop.change import CHANGE_TYPE
-from board_loop.open import OPEN_LIMIT
+from board_changes.change import CHANGE_TYPE
+from board_changes.open import OPEN_LIMIT
 
 # The most changes `open` returns.
 OPEN_MAX = 10_000
 
-Phase = Literal["shape", "plan", "build", "review", "land", "learn", "done", "dropped"]
-Route = Literal["owner", "ask-first", "proactive"]
+Phase = Literal["plan", "build", "review", "land", "done", "dropped"]
+Route = Literal["owner", "ask-first", "unowned"]
 # References Board resolves and checks. Each is a plain property, never an `anyOf` with null.
 Ref = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
@@ -45,15 +45,15 @@ def shipped(extra: JsonDict | None = None) -> Callable[[JsonDict], None]:
 
 
 class ChangeRecord(BaseModel):
-    """`loop/change/v1`: one change to a repository, its phase, and every record it produced.
+    """`changes/change/v1`: one change to a repository, its phase, and every record it produced.
 
     A change lives at `/changes/<name>.json`; its plan and any files it owns
     sit in `/changes/<name>/`. Git history holds its earlier phases. `repo`
     references the repository's mount, such as `/repos/viitta`. `phase` moves
-    from `shape` through `plan`, `build`, `review`, `land` and `learn` to
-    `done`; `dropped` ends a change early. `route` is `owner` when no one else
-    owns the files, `ask-first` when someone else does, and `proactive` when
-    the repository names no owners. `plan` references the Markdown plan.
+    from `plan` through `build`, `review` and `land` to `done`; `dropped`
+    ends a change early. `route` is `owner` when no one else owns the files,
+    `ask-first` when someone else does, and `unowned` when the repository
+    names no owners. `plan` references the Markdown plan.
     `issue` links the spec issue, when there is one. `head` is the commit
     under test and review. `pull_request` is the pull request's URL.
     `records` references every record the change produced: tasks, runs,
@@ -62,7 +62,7 @@ class ChangeRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=shipped())
 
-    tag: Literal["loop/change/v1"] = Field(alias="$type")
+    tag: Literal["changes/change/v1"] = Field(alias="$type")
     title: str = Field(min_length=1)
     repo: Ref
     phase: Phase
@@ -75,7 +75,7 @@ class ChangeRecord(BaseModel):
 
 
 class StartInput(Strict):
-    """Create a change in `shape` for a mounted repository."""
+    """Create a change in `plan` for a mounted repository."""
 
     model_config = ConfigDict(json_schema_extra=shipped())
 
@@ -108,7 +108,7 @@ class AttachInput(Strict):
     ref: LogicalPath | SkipJsonSchema[None] = Field(
         default=None, description="A record the change produced, such as /suites/board-tests/runs/<id>."
     )
-    route: Route | SkipJsonSchema[None] = Field(default=None, description="The route: owner, ask-first or proactive.")
+    route: Route | SkipJsonSchema[None] = Field(default=None, description="The route: owner, ask-first or unowned.")
     head: Commit | SkipJsonSchema[None] = Field(default=None, description="The commit under test and review.")
     issue: Url | SkipJsonSchema[None] = Field(default=None, description="The URL of the issue the change answers.")
     pull_request: Url | SkipJsonSchema[None] = Field(default=None, description="The pull request's URL.")
@@ -213,7 +213,7 @@ class PrOutput(Strict):
 
     `path` is the logical path of `pr.md`, which holds the body. `command` is
     the `gh pr create` line, for a POSIX shell, that would open the pull
-    request with that body; loop never runs it. When the change already
+    request with that body; the plugin never runs it. When the change already
     records a pull request, `command` is `null`, `pull_request` holds its
     URL and `pr.md` is not written. `unreadable` lists the references that reach nothing or that Board
     marks degraded.

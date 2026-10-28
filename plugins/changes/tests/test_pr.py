@@ -1,4 +1,4 @@
-"""`loop.pr` over a real board: the body read from the change, its plan and its records, and the gh command."""
+"""`changes.pr` over a real board: the body read from the change, its plan and its records, and the gh command."""
 
 import shlex
 from pathlib import Path
@@ -6,7 +6,7 @@ from typing import Any
 
 from conftest import BASE, HEAD, PLAN, Board, change, record, report
 
-from board_loop.pr import quoted, run_lines, sections
+from board_changes.pr import quoted, run_lines, sections
 
 PATH = "/changes/t"
 PLAN_PATH = "/changes/t/plan.md"
@@ -29,7 +29,7 @@ def landing(board: Board, phase: str = "land", **fields: Any) -> None:  # noqa: 
 
 
 def pr_text(board: Board) -> str:
-    """The pr.md loop wrote for the change."""
+    """The pr.md the plugin wrote for the change."""
     return (board.root / "changes/t/pr.md").read_text()
 
 
@@ -125,7 +125,7 @@ def test_a_path_that_holds_another_record_is_refused_and_the_same_path_holding_a
 ) -> None:
     board.write("changes/t.json", record("plans/decision/v1", refs=[]))
     refused = board.refusal("pr", {"path": PATH})
-    assert (refused["code"], refused["fields"]["path"]) == ("loop::change::not_found", PATH)
+    assert (refused["code"], refused["fields"]["path"]) == ("changes::change::not_found", PATH)
     assert not (board.root / "changes/t/pr.md").exists()
     landing(board)
     assert board.call("pr", {"path": PATH})["path"] == "/changes/t/pr.md"
@@ -134,7 +134,7 @@ def test_a_path_that_holds_another_record_is_refused_and_the_same_path_holding_a
 def test_a_change_board_marks_degraded_is_refused_and_a_valid_one_is_answered(board: Board) -> None:
     landing(board, phase="later")
     refused = board.refusal("pr", {"path": PATH})
-    assert (refused["code"], refused["fields"]["code"]) == ("loop::change::degraded", "board::record::invalid")
+    assert (refused["code"], refused["fields"]["code"]) == ("changes::change::degraded", "board::record::invalid")
     assert not (board.root / "changes/t/pr.md").exists()
     landing(board)
     assert board.call("pr", {"path": PATH})["path"] == "/changes/t/pr.md"
@@ -142,7 +142,7 @@ def test_a_change_board_marks_degraded_is_refused_and_a_valid_one_is_answered(bo
 
 def test_the_path_is_taken_as_a_flag_relative_to_the_board(board: Board) -> None:
     landing(board)
-    report_ = board.json("call", "loop.pr", "--path", "changes/t")
+    report_ = board.json("call", "changes.pr", "--path", "changes/t")
     assert report_["data"]["output"]["path"] == "/changes/t/pr.md"
 
 

@@ -1,38 +1,36 @@
 ---
-name: loop
-description: 'Walk one change to a repository from shaping the request to learning from it, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call loop.start --repo /repos/<name> --title ''<title>''`, then call `loop.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
+name: changes
+description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --repo /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
-# loop
+# changes
 
 The gate is the contract. `next` says what the current phase still lacks;
 `advance` moves on only when nothing is missing.
 
 ## Steps
 
-1. Run `board -C <board> call loop.start --repo /repos/<name> --title '<title>'`.
+1. Run `board -C <board> call changes.start --repo /repos/<name> --title '<title>'`.
    Add `--handle @<you>` so the route reflects who owns what. Read every path
    in `docs`. Treat each `ask_first` pattern as a file to ask about before
    changing.
-2. Run `board -C <board> call loop.next --path /changes/<name>`
+2. Run `board -C <board> call changes.next --path /changes/<name>`
    whenever you start a phase or lose context. Do what `instruction` says
    and fix each check whose `status` is `missing`.
 3. Attach every record you make with
-   `board -C <board> call loop.attach --path /changes/<name> --ref <path>`.
+   `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
    Set the commit under test with `--head <sha>` after each push, the issue
    with `--issue <url>`, and the pull request with `--pull-request <url>`.
-4. Run `board -C <board> call loop.advance --path /changes/<name>`
+4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
 5. To drop a change, `board put` it with `phase` set to `dropped`.
 
 ## Each phase
 
-- **shape**: interview the owner. Use your own planning skill where one is
+- **plan**: interview the owner. Use your own planning skill where one is
   configured. Write the plan's Problem, Outcome and Out of scope sections.
-  Record each question as a `plans/question/v1` and attach it.
-- **plan**: have the plan reviewed with clean context and attach the
-  `review/report/v1`. On the `ask-first` route, attach the owner's
-  `plans/decision/v1` whose `refs` name the plan.
+  On the `ask-first` route, attach the owner's `plans/decision/v1` whose
+  `refs` name the plan.
 - **build**: build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
   it.
@@ -41,22 +39,20 @@ The gate is the contract. `next` says what the current phase still lacks;
   review again.
 - **land**: add `## What the tests prove` and `## What the tests do not
   prove` sections to the plan with what the runs cannot show on their own.
-  Run `board -C <board> call loop.pr --path /changes/<name>`, read
+  Run `board -C <board> call changes.pr --path /changes/<name>`, read
   `/changes/<name>/pr.md` and edit it if it is wrong. Fix each path in
   `unreadable` and run `pr` again, or say why in the body. Run `command`
   yourself, in a POSIX shell, from a checkout of the repository on the
   change's `head`, then record the pull request's URL. Merging happens
-  outside Board.
-- **learn**: record what to improve as notes or tasks and attach them, or
-  decide there is nothing to record.
+  outside Board. Advancing from `land` ends the change in `done`.
 
 ## Refusals
 
-- `loop::gate::unmet`: `missing` names the failed checks. Run `next`.
-- `loop::ref::dangling`: nothing is at the path. Write the record
+- `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
+- `changes::ref::dangling`: nothing is at the path. Write the record
   first.
-- `loop::change::exists`: pass another `--name`, or resume the
+- `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
-- `loop::repo::not_found`: run `board ls /repos` to find the mount.
-- `loop::phase::final`: the change is done or dropped. Run `open`, or
+- `changes::repo::not_found`: run `board ls /repos` to find the mount.
+- `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

@@ -1,7 +1,7 @@
 [project]
-name = "board-loop"
+name = "board-changes"
 version = "0.1.0"
-description = "Walks an agent through one change, from shaping the request to learning from it, as a Board plugin."
+description = "Walks an agent through one change, from its plan to its pull request, as a Board plugin."
 requires-python = ">=3.12"
 dependencies = ["board-plugin", "pydantic>=2.11"]
 
