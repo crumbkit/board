@@ -3,7 +3,7 @@
   "capabilities": [
     {
       "_meta": {},
-      "description": "Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, and the stale ones.",
+      "description": "Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "The tasks to sweep now, in the repos the caller's remote chooses.",
@@ -11,6 +11,12 @@
           "context": {
             "description": "Only tasks tagged with this context, such as errands.",
             "title": "Context",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Only tasks this owner, such as a session id, holds or nobody holds, and list in held the ones it holds that are not available.",
+            "minLength": 1,
+            "title": "Owner",
             "type": "string"
           },
           "remote": {
@@ -115,6 +121,17 @@
                 ],
                 "title": "Due"
               },
+              "owner": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Owner"
+              },
               "path": {
                 "title": "Path",
                 "type": "string"
@@ -152,6 +169,7 @@
               "defer",
               "reviewed",
               "contexts",
+              "owner",
               "blocked_by",
               "waiting"
             ],
@@ -180,7 +198,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "The sweep.\n\n`available` holds the open tasks not deferred, not blocked and past their\n`from_hour`. `due_soon` holds every open task due within seven days, or\noverdue. `stale` holds the open tasks not available or deferred that have\nno `reviewed`, or were reviewed over 14 days ago. `repos` are the repos\nread, `degraded` counts their Markdown files under `tasks/` that are not a\nreadable open `tasks/task/v2` task, or hold a date that cannot be read,\nand `unsynced` lists the repos whose sync or pin failed. `cross_repo`\nlists the `after` entries that name another repo's task, which never\nblock. `origin_unread` says why the caller's git repository gave no\norigin, when it did not, so only `/` and the personal repo were read.",
+        "description": "The sweep.\n\n`available` holds the open tasks not deferred, not blocked and past their\n`from_hour`. `due_soon` holds every open task due within seven days, or\noverdue. `stale` holds the open tasks not available or deferred that have\nno `reviewed`, or were reviewed over 14 days ago. With `--owner`, every\nsection keeps the tasks that owner or nobody holds, and `held` lists the\nones that owner holds that are not available; without it, `held` is empty.\n`repos` are the repos read, `degraded` counts their Markdown files under\n`tasks/` that are not a readable open `tasks/task/v2` task, or hold a date\nthat cannot be read, and `unsynced` lists the repos whose sync or pin\nfailed. `cross_repo` lists the `after` entries that name another repo's\ntask, which never block. `origin_unread` says why the caller's git\nrepository gave no origin, when it did not, so only `/` and the personal\nrepo were read.",
         "properties": {
           "available": {
             "$ref": "#/$defs/Section"
@@ -197,6 +215,9 @@
             "type": "integer"
           },
           "due_soon": {
+            "$ref": "#/$defs/Section"
+          },
+          "held": {
             "$ref": "#/$defs/Section"
           },
           "origin_unread": {
@@ -232,6 +253,7 @@
           "available",
           "due_soon",
           "stale",
+          "held",
           "repos",
           "degraded",
           "unsynced",
@@ -349,6 +371,17 @@
             ],
             "title": "Defer"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -393,6 +426,126 @@
           "path",
           "status",
           "defer",
+          "owner",
+          "reviewed",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The task to claim, and who claims it.",
+        "properties": {
+          "owner": {
+            "description": "Who holds the task: an agent's session id, or a person's handle.",
+            "minLength": 1,
+            "title": "Owner",
+            "type": "string"
+          },
+          "path": {
+            "description": "The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "owner"
+        ],
+        "title": "ClaimInput",
+        "type": "object"
+      },
+      "name": "claim",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as a write call left it.\n\n`commit` holds the write, None when the board's own tree left it uncommitted. `unsynced` is the code of\na sync before the write that left the clone where it was, and `unpushed` the code of a push after it\nthat failed; both are `tasks::repo::not_synced` for the board's own tree, which is never synced.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "defer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defer"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "reviewed": {
+            "title": "Reviewed",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "status",
+          "defer",
+          "owner",
           "reviewed",
           "commit",
           "unsynced",
@@ -449,6 +602,17 @@
             ],
             "title": "Defer"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -493,6 +657,7 @@
           "path",
           "status",
           "defer",
+          "owner",
           "reviewed",
           "commit",
           "unsynced",
@@ -556,6 +721,17 @@
             ],
             "title": "Defer"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -600,6 +776,7 @@
           "path",
           "status",
           "defer",
+          "owner",
           "reviewed",
           "commit",
           "unsynced",
@@ -656,6 +833,17 @@
             ],
             "title": "Defer"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -700,6 +888,7 @@
           "path",
           "status",
           "defer",
+          "owner",
           "reviewed",
           "commit",
           "unsynced",
@@ -756,6 +945,17 @@
             ],
             "title": "Defer"
           },
+          "owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -800,6 +1000,7 @@
           "path",
           "status",
           "defer",
+          "owner",
           "reviewed",
           "commit",
           "unsynced",
@@ -830,5 +1031,5 @@
   "types": [
     "tasks/task/v2"
   ],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

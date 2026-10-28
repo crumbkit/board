@@ -1,5 +1,6 @@
-tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, and the stale ones.
+tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
+tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.done disabled Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.defer disabled Defer a task until a date or a horizon from today, written as a date. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.drop disabled Mark a task dropped. It syncs the task's repo first and pushes after, and sets reviewed.

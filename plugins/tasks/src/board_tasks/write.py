@@ -1,4 +1,4 @@
-"""The write calls: `add`, `done`, `defer`, `drop` and `reviewed` (README.md, Writing tasks).
+"""The write calls: `add`, `claim`, `done`, `defer`, `drop` and `reviewed` (README.md, Writing tasks).
 
 Each call syncs a mounted repo before it writes and pushes after, as notes `add` does, and sets
 `reviewed` to the person's today.
@@ -69,6 +69,21 @@ def origin(name: object) -> str | None:
         why = f"{unread}, so the repo the task belongs to is not known; name it with --remote or --repo"
         raise PluginError("tasks::repo::origin_unread", why, {"origin_unread": unread})
     return remote
+
+
+def claim(request: CallRequest) -> dict[str, object]:
+    """Set the task's owner, refused when another owner holds it."""
+    owner = str(request.input["owner"])
+
+    def change(record: dict[str, Any], _: dt.date) -> dict[str, str]:
+        held = record.get("owner")
+        if held not in (None, owner):
+            path = str(request.input["path"])
+            why = f"{path} is held by {held}, so it is left as it is; leave it to {held}, or claim another task"
+            raise PluginError("tasks::task::held", why, {"path": path, "owner": held})
+        return {"owner": owner}
+
+    return edit(request, change)
 
 
 def done(request: CallRequest) -> dict[str, object]:
@@ -209,6 +224,7 @@ def written(repo: Repo, path: str, record: dict[str, Any], commit: str | None, s
         "path": repo.logical(path),
         "status": record["status"],
         "defer": None if record.get("defer") is None else str(record["defer"]),
+        "owner": record.get("owner"),
         "reviewed": record["reviewed"],
         "commit": commit,
         "unsynced": synced,

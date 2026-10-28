@@ -6,9 +6,9 @@ from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_tasks.available import available
 from board_tasks.extract import extract
-from board_tasks.write import add, defer, done, drop, reviewed
+from board_tasks.write import add, claim, defer, done, drop, reviewed
 
-WRITES = {"add": add, "done": done, "defer": defer, "drop": drop, "reviewed": reviewed}
+WRITES = {"add": add, "claim": claim, "done": done, "defer": defer, "drop": drop, "reviewed": reviewed}
 
 
 def call(request: CallRequest) -> dict[str, object]:

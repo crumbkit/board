@@ -4,7 +4,7 @@
       "repeat"
     ]
   },
-  "description": "`tasks/task/v2`: the frontmatter of a Markdown task under `tasks/`, whose body holds its prose.\n\n`defer` hides the task until a date, a date-time or a horizon after `reviewed`.\n`after` references the tasks in the same repo that it waits on. `repeat`\nnames when a repeating task comes back, and `ephemeral` that a missed day\nis not kept. `from_hour` is the hour of the person's day it is available\nfrom. `contexts` tags where it can be done. `reviewed` is the day it was\nlast looked at. Any other field, such as Reflect's `id` and `pinned`, is\nadmitted and ignored.",
+  "description": "`tasks/task/v2`: the frontmatter of a Markdown task under `tasks/`, whose body holds its prose.\n\n`defer` hides the task until a date, a date-time or a horizon after `reviewed`.\n`after` references the tasks in the same repo that it waits on. `repeat`\nnames when a repeating task comes back, and `ephemeral` that a missed day\nis not kept. `from_hour` is the hour of the person's day it is available\nfrom. `contexts` tags where it can be done. `reviewed` is the day it was\nlast looked at. `owner` names the agent or person who holds it, such as a\nsession id or a handle. Any other field, such as Reflect's `id` and `pinned`, is\nadmitted and ignored.",
   "properties": {
     "$type": {
       "const": "tasks/task/v2",
@@ -64,6 +64,11 @@
       "minimum": 0,
       "title": "From Hour",
       "type": "integer"
+    },
+    "owner": {
+      "minLength": 1,
+      "title": "Owner",
+      "type": "string"
     },
     "repeat": {
       "pattern": "^(daily|weekdays|weekly-(mon|tue|wed|thu|fri|sat|sun)|monthly-([1-9]|[12][0-9]|3[01])|annually-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))$",

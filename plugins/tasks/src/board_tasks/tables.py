@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS tasks_v2 (
     from_hour INTEGER,
     reviewed TEXT,
     contexts TEXT NOT NULL,
-    waits INTEGER NOT NULL
+    waits INTEGER NOT NULL,
+    owner TEXT
 ) WITHOUT ROWID;
 """
 

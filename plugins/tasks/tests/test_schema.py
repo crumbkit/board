@@ -90,3 +90,14 @@ def test_a_task_admits_fields_another_tool_writes_and_still_checks_its_own(board
     board.write("tasks/reflect.md", task_v2("Reflect", id="0f3c9a", pinned=True))
     board.write("tasks/reflect-bad.md", task_v2("Reflect bad", id="0f3c9b", pinned=True, status="waiting"))
     assert checked(board) == {"/tasks/reflect.md": None, "/tasks/reflect-bad.md": "board::record::invalid"}
+
+
+def test_owner_is_a_non_empty_string(board: Board) -> None:
+    board.write("tasks/owned.md", task_v2("Owned", owner="session-7f3a"))
+    board.write("tasks/empty.md", task_v2("Empty", owner=""))
+    board.write("tasks/number.md", task_v2("Number", owner=7))
+    assert checked(board) == {
+        "/tasks/owned.md": None,
+        "/tasks/empty.md": "board::record::invalid",
+        "/tasks/number.md": "board::record::invalid",
+    }

@@ -1,1 +1,1 @@
-ok tasks 0.1.0 disabled offers available, add, done, defer, drop, reviewed
+ok tasks 0.2.0 disabled offers available, add, claim, done, defer, drop, reviewed

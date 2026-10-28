@@ -36,6 +36,26 @@ To add a task, run `board -C <board> call tasks.add --title '<title>'` with
 the fields the person gives; `contexts` and `after` go as JSON on stdin, and
 `origin_unread` needs `--repo`.
 
+## Sweep as a lead
+
+An agent that coordinates other agents keeps the work it owes in tasks, not in
+its conversation, which forgets in a busy period. Use one id for yourself,
+such as your session id, in every call.
+
+1. At the start of each turn, run
+   `board -C <board> call tasks.available --owner <your id>`. `held` lists
+   your tasks that wait, and `available` the ones you hold or may take.
+2. Before you start a task, run
+   `board -C <board> call tasks.claim --path <path> --owner <your id>`.
+   On `tasks::task::held`, another owner has it; take another task.
+3. When a turn leaves work owed, add a task for it with `tasks.add` and claim
+   it. Never hold owed work only in the conversation.
+4. Finish a task with `tasks.done`, or `tasks.drop` when it is no longer owed.
+5. Now and then, run `board -C <board> call tasks.available` without
+   `--owner`. A task held by a session that has ended is hidden from every
+   other owner's sweep. Hand each one on by changing its `owner` line, as
+   Edit below says.
+
 ## Edit
 
 1. Run `board -C <board> --json get <path>`, which gives the task's `text`
@@ -58,6 +78,7 @@ the fields the person gives; `contexts` and `after` go as JSON on stdin, and
   on this machine only, and a later call pushes it. Tell the person the code
   once, and go on.
 - `tasks::task::finished`: the task was finished elsewhere. Go on.
+- `tasks::task::held`: another owner holds the task. Go on.
 - `tasks::task::busy`: call again once; then tell the person, and go on.
 - `tasks::task::not_plain` or `tasks::task::not_task`: offer Edit.
 - Any other code: tell the person the message, and go on.

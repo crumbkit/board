@@ -1,9 +1,10 @@
-Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, and the stale ones.
+Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.
 
 Usage: board call tasks.available [OPTIONS]
 
 Options:
       --context <context>  Only tasks tagged with this context, such as errands.
+      --owner <owner>      Only tasks this owner, such as a session id, holds or nobody holds, and list in held the ones it holds that are not available.
       --remote <remote>    A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.
       --repo <repo>        One repo's tasks: / for the board's own tree, or a notes repo's mount path such as /repos/notes-personal; the caller's git remote chooses the repos when left out.
   -h, --help               Print help (see more with '--help')

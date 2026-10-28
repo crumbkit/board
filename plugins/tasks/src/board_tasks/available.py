@@ -4,7 +4,7 @@ import datetime as dt
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from board_plugin import repos
 from board_plugin.board import Board
@@ -36,6 +36,7 @@ TASK_COLUMNS = (
     "t.reviewed",
     "t.contexts",
     "t.waits",
+    "t.owner",
 )
 TASKS = f"""
 SELECT {", ".join(TASK_COLUMNS)}
@@ -65,6 +66,7 @@ class Task:
     reviewed: dt.date | None
     contexts: list[str]
     waits: bool
+    owner: str | None
 
 
 def available(request: CallRequest) -> dict[str, object]:
@@ -101,10 +103,10 @@ def available(request: CallRequest) -> dict[str, object]:
     if moved:
         tasks, degraded = read(listing(board)[1], roots)
         blocked, crossing = resolve(board, tasks)
-    context = request.input.get("context")
+    context, owner = request.input.get("context"), request.input.get("owner")
     if context is not None:
         tasks = [task for task in tasks if context in task.contexts]
-    sections = sweep(tasks, blocked, dt.datetime.now().astimezone(), day_start())
+    sections = sweep(tasks, blocked, dt.datetime.now().astimezone(), day_start(), cast("str | None", owner))
     return {
         **sections,
         "repos": roots,
@@ -198,7 +200,7 @@ def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
     """The open tasks in `roots`, and how many of their task files are degraded or hold a date that cannot be read."""
     tasks: list[Task] = []
     degraded = 0
-    for root, path, code, title, due, defer, hour, reviewed, contexts, waits in rows:
+    for root, path, code, title, due, defer, hour, reviewed, contexts, waits, owner in rows:
         at = repos.root(str(root))
         if at not in roots:
             continue
@@ -209,7 +211,16 @@ def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
             if defer is not None and defer not in HORIZONS:
                 until(defer)
             task = Task(
-                at, str(path), str(title), _date(due), defer, hour, _date(reviewed), json.loads(contexts), bool(waits)
+                at,
+                str(path),
+                str(title),
+                _date(due),
+                defer,
+                hour,
+                _date(reviewed),
+                json.loads(contexts),
+                bool(waits),
+                owner,
             )
         except ValueError:
             degraded += 1
@@ -219,19 +230,25 @@ def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
 
 
 def sweep(
-    tasks: list[Task], blocked: dict[str, list[str]], now: dt.datetime, start: dt.timedelta
+    tasks: list[Task], blocked: dict[str, list[str]], now: dt.datetime, start: dt.timedelta, owner: str | None = None
 ) -> dict[str, dict[str, Any]]:
-    """The sections of the sweep at `now`, for a day that starts `start` after midnight. It does no I/O."""
+    """The sections of the sweep at `now`, for a day that starts `start` after midnight. It does no I/O.
+
+    With an `owner`, every section keeps the tasks that owner or nobody holds, and `held` lists the ones that
+    owner holds that are not available. `waiting` still counts every task.
+    """
     day = today(now, start)
     waiting: dict[str, int] = {}
     for targets in blocked.values():
         for target in targets:
             waiting[target] = waiting.get(target, 0) + 1
-    shown: dict[str, list[dict[str, Any]]] = {"available": [], "due_soon": [], "stale": []}
+    shown: dict[str, list[dict[str, Any]]] = {"available": [], "due_soon": [], "stale": [], "held": []}
     for task in sorted(tasks, key=lambda task: (task.repo, task.title, task.path)):
-        held = deferred(task, day, now)
-        free = not held and not blocked.get(task.path) and opened(task.from_hour, day, now, start)
-        old = not held and (task.reviewed is None or task.reviewed < day - STALE)
+        if owner is not None and task.owner not in (None, owner):
+            continue
+        parked = deferred(task, day, now)
+        free = not parked and not blocked.get(task.path) and opened(task.from_hour, day, now, start)
+        old = not parked and (task.reviewed is None or task.reviewed < day - STALE)
         item = {
             "repo": task.repo,
             "path": task.path,
@@ -240,6 +257,7 @@ def sweep(
             "defer": task.defer,
             "reviewed": None if task.reviewed is None else task.reviewed.isoformat(),
             "contexts": task.contexts,
+            "owner": task.owner,
             "blocked_by": blocked.get(task.path, []),
             "waiting": waiting.get(task.path, 0),
         }
@@ -249,6 +267,8 @@ def sweep(
             shown["due_soon"].append(item)
         if not free and old:
             shown["stale"].append(item)
+        if not free and owner is not None and task.owner == owner:
+            shown["held"].append(item)
     return {name: {"tasks": items[:SHOWN], "total": len(items)} for name, items in shown.items()}
 
 

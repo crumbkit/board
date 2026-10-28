@@ -35,8 +35,8 @@ def _v2(database: sqlite3.Connection, record: ExtractRecord) -> None:
     task = Task.model_validate(record.record)
     defer = record.record.get("defer")
     database.execute(
-        "INSERT INTO tasks_v2 (blob, title, status, due, defer, from_hour, reviewed, contexts, waits)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tasks_v2 (blob, title, status, due, defer, from_hour, reviewed, contexts, waits, owner)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             record.blob,
             task.title,
@@ -47,5 +47,6 @@ def _v2(database: sqlite3.Connection, record: ExtractRecord) -> None:
             task.reviewed.isoformat() if task.reviewed else None,
             json.dumps(task.contexts),
             len(task.after),
+            task.owner,
         ),
     )

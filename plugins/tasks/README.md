@@ -2,8 +2,9 @@
 
 A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks and extracts
 each task's fields into its database. `available` sorts the tasks of the repos
-in scope into the tasks to work on now, those due soon and the stale ones.
-`add`, `done`, `defer`, `drop` and `reviewed` write tasks.
+in scope into the tasks to work on now, those due soon, the stale ones and
+those an owner holds. `add`, `claim`, `done`, `defer`, `drop` and `reviewed`
+write tasks.
 
 Install it from this checkout:
 
@@ -36,6 +37,7 @@ after: [/tasks/agree-scope.md]
 from_hour: 17
 contexts: [errands]
 reviewed: 2026-10-25
+owner: lead-7f3a
 ---
 The plan covers ...
 ```
@@ -58,6 +60,8 @@ The plan covers ...
 - `from_hour`, from 0 to 23, is the hour of the person's day from which the
   task is available. An hour before `BOARD_DAY_START` falls on the next date.
 - `contexts` are lowercase tags, `[a-z0-9-]+`.
+- `owner` names the agent or person who holds the task, such as a session id
+  or a handle. It is free-form and not empty. `claim` sets it.
 
 A task may hold other fields, such as the `id` and `pinned` that Reflect
 writes; the plugin ignores them. So a misspelt field, such as `defr`, is
@@ -66,19 +70,26 @@ admitted and has no effect. Its scope is the repo that holds it.
 ## Capabilities
 
 `board call tasks.available` chooses the repos in scope, syncs them, and
-returns three sections of their `open` tasks:
+returns four sections of their `open` tasks:
 
 - `available`: the tasks not deferred, not waiting on an unfinished task in
   their `after`, and past their `from_hour`;
 - `due_soon`: every task due within 7 days, overdue included, available or not;
 - `stale`: the tasks neither available nor deferred that have no `reviewed`,
   or were reviewed more than 14 days ago. A deferred task, `someday` included,
-  is left out until its deferral ends.
+  is left out until its deferral ends;
+- `held`: with `--owner <id>`, the tasks that owner holds that are not
+  available, because they are blocked, deferred or before their `from_hour`.
+  It is empty without `--owner`.
 
 Each section lists at most 100 tasks by repo, title and path, with `total`
 counting all of them. Each task carries `blocked_by`, the unfinished tasks it
 waits on, and `waiting`, how many tasks wait on it. `--context <tag>` keeps the
-tasks with that tag in every section; `waiting` still counts every task.
+tasks with that tag in every section, and `--owner <id>` keeps the tasks that
+owner or nobody holds; `waiting` still counts every task. Each task also
+carries its `owner`, or null. So a lead agent that calls
+`tasks.available --owner <id>` sees every task it holds, available or not,
+with the unowned ones it may take.
 
 The scope is the board's own tree, `/`, with the notes repos the board mounts.
 `--repo <path>` reads that one, and refuses any other path with
@@ -114,8 +125,8 @@ clock changes for daylight saving, `from_hour` is counted with the offset in
 force at the call, so it can be an hour off.
 
 `board query` can join `p_tasks.tasks_v2` (`blob`, `title`, `status`, `due`, `defer`,
-`from_hour`, `reviewed`, `contexts` as a JSON list, and `waits`, how many
-entries `after` holds), with `entries` on `blob`.
+`from_hour`, `reviewed`, `contexts` as a JSON list, `waits`, how many
+entries `after` holds, and `owner`), with `entries` on `blob`.
 
 ## Writing tasks
 
@@ -131,8 +142,8 @@ caller inside a git repository whose origin git does not give is refused with
 `tasks::repo::origin_unread`, since the task may belong to a work repo; pass
 `--remote` or `--repo`.
 
-`done`, `defer --until`, `drop` and `reviewed` take the task's `--path` in the
-board, such as `/repos/personal/tasks/call-the-bank.md`. The path is not
+`claim`, `done`, `defer --until`, `drop` and `reviewed` take the task's
+`--path` in the board, such as `/repos/personal/tasks/call-the-bank.md`. The path is not
 checked against the caller's scope, so any task in the board can be edited by
 its path. `done` sets `status: done`. A task with `repeat` stays open instead,
 deferred to its next occurrence, never earlier than the date its `defer`
@@ -144,9 +155,14 @@ kept.
 `monthly-31` falls on the month's last day when it is shorter, and
 `annually-02-29` on 28 February.
 `defer --until` takes a date or a horizon, and writes a horizon as the date it
-ends, counted from today. `drop` sets `status: dropped`. `done`, `defer` and
-`drop` refuse a task that is not open with `tasks::task::finished`; `reviewed`
-marks any task.
+ends, counted from today. `drop` sets `status: dropped`. `claim`, `done`,
+`defer` and `drop` refuse a task that is not open with
+`tasks::task::finished`; `reviewed` marks any task. `claim --owner <id>`
+sets `owner` on an open task that nobody or the same owner holds, and refuses
+one another owner holds with `tasks::task::held`, whose `owner` field names
+the holder. `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so
+a finished task still says who held it. No call clears `owner`; edit the task
+to hand it on.
 
 Each call sets `reviewed` to today. Today is the person's day, which starts at
 `BOARD_DAY_START`, so a call at 01:00 with a day that starts at 07:00 writes

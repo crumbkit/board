@@ -8,6 +8,7 @@ from board_tasks.models import (
     AddInput,
     AvailableInput,
     AvailableOutput,
+    ClaimInput,
     DeferInput,
     Task,
     TaskPath,
@@ -20,7 +21,7 @@ def manifest() -> dict[str, JsonValue]:
     return {
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
-        "version": "0.1.0",
+        "version": "0.2.0",
         # SKILL.md's description, the callout an agent sees first.
         "description": (
             "Sweep the person's tasks one at a time, marking each done, deferring, dropping or editing it, and add a "
@@ -38,7 +39,7 @@ def manifest() -> dict[str, JsonValue]:
                 "name": "available",
                 "description": (
                     "Sync the repos the caller's remote chooses, then list their open tasks available now, those due"
-                    " within seven days, and the stale ones."
+                    " within seven days, the stale ones, and those an owner holds."
                 ),
                 "inputSchema": AvailableInput.model_json_schema(),
                 "outputSchema": AvailableOutput.model_json_schema(),
@@ -53,6 +54,7 @@ def writes() -> list[dict[str, JsonValue]]:
     """The write calls, each of which syncs the task's repo, writes the task with `reviewed` today, and pushes."""
     calls = [
         ("add", AddInput, "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to."),
+        ("claim", ClaimInput, "Claim an open task for an owner, refused when another owner holds it."),
         ("done", TaskPath, "Mark a task done, or defer a repeating one to its next occurrence."),
         ("defer", DeferInput, "Defer a task until a date or a horizon from today, written as a date."),
         ("drop", TaskPath, "Mark a task dropped."),

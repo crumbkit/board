@@ -211,7 +211,7 @@ def test_available_answers_the_same_from_a_cold_cache(estate: Board) -> None:
 def test_a_board_with_no_task_answers_with_empty_sections(board: Board) -> None:
     code, output = call(board)
     assert code == 0, output
-    assert [output[name]["total"] for name in ("available", "due_soon", "stale")] == [0, 0, 0]
+    assert [output[name]["total"] for name in ("available", "due_soon", "stale", "held")] == [0, 0, 0, 0]
     board.write("tasks/first.md", task_v2("First", reviewed=RECENT))
     assert titles(call(board)[1]) == ["First"]
 
@@ -271,3 +271,16 @@ def test_a_task_deferred_to_today_waits_before_the_configured_day_start_and_not_
     assert (code, titles(output)) == (0, []), output
     (board.config / "board" / "config.json").write_text("{}")
     assert titles(call(board, tz=zone)[1]) == ["Today"]
+
+
+def test_owner_keeps_the_tasks_it_or_nobody_holds_and_lists_its_unavailable_ones_in_held(board: Board) -> None:
+    board.write("tasks/mine.md", task_v2("Mine", reviewed=RECENT, owner="lead-1"))
+    board.write("tasks/free.md", task_v2("Free", reviewed=RECENT))
+    board.write("tasks/theirs.md", task_v2("Theirs", reviewed=RECENT, owner="worker-2"))
+    board.write("tasks/parked.md", task_v2("Parked", reviewed=RECENT, owner="lead-1", defer=LATER))
+    code, output = call(board, "--owner", "lead-1")
+    assert code == 0, output
+    assert (titles(output), titles(output, "held"), output["held"]["total"]) == (["Free", "Mine"], ["Parked"], 1)
+    assert [item["owner"] for item in output["available"]["tasks"]] == [None, "lead-1"]
+    output = call(board)[1]
+    assert (titles(output), titles(output, "held")) == (["Free", "Mine", "Theirs"], [])

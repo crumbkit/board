@@ -60,6 +60,7 @@ def test_add_writes_an_open_task_named_by_its_title_reviewed_today_and_a_second_
         "path": "/tasks/call-the-bank.md",
         "status": "open",
         "defer": day(20),
+        "owner": None,
         "reviewed": day(),
         "commit": None,
         "unsynced": NOT_SYNCED,
@@ -137,6 +138,43 @@ def test_defer_writes_a_horizon_as_its_date_and_a_date_as_it_is_and_drop_drops(b
     assert f'defer: "{day(40)}"' in (board.root / "tasks" / "a.md").read_text()
     code, output = call(board, "drop", "--path", "/tasks/a.md")
     assert (code, output["status"]) == (0, "dropped"), output
+
+
+def test_claim_refuses_a_task_another_owner_holds_and_admits_one_held_by_nobody_or_the_same_owner(
+    board: Board,
+) -> None:
+    board.write("tasks/free.md", task_v2("Free"))
+    board.write("tasks/taken.md", task_v2("Taken", owner="worker-2"))
+    code, refused = call(board, "claim", "--path", "/tasks/taken.md", "--owner", "lead-1")
+    assert (code, refused["code"]) == (1, "tasks::task::held"), refused
+    assert (refused["fields"]["path"], refused["fields"]["owner"]) == ("/tasks/taken.md", "worker-2")
+    assert 'owner: "worker-2"' in (board.root / "tasks" / "taken.md").read_text()
+    code, output = call(board, "claim", "--path", "/tasks/taken.md", "--owner", "worker-2")
+    assert (code, output["owner"], output["reviewed"]) == (0, "worker-2", day()), output
+    code, output = call(board, "claim", "--path", "/tasks/free.md", "--owner", "lead-1")
+    assert (code, output["owner"], output["status"]) == (0, "lead-1", "open"), output
+    assert 'owner: "lead-1"' in (board.root / "tasks" / "free.md").read_text()
+
+
+def test_an_empty_owner_is_refused_by_available_and_claim_and_a_non_empty_one_is_admitted(board: Board) -> None:
+    board.write("tasks/a.md", task_v2("A"))
+    for capability, *flags in (("available",), ("claim", "--path", "/tasks/a.md")):
+        code, refused = call(board, capability, *flags, "--owner", "")
+        assert (code, refused["code"]) == (1, "board::plugin::bad_input"), (capability, refused)
+        code, output = call(board, capability, *flags, "--owner", "lead-1")
+        assert code == 0, (capability, output)
+
+
+def test_done_defer_and_drop_leave_the_owner_and_claim_refuses_a_finished_task(board: Board) -> None:
+    for name in ("a", "b"):
+        board.write(f"tasks/{name}.md", task_v2(name.upper(), owner="lead-1"))
+    assert call(board, "defer", "--path", "/tasks/a.md", "--until", "soon")[1]["owner"] == "lead-1"
+    assert call(board, "done", "--path", "/tasks/a.md")[1]["owner"] == "lead-1"
+    assert call(board, "drop", "--path", "/tasks/b.md")[1]["owner"] == "lead-1"
+    for name in ("a", "b"):
+        assert 'owner: "lead-1"' in (board.root / "tasks" / f"{name}.md").read_text()
+    code, refused = call(board, "claim", "--path", "/tasks/a.md", "--owner", "lead-1")
+    assert (code, refused["code"]) == (1, "tasks::task::finished"), refused
 
 
 def test_a_path_holding_no_task_is_refused_and_a_task_beside_it_is_admitted(board: Board) -> None:

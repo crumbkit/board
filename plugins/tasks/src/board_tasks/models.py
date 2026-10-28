@@ -50,7 +50,8 @@ class Task(BaseModel):
     names when a repeating task comes back, and `ephemeral` that a missed day
     is not kept. `from_hour` is the hour of the person's day it is available
     from. `contexts` tags where it can be done. `reviewed` is the day it was
-    last looked at. Any other field, such as Reflect's `id` and `pinned`, is
+    last looked at. `owner` names the agent or person who holds it, such as a
+    session id or a handle. Any other field, such as Reflect's `id` and `pinned`, is
     admitted and ignored.
     """
 
@@ -72,6 +73,7 @@ class Task(BaseModel):
     from_hour: Annotated[int, Field(ge=0, le=23)] | SkipJsonSchema[None] = None
     contexts: list[Annotated[str, Field(pattern=r"^[a-z0-9-]+$")]] = Field(default_factory=list[str])
     reviewed: datetime.date | SkipJsonSchema[None] = None
+    owner: Annotated[str, Field(min_length=1)] | SkipJsonSchema[None] = None
 
 
 def unset(schema: JsonDict) -> None:
@@ -110,6 +112,15 @@ class AvailableInput(Strict):
         pattern=r"^[a-z0-9-]+$",
         description="Only tasks tagged with this context, such as errands.",
     )
+    owner: str | SkipJsonSchema[None] = Field(
+        default=None,
+        json_schema_extra=unset,
+        min_length=1,
+        description=(
+            "Only tasks this owner, such as a session id, holds or nobody holds, and list in held the ones it holds "
+            "that are not available."
+        ),
+    )
     repo: str | SkipJsonSchema[None] = SCOPE["repo"]
     remote: str | SkipJsonSchema[None] = SCOPE["remote"]
 
@@ -124,6 +135,7 @@ class SweptTask(Strict):
     defer: str | None
     reviewed: datetime.date | None
     contexts: list[str]
+    owner: str | None
     blocked_by: list[str]
     waiting: int
 
@@ -155,18 +167,22 @@ class AvailableOutput(Strict):
     `available` holds the open tasks not deferred, not blocked and past their
     `from_hour`. `due_soon` holds every open task due within seven days, or
     overdue. `stale` holds the open tasks not available or deferred that have
-    no `reviewed`, or were reviewed over 14 days ago. `repos` are the repos
-    read, `degraded` counts their Markdown files under `tasks/` that are not a
-    readable open `tasks/task/v2` task, or hold a date that cannot be read,
-    and `unsynced` lists the repos whose sync or pin failed. `cross_repo`
-    lists the `after` entries that name another repo's task, which never
-    block. `origin_unread` says why the caller's git repository gave no
-    origin, when it did not, so only `/` and the personal repo were read.
+    no `reviewed`, or were reviewed over 14 days ago. With `--owner`, every
+    section keeps the tasks that owner or nobody holds, and `held` lists the
+    ones that owner holds that are not available; without it, `held` is empty.
+    `repos` are the repos read, `degraded` counts their Markdown files under
+    `tasks/` that are not a readable open `tasks/task/v2` task, or hold a date
+    that cannot be read, and `unsynced` lists the repos whose sync or pin
+    failed. `cross_repo` lists the `after` entries that name another repo's
+    task, which never block. `origin_unread` says why the caller's git
+    repository gave no origin, when it did not, so only `/` and the personal
+    repo were read.
     """
 
     available: Section
     due_soon: Section
     stale: Section
+    held: Section
     repos: list[str]
     degraded: int
     unsynced: list[Unsynced]
@@ -195,6 +211,12 @@ class DeferInput(TaskPath):
     """The task to defer, and until when."""
 
     until: str = Field(pattern=UNTIL, description=UNTIL_HELP)
+
+
+class ClaimInput(TaskPath):
+    """The task to claim, and who claims it."""
+
+    owner: str = Field(min_length=1, description="Who holds the task: an agent's session id, or a person's handle.")
 
 
 def optional(description: str, **constraints: Any) -> Any:  # noqa: ANN401 - a pydantic Field, typed Any as Field is
@@ -244,6 +266,7 @@ class Written(Strict):
     path: str
     status: str
     defer: str | None
+    owner: str | None
     reviewed: str
     commit: str | None
     unsynced: str | None

@@ -20,6 +20,7 @@ def task(title: str, **fields: Any) -> Task:  # noqa: ANN401 - the task's other 
         "reviewed": dt.date(2026, 10, 25),
         "contexts": list[str](),
         "waits": False,
+        "owner": None,
     } | fields
     return Task(repo="/", path=f"/tasks/{title}.md", title=title, **values)
 
@@ -56,6 +57,7 @@ def test_a_horizon_counts_from_reviewed_and_without_reviewed_defers_nothing() ->
         "available": ["not-today-from-yesterday", "someday-unreviewed", "soon-from-long-ago"],
         "due_soon": [],
         "stale": [],
+        "held": [],
     }
 
 
@@ -102,7 +104,11 @@ def test_a_task_not_available_is_stale_without_reviewed_or_reviewed_over_two_wee
 
 def test_a_section_lists_at_most_a_hundred_tasks_by_repo_then_title_and_counts_them_all() -> None:
     tasks = [task(f"t{number:03d}") for number in range(101, -1, -1)]
-    tasks.append(Task("/repos/a", "/repos/a/tasks/a.md", "a", None, None, None, dt.date(2026, 10, 25), [], waits=False))
+    tasks.append(
+        Task(
+            "/repos/a", "/repos/a/tasks/a.md", "a", None, None, None, dt.date(2026, 10, 25), [], waits=False, owner=None
+        )
+    )
     swept = sweep(tasks, {}, NOW, SEVEN)["available"]
     assert (len(swept["tasks"]), swept["total"]) == (100, 103)
     assert [item["title"] for item in swept["tasks"][:3]] == ["t000", "t001", "t002"]
@@ -127,8 +133,31 @@ def test_a_date_defer_ends_when_the_persons_day_starts_and_not_at_midnight() -> 
 
 def test_a_task_whose_dates_cannot_be_read_is_degraded_and_one_whose_dates_can_is_read() -> None:
     def row(defer: str, due: str | None = None) -> list[Any]:
-        return ["", f"/tasks/{defer}.md", None, defer, due, defer, None, "2026-10-25", "[]", 0]
+        return ["", f"/tasks/{defer}.md", None, defer, due, defer, None, "2026-10-25", "[]", 0, None]
 
     rows = [row("2026-10-25T25:00:00Z"), row("tomorrow"), row("soon", due="2026-13-01"), row("2026-10-25t10:00:00Z")]
     tasks, degraded = read(rows, ["/"])
     assert ([item.title for item in tasks], degraded) == (["2026-10-25t10:00:00Z"], 3)
+
+
+def test_an_owner_keeps_the_tasks_it_or_nobody_holds_and_held_lists_its_tasks_that_are_not_available() -> None:
+    tasks = [
+        task("mine", owner="lead", due=dt.date(2026, 10, 26)),
+        task("nobodys", due=dt.date(2026, 10, 26)),
+        task("theirs", owner="other", due=dt.date(2026, 10, 26)),
+        task("mine-deferred", owner="lead", defer="2026-10-30"),
+        task("mine-blocked", owner="lead", waits=True),
+        task("mine-later-today", owner="lead", from_hour=17),
+        task("theirs-deferred", owner="other", defer="2026-10-30"),
+    ]
+    blocked = {"/tasks/mine-blocked.md": ["/tasks/theirs.md"]}
+    swept = sweep(tasks, blocked, NOW, SEVEN, "lead")
+    assert {name: [item["title"] for item in section["tasks"]] for name, section in swept.items()} == {
+        "available": ["mine", "nobodys"],
+        "due_soon": ["mine", "nobodys"],
+        "stale": [],
+        "held": ["mine-blocked", "mine-deferred", "mine-later-today"],
+    }
+    assert [swept[name]["total"] for name in ("available", "held")] == [2, 3]
+    unowned = sections(tasks, blocked=blocked)
+    assert (unowned["available"], unowned["held"]) == (["mine", "nobodys", "theirs"], [])
