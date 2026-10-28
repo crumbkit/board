@@ -240,7 +240,7 @@ fn put_json(report: &PutReport) -> Value {
 }
 
 /// `plugin enable`: what it wrote, as `put` says it, or that nothing was
-/// needed, with a note for each schema it replaced or removed.
+/// needed, with a note for each schema it replaced, removed or kept.
 pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     let name = report.name.as_str();
     let text = if report.put.writes.is_empty() && report.removed.is_empty() {
@@ -252,6 +252,9 @@ pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     value["plugin"] = json!(name);
     value["replaced"] = json!(report.replaced);
     value["removed"] = json!(report.removed);
+    value["kept"] = (report.kept.iter())
+        .map(|kept| json!({"schema": kept.schema, "type": kept.record_type, "records": kept.records}))
+        .collect();
     let notes = (report.replaced.iter()).map(|path| {
         format!(
             "note: replaced {path} with the schema the {name} plugin ships; records its old copy admitted may now be degraded, and `board check` lists them"
@@ -259,7 +262,13 @@ pub(crate) fn plugin_enable(printer: Printer, report: &EnableReport) -> Output {
     });
     let removed = (report.removed.iter())
         .map(|path| format!("note: removed {path}, which the {name} plugin no longer ships"));
-    let notes = notes.chain(removed).map(Note::Always);
+    let kept = report.kept.iter().map(|kept| {
+        format!(
+            "note: kept {}, which the {name} plugin no longer ships, for the {} record(s) of type {}; migrate them with the plugin's migrate capability if it has one, or move them by hand, and the next enable removes it",
+            kept.schema, kept.records, kept.record_type
+        )
+    });
+    let notes = notes.chain(removed).chain(kept).map(Note::Always);
     printer.noted(ENABLE, said(value, text), notes.collect())
 }
 

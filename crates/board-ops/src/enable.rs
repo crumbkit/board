@@ -1,7 +1,7 @@
 //! `plugin enable`: adding a plugin to a board with the schemas it ships
 //! (docs/plugins.md, Installing and enabling).
 
-use std::fmt::Write as _;
+use std::collections::HashMap;
 use std::path::Path;
 
 use board_model::{Code, RecordType, Source, TYPES_DIRECTORY, canonical_json};
@@ -15,9 +15,6 @@ use crate::check::CheckError;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
 use crate::types::{Held, schema_at};
 
-/// How many records of a type the plugin no longer ships a refusal names.
-const LISTED: usize = 5;
-
 /// What `plugin enable` wrote: each schema the board lacked or held
 /// otherwise, then `.board/board.json` when it did not name the plugin.
 #[derive(Debug)]
@@ -26,9 +23,22 @@ pub struct EnableReport {
     pub put: PutReport,
     /// Each schema the board held otherwise, by its path from the root.
     pub replaced: Vec<String>,
-    /// Each schema in the plugin's namespace that it no longer ships, which
-    /// enable removed, by its path from the root.
+    /// Each schema in the plugin's namespace that it no longer ships and no
+    /// record uses, which enable removed, by its path from the root.
     pub removed: Vec<String>,
+    /// Each schema in the plugin's namespace that it no longer ships, which
+    /// enable kept because records in the board's own tree still use it.
+    pub kept: Vec<Kept>,
+}
+
+/// A schema the plugin no longer ships, kept for the records that use it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Kept {
+    /// The schema's path from the root.
+    pub schema: String,
+    pub record_type: RecordType,
+    /// How many records in the board's own tree have the type.
+    pub records: u64,
 }
 
 impl Board {
@@ -38,8 +48,9 @@ impl Board {
     /// as one put. A schema the board already holds is left as it is; a
     /// different one is replaced, since the plugin's copy is the source. A
     /// schema to remove that a record in the working tree still names is
-    /// refused, found through the index kept under `cache`. The board is
-    /// read under the lock the write holds.
+    /// kept, found through the index kept under `cache`, so the record stays
+    /// valid until the plugin migrates it. The board is read under the lock
+    /// the write holds.
     pub fn plugin_enable(
         &self,
         plugins: Option<&Path>,
@@ -78,10 +89,7 @@ impl Board {
             })?;
             prepared.push(Self::schema(&lock, &mut view, path, expect, shipped)?);
         }
-        let removed = self.orphans(name, &found.schemas)?;
-        if !removed.is_empty() {
-            self.unused(name, &removed, cache)?;
-        }
+        let (removed, kept) = self.unused(self.orphans(name, &found.schemas)?, cache)?;
         // The configuration is read again here, so a plugin another process
         // enabled since the board was opened is kept.
         let changed = || EnableError::Changed { name: name.clone() };
@@ -109,6 +117,7 @@ impl Board {
                 put: PutReport::new(Vec::new(), None),
                 replaced,
                 removed: removed_paths,
+                kept,
             });
         }
         let message = format!("Enable the {name} plugin");
@@ -123,17 +132,18 @@ impl Board {
             put,
             replaced,
             removed: removed_paths,
+            kept,
         })
     }
 
     /// Each schema file in the namespace of the plugin `name` whose type it
-    /// does not ship among `shipped`. A symlink is left alone, since no put
+    /// does not ship among `shipped`, with that type. A symlink is left alone, since no put
     /// writes through one.
     fn orphans(
         &self,
         name: &PluginName,
         shipped: &[(RecordType, Value)],
-    ) -> Result<Vec<Removal>, EnableError> {
+    ) -> Result<Vec<(Removal, RecordType)>, EnableError> {
         let directory = format!("{TYPES_DIRECTORY}{name}");
         let entries = (self.repository())
             .walk_under(&Source::WorkingTree, &directory)
@@ -142,70 +152,55 @@ impl Board {
             let record_type = RecordType::of_schema(&entry.path)?;
             let blob = entry.blob.filter(|_| entry.link.is_none())?;
             let held = shipped.iter().any(|(shipped, _)| *shipped == record_type);
-            (!held).then_some(Removal {
+            let removal = Removal {
                 path: entry.logical?,
                 file: entry.path,
                 blob,
-            })
+            };
+            (!held).then_some((removal, record_type))
         };
         Ok(entries.into_iter().filter_map(orphan).collect())
     }
 
-    /// Refuses when a record in the working tree has the type of any schema
-    /// in `removed`.
+    /// Splits `orphans` into the schemas no record in the working tree
+    /// uses, and those it keeps for the records that do.
     fn unused(
         &self,
-        name: &PluginName,
-        removed: &[Removal],
+        orphans: Vec<(Removal, RecordType)>,
         cache: Option<&Path>,
-    ) -> Result<(), EnableError> {
-        let types: Vec<RecordType> = (removed.iter())
-            .filter_map(|removal| RecordType::of_schema(&removal.file))
-            .collect();
-        let quoted: Vec<String> = types.iter().map(|t| format!("'{t}'")).collect();
+    ) -> Result<(Vec<Removal>, Vec<Kept>), EnableError> {
+        if orphans.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        let quoted: Vec<String> = orphans.iter().map(|(_, t)| format!("'{t}'")).collect();
         // A record type holds only lowercase letters, digits, `-` and `/`,
         // so it needs no escaping inside quotes.
         let sql = format!(
-            "SELECT coalesce(logical, path), count(*) OVER () FROM records \
-             WHERE source = 'worktree' AND type IN ({}) ORDER BY path",
+            "SELECT type, count(*) FROM records \
+             WHERE source = 'worktree' AND type IN ({}) GROUP BY type",
             quoted.join(", ")
         );
         let index = self.index(cache).map_err(CheckError::from)?;
         let view = self.view(self.snapshot(index, None)?.decided);
-        let rows = (view.and_then(|view| view.query(&sql, LISTED, None)))
+        let rows = (view.and_then(|view| view.query(&sql, orphans.len(), None)))
             .map_err(CheckError::from)?
             .rows;
-        let Some(total) = rows.first().and_then(|row| row[1].as_u64()) else {
-            return Ok(());
-        };
-        let records = rows.iter().filter_map(|row| row[0].as_str());
-        Err(EnableError::TypeInUse {
-            name: name.clone(),
-            types,
-            records: records.map(str::to_owned).collect(),
-            total: usize::try_from(total).unwrap_or(usize::MAX),
-        })
+        let used: HashMap<&str, u64> = (rows.iter())
+            .filter_map(|row| Some((row[0].as_str()?, row[1].as_u64()?)))
+            .collect();
+        let (mut removed, mut kept) = (Vec::new(), Vec::new());
+        for (removal, record_type) in orphans {
+            match used.get(record_type.as_str()) {
+                Some(&records) => kept.push(Kept {
+                    schema: removal.file,
+                    record_type,
+                    records,
+                }),
+                None => removed.push(removal),
+            }
+        }
+        Ok((removed, kept))
     }
-}
-
-/// What a `TypeInUse` refusal says: the types, and up to [`LISTED`]
-/// records with a count of the rest.
-fn in_use(name: &PluginName, types: &[RecordType], records: &[String], total: usize) -> String {
-    let quoted: Vec<String> = types.iter().map(|t| format!("'{t}'")).collect();
-    let types: Vec<String> = types.iter().map(ToString::to_string).collect();
-    let mut listed = records.join(", ");
-    if total > records.len() {
-        let _ = write!(
-            listed,
-            " and {} more, which `board query \"SELECT path FROM records WHERE type IN ({})\"` lists",
-            total - records.len(),
-            quoted.join(", ")
-        );
-    }
-    format!(
-        "the {name} plugin no longer ships {}, but {total} record(s) in the board still have one of those types: {listed}; nothing was written",
-        types.join(", ")
-    )
 }
 
 /// An enable that wrote nothing.
@@ -232,13 +227,6 @@ pub enum EnableError {
         "the board changed while the {name} plugin was being enabled, so nothing was written; run the enable again"
     )]
     Changed { name: PluginName },
-    #[error("{}", in_use(name, types, records, *total))]
-    TypeInUse {
-        name: PluginName,
-        types: Vec<RecordType>,
-        records: Vec<String>,
-        total: usize,
-    },
     #[error(transparent)]
     Records(#[from] CheckError),
     #[error(transparent)]
@@ -253,7 +241,6 @@ impl EnableError {
             Self::Manifest { source, .. } => source.code(),
             Self::Schema { .. } => Code::PluginBadManifest,
             Self::Changed { .. } => Code::PutStale,
-            Self::TypeInUse { .. } => Code::PluginTypeInUse,
             Self::Records(error) => error.code(),
             Self::Put(error) => error.code(),
         }

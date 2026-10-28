@@ -666,17 +666,6 @@ fn enabling_plugins(starts: &mut Starts) {
     let line = "call notes.due";
     starts.add(&place, Code::PluginSchemaDiffers, line);
     starts.pair(&place, Code::PluginSchemaDiffers, line, "call tasks.due");
-    let in_use = shipping().0;
-    in_use
-        .write(
-            ".board/types/notes/old/v1.schema.json",
-            Item::File(r#"{"type": "object"}"#),
-        )
-        .write("old.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
-    let place = starts.keep(in_use).xdg(xdg.workdir().join("xdg"));
-    let line = "plugin enable notes";
-    starts.add(&place, Code::PluginTypeInUse, line);
-    starts.pair(&place, Code::PluginTypeInUse, line, "plugin enable tasks");
     let place = starts
         .keep(lacking_a_schema().0)
         .xdg(xdg.workdir().join("xdg"));

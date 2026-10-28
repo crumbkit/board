@@ -503,9 +503,6 @@ fn generic(code: Code) -> &'static str {
         Code::PluginSchemaDiffers => {
             "run `board plugin enable <name>`, which replaces the board's copy with the schema the plugin ships"
         }
-        Code::PluginTypeInUse => {
-            "delete each record the message lists, for example with `git rm`, or put it again as a type the plugin ships; then enable the plugin again"
-        }
         Code::PluginAmbiguous => {
             "name the plugin as well, as in `board call <plugin>.<capability>`; `board plugin find --capability <name>` lists the plugins that offer it"
         }

@@ -796,33 +796,36 @@ fn plugin_enable_reports_a_schema_it_replaced_and_none_when_the_schema_is_the_sa
 }
 
 #[test]
-fn plugin_enable_refuses_while_a_record_has_a_type_the_plugin_dropped_and_removes_its_schema_once_none_does()
+fn plugin_enable_keeps_a_schema_the_plugin_dropped_while_a_record_has_its_type_and_removes_it_once_none_does()
  {
     let (board, data) = shipping();
     let old = ".board/types/notes/old/v1.schema.json";
     board
         .write(old, Item::File(r#"{"type": "object"}"#))
         .write("old.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
-    let refused = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
-    assert_eq!(refused.code, 1);
-    let report = json(&refused);
-    assert_eq!(report["code"], "board::plugin::type_in_use");
-    let message = report["message"].as_str().unwrap();
-    assert!(
-        message.contains("notes/old/v1") && message.contains("/old"),
-        "{message}"
+    let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
+    assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+    let report = json(&enabled);
+    assert_eq!(report["data"]["removed"], serde_json::json!([]));
+    assert_eq!(
+        report["data"]["kept"],
+        serde_json::json!([{"schema": old, "type": "notes/old/v1", "records": 1}])
     );
-    assert!(
-        report["recovery"]["text"]
-            .as_str()
-            .unwrap()
-            .contains("git rm")
+    assert_eq!(
+        text(&enabled.stderr),
+        format!(
+            "note: kept {old}, which the notes plugin no longer ships, for the 1 record(s) of type notes/old/v1; \
+             migrate them with the plugin's migrate capability if it has one, or move them by hand, \
+             and the next enable removes it\n"
+        )
     );
+    assert!(board.workdir().join(old).exists());
 
     board.write("old.json", Item::Deleted);
     let enabled = plugin(&board, &data, &["--json", "plugin", "enable", "notes"]);
     assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
     assert_eq!(json(&enabled)["data"]["removed"], serde_json::json!([old]));
+    assert_eq!(json(&enabled)["data"]["kept"], serde_json::json!([]));
     assert_eq!(
         text(&enabled.stderr),
         format!("note: removed {old}, which the notes plugin no longer ships\n")

@@ -27,10 +27,13 @@ runs a plugin from a board's tree.
 - Each shipped schema goes to `.board/types/`. A different one there is
   replaced and listed in `replaced`; `board check` lists records it degrades.
 - Each other schema under `.board/types/<name>/` is removed and listed in
-  `removed`. A record of that type refuses it: `board::plugin::type_in_use`.
+  `removed`. While a record in the board's own tree has its type, it is kept
+  and listed in `kept` instead.
 - `.board/board.json` names the plugin.
 
 An equal schema is left, so enabling again writes nothing.
+[plugins/lifecycle/updating.md](plugins/lifecycle/updating.md) says how a
+plugin update proceeds and how a plugin migrates its records.
 
 ## The manifest
 
@@ -175,7 +178,7 @@ and how Board keeps each database.
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
-`schema_missing`, `schema_differs`, `type_in_use`, `ambiguous`,
+`schema_missing`, `schema_differs`, `ambiguous`,
 `bad_input`, `bad_output`, `failed`, `no_database`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 

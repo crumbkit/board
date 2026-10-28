@@ -736,10 +736,6 @@ board call notes.due
   run board plugin enable notes
     exits 0
 
-board plugin enable notes
-  fails with board::plugin::type_in_use
-  hint
-
 board plugin list
   fails with board::plugin::schema_missing
 

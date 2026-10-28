@@ -17,7 +17,7 @@ Then run `board plugin enable tasks` in a board. The manifest lists
 `.board/board.json`. In a board enabled before this release, running
 `board plugin enable tasks` again removes `.board/types/tasks/task/v1.schema.json`,
 which the plugin no longer ships. While a `tasks/task/v1` record is left, it
-refuses with `board::plugin::type_in_use` and changes nothing. A notes repo
+keeps that schema and lists it in `kept`. A notes repo
 needs a copy of the schema in its own `.board/types/tasks/task/` for its tasks to be checked.
 
 ## The task

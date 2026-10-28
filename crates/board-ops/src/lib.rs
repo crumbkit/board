@@ -31,7 +31,7 @@ pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::call::Called;
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Signing, answer};
-pub use crate::enable::{EnableError, EnableReport};
+pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::extraction::{CallFailed, Plugins};
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};

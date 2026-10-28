@@ -335,45 +335,36 @@ fn orphaned(config: &str, records: usize) -> (Scenario, Scenario, PathBuf) {
 const UNCOMMITTED: &str = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
 
 #[test]
-fn a_schema_the_plugin_no_longer_ships_is_refused_while_a_record_has_its_type_and_removed_once_none_does()
+fn a_schema_the_plugin_no_longer_ships_is_kept_while_a_record_has_its_type_and_removed_once_none_does()
  {
-    let (board, _data, plugins) = orphaned(UNCOMMITTED, 1);
-    let refused = open(&board)
-        .plugin_enable(Some(&plugins), None, &notes())
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::PluginTypeInUse);
-    let message = refused.to_string();
-    assert!(message.contains("notes/old/v1"), "{message}");
-    assert!(message.contains("/old/0"), "{message}");
-    assert!(board.workdir().join(OLD).exists(), "nothing is removed");
-    assert!(
-        open(&board).config().plugins.is_empty(),
-        "nothing is written"
-    );
-    let note = ".board/types/notes/note/v1.schema.json";
-    assert!(!board.workdir().join(note).exists(), "nothing is written");
-
-    let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
+    let (board, _data, plugins) = orphaned(UNCOMMITTED, 2);
     let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes())
         .unwrap();
+    assert!(report.removed.is_empty());
+    let old: RecordType = "notes/old/v1".parse().unwrap();
+    assert_eq!(
+        report.kept,
+        [Kept {
+            schema: OLD.to_owned(),
+            record_type: old,
+            records: 2
+        }]
+    );
+    assert!(board.workdir().join(OLD).exists());
+    assert_eq!(open(&board).config().plugins, vec![notes()]);
+    let note = ".board/types/notes/note/v1.schema.json";
+    assert!(board.workdir().join(note).exists(), "the rest is written");
+
+    board
+        .write("old/0.json", Item::Deleted)
+        .write("old/1.json", Item::Deleted);
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
+    assert!(report.kept.is_empty());
     assert_eq!(report.removed, [OLD]);
     assert!(!board.workdir().join(OLD).exists());
-    assert_eq!(open(&board).config().plugins, vec![notes()]);
-}
-
-#[test]
-fn a_refusal_names_five_records_and_counts_the_rest() {
-    let (board, _data, plugins) = orphaned(UNCOMMITTED, 7);
-    let refused = open(&board)
-        .plugin_enable(Some(&plugins), None, &notes())
-        .unwrap_err();
-    let message = refused.to_string();
-    assert!(message.contains("7 record(s)"), "{message}");
-    assert!(message.contains("/old/4 and 2 more"), "{message}");
-    let query = r#"`board query "SELECT path FROM records WHERE type IN ('notes/old/v1')"`"#;
-    assert!(message.contains(query), "{message}");
-    assert!(!message.contains("/old/5"), "{message}");
 }
 
 #[test]
@@ -427,32 +418,32 @@ fn a_warm_index_finds_the_records_a_cold_one_does() {
     let (board, _data, plugins) = orphaned(UNCOMMITTED, 1);
     let cache = tempfile::tempdir().unwrap();
     let enable = || open(&board).plugin_enable(Some(&plugins), Some(cache.path()), &notes());
-    assert_eq!(enable().unwrap_err().code(), Code::PluginTypeInUse, "cold");
-    assert_eq!(enable().unwrap_err().code(), Code::PluginTypeInUse, "warm");
+    assert_eq!(enable().unwrap().kept.len(), 1, "cold");
+    assert_eq!(enable().unwrap().kept.len(), 1, "warm");
     board.write("old/0.json", Item::Deleted);
     assert_eq!(enable().unwrap().removed, [OLD], "warm, the record gone");
 }
 
 #[test]
-fn a_degraded_record_of_the_type_refuses_the_enable_and_a_valid_one_of_another_type_does_not() {
+fn a_degraded_record_of_the_type_keeps_its_schema_and_a_valid_one_of_another_type_does_not() {
     let strict = r#"{"type": "object", "required": ["x"]}"#;
     let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
     board
         .write(OLD, Item::File(strict))
         .write("old/bad.json", Item::File(r#"{"$type": "notes/old/v1"}"#));
-    let refused = open(&board)
+    let report = open(&board)
         .plugin_enable(Some(&plugins), None, &notes())
-        .unwrap_err();
-    assert_eq!(refused.code(), Code::PluginTypeInUse);
+        .unwrap();
+    assert_eq!(report.kept.len(), 1);
     let (board, _data, plugins) = orphaned(UNCOMMITTED, 0);
     board
         .write(OLD, Item::File(strict))
         .write("old/bad.json", Item::File(r#"{"$type": "notes/note/v1"}"#));
-    assert!(
-        open(&board)
-            .plugin_enable(Some(&plugins), None, &notes())
-            .is_ok()
-    );
+    let report = open(&board)
+        .plugin_enable(Some(&plugins), None, &notes())
+        .unwrap();
+    assert!(report.kept.is_empty());
+    assert_eq!(report.removed, [OLD]);
 }
 
 #[test]
