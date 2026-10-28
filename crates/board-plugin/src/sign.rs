@@ -7,7 +7,7 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::time::Duration;
 
-use board_model::SIGNATURE_NAMESPACE;
+use board_model::signature_namespace;
 
 use crate::process::{Finished, Limits, Scope, Stopped, run};
 
@@ -107,7 +107,8 @@ pub fn sign(
 }
 
 /// Checks that `signature` is the owner's signature of `statement`, by a
-/// key the allowed signers file `allowed` lists for the principal `owner`.
+/// key the allowed signers file `allowed` lists for the principal `owner`,
+/// in the namespace the statement's header names.
 /// The file must be trusted as the signer is.
 pub fn verify(allowed: &Path, statement: &str, signature: &str) -> Result<(), SignError> {
     if !allowed.is_file() {
@@ -123,7 +124,7 @@ pub fn verify(allowed: &Path, statement: &str, signature: &str) -> Result<(), Si
         "sh".to_owned(),
         allowed.display().to_string(),
         PRINCIPAL.to_owned(),
-        SIGNATURE_NAMESPACE.to_owned(),
+        signature_namespace(statement).to_owned(),
         signature.trim().to_owned(),
     ];
     let limits = Limits {

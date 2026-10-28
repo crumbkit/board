@@ -21,9 +21,8 @@ pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
 pub use crate::code::Code;
 pub use crate::effect::{
     APPROVAL_HEADER, Answer, Authority, Decision, EFFECT_TYPE, EFFECT_TYPES, Effect, Layer,
-    PREFERENCE_TYPE, PUT_OP, Pattern, Preference, RM_OP, Request, Rule, SEEN_TYPE,
-    SIGNATURE_NAMESPACE, Seen, Tell, WRITE_HEADER, decide, effect_record, is_effect_id, is_op,
-    is_write,
+    PREFERENCE_TYPE, PUT_OP, Pattern, Preference, RM_OP, Request, Rule, SEEN_TYPE, Seen, Tell,
+    WRITE_HEADER, decide, effect_record, is_effect_id, is_op, is_write, signature_namespace,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};

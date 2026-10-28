@@ -1,12 +1,10 @@
 //! A signer for tests: a software key that `ssh-keygen` makes, the allowed
 //! signers file that lists it, and a program with attention-sign's command
-//! line that signs with it, so tests check real signatures without Touch ID.
+//! line that signs with it in the namespace the statement's header names, so tests check real signatures without Touch ID.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-
-use board_model::SIGNATURE_NAMESPACE;
 
 use crate::{Item, Scenario};
 
@@ -30,7 +28,7 @@ impl Signer {
         );
         let public = std::fs::read_to_string(key.with_extension("pub")).unwrap();
         let script = format!(
-            "#!/bin/sh\n[ \"$1\" = approve ] || exit 1\nexec /usr/bin/ssh-keygen -Y sign -q -f '{key_text}' -n '{SIGNATURE_NAMESPACE}' < \"$2\"\n"
+            "#!/bin/sh\n[ \"$1\" = approve ] || exit 1\nstatement=$(mktemp)\ncat \"$2\" > \"$statement\"\nIFS= read -r namespace < \"$statement\"\ncase \"$namespace\" in board/approve/v1|board/write/v1) ;; *) exit 1 ;; esac\nexec /usr/bin/ssh-keygen -Y sign -q -f '{key_text}' -n \"$namespace\" < \"$statement\"\n"
         );
         scenario
             .write("allowed_signers", Item::File(&format!("owner {public}")))
@@ -51,6 +49,15 @@ impl Signer {
     /// The armored signature of `statement`.
     pub fn sign(&self, statement: &str) -> String {
         run(&self.program(), &["approve", "/dev/stdin"], statement)
+    }
+
+    /// The armored signature of `statement` in `namespace`, whatever its
+    /// first line says, as a signer that ignored it would make.
+    pub fn sign_in(&self, namespace: &str, statement: &str) -> String {
+        let key = self.directory().join("key");
+        let key = key.to_str().unwrap();
+        let arguments = ["-Y", "sign", "-q", "-f", key, "-n", namespace];
+        run(Path::new("/usr/bin/ssh-keygen"), &arguments, statement)
     }
 
     /// The directory that holds the key, for a cache or another program.

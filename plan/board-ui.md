@@ -129,6 +129,7 @@ listener, so they also get an adversarial security review.
     The owner's own put under `.board/settings/`, `preferences/` or
     `effects/` is signed the same way (decided 2026-10-26). The signer and
     the allowed signers file come from the passwd entry's home, and
-    approvals sign in their own namespace, `board/approve/v1`.
+    approvals sign in `board/approve/v1` and the owner's puts in
+    `board/write/v1`.
     docs/architecture/writes/effects.md has the design. Left out: rule
     narrowing in a window.

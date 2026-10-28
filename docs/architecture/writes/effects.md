@@ -177,10 +177,14 @@ and could otherwise approve its own effects.
   check rebuilds the same statement. Every stored signature is checked
   against the rebuilt text, so its layout is frozen: a change needs a new
   first line.
-- The signature is an SSH signature in the namespace `board/approve/v1`.
-  `attention-sign approve` signs in it and only signs a statement whose
-  first line is `board/approve/v1` or `board/write/v1`. A directive is
-  signed in `attention/directive/v1`, so neither verifies as the other.
+- The signature is an SSH signature in the namespace the statement's
+  first line names: `board/approve/v1` for an approval, `board/write/v1`
+  for an owner's put.
+  - `attention-sign approve` signs only a statement whose first line is
+    one of the two.
+  - A directive is signed in `attention/directive/v1`.
+  - No signature verifies in another namespace, so a key limited to
+    approvals cannot change a rule.
 - `/usr/bin/ssh-keygen -Y verify`, at a fixed path so `PATH` cannot supply
   another verifier, checks it against `.config/board/allowed_signers` in
   the same passwd home for the principal `owner`. The check runs before
@@ -189,10 +193,10 @@ and could otherwise approve its own effects.
   user or root owns and that neither group nor others may write.
 - Board accepts any key that the file lists for a principal pattern
   matching `owner`, so the file should hold only attention-sign's Secure
-  Enclave key, limited to the namespace:
+  Enclave key, limited to the namespaces:
 
   ```sh
-  echo "owner namespaces=\"board/approve/v1\" $(attention-sign key)" > ~/.config/board/allowed_signers
+  echo "owner namespaces=\"board/approve/v1,board/write/v1\" $(attention-sign key)" > ~/.config/board/allowed_signers
   ```
 
   A file copied from git's allowed signers, with an ordinary key in

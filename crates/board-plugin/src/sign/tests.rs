@@ -39,6 +39,53 @@ fn a_signature_of_another_statement_is_refused() {
     assert!(matches!(refused, Err(SignError::Bad { .. })), "{refused:?}");
 }
 
+const WRITE: &str = "board/write/v1\nop: put\npath: /preferences/r\n";
+
+#[test]
+fn a_rule_change_verifies_only_when_signed_in_the_write_namespace() {
+    let signer = Signer::new();
+    verify(&signer.allowed(), WRITE, &signer.sign(WRITE)).unwrap();
+    verify(
+        &signer.allowed(),
+        WRITE,
+        &signer.sign_in("board/write/v1", WRITE),
+    )
+    .unwrap();
+    let refused = verify(
+        &signer.allowed(),
+        WRITE,
+        &signer.sign_in("board/approve/v1", WRITE),
+    );
+    assert!(matches!(refused, Err(SignError::Bad { .. })), "{refused:?}");
+}
+
+#[test]
+fn an_approval_verifies_only_when_signed_in_the_approval_namespace() {
+    let signer = Signer::new();
+    let approval = signer.sign_in("board/approve/v1", STATEMENT);
+    verify(&signer.allowed(), STATEMENT, &approval).unwrap();
+    let refused = verify(
+        &signer.allowed(),
+        STATEMENT,
+        &signer.sign_in("board/write/v1", STATEMENT),
+    );
+    assert!(matches!(refused, Err(SignError::Bad { .. })), "{refused:?}");
+}
+
+#[test]
+fn a_key_limited_to_approvals_cannot_sign_a_rule_change() {
+    let signer = Signer::new();
+    let public = std::fs::read_to_string(signer.directory().join("key.pub")).unwrap();
+    signer.write(
+        "approvals_only",
+        Item::File(&format!("owner namespaces=\"board/approve/v1\" {public}")),
+    );
+    let limited = signer.directory().join("approvals_only");
+    verify(&limited, STATEMENT, &signer.sign(STATEMENT)).unwrap();
+    let refused = verify(&limited, WRITE, &signer.sign(WRITE));
+    assert!(matches!(refused, Err(SignError::Bad { .. })), "{refused:?}");
+}
+
 #[test]
 fn a_signature_by_a_key_the_allowed_file_does_not_list_is_refused() {
     let owner = Signer::new();

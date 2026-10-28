@@ -1206,6 +1206,27 @@ fn an_owners_put_to_a_rule_or_an_effect_is_refused_unless_they_sign_it_and_a_put
 }
 
 #[test]
+fn an_owners_put_to_a_rule_signed_as_an_approval_is_refused() {
+    let mine = personal();
+    let tools = Scenario::new();
+    let key = signer().directory().join("key");
+    tools.write(
+        "as-approval",
+        Item::Executable(&format!(
+            "#!/bin/sh\nexec /usr/bin/ssh-keygen -Y sign -q -f '{}' -n board/approve/v1 < \"$2\"\n",
+            key.display()
+        )),
+    );
+    let rule = preference("/tasks/*", "act");
+    let as_approval = owned(&mine, &mine, Some(&tools.workdir().join("as-approval")));
+    let error = put(&as_approval, "/preferences/r", &rule).unwrap_err();
+    assert_eq!(error.code(), Code::SettingsUnsigned);
+    assert!(!exists(&mine, "preferences/r.json"));
+    put(&owned(&mine, &mine, None), "/preferences/r", &rule).unwrap();
+    assert!(exists(&mine, "preferences/r.json"));
+}
+
+#[test]
 fn an_owners_file_put_to_a_rule_needs_their_signature_and_a_signed_one_writes() {
     let mine = personal();
     let (_tools, decline, _keep) = owner_signers();

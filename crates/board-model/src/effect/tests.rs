@@ -403,4 +403,26 @@ fn an_owners_write_names_its_path_and_board_and_shows_its_content_and_never_read
     );
     assert_ne!(put.owner_write(), put.approval(false));
     assert!(!put.owner_write().starts_with(APPROVAL_HEADER));
+    assert_eq!(signature_namespace(&put.owner_write()), "board/write/v1");
+    assert_eq!(
+        signature_namespace(&put.approval(false)),
+        "board/approve/v1"
+    );
+}
+
+#[test]
+fn only_a_statement_whose_whole_first_line_is_the_write_header_is_signed_as_a_write() {
+    assert_eq!(
+        signature_namespace("board/write/v1\nop: put\n"),
+        "board/write/v1"
+    );
+    assert_eq!(
+        signature_namespace("board/write/v1x\nop: put\n"),
+        "board/approve/v1"
+    );
+    assert_eq!(signature_namespace("board/write/v1"), "board/approve/v1");
+    assert_eq!(
+        signature_namespace("op: put\nboard/write/v1\n"),
+        "board/approve/v1"
+    );
 }

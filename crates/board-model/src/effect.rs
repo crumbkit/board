@@ -29,10 +29,16 @@ pub const APPROVAL_HEADER: &str = "board/approve/v1";
 /// change a rule or an effect.
 pub const WRITE_HEADER: &str = "board/write/v1";
 
-/// The SSH signature namespace of an approval and of an owner's write,
-/// which `attention-sign approve` signs in. A directive is signed in
-/// another namespace, so neither verifies as the other.
-pub const SIGNATURE_NAMESPACE: &str = "board/approve/v1";
+/// The SSH signature namespace `statement` is signed in, which is its
+/// header: an owner's write in `board/write/v1`, anything else in
+/// `board/approve/v1`. A key the allowed signers file limits to approvals
+/// therefore cannot change a rule. A directive has its own namespace.
+pub fn signature_namespace(statement: &str) -> &'static str {
+    match statement.split_once('\n') {
+        Some((WRITE_HEADER, _)) => WRITE_HEADER,
+        _ => APPROVAL_HEADER,
+    }
+}
 
 /// The op of a put, which Board performs itself.
 pub const PUT_OP: &str = "put";
