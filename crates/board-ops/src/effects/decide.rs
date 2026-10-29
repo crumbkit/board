@@ -9,7 +9,9 @@ use board_tree::{LOCK_WAIT, WriteError};
 
 use std::path::Path;
 
-use super::{Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen};
+use super::{
+    Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen, verified,
+};
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
 
@@ -126,13 +128,15 @@ impl Board {
 }
 
 /// Writes the owner's `answer` to the pending effect `id` in the personal
-/// board and removes the pending effect, in one commit. A plugin may not
-/// answer.
+/// board and removes the pending effect, in one commit. An approval holds
+/// `signature`, made elsewhere, or else one the signer makes now; either is
+/// checked before it is written. A plugin may not answer.
 pub fn answer(
     asker: &Asker,
     id: &str,
     answer: Answer,
     reason: Option<String>,
+    signature: Option<String>,
 ) -> Result<AnswerReport, EffectError> {
     if let Some(plugin) = &asker.plugin {
         return Err(EffectError::FromPlugin {
@@ -146,7 +150,13 @@ pub fn answer(
     let not_found = || EffectError::NotFound { id: id.to_owned() };
     let mut seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
     if answer == Answer::Approve {
-        seen.signature = Some(signed(asker, &personal, &effect)?);
+        seen.signature = Some(match signature {
+            Some(signature) => {
+                verified(&effect, asker.signing.allowed.as_deref(), &signature)?;
+                signature
+            }
+            None => signed(asker, &personal, &effect)?,
+        });
     }
     let records = [(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
     let pending = Removal {

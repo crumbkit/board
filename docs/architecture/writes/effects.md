@@ -75,8 +75,8 @@ plugin `BOARD_PLUGIN` names may run its op at the path.
 
 ## `board answer`
 
-`board answer <id> approve|refuse [--reason <text>]` writes the seen record
-and removes the pending effect, in one commit.
+`board answer <id> approve|refuse [--reason <text>] [--signature <file>]`
+writes the seen record and removes the pending effect, in one commit.
 
 - The records under `/effects/pending/` are the open effects. Git history
   keeps an answered one.
@@ -145,6 +145,13 @@ own effects.
 - A missing, declined or bad signature is refused with
   `board::settings::unsigned`, whose `effect` field is the id. Nothing is
   written. A refusal is unsigned.
+- `board answer <id> approve --signature <file>` takes a signature made
+  elsewhere, such as on a phone, from the file or from stdin for `-`.
+  - It runs no signer. It checks the signature as above and writes the same
+    seen record.
+  - `--signature` with `refuse` is refused with `board::cli::usage`.
+  - So is a file that cannot be read, is not UTF-8 or is over 8192 bytes.
+    The signature reaches `ssh-keygen` as one argument.
 
 ### The owner's own writes
 

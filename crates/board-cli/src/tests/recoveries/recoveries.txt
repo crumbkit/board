@@ -770,7 +770,7 @@ board answer 0000000000000000000000000000000000000000000000000000000000000000 re
   run board --personal ls /effects/pending
     exits 0
 
-board answer 8ad7c232a7b9636598d29eb351cb4c2597255d96dbc5403b535d5f055a6d20fd approve
+board answer 8ad7c232a7b9636598d29eb351cb4c2597255d96dbc5403b535d5f055a6d20fd approve --signature empty.sig
   fails with board::settings::unsigned
   hint
 

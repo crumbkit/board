@@ -2,6 +2,9 @@
 //! as that board, with the directory's logical path as the prefix, as git
 //! runs from a subdirectory (docs/architecture.md, Boards and entries).
 
+use board_model::Effect;
+use board_scenario::signer::Signer;
+
 use super::*;
 
 /// A repository with a commit and a `docs` directory, to mount.
@@ -602,4 +605,157 @@ fn a_write_command_the_put_check_does_not_cover_is_refused_under_a_plugin_and_ad
         "board::sync::no_remote"
     );
     assert_eq!(code(&run(None, &sync, b"")), "board::sync::no_remote");
+}
+
+/// A personal board holding one pending effect, the known boards file that
+/// names it, the effect and the file that holds it.
+fn one_pending() -> (Scenario, Scenario, Effect, String) {
+    let personal = uncommitted();
+    let effect = Effect::new("/b".into(), "tasks".into(), "put".into(), "/x".into());
+    let pending = format!("effects/pending/{}.json", effect.id());
+    let text = serde_json::to_string(&effect).unwrap();
+    personal.write(&pending, Item::File(&text));
+    let xdg = naming(&personal);
+    (personal, xdg, effect, pending)
+}
+
+/// `board answer <arguments>` with `xdg`'s known boards file and `signer`'s
+/// allowed signers file, and no signer to run.
+fn answering(xdg: &Scenario, signer: &Signer, arguments: &[&str], stdin: &[u8]) -> Output {
+    let context = Context {
+        start: xdg.workdir().to_path_buf(),
+        home: None,
+        cache: None,
+        plugins: None,
+        boards: Some(xdg.workdir().join("board/config.json")),
+        signer: None,
+        allowed_signers: Some(signer.allowed()),
+        environment: board_plugin::Environment::default(),
+        complete: None,
+        terminal: false,
+        browser: None,
+        binary: None,
+        cursor: None,
+    };
+    let arguments = [BINARY_NAME, "answer"]
+        .iter()
+        .chain(arguments)
+        .map(OsString::from);
+    run(arguments, &context, &mut &stdin[..], &mut Ran::default())
+}
+
+/// Approves a fresh pending effect with `--signature refused.sig`, holding
+/// what `refused` makes of the owner's signature of it, or no such file for
+/// `None`. That is refused with `code` and writes nothing. Then approves it
+/// with `--signature -` and what `admitted` makes on stdin, which writes
+/// the seen record with those bytes and removes the effect. The refusal's
+/// stderr is returned.
+fn approve_twins(
+    code_wanted: &str,
+    refused: impl FnOnce(&str) -> Option<Vec<u8>>,
+    admitted: impl FnOnce(&str) -> Vec<u8>,
+) -> String {
+    let (personal, xdg, effect, pending) = one_pending();
+    let (id, signer) = (effect.id(), Signer::new());
+    let signature = signer.sign(&effect.approval());
+    if let Some(bytes) = refused(&signature) {
+        signer.write("refused.sig", Item::Bytes(&bytes));
+    }
+    let file = signer.directory().join("refused.sig");
+    let approve = [
+        id.as_str(),
+        "approve",
+        "--signature",
+        file.to_str().unwrap(),
+    ];
+    let refusal = answering(&xdg, &signer, &approve, b"");
+    assert_eq!(code(&refusal), code_wanted);
+    assert!(personal.workdir().join(&pending).exists());
+    let bytes = admitted(&signature);
+    let approve = [id.as_str(), "approve", "--signature", "-"];
+    let approved = answering(&xdg, &signer, &approve, &bytes);
+    assert_eq!(text(&approved.stderr), "");
+    let seen = personal.workdir().join(format!("effects/seen/{id}.json"));
+    let seen: Value = serde_json::from_slice(&std::fs::read(seen).unwrap()).unwrap();
+    assert_eq!(seen["signature"].as_str().unwrap().as_bytes(), &bytes[..]);
+    assert!(!personal.workdir().join(&pending).exists());
+    text(&refusal.stderr)
+}
+
+#[test]
+fn approving_with_a_signature_by_another_key_is_refused_as_unsigned_with_its_own_hint_and_the_owners_is_written_without_a_signer()
+ {
+    let stderr = approve_twins(
+        "board::settings::unsigned",
+        |_| Some(Signer::new().sign(&one_pending().2.approval()).into_bytes()),
+        |signature| signature.as_bytes().to_vec(),
+    );
+    assert!(stderr.contains("the signature given with --signature did not verify"));
+    assert!(!stderr.contains("install attention-sign"));
+}
+
+#[test]
+fn approving_with_an_empty_signature_file_is_refused_as_unsigned_and_a_full_one_is_admitted() {
+    approve_twins(
+        "board::settings::unsigned",
+        |_| Some(Vec::new()),
+        |signature| signature.as_bytes().to_vec(),
+    );
+}
+
+#[test]
+fn approving_with_a_signature_file_that_does_not_exist_is_refused_as_usage_and_one_that_does_is_admitted()
+ {
+    let stderr = approve_twins(
+        "board::cli::usage",
+        |_| None,
+        |signature| signature.as_bytes().to_vec(),
+    );
+    assert!(stderr.contains("refused.sig cannot be read"), "{stderr}");
+}
+
+#[test]
+fn approving_with_a_signature_that_is_not_utf8_is_refused_as_usage_and_the_same_in_utf8_is_admitted()
+ {
+    let stderr = approve_twins(
+        "board::cli::usage",
+        |signature| Some([signature.as_bytes(), b"\xff"].concat()),
+        |signature| [signature.as_bytes(), b" "].concat(),
+    );
+    assert!(stderr.contains("is not UTF-8"), "{stderr}");
+}
+
+#[test]
+fn approving_with_a_signature_over_the_limit_is_refused_as_usage_and_one_at_the_limit_is_admitted()
+{
+    let padded = |signature: &str, length: usize| {
+        let mut bytes = signature.as_bytes().to_vec();
+        bytes.resize(length, b'\n');
+        bytes
+    };
+    let limit = crate::effects::MAX_SIGNATURE_BYTES;
+    let stderr = approve_twins(
+        "board::cli::usage",
+        |signature| Some(padded(signature, limit + 1)),
+        |signature| padded(signature, limit),
+    );
+    assert!(
+        stderr.contains(&format!("refused.sig is over {limit} bytes")),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn refusing_with_a_signature_is_refused_as_usage_and_refusing_without_one_is_admitted() {
+    let (personal, xdg, effect, pending) = one_pending();
+    let (id, signer) = (effect.id(), Signer::new());
+    let signature = signer.sign(&effect.approval());
+    let refuse = [id.as_str(), "refuse", "--signature", "-"];
+    let refused = answering(&xdg, &signer, &refuse, signature.as_bytes());
+    assert_eq!(code(&refused), "board::cli::usage");
+    assert!(text(&refused.stderr).contains("a refusal is unsigned"));
+    assert!(personal.workdir().join(&pending).exists());
+    let admitted = answering(&xdg, &signer, &[&id, "refuse"], b"");
+    assert_eq!(text(&admitted.stderr), "");
+    assert!(!personal.workdir().join(&pending).exists());
 }

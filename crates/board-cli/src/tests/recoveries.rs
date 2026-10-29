@@ -844,7 +844,7 @@ fn known_boards(starts: &mut Starts) {
 /// when no personal board is named or the known boards file cannot be read.
 fn effects(starts: &mut Starts) {
     let board = board();
-    identified(&board);
+    identified(&board).write("empty.sig", Item::File(""));
     let effect = |board: &str, plugin: &str, op: &str, path: &str| {
         let effect = board_model::Effect::new(
             board.to_owned(),
@@ -892,15 +892,17 @@ fn effects(starts: &mut Starts) {
     ] {
         starts.variable(&place, code, line, "BOARD_PLUGIN");
     }
-    // No signer is on these runs' PATH, so only a refusal is admitted.
+    // These runs take the signer and the allowed signers file from the
+    // passwd home, which is the developer's. An approval without
+    // --signature would run their signer, so the only approval here gives
+    // an empty signature file, and only a refusal is admitted.
     let unknown = format!("answer {} refuse", "0".repeat(64));
     starts.add(&answering, Code::SettingsNotFound, &unknown);
     let admitted = format!("answer {exact} refuse");
     starts.pair(&answering, Code::SettingsNotFound, &unknown, &admitted);
-    let approving = format!("answer {unsigned} approve");
+    let approving = format!("answer {unsigned} approve --signature empty.sig");
     starts.add(&answering, Code::SettingsUnsigned, &approving);
-    let admitted = format!("answer {unsigned} refuse");
-    starts.pair(&answering, Code::SettingsUnsigned, &approving, &admitted);
+    starts.untwinned(&answering, Code::SettingsUnsigned, &approving, UNSIGNED);
     let line = format!("answer {plugged} refuse");
     starts.add(&place, Code::SettingsFromPlugin, &line);
     starts.variable(&place, Code::SettingsFromPlugin, &line, "BOARD_PLUGIN");
@@ -958,6 +960,7 @@ const PUT_NUL: &str = "the text on stdin holds NUL, and no word of the line name
 const PUT_LOCKED: &str = "a merge is under way in the repository, and no word of the line names that; a_commit_during_a_merge_or_rebase_is_refused_and_a_clean_one_is_admitted in board-tree/src/tests/commits.rs pairs the code";
 const NOT_ANCESTOR: &str = "the mounted repository's HEAD does not descend from the pin, and no word of the line names that; a_mounted_head_that_does_not_descend_from_the_pin_is_refused_and_one_that_does_is_admitted in board-ops/src/put/tests/through.rs pairs the code";
 const MOUNT_STALE: &str = "the record changed in the mounted repository since the pin, and no word of the line names that; a_record_changed_in_the_mounted_repository_since_the_pin_is_refused_and_an_unchanged_one_is_admitted in board-ops/src/put/tests/through.rs pairs the code";
+const UNSIGNED: &str = "a good signature needs a key the developer's allowed signers file lists, and these runs must not reach their signer; the approving_with_ tests in board-cli/src/tests/known.rs pair the code with a test key";
 const SCHEMA_MISSING: &str = "the board lacks an enabled plugin's schema, and no word of the line names the board's files; an_enabled_plugin_whose_schema_is_missing_is_degraded_and_one_holding_it_is_not in board-ops/src/plugins/tests.rs pairs the code";
 
 /// Board's codes, as crumbkit's, and why each one that no command line in

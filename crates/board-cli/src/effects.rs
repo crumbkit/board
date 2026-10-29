@@ -1,13 +1,16 @@
 //! The effects commands: `decide` and `answer`.
 
-use board_model::{Answer, Refusal};
-use board_ops::{Board, EffectError};
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use board_model::{Answer, Code, Refusal};
+use board_ops::{AnswerReport, Board, EffectError};
 
 use crate::config::Context;
 use crate::known;
 use crate::render::{self, Printer};
 use crate::report::Output;
-use crate::run::{Given, Prefix, read};
+use crate::run::{Given, Prefix, plain, read};
 use crate::timing::Ran;
 
 /// `board decide`: whether the plugin may run `op` at `path`, read from
@@ -37,18 +40,93 @@ pub(crate) struct Answering {
     /// Why, kept in the seen record.
     #[arg(long)]
     reason: Option<String>,
+    /// A signature made elsewhere: this file, or - for stdin.
+    #[arg(long, value_name = "FILE")]
+    signature: Option<PathBuf>,
 }
 
 /// `board answer`, which needs no board but the personal one.
-pub(crate) fn answer(context: &Context, printer: Printer, answering: Answering) -> Output {
-    let Answering { id, answer, reason } = answering;
-    let answered = known::asker(context, true).and_then(|asker| {
-        board_ops::answer(&asker, &id, answer, reason).map_err(|error| refusal(&error))
-    });
-    match answered {
+pub(crate) fn answer(
+    context: &Context,
+    printer: Printer,
+    answering: Answering,
+    stdin: &mut dyn Read,
+) -> Output {
+    match answered(context, answering, stdin) {
         Ok(report) => render::answer(printer, &report),
         Err(refusal) => render::refused(printer, *refusal),
     }
+}
+
+fn answered(
+    context: &Context,
+    answering: Answering,
+    stdin: &mut dyn Read,
+) -> Result<AnswerReport, Box<Refusal>> {
+    let Answering {
+        id,
+        answer,
+        reason,
+        signature,
+    } = answering;
+    let given = signature.is_some();
+    let signature = (signature.as_deref())
+        .map(|file| supplied(answer, file, stdin))
+        .transpose()?;
+    let asker = known::asker(context, true)?;
+    board_ops::answer(&asker, &id, answer, reason, signature).map_err(|error| {
+        let refused = refusal(&error);
+        match error.code() {
+            Code::SettingsUnsigned if given => Box::new(refused.with_hint(UNVERIFIED)),
+            _ => refused,
+        }
+    })
+}
+
+/// The most bytes `--signature` reads. An armored SSH signature is under
+/// 1 KiB, and the signature reaches `ssh-keygen` as one argument.
+pub(crate) const MAX_SIGNATURE_BYTES: usize = 8192;
+
+/// The hint when a signature given with `--signature` does not verify.
+const UNVERIFIED: &str = "the signature given with --signature did not verify: check that it is an SSH signature in the namespace board/approve/v1 of this effect's statement, by a key ~/.config/board/allowed_signers lists as `owner`; or answer without --signature to sign with attention-sign";
+
+/// The signature `--signature` names, read from `file`, or stdin for `-`.
+/// A refusal takes none.
+fn supplied(answer: Answer, file: &Path, stdin: &mut dyn Read) -> Result<String, Box<Refusal>> {
+    let usage =
+        |message: String, hint: &str| Box::new(plain(Code::CliUsage, &message).with_hint(hint));
+    if answer == Answer::Refuse {
+        return Err(usage(
+            "--signature was given with refuse, and a refusal is unsigned".to_owned(),
+            "drop --signature to refuse, or answer approve",
+        ));
+    }
+    let mut bytes = Vec::new();
+    let limit = MAX_SIGNATURE_BYTES as u64 + 1;
+    let read = if file.as_os_str() == "-" {
+        stdin.take(limit).read_to_end(&mut bytes)
+    } else {
+        std::fs::File::open(file).and_then(|opened| opened.take(limit).read_to_end(&mut bytes))
+    };
+    let shown = file.display();
+    if let Err(error) = read {
+        return Err(usage(
+            format!("the signature in {shown} cannot be read: {error}"),
+            "give --signature the file that holds the armored signature, or - and the signature on stdin",
+        ));
+    }
+    if bytes.len() > MAX_SIGNATURE_BYTES {
+        return Err(usage(
+            format!("the signature in {shown} is over {MAX_SIGNATURE_BYTES} bytes"),
+            "give --signature the armored SSH signature alone, which is under 1 KiB",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        usage(
+            format!("the signature in {shown} is not UTF-8"),
+            "give --signature the armored SSH signature, which is ASCII text",
+        )
+    })
 }
 
 /// Refuses, under `BOARD_PLUGIN`, the command `ran` names: a write the put
