@@ -1,0 +1,9 @@
+attention/order/v1
+expires: 2026-12-31
+pinned: yes
+
+Order (binding):
+Do not push to main.
+
+Context (non-binding, from /orders/vector.context.md):
+The owner asked for this order while reviewing a branch.

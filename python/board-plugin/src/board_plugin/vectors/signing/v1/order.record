@@ -1,0 +1,7 @@
+{
+  "$type": "attention/order/v1",
+  "order": "Do not push to main.",
+  "context": "/orders/vector.context.md",
+  "expires": "2026-12-31",
+  "pinned": true
+}

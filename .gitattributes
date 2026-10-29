@@ -1,0 +1,4 @@
+# The signing vectors are compared byte for byte and by blob id, so git never
+# converts their line endings. Root `vectors` is a link to this directory, and
+# attributes do not follow links.
+python/board-plugin/src/board_plugin/vectors/** -text

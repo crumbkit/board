@@ -1,0 +1,2 @@
+owner namespaces="board/approve/v1,board/write/v1,attention/order/v1" ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPjDkO1k94evL4Ayz1PvZUFBHkFTbbTEMKKXZKYAL+rhn47GxRFWU3nXokoJEYIfs3yxyA2LHki8leg0RV7KBDI=
+other namespaces="board/approve/v1" ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBCNMtboC+tQd/cJXShkMPl3lj4B0Q+G/6dkPNlpTnSFl74wNQqj3nOJzHsjxtndR2UtTeVC+HAmy2Hdsw2EtgZg=

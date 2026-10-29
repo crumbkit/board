@@ -1,0 +1,8 @@
+{
+  "$type": "board/effect/v1",
+  "board": "/b",
+  "plugin": "p",
+  "op": "p.do",
+  "path": "/x.json",
+  "record": {"title": "a​b", "$type": "lr/task/v1"}
+}

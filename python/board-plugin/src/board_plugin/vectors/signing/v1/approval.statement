@@ -1,0 +1,11 @@
+board/approve/v1
+effect: b0a06cd06056a0f49013c5bfc5c4c748b14d748731514f103886a5212fbe1c88
+plugin: p
+op: p.do
+path: /x.json
+board: /b
+content: 47 bytes in 4 lines
+{
+  "$type": "lr/task/v1",
+  "title": "a\u{200b}b"
+}

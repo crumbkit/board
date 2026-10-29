@@ -1,5 +1,27 @@
 {
   "types": {},
   "reports": {},
-  "codes": []
+  "codes": [],
+  "vectors": {
+    "vectors/signing/v1/allowed_signers": "96f74643bfcfaefb3f4f8dfc5d8cdee3332d84a2",
+    "vectors/signing/v1/approval.effect.json": "aeff16e952d7276f623366d17dad80262472cfca",
+    "vectors/signing/v1/approval.raw": "beeb9d2c4d1fec59048ea7ed789505ee50cf29f6",
+    "vectors/signing/v1/approval.sig": "3e1401b634db765b3cf33a537f9d880fed7643e2",
+    "vectors/signing/v1/approval.statement": "90cf3c288eb0786227e1ea9a7551174663338abc",
+    "vectors/signing/v1/cross/approval-by-other.sig": "1eab202726b290d06f8fa8d30680788ebb887ca0",
+    "vectors/signing/v1/cross/approval-in-write.sig": "b9dd568d43a7c1a0d4b0431762d08000a5f46ee7",
+    "vectors/signing/v1/cross/order-in-directive.sig": "4ea5cc4fc17647f891ee0515c31d366c7302b68d",
+    "vectors/signing/v1/cross/write-in-approval.sig": "708340ed1798e1e0acae12171b78b026f4008622",
+    "vectors/signing/v1/key": "7ea0e551462572acc85664583d4bce16d4eaa240",
+    "vectors/signing/v1/key.pub": "124a9f0ba12b3e647d060b181b0f01bc2af1c721",
+    "vectors/signing/v1/manifest.json": "3940e5a9ae0c6c1f560688ece10596994f22b186",
+    "vectors/signing/v1/order.context.md": "aa8d37958809d49b9277e3e3cf53128f67038e37",
+    "vectors/signing/v1/order.record": "f50d828210aee7f8ce05f296344c8037954576f0",
+    "vectors/signing/v1/order.sig": "cce301fcebd623f42c5fc97dd7ce6fefa3b8a88d",
+    "vectors/signing/v1/order.statement": "f6a1c60bf36b1338c4ca4753a4c39b1cebab67b6",
+    "vectors/signing/v1/other": "b66734ee286fc7cbe98bece61e4123f9b8c7b9ce",
+    "vectors/signing/v1/other.pub": "683797b21b2b3ba4504416cccc4878f08592e969",
+    "vectors/signing/v1/write.sig": "bea3644188f710e5fc3188959f08c03bebd25362",
+    "vectors/signing/v1/write.statement": "c608370cb5eccad040d953cbc1c02d8e0e239fe4"
+  }
 }

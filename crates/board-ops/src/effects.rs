@@ -34,7 +34,7 @@ pub struct Asker {
 }
 
 /// How the owner signs an approval, and the keys a signature must verify
-/// against (docs/architecture/writes/effects.md, Signed approvals).
+/// against (docs/architecture/writes/signing.md).
 #[derive(Clone, Debug, Default)]
 pub struct Signing {
     /// The program run as `<signer> approve <statement-file>`, which shows

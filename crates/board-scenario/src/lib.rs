@@ -330,7 +330,12 @@ impl Scenario {
 
     /// The id of a blob holding `text`.
     pub fn blob(&self, text: &str) -> ObjectId {
-        model(self.git.write_blob(text).unwrap().detach())
+        self.blob_of(text.as_bytes())
+    }
+
+    /// The id of a blob holding `bytes`.
+    pub fn blob_of(&self, bytes: &[u8]) -> ObjectId {
+        model(self.git.write_blob(bytes).unwrap().detach())
     }
 
     /// The bytes of the blob `id` in the object store, or `None` when the

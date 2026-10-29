@@ -75,5 +75,5 @@ the answered effect from `/effects/pending/`, the query no longer needs its
 seen-record check.
 
 An approval runs Board's signer, which shows the effect and waits up to 20
-seconds for the owner's Touch ID (docs/architecture/writes/effects.md, Signed
-approvals), so it fits the mod's 30-second limit.
+seconds for the owner's Touch ID (docs/architecture/writes/signing.md),
+so it fits the mod's 30-second limit.

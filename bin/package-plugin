@@ -20,6 +20,8 @@ for extra in types README.md SKILL.md; do
   [ -e "$plugin/$extra" ] && cp -R "$plugin/$extra" "$dir/"
 done
 cp -R python/board-plugin/pyproject.toml python/board-plugin/src "$dir/vendor/board-plugin/"
+# The signing vectors hold test keys and serve only other repositories' tests.
+rm -r "$dir/vendor/board-plugin/src/board_plugin/vectors"
 # The checkout reaches board-plugin by a relative path; the archive by its vendored copy.
 sed -i.orig 's|"../../python/board-plugin"|"vendor/board-plugin"|' "$dir/pyproject.toml" "$dir/uv.lock"
 rm "$dir/pyproject.toml.orig" "$dir/uv.lock.orig"

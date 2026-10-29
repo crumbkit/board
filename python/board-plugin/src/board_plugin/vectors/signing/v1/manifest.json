@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "layouts": {
+    "approval.statement": {
+      "namespace": "board/approve/v1",
+      "owner": "viitta",
+      "built_by": "board_model::Effect::approval"
+    },
+    "write.statement": {
+      "namespace": "board/write/v1",
+      "owner": "viitta",
+      "built_by": "board_model::Effect::owner_write"
+    },
+    "order.statement": {
+      "namespace": "attention/order/v1",
+      "owner": "board-attention",
+      "built_by": "board_attention.order.statement"
+    }
+  },
+  "signatures": {
+    "approval.sig": {
+      "statement": "approval.statement",
+      "namespace": "board/approve/v1",
+      "signer": "owner"
+    },
+    "write.sig": {
+      "statement": "write.statement",
+      "namespace": "board/write/v1",
+      "signer": "owner"
+    },
+    "order.sig": {
+      "statement": "order.statement",
+      "namespace": "attention/order/v1",
+      "signer": "owner"
+    },
+    "cross/approval-in-write.sig": {
+      "statement": "approval.statement",
+      "namespace": "board/write/v1",
+      "signer": "owner"
+    },
+    "cross/write-in-approval.sig": {
+      "statement": "write.statement",
+      "namespace": "board/approve/v1",
+      "signer": "owner"
+    },
+    "cross/approval-by-other.sig": {
+      "statement": "approval.statement",
+      "namespace": "board/approve/v1",
+      "signer": "other"
+    },
+    "cross/order-in-directive.sig": {
+      "statement": "order.statement",
+      "namespace": "attention/directive/v1",
+      "signer": "owner"
+    }
+  },
+  "files": {
+    "allowed_signers": "6a998bfcf0a0b8d52c181ac221a124262a38f69fb1c9701ae88f5bdcb8079bc8",
+    "approval.effect.json": "dcf7c249ab57467142fb4e3746dbf4ba28a877c22d8f12ebce1d8e081434f60e",
+    "approval.raw": "a9de62ddd0af0e7395192a295be1fe227105cb69c6989b166c698891e89809dd",
+    "approval.sig": "e99f5e0bea4d8821bc96fdce3c19d3b2d1a6761bdd5020523c070b984016464e",
+    "approval.statement": "131c4045b6fa070ff589af51916773cc641a06b8e584d62d0c315bf9c8fce67d",
+    "cross/approval-by-other.sig": "bdf01e431a274eea0c7451a17994cf512abc7d167515294e58732c010be5b1d1",
+    "cross/approval-in-write.sig": "72a31ed7e5527dc084106bc0900cc129f396d93b7b66e9c64f088f41d31eed39",
+    "cross/order-in-directive.sig": "438ea4f889840eed09913a6d5f881e4e607f1eaf4c519e27acef08f6299117d1",
+    "cross/write-in-approval.sig": "11cef8b680cbf5f00393a7658ce4ef37508703706bd5b0376c0a9dde4bed0e06",
+    "key": "8ec7027b14e5d0a1502705e7771fb7c8146c1627374e543978bd8b80c2380a0d",
+    "key.pub": "cd9ad4e8913a2f01349592804358e222721b67c1ed768148f3d27cc7ab6beddc",
+    "order.context.md": "1aa36f15eae01537e643a05f0af0c2c7848be9f25364b1aea022092f65ffe201",
+    "order.record": "880b3c9e9df92200f918113a1496c01302d57b8a57becabe055a73d86183de9e",
+    "order.sig": "543c3430693110037ccdbddd654459ec2ac45ac348cadb92ba4fd1501c129a18",
+    "order.statement": "cc3e2481df0745b4d41a80c7cc343bc7b8fed967401a88e32a6ec743be904e4a",
+    "other": "7e00a3ca58b1596f39c8254099a9e93c55efc90920a5df123c46903956011356",
+    "other.pub": "b98e3f71b34d5457f60f61a93e610df953f76d421bc669ff1d495937809517a0",
+    "write.sig": "e62d6fdffcfd73c53e4f6ab1bb6efebd98e314b8aa8adb6f91a239f0d77126d5",
+    "write.statement": "f6a8597aad9dddfa6f174ebf1a7291758d47f285f997e8cc9b0a5cb0cb608125"
+  }
+}

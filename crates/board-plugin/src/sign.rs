@@ -1,7 +1,7 @@
 //! The two children an approval needs: the signer, which shows the owner a
 //! statement and signs it with Touch ID, and `ssh-keygen`, which checks a
 //! signature against the allowed signers file
-//! (docs/architecture/writes/effects.md, Signed approvals).
+//! (docs/architecture/writes/signing.md).
 
 use std::ffi::OsString;
 use std::path::Path;

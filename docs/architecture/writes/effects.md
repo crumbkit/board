@@ -96,52 +96,10 @@ writes the seen record and removes the pending effect, in one commit.
 
 ## Signed approvals
 
-Every approval carries the owner's Touch ID signature. An agent's shell has
-no `BOARD_PLUGIN`, so it counts as the owner and could otherwise approve its
-own effects.
+The owner signs every approval;
+[signing.md](signing.md) says what is signed, by which program, and how
+Board checks it.
 
-- `board answer <id> approve` writes the statement `Effect::approval` to a
-  0600 file in the cache and runs `<signer> approve <file>`.
-  - The signer is `.local/bin/attention-sign` in the home that the passwd
-    entry of the running user names. `HOME`, `PATH` and the XDG variables
-    do not move it. It sees only `PATH` and `HOME`, and has 20 seconds.
-    The check has 3 seconds, so an answer fits a 30-second caller such as
-    the effects mod.
-  - attention-sign shows the statement in a native window and signs with
-    the attention plugin's Secure Enclave key after Touch ID. Exit 3 means
-    the owner asked for changes.
-- The statement starts `board/approve/v1` and names the effect id, which
-  binds the content and prior blob. It shows the plugin, op, path and board,
-  then the content's size in bytes and lines and the content split at each
-  `\n`. Hidden characters, `\r` among them, are escaped as
-  `board_model::escaped` does.
-- Every stored signature is checked against the rebuilt statement, so its
-  layout is frozen: a change needs a new first line.
-- The signature is an SSH signature in the namespace the statement's
-  first line names: `board/approve/v1` for an approval, `board/write/v1`
-  for an owner's write.
-  - `attention-sign approve` signs only a statement whose first line is
-    one of the two.
-  - A directive is signed in `attention/directive/v1`.
-  - No signature verifies in another namespace, so a key limited to
-    approvals cannot sign an owner's write.
-- `/usr/bin/ssh-keygen -Y verify`, at a fixed path so `PATH` cannot supply
-  another verifier, checks it against `.config/board/allowed_signers` in
-  the same passwd home for the principal `owner`. The check runs before
-  the answer is written and whenever a decide reads an approval.
-- The signer and the allowed signers file must be regular files that the
-  user or root owns and that neither group nor others may write.
-- Board accepts any key that the file lists for a principal pattern
-  matching `owner`, so the file should hold only attention-sign's Secure
-  Enclave key, limited to the namespaces:
-
-  ```sh
-  echo "owner namespaces=\"board/approve/v1,board/write/v1\" $(attention-sign key)" > ~/.config/board/allowed_signers
-  ```
-
-  A file copied from git's allowed signers, with an ordinary key in
-  `~/.ssh`, would let an agent sign approvals with `ssh-keygen` and no
-  Touch ID.
 - A missing, declined or bad signature is refused with
   `board::settings::unsigned`, whose `effect` field is the id. Nothing is
   written. A refusal is unsigned.
@@ -165,13 +123,11 @@ system may fold it to `effects`. The owner's `rm` of `.board/board.json`
 also needs a signature, because the board does not open without it. A put
 of it does not.
 
-- The put runs `<signer> approve <file>` on the statement
-  `Effect::owner_write`. The statement starts `board/write/v1` and shows the
-  op, path and board, then the content as an approval shows it.
+- The put runs the signer on the statement `Effect::owner_write`
+  ([signing.md](signing.md)).
 - The signer runs while the put holds the board lock, so another write to
   that board waits and may time out. Each such line of a batch asks once.
-- Board checks the signature as the put runs and keeps no copy, so the
-  statement's layout is not frozen.
+- Board checks the signature as the put runs and keeps no copy.
 - A missing, declined or bad signature is refused with
   `board::settings::unsigned`, whose `path` field is the logical path, and
   nothing is written. A file put whose bytes are not UTF-8 cannot be shown,
