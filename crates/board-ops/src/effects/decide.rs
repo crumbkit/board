@@ -234,8 +234,8 @@ fn signed(asker: &Asker, personal: &Board, effect: &Effect) -> Result<String, Ef
     reason = "board-ops's effects module is the one caller of the signer and the verifier"
 )]
 pub(super) fn signature(signing: &Signing, root: &Path, statement: &str) -> Result<String, String> {
-    let signer =
-        (signing.signer.as_ref()).ok_or("no signer is found: the owner's home is not known")?;
+    let signer = (signing.signer.as_ref())
+        .ok_or("no signer is found: the owner's home is not known, or board is a debug build")?;
     let cache = (signing.cache.as_ref()).ok_or("no cache directory is named for the statement")?;
     let allowed = (signing.allowed.as_deref()).ok_or("no allowed signers file is named")?;
     let file = board_index::write_statement(cache, root, statement.as_bytes())

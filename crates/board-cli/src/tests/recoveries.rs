@@ -892,10 +892,10 @@ fn effects(starts: &mut Starts) {
     ] {
         starts.variable(&place, code, line, "BOARD_PLUGIN");
     }
-    // These runs take the signer and the allowed signers file from the
-    // passwd home, which is the developer's. An approval without
-    // --signature would run their signer, so the only approval here gives
-    // an empty signature file, and only a refusal is admitted.
+    // A debug build runs no signer, but these runs take the allowed signers
+    // file from the passwd home, which is the developer's. So the only
+    // approval here gives an empty signature file, and only a refusal is
+    // admitted.
     let unknown = format!("answer {} refuse", "0".repeat(64));
     starts.add(&answering, Code::SettingsNotFound, &unknown);
     let admitted = format!("answer {exact} refuse");

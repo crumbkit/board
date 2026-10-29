@@ -22,7 +22,9 @@ pub(crate) struct Context {
     /// `$XDG_CONFIG_HOME/board/config.json`, or `~/.config/board/config.json`.
     pub(crate) boards: Option<PathBuf>,
     /// The program that signs an approval: `.local/bin/attention-sign` in
-    /// the home the passwd entry names, which no variable moves.
+    /// the home the passwd entry names, which no variable moves. A debug
+    /// build, which every test runs, has none, so no test opens the owner's
+    /// Touch ID window. `cargo install` makes a release build.
     pub(crate) signer: Option<OsString>,
     /// The allowed signers file an approval's signature must verify against:
     /// `.config/board/allowed_signers` in the same home.
@@ -72,7 +74,7 @@ impl Context {
             cache,
             plugins,
             boards,
-            signer,
+            signer: signer.filter(|_| cfg!(not(debug_assertions))),
             allowed_signers,
             environment: Environment {
                 path,

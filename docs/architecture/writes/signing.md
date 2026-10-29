@@ -31,7 +31,8 @@ own effects.
   0600 file in the cache and run `<signer> approve <file>`.
 - The signer is `.local/bin/attention-sign` in the home that the passwd
   entry of the running user names. `HOME`, `PATH` and the XDG variables do
-  not move it. It sees only `PATH` and `HOME`, and has 20 seconds. The check
+  not move it. A debug build, which the tests run, has no signer. It sees
+  only `PATH` and `HOME`, and has 20 seconds. The check
   has 3 seconds, so an answer fits a 30-second caller such as the effects
   mod.
 - attention-sign shows the statement in a native window and signs with the
