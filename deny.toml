@@ -26,6 +26,14 @@ deny = [
     { crate = "nix", wrappers = ["board-cli"] },
     { crate = "tiny_http", wrappers = ["board-serve"] },
     { crate = "jsonschema-regex", wrappers = ["board-validate", "jsonschema"] },
+    # Signatures are checked only by /usr/bin/ssh-keygen, through
+    # board-plugin's sign module (STANDARDS.md 29), so no crate may sign or
+    # verify in process.
+    { crate = "ssh-key", reason = "signatures are verified only by ssh-keygen" },
+    { crate = "ssh-encoding", reason = "signatures are verified only by ssh-keygen" },
+    { crate = "p256", reason = "signatures are verified only by ssh-keygen" },
+    { crate = "ecdsa", reason = "signatures are verified only by ssh-keygen" },
+    { crate = "openssl", reason = "signatures are verified only by ssh-keygen" },
 ]
 
 [licenses]

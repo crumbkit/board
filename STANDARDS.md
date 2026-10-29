@@ -1,6 +1,6 @@
 # Standards
 
-Rules 1 to 28 cover the Rust workspace; P1 to P6 cover Python. Each rule says
+Rules 1 to 29 cover the Rust workspace; P1 to P6 cover Python. Each rule says
 what enforces it. A rule without a gate is still a rule.
 
 ## Types
@@ -182,6 +182,20 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
       code is used or expired, so no copy on disk outlives it.
     - Refusals carry distinct codes for an unknown, a used and an expired
       code, so the reader knows whether to relaunch or investigate.
+
+## Signing
+
+29. **Signing has one owner.** `board_model::effect` builds the statements
+    and names their namespaces. `board_plugin::sign` runs the signer and
+    `ssh-keygen` and checks the allowed signers file. Only board-ops's
+    effects module calls `sign`, `verify`, `Effect::approval` or
+    `Effect::owner_write`. A changed layout is a new `vectors/signing/`
+    version (docs/architecture/writes/signing.md). Gate: clippy
+    `disallowed-methods` on those four functions; `cargo xtask lint` fails
+    with `xtask::signing::outside_owner` when source code outside
+    `signing.owners` in `lint.toml` names a signing literal; cargo-deny bans
+    the crates that sign or verify in process; the `released` test refuses
+    an edit to a vector.
 
 ## Baseline lints
 

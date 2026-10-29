@@ -1,3 +1,7 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the owner's tests run the signer and the verifier"
+)]
 use std::ffi::OsString;
 use std::path::PathBuf;
 

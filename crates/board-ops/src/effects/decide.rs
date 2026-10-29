@@ -213,6 +213,10 @@ fn read_pending(
 
 /// The owner's signature of `effect`'s approval, made by the signer after
 /// Touch ID and checked before it is written.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-ops's effects module builds the approval statement it signs"
+)]
 fn signed(asker: &Asker, personal: &Board, effect: &Effect) -> Result<String, EffectError> {
     let root = root(personal);
     let statement = effect.approval();
@@ -225,6 +229,10 @@ fn signed(asker: &Asker, personal: &Board, effect: &Effect) -> Result<String, Ef
 /// The owner's signature of `statement`, which the signer shows them from a
 /// file in the cache under `root`'s name, checked against the allowed
 /// signers file. `Err` says why there is none.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-ops's effects module is the one caller of the signer and the verifier"
+)]
 pub(super) fn signature(signing: &Signing, root: &Path, statement: &str) -> Result<String, String> {
     let signer =
         (signing.signer.as_ref()).ok_or("no signer is found: the owner's home is not known")?;

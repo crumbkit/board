@@ -108,10 +108,13 @@ fn owner_home() -> Option<PathBuf> {
     Some(user.dir).filter(|dir| dir.is_absolute())
 }
 
+/// The allowed signers file, relative to the owner's home.
+pub(crate) const ALLOWED_SIGNERS: &str = ".config/board/allowed_signers";
+
 /// The signer and the allowed signers file in the owner's `home`.
 fn trust(home: &Path) -> (OsString, PathBuf) {
     let signer = home.join(".local/bin/attention-sign").into_os_string();
-    (signer, home.join(".config/board/allowed_signers"))
+    (signer, home.join(ALLOWED_SIGNERS))
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Repository lints that clippy cannot express: the word budgets, the
-//! source file length cap, the `#[expect]` ratchet, and the budget controls'
-//! agreement with lint.toml. `bin/lint` runs it as
+//! source file length cap, the `#[expect]` ratchet, the signing literals'
+//! owners, and the budget controls' agreement with lint.toml. `bin/lint` runs it as
 //! `cargo xtask lint`; `lint.toml` holds every number it enforces.
 
 mod bench;
@@ -9,6 +9,7 @@ mod config;
 mod controls;
 mod files;
 mod report;
+mod signing;
 mod source;
 mod words;
 
@@ -94,6 +95,7 @@ fn lint(root: &Path) -> Result<Report, LintError> {
     )?);
     checks.push(lines);
     checks.push(expects);
+    checks.push(signing::check(&root, &config.signing)?);
     Ok(Report {
         checks,
         controls: controls::check(&root, &config)?,

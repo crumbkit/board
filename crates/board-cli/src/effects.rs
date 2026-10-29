@@ -3,10 +3,10 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use board_model::{Answer, Code, Refusal};
+use board_model::{APPROVAL_HEADER, Answer, Code, Refusal};
 use board_ops::{AnswerReport, Board, EffectError};
 
-use crate::config::Context;
+use crate::config::{ALLOWED_SIGNERS, Context};
 use crate::known;
 use crate::render::{self, Printer};
 use crate::report::Output;
@@ -77,18 +77,22 @@ fn answered(
     board_ops::answer(&asker, &id, answer, reason, signature).map_err(|error| {
         let refused = refusal(&error);
         match error.code() {
-            Code::SettingsUnsigned if given => Box::new(refused.with_hint(UNVERIFIED)),
+            Code::SettingsUnsigned if given => Box::new(refused.with_hint(unverified())),
             _ => refused,
         }
     })
 }
 
 /// The most bytes `--signature` reads. An armored SSH signature is under
-/// 1 KiB, and the signature reaches `ssh-keygen` as one argument.
+/// 1 KiB, and the signature reaches the verifier as one argument.
 pub(crate) const MAX_SIGNATURE_BYTES: usize = 8192;
 
 /// The hint when a signature given with `--signature` does not verify.
-const UNVERIFIED: &str = "the signature given with --signature did not verify: check that it is an SSH signature in the namespace board/approve/v1 of this effect's statement, by a key ~/.config/board/allowed_signers lists as `owner`; or answer without --signature to sign with attention-sign";
+fn unverified() -> String {
+    format!(
+        "the signature given with --signature did not verify: check that it is an SSH signature in the namespace {APPROVAL_HEADER} of this effect's statement, by a key ~/{ALLOWED_SIGNERS} lists as `owner`; or answer without --signature to sign with Touch ID"
+    )
+}
 
 /// The signature `--signature` names, read from `file`, or stdin for `-`.
 /// A refusal takes none.

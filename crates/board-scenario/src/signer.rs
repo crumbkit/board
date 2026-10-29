@@ -41,6 +41,20 @@ impl Signer {
         self.directory().join("sign")
     }
 
+    /// A program with the signer's command line that signs in `namespace`
+    /// whatever the statement's first line says, as a signer that ignored
+    /// it would.
+    pub fn program_in(&self, namespace: &str) -> PathBuf {
+        let name = format!("sign-in-{}", namespace.replace('/', "-"));
+        let key = self.directory().join("key");
+        let script = format!(
+            "#!/bin/sh\nexec /usr/bin/ssh-keygen -Y sign -q -f '{}' -n '{namespace}' < \"$2\"\n",
+            key.display()
+        );
+        self.write(&name, Item::Executable(&script));
+        self.directory().join(name)
+    }
+
     /// The allowed signers file that lists this key as `owner`.
     pub fn allowed(&self) -> PathBuf {
         self.directory().join("allowed_signers")

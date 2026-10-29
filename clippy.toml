@@ -29,6 +29,10 @@ disallowed-methods = [
     { path = "std::fs::rename", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
     { path = "std::fs::remove_file", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
     { path = "std::fs::remove_dir_all", reason = "file writes are owned by board-tree (the tree) and board-index (the cache)" },
+    { path = "board_plugin::sign::sign", reason = "signing is called only by board-ops's effects module (STANDARDS.md 29)" },
+    { path = "board_plugin::sign::verify", reason = "signing is called only by board-ops's effects module (STANDARDS.md 29)" },
+    { path = "board_model::effect::Effect::approval", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
+    { path = "board_model::effect::Effect::owner_write", reason = "a statement is built only where board-ops's effects module signs or verifies it (STANDARDS.md 29)" },
     { path = "std::io::stdout", reason = "stdout is owned by the report module of each binary" },
     { path = "std::io::stderr", reason = "stderr is owned by the report module of each binary" },
 ]

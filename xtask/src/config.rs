@@ -3,6 +3,7 @@
 use serde::Deserialize;
 
 use crate::files::{FilesError, Root};
+use crate::signing::SigningConfig;
 
 pub(crate) const FILE: &str = "lint.toml";
 
@@ -18,6 +19,7 @@ pub(crate) struct Config {
     pub(crate) plan_leaves: DirectoryBudget,
     pub(crate) source: SourceBudget,
     pub(crate) expect: ExpectBudget,
+    pub(crate) signing: SigningConfig,
 }
 
 #[derive(Debug, Deserialize)]

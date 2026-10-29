@@ -3,7 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-use board_model::{Answer, Code, Digest, Effect, LogicalPath, Seen, canonical_json};
+use board_model::{
+    APPROVAL_HEADER, Answer, Code, Digest, Effect, LogicalPath, Seen, WRITE_HEADER, canonical_json,
+};
 use board_scenario::seed::mount_of;
 use board_scenario::signer::Signer;
 use board_scenario::{Item, Scenario};
@@ -654,6 +656,10 @@ fn named<T: std::fmt::Debug>(result: Result<T, EffectError>) -> (Code, Option<St
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it signs the approval with the test key, as the signer would"
+)]
 fn an_approval_without_the_owners_signature_or_by_another_key_is_refused_as_unsigned_and_the_owners_is_admitted()
  {
     let (scenario, mine) = (board(), personal());
@@ -693,7 +699,8 @@ fn approving_with_no_signer_is_refused_as_unsigned_and_writes_nothing_and_refusi
     answer(&asker(None, Some(&mine)), &id, Answer::Approve, None, None).unwrap();
     let seen = read(&mine, &format!("effects/seen/{id}.json"));
     let signature = seen["signature"].as_str().unwrap();
-    assert!(signature.starts_with("-----BEGIN SSH SIGNATURE-----"));
+    let armor = signer().sign(&format!("{APPROVAL_HEADER}\n"));
+    assert_eq!(signature.lines().next(), armor.lines().next());
     let refused = asked(decide(&board, "/pulls/8"));
     answer(&unsigned_owner, &refused, Answer::Refuse, None, None).unwrap();
     let seen = read(&mine, &format!("effects/seen/{refused}.json"));
@@ -724,6 +731,10 @@ fn approving_when_the_owner_declines_to_sign_is_refused_as_unsigned_with_their_f
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it signs the approval with the test key, as the signer would"
+)]
 fn an_approval_with_a_signature_by_another_key_or_in_the_write_namespace_is_refused_as_unsigned_and_the_owners_is_admitted_without_the_signer()
  {
     let (scenario, mine) = (board(), personal());
@@ -736,7 +747,7 @@ fn an_approval_with_a_signature_by_another_key_or_in_the_write_namespace_is_refu
         |signature: String| answer(&no_signer, &id, Answer::Approve, None, Some(signature));
     let unsigned = (Code::SettingsUnsigned, Some(id.clone()));
     assert_eq!(named(approve(Signer::new().sign(&approval))), unsigned);
-    let written = signer().sign_in("board/write/v1", &approval);
+    let written = signer().sign_in(WRITE_HEADER, &approval);
     assert_eq!(named(approve(written)), unsigned);
     assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
     let signature = signer().sign(&approval);
@@ -822,7 +833,7 @@ fn an_owners_put_under_effects_is_refused_unless_they_sign_it_and_a_put_elsewher
     let root = scenario.workdir().canonicalize().unwrap();
     assert!(
         shown.starts_with(&format!(
-            "board/write/v1\nop: put\npath: /effects/r\nboard: {}\ncontent: ",
+            "{WRITE_HEADER}\nop: put\npath: /effects/r\nboard: {}\ncontent: ",
             root.display()
         )),
         "{shown}"
@@ -833,16 +844,7 @@ fn an_owners_put_under_effects_is_refused_unless_they_sign_it_and_a_put_elsewher
 #[test]
 fn an_owners_put_under_effects_signed_as_an_approval_is_refused() {
     let mine = personal();
-    let tools = Scenario::new();
-    let key = signer().directory().join("key");
-    tools.write(
-        "as-approval",
-        Item::Executable(&format!(
-            "#!/bin/sh\nexec /usr/bin/ssh-keygen -Y sign -q -f '{}' -n board/approve/v1 < \"$2\"\n",
-            key.display()
-        )),
-    );
-    let as_approval = owned(&mine, &mine, Some(&tools.workdir().join("as-approval")));
+    let as_approval = owned(&mine, &mine, Some(&signer().program_in(APPROVAL_HEADER)));
     let error = put(&as_approval, "/effects/r", &task("")).unwrap_err();
     assert_eq!(error.code(), Code::SettingsUnsigned);
     assert!(!exists(&mine, "effects/r.json"));
@@ -954,7 +956,7 @@ fn an_owners_removal_under_effects_is_refused_unless_they_sign_it_and_one_elsewh
     assert_eq!(
         shown,
         format!(
-            "board/write/v1\nop: rm\npath: /effects/r\nboard: {}\n",
+            "{WRITE_HEADER}\nop: rm\npath: /effects/r\nboard: {}\n",
             root.display()
         )
     );

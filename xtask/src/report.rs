@@ -93,6 +93,7 @@ pub(crate) enum CheckKind {
     PlanLinks,
     SourceLines,
     Expect,
+    Signing,
 }
 
 impl CheckKind {
@@ -106,6 +107,7 @@ impl CheckKind {
             Self::PlanLinks => "plan-links",
             Self::SourceLines => "source",
             Self::Expect => "expect",
+            Self::Signing => "signing",
         }
     }
 
@@ -115,6 +117,7 @@ impl CheckKind {
             Self::PlanLinks => "problems",
             Self::SourceLines => "lines",
             Self::Expect => "attributes",
+            Self::Signing => "literals",
         }
     }
 
@@ -127,6 +130,7 @@ impl CheckKind {
             Self::PlanLinks => "xtask::plan::index_differs",
             Self::SourceLines => "xtask::source::too_long",
             Self::Expect => "xtask::expect::count_changed",
+            Self::Signing => "xtask::signing::outside_owner",
         }
     }
 }
@@ -241,7 +245,7 @@ fn summarise(check: &Check) -> String {
         .iter()
         .take(SHOWN_PARTS)
         .map(|part| match check.kind {
-            CheckKind::PlanLinks => part.label.clone(),
+            CheckKind::PlanLinks | CheckKind::Signing => part.label.clone(),
             _ => format!("{} {}", part.label, part.amount),
         })
         .collect();
@@ -259,6 +263,10 @@ fn advice(check: &Check) -> String {
         ),
         (CheckKind::Expect, _) => format!("lower expect.count to {} in lint.toml", check.used),
         (CheckKind::SourceLines, _) => "split the files above".to_owned(),
+        (CheckKind::Signing, _) => "only the files signing.owners in lint.toml lists may name a \
+             signing literal; use board_model's headers or the vectors, or move the code into an owner \
+             (docs/architecture/writes/signing.md)"
+            .to_owned(),
         (CheckKind::PlanLeaf, _) => format!(
             "split {leaf} into two milestones, or raise plan_leaves.max_words in lint.toml \
              in a change that says why",

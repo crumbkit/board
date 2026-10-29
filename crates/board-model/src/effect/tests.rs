@@ -1,3 +1,7 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the owner's tests build each statement to check its layout"
+)]
 use serde_json::json;
 
 use super::*;

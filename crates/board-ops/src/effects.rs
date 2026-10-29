@@ -226,6 +226,10 @@ fn seen(
 
 /// Checks that `signature` is the owner's signature of `effect`'s
 /// approval, by a key the allowed signers file lists.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-ops's effects module is the one caller of the verifier"
+)]
 fn verified(effect: &Effect, allowed: Option<&Path>, signature: &str) -> Result<(), EffectError> {
     let unsigned = |why: String| EffectError::Unsigned {
         id: effect.id(),
@@ -425,6 +429,10 @@ impl Board {
     /// [`Effect::owner_write`] now,
     /// with Touch ID, while the put holds the lock; Board keeps no
     /// signature of it.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "board-ops's effects module builds the owner-write statement it signs"
+    )]
     fn owner_put(&self, target: &Target, change: Change<'_>) -> Result<(), EffectError> {
         if !self.asker.sign_owner_writes {
             return Ok(());

@@ -81,6 +81,9 @@ max_words = 8
 max_lines = 3
 [expect]
 count = 0
+[signing]
+literals = ["ns/sign/v1"]
+owners = ["src/sign.rs"]
 "#;
 
 /// The controls that record `CONFIG`'s word budgets, by path.

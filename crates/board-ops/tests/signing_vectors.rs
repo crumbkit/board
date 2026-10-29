@@ -58,6 +58,10 @@ fn effect() -> Effect {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it builds each statement as the effects module does"
+)]
 fn board_builds_the_approval_and_owner_write_statements_byte_for_byte() {
     let manifest = manifest();
     assert_eq!(manifest.version, 1);
@@ -93,6 +97,10 @@ fn each_board_statement_is_signed_in_the_namespace_the_manifest_names() {
 }
 
 /// Whether Board's verifier admits the signature `name` of its statement.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it verifies a vector as the effects module does"
+)]
 fn verified(name: &str, signature: &Signature) -> Result<(), SignError> {
     board_plugin::verify(
         &path("allowed_signers"),

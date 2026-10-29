@@ -94,6 +94,16 @@ impl Root {
     /// Every `.rs` file below the root, skipping `target` and hidden
     /// directories, in sorted order.
     pub(crate) fn rust_sources(&self) -> Result<Vec<PathBuf>, FilesError> {
+        self.sources(|relative| relative.extension().is_some_and(|found| found == "rs"))
+    }
+
+    /// Every file below the root whose path relative to it `wanted` admits,
+    /// skipping `target`, `node_modules` and hidden directories, in sorted
+    /// order.
+    pub(crate) fn sources(
+        &self,
+        wanted: impl Fn(&Path) -> bool,
+    ) -> Result<Vec<PathBuf>, FilesError> {
         let mut pending = vec![self.0.clone()];
         let mut sources = Vec::new();
         while let Some(directory) = pending.pop() {
@@ -107,11 +117,13 @@ impl Root {
                 let path = entry.path();
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
-                if kind.is_dir() && name != "target" && !name.starts_with('.') {
-                    pending.push(path);
-                } else if kind.is_file()
-                    && path.extension().is_some_and(|extension| extension == "rs")
+                if kind.is_dir()
+                    && name != "target"
+                    && name != "node_modules"
+                    && !name.starts_with('.')
                 {
+                    pending.push(path);
+                } else if kind.is_file() && wanted(self.relative(&path)) {
                     sources.push(path);
                 }
             }

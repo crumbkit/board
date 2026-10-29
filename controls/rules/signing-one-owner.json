@@ -1,0 +1,28 @@
+{
+  "$type": "controls/control/v1",
+  "applies_to": [
+    "/STANDARDS.md",
+    "/docs/architecture/writes/signing.md"
+  ],
+  "paths": [
+    "crates/board-model/src/effect.rs",
+    "crates/board-model/src/effect/*",
+    "crates/board-plugin/src/sign.rs",
+    "crates/board-plugin/src/sign/*",
+    "crates/board-ops/src/effects.rs",
+    "crates/board-ops/src/effects/*",
+    "crates/board-ops/tests/signing_vectors.rs",
+    "crates/board-scenario/src/signer.rs",
+    "crates/board-cli/src/config.rs",
+    "python/board-plugin/src/board_plugin/vectors/*",
+    "clippy.toml",
+    "deny.toml",
+    "bin/package-plugin",
+    "lint.toml",
+    "released.json",
+    "xtask/src/signing.rs",
+    "xtask/src/signing/*"
+  ],
+  "purpose": "An approval is the owner's Touch ID over exact bytes. A second caller, a copied literal or a loosened gate lets an agent approve its own effect without the owner noticing.",
+  "requirement": "Signing has one owner: board_model::effect builds the statements and names the namespaces, and board_plugin::sign runs the signer and ssh-keygen. Only board-ops's effects module calls sign, verify, Effect::approval or Effect::owner_write, and only the owners lint.toml lists name a signing literal. A released vector is never edited; a changed layout is a new vectors/signing version."
+}

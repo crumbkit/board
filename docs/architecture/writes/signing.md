@@ -60,6 +60,26 @@ own effects.
   `~/.ssh`, would let an agent sign approvals with `ssh-keygen` and no Touch
   ID.
 
+## Owners and gates
+
+STANDARDS.md 29 states the rule; `controls/rules/signing-one-owner.json`
+records it.
+
+- `board_model::effect` builds the statements and names the namespaces.
+- `board_plugin::sign` runs the signer and `ssh-keygen` and checks the
+  allowed signers file.
+- Only board-ops's effects module calls them. Clippy's `disallowed-methods`
+  refuses any other caller of `sign`, `verify`, `Effect::approval` and
+  `Effect::owner_write`; each caller carries an `#[expect]` that names it.
+- `cargo xtask lint` fails with `xtask::signing::outside_owner`, naming the
+  file, line and literal, when source code outside `signing.owners` in
+  `lint.toml` names a namespace, `ssh-keygen`, `attention-sign`, the allowed
+  signers path or the signature armor. It reads `.rs`, `.py`, `.sh`, `.ts`
+  and `.tsx` files, and scripts without an extension under `bin/` and
+  `plugins/`.
+- `deny.toml` bans `ssh-key`, `ssh-encoding`, `p256`, `ecdsa` and
+  `openssl`, so no crate signs or verifies in process.
+
 ## Across repositories
 
 | Statement | Built by | Signed by | Verified by | Namespace |
@@ -90,6 +110,8 @@ own effects.
 
 ## What an agent never does
 
+- Add a caller of a signing function, an owner to `signing.owners`, or an
+  `#[expect]` for either gate, without the owner's approval.
 - Write `~/.config/board/allowed_signers` or `~/.local/bin/attention-sign`.
 - Run `ssh-keygen -Y sign` with any key but a test key.
 - Change a statement's layout without a new first line and a new vectors

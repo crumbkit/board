@@ -650,6 +650,10 @@ fn answering(xdg: &Scenario, signer: &Signer, arguments: &[&str], stdin: &[u8]) 
 /// with `--signature -` and what `admitted` makes on stdin, which writes
 /// the seen record with those bytes and removes the effect. The refusal's
 /// stderr is returned.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it signs the pending effect's approval with the test key, as a phone would"
+)]
 fn approve_twins(
     code_wanted: &str,
     refused: impl FnOnce(&str) -> Option<Vec<u8>>,
@@ -683,6 +687,10 @@ fn approve_twins(
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it signs the approval with another key"
+)]
 fn approving_with_a_signature_by_another_key_is_refused_as_unsigned_with_its_own_hint_and_the_owners_is_written_without_a_signer()
  {
     let stderr = approve_twins(
@@ -691,7 +699,7 @@ fn approving_with_a_signature_by_another_key_is_refused_as_unsigned_with_its_own
         |signature| signature.as_bytes().to_vec(),
     );
     assert!(stderr.contains("the signature given with --signature did not verify"));
-    assert!(!stderr.contains("install attention-sign"));
+    assert!(!stderr.contains("list the owner's key as `owner`"));
 }
 
 #[test]
@@ -746,6 +754,10 @@ fn approving_with_a_signature_over_the_limit_is_refused_as_usage_and_one_at_the_
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "it signs the approval with the test key"
+)]
 fn refusing_with_a_signature_is_refused_as_usage_and_refusing_without_one_is_admitted() {
     let (personal, xdg, effect, pending) = one_pending();
     let (id, signer) = (effect.id(), Signer::new());
