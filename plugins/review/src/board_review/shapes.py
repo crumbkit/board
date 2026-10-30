@@ -15,6 +15,8 @@ REPORT_TYPE = "review/report/v1"
 AGENT_VARIABLE = "BOARD_REVIEW_AGENT"
 # How long `review.run` may take, in seconds: an agent reading a large change takes minutes.
 RUN_TIMEOUT = 1800
+# How long `review.post` may take, in seconds: one decide and one `gh pr comment`.
+POST_TIMEOUT = 60
 
 Verdict = Literal["approve", "changes", "comment"]
 Severity = Literal["high", "medium", "low"]
@@ -121,6 +123,39 @@ class RunOutput(TypedDict):
     range: str
     verdict: Verdict
     findings: int
+
+
+class PostInput(TypedDict):
+    """Post a report as a comment on a pull request, once the owner approves the comment."""
+
+    report: Annotated[
+        str,
+        Extra(
+            pattern="^/reviews/[^/]+/report$",
+            format="board-path",
+            description="The report to post, by its logical path, such as /reviews/fix-sync/report.",
+        ),
+    ]
+    pr: Annotated[
+        str,
+        Extra(
+            pattern=r"^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$",
+            description="The pull request to comment on, by its URL, such as https://github.com/o/r/pull/7.",
+        ),
+    ]
+
+
+class PostOutput(TypedDict):
+    """The report, the pull request, the comment's URL, and whether this call posted it.
+
+    `effect` is the approved effect's id, absent when the call skipped or the owner ran it.
+    """
+
+    report: str
+    pull_request: str
+    comment: str
+    posted: bool
+    effect: NotRequired[str]
 
 
 class CoveredInput(TypedDict):

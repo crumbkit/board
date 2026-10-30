@@ -1,7 +1,10 @@
-"""A repository that is its own board, with review enabled, and a stub agent in place of a model.
+"""A repository that is its own board, with review enabled, a stub agent in place of a model, and a stub gh.
 
-The stub reads the prompt into `prompt.txt`, its environment into `env.txt`,
-and prints `answer.txt`, so no test runs a real model.
+The stub agent reads the prompt into `prompt.txt`, its environment into
+`env.txt`, and prints `answer.txt`, so no test runs a real model. The stub gh
+records each call and prints a comment's URL, so no test reaches GitHub. A
+personal board takes the plugin's asks, and a `board` shim runs the real
+binary, as the owner for a decide when the test approved it.
 """
 
 import json
@@ -28,6 +31,27 @@ exit "$(cat "$(dirname "$0")/exit.txt" 2>/dev/null || echo 0)"
 """
 
 
+# The `board` the plugin runs. A plugin's decide cannot be approved without the owner's signature, so with
+# `approve` present the shim runs decide as the owner, whom Board admits, and Board prints its real report.
+SHIM = """#!/bin/sh
+if [ "$2" = decide ] && [ -e "$(dirname "$0")/approve" ]; then unset BOARD_PLUGIN; fi
+exec "{board}" "$@"
+"""
+
+GH = """#!/bin/sh
+here="$(dirname "$0")"
+printf '%s\\n' "$@" > "$here/gh-argv.txt"
+cat > "$here/gh-stdin.txt"
+env > "$here/gh-env.txt"
+echo call >> "$here/gh-calls.txt"
+code="$(cat "$here/gh-exit.txt" 2>/dev/null || echo 0)"
+if [ "$code" = 0 ]; then echo "{url}"; else echo "HTTP 502: Bad Gateway" >&2; fi
+exit "$code"
+"""
+# The comment URL the stub gh prints.
+COMMENT_URL = "https://github.com/o/r/pull/7#issuecomment-1"
+
+
 def board_binary() -> Path:
     """The `board` under test: `$BOARD_BIN`, or the workspace's debug build."""
     return Path(os.environ.get("BOARD_BIN", REPOSITORY / "target" / "debug" / "board")).resolve()
@@ -46,6 +70,9 @@ class Repo:
     agent: Path
     data: Path
     cache: Path
+    config: Path
+    personal: Path
+    bin: Path
 
     def write(self, path: str, text: str) -> None:
         """Write a fixture file at `path` under the board's root. Every test writes through here."""
@@ -90,12 +117,13 @@ class Repo:
         """
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
-        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        path = os.pathsep.join([str(self.bin), str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
         environment = {
             "PATH": path,
             "HOME": os.environ.get("HOME", str(self.root)),
             "XDG_DATA_HOME": str(self.data),
             "XDG_CACHE_HOME": str(self.cache),
+            "XDG_CONFIG_HOME": str(self.config),
             "BOARD_REVIEW_AGENT": json.dumps(["sh", str(self.agent / "agent.sh")]),
         } | (extra or {})
         environment = {name: value for name, value in environment.items() if value}
@@ -127,6 +155,22 @@ class Repo:
         return f"/reviews/{name}/brief"
 
 
+def _personal(fixture: Repo) -> None:
+    """A personal board the known boards file names, and the `board` shim and stub gh on the front of PATH."""
+    (fixture.config / "board").mkdir(parents=True)
+    (fixture.config / "board" / "config.json").write_text(json.dumps({"personal": str(fixture.personal)}))
+    fixture.personal.mkdir()
+    (fixture.personal / ".board").mkdir()
+    (fixture.personal / ".board" / "board.json").write_text(json.dumps({"$type": "board/config/v1"}))
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    for arguments in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-qm", "personal"]):
+        subprocess.run([*git, *arguments], cwd=fixture.personal, env=os.environ | ISOLATED, check=True)
+    fixture.bin.mkdir()
+    for name, script in (("board", SHIM.format(board=board_binary())), ("gh", GH.format(url=COMMENT_URL))):
+        (fixture.bin / name).write_text(script)
+        (fixture.bin / name).chmod(0o755)
+
+
 def library(root: Path, files: dict[str, str]) -> dict[str, str]:
     """Commit `files` to a new repository at `root`, and return a mount record pinned to that commit."""
     root.mkdir()
@@ -144,9 +188,18 @@ def library(root: Path, files: dict[str, str]) -> dict[str, str]:
 @pytest.fixture
 def repo(tmp_path: Path) -> Repo:
     """A repository on main with one commit and its own board enabling review."""
-    fixture = Repo(root=tmp_path / "repo", agent=tmp_path / "agent", data=tmp_path / "data", cache=tmp_path / "cache")
+    fixture = Repo(
+        root=tmp_path / "repo",
+        agent=tmp_path / "agent",
+        data=tmp_path / "data",
+        cache=tmp_path / "cache",
+        config=tmp_path / "config",
+        personal=tmp_path / "personal",
+        bin=tmp_path / "bin",
+    )
     fixture.root.mkdir()
     fixture.agent.mkdir()
+    _personal(fixture)
     (fixture.agent / "agent.sh").write_text(AGENT)
     fixture.answers(answer())
     fixture.git("init", "-q", "-b", "main")

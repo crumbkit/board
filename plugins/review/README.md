@@ -2,7 +2,8 @@
 
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
-change, and records what it found as a report. `review.covered` checks that a
+change, and records what it found as a report. `review.post` comments a report
+on a pull request once the owner approves the comment. `review.covered` checks that a
 committed report covers a pull request's commits, so CI can require a review
 of each pull request.
 
@@ -87,16 +88,48 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   and the ends of stdout and stderr), `review::agent::timeout` or
   `review::agent::bad_output`.
 
+`board call review.post --report /reviews/<id>/report --pr <url>`:
+
+- `--pr` is the pull request's full URL, `https://github.com/<owner>/<repo>/pull/<n>`.
+- Skips a report whose `source` is set, without asking or posting, and
+  returns that URL with `posted: false`. A posted report, or one recorded
+  from a GitHub review, has one.
+- Builds the comment from the report: the verdict, `by`, the range, each
+  finding with its severity, file and line, and the report it follows. A
+  footer names the report and the pull request. Every `@` is followed by a
+  zero-width joiner, so text an agent wrote from an untrusted diff mentions
+  no one.
+- Asks the owner with `board decide --op review.post --path <report> --text -`,
+  showing the whole comment. Until the owner approves, it fails with
+  `review::board::refused` carrying Board's `board::settings::asked` or
+  `board::settings::refused`, its message and the `effect` id. The effect's
+  id covers the text, and the footer puts the pull request in the text, so
+  an approval admits only that comment on that pull request. A changed
+  report, or another pull request, asks again.
+- Once approved, runs `gh pr comment <url> --body-file -` with the comment on
+  stdin, then sets the report's `source` to the URL gh printed. gh reads its
+  login from its own config, or `GH_TOKEN`, `GITHUB_TOKEN` or
+  `GH_CONFIG_DIR` when Board has them, and never prompts. Commit the report
+  afterwards; `review.covered` skips a commit that only sets a report's
+  `source`.
+- Fails with `review::gh::failed` when gh cannot start, runs past 40
+  seconds, or exits non-zero, with gh's stderr in the message; the report
+  is unchanged, so posting again retries. A report that is not there fails
+  with `review::board::refused` and Board's `board::path::not_found`.
+- If gh posted but the report could not be written, posting again posts a
+  second comment.
+
 `board call review.covered --base <commit> [--head <commit>]`:
 
 - Checks each commit from the merge base of `--base` and the head to the head.
   `--base` is required, so CI cannot check the tip alone. The head is HEAD by
   default.
-- A commit that only adds briefs and reports needs no report, so committing
-  one leaves the head covered. Each added file must be a `review/brief/v1` at
-  `reviews/<id>/brief.json` or a `review/report/v1` at
-  `reviews/<id>/report.json`. A commit that adds any other file, a merge, or a
-  commit that changes or deletes a file always needs one.
+- A commit that only adds briefs and reports, or only sets a report's
+  `source`, needs no report, so committing one leaves the head covered. Each
+  added file must be a `review/brief/v1` at `reviews/<id>/brief.json` or a
+  `review/report/v1` at `reviews/<id>/report.json`. A commit that adds any
+  other file, a merge, or a commit that changes any other field or deletes a
+  file always needs one.
 - A report with the verdict `changes` never covers.
 - Another report covers each commit its range contains, and each commit whose
   patch id it lists, as after a rebase. A merge or an empty commit has no
@@ -148,6 +181,8 @@ The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 `uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
 the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. The tests start a stub agent script, never a
-model. `plugin.json` and the shipped schemas are generated from the shapes in
+model, and a stub gh, never GitHub. An approval needs the owner's
+signature, so the approved tests put a `board` shim on PATH that runs the
+plugin's decide as the owner, whom Board admits. `plugin.json` and the shipped schemas are generated from the shapes in
 `src/board_review/shapes.py` by `board_review.manifest`, and a test checks that
 the committed files match.
