@@ -10,10 +10,10 @@ import { contextText, parseCheck } from '../hooks/controls'
 
 const ROOT = '/work/crumbkit'
 const DOCS = { control: '/controls/crumbkit/docs-1', requirement: 'AGENTS.md has at most 200 words.', budget: 'words', used: 196, max: 200, files: [] }
-const SCAN = { control: '/controls/crumbkit/scan', requirement: 'Run the confidentiality scan before a push.', files: 3, paths: [], purpose: 'p' }
+const README = { control: '/controls/example/readme', requirement: 'Keep the usage section of the README current.', files: 3, paths: [], purpose: 'p' }
 const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
-const CHECK = report({ measured: [DOCS], stated: [SCAN] })
+const CHECK = report({ measured: [DOCS], stated: [README] })
 const BAND = {
   plugin: 'board-controls',
   component: 'AbovePrompt',
@@ -74,7 +74,7 @@ test('the context block lists each control with its requirement, and a budget wi
     `The board's controls state requirements on files in ${ROOT}. Follow each one that applies to a file you ` +
       'change. `board get <control>` shows which files a control names.\n\n' +
       '- /controls/crumbkit/docs-1: AGENTS.md has at most 200 words. (now 196 of 200 words)\n' +
-      '- /controls/crumbkit/scan: Run the confidentiality scan before a push.',
+      '- /controls/example/readme: Keep the usage section of the README current.',
   )
 })
 
@@ -91,7 +91,7 @@ test('session start checks the repository root once, and the first message carri
   const context = await $.prompt.context({ blocks: [{ name: 'claudeMd', text: 'instructions' }] })
   expect(events).toEqual(['check'])
   expect(context.blocks.map(b => b.name)).toEqual(['claudeMd', 'boardControls'])
-  expect(context.blocks[1]?.text).toContain('/controls/crumbkit/scan')
+  expect(context.blocks[1]?.text).toContain('/controls/example/readme')
 })
 
 test('with no board the first message carries no block and the status line stays empty', async ($, on) => {
