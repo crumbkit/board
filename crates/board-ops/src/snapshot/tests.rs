@@ -40,6 +40,7 @@ fn filled(board: &crate::Board, index: Index) -> Filled {
     }
 }
 
+mod decisions;
 mod mounts;
 
 /// How many validations and how many blob facts deciding `scenario`
