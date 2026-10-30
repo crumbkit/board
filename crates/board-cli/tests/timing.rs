@@ -85,7 +85,17 @@ fn a_run_appends_a_record_of_its_command_and_phases_and_a_failed_run_its_error_c
     assert_eq!((&found["exit"], &found["error"]), (&0.into(), &Value::Null));
     assert!(found["total_us"].as_u64().unwrap() > 0);
     assert!(found["at_ms"].as_u64().unwrap() > 0);
-    assert_eq!(found["version"], env!("CARGO_PKG_VERSION"));
+    let version = found["version"].as_str().unwrap();
+    let build = version
+        .strip_prefix(concat!(env!("CARGO_PKG_VERSION"), "+"))
+        .unwrap();
+    let commit = build.strip_suffix(".dirty").unwrap_or(build);
+    assert_eq!(commit.len(), 12, "{version}");
+    assert!(
+        commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "{version}"
+    );
+    assert_eq!(found["capability"], Value::Null);
     let phases: Vec<&str> = found["phases"]
         .as_array()
         .unwrap()
@@ -165,8 +175,10 @@ fn a_scoped_check_resolves_within_its_snapshot_and_refs_resolves_before_opening_
     assert!(resolved.1 <= opened.0, "{}", records[1]);
 }
 
-#[test]
-fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
+/// Calls `available` of a `tasks` plugin that replies with an empty output,
+/// with `arguments` after `call`, in a board that enables it, with `{}` on
+/// stdin.
+fn call_tasks(home: &Path, arguments: &[&str]) {
     let scenario = Scenario::new();
     scenario.write(
         ".board/board.json",
@@ -181,7 +193,7 @@ fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
         "capabilities": [{
             "name": "available",
             "description": "",
-            "inputSchema": {"type": "object"},
+            "inputSchema": {"type": "object", "properties": {"repo": {"type": "string"}}},
             "outputSchema": {"type": "object"}
         }]
     });
@@ -197,14 +209,19 @@ fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
         ),
     )
     .write("input.json", Item::File("{}"));
-    let home = tempfile::tempdir().unwrap();
-    let called = command(&scenario, home.path(), &["call", "tasks.available"])
+    let called = command(&scenario, home, &[&["call"][..], arguments].concat())
         .env("PATH", "/usr/bin:/bin")
         .env("XDG_DATA_HOME", data.workdir())
         .stdin(std::fs::File::open(data.workdir().join("input.json")).unwrap())
         .output()
         .unwrap();
     assert!(called.status.success(), "{called:?}");
+}
+
+#[test]
+fn a_call_records_the_plugin_process_it_started_and_the_time_to_its_reply() {
+    let home = tempfile::tempdir().unwrap();
+    call_tasks(home.path(), &["tasks.available"]);
     let record = &records(home.path())[0];
     assert_eq!(record["work"]["started"], 1, "{record}");
     let (reply, call) = (span(record, "plugin.reply"), span(record, "plugin.call"));
@@ -293,4 +310,15 @@ fn a_log_that_cannot_be_written_leaves_output_and_exit_code_as_a_writable_log_do
     }
     assert_eq!(records(writable.path()).len(), 3);
     assert!(log(blocked.path()).is_dir());
+}
+
+#[test]
+fn a_call_records_the_capability_it_ran_and_none_of_its_argument_values() {
+    let home = tempfile::tempdir().unwrap();
+    call_tasks(home.path(), &["tasks.available", "--repo", "secret"]);
+    let record = &records(home.path())[0];
+    assert_eq!(record["command"], "call", "{record}");
+    assert_eq!(record["capability"], "tasks.available", "{record}");
+    let text = std::fs::read_to_string(log(home.path())).unwrap();
+    assert!(!text.contains("secret"), "{text}");
 }
