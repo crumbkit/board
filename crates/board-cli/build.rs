@@ -26,10 +26,18 @@ fn changes() -> String {
     let mut hasher = DefaultHasher::new();
     let diff = [&["diff", "HEAD", "--binary", "--"], &SOURCE[..]].concat();
     hasher.write(git(&diff).unwrap_or_default().as_bytes());
-    let untracked = [&["ls-files", "--others", "--exclude-standard", "--"], &SOURCE[..]].concat();
+    let untracked = [
+        &["ls-files", "--others", "--exclude-standard", "--"],
+        &SOURCE[..],
+    ]
+    .concat();
     for file in git(&untracked).unwrap_or_default().lines() {
         hasher.write(file.as_bytes());
-        hasher.write(git(&["hash-object", "--", file]).unwrap_or_default().as_bytes());
+        hasher.write(
+            git(&["hash-object", "--", file])
+                .unwrap_or_default()
+                .as_bytes(),
+        );
     }
     format!("{:016x}", hasher.finish())
 }
@@ -41,9 +49,13 @@ fn main() {
     ]
     .concat();
     let dirty = git(&status).is_some_and(|changes| !changes.is_empty());
-    let build = git(&["rev-parse", "--short=12", "HEAD"]).map(|commit| match dirty {
-        true => format!("+{commit}.dirty.{}", changes()),
-        false => format!("+{commit}"),
+    let build = git(&["rev-parse", "--short=12", "HEAD"]).map(|commit| {
+        let changes = if dirty {
+            format!(".dirty.{}", changes())
+        } else {
+            String::new()
+        };
+        format!("+{commit}{changes}")
     });
     println!("cargo::rustc-env=BOARD_BUILD={}", build.unwrap_or_default());
     // A commit appends to HEAD's reflog, or moves HEAD where git keeps no

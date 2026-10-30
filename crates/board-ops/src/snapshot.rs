@@ -151,7 +151,10 @@ impl Board {
         drop(timed);
         let _timed = self.timed("snapshot.decide");
         let scopes = mounts.scopes(scope);
-        let facts = mounts.sources.iter().filter_map(|m| Some(&m.walked.as_ref()?.1));
+        let facts = mounts
+            .sources
+            .iter()
+            .filter_map(|m| Some(&m.walked.as_ref()?.1));
         let plain = plain(std::iter::once(&refresh.facts).chain(facts));
         let mut known = known(&refresh.entries, &mut work.hashed);
         let resolver = self.repositories().resolver(&mut known, refresh.listings)?;
@@ -191,7 +194,8 @@ impl Board {
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
-            let Some(walked) = (mounted.walked.as_ref()).filter(|_| !(need == Need::View && mounted.kept))
+            let Some(walked) =
+                (mounted.walked.as_ref()).filter(|_| !(need == Need::View && mounted.kept))
             else {
                 work.kept += 1;
                 let source = Source::Commit(mounted.commit);
@@ -212,9 +216,10 @@ impl Board {
             work,
         };
         let mut walked = vec![(Source::WorkingTree, refresh.entries)];
-        walked.extend((mounts.sources.into_iter()).filter_map(|mounted| {
-            Some((Source::Commit(mounted.commit), mounted.walked?.0))
-        }));
+        walked.extend(
+            (mounts.sources.into_iter())
+                .filter_map(|mounted| Some((Source::Commit(mounted.commit), mounted.walked?.0))),
+        );
         Ok(((report, decided.references, walked), decided.resolved))
     }
 
@@ -257,11 +262,15 @@ impl Board {
         let failed = decide.failed.get();
         drop(decide);
         let rows = &decided.resolved[start..];
-        let whole = scopes.get(&source).is_some_and(|states| states.contains(&None));
+        let whole = scopes
+            .get(&source)
+            .is_some_and(|states| states.contains(&None));
         // A file that could not be read may be read next run.
         let storable = whole
             && !failed
-            && !rows.iter().any(|row| row.code == Some(Code::RepoUnreadable));
+            && !rows
+                .iter()
+                .any(|row| row.code == Some(Code::RepoUnreadable));
         let kept = match &mounted.key {
             Some(_) if mounted.kept => true,
             Some(key) if storable => {
@@ -345,7 +354,9 @@ impl Cache for Indexing<'_> {
 
     fn complete(facts: &Facts, entries: &[Entry]) -> bool {
         entries.iter().all(|entry| {
-            entry.blob.is_none() || Role::of(&entry.path).is_none() || facts.contains_key(&entry.path)
+            entry.blob.is_none()
+                || Role::of(&entry.path).is_none()
+                || facts.contains_key(&entry.path)
         })
     }
 

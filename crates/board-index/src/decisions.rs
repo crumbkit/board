@@ -81,7 +81,9 @@ impl Writer {
             .prepare_cached(
                 "SELECT path, logical, blob FROM main.pointers WHERE scan = ?1 ORDER BY path",
             )?
-            .query_map([scan.hex()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .query_map([scan.hex()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
             .collect::<Result<Vec<Row>, _>>()?;
         if rows.is_empty() {
             return Ok(None);
@@ -133,7 +135,9 @@ impl Writer {
         )?;
         for entry in entries {
             let (path, logical, blob, size, role, schema, kind, code) = columns(entry);
-            statement.execute(params![key, path, logical, blob, size, role, schema, kind, code])?;
+            statement.execute(params![
+                key, path, logical, blob, size, role, schema, kind, code
+            ])?;
         }
         Ok(())
     }

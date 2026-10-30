@@ -67,7 +67,11 @@ fn a_warm_query_keeps_every_mounted_source_and_after_one_moves_decides_only_that
     let (other, commit) = library(&[]);
     scenario.write("other.json", Item::File(&mount(&other.path(), commit)));
     let cache = tempfile::tempdir().unwrap();
-    assert_eq!(kept(&scenario, cache.path()), 0, "a cold index keeps nothing");
+    assert_eq!(
+        kept(&scenario, cache.path()),
+        0,
+        "a cold index keeps nothing"
+    );
     let warm = query_as(&scenario, cache.path(), "");
     assert_eq!((warm.kept, warm.trees), (2, 0));
     // The move also turns the library's plain project into a link.
@@ -95,13 +99,16 @@ fn a_mount_moved_to_another_commit_with_the_same_tree_is_kept_and_named_by_the_n
     let board = open(&scenario);
     let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let sources = "SELECT DISTINCT source FROM entries WHERE source <> 'worktree'";
-    let rows = filled(&board, index).view.query(sources, 10, None).unwrap().rows;
+    let rows = filled(&board, index)
+        .view
+        .query(sources, 10, None)
+        .unwrap()
+        .rows;
     assert_eq!(rows, [[serde_json::Value::from(second.to_string())]]);
 }
 
 #[test]
-fn a_mount_moved_to_a_longer_route_is_decided_again_and_a_path_too_long_beneath_it_is_malformed()
-{
+fn a_mount_moved_to_a_longer_route_is_decided_again_and_a_path_too_long_beneath_it_is_malformed() {
     // Nineteen segments of 204 bytes and one of 195: 4091 bytes as a
     // logical path in the library, which fits under /v and not under
     // /vendor/lib.
@@ -122,7 +129,11 @@ fn a_mount_moved_to_a_longer_route_is_decided_again_and_a_path_too_long_beneath_
     let board = open(&scenario);
     let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let sql = format!("SELECT code FROM entries WHERE path = '{long}'");
-    let rows = filled(&board, index).view.query(&sql, 1, None).unwrap().rows;
+    let rows = filled(&board, index)
+        .view
+        .query(&sql, 1, None)
+        .unwrap()
+        .rows;
     assert_eq!(rows, [["board::path::malformed"]]);
 }
 
@@ -148,20 +159,32 @@ fn a_repository_deleted_two_mounts_down_decides_both_mounts_above_it_again_and_i
     kept(&scenario, cache.path());
     assert_eq!(kept(&scenario, cache.path()), 3);
     innermost.write(".git", Item::Deleted);
-    assert_eq!(kept(&scenario, cache.path()), 0, "a probe changed below each");
+    assert_eq!(
+        kept(&scenario, cache.path()),
+        0,
+        "a probe changed below each"
+    );
     assert_eq!(kept(&scenario, cache.path()), 2);
 }
 
 #[test]
-fn a_mounted_commit_its_repository_lost_decides_the_mount_above_it_again_and_its_twin_keeps_it() {
+fn a_mounted_commit_its_repository_lost_decides_the_mounts_above_it_again_as_does_losing_the_repository()
+ {
     let (scenario, [_middle, _inner, innermost]) = three_deep();
     let cache = tempfile::tempdir().unwrap();
     kept(&scenario, cache.path());
     assert_eq!(kept(&scenario, cache.path()), 3);
     let j = innermost.head().unwrap().id;
     innermost.write(&object(j), Item::Deleted);
-    assert_eq!(kept(&scenario, cache.path()), 0, "a probe changed below each");
+    assert_eq!(
+        kept(&scenario, cache.path()),
+        0,
+        "a probe changed below each"
+    );
     assert_eq!(kept(&scenario, cache.path()), 2);
+    // Only the refusal's code changes now.
+    innermost.write(".git", Item::Deleted);
+    assert_eq!(kept(&scenario, cache.path()), 0);
 }
 
 #[test]
@@ -205,7 +228,11 @@ fn a_mounted_source_with_a_file_that_cannot_be_read_is_never_kept_and_its_twin_i
         scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
         let cache = tempfile::tempdir().unwrap();
         kept(&scenario, cache.path());
-        assert_eq!(kept(&scenario, cache.path()), expected, "missing: {missing}");
+        assert_eq!(
+            kept(&scenario, cache.path()),
+            expected,
+            "missing: {missing}"
+        );
     }
 }
 
@@ -227,7 +254,11 @@ fn a_source_whose_reference_reaches_a_blob_that_cannot_be_read_is_never_kept_and
         scenario.write("m.json", Item::File(&mount(&middle.path(), m)));
         let cache = tempfile::tempdir().unwrap();
         kept(&scenario, cache.path());
-        assert_eq!(kept(&scenario, cache.path()), expected, "missing: {missing}");
+        assert_eq!(
+            kept(&scenario, cache.path()),
+            expected,
+            "missing: {missing}"
+        );
     }
 }
 
@@ -238,7 +269,9 @@ fn a_scoped_check_keeps_no_decision_and_its_unscoped_twin_keeps_each() {
         let _vendor = Library::mounted(&scenario);
         let cache = tempfile::tempdir().unwrap();
         let scope = scope.map(|scope| scope.parse().unwrap());
-        open(&scenario).check(scope.as_ref(), Some(cache.path())).unwrap();
+        open(&scenario)
+            .check(scope.as_ref(), Some(cache.path()))
+            .unwrap();
         assert_eq!(kept(&scenario, cache.path()), expected, "{scope:?}");
     }
 }
@@ -265,7 +298,11 @@ fn a_source_that_mounts_a_commit_through_another_repository_than_its_walk_is_nev
     for (through_clone, expected) in [(true, 1), (false, 2)] {
         let (library, commit) = library(&[]);
         let clone = Scenario::clone_of(&library);
-        let repo = if through_clone { clone.path() } else { library.path() };
+        let repo = if through_clone {
+            clone.path()
+        } else {
+            library.path()
+        };
         let (middle, m) = self::library(&[("l.json", &mount(&repo, commit))]);
         let scenario = board();
         scenario

@@ -11,9 +11,9 @@ use serde_json::Value;
 
 use crate::Board;
 use crate::board::config_file;
-use crate::snapshot::Need;
 use crate::check::CheckError;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
+use crate::snapshot::Need;
 use crate::types::{Held, schema_at};
 
 /// What `plugin enable` wrote: each schema the board lacked or held

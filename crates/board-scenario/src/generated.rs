@@ -160,11 +160,13 @@ pub fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
 /// A board with `config` as its `board.json` and the files [`generated`]
 /// chose, and a library board with two commits for it to mount. The second
 /// adds a valid task and an invalid one, makes its project a link to
-/// another, and changes the links of its note.
+/// another, changes the links of its note, and mounts an inner board that
+/// a task refers into.
 #[derive(Debug)]
 pub struct Generated {
     scenario: Scenario,
     library: Scenario,
+    _inner: Scenario,
     first: ObjectId,
     second: ObjectId,
     present: BTreeMap<String, bool>,
@@ -186,7 +188,16 @@ impl Generated {
         let first = library.commit(&files);
         let ok = task(r#", "project": "/projects/p""#);
         let to_q = r#"{"$type": "board/mount/v1", "path": "/projects/q"}"#;
+        let inner = Scenario::new();
+        let inner_commit = inner.commit(&[("projects/p.json", project)]);
+        let to_inner = format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{inner_commit}"}}"#,
+            inner.path()
+        );
+        let into_inner = task(r#", "see": "/inner/projects/p""#);
         let mut more = schemas.to_vec();
+        more.push(("inner.json", &to_inner));
+        more.push(("tasks/inner.json", &into_inner));
         more.push(("projects/p.json", to_q));
         more.push(("projects/q.json", project));
         more.push(("notes.md", "[ok](tasks/ok.json) [gone](/gone)"));
@@ -196,6 +207,7 @@ impl Generated {
         let mut generated = Self {
             scenario: Scenario::new(),
             library,
+            _inner: inner,
             first,
             second,
             present: BTreeMap::new(),

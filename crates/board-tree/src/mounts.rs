@@ -174,16 +174,15 @@ impl Repositories {
             } = candidate;
             let source = Source::Commit(commit);
             let scan = scan(build, root);
-            let (walked, held) = match cache.pointers(&scan) {
-                Some(held) => (None, held),
-                None => {
-                    let (entries, facts) = walk(&repository, commit, root, cache)?;
-                    let held = held(&entries, &|path| C::is_pointer(&facts, path));
-                    if C::complete(&facts, &entries) {
-                        cache.put_pointers(&scan, &held)?;
-                    }
-                    (Some((entries, facts)), held)
+            let (walked, held) = if let Some(held) = cache.pointers(&scan) {
+                (None, held)
+            } else {
+                let (entries, facts) = walk(&repository, commit, root, cache)?;
+                let held = held(&entries, &|path| C::is_pointer(&facts, path));
+                if C::complete(&facts, &entries) {
+                    cache.put_pointers(&scan, &held)?;
                 }
+                (Some((entries, facts)), held)
             };
             let found = mounts_in(&repository, &source, &held);
             let from = repository.path();

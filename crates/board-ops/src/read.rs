@@ -14,9 +14,9 @@ use serde_json::Value;
 
 use crate::attachment::FetchError;
 use crate::board::Board;
-use crate::snapshot::Need;
 use crate::check::CheckError;
 use crate::index::Refreshed;
+use crate::snapshot::Need;
 
 /// A file as `get` returns it: where it is, its stored bytes, and its parsed
 /// record or the refusal that says why it has none.

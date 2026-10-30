@@ -10,8 +10,8 @@ use board_model::{Change, Code, Fields, Kind, Location, LogicalPath, RecordType,
 use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
-use crate::snapshot::Need;
 use crate::index::{RefreshError, Refreshed};
+use crate::snapshot::Need;
 
 /// One entry as `check` reports it.
 #[derive(Clone, Debug, PartialEq)]

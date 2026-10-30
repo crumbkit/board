@@ -98,7 +98,10 @@ fn a_check_looks_up_each_records_validation_once_cold_and_warm() {
 /// Decides every entry of `scenario` through `index`, and returns what it
 /// reported.
 fn decided(scenario: &Scenario, index: Index) -> CheckReport {
-    open(scenario).snapshot(index, None, Need::Report).unwrap().report
+    open(scenario)
+        .snapshot(index, None, Need::Report)
+        .unwrap()
+        .report
 }
 
 /// What `entries` shows, as check reports it.
@@ -282,7 +285,11 @@ fn warm_decides_as_cold(
         wrote: false,
         ..again.work
     };
-    prop_assert_eq!(wrote, decided_only(again.work), "a prune keeps what the tree reaches");
+    prop_assert_eq!(
+        wrote,
+        decided_only(again.work),
+        "a prune keeps what the tree reaches"
+    );
     Ok(())
 }
 

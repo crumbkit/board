@@ -11,8 +11,7 @@ use board_model::{
     POINTER_TYPE, RecordType, Role, Source, classify,
 };
 use board_tree::{
-    Contents, Entry, GitError, Mounted, Reader, Refused, Repositories, ResolveError, Status,
-    latest,
+    Contents, Entry, GitError, Mounted, Reader, Refused, Repositories, ResolveError, Status, latest,
 };
 
 use super::Facts;

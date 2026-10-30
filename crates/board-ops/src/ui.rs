@@ -240,11 +240,15 @@ impl Board {
     }
 }
 
+/// Reads a blob at a location in its own board.
+pub(crate) type ReadBlob<'a> =
+    dyn FnMut(&Location, ObjectId) -> Result<Option<Contents>, GitError> + 'a;
+
 /// The first way `binding`, or when `None` the binding at `path`, does not fit
 /// its view, with each path found by `resolve` and read by `read_blob`.
 pub(crate) fn fitted(
     (path, binding): (&LogicalPath, Option<Binding>),
-    read_blob: &mut dyn FnMut(&Location, ObjectId) -> Result<Option<Contents>, GitError>,
+    read_blob: &mut ReadBlob<'_>,
     resolve: &mut dyn FnMut(&LogicalPath) -> Result<Location, ResolveError>,
 ) -> Option<(Code, Detail)> {
     let read = &mut |path: &LogicalPath| {

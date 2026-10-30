@@ -61,7 +61,10 @@ impl<F> Reached<F> {
         }
         // Commits cannot form a cycle; were one found, it stays unkeyed.
         closures.insert(commit, None);
-        let mounted = self.sources.iter().find(|mounted| mounted.commit == commit)?;
+        let mounted = self
+            .sources
+            .iter()
+            .find(|mounted| mounted.commit == commit)?;
         let from = Source::Commit(commit);
         let mut probes: Vec<&Probe> = (self.probes.iter())
             .filter(|probe| probe.from == from)
@@ -69,7 +72,12 @@ impl<F> Reached<F> {
         probes.sort_by(|a, b| a.path.cmp(&b.path));
         let mut fields = vec![
             mounted.root.to_string().into_bytes(),
-            mounted.repository.path().as_os_str().as_encoded_bytes().to_vec(),
+            mounted
+                .repository
+                .path()
+                .as_os_str()
+                .as_encoded_bytes()
+                .to_vec(),
         ];
         for probe in probes {
             fields.push(probe.path.clone().into_bytes());
@@ -79,7 +87,10 @@ impl<F> Reached<F> {
                 Err(Code::PathMalformed) => return None,
                 Err(code) => fields.extend([b"refused".to_vec(), code.as_str().into()]),
                 Ok(opened) => {
-                    let child = self.sources.iter().find(|child| child.commit == probe.commit)?;
+                    let child = self
+                        .sources
+                        .iter()
+                        .find(|child| child.commit == probe.commit)?;
                     if child.repository.path() != opened {
                         return None;
                     }

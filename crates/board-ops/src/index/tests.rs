@@ -14,7 +14,11 @@ use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 fn build(scenario: &Scenario, cache: &std::path::Path) -> Refreshed {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.snapshot(index, None, Need::Report).unwrap().report.work
+    board
+        .snapshot(index, None, Need::Report)
+        .unwrap()
+        .report
+        .work
 }
 
 /// The board, plus two tasks with the same bytes and one invalid task.

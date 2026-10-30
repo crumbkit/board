@@ -8,8 +8,8 @@ use board_model::{Code, Fields, Known, Refusal};
 use serde_json::Value;
 
 use crate::board::Board;
-use crate::snapshot::Need;
 use crate::check::CheckError;
+use crate::snapshot::Need;
 
 /// The most rows `query` returns, and the most entries a listing shows,
 /// unless asked otherwise (STANDARDS.md 23).
