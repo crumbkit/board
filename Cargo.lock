@@ -148,6 +148,7 @@ name = "board-model"
 version = "0.0.0"
 dependencies = [
  "bolero",
+ "humantime",
  "percent-encoding",
  "proptest",
  "pulldown-cmark",

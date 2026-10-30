@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use board_tree::{LOCK_WAIT, WriteError};
 
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use super::{
     ANSWERED, Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen,
@@ -110,10 +110,7 @@ impl Board {
             .personal(|| format!("{op} {path} needs a pending effect in the personal board"))?;
         let mut effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into())
             .showing(record, text);
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        effect.asked = Some(utc(now));
+        effect.asked = Some(utc(SystemTime::now()));
         let id = effect.id();
         let (plugin, op, path) = (plugin.clone(), op.to_owned(), path.clone());
         match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
@@ -218,7 +215,7 @@ pub fn answer(
     let personal = asker.personal(|| "an answer is written in the personal board".to_owned())?;
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
-    let mut seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
+    let mut seen = Seen::new(format!("/{ANSWERED}/{id}"), answer, reason);
     if answer == Answer::Approve {
         seen.signature = Some(match signature {
             Some(signature) => {

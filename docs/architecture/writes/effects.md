@@ -36,8 +36,9 @@ Each is a Board type, checked by its Rust type, with no schema file.
   - Board never sets `prior` yet.
 - `board/seen/v1`: the owner's answer at `/effects/seen/<id>`: `approve` or
   `refuse`, with an optional `reason`. An approval holds the owner's
-  `signature`.
-- An answered effect moves to `/effects/answered/<id>`, unchanged.
+  `signature`. Its `effect` names `/effects/answered/<id>`, where the
+  answered effect moves, unchanged. A seen record written before Board
+  kept answered effects names `/effects/pending/<id>`.
 - The id is the 64 hex digits of the SHA-256 of the canonical JSON of the
   board root, plugin, op, path, digest and prior blob.
 

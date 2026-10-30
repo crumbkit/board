@@ -2,6 +2,8 @@
     clippy::disallowed_methods,
     reason = "the owner's tests build each statement to check its layout"
 )]
+use std::time::{Duration, UNIX_EPOCH};
+
 use serde_json::json;
 
 use super::*;
@@ -242,7 +244,7 @@ fn an_effect_asked_at_another_time_keeps_its_id_and_approval_and_reads_back_with
     )
     .showing(None, Some("t\n".to_owned()));
     let asked = Effect {
-        asked: Some(utc(Duration::from_secs(1))),
+        asked: Some(utc(UNIX_EPOCH + Duration::from_secs(1))),
         ..effect.clone()
     };
     assert_eq!(asked.id(), effect.id());
@@ -259,11 +261,13 @@ fn an_effect_asked_at_another_time_keeps_its_id_and_approval_and_reads_back_with
 }
 
 #[test]
-fn a_utc_time_is_rfc_3339_to_the_microsecond_with_a_fixed_width() {
-    assert_eq!(utc(Duration::ZERO), "1970-01-01T00:00:00.000000Z");
-    let leap = Duration::from_secs(1_709_251_199);
-    assert_eq!(utc(leap), "2024-02-29T23:59:59.000000Z");
-    let now = Duration::from_micros(1_793_400_294_102_864);
-    assert_eq!(utc(now), "2026-10-30T22:44:54.102864Z");
-    assert!(utc(leap) < utc(now));
+fn a_utc_time_is_rfc_3339_to_the_microsecond_with_a_fixed_width_of_27() {
+    let at = |micros| utc(UNIX_EPOCH + Duration::from_micros(micros));
+    assert_eq!(at(0), "1970-01-01T00:00:00.000000Z");
+    let leap = at(1_709_251_199_000_000);
+    assert_eq!(leap, "2024-02-29T23:59:59.000000Z");
+    let now = at(1_793_400_294_102_864);
+    assert_eq!(now, "2026-10-30T22:44:54.102864Z");
+    assert_eq!((leap.len(), now.len()), (27, 27));
+    assert!(leap < now);
 }

@@ -136,11 +136,10 @@ fn asked(result: Result<DecideReport, EffectError>) -> String {
 
 /// The time `offset` seconds from now, as Board writes `asked`.
 fn now(offset: i64) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-    let shifted = now.as_secs().checked_add_signed(offset).unwrap();
-    board_model::utc(std::time::Duration::from_secs(shifted))
+    let now = std::time::SystemTime::now();
+    let shift = std::time::Duration::from_secs(offset.unsigned_abs());
+    let shifted = if offset < 0 { now - shift } else { now + shift };
+    board_model::utc(shifted)
 }
 
 fn link(to: &str) -> String {
@@ -911,7 +910,7 @@ fn pending_effect(mine: &Scenario, id: &str) -> Effect {
 /// An approval of `id` written straight into `mine`, as an agent with the
 /// owner's shell could write it, carrying `signature`.
 fn approve_by_hand(mine: &Scenario, id: &str, signature: Option<String>) {
-    let mut seen = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    let mut seen = Seen::new(format!("/effects/answered/{id}"), Answer::Approve, None);
     seen.signature = signature;
     let text = json!(seen).to_string();
     mine.write(&format!("effects/seen/{id}.json"), Item::File(&text));
@@ -1020,7 +1019,7 @@ fn an_approval_with_a_signature_by_another_key_or_in_the_write_namespace_is_refu
     assert!(!exists(&mine, &format!("effects/seen/{id}.json")));
     let signature = signer().sign(&approval);
     approve(signature.clone()).unwrap();
-    let mut expected = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    let mut expected = Seen::new(format!("/effects/answered/{id}"), Answer::Approve, None);
     expected.signature = Some(signature);
     let seen = Seen::from_value(&read(&mine, &format!("effects/seen/{id}.json"))).unwrap();
     assert_eq!(seen, expected);

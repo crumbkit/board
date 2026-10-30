@@ -3,7 +3,7 @@
 
 use std::fmt::Write as _;
 use std::str::FromStr;
-use std::time::Duration;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -227,37 +227,15 @@ fn show_content(statement: &mut String, record: Option<&Value>, text: Option<&st
     }
 }
 
-/// `since`, the time since 1970, as RFC 3339 in UTC to the microsecond, such
-/// as `2026-10-30T22:44:54.102864Z`. Every time before the year 10000 has
-/// the same width, so text order is time order.
-pub fn utc(since: Duration) -> String {
-    let seconds = i64::try_from(since.as_secs()).unwrap_or(i64::MAX);
-    let (days, second) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
-    // Howard Hinnant's `civil_from_days`.
-    let shifted = days + 719_468;
-    let era = shifted.div_euclid(146_097);
-    let of_era = shifted - era * 146_097;
-    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
-    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let shifted_month = (5 * of_year + 2) / 153;
-    let day = of_year - (153 * shifted_month + 2) / 5 + 1;
-    let month = if shifted_month < 10 {
-        shifted_month + 3
-    } else {
-        shifted_month - 9
-    };
-    let year = year_of_era + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:06}Z",
-        second / 3_600,
-        second / 60 % 60,
-        second % 60,
-        since.subsec_micros()
-    )
+/// `time` as RFC 3339 in UTC to the microsecond, such as
+/// `2026-10-30T22:44:54.102864Z`. Every time from 1970 to 9999 has the same
+/// width, so text order is time order.
+pub fn utc(time: SystemTime) -> String {
+    humantime::format_rfc3339_micros(time).to_string()
 }
 
-/// A `board/seen/v1` record: the owner's answer to the pending effect at
-/// `effect`. An approval carries `signature`, the owner's SSH signature
+/// A `board/seen/v1` record: the owner's answer to the effect at `effect`,
+/// under `/effects/answered/`. An approval carries `signature`, the owner's SSH signature
 /// over [`Effect::approval`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
