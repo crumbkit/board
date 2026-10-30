@@ -339,6 +339,28 @@ fn a_check_opens_two_repositories_each_two_mounts_name_once_each_and_answers_war
 }
 
 #[test]
+fn a_mount_of_a_commit_its_repository_lacks_beside_two_others_is_commit_missing_and_its_twin_is_ok()
+{
+    let ((one, first), (two, second), (three, third)) = (library(), library(), library());
+    let only_in_one = one.commit(&[("tasks/later.json", &task(""))]);
+    for (commit, expected) in [
+        (only_in_one, Status::Degraded(Code::MountCommitMissing)),
+        (third, Status::Ok),
+    ] {
+        let scenario = board();
+        scenario
+            .write("a.json", Item::File(&mount(&one.path(), first)))
+            .write("b.json", Item::File(&mount(&two.path(), second)))
+            .write("c.json", Item::File(&mount(&three.path(), commit)));
+        let report = check(&scenario, None);
+        let status = report.entries.iter().find(|entry| entry.path == "c.json");
+        assert_eq!(status.unwrap().status, expected);
+        assert_eq!(report.work.repositories, 3, "{expected:?}");
+        assert_eq!(report.work.pointers_read, 3, "{expected:?}");
+    }
+}
+
+#[test]
 fn getting_and_listing_through_a_mount_opens_the_mounted_repository_once() {
     let (one, commit) = library();
     let scenario = board();
