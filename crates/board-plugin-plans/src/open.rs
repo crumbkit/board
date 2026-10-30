@@ -23,30 +23,28 @@ const TREE_CODES: [&str; 2] = ["board::ref::dangling", "board::ref::wrong_type"]
 
 /// The open questions under `path`, oldest first.
 #[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 #[schemars(rename = "OpenInput")]
 pub(crate) struct Input {
     /// Only questions below this logical path, such as /projects/board;
     /// every question when left out.
-    #[serde(default = "root")]
     #[schemars(pattern("^/"), extend("format" = "board-path"))]
     path: String,
     /// The most questions to return, 1 to 10,000; 100 when left out.
-    #[serde(default = "limit", deserialize_with = "whole")]
+    #[serde(deserialize_with = "whole")]
     #[schemars(range(min = 1, max = 10_000))]
     limit: u16,
 }
 
-fn root() -> String {
-    "/".to_owned()
+impl Default for Input {
+    fn default() -> Self {
+        Self {
+            path: "/".to_owned(),
+            limit: 100,
+        }
+    }
 }
 
-/// The default `limit` (STANDARDS.md 23).
-fn limit() -> u16 {
-    100
-}
-
-/// A whole number the input schema admitted, such as `2` or `2.0`.
 #[expect(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -99,9 +97,7 @@ struct Choice {
     text: String,
 }
 
-/// The fields of a `plans/question/v1` that `open` returns. Options left
-/// out are none; options of `null` are not readable. Each option is read
-/// as an object, since serde would read a struct from a list too.
+/// Options are read as objects because serde reads a struct from a list too.
 #[derive(Deserialize)]
 struct Stored {
     question: String,
@@ -115,7 +111,7 @@ struct Stored {
 
 /// `T`'s JSON Schema, draft 2020-12 without `$schema`, as a manifest holds
 /// it. An integer's `format`, such as `uint16`, says only how Rust stores it.
-fn schema<T: JsonSchema>(settings: SchemaSettings) -> Value {
+pub(crate) fn schema<T: JsonSchema>(settings: SchemaSettings) -> Value {
     let mut settings =
         settings.with_transform(RecursiveTransform(|schema: &mut schemars::Schema| {
             if schema.get("type").and_then(Value::as_str) == Some("integer") {
@@ -126,23 +122,13 @@ fn schema<T: JsonSchema>(settings: SchemaSettings) -> Value {
     settings.into_generator().into_root_schema_for::<T>().into()
 }
 
-/// The manifest's `inputSchema` for `open`.
-pub(crate) fn input_schema() -> Value {
-    schema::<Input>(SchemaSettings::draft2020_12())
-}
-
-/// The manifest's `outputSchema` for `open`.
-pub(crate) fn output_schema() -> Value {
-    schema::<Output>(SchemaSettings::draft2020_12().for_serialize())
-}
-
-/// Every question under `input`'s `path` whose `status` is `open`, oldest
-/// first, at most `limit`. Board has checked `input` against the input
-/// schema.
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path, limit } = Input::deserialize(input).map_err(|error| PluginError {
         code: "plans::call::bad_input".to_owned(),
-        message: format!("open's input {input} does not read: {error}"),
+        message: format!(
+            "open's input {input} passed its schema but does not read: {error}; \
+             the input struct and its schema disagree, so report this to Board's developers"
+        ),
         fields: Map::new(),
     })?;
     let prefix = format!("{}/", path.trim_end_matches('/'));
@@ -176,17 +162,14 @@ pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
         truncated: total > limit,
         unreadable,
     };
-    Ok(serde_json::to_value(output).unwrap_or_else(|_| Value::Object(Map::new())))
+    Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and bools"))
 }
 
-/// The question in `body` and when it was asked, or `None` when it does not
-/// have the shape `open` returns. Board has validated the record, but a
-/// mounted board validates against its own schemas.
+/// `None` when `body` lacks the shape `open` returns, as a mounted board's may.
 fn readable(path: &str, body: &Value) -> Option<(Instant, Waiting)> {
-    let record = parse_json(body.as_str()?.as_bytes()).ok()?;
-    if !record.is_object() {
-        return None;
-    }
+    let record = parse_json(body.as_str()?.as_bytes())
+        .ok()
+        .filter(Value::is_object)?;
     let asked = Stored::deserialize(&record).ok()?;
     let when = instant(&asked.asked)?;
     let options = asked.options.iter().map(choice).collect::<Option<_>>()?;
@@ -202,17 +185,14 @@ fn readable(path: &str, body: &Value) -> Option<(Instant, Waiting)> {
     Some((when, question))
 }
 
-/// An option holding exactly `id` and `text`, both non-empty strings.
 fn choice(option: &Map<String, Value>) -> Option<Choice> {
-    let text = |name: &str| {
-        let text = option.get(name)?.as_str()?;
-        (!text.is_empty()).then(|| text.to_owned())
+    let text = |name| {
+        (option.get(name)?.as_str())
+            .filter(|text| !text.is_empty())
+            .map(str::to_owned)
     };
-    (option.len() == 2).then_some(())?;
-    Some(Choice {
-        id: text("id")?,
-        text: text("text")?,
-    })
+    let (id, text) = (text("id")?, text("text")?);
+    (option.len() == 2).then_some(Choice { id, text })
 }
 
 #[cfg(test)]

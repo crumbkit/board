@@ -4,9 +4,8 @@ This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `plans` is built in.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
-  of `board-plugins`, which board-cli enables by default.
-- It builds its capabilities' schemas from Rust types with schemars. It
-  embeds the record schemas it ships as files.
+  of `board-plugins` that board-cli enables by default. It builds its
+  capabilities' schemas with schemars and embeds its record schemas as files.
 
 ## The traits
 
@@ -22,8 +21,7 @@ Board is called. `plans` is built in.
 - `Host`, what Board offers during a call:
   - `query(sql, limit)` runs SQL as `board query` does, with the caller's
     index cache. `Limit::rows(n)` takes 1 to 10,000 rows; `Limit::ALL` every
-    row. There is no byte budget. `PluginError::board_refused` makes its
-    refusal `<plugin>::board::refused`, with Board's code in `fields.code`.
+    row. There is no byte budget.
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. A built-in plugin
     reads no environment.
@@ -35,7 +33,6 @@ offered before installed ones and is listed, found and enabled as an
 installed one is; a board still enables it by name. An installed plugin with
 the same name is `board::plugin::duplicate` for `call` and `plugin enable`;
 `plugin list` names its directory and `plugin find` leaves the plugin out.
-Remove that directory; if it is a symlink, remove the link, not its target.
 
 ## Calling
 

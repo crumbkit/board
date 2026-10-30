@@ -1459,7 +1459,6 @@ fn type_add_refuses_the_board_namespace_and_a_malformed_type() {
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
 
-#[cfg(feature = "plans")]
 mod built_in;
 mod cli;
 mod complete;

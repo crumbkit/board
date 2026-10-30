@@ -70,9 +70,7 @@ pub struct PluginError {
 }
 
 impl PluginError {
-    /// `<plugin>::board::refused`: Board refused the `board <command>` a
-    /// plugin asked for with `refusal`. Its fields are the refusal's and
-    /// its `code`, as a process plugin's Python helper reports it.
+    /// `<plugin>::board::refused`, as a process plugin's Python helper reports it.
     pub fn board_refused(plugin: &str, command: &str, refusal: &Refusal) -> Self {
         let code = refusal.code.as_str();
         let then = (refusal.hint.as_deref().filter(|hint| !hint.is_empty()))

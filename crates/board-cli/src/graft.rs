@@ -109,18 +109,14 @@ pub(crate) fn find(
         _ => None,
     })?;
     let offered = || {
-        let built = (built_in.0.iter()).map(|built| built.manifest());
-        let installed = || {
-            let installed = board_plugin::installed(plugins?).ok()?.into_iter();
-            installed
-                .into_iter()
-                .find(|entry| entry.name == plugin.as_str())?
-                .manifest
-                .ok()
-        };
-        let manifest = (built.into_iter())
+        let manifest = (built_in.0.iter().map(|built| built.manifest()))
             .find(|manifest| manifest.name == plugin)
-            .or_else(installed)?;
+            .or_else(|| {
+                (board_plugin::installed(plugins?).ok()?.into_iter())
+                    .find(|entry| entry.name == plugin.as_str())?
+                    .manifest
+                    .ok()
+            })?;
         let offered = manifest
             .capabilities
             .iter()

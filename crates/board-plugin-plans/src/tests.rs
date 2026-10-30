@@ -61,7 +61,7 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run
 
 #[test]
 fn every_input_property_carries_a_sentence_that_says_what_it_means() {
-    let input = open::input_schema();
+    let input = open::schema::<open::Input>(schemars::generate::SchemaSettings::draft2020_12());
     let properties = input["properties"].as_object().unwrap();
     let names: Vec<&str> = properties.keys().map(String::as_str).collect();
     assert_eq!(names, ["limit", "path"]);

@@ -135,7 +135,13 @@ fn a_path_matches_the_questions_below_it_with_or_without_a_trailing_slash() {
             "/projects/a",
         ]
         .map(|path| row(path, None, body("2026-10-01T09:00:00Z", &json!({}))))
-        .to_vec()
+        .into_iter()
+        .chain([vec![
+            Value::Null,
+            Value::Null,
+            body("2026-10-01T09:00:00Z", &json!({})),
+        ]])
+        .collect::<Vec<_>>()
     };
     for (path, expected) in [
         ("/projects/a", vec!["/projects/a/questions/q"]),
@@ -154,8 +160,13 @@ fn a_path_matches_the_questions_below_it_with_or_without_a_trailing_slash() {
         assert_eq!(paths, expected, "{path}");
         assert_eq!(output["unreadable"], 0, "{path}");
     }
-    let (paths, _) = opened(rows(), &json!({}));
+    let (paths, output) = opened(rows(), &json!({}));
     assert_eq!(paths.len(), 3, "no path is every question");
+    assert_eq!(
+        (&output["total"], &output["unreadable"]),
+        (&json!(3), &json!(0)),
+        "a row without a logical path is neither listed nor unreadable"
+    );
 }
 
 #[test]

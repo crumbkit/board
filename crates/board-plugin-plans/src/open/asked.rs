@@ -1,14 +1,11 @@
-//! When a question was asked: the RFC 3339 times Python's
-//! `datetime.fromisoformat` reads, which the Python plugin accepted.
+//! Reads `asked` as Python's `datetime.fromisoformat` did for the Python plugin.
 
 /// An instant: seconds since 1970-01-01T00:00:00Z, then microseconds.
 pub(crate) type Instant = (i64, u32);
 
-/// The instant `text` names, or `None` unless it is
-/// `YYYY-MM-DDTHH:MM:SS[.F+](Z|±HH:MM)` in ASCII digits, `T` and `Z` in
-/// either case, with year 1 or later, a real date, an hour to 23, a minute
-/// and second to 59 and an offset under 24 hours whose minutes may run to
-/// 99. Fraction digits past the sixth are dropped.
+/// `YYYY-MM-DDTHH:MM:SS[.F+](Z|±HH:MM)` in ASCII digits, `T` and `Z` in either
+/// case, a real date from year 1, hour to 23, offset under 24 hours whose
+/// minutes may run to 99. Fraction digits past the sixth are dropped.
 pub(crate) fn instant(text: &str) -> Option<Instant> {
     let bytes = text.as_bytes();
     let number = |from: usize, to: usize| -> Option<i64> {
@@ -28,16 +25,10 @@ pub(crate) fn instant(text: &str) -> Option<Instant> {
     let mut rest = &bytes[19..];
     let mut micros = 0;
     if let Some(fraction) = rest.strip_prefix(b".") {
-        let digits = fraction
-            .iter()
-            .take_while(|byte| byte.is_ascii_digit())
-            .count();
-        if digits == 0 {
-            return None;
-        }
-        let padded = fraction[..digits].iter().chain([b'0'; 6].iter()).take(6);
+        let digits = fraction.iter().take_while(|byte| byte.is_ascii_digit());
+        let (digits, padded) = (digits.clone().count(), digits.chain(&[b'0'; 6]).take(6));
         micros = padded.fold(0, |micros, &digit| micros * 10 + u32::from(digit - b'0'));
-        rest = &fraction[digits..];
+        rest = (digits > 0).then(|| &fraction[digits..])?;
     }
     let offset = match rest {
         b"Z" | b"z" => 0,
@@ -63,7 +54,6 @@ pub(crate) fn instant(text: &str) -> Option<Instant> {
     })
 }
 
-/// How many days `month` of `year` has.
 fn days_in(year: i64, month: i64) -> i64 {
     match month {
         2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,

@@ -1,12 +1,11 @@
-//! The plans plugin built into Board: questions an agent session asks the
-//! owner, the owner's answers, and the decisions sessions record
-//! (plugins/plans/README.md).
+//! The plans plugin built into Board (plugins/plans/README.md).
 
 mod open;
 
 use board_model::{CapabilityName, RecordType, parse_json};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
+use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 /// Each type the plugin ships, with its schema. No Rust code reads these
@@ -26,7 +25,6 @@ const TYPES: [(&str, &str); 3] = [
     ),
 ];
 
-/// The plans plugin.
 #[derive(Clone, Copy, Debug)]
 pub struct Plans;
 
@@ -36,8 +34,6 @@ impl Plugin for Plans {
             .expect("the manifest is built from constants and its types' schemas; a test parses it")
     }
 
-    /// A schema that does not parse is left out, so the manifest's type
-    /// lacks it and Board reports `board::plugin::bad_manifest`.
     fn schemas(&self) -> Vec<(RecordType, Value)> {
         (TYPES.iter())
             .filter_map(|(name, text)| {
@@ -63,7 +59,6 @@ impl Plugin for Plans {
     }
 }
 
-/// `board/plugin-manifest/v1` for this plugin, without `run`.
 fn manifest() -> Value {
     json!({
         "$type": "board/plugin-manifest/v1",
@@ -77,8 +72,8 @@ fn manifest() -> Value {
         "capabilities": [{
             "name": "open",
             "description": "The questions under a path whose status is open, oldest first.",
-            "inputSchema": open::input_schema(),
-            "outputSchema": open::output_schema(),
+            "inputSchema": open::schema::<open::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": open::schema::<open::Output>(SchemaSettings::draft2020_12().for_serialize()),
             "annotations": {"readOnlyHint": true},
             "_meta": {},
         }],

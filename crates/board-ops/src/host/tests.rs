@@ -591,9 +591,9 @@ fn querying(sql: &'static str) -> Fixture {
     answering(
         "fixture",
         Box::new(move |host| match host.query(sql, Limit::ALL) {
-            Ok(report) => {
-                Ok(json!({"count": report.rows.len(), "memory": report.memory.is_some()}))
-            }
+            Ok(report) => Ok(
+                json!({"count": report.rows.len(), "memory": report.memory.is_some(), "rows": report.rows}),
+            ),
             Err(error) => Err(PluginError::board_refused(
                 "fixture",
                 "query",
@@ -647,14 +647,24 @@ fn a_built_ins_queries_use_the_callers_index_cache_and_answer_as_a_cold_index_do
         cold["memory"], true,
         "without a cache the index is in memory"
     );
-    let (first, _) = call(Some(cache.path()));
+    let (first, parsed_first) = call(Some(cache.path()));
+    assert!(
+        parsed_first.unwrap_or(0) > 0,
+        "the first cached call builds the index"
+    );
     let (warm, parsed) = call(Some(cache.path()));
     assert_eq!(parsed.unwrap_or(0), 0, "a warm index parses no blob again");
     assert_eq!(
         (&first["memory"], &warm["memory"]),
         (&json!(false), &json!(false))
     );
-    assert_eq!(warm["count"], cold["count"]);
+    for answer in [&first, &warm] {
+        assert_eq!(
+            (&answer["count"], &answer["rows"]),
+            (&cold["count"], &cold["rows"])
+        );
+    }
+    assert!(cold["count"].as_u64().unwrap() > 0);
 }
 
 #[test]

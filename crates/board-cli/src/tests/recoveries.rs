@@ -601,7 +601,6 @@ fn calling_plugins(starts: &mut Starts) {
 
 /// A call to plans, which the binary has built in, on a board that enables
 /// it and tasks, with a copy of plans installed too.
-#[cfg(feature = "plans")]
 fn installed_again(starts: &mut Starts) {
     let xdg = Scenario::new();
     let plugins = "xdg/data/board/plugins";
@@ -936,7 +935,6 @@ fn starts(twins: bool) -> Starts {
     on_the_seed(&mut starts);
     unopened(&mut starts);
     calling_plugins(&mut starts);
-    #[cfg(feature = "plans")]
     installed_again(&mut starts);
     enabling_plugins(&mut starts);
     apart(&mut starts);
