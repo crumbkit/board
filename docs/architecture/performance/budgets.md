@@ -13,6 +13,7 @@ the other reference board.
 | `board ls` of a record's directory, warm | 500 ms |
 | `board check`, warm, nothing changed | 500 ms |
 | simple `board query`, warm | 500 ms |
+| simple `board query`, warm, 20 mounts | 4 s |
 | full index, cold | 1 s |
 | `board call tasks.available --repo /`, warm | 500 ms |
 | `board put` of a small record, warm | 300 ms |

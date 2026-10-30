@@ -131,8 +131,13 @@ fn bench(root: &Path, options: &bench::Options) -> Result<Vec<bench::Timed>, ben
         return bench::run(board, &budgets, &host, bench::Corpus::Given);
     }
     let generated = tempfile::tempdir().map_err(bench::BenchError::Write)?;
-    bench::generate(generated.path(), options.records).map_err(bench::BenchError::Write)?;
-    bench::run(generated.path(), &budgets, &host, bench::Corpus::Generated)
+    bench::generate(generated.path(), options.records, &[], 0).map_err(bench::BenchError::Write)?;
+    let mounts = tempfile::tempdir().map_err(bench::BenchError::Write)?;
+    let mounted = bench::generate_mounted(mounts.path(), options.records)
+        .map_err(bench::BenchError::Write)?;
+    bench::settle();
+    let corpus = bench::Corpus::Generated { mounted: &mounted };
+    bench::run(generated.path(), &budgets, &host, corpus)
 }
 
 #[derive(Debug, thiserror::Error)]

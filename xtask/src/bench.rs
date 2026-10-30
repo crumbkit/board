@@ -8,8 +8,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use board_model::{Kind, LogicalPath};
-use board_ops::{Board, Expect, Plugins};
+use board_model::{Kind, LogicalPath, ObjectId};
+use board_ops::{Board, CheckReport, Expect, Plugins};
 use board_plugin::{Environment, Limits, Target};
 use board_tree::Status;
 
@@ -21,6 +21,8 @@ const SLACK: u32 = 3;
 const RECORDS: usize = 10_000;
 /// Tasks per directory in a generated board.
 const PER_DIRECTORY: usize = 100;
+/// The most repositories a generated mounted board mounts.
+const MOUNTS: usize = 20;
 
 /// The tasks plugin's tasks in a generated board: as many as one section of
 /// `tasks.available` shows.
@@ -32,12 +34,15 @@ const TASK_SCHEMA: &str = include_str!("../../plugins/tasks/types/tasks/task/v2.
 pub(crate) const CALL: &str = "`board call tasks.available --repo /`, warm";
 /// The operation that times a put, which writes a record into the board.
 pub(crate) const PUT: &str = "`board put` of a small record, warm";
+/// The operation that times a query of a board that mounts others.
+pub(crate) const MOUNTED: &str = "simple `board query`, warm, 20 mounts";
 
-/// Whose board bench measures: one it generated and may write, or one
-/// given with `--board`, which it only reads.
+/// Whose board bench measures: one it generated and may write, with the
+/// generated mounted board beside it, or one given with `--board`, which it
+/// only reads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Corpus {
-    Generated,
+pub(crate) enum Corpus<'a> {
+    Generated { mounted: &'a Path },
     Given,
 }
 
@@ -163,18 +168,18 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Duration)>, BenchError>
 /// Times every budgeted operation on the board at `root`, a repository root.
 /// `get` reads the first record a check finds, `ls` lists its directory, the
 /// plugin call runs on `host`, and `put` writes a record for each run into a
-/// `Corpus::Generated` board.
+/// `Corpus::Generated` board, whose mounted board the mounted query reads.
 pub(crate) fn run(
     root: &Path,
     budgets: &[(String, Duration)],
     host: &Host,
     corpus: Corpus,
 ) -> Result<Vec<Timed>, BenchError> {
-    let board = Board::open(root, None).map_err(|error| failed(&error))?;
-    let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
-    let checked = board
-        .check(None, Some(warm.path()))
-        .map_err(|error| failed(&error))?;
+    let (board, warm, checked) = warmed(root)?;
+    let mounted = match corpus {
+        Corpus::Generated { mounted } => Some(warmed(mounted)?),
+        Corpus::Given => None,
+    };
     let sample = checked
         .entries
         .iter()
@@ -206,14 +211,18 @@ pub(crate) fn run(
                     took,
                 });
             }
-            if operation == PUT && corpus == Corpus::Given {
+            let skipped = match (operation.as_str(), corpus) {
+                (PUT, Corpus::Given) => "writes only a board it generated",
+                (MOUNTED, Corpus::Given) => "mounts repositories only into a board it generated",
+                _ => "",
+            };
+            if !skipped.is_empty() {
                 return Ok(Timed {
                     operation: operation.clone(),
                     budget: *budget,
-                    took: Took::Skipped(
-                        "the board was given with --board, and bench writes only a board it generated"
-                            .to_owned(),
-                    ),
+                    took: Took::Skipped(format!(
+                        "the board was given with --board, and bench {skipped}"
+                    )),
                 });
             }
             let mut times = Vec::with_capacity(RUNS);
@@ -236,15 +245,11 @@ pub(crate) fn run(
                         .check(None, Some(warm.path()))
                         .map(drop)
                         .map_err(|e| failed(&e)),
-                    "simple `board query`, warm" => board
-                        .query(
-                            "SELECT count(*) FROM entries",
-                            1,
-                            None,
-                            Some(warm.path()),
-                        )
-                        .map(drop)
-                        .map_err(|e| failed(&e)),
+                    "simple `board query`, warm" => count(&board, warm.path()),
+                    MOUNTED => match &mounted {
+                        Some((board, warm, _)) => count(board, warm.path()),
+                        None => Ok(()),
+                    },
                     "full index, cold" => board
                         .check(None, Some(cold.path()))
                         .map(drop)
@@ -266,6 +271,25 @@ pub(crate) fn run(
             })
         })
         .collect()
+}
+
+/// The board at `root`, checked once into a new cache directory, and what
+/// the check found.
+fn warmed(root: &Path) -> Result<(Board, tempfile::TempDir, CheckReport), BenchError> {
+    let board = Board::open(root, None).map_err(|error| failed(&error))?;
+    let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
+    let checked = board
+        .check(None, Some(warm.path()))
+        .map_err(|error| failed(&error))?;
+    Ok((board, warm, checked))
+}
+
+/// The simple query the query rows time.
+fn count(board: &Board, warm: &Path) -> Result<(), BenchError> {
+    board
+        .query("SELECT count(*) FROM entries", 1, None, Some(warm))
+        .map(drop)
+        .map_err(|error| failed(&error))
 }
 
 /// The median of `RUNS` calls of `tasks.available` on the board's own tree,
@@ -318,14 +342,21 @@ fn failed(error: &dyn std::fmt::Display) -> BenchError {
 /// Writes a board of `records` tasks, a hundred to a directory, each
 /// referring to one of a hundred projects, into `root`, with a minimal git
 /// directory so that `root` is a repository's working tree, and an identity
-/// so that a put can commit. The board
+/// so that a put can commit, and commits it with `extra`. The board
 /// enables the tasks plugin and holds `TASKS` of its open tasks; one in five
 /// waits on the first, so `tasks.available` asks Board what blocks it.
+/// With `mounts`, each task refers to a project of the board mounted at
+/// `/repos/r<n>` instead.
 #[expect(
     clippy::disallowed_methods,
     reason = "bench writes the board it measures, and nothing else"
 )]
-pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
+pub(crate) fn generate(
+    root: &Path,
+    records: usize,
+    extra: &[(String, String)],
+    mounts: usize,
+) -> std::io::Result<ObjectId> {
     let mut files: Vec<(String, String)> = Vec::new();
     let mut write = |path: &str, text: &str| -> std::io::Result<()> {
         let full = root.join(path);
@@ -377,24 +408,57 @@ pub(crate) fn generate(root: &Path, records: usize) -> std::io::Result<()> {
         )?;
     }
     for task in 0..records {
+        let mount = match mounts {
+            0 => String::new(),
+            mounts => format!("/repos/r{:02}", task % mounts),
+        };
         write(
             &format!("tasks/d{}/t{task}.json", task / PER_DIRECTORY),
             &format!(
-                r#"{{"$type": "bench/task/v1", "title": "task {task}", "project": "/projects/p{}"}}"#,
+                r#"{{"$type": "bench/task/v1", "title": "task {task}", "project": "{mount}/projects/p{}"}}"#,
                 task % 100
             ),
         )?;
     }
-    commit(root, &files)?;
-    // A file modified in the second a refresh begins is hashed again, as
-    // git does, so the warm runs start in a later second.
+    for (path, text) in extra {
+        write(path, text)?;
+    }
+    commit(root, &files)
+}
+
+/// Writes repositories under `root/repos`, one for each 500 `records` up to
+/// `MOUNTS`, each a generated board of `records / 40` tasks with a hundred
+/// directories of source files, and a generated board at `root/board` of
+/// `records / 5` tasks that mounts each at `/repos/r<n>`. Returns the
+/// board's root. The source files name their repository, so no two
+/// repositories share a commit, which Board would index once.
+pub(crate) fn generate_mounted(root: &Path, records: usize) -> std::io::Result<PathBuf> {
+    let mounts = (records / 500).clamp(1, MOUNTS);
+    let mut pointers = Vec::with_capacity(mounts);
+    for mount in 0..mounts {
+        let source: Vec<_> = (0..100)
+            .map(|directory| (format!("src/d{directory}/lib.rs"), format!("// r{mount}\n")))
+            .collect();
+        let repository = root.join(format!("repos/r{mount:02}"));
+        let commit = generate(&repository, records / 40, &source, 0)?;
+        let pointer = serde_json::json!({"$type": "board/mount/v1",
+            "repo": repository, "follow": "main", "commit": commit.to_string()});
+        pointers.push((format!("repos/r{mount:02}.json"), pointer.to_string()));
+    }
+    let board = root.join("board");
+    generate(&board, records / 5, &pointers, mounts)?;
+    Ok(board)
+}
+
+/// Waits until the generated boards' files are a second old: a file
+/// modified in the second a refresh begins is hashed again, as git does.
+pub(crate) fn settle() {
     std::thread::sleep(Duration::from_millis(1_100));
-    Ok(())
 }
 
 /// Commits `files`, already in the working tree at `root`, in one commit,
 /// so that git's index holds every record as a real board's does.
-fn commit(root: &Path, files: &[(String, String)]) -> std::io::Result<()> {
+fn commit(root: &Path, files: &[(String, String)]) -> std::io::Result<ObjectId> {
     let board = Board::open(root, None).map_err(std::io::Error::other)?;
     let repository = board.repository();
     let lock = repository
@@ -406,13 +470,11 @@ fn commit(root: &Path, files: &[(String, String)]) -> std::io::Result<()> {
         .collect();
     let staged = repository
         .stage_commit(&lock, &writes, "generated")
-        .map_err(std::io::Error::other)?;
-    if let Some(staged) = staged {
-        repository
-            .finish_commit(&lock, staged)
-            .map_err(std::io::Error::other)?;
-    }
-    Ok(())
+        .map_err(std::io::Error::other)?
+        .ok_or_else(|| std::io::Error::other("a generated board changes its repository"))?;
+    repository
+        .finish_commit(&lock, staged)
+        .map_err(std::io::Error::other)
 }
 
 /// Why `bench` could not measure.
