@@ -96,7 +96,7 @@ fn start(words: &[OsString], shell: &str, context: &Context) -> Option<PathBuf> 
             break;
         }
         if word == "--personal" {
-            base = crate::known::personal(context).ok()?;
+            base = context.personal().ok()?;
         }
         let directory = if word == "-C" {
             words.next().and_then(|word| word.to_str())

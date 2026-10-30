@@ -3,11 +3,10 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use board_model::{APPROVAL_HEADER, Answer, Code, Refusal};
-use board_ops::{AnswerReport, Board, EffectError};
+use board_model::{APPROVAL_HEADER, Answer, Code, Fields, PluginName, Refusal};
+use board_ops::{AnswerReport, Asker, Board, EffectError, Signing};
 
 use crate::config::{ALLOWED_SIGNERS, Context};
-use crate::known;
 use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::run::{Given, Prefix, plain, read};
@@ -73,7 +72,7 @@ fn answered(
     let signature = (signature.as_deref())
         .map(|file| supplied(answer, file, stdin))
         .transpose()?;
-    let asker = known::asker(context, true)?;
+    let asker = asker(context, true)?;
     board_ops::answer(&asker, &id, answer, reason, signature).map_err(|error| {
         let refused = refusal(&error);
         match error.code() {
@@ -136,7 +135,7 @@ fn supplied(answer: Answer, file: &Path, stdin: &mut dyn Read) -> Result<String,
 /// Refuses, under `BOARD_PLUGIN`, the command `ran` names: a write the put
 /// check does not cover, which only the owner runs. `None` for the owner.
 pub(crate) fn from_plugin(context: &Context, ran: &Ran) -> Option<Box<Refusal>> {
-    let plugin = match known::plugin(context) {
+    let plugin = match plugin(context) {
         Ok(plugin) => plugin?,
         Err(refusal) => return Some(refusal),
     };
@@ -147,6 +146,46 @@ pub(crate) fn from_plugin(context: &Context, ran: &Ran) -> Option<Box<Refusal>> 
         what,
     };
     Some(refusal(&error))
+}
+
+/// Who asks for an effect in this run: the plugin `BOARD_PLUGIN` names, and
+/// the personal board when `personal` says the run writes there. A known
+/// boards file that cannot be read, a personal board that is not a board,
+/// or a `BOARD_PLUGIN` that is not a plugin's name refuses.
+pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refusal>> {
+    let plugin = plugin(context)?;
+    let known = personal.then(|| context.known()).transpose()?;
+    let environment = &context.environment;
+    let passed = [("PATH", &environment.path), ("HOME", &environment.home)];
+    let signing = Signing {
+        signer: context.signer.clone(),
+        allowed: context.allowed_signers.clone(),
+        cache: context.cache.clone(),
+        environment: (passed.into_iter())
+            .filter_map(|(name, value)| Some((name, value.clone()?)))
+            .collect(),
+    };
+    board_ops::asker(plugin, known.as_ref(), context.home.clone(), signing)
+}
+
+/// The plugin `BOARD_PLUGIN` names, refused unless it is a plugin's name.
+fn plugin(context: &Context) -> Result<Option<PluginName>, Box<Refusal>> {
+    let Some(name) = &context.environment.plugin else {
+        return Ok(None);
+    };
+    let variable = board_plugin::PLUGIN_VARIABLE;
+    let Some(named) = name.to_str().and_then(|name| name.parse().ok()) else {
+        let message = format!(
+            "{variable} is {:?}, which is not a plugin's name",
+            name.to_string_lossy()
+        );
+        let hint = format!(
+            "set {variable} to the plugin's name, lowercase ASCII letters, digits and hyphens such as tasks, or unset it to run as the owner"
+        );
+        let refusal = Refusal::new(Code::ConfigInvalid, message, &Fields::default());
+        return Err(Box::new(refusal.with_hint(hint)));
+    };
+    Ok(Some(named))
 }
 
 fn refusal(error: &EffectError) -> Box<Refusal> {
