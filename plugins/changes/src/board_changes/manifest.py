@@ -46,7 +46,7 @@ def manifest() -> dict[str, JsonValue]:
         "description": (
             "Walk one change to a repository from its plan to its pull request, and gather every "
             "record it produces. Use it when you start a change to a repository mounted in the board, and whenever "
-            "you resume one. Start with `board -C <board> call changes.start --repo /repos/<name> --title "
+            "you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title "
             "'<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and "
             "README.md in the plugin's directory say more."
         ),

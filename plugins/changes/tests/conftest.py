@@ -201,7 +201,7 @@ def report(head: str = HEAD, verdict: str = "approve", **fields: Any) -> str:  #
 
 def change(phase: str = "plan", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """An `changes/change/v1` record in `phase`."""
-    defaults: dict[str, Any] = {"title": "Let a suite declare a timeout", "repo": "/repos/x", "phase": phase}
+    defaults: dict[str, Any] = {"title": "Let a suite declare a timeout", "mount": "/repos/x", "phase": phase}
     return record("changes/change/v1", **(defaults | fields))
 
 

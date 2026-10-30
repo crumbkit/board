@@ -308,7 +308,8 @@ fn a_body_that_is_not_an_object_is_unreadable_and_an_object_is_read() {
 
 #[test]
 fn a_question_is_returned_with_its_original_time_and_null_for_what_it_leaves_out() {
-    let fields = json!({"options": [{"text": "A", "id": "a"}], "recommendation": "a", "repo": "r"});
+    let fields =
+        json!({"options": [{"text": "A", "id": "a"}], "recommendation": "a", "mount": "/repos/r"});
     let rows = vec![row(
         "/q/a",
         None,

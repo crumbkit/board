@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `repos` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `suites`\nreferences the `runs/suite/v1` records that say how it is tested, and\n`runs` the `runs/run/v1` records its verdict rests on. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.\n`written_by` names the plugin and hook that wrote an eval without an agent.",
+  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.\n\n`subjects` are the names of what is tested, such as `crumbkit` or `clap`;\nversions go in a run's `versions`. `mounts` references the mount of each\nrepository the eval concerns, such as `/repos/crumbkit`. `suites`\nreferences the `runs/suite/v1` records that say how it is tested, and\n`runs` the `runs/run/v1` records its verdict rests on. `decision` is the\ndecision this eval informs. A `concluded` eval has a `verdict`.\n`written_by` names the plugin and hook that wrote an eval without an agent.",
   "if": {
     "properties": {
       "status": {
@@ -25,17 +25,17 @@
       "title": "Decision",
       "type": "string"
     },
-    "question": {
-      "title": "Question",
-      "type": "string"
-    },
-    "repos": {
+    "mounts": {
       "items": {
         "format": "board-ref",
         "type": "string"
       },
-      "title": "Repos",
+      "title": "Mounts",
       "type": "array"
+    },
+    "question": {
+      "title": "Question",
+      "type": "string"
     },
     "runs": {
       "items": {
@@ -57,7 +57,7 @@
       "type": "string"
     },
     "subjects": {
-      "description": "The names of what is tested, such as `crumbkit` or `clap`, without versions. Name a repository in `repos`, by its mount.",
+      "description": "The names of what is tested, such as `crumbkit` or `clap`, without versions. Name a repository by its mount, in `mounts`.",
       "items": {
         "type": "string"
       },

@@ -8,15 +8,15 @@ from board_evals.models import AboutInput, ListOutput
 
 
 def about(request: CallRequest) -> ListOutput:
-    """The evals whose `subjects` include the subject, or that name the repo in `repos` or live under it.
+    """The evals whose `subjects` include the subject, or that name the mount in `mounts` or live under it.
 
-    An eval lives under a repo when its path starts with the repo and a `/`. The prefix is compared with `substr`,
+    An eval lives under a mount when its path starts with the mount and a `/`. The prefix is compared with `substr`,
     so `_` and `%` in it match only themselves.
     """
     asked = AboutInput.model_validate(request.input)
-    if asked.repo is not None:
-        field, match = "$.repos", f"s.value = {literal(asked.repo)}"
-        prefix = literal(asked.repo + "/")
+    if asked.mount is not None:
+        field, match = "$.mounts", f"s.value = {literal(asked.mount)}"
+        prefix = literal(asked.mount + "/")
         inside = f" OR substr(logical, 1, length({prefix})) = {prefix}"
     else:
         field, match = "$.subjects", f"lower(s.value) = lower({literal(asked.subject or '')})"

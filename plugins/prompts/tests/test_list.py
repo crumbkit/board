@@ -2,7 +2,7 @@
 
 import json
 
-from conftest import Board, git, mount, prompt
+from conftest import Board, git, mark, mount, prompt
 
 
 def titles(output: dict[str, object]) -> list[tuple[str, str]]:
@@ -52,6 +52,18 @@ def test_a_mount_the_board_does_not_mark_is_skipped_and_its_files_are_not_counte
     output = board.call("list")[1]
     assert (titles(output), output["repos"]) == ([("/repos/notes", "Notes")], ["/", "/repos/notes"])
     assert output["degraded"] == 0
+
+
+def test_list_refuses_a_list_of_marked_repos_naming_a_mount_the_board_lacks_and_answers_once_it_is_mounted(
+    board: Board,
+) -> None:
+    mount(board, "notes", {"prompts/a.md": prompt("Notes")})
+    mark(board, "/repos/gone")
+    code, refused = board.call("list")
+    assert (code, refused["code"]) == (1, "prompts::repos::invalid"), refused
+    mount(board, "gone", {"README.md": "x"}, marked=False)
+    code, output = board.call("list")
+    assert (code, output["repos"]) == (0, ["/", "/repos/gone", "/repos/notes"]), output
 
 
 def test_the_remote_chooses_its_covering_repo_with_the_personal_repo_and_repo_names_one(board: Board) -> None:

@@ -63,9 +63,9 @@ class ReposRecord(Strict):
     """
 
     tag: Literal["prompts/repos/v1"] = Field(alias="$type")
-    repos: list[Annotated[str, Field(pattern=r"^/\S*[^/]$")]] = Field(
+    mounts: list[Annotated[str, Field(json_schema_extra={"format": "board-ref"})]] = Field(
         json_schema_extra={"uniqueItems": True},
-        description="The mount path of each repo whose prompts are admitted, such as /repos/notes-personal.",
+        description="The mount of each repo whose prompts are admitted, such as /repos/notes-personal.",
     )
 
 

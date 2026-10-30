@@ -20,7 +20,8 @@ needs to know.
    under any other keyword that applies subschemas, or behind a
    `$dynamicRef`, with `schema::invalid`.
 6. References and URLs never share a field. URLs go in a field named `urls`,
-   whose items match `^https?://`.
+   whose items match `^https?://`. A field that holds one URL is named for
+   what it is, such as `pull_request`.
 7. A field that names a repository is a reference to that repository's mount
    record at `/repos/<name>`, named for what it is, such as `mount` or
    `mounts`. A pinned version is a sibling field, such as `commit`.
@@ -34,8 +35,7 @@ needs to know.
 11. Every property has a `description`. No property has a `title`.
 12. No `$schema` key. Draft 2020-12, committed in canonical form.
 
-Until they migrate, plans question `repo`, changes `repo`, prompts/repos
-and evals `repos` break rule 7.
+Until they migrate, notes `covers` and prompts `runs_in.repo` break rule 7.
 
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11 and 12 on every committed
 record schema. It lists the schemas that break a rule today, until their

@@ -2,7 +2,7 @@
 
 import json
 
-from conftest import Board, change
+from conftest import Board, change, record
 
 
 def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -> None:
@@ -15,14 +15,14 @@ def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -
         {
             "path": "/changes/a",
             "title": "Let a suite declare a timeout",
-            "repo": "/repos/x",
+            "mount": "/repos/x",
             "phase": "plan",
             "route": None,
         },
         {
             "path": "/changes/b",
             "title": "Let a suite declare a timeout",
-            "repo": "/repos/x",
+            "mount": "/repos/x",
             "phase": "build",
             "route": "owner",
         },
@@ -66,4 +66,18 @@ def test_the_schema_refuses_an_unknown_phase_or_field_and_reports_a_reference_th
         "/changes/phase": "board::record::invalid",
         "/changes/extra": "board::record::invalid",
         "/changes/dangling": "board::ref::dangling",
+    }
+
+
+def test_the_schema_refuses_a_repository_by_owner_and_name_or_under_the_old_repo_key_and_admits_its_mount(
+    board: Board,
+) -> None:
+    board.write("repos/x/README.md", "x")
+    board.write("changes/named.json", change(mount="crumbkit/board"))
+    board.write("changes/old.json", record("changes/change/v1", title="T", repo="/repos/x", phase="plan"))
+    board.write("changes/mounted.json", change(mount="/repos/x"))
+    assert checked(board) == {
+        "/changes/named": "board::ref::malformed",
+        "/changes/old": "board::record::invalid",
+        "/changes/mounted": None,
     }

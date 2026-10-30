@@ -117,9 +117,20 @@ def test_a_link_in_the_boards_tree_to_a_code_mounts_prompts_is_outside_scope_and
 def test_an_invalid_list_of_marked_repos_is_refused_and_a_valid_one_is_read(board: Board) -> None:
     mount(board, "notes", {"prompts/review-pr.md": REVIEW})
     assert board.call("get", stdin=given("/repos/notes/prompts/review-pr.md", **VALUES))[0] == 0
-    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", "repos": ["repos/notes"]}))
+    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", "mounts": ["repos/notes"]}))
     code, refused = board.call("get", stdin=given("/repos/notes/prompts/review-pr.md", **VALUES))
     assert (code, refused["code"]) == (1, "prompts::repos::invalid"), refused
+
+
+def test_a_list_of_marked_repos_naming_a_mount_the_board_lacks_is_refused_and_admitted_once_it_is_mounted(
+    board: Board,
+) -> None:
+    mount(board, "notes", {"prompts/review-pr.md": REVIEW})
+    mark(board, "/repos/gone")
+    code, refused = board.call("get", stdin=given("/repos/notes/prompts/review-pr.md", **VALUES))
+    assert (code, refused["code"]) == (1, "prompts::repos::invalid"), refused
+    mount(board, "gone", {"README.md": "x"}, marked=False)
+    assert board.call("get", stdin=given("/repos/notes/prompts/review-pr.md", **VALUES))[0] == 0
 
 
 def test_a_runs_in_given_on_stdin_replaces_the_prompts_and_is_rendered_and_checked_the_same_way(

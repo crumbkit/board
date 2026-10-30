@@ -205,7 +205,7 @@ def test_a_reference_through_a_mount_the_team_lacks_is_refused_and_one_the_team_
     head = commit(library)
     pointer = json.dumps({"$type": "board/mount/v1", "repo": str(library), "follow": "main", "commit": head})
     boards.write(boards.personal, "repos/library.json", pointer)
-    experiment(boards, repos=["/repos/library"])
+    experiment(boards, mounts=["/repos/library"])
     code, document = boards.share(path="/evals/x")
     assert (code, document["code"]) == (1, "share::closure::unresolved")
     assert document["fields"]["paths"] == ["/repos/library"]

@@ -69,7 +69,7 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         for name, field in capability["inputSchema"]["properties"].items()
     }
     assert set(descriptions) == {
-        ("start", "repo"),
+        ("start", "mount"),
         ("start", "title"),
         ("start", "name"),
         ("start", "handle"),

@@ -21,12 +21,12 @@ def name_of(title: str) -> str:
 def start(request: CallRequest) -> dict[str, object]:
     """Create the change at `/changes/<name>` and its plan, and return the route and the brief."""
     asked = request.input
-    repo, title = str(asked["repo"]).rstrip("/"), str(asked["title"])
+    mount, title = str(asked["mount"]).rstrip("/"), str(asked["title"])
     name = str(asked.get("name") or name_of(title))
     handle = asked.get("handle")
     path, plan = f"/changes/{name}", f"/changes/{name}/plan.md"
     board = Board(request.board.root, PLUGIN)
-    exists(board, repo)
+    exists(board, mount)
     held = board.get([path, plan])
     if not isinstance(held[0], PluginError):
         raise PluginError(
@@ -35,11 +35,11 @@ def start(request: CallRequest) -> dict[str, object]:
             f"`board call changes.next --path {path}`",
             {"path": path},
         )
-    codeowners = files(board, repo, CODEOWNERS)
+    codeowners = files(board, mount, CODEOWNERS)
     rules = owners(next(iter(codeowners.values()), ""))
     asking = ask_first(rules, handle if isinstance(handle, str) else None)
-    docs = files(board, repo, DOCS)
-    change: Change = {"$type": CHANGE_TYPE, "title": title, "repo": repo, "phase": "plan", "plan": plan}
+    docs = files(board, mount, DOCS)
+    change: Change = {"$type": CHANGE_TYPE, "title": title, "mount": mount, "phase": "plan", "plan": plan}
     change["route"] = route(rules, asking)
     lines: list[dict[str, object]] = [{"path": path, "expect": "none", "record": change}]
     if isinstance(held[1], PluginError):
@@ -54,5 +54,5 @@ def start(request: CallRequest) -> dict[str, object]:
         "ask_first": asking,
         "codeowners": next(iter(codeowners), None),
         "docs": list(docs),
-        "suite": suite_in(board, repo, docs),
+        "suite": suite_in(board, mount, docs),
     }

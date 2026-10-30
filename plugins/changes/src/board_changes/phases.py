@@ -73,7 +73,7 @@ def observe(board: Board, path: str, change: Change) -> Observed:
     cited = change.get("records", []) if phase in READS_RECORDS else []
     records, unreadable = referenced(board, cited)
     plan = plan_text(board, change) if phase == "plan" else None
-    suite = check_suite(board, change["repo"]) if phase == "build" else None
+    suite = check_suite(board, change["mount"]) if phase == "build" else None
     return Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
 
 

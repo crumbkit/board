@@ -48,8 +48,8 @@ CONCLUDED_NEEDS_VERDICT: JsonDict = {
     "if": {"properties": {"status": {"const": "concluded"}}, "required": ["status"]},
     "then": {"required": ["verdict"]},
 }
-# `about` asks about a subject or a repository, never both. Board checks this before the plugin runs.
-SUBJECT_OR_REPO: JsonDict = {"oneOf": [{"required": ["subject"]}, {"required": ["repo"]}]}
+# `about` asks about a subject or a mount, never both. Board checks this before the plugin runs.
+SUBJECT_OR_MOUNT: JsonDict = {"oneOf": [{"required": ["subject"]}, {"required": ["mount"]}]}
 
 
 def shipped(extra: JsonDict | None = None) -> Callable[[JsonDict], None]:
@@ -78,7 +78,7 @@ class EvalRecord(Record):
     """`evals/eval/v1`: a question about some subjects, how it is tested, what it rests on, and what was concluded.
 
     `subjects` are the names of what is tested, such as `crumbkit` or `clap`;
-    versions go in a run's `versions`. `repos` references the mount of each
+    versions go in a run's `versions`. `mounts` references the mount of each
     repository the eval concerns, such as `/repos/crumbkit`. `suites`
     references the `runs/suite/v1` records that say how it is tested, and
     `runs` the `runs/run/v1` records its verdict rests on. `decision` is the
@@ -93,10 +93,10 @@ class EvalRecord(Record):
     subjects: list[str] = Field(
         min_length=1,
         description="The names of what is tested, such as `crumbkit` or `clap`, without versions. "
-        "Name a repository in `repos`, by its mount.",
+        "Name a repository by its mount, in `mounts`.",
     )
     status: Literal["planned", "running", "concluded", "abandoned"]
-    repos: list[FileRef] | SkipJsonSchema[None] = None
+    mounts: list[FileRef] | SkipJsonSchema[None] = None
     suites: list[SuiteRef] | SkipJsonSchema[None] = None
     runs: list[RunRef] | SkipJsonSchema[None] = None
     decision: str | SkipJsonSchema[None] = None
@@ -113,25 +113,25 @@ class EvalRecord(Record):
 
 
 class AboutInput(Strict):
-    """The evals that name this `subject` or this `repo`, at most `limit` of them.
+    """The evals that name this `subject` or this `mount`, at most `limit` of them.
 
-    A subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`. It matches
-    an eval whose `repos` include that exact path, or whose own path lies under it.
+    A subject matches ignoring case for ASCII letters. A mount is a path such as `/repos/crumbkit`. It matches
+    an eval whose `mounts` include that exact path, or whose own path lies under it.
     """
 
-    model_config = ConfigDict(json_schema_extra=SUBJECT_OR_REPO)
+    model_config = ConfigDict(json_schema_extra=SUBJECT_OR_MOUNT)
 
     subject: str | SkipJsonSchema[None] = Field(
         default=None,
         min_length=1,
         description="The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case;"
-        " give subject or repo, not both.",
+        " give subject or mount, not both.",
     )
-    repo: str | SkipJsonSchema[None] = Field(
+    mount: str | SkipJsonSchema[None] = Field(
         default=None,
         min_length=1,
         description="A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it;"
-        " give subject or repo, not both.",
+        " give subject or mount, not both.",
     )
     limit: int = Field(
         default=LIST_LIMIT,

@@ -44,6 +44,11 @@
       "format": "board-ref",
       "type": "string"
     },
+    "mount": {
+      "description": "The mount of the repository the question concerns, such as\n`/repos/board`, when there is one.",
+      "format": "board-ref",
+      "type": "string"
+    },
     "note": {
       "description": "What the asker did not know, such as details nobody has written down\nyet.",
       "type": "string"
@@ -63,10 +68,6 @@
     },
     "recommendation": {
       "description": "The `id` of the option the asker recommends.",
-      "type": "string"
-    },
-    "repo": {
-      "description": "The repository the question concerns, as a GitHub owner/name such as\n`crumbkit/board`, when there is one.",
       "type": "string"
     },
     "session": {

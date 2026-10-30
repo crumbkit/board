@@ -10,7 +10,7 @@ the meaning of every field.
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
   `question`, `session` (the asking session's `local_` id), `asked` and
   `status` (`open`, `answered` or `withdrawn`) are required. `options`,
-  `recommendation`, `why`, `blocks`, `repo`, `context_path` and `note` are
+  `recommendation`, `why`, `blocks`, `mount`, `context_path` and `note` are
   optional.
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, or

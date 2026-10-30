@@ -48,7 +48,7 @@ class ChangeRecord(BaseModel):
     """`changes/change/v1`: one change to a repository, its phase, and every record it produced.
 
     A change lives at `/changes/<name>.json`; its plan and any files it owns
-    sit in `/changes/<name>/`. Git history holds its earlier phases. `repo`
+    sit in `/changes/<name>/`. Git history holds its earlier phases. `mount`
     references the repository's mount, such as `/repos/board`. `phase` moves
     from `plan` through `build`, `review` and `land` to `done`; `dropped`
     ends a change early. `route` is `owner` when no one else owns the files,
@@ -64,7 +64,7 @@ class ChangeRecord(BaseModel):
 
     tag: Literal["changes/change/v1"] = Field(alias="$type")
     title: str = Field(min_length=1)
-    repo: Ref
+    mount: Ref
     phase: Phase
     route: Route | SkipJsonSchema[None] = None
     plan: Ref | SkipJsonSchema[None] = None
@@ -79,7 +79,7 @@ class StartInput(Strict):
 
     model_config = ConfigDict(json_schema_extra=shipped())
 
-    repo: LogicalPath = Field(description="The repository's mount, such as /repos/board.")
+    mount: LogicalPath = Field(description="The repository's mount, such as /repos/board.")
     title: str = Field(pattern="[A-Za-z0-9]", description="What the change does, in a few words.")
     name: str | SkipJsonSchema[None] = Field(
         default=None,
@@ -189,7 +189,7 @@ class OpenChange(Strict):
 
     path: str
     title: str
-    repo: str
+    mount: str
     phase: Phase
     route: Route | None
 

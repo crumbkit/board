@@ -7,20 +7,20 @@
       "title": "$Type",
       "type": "string"
     },
-    "repos": {
-      "description": "The mount path of each repo whose prompts are admitted, such as /repos/notes-personal.",
+    "mounts": {
+      "description": "The mount of each repo whose prompts are admitted, such as /repos/notes-personal.",
       "items": {
-        "pattern": "^/\\S*[^/]$",
+        "format": "board-ref",
         "type": "string"
       },
-      "title": "Repos",
+      "title": "Mounts",
       "type": "array",
       "uniqueItems": true
     }
   },
   "required": [
     "$type",
-    "repos"
+    "mounts"
   ],
   "title": "ReposRecord",
   "type": "object"
