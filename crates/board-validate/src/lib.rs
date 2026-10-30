@@ -27,8 +27,9 @@ pub struct Schema {
 }
 
 impl Schema {
-    /// Compiles a schema document. It must be JSON Schema 2020-12, and its
-    /// `x-board-type` values must be record types.
+    /// Compiles a schema document. It must be JSON Schema 2020-12, its
+    /// `x-board-type` values must be record types, and it may mark a
+    /// reference only where references are searched.
     pub fn compile(document: Value) -> Result<Self, SchemaError> {
         if let Some(draft) = document.get("$schema")
             && draft.as_str() != Some(DRAFT_2020_12)
@@ -39,6 +40,7 @@ impl Schema {
         }
         references::check_types(&document)?;
         references::check_expansion(&document)?;
+        references::check_hidden(&document)?;
         let validator = jsonschema::options()
             .with_draft(Draft::Draft202012)
             .with_pattern_options(PatternOptions::regex())
@@ -124,6 +126,11 @@ pub enum SchemaError {
         references::MAX_EXPANSION
     )]
     TooComplex,
+    #[error(
+        "schema marks a board-ref under {keyword}, where references are never searched; \
+         put it under properties, items, allOf or a $ref from one of them"
+    )]
+    HiddenReference { keyword: &'static str },
     #[error("schema does not compile: {source}")]
     Compile {
         #[source]
@@ -137,6 +144,7 @@ impl SchemaError {
             Self::Draft { .. }
             | Self::BoardType { .. }
             | Self::TooComplex
+            | Self::HiddenReference { .. }
             | Self::Compile { .. } => Code::SchemaInvalid,
         }
     }

@@ -1,8 +1,11 @@
 //! Finding the references a record makes (docs/architecture.md, Typed
 //! references). The schema is searched through `properties`,
 //! `patternProperties`, `additionalProperties`, `items`, `prefixItems`,
-//! `allOf` and local `$ref`; branches of `anyOf`, `oneOf` and `if` still
-//! validate but are not searched.
+//! `allOf` and local `$ref`. A schema that marks a reference under any
+//! other keyword that applies subschemas, or behind a `$dynamicRef`, is
+//! refused.
+
+use std::collections::HashSet;
 
 use board_model::{LogicalPath, RecordType};
 use regex::Regex;
@@ -96,6 +99,105 @@ pub(crate) fn within_expansion(root: &Value, node: &Value, refs: usize, count: &
         }
     }
     true
+}
+
+/// The keywords whose subschemas are searched for references, besides
+/// `$ref`, which keeps the search where it was.
+const SEARCHED: [&str; 6] = [
+    "properties",
+    "patternProperties",
+    "additionalProperties",
+    "items",
+    "prefixItems",
+    "allOf",
+];
+
+/// Keywords whose value is a map of subschemas, a list of them, or one.
+const MAPS: [&str; 4] = [
+    "$defs",
+    "properties",
+    "patternProperties",
+    "dependentSchemas",
+];
+const LISTS: [&str; 4] = ["allOf", "anyOf", "oneOf", "prefixItems"];
+const SINGLE: [&str; 10] = [
+    "items",
+    "additionalProperties",
+    "not",
+    "if",
+    "then",
+    "else",
+    "contains",
+    "propertyNames",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+];
+
+/// Refuses a schema that marks a reference under a keyword outside
+/// [`SEARCHED`], or behind a `$dynamicRef`, directly or through local
+/// `$ref`s, since the record's reference would validate but never be found.
+pub(crate) fn check_hidden(schema: &Value) -> Result<(), SchemaError> {
+    Hidden {
+        root: schema,
+        followed: HashSet::new(),
+    }
+    .walk(schema, None)
+}
+
+struct Hidden<'a> {
+    root: &'a Value,
+    /// Each reference already followed, with the keyword it sat under.
+    followed: HashSet<(&'a str, Option<&'static str>)>,
+}
+
+impl<'a> Hidden<'a> {
+    /// Walks the subschemas of `node`, which sits under the unsearched
+    /// keyword `under`, if any.
+    fn walk(&mut self, node: &'a Value, under: Option<&'static str>) -> Result<(), SchemaError> {
+        let Value::Object(keywords) = node else {
+            return Ok(());
+        };
+        if let Some(keyword) = under
+            && keywords.get("format").and_then(Value::as_str) == Some(REFERENCE_FORMAT)
+        {
+            return Err(SchemaError::HiddenReference { keyword });
+        }
+        for (keyword, inner) in [("$ref", under), ("$dynamicRef", Some("$dynamicRef"))] {
+            if let Some(target) = keywords.get(keyword).and_then(Value::as_str)
+                && let Some(found) = local(self.root, target)
+                && self.followed.insert((target, inner))
+            {
+                self.walk(found, inner)?;
+            }
+        }
+        for (keyword, value) in keywords {
+            let Some((name, schemas)) = applied(keyword, value) else {
+                continue;
+            };
+            let inner = match name {
+                "$defs" => None,
+                searched if SEARCHED.contains(&searched) => under,
+                unsearched => Some(unsearched),
+            };
+            for schema in schemas {
+                self.walk(schema, inner)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The subschemas `value` holds as the value of `keyword`, with the
+/// keyword's name; `None` for a keyword that holds none.
+fn applied<'a>(keyword: &str, value: &'a Value) -> Option<(&'static str, Vec<&'a Value>)> {
+    let name = *(MAPS.iter().chain(&LISTS).chain(&SINGLE)).find(|name| **name == keyword)?;
+    let schemas = match value {
+        Value::Object(by_name) if MAPS.contains(&name) => by_name.values().collect(),
+        Value::Array(schemas) if LISTS.contains(&name) => schemas.iter().collect(),
+        schema if SINGLE.contains(&name) => vec![schema],
+        _ => return None,
+    };
+    Some((name, schemas))
 }
 
 /// A reference a record makes.

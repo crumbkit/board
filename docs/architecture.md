@@ -144,9 +144,12 @@ name the types it accepts with `"x-board-type"` (a string or a list of exact
 `$type` values). A reference is an absolute logical path, read in the referring
 record's board. Board finds references through `properties`,
 `patternProperties`, `additionalProperties`, `items`, `prefixItems`, `allOf`
-and local `$ref`; branches of `anyOf`, `oneOf` and `if` still validate but are
-not searched. A string that is not a logical path is `ref::malformed`. `check`
-reports the first failing reference in document order: `ref::dangling`, or,
+and local `$ref`. A schema that marks one under any other keyword that
+applies subschemas, or behind a `$dynamicRef`, is `schema::invalid`.
+[records/shapes.md](architecture/records/shapes.md) gives the shape every
+record schema keeps. A string that is not a logical path is
+`ref::malformed`. `check` reports the first failing reference in document
+order: `ref::dangling`, or,
 when the schema names types, `ref::wrong_type` for anything but a record of one
 of them. Without `x-board-type`, a reference may reach any entry, such as a
 Markdown file.

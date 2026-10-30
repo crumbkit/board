@@ -1,8 +1,8 @@
 # plans
 
 A plugin built into Board for the questions an agent session asks the owner, the owner's
-answers, and the decisions sessions record. Each schema's description holds
-the full meaning of every field.
+answers, and the decisions sessions record. Each schema's descriptions hold
+the meaning of every field.
 
 ## Records
 
@@ -75,9 +75,11 @@ such a change, run `board plugin enable plans` again.
 
 ## Developing
 
-The plugin is the crate `crates/board-plugin-plans`. It ships the schemas in
-its `types/` directory as they are, and builds the manifest's input and
-output schemas from its Rust types.
+The plugin is the crate `crates/board-plugin-plans`. It generates its record
+schemas and the manifest's input and output schemas from Rust structs with
+schemars. The record schemas are committed in its `types/` directory, and a
+test fails when they differ from what the structs generate; run it with
+`SNAPSHOTS=overwrite` to rewrite them.
 
 This directory keeps the mod and a uv project that only tests the plugin
 through the real binary. The gates, which CI runs: `uv run ruff format --check .`,

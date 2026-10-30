@@ -5,16 +5,15 @@ mod asked;
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
 use schemars::JsonSchema;
-use schemars::generate::SchemaSettings;
-use schemars::transform::RecursiveTransform;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
 use self::asked::{Instant, instant};
+use crate::records::Choice;
 
 /// Every open question. The path's prefix is matched in Rust: `starts_with`
 /// compares as `substr` and `length` would in `SQLite`.
-const QUESTIONS: &str = "SELECT logical, code, body FROM records \
+pub(crate) const QUESTIONS: &str = "SELECT logical, code, body FROM records \
      WHERE type = 'plans/question/v1' AND json_extract(body, '$.status') = 'open'";
 
 /// Codes that depend on the tree rather than the record. A question
@@ -85,18 +84,6 @@ struct Waiting {
     blocks: Option<String>,
 }
 
-/// One answer the owner may give. An answer's `choice` and the question's
-/// `recommendation` name it by `id`.
-#[derive(Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-#[schemars(rename = "Option")]
-struct Choice {
-    #[schemars(length(min = 1))]
-    id: String,
-    #[schemars(length(min = 1))]
-    text: String,
-}
-
 /// Options are read as objects because serde reads a struct from a list too.
 #[derive(Deserialize)]
 struct Stored {
@@ -107,19 +94,6 @@ struct Stored {
     options: Vec<Map<String, Value>>,
     recommendation: Option<String>,
     blocks: Option<String>,
-}
-
-/// `T`'s JSON Schema, draft 2020-12 without `$schema`, as a manifest holds
-/// it. An integer's `format`, such as `uint16`, says only how Rust stores it.
-pub(crate) fn schema<T: JsonSchema>(settings: SchemaSettings) -> Value {
-    let mut settings =
-        settings.with_transform(RecursiveTransform(|schema: &mut schemars::Schema| {
-            if schema.get("type").and_then(Value::as_str) == Some("integer") {
-                schema.remove("format");
-            }
-        }));
-    settings.meta_schema = None;
-    settings.into_generator().into_root_schema_for::<T>().into()
 }
 
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {

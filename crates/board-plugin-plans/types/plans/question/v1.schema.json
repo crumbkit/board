@@ -2,16 +2,16 @@
   "$defs": {
     "Option": {
       "additionalProperties": false,
-      "description": "One answer the owner may give. An answer's `choice` and the question's `recommendation` name it by `id`.",
+      "description": "One answer the owner may give. An answer's `choice` and the question's\n`recommendation` name it by `id`.",
       "properties": {
         "id": {
+          "description": "The option's name, unique among the question's options.",
           "minLength": 1,
-          "title": "Id",
           "type": "string"
         },
         "text": {
+          "description": "What choosing the option means, in words the owner reads.",
           "minLength": 1,
-          "title": "Text",
           "type": "string"
         }
       },
@@ -19,72 +19,72 @@
         "id",
         "text"
       ],
-      "title": "Option",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`plans/question/v1`: a question an agent session needs the owner to answer.\n\nIt lives at `/projects/<project>/questions/<id>`, so its path names its\nproject. `<id>` is a sortable UTC time and a short random suffix, such as\n`20261024T1830Z-k3`. Its answer is a `plans/answer/v1` at\n`/projects/<project>/answers/<id>`, with the same id. `session` is the\nasking session's `local_` id, so the answer can be sent back to it. `repo`\nnames the repository, such as `crumbkit/board`, when there is one.\n`recommendation` is the `id` of one of `options`, and `why` gives the reason.\n`blocks` says what cannot proceed until the question is answered. `status`\nis `open` until an answer is recorded, then `answered`; `withdrawn` means\nthe question no longer matters. `context_path` references a Markdown file\nin the board that holds long background. `note` records what the asker did\nnot know, such as details nobody has written down yet. Never put a secret\nvalue in a question.",
+  "description": "`plans/question/v1`: a question an agent session needs the owner to answer.\n\nIt lives at `/projects/<project>/questions/<id>`, so its path names its\nproject. `<id>` is a sortable UTC time and a short random suffix, such as\n`20261024T1830Z-k3`. Its answer is a `plans/answer/v1` at\n`/projects/<project>/answers/<id>`, with the same id. Never put a secret\nvalue in a question.",
   "properties": {
     "$type": {
       "const": "plans/question/v1",
-      "title": "$Type",
+      "description": "The record's type.",
       "type": "string"
     },
     "asked": {
+      "description": "When the question was asked.",
       "format": "date-time",
-      "title": "Asked",
       "type": "string"
     },
     "blocks": {
-      "title": "Blocks",
+      "description": "What cannot proceed until the question is answered.",
       "type": "string"
     },
     "context_path": {
+      "description": "A Markdown file in the board that holds long background.",
       "format": "board-ref",
-      "title": "Context Path",
       "type": "string"
     },
     "note": {
-      "title": "Note",
+      "description": "What the asker did not know, such as details nobody has written down\nyet.",
       "type": "string"
     },
     "options": {
+      "default": [],
+      "description": "The answers the owner may choose from.",
       "items": {
         "$ref": "#/$defs/Option"
       },
-      "title": "Options",
       "type": "array"
     },
     "question": {
+      "description": "What the owner is asked.",
       "minLength": 1,
-      "title": "Question",
       "type": "string"
     },
     "recommendation": {
-      "title": "Recommendation",
+      "description": "The `id` of the option the asker recommends.",
       "type": "string"
     },
     "repo": {
-      "title": "Repo",
+      "description": "The repository the question concerns, as a GitHub owner/name such as\n`crumbkit/board`, when there is one.",
       "type": "string"
     },
     "session": {
+      "description": "The asking session's `local_` id, so the answer can be sent back to it.",
       "pattern": "^local_[0-9a-f-]+$",
-      "title": "Session",
       "type": "string"
     },
     "status": {
+      "description": "`open` until an answer is recorded, then `answered`; `withdrawn` when\nthe question no longer matters.",
       "enum": [
         "open",
         "answered",
         "withdrawn"
       ],
-      "title": "Status",
       "type": "string"
     },
     "why": {
-      "title": "Why",
+      "description": "Why the asker recommends it.",
       "type": "string"
     }
   },
