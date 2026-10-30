@@ -416,10 +416,12 @@ fn a_schema_outside_the_plugins_namespace_or_symlinked_is_left_alone() {
 #[test]
 fn a_warm_index_finds_the_records_a_cold_one_does() {
     let (board, _data, plugins) = orphaned(UNCOMMITTED, 1);
+    let library = crate::tests::Library::mounted(&board);
     let cache = tempfile::tempdir().unwrap();
     let enable = || open(&board).plugin_enable(Some(&plugins), Some(cache.path()), &notes());
     assert_eq!(enable().unwrap().kept.len(), 1, "cold");
     assert_eq!(enable().unwrap().kept.len(), 1, "warm");
+    library.moved(&board);
     board.write("old/0.json", Item::Deleted);
     assert_eq!(enable().unwrap().removed, [OLD], "warm, the record gone");
 }

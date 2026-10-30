@@ -39,6 +39,74 @@ pub(crate) fn open(scenario: &Scenario) -> Board {
     Board::open(scenario.workdir(), None).unwrap()
 }
 
+/// A library board that a board mounts at `/vendor`, with a task of the
+/// board that refers into it. The library's second commit makes its project
+/// a link to another, and changes its task and its note, so moving the
+/// mount changes what each reference into it reaches.
+pub(crate) struct Library {
+    library: Scenario,
+    second: ObjectId,
+}
+
+impl Library {
+    /// Mounts a new library in `board` at its first commit.
+    pub(crate) fn mounted(board: &Scenario) -> Self {
+        let library = Scenario::new();
+        let project = r#"{"$type": "lr/project/v1"}"#;
+        let to_q = r#"{"$type": "board/mount/v1", "path": "/projects/q"}"#;
+        let (see_p, see_none) = (task(r#", "see": "/projects/p""#), task(r#", "see": "/x""#));
+        let files = |p, t, note| {
+            [
+                (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
+                (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+                ("projects/p.json", p),
+                ("projects/q.json", project),
+                ("tasks/t.json", t),
+                ("notes.md", note),
+            ]
+        };
+        let first = library.commit(&files(project, &see_p, "[p](/projects/p)"));
+        let second = library.commit(&files(to_q, &see_none, "[t](tasks/t.json) [x](/x)"));
+        let refers = task(r#", "project": "/vendor/projects/p", "see": "/vendor/tasks/t""#);
+        board
+            .write("vendor.json", Item::File(&Self::mount(&library, first)))
+            .write("tasks/vendor.json", Item::File(&refers));
+        Self { library, second }
+    }
+
+    /// Moves `board`'s mount to the library's second commit.
+    pub(crate) fn moved(&self, board: &Scenario) {
+        let mount = Self::mount(&self.library, self.second);
+        board.write("vendor.json", Item::File(&mount));
+    }
+
+    fn mount(library: &Scenario, commit: ObjectId) -> String {
+        format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{}", "follow": "main", "commit": "{commit}"}}"#,
+            library.path()
+        )
+    }
+}
+
+/// A check answers from a warm index as from a cold one after the mount
+/// moves and a record changes.
+#[test]
+fn a_check_answers_from_a_warm_index_as_from_a_cold_one_after_the_mount_moves() {
+    let scenario = board();
+    let library = Library::mounted(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let checked = |cache: Option<&std::path::Path>| {
+        let report = open(&scenario).check(None, cache).unwrap();
+        report.entries
+    };
+    let before = checked(Some(cache.path()));
+    library.moved(&scenario);
+    scenario.write("projects/p.json", Item::File(r#"{"$type": "lr/task/v1"}"#));
+    let warm = checked(Some(cache.path()));
+    assert_ne!(warm, before, "the change is seen");
+    assert_eq!(warm, checked(None));
+}
+
 /// Makes the next walk of `board`, indexed in `cache`, see `blob` at `path`.
 /// The walk trusts a stored blob whose stat still matches, so a stand-in
 /// makes it see a blob the file does not hold, as if the file changed
@@ -1355,6 +1423,28 @@ fn get_each_answers_through_links_and_mounts_as_each_path_alone() {
             Err(Code::RecordNotARecord),
         ]
     );
+}
+
+#[test]
+fn ls_answers_from_a_warm_index_as_from_a_cold_one_after_the_mount_moves() {
+    let scenario = board();
+    let library = Library::mounted(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let listed = |asked: &str, cache: Option<&std::path::Path>| {
+        let report = open(&scenario).ls(&path(asked), cache).unwrap();
+        (report.location, report.listed)
+    };
+    let before = listed("/vendor/projects", Some(cache.path()));
+    library.moved(&scenario);
+    scenario.write("tasks/new.json", Item::File(&task("")));
+    for asked in ["/vendor/projects", "/tasks"] {
+        assert_eq!(
+            listed(asked, Some(cache.path())),
+            listed(asked, None),
+            "{asked}"
+        );
+    }
+    assert_ne!(listed("/vendor/projects", Some(cache.path())), before);
 }
 
 #[test]

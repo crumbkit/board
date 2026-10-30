@@ -445,8 +445,19 @@ fn answered(scenario: &Scenario, text: &str, cache: Option<&Path>) -> RefsReport
 #[test]
 fn refs_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change() {
     let scenario = linked();
+    let library = crate::tests::Library::mounted(&scenario);
     let cache = tempfile::tempdir().unwrap();
     let before = answered(&scenario, "/projects/p", Some(cache.path()));
+    let vendor = answered(&scenario, "/vendor/projects/p", Some(cache.path()));
+    library.moved(&scenario);
+    assert_ne!(
+        answered(&scenario, "/vendor/projects/p", Some(cache.path())),
+        vendor
+    );
+    assert_eq!(
+        answered(&scenario, "/vendor/projects/p", Some(cache.path())),
+        answered(&scenario, "/vendor/projects/p", None),
+    );
     scenario
         .write("tasks/a.json", Item::File(&task(r#", "see": "/links/l""#)))
         .write("tasks/b.json", Item::File(&task("")));
@@ -473,9 +484,11 @@ fn answered_each(scenario: &Scenario, texts: &[&str], cache: Option<&Path>) -> V
 fn refs_of_several_paths_answers_from_a_warm_index_as_from_a_cold_one_after_the_references_change()
 {
     let scenario = linked();
+    let library = crate::tests::Library::mounted(&scenario);
     let cache = tempfile::tempdir().unwrap();
-    let asked = ["/projects/p", "/tasks/a", "/tasks/b"];
+    let asked = ["/projects/p", "/tasks/a", "/tasks/b", "/tasks/vendor"];
     let before = answered_each(&scenario, &asked, Some(cache.path()));
+    library.moved(&scenario);
     scenario
         .write("tasks/a.json", Item::File(&task(r#", "see": "/links/l""#)))
         .write("tasks/b.json", Item::File(&task("")));

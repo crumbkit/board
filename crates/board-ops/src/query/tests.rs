@@ -277,14 +277,18 @@ fn answered(scenario: &Scenario, sql: &str, cache: Option<&Path>) -> QueryReport
 fn a_query_answers_from_a_warm_index_as_from_a_cold_one_after_a_change() {
     let scenario = board();
     scenario.write("tasks/a.json", Item::File(&task("")));
+    let library = crate::tests::Library::mounted(&scenario);
     let cache = tempfile::tempdir().unwrap();
     answered(&scenario, "SELECT 1", Some(cache.path()));
+    library.moved(&scenario);
     scenario
         .write("tasks/a.json", Item::File(&task(r#", "see": "/nowhere""#)))
         .write("tasks/b.json", Item::File(&task("")));
     for sql in [
         "SELECT * FROM entries ORDER BY source, path",
         "SELECT * FROM records ORDER BY source, path",
+        "SELECT * FROM refs ORDER BY record, schema, ordinal",
+        "SELECT * FROM links ORDER BY blob, ordinal",
     ] {
         let warm = answered(&scenario, sql, Some(cache.path()));
         assert_eq!(warm, answered(&scenario, sql, None), "{sql}");
