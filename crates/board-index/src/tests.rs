@@ -744,3 +744,18 @@ fn a_statement_is_readable_only_by_its_owner_and_removed_when_dropped() {
     drop(statement);
     assert!(!file.exists(), "the statement outlived its path");
 }
+
+#[test]
+fn an_index_keeps_temporary_tables_in_memory_when_created_reopened_or_held_in_memory() {
+    let cache = tempfile::tempdir().unwrap();
+    // `SQLite` reads 2 as MEMORY; the default, 0, keeps them in a file.
+    let temp_store = |index: Index| -> i64 {
+        (index.connection)
+            .query_row("PRAGMA temp_store", [], |row| row.get(0))
+            .unwrap()
+    };
+    let open = || Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
+    assert_eq!(temp_store(open()), 2, "created");
+    assert_eq!(temp_store(open()), 2, "reopened");
+    assert_eq!(temp_store(Index::fall_back().unwrap()), 2, "in memory");
+}
