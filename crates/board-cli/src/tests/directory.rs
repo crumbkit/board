@@ -216,6 +216,7 @@ fn a_directory_that_is_not_utf8_still_prints_a_groups_help() {
         browser: None,
         binary: None,
         cursor: None,
+        built_in: board_ops::BuiltIn::default(),
     };
     let arguments = [
         OsString::from(BINARY_NAME),

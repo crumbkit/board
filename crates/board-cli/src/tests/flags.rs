@@ -208,6 +208,7 @@ fn a_terminal_on_stdin_is_not_read() {
         browser: None,
         binary: None,
         cursor: None,
+        built_in: board_ops::BuiltIn::default(),
     };
     let arguments = || ["board", "call", "tasks.due"].map(OsString::from);
     let mut torn: &[u8] = b"{";
@@ -249,7 +250,7 @@ fn the_reserved_flags_are_the_long_flags_of_a_grafted_call() {
     );
     let arguments = ["board", "call", "tasks.due"].map(OsString::from);
     let plugins = data.workdir().join("plugins");
-    let grafted = crate::graft::find(&arguments, Some(&plugins));
+    let grafted = crate::graft::find(&arguments, board_ops::BuiltIn::default(), Some(&plugins));
     assert!(grafted.is_some());
     let mut command = crate::graft::command(grafted.as_ref());
     command.build();
@@ -365,7 +366,7 @@ fn updating_a_parsed_command_line_replaces_its_graft() {
     let plugins = data.workdir().join("plugins");
     let matches = |words: &[&str]| {
         let arguments: Vec<OsString> = words.iter().map(OsString::from).collect();
-        let grafted = crate::graft::find(&arguments, Some(&plugins));
+        let grafted = crate::graft::find(&arguments, board_ops::BuiltIn::default(), Some(&plugins));
         crate::graft::command(grafted.as_ref()).get_matches_from(arguments)
     };
     let mut parsed = crate::graft::Parsed::from_arg_matches(&matches(&[

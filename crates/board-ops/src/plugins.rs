@@ -19,6 +19,8 @@ pub struct Plugins<'a> {
     pub directory: Option<&'a Path>,
     pub environment: Environment,
     pub limits: Limits,
+    /// Where a built-in plugin's queries keep the index.
+    pub cache: Option<&'a Path>,
 }
 
 /// A call that failed: the plugin's or Board's refusal.
@@ -225,8 +227,9 @@ impl Board {
         })
     }
 
-    /// The installed plugins offering `capability`, when given, whose
-    /// capabilities match every filter. A broken plugin offers nothing.
+    /// The plugins offering `capability`, when given, whose capabilities
+    /// match every filter. A broken plugin, and a built-in one installed
+    /// again, offers nothing.
     pub fn plugin_find(
         &self,
         plugins: Option<&Path>,
@@ -237,6 +240,7 @@ impl Board {
             .plugin_list(plugins)?
             .plugins
             .into_iter()
+            .filter(|plugin| plugin.shadows.is_none())
             .filter_map(|plugin| match plugin.state {
                 PluginState::Installed(mut manifest) => {
                     manifest.retain(capability, filters);

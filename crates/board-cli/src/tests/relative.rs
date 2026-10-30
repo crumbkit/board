@@ -110,6 +110,7 @@ fn relative_into(
         browser: None,
         binary: None,
         cursor: None,
+        built_in: board_ops::BuiltIn::default(),
     };
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())

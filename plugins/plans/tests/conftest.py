@@ -1,4 +1,4 @@
-"""Fixture boards that run the real `board` binary with this plugin installed and enabled."""
+"""Fixture boards that run the real `board` binary, which has this plugin built in, with the plugin enabled."""
 
 import json
 import os
@@ -12,7 +12,6 @@ import pytest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
-SCHEMAS = PLUGIN / "types" / "plans"
 
 
 def board_binary() -> Path:
@@ -22,7 +21,7 @@ def board_binary() -> Path:
 
 @dataclass(frozen=True)
 class Board:
-    """A git repository holding a board, with this plugin installed for it alone."""
+    """A git repository holding a board, with its own data and cache directories."""
 
     root: Path
     data: Path
@@ -78,14 +77,11 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with plans installed and enabled through `board plugin enable`."""
+    """A board that does not commit, with plans enabled through `board plugin enable`."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
-    plugins = fixture.data / "board" / "plugins"
-    plugins.mkdir(parents=True)
-    (plugins / "plans").symlink_to(PLUGIN)
     enabled = fixture.run("plugin", "enable", "plans")
     assert enabled.returncode == 0, enabled.stderr
     return fixture

@@ -12,9 +12,10 @@ text: `message` for a refused manifest and `schemas` for schema problems. The ta
 or `--fields` asks for the table. It exits 1 on a broken install
 (`board::plugin::bad_manifest`), an enabled name not installed
 (`not_installed`), or an enabled plugin's schema that the board lacks
-(`schema_missing`) or holds differently (`schema_differs`), naming the file.
+(`schema_missing`) or holds differently (`schema_differs`), naming the file,
+or a built-in plugin also installed (`duplicate`), naming it in `shadows`.
 `board plugin find [--capability <name>] [--meta <key>=<value>]…` lists the
-capabilities of working installs, a line each with its description. Each filter
+capabilities of working plugins, a line each with its description. Each filter
 narrows the list to the capabilities that match it; with none, it lists them all.
 A `--meta` filter matches a string value in the capability's `_meta`, or in the
 plugin's `metadata` when `_meta` lacks the key. Its columns are `plugin`,

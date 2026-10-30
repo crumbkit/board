@@ -1,3 +1,4 @@
+plans.open disabled The questions under a path whose status is open, oldest first.
 tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.

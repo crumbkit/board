@@ -26,6 +26,7 @@ fn with_shell(
         browser: None,
         binary: None,
         cursor: None,
+        built_in: board_ops::BuiltIn::default(),
     };
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
@@ -272,6 +273,7 @@ fn a_path_after_personal_completes_in_the_personal_board_and_without_one_named_n
             browser: None,
             binary: None,
             cursor: None,
+            built_in: board_ops::BuiltIn::default(),
         };
         let arguments = ["--", BINARY_NAME, "--personal", "get", "/ta"];
         let arguments = std::iter::once(BINARY_NAME)

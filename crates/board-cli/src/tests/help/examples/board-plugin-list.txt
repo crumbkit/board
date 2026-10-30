@@ -1,1 +1,2 @@
+ok plans 0.1.0 disabled offers open
 ok tasks 0.3.0 disabled offers available, add, claim, done, defer, drop, reviewed

@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 19] = [
+pub const NOT_REPRODUCED: [(Code, &str); 18] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -72,11 +72,6 @@ pub const NOT_REPRODUCED: [(Code, &str); 19] = [
         Code::UiOpenFailed,
         "ui open must fail to start a server or a browser, and a test must not start one; \
          board-serve/src/tests.rs pairs a binary that cannot start with a running server",
-    ),
-    (
-        Code::PluginDuplicate,
-        "no plugin is built into the board binary yet, so no installed plugin can share a name with one; \
-         board-ops/src/host/tests.rs pairs a built-in and an installed copy with one under another name",
     ),
     (Code::ServeHost, SERVED),
     (Code::ServeOrigin, SERVED),

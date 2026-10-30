@@ -113,6 +113,7 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-plugins",
  "board-scenario",
  "board-serve",
  "board-tree",
@@ -188,6 +189,29 @@ dependencies = [
  "signal-hook",
  "strsim",
  "thiserror",
+]
+
+[[package]]
+name = "board-plugin-plans"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-scenario",
+ "bolero",
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "board-plugins"
+version = "0.0.0"
+dependencies = [
+ "board-ops",
+ "board-plugin-plans",
 ]
 
 [[package]]
