@@ -86,15 +86,18 @@ fn a_run_appends_a_record_of_its_command_and_phases_and_a_failed_run_its_error_c
     assert!(found["total_us"].as_u64().unwrap() > 0);
     assert!(found["at_ms"].as_u64().unwrap() > 0);
     let version = found["version"].as_str().unwrap();
-    let build = version
-        .strip_prefix(concat!(env!("CARGO_PKG_VERSION"), "+"))
-        .unwrap();
-    let commit = build.strip_suffix(".dirty").unwrap_or(build);
-    assert_eq!(commit.len(), 12, "{version}");
-    assert!(
-        commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
-        "{version}"
-    );
+    let build = version.strip_prefix(env!("CARGO_PKG_VERSION")).unwrap();
+    // A build outside a git checkout has no suffix.
+    if let Some(build) = build.strip_prefix('+') {
+        let commit = build.strip_suffix(".dirty").unwrap_or(build);
+        assert_eq!(commit.len(), 12, "{version}");
+        assert!(
+            commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "{version}"
+        );
+    } else {
+        assert_eq!(build, "", "{version}");
+    }
     assert_eq!(found["capability"], Value::Null);
     let phases: Vec<&str> = found["phases"]
         .as_array()

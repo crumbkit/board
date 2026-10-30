@@ -1,5 +1,5 @@
 //! `cargo xtask bench --against <board>`: runs each row's `board` command
-//! with an older binary (base) and the one beside xtask (new) in alternating
+//! with an older binary (base) and one it builds in release (new) in alternating
 //! order, and calls a row slower only when a sign test over the rounds says
 //! so (docs/architecture/performance/budgets.md).
 
@@ -15,7 +15,7 @@ use crate::process;
 const THRESHOLD: f64 = 0.05;
 /// The rounds that must move one way for a row to be slower or faster: a
 /// sign test over 15 rounds that calls a row slower by luck under 2% of the
-/// time. With fewer rounds, no row is.
+/// time. That bound holds only at 15 rounds; with fewer, no row is slower.
 const AGREE: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,50 +58,38 @@ pub(crate) fn rows(
     directory: &str,
     mounted: Option<&Path>,
 ) -> Vec<Row> {
-    let row = |name, board: &Path, words: &[&str], cold| -> Row {
-        let words = words.iter().map(OsString::from);
-        (
-            name,
-            ["-C".into(), board.into()]
-                .into_iter()
-                .chain(words)
-                .collect(),
-            cold,
-        )
-    };
-    let query = ["query", "SELECT count(*) FROM entries"];
-    let mut rows = vec![
-        row("`board get`, warm", plain, &["get", sample], false),
-        row(
-            "`board ls` of a record's directory, warm",
-            plain,
-            &["ls", directory],
-            false,
-        ),
-        row(
-            "`board check`, warm, nothing changed",
-            plain,
-            &["check"],
-            false,
-        ),
-        row("simple `board query`, warm", plain, &query, false),
-        row("full index, cold", plain, &["check"], true),
+    let query: &[&str] = &["query", "SELECT count(*) FROM entries"];
+    let ls = "`board ls` of a record's directory, warm";
+    let table: [(&'static str, &[&str], bool); 5] = [
+        ("`board get`, warm", &["get", sample], false),
+        (ls, &["ls", directory], false),
+        ("`board check`, warm, nothing changed", &["check"], false),
+        ("simple `board query`, warm", query, false),
+        ("full index, cold", &["check"], true),
     ];
-    rows.extend(mounted.map(|mounted| row(MOUNTED, mounted, &query, false)));
+    let row = |(name, words, cold): (&'static str, &[&str], bool), board: &Path| -> Row {
+        let words = words.iter().map(OsString::from);
+        let arguments = ["-C".into(), board.into()].into_iter().chain(words);
+        (name, arguments.collect(), cold)
+    };
+    let mut rows: Vec<Row> = table.into_iter().map(|entry| row(entry, plain)).collect();
+    rows.extend(mounted.map(|mounted| row((MOUNTED, query, false), mounted)));
     rows
 }
 
-/// The arms in round `round`: base goes first in even rounds.
-pub(crate) fn order(round: usize) -> [Arm; 2] {
-    if round.is_multiple_of(2) {
-        [Arm::Base, Arm::New]
-    } else {
-        [Arm::New, Arm::Base]
-    }
+/// Each round's arms in order, and whether it is measured: one discarded
+/// round, then `runs` that alternate which arm goes first, starting with
+/// base, so the measured rounds split as evenly as their count allows.
+pub(crate) fn rounds(runs: usize) -> impl Iterator<Item = (bool, [Arm; 2])> {
+    (0..=runs).map(|round| match round % 2 {
+        1 => (true, [Arm::Base, Arm::New]),
+        _ => (round > 0, [Arm::New, Arm::Base]),
+    })
 }
 
-/// Judges paired rounds: each round's change is `(new - base) / base`.
-pub(crate) fn judge(base: &[Duration], new: &[Duration]) -> Compared {
+/// Judges the paired rounds of row `name`: each round's change is
+/// `(new - base) / base`.
+pub(crate) fn judge(name: &str, base: &[Duration], new: &[Duration]) -> Compared {
     let deltas: Vec<f64> = base
         .iter()
         .zip(new)
@@ -120,7 +108,7 @@ pub(crate) fn judge(base: &[Duration], new: &[Duration]) -> Compared {
         Verdict::Same
     };
     Compared {
-        name: String::new(),
+        name: name.to_owned(),
         base: median(base.to_vec()),
         new: median(new.to_vec()),
         delta,
@@ -137,12 +125,20 @@ pub(crate) fn passed(compared: &[Compared]) -> bool {
         .all(|row| !matches!(row.verdict, Verdict::Slower | Verdict::Failed(Arm::New, _)))
 }
 
-/// `path`, when it names a file.
-pub(crate) fn base(path: &Path) -> Result<PathBuf, BenchError> {
-    let path = path.to_owned();
-    path.is_file()
-        .then(|| path.clone())
-        .ok_or(BenchError::NoAgainst { path })
+/// Builds `board` in release from the workspace at `root`, to compare as new.
+pub(crate) fn build(root: &Path) -> Result<PathBuf, BenchError> {
+    let mut cargo = process::cargo();
+    cargo.args(["build", "--release", "--quiet", "--package", "board-cli"]);
+    let status = cargo.current_dir(root).status().map_err(|e| failed(&e))?;
+    if !status.success() {
+        return Err(failed(&format!("building board-cli stopped with {status}")));
+    }
+    let directory = process::target(root).join("release");
+    let board = directory.join("board");
+    board
+        .is_file()
+        .then_some(board)
+        .ok_or(BenchError::NoBoard { directory })
 }
 
 /// Runs every row `runs` rounds on `binaries` (base, new), each with its own
@@ -159,8 +155,8 @@ pub(crate) fn compare(
     for (name, arguments, cold) in rows {
         let mut times = [Vec::with_capacity(runs), Vec::with_capacity(runs)];
         let mut verdict = None;
-        for round in 0..=runs {
-            for arm in order(round) {
+        for (measured, arms) in rounds(runs) {
+            for arm in arms {
                 let cold = cold.then(temporary).transpose()?;
                 let cache = cold.as_ref().unwrap_or(&caches[arm as usize]).path();
                 let directories = [cache, empty.path()];
@@ -168,14 +164,13 @@ pub(crate) fn compare(
                 if exit != 0 {
                     verdict = verdict.or(Some(Verdict::Failed(arm, exit)));
                 }
-                if round > 0 {
+                if measured {
                     times[arm as usize].push(took);
                 }
             }
         }
-        let judged = judge(&times[0], &times[1]);
+        let judged = judge(name, &times[0], &times[1]);
         compared.push(Compared {
-            name: (*name).to_owned(),
             verdict: verdict.unwrap_or(judged.verdict),
             ..judged
         });

@@ -49,7 +49,7 @@ many tasks as the first, refers each to a project in one of up to 20
 mounted repositories, one for each 500 records, and mounts each at
 `/repos/r<n>`. Each repository is a generated board of a fortieth as many
 tasks, with 100 directories of source files. At 10,000 records the board
-decides about 13,300 entries, 11,300 of them mounted. Its budget is the
+decides about 13,300 entries, 11,100 of them mounted. Its budget is the
 measured median on an M-series laptop, 3.7 s, rounded up; the row shows
 that deciding the references into mounts costs more than the rest of the
 board. The generated repositories hold their objects loose, from one
@@ -59,10 +59,12 @@ commit, where a real repository's are mostly packed. On a board given with
 ### Comparing two builds
 
 `cargo xtask bench --against <board> [--runs <n>]` compares an older
-`board` binary (base) with the `board` beside xtask (new) on the generated
-boards, or on the board `--board` gives. It is the regression check for a
-change that may be slower; it runs locally and in no lane. Build the base
-from `main` in a worktree first:
+`board` binary (base) with a release build of this workspace (new) on the
+generated boards, or on the board `--board` gives. Bench builds new itself,
+with `cargo build --release --package board-cli`, before it generates the
+boards, and fails with `xtask::bench::no_board` if that leaves no `board`.
+It is the regression check for a change that may be slower; it runs locally
+and in no lane. Build the base from `main` in a worktree first:
 
     git worktree add /tmp/base origin/main
     cargo build --release --package board-cli --manifest-path /tmp/base/Cargo.toml
@@ -71,16 +73,19 @@ Each row runs its `board` command as a child process: `get`, `ls`,
 `check`, `query`, a check with an empty cache for the cold row, and the
 mounted query; there is no put or plugin call. Each binary gets its own
 cache, an empty config and data directory, and only `HOME` and `PATH` from
-this machine. After one discarded run of each, every round runs both, base
-first in even rounds and new first in odd ones, 15 rounds by default. Each
+this machine. After one discarded run of each, every round runs both,
+alternating which goes first, from base, so 15 rounds, the default, run base
+first 8 times and new first 7. Each
 round gives the change `(new - base) / base`. A row is slower when the
 median change is over 5% and new was slower in at least 12 rounds. Over 15
 rounds that is a sign test that calls a row slower by luck under 2% of the
-time; with fewer than 12 rounds no row is slower. Faster is the same rule
+time. The 2% holds only at 15 rounds: with more it is looser, and with
+fewer than 12 no row is slower. Faster is the same rule
 the other way, and any other row is the same. A row whose base exits with
 an error is reported and not judged. The command exits 1 when a row is
 slower or new fails where base passed. A missing base fails with
-`xtask::bench::no_against`.
+`xtask::bench::no_against`, and `--runs` without `--against` with
+`xtask::bench::runs_without_against`.
 
 Targets are the speed an agent loop or a web view needs. None is met or
 enforced yet:

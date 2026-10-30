@@ -44,7 +44,7 @@ after each commit, so board-cli recompiles after every commit.
 | `index.refresh.facts` | loading or adding each entry's facts |
 | `index.refresh.head` | listing `HEAD`'s trees |
 | `snapshot.mounts` | walking each mounted commit, within `snapshot` |
-| `snapshot.decide` | deciding every entry, its references and pointers |
+| `snapshot.decide` | deciding every entry, its references and pointers, then storing the mounts and pruning the index |
 | `snapshot.commit` | committing the index |
 | `view` | filling the views with what the snapshot decided, for `query` |
 | `query.sql` | running the SQL statement |
@@ -62,8 +62,9 @@ repositories a snapshot opened from disk besides the board's own, and
 `pointers_read`, the files `snapshot.decide` read to learn whether they
 are pointers, once per blob in each source. `pointers_read` leaves out the
 pointers read while walking mounts and while resolving a path before the
-snapshot. When another process holds the index, a snapshot runs again in
-memory, and the counts are those of the run that answered, except
+snapshot. When another process holds the index, a snapshot runs again: the
+second run waits for the index's write lock, and runs in memory only if that
+wait times out. The counts are those of the run that answered, except
 `repositories`, which counts each repository opened in either run once. `plugin.reply` includes the
 plugin's own work, such as the `board query` it runs, which records its own
 line one `depth` deeper. The runs that refused a changed target, from both log files:
@@ -80,12 +81,13 @@ before you attach it to a bug report.
 
 ## Reading the log and profiling
 
-The median time of each phase over the last 20 top-level runs of `query`
-(use `select(.capability == "tasks.available")` for a call):
+The median time of each phase, and of the whole run as `total`, over the
+last 20 top-level runs of `query` (use
+`select(.capability == "tasks.available" and .depth == 0)` for a call):
 
     cat ~/.cache/board/timings.jsonl.1 ~/.cache/board/timings.jsonl 2>/dev/null |
       jq -s '[.[] | select(.command == "query" and .depth == 0)] | .[-20:]
-        | [.[].phases[]] | group_by(.name)
+        | [.[].phases[]] + map({name: "total", us: .total_us}) | group_by(.name)
         | map({name: .[0].name, runs: length, ms: ((map(.us) | sort)[length / 2 | floor] / 1000)})'
 
 Check `version` first, so that runs of an older build do not mix in.

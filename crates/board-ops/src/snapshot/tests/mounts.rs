@@ -122,6 +122,23 @@ fn a_check_opens_a_repository_two_mounts_name_once_and_counts_it_and_the_pointer
 }
 
 #[test]
+fn a_check_scoped_into_a_mount_counts_the_repository_its_scope_opens_as_an_unscoped_check_does() {
+    let (library, commit) = library();
+    let scenario = board();
+    scenario.write(
+        "vendor/lib.json",
+        Item::File(&mount(&library.path(), commit)),
+    );
+    assert_eq!(check(&scenario, None).work.repositories, 1);
+    assert_eq!(
+        check(&scenario, Some("/vendor/lib/tasks"))
+            .work
+            .repositories,
+        1
+    );
+}
+
+#[test]
 fn a_mount_inside_a_mounted_board_is_followed_and_reads_against_its_own_repository() {
     let (library, commit) = library();
     let middle = Scenario::new();

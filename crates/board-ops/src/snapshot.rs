@@ -58,13 +58,13 @@ impl Board {
         scope: Option<&LogicalPath>,
     ) -> Result<Snapshot, CheckError> {
         let _timed = self.timed("snapshot");
+        let opened = self.repositories().opened();
         if let Some(scope) = scope {
             let _timed = self.timed("resolve");
             self.repositories()
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let opened = self.repositories().opened();
         let ((mut report, references, walked), wrote, writer, entries) =
             attempt(index, |writer| self.decide(writer, scope))?;
         let timed = self.timed("snapshot.commit");

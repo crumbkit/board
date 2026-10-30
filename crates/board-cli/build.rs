@@ -20,28 +20,23 @@ fn git(arguments: &[&str]) -> Option<String> {
 
 fn main() {
     let status = [
-        &["--no-optional-locks", "status", "--porcelain", "--"][..],
-        &SOURCE,
+        &["--no-optional-locks", "status", "--porcelain", "--"],
+        &SOURCE[..],
     ]
     .concat();
-    let dirty = if git(&status).is_some_and(|changes| !changes.is_empty()) {
-        ".dirty"
-    } else {
-        ""
-    };
-    let build = git(&["rev-parse", "--short=12", "HEAD"]).map(|commit| format!("+{commit}{dirty}"));
+    let dirty = git(&status).is_some_and(|changes| !changes.is_empty());
+    let build = git(&["rev-parse", "--short=12", "HEAD"])
+        .map(|commit| format!("+{commit}{}", if dirty { ".dirty" } else { "" }));
     println!("cargo::rustc-env=BOARD_BUILD={}", build.unwrap_or_default());
-    // A commit appends to HEAD's reflog; an edit changes the source.
-    let log = git(&[
-        "rev-parse",
-        "--path-format=absolute",
-        "--git-path",
-        "logs/HEAD",
-    ]);
-    for path in log
+    // A commit appends to HEAD's reflog, or moves HEAD where git keeps no
+    // reflog; an edit changes the source.
+    let path = |name| git(&["rev-parse", "--path-format=absolute", "--git-path", name]);
+    let head = (path("logs/HEAD").filter(|log| std::path::Path::new(log).exists()))
+        .or_else(|| path("HEAD"));
+    for watched in head
         .into_iter()
         .chain(SOURCE.map(|path| format!("../../{path}")))
     {
-        println!("cargo::rerun-if-changed={path}");
+        println!("cargo::rerun-if-changed={watched}");
     }
 }

@@ -68,18 +68,43 @@ fn bench_reads_a_board_or_a_record_count() {
             board: None,
             records: 50,
             against: None,
-            runs: 15,
+            runs: None,
         })
     );
     assert_eq!(parse("--board /b").unwrap().board, Some("/b".into()));
     let against = parse("--against /old/board --runs 3").unwrap();
     assert_eq!(
         (against.against, against.runs),
-        (Some("/old/board".into()), 3)
+        (Some("/old/board".into()), Some(3))
     );
     assert_eq!(parse("--runs 0"), None);
     assert_eq!(parse("--records many"), None);
     assert_eq!(parse("--other"), None);
+}
+
+#[test]
+fn against_names_an_existing_base_and_takes_runs_only_with_it_or_is_refused() {
+    let fixture = Fixture::new();
+    fixture.write("board", "");
+    let base = fixture.path().join("board");
+    let options = |against: Option<PathBuf>, runs| Options {
+        board: None,
+        records: 1,
+        against,
+        runs,
+    };
+    let missing = options(Some(fixture.path().join("nothing")), None);
+    assert_eq!(
+        missing.against().unwrap_err().code(),
+        "xtask::bench::no_against"
+    );
+    let named = options(Some(base.clone()), None);
+    assert_eq!(named.against().unwrap(), Some((base.as_path(), 15)));
+    let lone = options(None, Some(3)).against().unwrap_err();
+    assert_eq!(lone.code(), "xtask::bench::runs_without_against");
+    let paired = options(Some(base.clone()), Some(3));
+    assert_eq!(paired.against().unwrap(), Some((base.as_path(), 3)));
+    assert_eq!(options(None, None).against().unwrap(), None);
 }
 
 #[test]
@@ -213,9 +238,7 @@ fn a_plugin_call_that_fails_fails_the_bench_and_one_that_answers_is_timed() {
             root.path(),
             &budgets,
             &host(fixture, script),
-            Corpus::Generated {
-                mounted: root.path(),
-            },
+            Some(root.path()),
         )
     };
     let failed = call(&Fixture::new(), "#!/bin/sh\ncat > /dev/null\nexit 1\n").unwrap_err();
@@ -269,7 +292,7 @@ fn the_put_row_writes_a_record_each_run_on_a_generated_board_and_skips_a_given_o
     generate(root.path(), 1, &[], 0).unwrap();
     let budgets = [(PUT.to_owned(), Duration::from_secs(1))];
     let host = host(&Fixture::new(), "");
-    let given = run(root.path(), &budgets, &host, Corpus::Given).unwrap();
+    let given = run(root.path(), &budgets, &host, None).unwrap();
     assert_eq!(
         given[0].took,
         Took::Skipped(
@@ -277,15 +300,7 @@ fn the_put_row_writes_a_record_each_run_on_a_generated_board_and_skips_a_given_o
                 .to_owned()
         )
     );
-    let timed = run(
-        root.path(),
-        &budgets,
-        &host,
-        Corpus::Generated {
-            mounted: root.path(),
-        },
-    )
-    .unwrap();
+    let timed = run(root.path(), &budgets, &host, Some(root.path())).unwrap();
     assert!(matches!(timed[0].took, Took::Median(_)), "{timed:?}");
     let cache = tempfile::tempdir().unwrap();
     let report = Board::open(root.path(), None)
@@ -307,7 +322,7 @@ fn the_mounted_query_row_is_timed_on_the_generated_mounted_board_and_skipped_on_
     let mounted = generate_mounted(root.path(), 20).unwrap();
     let budgets = [(MOUNTED.to_owned(), Duration::from_secs(1))];
     let host = host(&Fixture::new(), "");
-    let given = run(&mounted, &budgets, &host, Corpus::Given).unwrap();
+    let given = run(&mounted, &budgets, &host, None).unwrap();
     assert_eq!(
         given[0].took,
         Took::Skipped(
@@ -315,7 +330,6 @@ fn the_mounted_query_row_is_timed_on_the_generated_mounted_board_and_skipped_on_
                 .to_owned()
         )
     );
-    let generated = Corpus::Generated { mounted: &mounted };
-    let timed = run(&mounted, &budgets, &host, generated).unwrap();
+    let timed = run(&mounted, &budgets, &host, Some(&mounted)).unwrap();
     assert!(matches!(timed[0].took, Took::Median(_)), "{timed:?}");
 }

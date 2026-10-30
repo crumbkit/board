@@ -39,15 +39,6 @@ pub(crate) const PUT: &str = "`board put` of a small record, warm";
 /// The operation that times a query of a board that mounts others.
 pub(crate) const MOUNTED: &str = "simple `board query`, warm, 20 mounts";
 
-/// Whose board bench measures: one it generated and may write, with the
-/// generated mounted board beside it, or one given with `--board`, which it
-/// only reads.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Corpus<'a> {
-    Generated { mounted: &'a Path },
-    Given,
-}
-
 /// One operation's budget and what it took.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Timed {
@@ -116,7 +107,8 @@ pub(crate) struct Options {
     pub(crate) records: usize,
     /// The base `board` binary `--against` compares this one with.
     pub(crate) against: Option<PathBuf>,
-    pub(crate) runs: usize,
+    /// The rounds `--against` runs, if `--runs` sets them.
+    pub(crate) runs: Option<usize>,
 }
 
 impl Options {
@@ -126,7 +118,7 @@ impl Options {
             board: None,
             records: RECORDS,
             against: None,
-            runs: AGAINST_RUNS,
+            runs: None,
         };
         while let Some(flag) = arguments.next() {
             match flag.as_str() {
@@ -134,12 +126,23 @@ impl Options {
                 "--records" => options.records = arguments.next()?.parse().ok()?,
                 "--against" => options.against = Some(PathBuf::from(arguments.next()?)),
                 "--runs" => {
-                    options.runs = arguments.next()?.parse().ok().filter(|runs| *runs > 0)?;
+                    options.runs = Some(arguments.next()?.parse().ok().filter(|runs| *runs > 0)?);
                 }
                 _ => return None,
             }
         }
         Some(options)
+    }
+
+    /// The base binary `--against` names and the rounds to run, if it names
+    /// one: an existing file, and `--runs` only with it.
+    pub(crate) fn against(&self) -> Result<Option<(&Path, usize)>, BenchError> {
+        match (&self.against, self.runs) {
+            (None, None) => Ok(None),
+            (None, Some(_)) => Err(BenchError::RunsWithoutAgainst),
+            (Some(base), _) if !base.is_file() => Err(BenchError::NoAgainst { path: base.clone() }),
+            (Some(base), runs) => Ok(Some((base, runs.unwrap_or(AGAINST_RUNS)))),
+        }
     }
 }
 
@@ -179,18 +182,18 @@ pub(crate) fn budgets(docs: &str) -> Result<Vec<(String, Duration)>, BenchError>
 /// Times every budgeted operation on the board at `root`, a repository root.
 /// `get` reads the first record a check finds, `ls` lists its directory, the
 /// plugin call runs on `host`, and `put` writes a record for each run into a
-/// `Corpus::Generated` board, whose mounted board the mounted query reads.
+/// board bench generated. `mounted` is the mounted board generated beside
+/// it, which the mounted query reads; a board given with `--board` has none,
+/// and bench only reads it.
 pub(crate) fn run(
     root: &Path,
     budgets: &[(String, Duration)],
     host: &Host,
-    corpus: Corpus,
+    mounted: Option<&Path>,
 ) -> Result<Vec<Timed>, BenchError> {
     let (board, warm, checked) = warmed(root)?;
-    let mounted = match corpus {
-        Corpus::Generated { mounted } => Some(warmed(mounted)?),
-        Corpus::Given => None,
-    };
+    let given = mounted.is_none();
+    let mounted = mounted.map(warmed).transpose()?;
     let (sample, directory) = sample(&checked)?;
     let sample = &sample;
     budgets
@@ -212,9 +215,9 @@ pub(crate) fn run(
                     took,
                 });
             }
-            let skipped = match (operation.as_str(), corpus) {
-                (PUT, Corpus::Given) => "writes only a board it generated",
-                (MOUNTED, Corpus::Given) => "mounts repositories only into a board it generated",
+            let skipped = match (operation.as_str(), given) {
+                (PUT, true) => "writes only a board it generated",
+                (MOUNTED, true) => "mounts repositories only into a board it generated",
                 _ => "",
             };
             if !skipped.is_empty() {
@@ -512,6 +515,8 @@ pub(crate) enum BenchError {
         path.display()
     )]
     NoAgainst { path: PathBuf },
+    #[error("--runs sets the rounds of --against; add --against <board> or drop --runs")]
+    RunsWithoutAgainst,
 }
 
 impl BenchError {
@@ -522,6 +527,7 @@ impl BenchError {
             Self::Board { .. } | Self::Write(_) => "xtask::bench::failed",
             Self::NoBoard { .. } => "xtask::bench::no_board",
             Self::NoAgainst { .. } => "xtask::bench::no_against",
+            Self::RunsWithoutAgainst => "xtask::bench::runs_without_against",
         }
     }
 }

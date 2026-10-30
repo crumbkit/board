@@ -44,10 +44,10 @@ pub(crate) fn samply(path: &OsStr) -> Result<PathBuf, ProfileError> {
 /// Builds, warms and records `profile` from the workspace at `root`.
 pub(crate) fn run(root: &Path, profile: &Profile) -> Result<(), ProfileError> {
     let samply = samply(&process::var("PATH").unwrap_or_default())?;
-    let mut build = process::command("cargo");
+    let mut build = process::cargo();
     build.args(["build", "--profile", "profiling", "--package", "board-cli"]);
     status(build.current_dir(root))?;
-    let board = root.join("target/profiling/board");
+    let board = process::target(root).join("profiling/board");
     let mut warm = process::command(&board);
     status(warm.args(&profile.arguments).stdout(Stdio::null()))?;
     let mut record = process::command(samply);
@@ -59,24 +59,33 @@ pub(crate) fn run(root: &Path, profile: &Profile) -> Result<(), ProfileError> {
 }
 
 fn status(command: &mut Command) -> Result<(), ProfileError> {
-    let code = command.status().ok().map(|status| status.code());
+    let (outcome, source) = match command.status() {
+        Ok(status) if status.success() => return Ok(()),
+        Ok(status) => (format!("stopped with {status}"), None),
+        Err(error) => ("could not start".to_owned(), Some(error)),
+    };
     let program = command.get_program().to_owned();
-    (code == Some(Some(0)))
-        .then_some(())
-        .ok_or(ProfileError::Failed {
-            program,
-            code: code.flatten(),
-        })
+    Err(ProfileError::Failed {
+        program,
+        outcome,
+        source,
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ProfileError {
     #[error("samply is not on PATH; install it with `cargo install --locked samply`")]
     NoSamply,
-    #[error("{} failed with exit code {code:?}", program.display())]
+    #[error(
+        "{} {outcome}; check that it is installed, and that the board arguments \
+         name a command that succeeds",
+        program.display()
+    )]
     Failed {
         program: OsString,
-        code: Option<i32>,
+        outcome: String,
+        #[source]
+        source: Option<std::io::Error>,
     },
 }
 
