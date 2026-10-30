@@ -8,17 +8,21 @@ mod budgets;
 mod config;
 mod controls;
 mod files;
+mod process;
+mod profile;
 mod report;
 mod signing;
 mod source;
+mod timing;
 mod words;
 
 #[cfg(test)]
 mod tests;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use crate::bench::against;
 use crate::config::{Config, ConfigError};
 use crate::files::{FilesError, Root};
 use crate::report::{CheckKind, Output, Report};
@@ -28,48 +32,57 @@ const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/..");
 
 fn main() -> ExitCode {
     let mut arguments = std::env::args().skip(1);
+    let root = Path::new(ROOT);
+    let usage = || {
+        report::emit(&Output::Usage);
+        ExitCode::from(2)
+    };
     match arguments.next().as_deref() {
-        Some("lint") if arguments.next().is_none() => {}
-        Some("bench") => {
-            let Some(options) = bench::Options::parse(arguments) else {
-                report::emit(&Output::Usage);
-                return ExitCode::from(2);
-            };
-            return match bench(Path::new(ROOT), &options) {
-                Ok(timed) => {
-                    report::emit(&Output::Bench(&timed));
-                    if timed.iter().all(bench::Timed::passed) {
-                        ExitCode::SUCCESS
-                    } else {
-                        ExitCode::FAILURE
-                    }
-                }
-                Err(error) => {
-                    report::emit(&Output::Failure {
-                        code: error.code(),
-                        error: &error,
-                    });
-                    ExitCode::FAILURE
-                }
-            };
+        Some("lint") if arguments.next().is_none() => {
+            let linted = lint(root).map(|report| {
+                report::emit(&Output::Report(&report));
+                report.passed()
+            });
+            finish(linted, LintError::code)
         }
-        _ => {
-            report::emit(&Output::Usage);
-            return ExitCode::from(2);
-        }
-    }
-    match lint(Path::new(ROOT)) {
-        Ok(report) => {
-            report::emit(&Output::Report(&report));
-            if report.passed() {
+        Some("bench") => match bench::Options::parse(arguments) {
+            Some(options) => finish(bench(root, &options), bench::BenchError::code),
+            None => usage(),
+        },
+        Some("timing") => match timing::Filter::parse(arguments) {
+            Some(filter) => {
+                let home = process::var("HOME").map(|home| Path::new(&home).join(".cache"));
+                let cache = process::var("XDG_CACHE_HOME").map(PathBuf::from).or(home);
+                let summary = timing::summarize(&timing::read(&cache.unwrap_or_default()), &filter);
+                let words = [Some(filter.command.as_str()), filter.capability.as_deref()];
+                let words = words.into_iter().flatten().collect::<Vec<_>>().join(" ");
+                report::emit(&Output::Timing(&words, &summary));
                 ExitCode::SUCCESS
-            } else {
-                ExitCode::FAILURE
             }
-        }
+            None => usage(),
+        },
+        Some("profile") => match profile::Profile::parse(arguments) {
+            Some(profile) => finish(
+                profile::run(root, &profile).map(|()| true),
+                profile::ProfileError::code,
+            ),
+            None => usage(),
+        },
+        _ => usage(),
+    }
+}
+
+/// Exit 0 when `result` passed, else 1, printing the error it failed with.
+fn finish<E: std::error::Error>(
+    result: Result<bool, E>,
+    code: impl Fn(&E) -> &'static str,
+) -> ExitCode {
+    match result {
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::FAILURE,
         Err(error) => {
             report::emit(&Output::Failure {
-                code: error.code(),
+                code: code(&error),
                 error: &error,
             });
             ExitCode::FAILURE
@@ -103,7 +116,8 @@ fn lint(root: &Path) -> Result<Report, LintError> {
 }
 
 /// Times the budgeted operations on the board `options` names, or on one
-/// generated for the run.
+/// generated for the run, or compares them with an older binary, and
+/// prints whether they passed.
 /// The plugin call gets this machine's `PATH` and `HOME`, the `board` beside
 /// this binary, and a data directory that installs the repository's tasks
 /// plugin.
@@ -111,7 +125,7 @@ fn lint(root: &Path) -> Result<Report, LintError> {
     clippy::disallowed_methods,
     reason = "bench reads PATH and HOME, and installs the plugin it calls"
 )]
-fn bench(root: &Path, options: &bench::Options) -> Result<Vec<bench::Timed>, bench::BenchError> {
+fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchError> {
     let docs = std::fs::read_to_string(root.join("docs/architecture/performance/budgets.md"))
         .map_err(bench::BenchError::Write)?;
     let budgets = bench::budgets(&docs)?;
@@ -127,17 +141,36 @@ fn bench(root: &Path, options: &bench::Options) -> Result<Vec<bench::Timed>, ben
         board: exe.parent().map(Path::to_path_buf).unwrap_or_default(),
         data: data.path().to_owned(),
     };
-    if let Some(board) = &options.board {
-        return bench::run(board, &budgets, &host, bench::Corpus::Given);
-    }
+    let base = options.against.as_deref().map(against::base).transpose()?;
     let generated = tempfile::tempdir().map_err(bench::BenchError::Write)?;
-    bench::generate(generated.path(), options.records, &[], 0).map_err(bench::BenchError::Write)?;
     let mounts = tempfile::tempdir().map_err(bench::BenchError::Write)?;
-    let mounted = bench::generate_mounted(mounts.path(), options.records)
-        .map_err(bench::BenchError::Write)?;
-    bench::settle();
-    let corpus = bench::Corpus::Generated { mounted: &mounted };
-    bench::run(generated.path(), &budgets, &host, corpus)
+    let mounted;
+    let (board, corpus) = if let Some(board) = &options.board {
+        (board.as_path(), bench::Corpus::Given)
+    } else {
+        bench::generate(generated.path(), options.records, &[], 0)
+            .map_err(bench::BenchError::Write)?;
+        mounted = bench::generate_mounted(mounts.path(), options.records)
+            .map_err(bench::BenchError::Write)?;
+        bench::settle();
+        let corpus = bench::Corpus::Generated { mounted: &mounted };
+        (generated.path(), corpus)
+    };
+    let Some(base) = base else {
+        let timed = bench::run(board, &budgets, &host, corpus)?;
+        report::emit(&Output::Bench(&timed));
+        return Ok(timed.iter().all(bench::Timed::passed));
+    };
+    let new = bench::plugin_path(&host).map(|_| host.board.join("board"))?;
+    let (sample, directory) = bench::sample(&bench::warmed(board)?.2)?;
+    let mounted = match corpus {
+        bench::Corpus::Generated { mounted } => Some(mounted),
+        bench::Corpus::Given => None,
+    };
+    let rows = against::rows(board, sample.as_str(), directory.as_str(), mounted);
+    let (versions, compared) = against::compare([base, new], &rows, options.runs, &host)?;
+    report::emit(&Output::Against(&versions, &compared));
+    Ok(against::passed(&compared))
 }
 
 #[derive(Debug, thiserror::Error)]

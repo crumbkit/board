@@ -21,6 +21,8 @@ const SLACK: u32 = 3;
 const RECORDS: usize = 10_000;
 /// Tasks per directory in a generated board.
 const PER_DIRECTORY: usize = 100;
+/// The rounds `--against` runs unless `--runs` says otherwise.
+const AGAINST_RUNS: usize = 15;
 /// The most repositories a generated mounted board mounts.
 const MOUNTS: usize = 20;
 
@@ -112,19 +114,28 @@ pub(crate) fn plugin_path(host: &Host) -> Result<OsString, BenchError> {
 pub(crate) struct Options {
     pub(crate) board: Option<PathBuf>,
     pub(crate) records: usize,
+    /// The base `board` binary `--against` compares this one with.
+    pub(crate) against: Option<PathBuf>,
+    pub(crate) runs: usize,
 }
 
 impl Options {
-    /// Reads `[--board <dir>] [--records <n>]`.
+    /// Reads `[--board <dir>] [--records <n>] [--against <board> [--runs <n>]]`.
     pub(crate) fn parse(mut arguments: impl Iterator<Item = String>) -> Option<Self> {
         let mut options = Self {
             board: None,
             records: RECORDS,
+            against: None,
+            runs: AGAINST_RUNS,
         };
         while let Some(flag) = arguments.next() {
             match flag.as_str() {
                 "--board" => options.board = Some(PathBuf::from(arguments.next()?)),
                 "--records" => options.records = arguments.next()?.parse().ok()?,
+                "--against" => options.against = Some(PathBuf::from(arguments.next()?)),
+                "--runs" => {
+                    options.runs = arguments.next()?.parse().ok().filter(|runs| *runs > 0)?;
+                }
                 _ => return None,
             }
         }
@@ -180,18 +191,8 @@ pub(crate) fn run(
         Corpus::Generated { mounted } => Some(warmed(mounted)?),
         Corpus::Given => None,
     };
-    let sample = checked
-        .entries
-        .iter()
-        .find(|entry| entry.kind == Kind::Record && entry.status == Status::Ok)
-        .and_then(|entry| entry.logical.clone())
-        .ok_or_else(|| failed(&"it holds no valid record to get"))?;
+    let (sample, directory) = sample(&checked)?;
     let sample = &sample;
-    let directory = sample
-        .as_str()
-        .rsplit_once('/')
-        .and_then(|(parent, _)| parent.parse().ok())
-        .unwrap_or_else(LogicalPath::root);
     budgets
         .iter()
         .map(|(operation, budget)| {
@@ -275,13 +276,26 @@ pub(crate) fn run(
 
 /// The board at `root`, checked once into a new cache directory, and what
 /// the check found.
-fn warmed(root: &Path) -> Result<(Board, tempfile::TempDir, CheckReport), BenchError> {
+pub(crate) fn warmed(root: &Path) -> Result<(Board, tempfile::TempDir, CheckReport), BenchError> {
     let board = Board::open(root, None).map_err(|error| failed(&error))?;
     let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
     let checked = board
         .check(None, Some(warm.path()))
         .map_err(|error| failed(&error))?;
     Ok((board, warm, checked))
+}
+
+/// The first valid record `checked` found, which `get` reads, and its
+/// directory, which `ls` lists.
+pub(crate) fn sample(checked: &CheckReport) -> Result<(LogicalPath, LogicalPath), BenchError> {
+    let sample = (checked.entries.iter())
+        .find(|entry| entry.kind == Kind::Record && entry.status == Status::Ok)
+        .and_then(|entry| entry.logical.clone())
+        .ok_or_else(|| failed(&"it holds no valid record to get"))?;
+    let directory = (sample.as_str().rsplit_once('/'))
+        .and_then(|(parent, _)| parent.parse().ok())
+        .unwrap_or_else(LogicalPath::root);
+    Ok((sample, directory))
 }
 
 /// The simple query the query rows time.
@@ -496,6 +510,11 @@ pub(crate) enum BenchError {
         directory.display()
     )]
     NoBoard { directory: PathBuf },
+    #[error(
+        "{} is not a file; build a base board from main as docs/architecture/performance/budgets.md says",
+        path.display()
+    )]
+    NoAgainst { path: PathBuf },
 }
 
 impl BenchError {
@@ -505,9 +524,12 @@ impl BenchError {
             Self::Unknown { .. } => "xtask::bench::unknown_operation",
             Self::Board { .. } | Self::Write(_) => "xtask::bench::failed",
             Self::NoBoard { .. } => "xtask::bench::no_board",
+            Self::NoAgainst { .. } => "xtask::bench::no_against",
         }
     }
 }
+
+pub(crate) mod against;
 
 #[cfg(test)]
 mod tests;

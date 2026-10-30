@@ -66,10 +66,18 @@ fn bench_reads_a_board_or_a_record_count() {
         parse("--records 50"),
         Some(Options {
             board: None,
-            records: 50
+            records: 50,
+            against: None,
+            runs: 15,
         })
     );
     assert_eq!(parse("--board /b").unwrap().board, Some("/b".into()));
+    let against = parse("--against /old/board --runs 3").unwrap();
+    assert_eq!(
+        (against.against, against.runs),
+        (Some("/old/board".into()), 3)
+    );
+    assert_eq!(parse("--runs 0"), None);
     assert_eq!(parse("--records many"), None);
     assert_eq!(parse("--other"), None);
 }

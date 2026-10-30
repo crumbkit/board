@@ -12,13 +12,23 @@ its owner (mode 0600). `BOARD_TIMINGS=0` turns recording off. A plugin inherits
 log.
 
 A record holds the start time (`at_ms`), Board's `version`, the subcommands
-run (`command`, such as `plugin find`, never the values given), the plugin call
+run (`command`, such as `plugin find`, never the values given), the
+`capability` a `call` ran as `<plugin>.<capability>` (null for any other run,
+and never the call's input), the plugin call
 `depth`, the board's absolute path (`root`), the logical path the run
 started in when a known board's mount holds it (`prefix`, otherwise null), the `exit` code and `error` code,
 `total_us`, and `phases`. Each phase gives its
 `name`, its start after the run's (`at_us`), its time (`us`) and how often it
 was `entered`, in the order the phases started. A record has only the phases
-its run entered:
+its run entered.
+
+The `version` is board-cli's version, then `+` and the 12-character commit
+it was built from, then `.dirty` when `crates/`, `Cargo.toml`, `Cargo.lock`
+or `rust-toolchain.toml` differed from that commit, untracked files
+included, such as `0.0.0+45aafa9e1b2c.dirty`. A build outside a git checkout
+has no suffix. board-cli's build script asks git, and cargo runs it again
+after each commit, so board-cli recompiles after every commit.
+`board --version` prints the version alone.
 
 | Phase | What it times |
 | --- | --- |
@@ -33,6 +43,9 @@ its run entered:
 | `index.refresh.sync` | storing what the walk found that differs from those rows |
 | `index.refresh.facts` | loading or adding each entry's facts |
 | `index.refresh.head` | listing `HEAD`'s trees |
+| `snapshot.mounts` | walking each mounted commit, within `snapshot` |
+| `snapshot.decide` | deciding every entry, its references and pointers |
+| `snapshot.commit` | committing the index |
 | `view` | filling the views with what the snapshot decided, for `query` |
 | `query.sql` | running the SQL statement |
 | `plugin.call` | running a capability |
@@ -43,8 +56,15 @@ its run entered:
 
 `work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
 `trees`, `rows`, `target_changed`, how many targets `refs --field` left
-unread because they changed after the check (it does not name them), and
-`started`, the plugin processes a call started. `plugin.reply` includes the
+unread because they changed after the check (it does not name them),
+`started`, the plugin processes a call started, `repositories`, the
+repositories a snapshot opened from disk besides the board's own, and
+`pointers_read`, the files `snapshot.decide` read to learn whether they
+are pointers, once per blob in each source. `pointers_read` leaves out the
+pointers read while walking mounts and while resolving a path before the
+snapshot. When another process holds the index, a snapshot runs again in
+memory, and the counts are those of the run that answered, except
+`repositories`, which counts each repository opened in either run once. `plugin.reply` includes the
 plugin's own work, such as the `board query` it runs, which records its own
 line one `depth` deeper. The runs that refused a changed target, from both log files:
 `cat ~/.cache/board/timings.jsonl.1 ~/.cache/board/timings.jsonl 2>/dev/null | jq -c 'select(.work.target_changed) | {at_ms, root, n: .work.target_changed}'`.
@@ -57,3 +77,24 @@ already gone. Recording happens after the output is printed. A record that canno
 the run's output and exit code stay as they were. Read the log with `jq`. The
 `root` of each record shows the names of your directories, so check the log
 before you attach it to a bug report.
+
+## Reading the log and profiling
+
+`cargo xtask timing <command> [--last <n>]` reads both log files under
+`$XDG_CACHE_HOME`, or `~/.cache`, and prints the median total time and the
+median of each phase of the last 20 runs of `<command>`, such as `query` or
+`plugin find`. A last word with a dot, such as `call tasks.available`,
+chooses the calls of that capability. It counts only runs at `depth` 0 and
+of the newest version in the log, so runs of an older build do not mix in.
+Each phase says how many of the runs entered it, and the report counts the
+lines that are not JSON.
+
+`cargo xtask profile [--save <file>] -- <board arguments>` builds `board`
+in the `profiling` cargo profile, which is release with line tables, runs
+it once to warm the index, then records 20 runs at 4,000 samples a second
+under [samply](https://github.com/mstange/samply), which must be on `PATH`;
+without it the command fails with `xtask::profile::no_samply`. samply then
+opens the Firefox Profiler. With `--save`, samply writes the profile to the
+file instead, and `samply load <file>` opens it later. The runs use the
+environment xtask runs in, so set `XDG_CACHE_HOME` to keep them out of
+your own index and log.

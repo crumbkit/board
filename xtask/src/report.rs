@@ -2,15 +2,21 @@
 
 use std::error::Error;
 use std::fmt::Write as _;
+use std::time::Duration;
 
+use crate::bench::against::{Arm, Compared, Verdict};
 use crate::bench::{Timed, Took};
 use crate::controls::Divergence;
+use crate::timing::Summary;
 
 /// How many parts a report line names before summarising the rest.
 const SHOWN_PARTS: usize = 5;
 
-const USAGE: &str =
-    "usage: cargo xtask lint\n       cargo xtask bench [--board <dir>] [--records <n>]\n";
+const USAGE: &str = "usage: cargo xtask lint
+       cargo xtask bench [--board <dir>] [--records <n>] [--against <board> [--runs <n>]]
+       cargo xtask timing <command> [--last <n>]
+       cargo xtask profile [--save <file>] -- <board arguments>
+";
 
 #[derive(Debug)]
 pub(crate) struct Report {
@@ -157,6 +163,8 @@ impl Part {
 pub(crate) enum Output<'a> {
     Report(&'a Report),
     Bench(&'a [Timed]),
+    Against(&'a [String; 2], &'a [Compared]),
+    Timing(&'a str, &'a Summary),
     Failure {
         code: &'static str,
         error: &'a dyn Error,
@@ -173,6 +181,13 @@ pub(crate) fn emit(output: &Output<'_>) {
     match output {
         Output::Report(report) => print!("{}", render(report)),
         Output::Bench(timed) => print!("{}", render_bench(timed)),
+        Output::Against(versions, compared) => {
+            print!(
+                "{}",
+                render_against(&[&versions[0], &versions[1]], compared)
+            );
+        }
+        Output::Timing(command, summary) => print!("{}", render_timing(command, summary)),
         Output::Failure { code, error } => eprint!("{}", render_failure(code, *error)),
         Output::Usage => eprint!("{USAGE}"),
     }
@@ -199,6 +214,65 @@ pub(crate) fn render_bench(timed: &[Timed]) -> String {
             millis = budget.as_millis(),
             ratio = median.as_secs_f64() / budget.as_secs_f64(),
             name = operation.operation,
+        );
+    }
+    text
+}
+
+/// The versions compared, then one line per row: its verdict, each arm's
+/// median, the median round's change and the rounds new was slower in.
+pub(crate) fn render_against(versions: &[&str; 2], compared: &[Compared]) -> String {
+    let mut text = format!("base  {}\nnew   {}\n", versions[0], versions[1]);
+    for row in compared {
+        let verdict = match row.verdict {
+            Verdict::Failed(arm, exit) => {
+                let (status, arm) = match arm {
+                    Arm::Base => ("skip", "base"),
+                    Arm::New => ("FAIL", "new"),
+                };
+                let _ = writeln!(
+                    text,
+                    "{status:<6}  {arm} failed (exit {exit})  {}",
+                    row.name
+                );
+                continue;
+            }
+            Verdict::Slower => "SLOWER",
+            Verdict::Faster => "faster",
+            Verdict::Same => "same",
+        };
+        let millis = |time: Duration| time.as_secs_f64() * 1_000.0;
+        let _ = writeln!(
+            text,
+            "{verdict:<6}  base {:>8.1} ms  new {:>8.1} ms  {:>+6.1}%  {}/{} rounds slower  {}",
+            millis(row.base),
+            millis(row.new),
+            row.delta * 100.0,
+            row.slower,
+            row.rounds,
+            row.name,
+        );
+    }
+    text
+}
+
+/// The runs summarised, then the median total and each phase's median.
+pub(crate) fn render_timing(command: &str, summary: &Summary) -> String {
+    let mut text = format!("{command}: {} runs of {}", summary.runs, summary.version);
+    match summary.malformed {
+        0 => {}
+        1 => text.push_str("; 1 line of the log is not JSON"),
+        lines => {
+            let _ = write!(text, "; {lines} lines of the log are not JSON");
+        }
+    }
+    let millis = |micros: u64| Duration::from_micros(micros).as_secs_f64() * 1_000.0;
+    let _ = writeln!(text, "\n{:<10} {:>8.1} ms", "total", millis(summary.total));
+    for (name, median, entered) in &summary.phases {
+        let _ = writeln!(
+            text,
+            "{name:<10} {:>8.1} ms  {entered} runs",
+            millis(*median)
         );
     }
     text
