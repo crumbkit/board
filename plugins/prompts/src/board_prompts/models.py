@@ -21,10 +21,10 @@ def named(schema: JsonDict) -> None:
     schema["additionalProperties"] = False
 
 
-class InRepo(Strict):
-    """Work that starts in a clone of a GitHub repository."""
+class InClone(Strict):
+    """Work that starts in a clone of the GitHub repository whose remote is `remote`."""
 
-    repo: str = Field(
+    remote: str = Field(
         pattern=rf"^({PLACEHOLDER}|[^/\s]+/[^/\s]+)$", description="owner/name, or an input such as {repo}."
     )
 
@@ -49,7 +49,7 @@ class PromptRecord(Strict):
     tag: Literal["prompts/prompt/v1"] = Field(alias="$type")
     title: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
-    runs_in: InRepo | InDirectory
+    runs_in: InClone | InDirectory
     inputs: dict[Annotated[str, Field(pattern=f"^{INPUT}$")], str] | SkipJsonSchema[None] = Field(
         default=None, json_schema_extra=named
     )
@@ -83,7 +83,7 @@ class GetInput(Strict):
             'input as JSON on stdin: {"path": "/prompts/review-pr.md", "inputs": {"pr": "2140"}}.'
         ),
     )
-    runs_in: InRepo | InDirectory | SkipJsonSchema[None] = Field(
+    runs_in: InClone | InDirectory | SkipJsonSchema[None] = Field(
         default=None,
         json_schema_extra=unset,
         description=(

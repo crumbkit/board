@@ -17,7 +17,7 @@ MAX_VALUE = 200
 # A control character, or a Unicode line or paragraph separator, either of which would let a value span lines.
 UNSAFE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 # A rendered `runs_in`: a GitHub owner/name, or an absolute path or one under ~/ that never climbs out with `..`.
-REPO = re.compile(r"[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9._-]+")
+REMOTE = re.compile(r"[A-Za-z0-9-]+/(?!\.\.?$)[A-Za-z0-9._-]+")
 DIRECTORY = re.compile(r"(?:/|~/)(?!(?:.*/)?\.\.(?:/|$)).*")
 
 
@@ -72,9 +72,9 @@ def placed(runs_in: Mapping[str, str], values: Mapping[str, str]) -> dict[str, s
     """
     [(key, written)] = runs_in.items()
     value = render(written, values)
-    if unsafe(value) or not (REPO if key == "repo" else DIRECTORY).fullmatch(value):
+    if unsafe(value) or not (REMOTE if key == "remote" else DIRECTORY).fullmatch(value):
         named = [found[1] for found in PLACEHOLDER.finditer(written) if found[1] in values]
-        kind = "a GitHub owner/name" if key == "repo" else "an absolute path or one under ~/ without a .. segment"
+        kind = "a GitHub owner/name" if key == "remote" else "an absolute path or one under ~/ without a .. segment"
         inputs = ", ".join(named) or "none"
         why = f"runs_in.{key} renders as {value!r}, which is not {kind}; check the values of the inputs: {inputs}"
         raise PluginError("prompts::runs_in::invalid", why, {"runs_in": {key: value}, "inputs": named})

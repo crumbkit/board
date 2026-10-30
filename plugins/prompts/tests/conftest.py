@@ -95,7 +95,7 @@ def prompt(title: str = "Review a pull request", body: str = "", **fields: Any) 
         "$type": "prompts/prompt/v1",
         "title": title,
         "purpose": "A clean-context review of one pull request.",
-        "runs_in": {"repo": "example-org/widgets"},
+        "runs_in": {"remote": "example-org/widgets"},
         **fields,
     }
     lines = [f"{key}: {json.dumps(value)}" for key, value in values.items() if value is not None]

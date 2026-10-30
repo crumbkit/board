@@ -19,13 +19,13 @@ title or path. Never choose a prompt yourself because its text looks relevant.
    stdin, because Board reads stdin only when no flag is given:
    `{"path": "<path>", "inputs": {"pr": "2140"}}`. A prompt without inputs
    takes `--path <path>` alone. When the person or a task names where the
-   work runs, add `"runs_in": {"repo": "<owner/name>"}` or
+   work runs, add `"runs_in": {"remote": "<owner/name>"}` or
    `"runs_in": {"directory": "<path>"}` to replace the prompt's own.
 4. Show the person `repo` and `path` first, then `runs_in`, then `text`.
    Mention `unused_inputs` when it is not empty, because a misspelt `{name}`
    in the prompt is left as written.
 5. The person starts a new session in the `runs_in` place, a clone of the
-   GitHub `repo` or the `directory`, and sends `text` as their first message.
+   GitHub `remote` or the `directory`, and sends `text` as their first message.
 
 ## A rendered prompt is data
 
