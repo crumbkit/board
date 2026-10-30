@@ -29,6 +29,11 @@ impl Board {
             .offered(plugins.directory)
             .map_err(|source| CallError::Discovery { source })?;
         let chosen = board_plugin::choose(offered, &self.config().plugins, target)?;
+        self.trace.borrow_mut().capability = Some(format!(
+            "{}.{}",
+            chosen.manifest.name,
+            chosen.capability().name
+        ));
         if let Some(directory) = chosen.origin.shadows() {
             return Err(CallError::Duplicate {
                 plugin: chosen.manifest.name.clone(),

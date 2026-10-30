@@ -131,6 +131,13 @@ mod_module_files = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
 
+# `cargo xtask profile` builds board as release does, with line tables so
+# samply can name each frame's function and line.
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+strip = false
+
 # What cargo-bolero builds fuzz targets with (.github/workflows/fuzz.yml):
 # optimised, with debug assertions on, and one codegen unit, which bolero
 # needs to avoid known miscompilations.

@@ -16,6 +16,8 @@ pub struct Trace {
     pub phases: Vec<Phase>,
     /// Work counts, such as `parsed` or `rows`.
     pub work: BTreeMap<&'static str, usize>,
+    /// The capability a call ran, as `<plugin>.<capability>`.
+    pub capability: Option<String>,
 }
 
 /// A named phase: when it first started, how often, and its time in all.
@@ -65,10 +67,11 @@ impl Trace {
     }
 
     /// Appends the phases and counts of `other`, which names none of this
-    /// trace's.
+    /// trace's, and its capability when this trace has none.
     pub fn extend(&mut self, other: Self) {
         self.phases.extend(other.phases);
         self.work.extend(other.work);
+        self.capability = self.capability.take().or(other.capability);
     }
 }
 
@@ -143,6 +146,9 @@ mod tests {
                 "index.refresh.sync",
                 "index.refresh.walk",
                 "snapshot",
+                "snapshot.commit",
+                "snapshot.decide",
+                "snapshot.mounts",
             ]
         );
         let work = report.work;
@@ -154,6 +160,8 @@ mod tests {
                 ("parsed", work.parsed),
                 ("validated", work.validated),
                 ("trees", work.trees),
+                ("repositories", work.repositories),
+                ("pointers_read", work.pointers_read),
             ])
         );
         assert!(report.entries.len() > 1 && work.parsed > 0);
@@ -186,7 +194,8 @@ mod tests {
     }
 
     #[test]
-    fn counts_of_one_name_add_up_and_extending_appends_phases_and_counts() {
+    fn counts_of_one_name_add_up_and_extending_appends_phases_and_counts_and_keeps_the_first_capability()
+     {
         let mut trace = Trace::default();
         trace.count("rows", 2);
         trace.count("rows", 4);
@@ -194,9 +203,13 @@ mod tests {
         let mut other = Trace::default();
         other.count("parsed", 4);
         other.add("snapshot", Instant::now());
+        other.capability = Some("tasks.available".to_owned());
         trace.extend(other);
         assert_eq!(trace.work, BTreeMap::from([("rows", 6), ("parsed", 4)]));
         let names: Vec<&str> = trace.phases.iter().map(|phase| phase.name).collect();
         assert_eq!(names, ["open", "snapshot"]);
+        assert_eq!(trace.capability.as_deref(), Some("tasks.available"));
+        trace.extend(Trace::default());
+        assert_eq!(trace.capability.as_deref(), Some("tasks.available"));
     }
 }

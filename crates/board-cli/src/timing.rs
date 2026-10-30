@@ -44,8 +44,9 @@ pub(crate) fn record(started: Instant, ran: &Ran, output: &Output, depth: u32) -
     Some(json!({
         "$type": "board/timing/v1",
         "at_ms": micros(at) / 1000,
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": concat!(env!("CARGO_PKG_VERSION"), env!("BOARD_BUILD")),
         "command": command,
+        "capability": ran.trace.capability,
         "depth": depth,
         "root": ran.root.as_ref().map(|root| root.display().to_string()),
         "prefix": ran.prefix,

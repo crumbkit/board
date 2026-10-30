@@ -34,8 +34,10 @@ fn a_record_is_written_as_these_exact_bytes_but_for_its_times() {
     ] {
         *record.pointer_mut(pointer).unwrap() = time.into();
     }
+    *record.pointer_mut("/version").unwrap() = "0.0.0".into();
     let golden = concat!(
-        r#"{"$type":"board/timing/v1","at_ms":1791250685132,"command":"check","depth":1,"#,
+        r#"{"$type":"board/timing/v1","at_ms":1791250685132,"capability":null,"#,
+        r#""command":"check","depth":1,"#,
         r#""error":"board::path::not_found","exit":1,"#,
         r#""phases":[{"at_us":149,"entered":2,"name":"snapshot","us":1125}],"prefix":null,"#,
         r#""root":"/boards/one","total_us":1280,"version":"0.0.0","#,

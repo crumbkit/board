@@ -354,8 +354,9 @@ fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
             assert_eq!(location.pointers.len(), hops - start);
         }
         // Each pointer and the record at the end, not one read per hop of
-        // every resolution.
+        // every resolution, and the timing log's count says the same.
         assert_eq!(tree.reads, hops + 1, "{hops} hops");
+        assert_eq!(pointers.read, tree.reads, "{hops} hops");
     }
 }
 
