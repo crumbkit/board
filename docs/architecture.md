@@ -401,3 +401,6 @@ and `cargo xtask bench` fails above three times a budget.
 lists the budgets and targets. Every `board` run whose command line parses
 appends a record of its phases to a timing log, described in
 [architecture/performance/timing.md](architecture/performance/timing.md).
+The index keeps each mounted source's decision under a key of what it
+depends on, so a warm query reads it instead of deciding again
+([architecture/performance/decisions.md](architecture/performance/decisions.md)).

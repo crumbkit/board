@@ -3,7 +3,9 @@
 //! indexing each mounted commit once however many places mount it, decides
 //! every entry and commits. What depends only on content comes from the
 //! index; whether a reference or pointer resolves depends on the whole tree,
-//! so each run decides it again. The index's `entries` and `records` views
+//! so each run decides it again, except for a mounted source whose decision
+//! the index keeps under a key of all it depends on
+//! (docs/architecture/performance/decisions.md). The index's `entries` and `records` views
 //! show what a snapshot decided, so they are read only through one. This
 //! snapshot is a decided run over the index; `Repositories::snapshot` is a
 //! different thing, a view of the git working tree for resolving paths.

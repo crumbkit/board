@@ -23,9 +23,10 @@ was `entered`, in the order the phases started. A record has only the phases
 its run entered.
 
 The `version` is board-cli's version, then `+` and the 12-character commit
-it was built from, then `.dirty` when `crates/`, `Cargo.toml`, `Cargo.lock`
-or `rust-toolchain.toml` differed from that commit, untracked files
-included, such as `0.0.0+45aafa9e1b2c.dirty`. A build outside a git checkout
+it was built from, then `.dirty.` and a hash of the changes when `crates/`,
+`Cargo.toml`, `Cargo.lock` or `rust-toolchain.toml` differed from that
+commit, untracked files included, such as
+`0.0.0+45aafa9e1b2c.dirty.3f0c2a9b8d7e6f15`. A build outside a git checkout
 has no suffix. board-cli's build script asks git, and cargo runs it again
 after each commit, so board-cli recompiles after every commit.
 `board --version` prints the version alone.
@@ -58,8 +59,9 @@ after each commit, so board-cli recompiles after every commit.
 `trees`, `rows`, `target_changed`, how many targets `refs --field` left
 unread because they changed after the check (it does not name them),
 `started`, the plugin processes a call started, `repositories`, the
-repositories a snapshot opened from disk besides the board's own, and
-`pointers_read`, the files `snapshot.decide` read to learn whether they
+repositories a snapshot opened from disk besides the board's own, `kept`,
+the mounted sources a query read from kept decisions without walking them
+(architecture/performance/decisions.md), and `pointers_read`, the files `snapshot.decide` read to learn whether they
 are pointers, once per blob in each source. It leaves out a file whose
 facts in the index say it is JSON that parsed and has no `$type`, or a
 valid one other than a pointer's, because such a file holds no pointer. It
