@@ -15,7 +15,7 @@ use crate::git::{CommitTree, Contents, GitError, Repository, Sizes};
 use crate::repositories::Repositories;
 use crate::symlink::{Chains, End, Node, ROOT, Refused};
 use crate::tree::{Kind, RawEntry, Tree};
-use crate::worktree::{Known, WorkingTree};
+use crate::worktree::{Known, Listings, WorkingTree};
 
 /// The most pointers one resolution follows, as POSIX allows symlinks.
 pub const MAX_HOPS: usize = 40;
@@ -92,13 +92,18 @@ impl Repositories {
         self.snapshot()?.ancestor(path)
     }
 
-    /// A resolver for many paths in one snapshot of the working tree, which
-    /// hashes a file it picks or reads only when `known` does not already
-    /// know its blob.
-    pub fn resolver<'k>(&self, known: Known<'k>) -> Result<Resolver<'_, 'k>, GitError> {
+    /// A resolver for many paths in the snapshot of the working tree that
+    /// `walked`, a walk's listings, holds. It hashes a file it picks or
+    /// reads only when neither the walk nor `known` knows its blob.
+    pub fn resolver<'k>(
+        &self,
+        known: Known<'k>,
+        walked: Listings,
+    ) -> Result<Resolver<'_, 'k>, GitError> {
+        let tree = self.root().working_tree(Some(known))?.on_demand();
         Ok(Resolver {
             repositories: self,
-            tree: self.root().working_tree(Some(known))?.on_demand(),
+            tree: tree.listed(walked),
             pointers: Pointers::default(),
             chains: Chains::default(),
         })

@@ -544,6 +544,7 @@ fn unkept(board: &crate::Board) -> Result<Vec<board_tree::Entry>, board_tree::Gi
     board
         .repository()
         .walk_working_tree(&mut |_, _| None, &|_, _| {}, &mut |()| Ok(()))
+        .map(|(entries, _)| entries)
 }
 
 #[test]

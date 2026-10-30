@@ -9,7 +9,7 @@ use crate::address::{self, Pointers};
 use crate::git::{GitError, Repository};
 use crate::symlink::{Chains, End, Node, ROOT};
 use crate::tree::{Kind, RawEntry, Tree, Unhashed};
-use crate::worktree::{Known, Prepare};
+use crate::worktree::{Known, Listings, Prepare};
 
 /// One file in a tree. Directories are not entries.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -117,24 +117,25 @@ impl Repository {
     /// differs. The first error `keep` returns ends the walk, as its answer;
     /// each thread stops at the next file it prepares. If a hashing thread
     /// panics after `keep` has failed, the walk ends with that panic instead.
+    /// The walk's listings come with its entries, for a
+    /// [`Resolver`](crate::Resolver) of the same snapshot to start from.
     pub fn walk_working_tree<T: Send, E: From<GitError>>(
         &self,
         known: Known<'_>,
         prepare: Prepare<'_, T>,
         keep: &mut dyn FnMut(T) -> Result<(), E>,
-    ) -> Result<Vec<Entry>, E> {
+    ) -> Result<(Vec<Entry>, Listings), E> {
         let mut failed = None;
         let mut keep = |prepared| keep(prepared).map_err(|error| failed = Some(error)).is_ok();
-        let walked = walk_in(
-            &mut self
-                .working_tree(Some(known))?
-                .keeping(prepare, &mut keep)
-                .on_demand(),
-        );
+        let mut tree = (self.working_tree(Some(known))?)
+            .keeping(prepare, &mut keep)
+            .on_demand();
+        let walked = walk_in(&mut tree);
+        let listings = tree.listings();
         // A walk that `keep` ended has incomplete entries.
         match failed {
             Some(error) => Err(error),
-            None => Ok(walked?),
+            None => Ok((walked?, listings)),
         }
     }
 }

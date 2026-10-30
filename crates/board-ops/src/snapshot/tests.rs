@@ -682,3 +682,51 @@ fn pointer_bytes_at_a_schema_path_a_json_path_and_behind_a_symlink_are_followed_
         assert_eq!(snapshot.report.work.pointers_read, 3);
     }
 }
+
+#[test]
+fn a_check_lists_each_directory_once_and_a_scoped_one_lists_the_directory_holding_its_scope_once_more()
+ {
+    let scenario = board();
+    let see = |target: &str| task(&format!(r#", "see": "{target}""#));
+    scenario
+        .write("tasks/a.json", Item::File(&see("/projects/p")))
+        .write("tasks/b.json", Item::File(&see("/tasks/a")))
+        .write(
+            "notes/n.md",
+            Item::File("[a](/tasks/a) [p](../projects/p.json)"),
+        );
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let listed = |scope: Option<&str>| {
+        let scope = scope.map(|scope| scope.parse().unwrap());
+        let before = board.repository().directories_listed();
+        board.check(scope.as_ref(), Some(cache.path())).unwrap();
+        board.repository().directories_listed() - before
+    };
+    // The root, `.board`, its `types`, `lr`, `task` and `project`, then
+    // `projects`, `tasks` and `notes`, cold and warm.
+    assert_eq!([listed(None), listed(None)], [9, 9]);
+    // Resolving the scope before the snapshot lists the root once more.
+    assert_eq!(listed(Some("/tasks")), 9 + 1);
+}
+
+#[test]
+fn a_file_added_between_warm_runs_is_resolved_by_the_second() {
+    let scenario = board();
+    let see = |target: &str| task(&format!(r#", "see": "{target}""#));
+    scenario.write("tasks/a.json", Item::File(&see("/projects/new")));
+    let cache = tempfile::tempdir().unwrap();
+    let root = open(&scenario).repository().path().to_path_buf();
+    let warm = || Index::open(Some(cache.path()), &root).unwrap();
+    let led = |scenario: &Scenario| {
+        agrees(scenario, warm()).unwrap();
+        led(&filled(&open(scenario), warm()).references)
+    };
+    assert_eq!(led(&scenario), [("tasks/a.json".to_owned(), None)]);
+    scenario.write(
+        "projects/new.json",
+        Item::File(r#"{"$type": "lr/project/v1"}"#),
+    );
+    let reached = Some(("projects/new.json".to_owned(), 0));
+    assert_eq!(led(&scenario), [("tasks/a.json".to_owned(), reached)]);
+}

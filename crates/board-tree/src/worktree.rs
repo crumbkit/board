@@ -76,6 +76,25 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
 }
 
+/// What one snapshot of the working tree listed and hashed, so that a later
+/// view of the same snapshot reads none of it again: a resolver that starts
+/// from a walk's listings lists each directory once in a run.
+#[derive(Default)]
+pub struct Listings {
+    listed: HashMap<PathBuf, Listing>,
+    settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
+}
+
+impl std::fmt::Debug for Listings {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let listed = self.listed.len();
+        formatter
+            .debug_struct("Listings")
+            .field("listed", &listed)
+            .finish_non_exhaustive()
+    }
+}
+
 /// One directory's items, each classified the first time a lookup returns
 /// it, so that it keeps one answer in this snapshot.
 struct Listing {
@@ -175,6 +194,21 @@ impl<T: Send> WorkingTree<'_, '_, T> {
     pub(crate) fn on_demand(mut self) -> Self {
         self.on_demand = true;
         self
+    }
+
+    /// This tree as the snapshot `listings` holds: what they listed and
+    /// hashed is not read again.
+    pub(crate) fn listed(mut self, listings: Listings) -> Self {
+        (self.listed, self.settled) = (listings.listed, listings.settled);
+        self
+    }
+
+    /// What this tree has listed and hashed.
+    pub(crate) fn listings(self) -> Listings {
+        Listings {
+            listed: self.listed,
+            settled: self.settled,
+        }
     }
 
     /// Hashes the file at `relative` on this thread, handing what is

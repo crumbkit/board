@@ -144,7 +144,8 @@ impl Board {
         let plain =
             plain(std::iter::once(&refresh.facts).chain(mounts.sources.iter().map(|m| &m.facts)));
         let mut known = known(&refresh.entries, &mut work.hashed);
-        let mut resolver = self.repositories().resolver(&mut known)?.knowing(&plain);
+        let resolver = self.repositories().resolver(&mut known, refresh.listings)?;
+        let mut resolver = resolver.knowing(&plain);
         let mut decided = Decisions::default();
         let root = Decide {
             repositories: self.repositories(),

@@ -13,7 +13,7 @@ use board_model::{
     Canonical, Classified, Code, Content, MAX_RECORD_BYTES, ObjectId, RecordType, Role, Source,
     canonical_json, classify,
 };
-use board_tree::{Entry, GitError, Reader, Repository, latest};
+use board_tree::{Entry, GitError, Listings, Reader, Repository, latest};
 use board_validate::Schema;
 use serde_json::Value;
 
@@ -91,6 +91,8 @@ pub(crate) fn plain<'f>(
 #[derive(Debug)]
 pub(crate) struct Refresh {
     pub(crate) entries: Vec<Entry>,
+    /// What the walk listed, so resolution in this run lists nothing again.
+    pub(crate) listings: Listings,
     /// The fact for each entry that has one, by physical path. An entry
     /// that changed after the walk or could not be read has none.
     pub(crate) facts: HashMap<String, Indexed>,
@@ -106,7 +108,7 @@ impl Board {
         let _timed = self.timed("index.refresh");
         let mut work = Refreshed::default();
         let mut kept = Kept::default();
-        let entries = self.walk(writer, &mut work, &mut kept)?;
+        let (entries, listings) = self.walk(writer, &mut work, &mut kept)?;
         let timed = self.timed("index.refresh.facts");
         let facts = facts(
             writer,
@@ -122,6 +124,7 @@ impl Board {
         drop(timed);
         Ok(Refresh {
             entries,
+            listings,
             facts,
             head,
             work,
@@ -157,12 +160,12 @@ impl Board {
         writer: &Writer,
         work: &mut Refreshed,
         kept: &mut Kept,
-    ) -> Result<Vec<Entry>, RefreshError> {
+    ) -> Result<(Vec<Entry>, Listings), RefreshError> {
         let timed = self.timed("index.refresh.load");
         let mut worktree = writer.worktree()?;
         drop(timed);
         let timed = self.timed("index.refresh.walk");
-        let entries = self.repository().walk_working_tree(
+        let (entries, listings) = self.repository().walk_working_tree(
             &mut |path, stat| worktree.known(path, stat),
             &|path, contents| {
                 Role::of(path).map(|role| parse(contents.blob, role, Some(&contents.bytes)))
@@ -178,7 +181,7 @@ impl Board {
         drop(timed);
         let _timed = self.timed("index.refresh.sync");
         work.hashed += writer.sync_worktree(worktree, &entries)?;
-        Ok(entries)
+        Ok((entries, listings))
     }
 }
 
