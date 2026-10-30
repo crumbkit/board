@@ -119,7 +119,10 @@ record covers it, as `tasks.available` does. Each prompt carries its `repo`,
 `path`, `title`, `purpose`, `runs_in` as written and `inputs`. The list holds
 at most 100 prompts, by repo then title; `total` counts all of them, and
 `degraded` counts the Markdown files under a `prompts/` directory in scope
-that are not a valid prompt. `repos` names the repos read, and
+that `board check` marks degraded for any code but a broken link
+(`board::ref::dangling` or `board::ref::wrong_type`): an invalid prompt, or
+frontmatter that does not parse or names an unknown type. Plain Markdown, such
+as an eval's evidence, is not counted. `repos` names the repos read, and
 `origin_unread` says why the caller's git repository gave no origin.
 
 ## Codes

@@ -34,8 +34,8 @@ SELECT 'marks', e.type, e.status, e.code, r.body, NULL, NULL, NULL
 FROM entries AS e LEFT JOIN records AS r ON r.logical = e.logical
 WHERE e.source = 'worktree' AND e.path = {literal(MARKS)}
 """  # noqa: S608 - the only values interpolated are constants, quoted by `literal`
-# Each Markdown file under a `prompts/` directory of its repo: the commit it was read from, the root of the
-# path Board indexed it at, its logical path, its path in the repo, its type, Board code and frontmatter.
+# What a query reads of each file it selects: the commit it was read from, the root of the path Board indexed it
+# at, its logical path, its path in the repo, its type, Board code and frontmatter.
 COLUMNS = (
     "e.source",
     "substr(e.logical, 1, length(e.logical) - length(e.path))",
@@ -44,6 +44,15 @@ COLUMNS = (
     "e.type",
     "e.code",
     "r.body",
+)
+
+# The files `list` reads: each Markdown file under a `prompts/` directory that is a `prompts/prompt/v1` record, or
+# that Board marks degraded with a code other than a tree code, such as frontmatter that does not parse or names an
+# unknown type. Plain Markdown, such as an eval's evidence, has no type and no such code, so it is left out.
+LISTED = (
+    f"(e.type = {literal(PROMPT_TYPE)}"
+    f" OR (e.code IS NOT NULL AND e.code NOT IN ({', '.join(map(literal, TREE_CODES))})))"
+    " AND e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/prompts/*'"
 )
 
 
@@ -152,16 +161,16 @@ def listing(request: CallRequest) -> dict[str, object]:
     name, given = request.input.get("repo"), request.input.get("remote")
     with ThreadPoolExecutor() as pool:
         origin = pool.submit(repos.caller_origin) if name is None and given is None else None
-        found, held, rows = query(board, "e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/prompts/*'")
+        found, held, rows = query(board, LISTED)
         remote, unread = (None if given is None else str(given), None) if origin is None else origin.result()
     roots = repos.scope(board.plugin, found, None if name is None else str(name), remote, unread)
     prompts: list[dict[str, Any]] = []
     degraded = 0
-    for source, _, logical, _, kind, code, frontmatter in rows:
+    for source, _, logical, _, _, code, frontmatter in rows:
         repo = held.get(str(source))
         if repo not in roots:
             continue
-        if kind != PROMPT_TYPE or code not in (None, *TREE_CODES) or frontmatter is None:
+        if code not in (None, *TREE_CODES):
             degraded += 1
             continue
         record = json.loads(frontmatter)
