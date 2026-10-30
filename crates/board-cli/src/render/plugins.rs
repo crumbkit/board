@@ -1,7 +1,7 @@
 //! `plugin list` and `plugin find`.
 
 use board_model::{Code, canonical_json};
-use board_ops::{Plugin, PluginFindReport, PluginListReport, PluginState};
+use board_ops::{PluginEntry, PluginFindReport, PluginListReport, PluginState};
 use board_plugin::{CallReport, Capability};
 use board_tree::Status;
 use crumbkit::help::Leaf;
@@ -20,7 +20,7 @@ use crate::run::Page;
 /// and the names of its capabilities. Broken or missing plugins come first
 /// and report a problem, so the run exits 1.
 pub(crate) fn plugin_list(printer: Printer, report: &PluginListReport, page: &Page) -> Output {
-    let mut plugins: Vec<&Plugin> = report.plugins.iter().collect();
+    let mut plugins: Vec<&PluginEntry> = report.plugins.iter().collect();
     plugins.sort_by_key(|plugin| plugin.code().is_none());
     let rows = plugins.into_iter().map(Listed::of).collect();
     let listing = page.first_of(rows).described("plugins");
@@ -71,7 +71,7 @@ struct Listed {
 }
 
 impl Listed {
-    fn of(plugin: &Plugin) -> Self {
+    fn of(plugin: &PluginEntry) -> Self {
         let code = plugin.code();
         let status = Health(code.map_or(Status::Ok, Status::Degraded));
         let manifest = match &plugin.state {
@@ -164,7 +164,7 @@ pub(super) const LIST: Leaf = Leaf::new(&["plugin", "list"]).document(LIST_REPOR
 
 /// A refused manifest's message, or each schema problem as its code and
 /// file, after `: `; empty when none.
-fn problems(plugin: &Plugin) -> String {
+fn problems(plugin: &PluginEntry) -> String {
     if let PluginState::BadManifest(error) = &plugin.state {
         return format!(": {error}");
     }

@@ -1,11 +1,8 @@
-use std::path::Path;
-
 use board_model::PluginCode;
 use board_model::RefusalCode::{self, Board};
 use serde_json::json;
 
 use crate::installed::Installed;
-use crate::process::Limits;
 
 use super::*;
 
@@ -141,7 +138,7 @@ fn plugin(name: &str, capabilities: &[&str], input: &Value) -> Installed {
     });
     Installed {
         name: name.to_owned(),
-        directory: PathBuf::from(name),
+        origin: Origin::Directory(PathBuf::from(name)),
         manifest: Ok(Manifest::parse(name, manifest.to_string().as_bytes()).unwrap()),
         schemas: Vec::new(),
     }
@@ -173,7 +170,7 @@ fn a_named_capability_is_chosen_among_the_plugins_others() {
     )
     .unwrap();
     assert_eq!(chosen.capability().name.as_str(), "open");
-    assert_eq!(chosen.directory, PathBuf::from("tasks"));
+    assert_eq!(chosen.origin, Origin::Directory(PathBuf::from("tasks")));
 }
 
 #[test]
@@ -349,14 +346,7 @@ fn input_refusal(schema: &Value, input: &str) -> (RefusalCode, String, Value) {
         &"tasks.due".parse().unwrap(),
     )
     .unwrap();
-    let environment = Environment::default();
-    let context = Context {
-        root: Path::new("."),
-        environment: &environment,
-        limits: Limits::default(),
-        spawned: &RefCell::default(),
-    };
-    let refusal = invoke(&chosen, input.as_bytes(), &context)
+    let refusal = super::input(&chosen, input.as_bytes())
         .unwrap_err()
         .refusal();
     (refusal.code, refusal.message, Value::Object(refusal.fields))
@@ -405,8 +395,17 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
         "{message}"
     );
     assert_eq!(fields, json!({"plugin": "tasks", "capability": "due"}));
-    let admitted = input_refusal(&schema, r#"{"before": "2026-10-05", "task": "/a/b"}"#);
-    assert_eq!(admitted.0, Board(Code::PluginNotStarted), "{}", admitted.1);
+    let chosen = choose(
+        vec![plugin("tasks", &["due"], &schema)],
+        &names(&["tasks"]),
+        &"tasks.due".parse().unwrap(),
+    )
+    .unwrap();
+    let admitted = r#"{"before": "2026-10-05", "task": "/a/b"}"#;
+    assert_eq!(
+        super::input(&chosen, admitted.as_bytes()).unwrap(),
+        json!({"before": "2026-10-05", "task": "/a/b"})
+    );
 }
 
 /// Asserts that Board refuses `error` with `code`, naming `fields`, with the

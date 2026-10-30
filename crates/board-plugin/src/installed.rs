@@ -13,16 +13,65 @@ use crate::manifest::{Manifest, ManifestError};
 
 pub const MANIFEST_FILE: &str = "plugin.json";
 
-/// One entry of the plugins directory.
+/// A plugin Board can call: an entry of the plugins directory, or one built
+/// into Board.
 #[derive(Debug)]
 pub struct Installed {
     /// The entry's name, which a manifest must repeat.
     pub name: String,
-    pub directory: PathBuf,
+    pub origin: Origin,
     pub manifest: Result<Manifest, ManifestError>,
     /// Each type the manifest declares and the schema the plugin ships for
     /// it, in the manifest's order; empty when the manifest is refused.
     pub schemas: Vec<(RecordType, Value)>,
+}
+
+/// Where a plugin's code is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Origin {
+    /// The plugin's directory, whose `run` Board starts.
+    Directory(PathBuf),
+    /// Built into Board: its place in the caller's list of built-in
+    /// plugins, and the directory of an installed plugin of the same name.
+    BuiltIn {
+        index: usize,
+        shadows: Option<PathBuf>,
+    },
+}
+
+/// The plugin built into Board at `index`, with `manifest` and the schema
+/// it ships for each type, each compiled. A declared type without one
+/// makes the manifest refused.
+pub fn built_in(index: usize, manifest: Manifest, schemas: &[(RecordType, Value)]) -> Installed {
+    let compiled = manifest
+        .types
+        .iter()
+        .map(|record_type| {
+            let path = PathBuf::from(shipped_schema_path(record_type));
+            let (_, schema) = schemas
+                .iter()
+                .find(|(shipped, _)| shipped == record_type)
+                .ok_or_else(|| ManifestError::ShippedMissing {
+                    record_type: record_type.clone(),
+                    path: path.clone(),
+                })?;
+            compiled(record_type, path, schema.clone())
+        })
+        .collect();
+    let name = manifest.name.to_string();
+    let (manifest, schemas) = match compiled {
+        Ok(schemas) => (Ok(manifest), schemas),
+        Err(error) => (Err(error), Vec::new()),
+    };
+    Installed {
+        name,
+        origin: Origin::BuiltIn {
+            index,
+            shadows: None,
+        },
+        manifest,
+        schemas,
+    }
 }
 
 /// Every entry of `plugins`, sorted by name. A directory that does not exist
@@ -57,7 +106,7 @@ pub fn installed(plugins: &Path) -> Result<Vec<Installed>, DiscoveryError> {
         };
         found.push(Installed {
             name,
-            directory,
+            origin: Origin::Directory(directory),
             manifest,
             schemas,
         });
@@ -92,14 +141,24 @@ fn shipped(
                 path: path.clone(),
                 source,
             })?;
-            Schema::compile(schema.clone()).map_err(|source| ManifestError::ShippedSchema {
-                record_type: record_type.clone(),
-                path,
-                source,
-            })?;
-            Ok((record_type.clone(), schema))
+            compiled(record_type, path, schema)
         })
         .collect()
+}
+
+/// `schema`, the one a plugin ships for `record_type` at `path`, once it
+/// compiles.
+fn compiled(
+    record_type: &RecordType,
+    path: PathBuf,
+    schema: Value,
+) -> Result<(RecordType, Value), ManifestError> {
+    Schema::compile(schema.clone()).map_err(|source| ManifestError::ShippedSchema {
+        record_type: record_type.clone(),
+        path,
+        source,
+    })?;
+    Ok((record_type.clone(), schema))
 }
 
 /// A file's bytes, one past the record bound so the parse sees one too

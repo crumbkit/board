@@ -14,7 +14,7 @@ use board_validate::RecordError;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
-use crate::installed::{DiscoveryError, Installed};
+use crate::installed::{DiscoveryError, Installed, Origin};
 use crate::manifest::{Capability, Manifest, ManifestError, VariableName};
 use crate::process::{self, Limits, Scope, Spawned, Stopped};
 use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallResult, Reply};
@@ -136,7 +136,7 @@ impl Environment {
 #[derive(Debug)]
 pub struct Chosen {
     pub manifest: Manifest,
-    pub directory: PathBuf,
+    pub origin: Origin,
     /// Each type the plugin ships and its schema, as `Installed` holds them.
     pub schemas: Vec<(RecordType, Value)>,
     capability: usize,
@@ -190,7 +190,7 @@ pub fn choose(
             }
             Ok(Chosen {
                 manifest,
-                directory: found.directory,
+                origin: found.origin,
                 schemas: found.schemas,
                 capability: index,
             })
@@ -201,7 +201,7 @@ pub fn choose(
                 .filter_map(|installed| {
                     Some((
                         installed.manifest.ok()?,
-                        installed.directory,
+                        installed.origin,
                         installed.schemas,
                     ))
                 })
@@ -209,11 +209,11 @@ pub fn choose(
             let nearest = nearest(capability, manifests.iter().map(|(manifest, ..)| manifest));
             let (on, off): (Vec<_>, Vec<_>) = manifests
                 .into_iter()
-                .filter_map(|(manifest, directory, schemas)| {
+                .filter_map(|(manifest, origin, schemas)| {
                     let index = offered(&manifest, capability)?;
                     Some(Chosen {
                         manifest,
-                        directory,
+                        origin,
                         schemas,
                         capability: index,
                     })
@@ -280,16 +280,11 @@ pub struct Context<'a> {
     pub spawned: &'a RefCell<Vec<Spawned>>,
 }
 
-/// Checks `input` against the capability's schema, runs the plugin with one
-/// request, and checks its one reply.
-pub fn invoke(
-    chosen: &Chosen,
-    input: &[u8],
-    context: &Context<'_>,
-) -> Result<CallReport, CallError> {
-    let depth = context.environment.depth()?;
+/// `bytes` read as the chosen capability's input, once its schema admits
+/// them.
+pub fn input(chosen: &Chosen, bytes: &[u8]) -> Result<Value, CallError> {
     let capability = chosen.capability();
-    let input = parse_json(input).map_err(|source| CallError::InputJson {
+    let input = parse_json(bytes).map_err(|source| CallError::InputJson {
         plugin: chosen.manifest.name.clone(),
         capability: capability.name.clone(),
         source,
@@ -302,7 +297,30 @@ pub fn invoke(
             capability: capability.name.clone(),
             source,
         })?;
-    let request = protocol::request(&capability.name, &input, context.root);
+    Ok(input)
+}
+
+/// `output`, once the chosen capability's output schema admits it.
+pub fn output(chosen: &Chosen, output: Value) -> Result<Value, BadOutput> {
+    chosen
+        .capability()
+        .output
+        .validate(&output)
+        .map(|()| output)
+        .map_err(|source| BadOutput::Output { source })
+}
+
+/// Runs the plugin in `directory` with one request holding `input`, which
+/// [`input`] admitted, and checks its one reply.
+pub fn invoke(
+    chosen: &Chosen,
+    directory: &Path,
+    input: &Value,
+    context: &Context<'_>,
+) -> Result<CallReport, CallError> {
+    let depth = context.environment.depth()?;
+    let capability = chosen.capability();
+    let request = protocol::request(&capability.name, input, context.root);
     let plugin = &chosen.manifest.name;
     let context = Context {
         limits: Limits {
@@ -313,7 +331,7 @@ pub fn invoke(
     };
     let output = exchange(
         &chosen.manifest,
-        &chosen.directory,
+        directory,
         request,
         &context,
         Child {
@@ -321,13 +339,7 @@ pub fn invoke(
             pass: &capability.env,
         },
         CALL_RESULT_TYPE,
-        |result: RawCallResult| {
-            capability
-                .output
-                .validate(&result.output)
-                .map(|()| result.output)
-                .map_err(|source| BadOutput::Output { source })
-        },
+        |result: RawCallResult| output(chosen, result.output),
     )?;
     Ok(CallReport {
         plugin: plugin.clone(),
@@ -342,7 +354,7 @@ pub fn invoke(
 ///
 /// # Panics
 ///
-/// Never: a manifest's `run` is never empty.
+/// Never: an installed plugin's `run` is never empty.
 pub(crate) fn exchange<T: DeserializeOwned, U>(
     manifest: &Manifest,
     directory: &Path,
@@ -355,7 +367,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     let (program, arguments) = manifest
         .run
         .split_first()
-        .expect("a manifest's run is never empty: Manifest::parse refuses it");
+        .expect("an installed plugin's run is never empty: Manifest::parse refuses an empty one");
     let program = if program.contains('/') {
         directory.join(program)
     } else {

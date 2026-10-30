@@ -144,6 +144,18 @@ fn an_empty_run_is_refused() {
 }
 
 #[test]
+fn only_a_built_in_manifest_may_leave_run_out() {
+    let mut without = manifest();
+    without.as_object_mut().unwrap().remove("run");
+    assert!(Manifest::built_in(without.clone()).unwrap().run.is_empty());
+    assert!(matches!(
+        Manifest::from_value(without).unwrap_err(),
+        ManifestError::EmptyRun
+    ));
+    assert!(Manifest::from_value(manifest()).is_ok());
+}
+
+#[test]
 fn a_capability_offered_twice_is_refused() {
     let capability = manifest()["capabilities"][0].clone();
     let mut other = capability.clone();

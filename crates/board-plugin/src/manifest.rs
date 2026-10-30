@@ -165,6 +165,7 @@ struct RawManifest {
     name: PluginName,
     version: Version,
     description: String,
+    #[serde(default)]
     run: Vec<String>,
     #[serde(default)]
     metadata: Map<String, Value>,
@@ -217,7 +218,7 @@ pub struct Manifest {
     pub name: PluginName,
     pub version: Version,
     pub description: String,
-    /// The program and its arguments; never empty.
+    /// The program and its arguments; empty only for a built-in plugin.
     pub run: Vec<String>,
     pub metadata: Map<String, Value>,
     /// The types whose schemas the plugin ships, each in its own namespace.
@@ -256,13 +257,20 @@ impl Manifest {
 
     /// Reads a parsed manifest by its content alone, wherever it is stored.
     pub fn from_value(value: Value) -> Result<Self, ManifestError> {
+        let manifest = Self::built_in(value)?;
+        if manifest.run.is_empty() {
+            return Err(ManifestError::EmptyRun);
+        }
+        Ok(manifest)
+    }
+
+    /// Reads the manifest of a plugin built into Board, which runs no
+    /// program, so its `run` may be empty or left out.
+    pub fn built_in(value: Value) -> Result<Self, ManifestError> {
         let raw =
             RawManifest::deserialize(value).map_err(|source| ManifestError::Shape { source })?;
         if raw.tag != MANIFEST_TYPE {
             return Err(ManifestError::Type { found: raw.tag });
-        }
-        if raw.run.is_empty() {
-            return Err(ManifestError::EmptyRun);
         }
         for (at, record_type) in raw.types.iter().enumerate() {
             if record_type.is_reserved() {

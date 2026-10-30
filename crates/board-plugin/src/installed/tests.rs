@@ -35,7 +35,10 @@ fn every_entry_is_found_in_name_order() {
         .write("plugins/notes/plugin.json", Item::File("{}"));
     let found = installed(&plugins(&scenario)).unwrap();
     assert_eq!(names(&found), ["notes", "tasks"]);
-    assert_eq!(found[1].directory, plugins(&scenario).join("tasks"));
+    assert_eq!(
+        found[1].origin,
+        Origin::Directory(plugins(&scenario).join("tasks"))
+    );
     assert!(found[1].manifest.is_ok());
     assert_eq!(
         found[0].manifest.as_ref().unwrap_err().code(),
@@ -130,4 +133,43 @@ fn a_type_whose_shipped_schema_is_missing_or_unusable_is_a_bad_manifest_naming_t
             serde_json::json!({"type": "object"})
         )]
     );
+}
+
+#[test]
+fn a_built_in_plugin_must_ship_a_compiling_schema_for_each_declared_type() {
+    let manifest = || {
+        let mut value: Value = serde_json::from_str(TASKS).unwrap();
+        value["types"] = serde_json::json!(["tasks/task/v1"]);
+        Manifest::built_in(value).unwrap()
+    };
+    let shipped = |schema: Value| vec![("tasks/task/v1".parse().unwrap(), schema)];
+    let admitted = built_in(
+        3,
+        manifest(),
+        &shipped(serde_json::json!({"type": "object"})),
+    );
+    assert_eq!(admitted.name, "tasks");
+    assert_eq!(
+        admitted.origin,
+        Origin::BuiltIn {
+            index: 3,
+            shadows: None
+        }
+    );
+    assert_eq!(
+        admitted.schemas,
+        shipped(serde_json::json!({"type": "object"}))
+    );
+    let missing = built_in(3, manifest(), &[]);
+    assert_eq!(missing.name, "tasks");
+    assert!(matches!(
+        missing.manifest.unwrap_err(),
+        ManifestError::ShippedMissing { .. }
+    ));
+    let broken = built_in(3, manifest(), &shipped(serde_json::json!({"type": 5})));
+    assert!(matches!(
+        broken.manifest.unwrap_err(),
+        ManifestError::ShippedSchema { .. }
+    ));
+    assert!(broken.schemas.is_empty());
 }

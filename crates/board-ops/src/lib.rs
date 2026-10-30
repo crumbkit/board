@@ -8,6 +8,7 @@ mod call;
 mod check;
 mod effects;
 mod enable;
+mod host;
 mod index;
 mod init;
 mod known;
@@ -31,12 +32,13 @@ pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Shown, Signing, answer};
 pub use crate::enable::{EnableError, EnableReport, Kept};
+pub use crate::host::{Host, Limit, Plugin, PluginError, Settings};
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};
 pub use crate::known::{KnownBoards, Prefix, asker, open, unopened};
 pub use crate::mount::{MountError, MountUpdateReport};
 pub use crate::plugins::{
-    CallFailed, Found, Plugin, PluginFindReport, PluginListReport, PluginState, Plugins,
+    CallFailed, Found, PluginEntry, PluginFindReport, PluginListReport, PluginState, Plugins,
     SchemaProblem,
 };
 pub use crate::put::{

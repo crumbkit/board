@@ -830,6 +830,7 @@ codes that no start provokes:
   board::sync::kept: a file must be edited during the sync's push; board-ops/src/sync/tests.rs edits one in a pre-push hook
   board::plugin::timeout: the CLI's 30-second plugin limit is too slow for a test; board-ops/src/call/tests.rs uses a 500 ms limit
   board::ui::open_failed: ui open must fail to start a server or a browser, and a test must not start one; board-serve/src/tests.rs pairs a binary that cannot start with a running server
+  board::plugin::duplicate: no plugin is built into the board binary yet, so no installed plugin can share a name with one; board-ops/src/host/tests.rs pairs a built-in and an installed copy with one under another name
   board::serve::host: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::origin: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
   board::serve::token: the server gives it to an HTTP request, never to a command line; board-serve/src/tests.rs pairs each refused request with an admitted twin
