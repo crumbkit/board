@@ -118,8 +118,8 @@ board's own tree, the personal repo and the marked repos whose `notes/repo/v1`
 record covers it, as `tasks.available` does. Each prompt carries its `repo`,
 `path`, `title`, `purpose`, `runs_in` as written and `inputs`. The list holds
 at most 100 prompts, by repo then title; `total` counts all of them, and
-`degraded` counts the Markdown files under a `prompts/` directory in scope
-that are not a valid prompt. `repos` names the repos read, and
+`degraded` counts the `prompts/prompt/v1` records under a `prompts/`
+directory in scope that are not valid. `repos` names the repos read, and
 `origin_unread` says why the caller's git repository gave no origin.
 
 ## Codes

@@ -219,7 +219,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "At most 100 prompts, by repo then title, and how many there are.\n\n`degraded` counts the Markdown files under a `prompts/` directory in scope\nthat are not a valid prompt. `repos` are the repos read. `origin_unread`\nsays why the caller's git repository gave no origin, when it did not, so\nonly `/` and the personal repo were read.",
+        "description": "At most 100 prompts, by repo then title, and how many there are.\n\n`degraded` counts the `prompts/prompt/v1` records under a `prompts/`\ndirectory in scope that are not valid. `repos` are the repos read. `origin_unread`\nsays why the caller's git repository gave no origin, when it did not, so\nonly `/` and the personal repo were read.",
         "properties": {
           "degraded": {
             "title": "Degraded",

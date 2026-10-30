@@ -152,16 +152,17 @@ def listing(request: CallRequest) -> dict[str, object]:
     name, given = request.input.get("repo"), request.input.get("remote")
     with ThreadPoolExecutor() as pool:
         origin = pool.submit(repos.caller_origin) if name is None and given is None else None
-        found, held, rows = query(board, "e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/prompts/*'")
+        where = f"e.type = {literal(PROMPT_TYPE)} AND e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/prompts/*'"
+        found, held, rows = query(board, where)
         remote, unread = (None if given is None else str(given), None) if origin is None else origin.result()
     roots = repos.scope(board.plugin, found, None if name is None else str(name), remote, unread)
     prompts: list[dict[str, Any]] = []
     degraded = 0
-    for source, _, logical, _, kind, code, frontmatter in rows:
+    for source, _, logical, _, _, code, frontmatter in rows:
         repo = held.get(str(source))
         if repo not in roots:
             continue
-        if kind != PROMPT_TYPE or code not in (None, *TREE_CODES) or frontmatter is None:
+        if code not in (None, *TREE_CODES) or frontmatter is None:
             degraded += 1
             continue
         record = json.loads(frontmatter)

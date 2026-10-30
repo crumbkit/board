@@ -34,15 +34,23 @@ def test_list_shows_each_prompt_as_written_by_repo_then_title(board: Board) -> N
     assert (output["total"], output["degraded"], output["repos"]) == (3, 0, ["/", "/repos/notes"])
 
 
-def test_a_file_under_prompts_that_is_not_a_valid_prompt_is_counted_as_degraded(board: Board) -> None:
+def test_a_prompt_record_under_prompts_that_is_not_valid_is_counted_as_degraded(board: Board) -> None:
     board.write("prompts/good.md", prompt("Good"))
     board.write("prompts/linked.md", prompt("Linked", body="[plan](/plan.md)"))
     board.write("prompts/invalid.md", prompt("Invalid", purpose=None))
-    board.write("prompts/untyped.md", "# A note\n")
     board.write("notes/elsewhere.md", prompt("Elsewhere"))
     code, output = board.call("list")
     assert code == 0, output
-    assert (titles(output), output["degraded"]) == ([("/", "Good"), ("/", "Linked")], 2)
+    assert (titles(output), output["degraded"]) == ([("/", "Good"), ("/", "Linked")], 1)
+
+
+def test_a_markdown_file_under_prompts_that_is_no_prompt_record_is_not_counted(board: Board) -> None:
+    board.write("prompts/good.md", prompt("Good"))
+    board.write("prompts/untyped.md", "# A note\n")
+    board.write("evals/x/evidence/prompts/scorer.md", "# A scorer's prompt, kept as evidence\n")
+    code, output = board.call("list")
+    assert code == 0, output
+    assert (titles(output), output["degraded"]) == ([("/", "Good")], 0)
 
 
 def test_a_mount_the_board_does_not_mark_is_skipped_and_its_files_are_not_counted(board: Board) -> None:

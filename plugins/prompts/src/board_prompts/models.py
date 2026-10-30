@@ -149,8 +149,8 @@ class ListedPrompt(Strict):
 class ListOutput(Strict):
     """At most 100 prompts, by repo then title, and how many there are.
 
-    `degraded` counts the Markdown files under a `prompts/` directory in scope
-    that are not a valid prompt. `repos` are the repos read. `origin_unread`
+    `degraded` counts the `prompts/prompt/v1` records under a `prompts/`
+    directory in scope that are not valid. `repos` are the repos read. `origin_unread`
     says why the caller's git repository gave no origin, when it did not, so
     only `/` and the personal repo were read.
     """
