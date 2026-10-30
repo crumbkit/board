@@ -580,3 +580,24 @@ fn references_into_one_mounted_commit_decode_its_trees_once_and_the_same_commit_
     // The root, `a` and `a/b` of each repository.
     assert_eq!((decoded(&one, a), decoded(&two, b)), (3, 3));
 }
+
+#[test]
+fn two_mounts_of_one_repository_at_different_commits_each_resolve_in_their_own_commit() {
+    let inner = Scenario::new();
+    let (first, second) = (
+        inner.commit(&[("x.json", "1")]),
+        inner.commit(&[("x.json", "2")]),
+    );
+    let outer = Scenario::new();
+    let commit = outer.commit(&[
+        ("m.json", &mount(&inner.path(), first)),
+        ("n.json", &mount(&inner.path(), second)),
+    ]);
+    let repositories = outer.repositories();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    let m = in_commit.resolve(&path("/m/x")).unwrap();
+    let n = in_commit.resolve(&path("/n/x")).unwrap();
+    assert_eq!(m.object, Object::Blob(inner.blob("1")));
+    assert_eq!(n.object, Object::Blob(inner.blob("2")));
+    assert_eq!(n.board.source, Source::Commit(second));
+}
