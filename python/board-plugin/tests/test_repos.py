@@ -12,7 +12,7 @@ from board_plugin.repos import caller_origin, covers, parsed, record, shown_remo
 @pytest.mark.parametrize(
     ("remote", "shown"),
     [
-        ("https://x-access-token:SECRET@github.com/crumbkit/viitta.git", "crumbkit/viitta"),
+        ("https://x-access-token:SECRET@github.com/crumbkit/board.git", "crumbkit/board"),
         ("https://user:SECRET@gitlab.com/example-org/home.git", "https://gitlab.com/example-org/home.git"),
         ("https://user:p@ss@gitlab.com/example-org/home.git", "https://gitlab.com/example-org/home.git"),
         ("ssh://git@gitlab.com/example-org/home.git", "ssh://gitlab.com/example-org/home.git"),
@@ -33,7 +33,7 @@ def test_a_remote_is_shown_as_owner_and_name_on_github_and_elsewhere_without_its
         ("ssh://git@github.com/example-org/home.git", True),
         ("git@github.com-work:example-org/home.git", True),
         ("example-org/home", True),
-        ("crumbkit/viitta", True),
+        ("crumbkit/board", True),
         ("crumbkit/board", False),
         ("https://gitlab.com/example-org/home.git", False),
         ("git@gitlab.com:example-org/home.git", False),
@@ -45,7 +45,7 @@ def test_a_remote_is_shown_as_owner_and_name_on_github_and_elsewhere_without_its
     ],
 )
 def test_a_record_covers_a_github_remote_by_owner_or_by_repository(remote: str | None, *, covered: bool) -> None:
-    assert covers({"covers": ["example-org/*", "crumbkit/viitta"]}, remote) is covered
+    assert covers({"covers": ["example-org/*", "crumbkit/board"]}, remote) is covered
 
 
 def test_a_listed_mount_carries_its_pin_and_clone_and_the_boards_own_tree_neither() -> None:

@@ -83,7 +83,7 @@ jobs:
       - run: bin/lint python
       - run: bin/test python
       # The budget controls only record lint.toml; bin/lint checks they agree.
-      - name: viitta passes board check with the controls plugin installed
+      - name: The repository passes board check with the controls plugin installed
         run: |
           mkdir -p "$RUNNER_TEMP/data/board/plugins"
           ln -s "$PWD/plugins/controls" "$RUNNER_TEMP/data/board/plugins/controls"

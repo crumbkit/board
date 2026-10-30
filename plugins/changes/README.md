@@ -13,7 +13,7 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 {
   "$type": "changes/change/v1",
   "title": "Let a suite declare a timeout",
-  "repo": "/repos/viitta",
+  "repo": "/repos/board",
   "phase": "build",
   "route": "owner",
   "plan": "/changes/suite-timeout/plan.md",

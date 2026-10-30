@@ -20,7 +20,7 @@ from board_notes.repo import Repo
 
 BUSY = "notes::note::busy"
 EXAMPLE_ORG = "https://github.com/example-org/home.git"
-VIITTA = "git@github.com:crumbkit/viitta.git"
+BOARD_REMOTE = "git@github.com:crumbkit/board.git"
 
 
 def test_a_mount_without_daily_is_not_a_notes_repo_and_one_with_it_is(notes: Notes) -> None:
@@ -61,17 +61,17 @@ def test_a_board_without_a_notes_repo_is_refused_and_one_with_its_own_daily_is_i
 def test_a_note_goes_to_the_one_repo_covering_the_remote_and_otherwise_to_the_personal_inbox(notes: Notes) -> None:
     work = another(notes, "notes-work")
     cover(notes, work, ["Example-Org/*"])
-    cover(notes, notes.clone, ["crumbkit/board"], personal=True)
+    cover(notes, notes.clone, ["crumbkit/notes"], personal=True)
     code, routed = notes.call("add", "--text", "Deploy.", "--remote", EXAMPLE_ORG)
     assert code == 0, routed
     assert (routed["repo"], routed["candidates"]) == ("/repos/notes-work", None)
     assert routed["path"].startswith("/repos/notes-work/daily/")
-    code, inboxed = notes.call("add", "--text", "Rename.", "--remote", VIITTA, "--topic", "Board: names")
+    code, inboxed = notes.call("add", "--text", "Rename.", "--remote", BOARD_REMOTE, "--topic", "Board: names")
     assert code == 0, inboxed
     assert (inboxed["repo"], inboxed["candidates"]) == ("/repos/notes-personal", [])
     path = notes.note(inboxed)
     assert re.fullmatch(r"inbox/\d{4}-\d\d-\d\d-\d{6}\.md", path), path
-    frontmatter = '---\nremote: "crumbkit/viitta"\ncandidates: []\ntopic: "Board: names"\n---\n\n'
+    frontmatter = '---\nremote: "crumbkit/board"\ncandidates: []\ntopic: "Board: names"\n---\n\n'
     text = git(notes.remote, "show", f"main:{path}")
     assert re.fullmatch(re.escape(frontmatter) + r"## \d\d:\d\d\n\nRename\.", text), text
 
@@ -111,10 +111,10 @@ def test_daily_reads_the_note_of_the_repo_covering_the_remote_and_refuses_one_no
     cover(notes, notes.clone, [], personal=True)
     code, covered = notes.call("daily", "--remote", EXAMPLE_ORG)
     assert (code, covered["repo"]) == (0, "/repos/notes-work"), covered
-    code, refused = notes.call("daily", "--remote", VIITTA)
+    code, refused = notes.call("daily", "--remote", BOARD_REMOTE)
     assert (code, refused["code"]) == (1, "notes::repo::ambiguous"), "the personal note is never read by default"
     assert refused["fields"]["candidates"] == []
-    code, named = notes.call("daily", "--remote", VIITTA, "--repo", "/repos/notes-personal")
+    code, named = notes.call("daily", "--remote", BOARD_REMOTE, "--repo", "/repos/notes-personal")
     assert (code, named["repo"]) == (0, "/repos/notes-personal"), named
 
 
@@ -126,7 +126,7 @@ def test_daily_without_a_remote_reads_the_personal_note_and_one_with_an_uncovere
     cover(notes, notes.clone, [], personal=True)
     code, personal = notes.call("daily")
     assert (code, personal["repo"]) == (0, "/repos/notes-personal"), personal
-    code, refused = notes.call("daily", cwd=checkout(notes, VIITTA))
+    code, refused = notes.call("daily", cwd=checkout(notes, BOARD_REMOTE))
     assert (code, refused["code"]) == (1, "notes::repo::ambiguous"), refused
 
 
@@ -152,17 +152,17 @@ def test_the_only_repo_without_a_record_serves_a_call_without_a_remote_and_refus
 
 
 def test_a_remote_s_credential_is_never_stored_or_shown_and_its_owner_and_name_are(notes: Notes) -> None:
-    tokened = "https://x-access-token:SECRET@github.com/crumbkit/viitta.git"
+    tokened = "https://x-access-token:SECRET@github.com/crumbkit/board.git"
     another(notes, "notes-work")
     code, refused = notes.call("add", "--text", "Where?", "--remote", tokened)
     assert (code, refused["code"]) == (1, "notes::repo::no_personal")
     assert "SECRET" not in json.dumps(refused)
-    assert "crumbkit/viitta" in refused["message"]
+    assert "crumbkit/board" in refused["message"]
     cover(notes, notes.clone, [], personal=True)
     code, output = notes.call("add", "--text", "Where?", "--remote", tokened)
     assert code == 0, output
     text = (notes.clone / notes.note(output)).read_text()
-    assert ("SECRET" in text, 'remote: "crumbkit/viitta"' in text) == (False, True)
+    assert ("SECRET" in text, 'remote: "crumbkit/board"' in text) == (False, True)
 
 
 def test_a_note_is_routed_by_the_origin_of_the_directory_board_runs_in_and_remote_overrides_it(notes: Notes) -> None:
@@ -172,15 +172,15 @@ def test_a_note_is_routed_by_the_origin_of_the_directory_board_runs_in_and_remot
     home = checkout(notes, EXAMPLE_ORG)
     code, routed = notes.call("add", "--text", "From home.", cwd=home)
     assert (code, routed["repo"], routed["candidates"]) == (0, "/repos/notes-work", None), routed
-    code, overridden = notes.call("add", "--text", "Elsewhere.", "--remote", VIITTA, cwd=home)
+    code, overridden = notes.call("add", "--text", "Elsewhere.", "--remote", BOARD_REMOTE, cwd=home)
     assert (code, overridden["repo"], overridden["candidates"]) == (0, "/repos/notes-personal", []), overridden
-    assert 'remote: "crumbkit/viitta"' in (notes.clone / notes.note(overridden)).read_text()
+    assert 'remote: "crumbkit/board"' in (notes.clone / notes.note(overridden)).read_text()
 
 
 def test_the_only_notes_repo_takes_a_note_it_covers_and_refuses_one_its_record_excludes(notes: Notes) -> None:
     cover(notes, notes.clone, ["example-org/*"])
     head = git(notes.clone, "rev-parse", "HEAD")
-    code, refused = notes.call("add", "--text", "Not for work.", cwd=checkout(notes, VIITTA))
+    code, refused = notes.call("add", "--text", "Not for work.", cwd=checkout(notes, BOARD_REMOTE))
     assert (code, refused["code"]) == (1, "notes::repo::no_personal")
     assert git(notes.clone, "rev-parse", "HEAD") == head, "nothing was written"
     code, output = notes.call("add", "--text", "For work.", cwd=checkout(notes, EXAMPLE_ORG))
@@ -212,11 +212,11 @@ def test_an_inbox_note_is_written_whole_when_the_clone_cannot_sync_and_a_daily_n
     git(notes.clone, "push", "-q")
     notes.phone_appends(path, "From the phone.\n")
     notes.write(notes.clone, path, "Old.\nTyping in Reflect")
-    code, inboxed = notes.call("add", "--text", "Whose?", "--remote", VIITTA, "--topic", "T")
+    code, inboxed = notes.call("add", "--text", "Whose?", "--remote", BOARD_REMOTE, "--topic", "T")
     assert code == 0, inboxed
     assert (inboxed["parked"], inboxed["unpushed"]) == (None, "board::sync::edited")
     assert notes.note(inboxed).startswith("inbox/")
-    frontmatter = '---\nremote: "crumbkit/viitta"\ncandidates: []\ntopic: "T"\n---\n\n'
+    frontmatter = '---\nremote: "crumbkit/board"\ncandidates: []\ntopic: "T"\n---\n\n'
     assert (notes.clone / notes.note(inboxed)).read_text().startswith(frontmatter)
     code, parked = notes.call("add", "--text", "Mine.", "--repo", "/repos/notes-personal")
     assert (code, parked["parked"]) == (0, "board::sync::edited"), parked
@@ -231,7 +231,7 @@ def test_two_inbox_notes_in_one_second_are_two_files(notes: Notes) -> None:
         notes.write(notes.clone, path, "Earlier.\n")
     commit(notes.clone)
     git(notes.clone, "push", "-q")
-    code, output = notes.call("add", "--text", "Later.", "--remote", VIITTA, tz="UTC")
+    code, output = notes.call("add", "--text", "Later.", "--remote", BOARD_REMOTE, tz="UTC")
     assert code == 0, output
     path = notes.note(output)
     assert path.removesuffix("-2.md") + ".md" in taken, path

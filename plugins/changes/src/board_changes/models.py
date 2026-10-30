@@ -49,7 +49,7 @@ class ChangeRecord(BaseModel):
 
     A change lives at `/changes/<name>.json`; its plan and any files it owns
     sit in `/changes/<name>/`. Git history holds its earlier phases. `repo`
-    references the repository's mount, such as `/repos/viitta`. `phase` moves
+    references the repository's mount, such as `/repos/board`. `phase` moves
     from `plan` through `build`, `review` and `land` to `done`; `dropped`
     ends a change early. `route` is `owner` when no one else owns the files,
     `ask-first` when someone else does, and `unowned` when the repository
@@ -79,7 +79,7 @@ class StartInput(Strict):
 
     model_config = ConfigDict(json_schema_extra=shipped())
 
-    repo: LogicalPath = Field(description="The repository's mount, such as /repos/viitta.")
+    repo: LogicalPath = Field(description="The repository's mount, such as /repos/board.")
     title: str = Field(pattern="[A-Za-z0-9]", description="What the change does, in a few words.")
     name: str | SkipJsonSchema[None] = Field(
         default=None,

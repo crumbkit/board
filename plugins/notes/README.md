@@ -56,7 +56,7 @@ Each notes repo may hold `notes-repo.json` at its root, a `notes/repo/v1`
 record naming the GitHub repositories its notes are about:
 
 ```json
-{"$type": "notes/repo/v1", "covers": ["example-org/*", "crumbkit/viitta"], "personal": true}
+{"$type": "notes/repo/v1", "covers": ["example-org/*", "crumbkit/board"], "personal": true}
 ```
 
 `owner/*` covers every repository of that owner. The record is valid only

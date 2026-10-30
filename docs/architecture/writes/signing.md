@@ -85,8 +85,8 @@ records it.
 
 | Statement | Built by | Signed by | Verified by | Namespace |
 | --- | --- | --- | --- | --- |
-| Approval | viitta `Effect::approval` | board-app `attention-sign approve` | viitta `board_plugin::verify` | `board/approve/v1` |
-| Owner's write | viitta `Effect::owner_write` | board-app `attention-sign approve` | viitta `board_plugin::verify` | `board/write/v1` |
+| Approval | board `Effect::approval` | board-app `attention-sign approve` | board `board_plugin::verify` | `board/approve/v1` |
+| Owner's write | board `Effect::owner_write` | board-app `attention-sign approve` | board `board_plugin::verify` | `board/write/v1` |
 | Order | board-attention `order.statement` | board-app `attention-sign sign` | board-attention `verified_signer` | `attention/order/v1` |
 
 - Board reads `~/.config/board/allowed_signers`; board-attention reads

@@ -79,4 +79,4 @@ totals. The query reads at most 1000 records, and when Board cuts it there,
 both the pane and the output row say so. The report quotes record fields only and calls no model.
 
 The pane is drawn by the mod's own `ui.render` hook. Once board-ui lands
-(viitta#301), it moves to board-ui view and binding records.
+(#301), it moves to board-ui view and binding records.

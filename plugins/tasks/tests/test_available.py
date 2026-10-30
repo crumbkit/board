@@ -137,7 +137,7 @@ def test_the_remote_chooses_its_covering_repo_with_the_personal_repo_and_the_boa
     assert output["repos"] == ["/", "/repos/personal", "/repos/work"]
     assert titles(output) == ["Board task", "Home task", "Work task"]
     assert [item["repo"] for item in output["available"]["tasks"]] == ["/", "/repos/personal", "/repos/work"]
-    assert call(estate, "--remote", "crumbkit/viitta")[1]["repos"] == ["/", "/repos/personal"]
+    assert call(estate, "--remote", "crumbkit/board")[1]["repos"] == ["/", "/repos/personal"]
 
 
 def test_without_a_remote_every_repo_is_read_and_repo_names_one(estate: Board) -> None:

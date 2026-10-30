@@ -79,6 +79,7 @@ fn board_builds_the_approval_and_owner_write_statements_byte_for_byte() {
     ];
     for (name, statement) in built {
         assert_eq!(statement, read(name), "{name}");
+        // v1 is frozen, so it names this repository by its earlier name.
         assert_eq!(manifest.layouts[name].owner, "viitta", "{name}");
         assert!(
             manifest.layouts[name]

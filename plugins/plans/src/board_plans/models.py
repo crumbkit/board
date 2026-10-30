@@ -76,7 +76,7 @@ class QuestionRecord(Record):
     `20261024T1830Z-k3`. Its answer is a `plans/answer/v1` at
     `/projects/<project>/answers/<id>`, with the same id. `session` is the
     asking session's `local_` id, so the answer can be sent back to it. `repo`
-    names the repository, such as `crumbkit/viitta`, when there is one.
+    names the repository, such as `crumbkit/board`, when there is one.
     `recommendation` is the `id` of one of `options`, and `why` gives the reason.
     `blocks` says what cannot proceed until the question is answered. `status`
     is `open` until an answer is recorded, then `answered`; `withdrawn` means

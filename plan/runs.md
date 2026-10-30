@@ -12,8 +12,8 @@ is written.
 
 ## Build order
 
-1. The `runs` plugin in viitta: `runs/suite/v1`, `runs/run/v1`, `latest` and
-   `trend`. Built: plugins/runs/README.md describes it.
+1. The `runs` plugin in this repository: `runs/suite/v1`, `runs/run/v1`,
+   `latest` and `trend`. Built: plugins/runs/README.md describes it.
 2. `evals` refers to suites and lists runs (decisions 4 and 9). The evals
    skill changes in the same step. Built: plugins/evals/README.md describes
    it.
@@ -31,9 +31,8 @@ is written.
    controls.
 2. **No version bumps until a second user exists.** Schemas change in place.
    Each change updates the plugin's schemas, the copies in every board that
-   enabled it (the personal board at ~/Code/board and viitta on this machine)
-   and existing
-   records together.
+   enabled it (the personal board at ~/Code/board and this repository on
+   this machine) and existing records together.
 3. **A new `runs` plugin** owns two types:
    - `runs/suite/v1`: what gets run. Its fields are settled in decision 10.
    - `runs/run/v1`: one execution of a suite. `suite` ref, `by`, `started`,
@@ -102,8 +101,8 @@ is written.
     Flaky tests stay plain SQL through `board query` until a caller needs
     them.
 
-13. **`cargo xtask bench --record` writes one run** to viitta's own board at
-    `/suites/board-bench`, with one case per operation and a `median_ms`
+13. **`cargo xtask bench --record` writes one run** to this repository's own
+    board at `/suites/board-bench`, with one case per operation and a `median_ms`
     measure. The owner runs it locally. CI keeps printing to stdout, because
     CI cannot commit to a board. The budgets stay where they are (decision
     16).
@@ -113,7 +112,7 @@ is written.
     reads finished main-branch workflow runs from GitHub and writes one
     `runs/run/v1` per workflow run to a dedicated CI board, mounted into the
     personal board. Each repository and workflow is one suite, such as
-    `/suites/viitta-ci`. Each job is a case with `duration_s` and `queued_s`
+    `/suites/board-ci`. Each job is a case with `duration_s` and `queued_s`
     measures, and failed jobs are non-passing results. PR runs are not
     recorded. CI never commits to a board.
 

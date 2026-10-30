@@ -62,7 +62,7 @@ listener, so they also get an adversarial security review.
      computed through `board-tree`; `POST /api/gate/<id>` takes the owner's
      answer to a pending effect and is the only write route.
 6. **The built app is committed** and embedded with `include_bytes!`, so
-   viitta builds with only Rust installed. CI fails when the committed bundle
+   board builds with only Rust installed. CI fails when the committed bundle
    is stale.
 7. **Toolchain.** React 19, Vite, Tailwind 4, shadcn/ui once a kind needs it, Shiki, Storybook,
    Vitest, Playwright and pnpm, with stable TypeScript. board-ui has its own

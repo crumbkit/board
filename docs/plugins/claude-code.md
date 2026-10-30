@@ -25,7 +25,7 @@ The release archive of a plugin does not include its mod.
 
 The repository is also a Claude Code marketplace named `board`, listed in
 `.claude-plugin/marketplace.json`. To install a mod, add the marketplace once
-with `claude plugin marketplace add crumbkit/viitta`, then run
+with `claude plugin marketplace add crumbkit/board`, then run
 `claude plugin install <name>@board`, where `<name>` is the mod's name in its
 `plugin.json`, such as `board-runs`, `board-controls` or `board-plans`. The `mods` workflow
 fails when a mod has no entry in the marketplace.

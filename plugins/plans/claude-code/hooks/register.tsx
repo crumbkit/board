@@ -175,7 +175,7 @@ export const register: Register = (on, options) => {
   })
 
   // The report is a plain list of record fields, drawn as Markdown. Once
-  // board-ui lands (viitta#301), this pane moves to its view and binding
+  // board-ui lands (#301), this pane moves to its view and binding
   // records, and a short narrative per project from `$.model.complete` with a
   // Haiku-class model may lead it.
   on('command.run', { command: 'yesterday' }, async $ => {

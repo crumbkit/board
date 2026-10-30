@@ -16,7 +16,7 @@ file is deleted.
 4. `review.covered`, which CI calls to check a pull request is covered by
    reports.
 
-The trial runs on the owner's own repositories, viitta first. Other Rust
+The trial runs on the owner's own repositories, board first. Other Rust
 repositories join as it proves itself.
 
 ## Decided

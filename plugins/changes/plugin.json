@@ -22,7 +22,7 @@
             "type": "string"
           },
           "repo": {
-            "description": "The repository's mount, such as /repos/viitta.",
+            "description": "The repository's mount, such as /repos/board.",
             "format": "board-path",
             "pattern": "^/",
             "title": "Repo",

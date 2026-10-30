@@ -26,7 +26,7 @@ M7 is done when the owner says so.
 
 After M7, real numbers decide whether to land the three measured warm-check
 speedups (#33; warm `check` is about 20 µs per entry). The long-chain numbers
-are in #57 and viitta-stress-test 9d557d1.
+are in #57 and in commit 9d557d1 of the separate stress-test repository.
 
 ## Then: runs
 
@@ -94,11 +94,9 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
 
 ## Settled decisions
 
-1. The name stays `board` for now: the binary and its help, the `board-*`
-   crates, `board::` codes, record types, plugin ids, config and the reserved
-   `board` namespace. `viitta` is the repository's name and a stable
-   identifier kept as a hedge. If a rename is ever needed, internal and public
-   naming are split then (2026-10-24).
+1. The name is `board`: the repository (crumbkit/board), the binary and its
+   help, the `board-*` crates, `board::` codes, record types, plugin ids,
+   config and the reserved `board` namespace (2026-10-30).
 2. The code is proprietary and unpublished.
 3. A limit that refuses a write, such as a file-size limit, is a setting that
    `put` and `check` apply. A requirement on files is a control (2026-10-05).
