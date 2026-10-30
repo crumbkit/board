@@ -6,7 +6,6 @@ mod complete;
 mod config;
 mod effects;
 mod graft;
-mod known;
 mod plugin;
 mod render;
 mod report;

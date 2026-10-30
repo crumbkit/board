@@ -10,6 +10,7 @@ mod effects;
 mod enable;
 mod index;
 mod init;
+mod known;
 mod mount;
 mod plugins;
 mod put;
@@ -32,6 +33,7 @@ pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Signing
 pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};
+pub use crate::known::{KnownBoards, Prefix, asker, open, unopened};
 pub use crate::mount::{MountError, MountUpdateReport};
 pub use crate::plugins::{
     CallFailed, Found, Plugin, PluginFindReport, PluginListReport, PluginState, Plugins,

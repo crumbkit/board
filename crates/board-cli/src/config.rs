@@ -4,6 +4,8 @@ use std::ffi::OsString;
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 
+use board_model::Refusal;
+use board_ops::KnownBoards;
 use board_plugin::Environment;
 
 /// What the binary learns from its environment.
@@ -99,6 +101,19 @@ impl Context {
                 .ok()
                 .and_then(|index| index.parse().ok()),
         }
+    }
+
+    /// The known boards the file `boards` names, none when there is no file.
+    pub(crate) fn known(&self) -> Result<KnownBoards, Box<Refusal>> {
+        let Some(file) = &self.boards else {
+            return Ok(KnownBoards::default());
+        };
+        KnownBoards::parse(file, std::fs::read(file))
+    }
+
+    /// The root of the personal board the known boards file names.
+    pub(crate) fn personal(&self) -> Result<PathBuf, Box<Refusal>> {
+        self.known()?.personal(self.home.as_deref())
     }
 }
 

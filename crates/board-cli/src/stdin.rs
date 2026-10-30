@@ -11,7 +11,6 @@ use clap::Subcommand;
 use serde_json::{Map, Value};
 
 use crate::config::Context;
-use crate::known;
 use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::run::{plain, plugins};
@@ -89,8 +88,8 @@ pub(crate) fn call(
         Err(refusal) => return render::refused(printer, refusal),
     };
     let mut plugins = plugins(context);
-    plugins.environment.day_start = match known::day_start(context) {
-        Ok(start) => start.map(OsString::from),
+    plugins.environment.day_start = match context.known() {
+        Ok(known) => known.day_start().map(OsString::from),
         Err(refusal) => return render::refused(printer, *refusal),
     };
     match board.call(target, &input, &plugins) {

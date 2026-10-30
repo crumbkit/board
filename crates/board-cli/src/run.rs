@@ -26,7 +26,6 @@ use crumbkit::{Sink, Unparsed};
 use crate::config::Context;
 use crate::effects;
 use crate::graft;
-use crate::known;
 use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::stdin::{TypeCommand, call, put};
@@ -93,9 +92,7 @@ pub(crate) struct Cli {
 /// How many entries a listing shows (STANDARDS.md 23).
 pub(crate) type Page = crumbkit::Page<DEFAULT_LIMIT, MAX_LIMIT>;
 
-/// Where the run started, as a logical path in its board, or the refusal of
-/// that path when it is not one.
-pub(crate) type Prefix = Result<LogicalPath, PathError>;
+pub(crate) use board_ops::Prefix;
 
 /// A path argument as typed: absolute, or relative to the run's prefix.
 #[derive(Clone, Debug)]
@@ -429,7 +426,7 @@ pub(crate) fn run(
     {
         return render::refused(printer, *refusal);
     }
-    let base = cli.personal.then(|| known::personal(context));
+    let base = cli.personal.then(|| context.personal());
     let base = base.unwrap_or_else(|| Ok(context.start.clone()));
     let start = match base.and_then(|base| entered(&base, &cli.directories)) {
         Ok(start) => start,
@@ -442,7 +439,7 @@ pub(crate) fn run(
                 let outside = matches!(error, board_ops::InitError::NotARepository { .. });
                 render::refused(
                     printer,
-                    unopened(error.code(), &error, &Fields::default(), outside),
+                    board_ops::unopened(error.code(), &error, &Fields::default(), outside),
                 )
             }
         };
@@ -464,7 +461,7 @@ pub(crate) fn run(
         _ => None,
     };
     if let Some(personal) = asks {
-        match known::asker(context, personal) {
+        match effects::asker(context, personal) {
             Ok(asker) => board.ask_as(asker),
             Err(refusal) => return render::refused(printer, *refusal),
         }
@@ -716,31 +713,8 @@ fn refs(
 }
 
 /// The board holding `start`, or else the one known board with a mount
-/// whose repository holds `start`, and `start`'s logical path in that
-/// board, if it has one. Outside a git repository no mount can hold `start`, so the known
-/// boards are not read.
+/// whose repository holds `start`, and `start`'s logical path in that board.
 fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    let error = match Board::open(start, context.home.clone()) {
-        Ok(board) => return Ok((board, board_tree::within(start))),
-        Err(error) => error,
-    };
-    let outside = matches!(error, board_ops::OpenError::NoRepository { .. });
-    let refusal = unopened(error.code(), &error, &error.fields(), outside);
-    if !matches!(error, board_ops::OpenError::NotFound { .. }) {
-        return Err(Box::new(refusal));
-    }
-    known::find(context, start, refusal).map(|(board, prefix)| (board, Some(prefix)))
-}
-
-/// The refusal when a board cannot be opened or made. `outside` a git
-/// repository, `board init` fails too, so the hint names only what can run.
-fn unopened(code: Code, error: &dyn std::fmt::Display, fields: &Fields, outside: bool) -> Refusal {
-    let refusal = Refusal::new(code, error, fields);
-    if outside {
-        refusal.with_hint(
-            "run `git init` first to make the directory a repository; for a board elsewhere, run `board -C <dir> check`",
-        )
-    } else {
-        refusal
-    }
+    let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
+    board_ops::open(start, home, cache, || context.known())
 }
