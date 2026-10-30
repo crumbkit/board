@@ -34,7 +34,7 @@ def test_a_remote_is_shown_as_owner_and_name_on_github_and_elsewhere_without_its
         ("git@github.com-work:example-org/home.git", True),
         ("example-org/home", True),
         ("crumbkit/board", True),
-        ("crumbkit/board", False),
+        ("another-org/board", False),
         ("https://gitlab.com/example-org/home.git", False),
         ("git@gitlab.com:example-org/home.git", False),
         ("git@github.com.evil.io:example-org/home.git", False),
