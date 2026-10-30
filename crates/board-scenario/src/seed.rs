@@ -100,7 +100,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 65] = [
+pub const NOT_CHECKED: [(Code, &str); 63] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -193,8 +193,6 @@ pub const NOT_CHECKED: [(Code, &str); 65] = [
         Code::CliUsage,
         "the command line is refused before any board is read",
     ),
-    (Code::UiSlotMismatch, PUT),
-    (Code::UiSlotInvalid, PUT),
     (Code::UiNotABinding, OPEN),
     (Code::UiOpenFailed, OPEN),
     (Code::ServeHost, OPEN),
@@ -244,7 +242,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 30] = [
+const TEXT: [(&str, &str, Option<Code>); 32] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -282,6 +280,8 @@ const TEXT: [(&str, &str, Option<Code>); 30] = [
     ("plugins/broken/plugin.json", r#"{"$type": "board/plugin-manifest/v1"}"#, Some(Code::PluginBadManifest)),
     ("ui/view.json", r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "markdown"}]}"#, None),
     ("ui/unknown.json", r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "chart"}]}"#, Some(Code::UiUnknownKind)),
+    ("ui/mismatch.json", r#"{"$type": "ui/binding/v1", "view": "/ui/view", "slots": {}}"#, Some(Code::UiSlotMismatch)),
+    ("ui/invalid.json", r#"{"$type": "ui/binding/v1", "view": "/ui/view", "slots": {"s": {"data": {"text": "x"}}}}"#, Some(Code::UiSlotInvalid)),
 ];
 
 /// Exhibits in the root board that are symlinks: path, text and code. A

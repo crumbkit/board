@@ -15,8 +15,8 @@ use std::path::Path;
 
 use board_index::{Decided, Index, IndexError, Resolved, Storage, ValidationFact, View, Writer};
 use board_model::{
-    Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId, POINTER_TYPE,
-    RecordType, Role, Source, Stat, classify,
+    BINDING_TYPE, Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId,
+    POINTER_TYPE, RecordType, Role, Source, Stat, classify,
 };
 use board_tree::{
     Cache, Entry, Mounted, Place, Reader, Refused, Repositories, Repository, ResolveError, Status,
@@ -28,6 +28,7 @@ use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, fol
 use crate::index::{
     Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_type, transact,
 };
+use crate::ui::fitted;
 use crate::verdict::{Fault, SchemaFound};
 
 /// Every file each source's walk listed, sorted by path: the working tree
@@ -455,7 +456,7 @@ impl Decide<'_> {
             Kind::Record => {
                 let judged = self.record(fact, schema, reached)?;
                 let links = self.links(entry, &fact.fact.links, reached);
-                Ok(judged.map(|failure| failure.or(links)))
+                Ok(judged.map(|failure| failure.or_else(|| self.fitted(entry, fact)).or(links)))
             }
             Kind::File => Ok(Ok(self.links(entry, &fact.fact.links, reached))),
             Kind::Schema | Kind::Json => Ok(Ok(None)),
@@ -660,6 +661,16 @@ impl Decide<'_> {
     fn read_type(&self, location: &Location, blob: ObjectId) -> Option<RecordType> {
         let root = &mut self.reader.borrow_mut();
         read_type(self.repositories, root, location, blob)
+    }
+
+    /// The first way `entry`, when it is a binding, does not fit its view,
+    /// read in the source being checked.
+    fn fitted(&self, entry: &Entry, record: &Indexed) -> Option<Failure> {
+        (record.fact.record_type.as_ref()?.as_str() == BINDING_TYPE).then_some(())?;
+        let (root, path) = (&mut self.reader.borrow_mut(), entry.logical.as_ref()?);
+        let resolve = &mut |path: &LogicalPath| self.resolve(path);
+        let fitted = fitted((path, None), self.repositories, root, resolve);
+        fitted.map(|(code, detail)| (code, Some(detail)))
     }
 }
 

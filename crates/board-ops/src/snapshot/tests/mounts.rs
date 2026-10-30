@@ -440,3 +440,45 @@ fn symlinks_in_a_mount_whose_texts_are_long_are_reported_by_their_length_and_a_s
     let size = format!("{report:?}").len();
     assert!(size < 100_000, "{size} bytes");
 }
+
+#[test]
+fn a_binding_in_a_mounted_board_fits_the_view_in_its_own_board_and_one_whose_view_is_missing_there_dangles()
+ {
+    let view = r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "markdown"}]}"#;
+    let binding = r#"{"$type": "ui/binding/v1", "view": "/views/v",
+        "slots": {"s": {"data": {"markdown": "x"}}}}"#;
+    // The root's view at the same path names another slot, so the binding
+    // read against the root would not fit.
+    let other = view.replace(r#""s""#, r#""t""#);
+    let cases = [
+        (
+            vec![("views/v.json", view), ("bindings/b.json", binding)],
+            None,
+        ),
+        (
+            vec![("bindings/b.json", binding)],
+            Some((Code::RefDangling, "/view")),
+        ),
+    ];
+    for (files, expected) in cases {
+        let library = Scenario::new();
+        let commit = library.commit(&files);
+        let scenario = board();
+        scenario.write("views/v.json", Item::File(&other)).write(
+            "vendor/lib.json",
+            Item::File(&mount(&library.path(), commit)),
+        );
+        let report = check(&scenario, None);
+        let entry = (report.entries.iter())
+            .find(|entry| entry.logical.as_ref().unwrap().as_str() == "/vendor/lib/bindings/b")
+            .unwrap();
+        let found = match entry.status {
+            Status::Ok => None,
+            Status::Degraded(code) => {
+                let detail = entry.detail.as_ref().unwrap();
+                Some((code, detail.pointer.as_deref().unwrap()))
+            }
+        };
+        assert_eq!(found, expected);
+    }
+}

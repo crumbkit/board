@@ -1,10 +1,12 @@
-//! Bindings fitted to their views on put, and pages read for the app.
+//! Bindings fitted to their views by put and check alike, and pages read
+//! for the app.
 
 use board_model::{Code, LogicalPath};
 use board_scenario::{Item, Scenario};
+use board_tree::Status;
 use serde_json::{Value, json};
 
-use crate::put::Expect;
+use crate::put::{Expect, PutReport};
 use crate::tests::{board, open};
 
 const VIEW: &str = r#"{"$type": "ui/view/v1", "slots": [
@@ -66,64 +68,6 @@ fn markdown() -> Value {
 }
 
 #[test]
-fn slot_data_its_kind_refuses_is_refused_and_data_it_accepts_is_admitted() {
-    let scenario = scenario();
-    assert_eq!(
-        put(&scenario, &binding(json!({"data": {"text": "x"}}), task())),
-        Err((Code::UiSlotInvalid, Some("/slots/summary/data".to_owned())))
-    );
-    assert_eq!(put(&scenario, &binding(markdown(), task())), Ok(()));
-}
-
-#[test]
-fn a_reference_to_a_type_the_slot_does_not_draw_is_refused_and_one_it_draws_is_admitted() {
-    let scenario = scenario();
-    assert_eq!(
-        put(&scenario, &binding(json!({"ref": "/tasks/a"}), task())),
-        Err((Code::RefWrongType, Some("/slots/summary/ref".to_owned())))
-    );
-    assert_eq!(
-        put(&scenario, &binding(json!({"ref": "/summaries/a"}), task())),
-        Ok(())
-    );
-}
-
-#[test]
-fn a_reference_that_does_not_resolve_is_refused_and_one_that_does_is_admitted() {
-    let scenario = scenario();
-    assert_eq!(
-        put(&scenario, &binding(markdown(), json!({"ref": "/tasks/b"}))),
-        Err((Code::RefDangling, Some("/slots/task/ref".to_owned())))
-    );
-    assert_eq!(put(&scenario, &binding(markdown(), task())), Ok(()));
-}
-
-#[test]
-fn a_binding_missing_a_slot_its_view_names_is_refused_and_a_full_one_is_admitted() {
-    let scenario = scenario();
-    let partial = json!({"$type": "ui/binding/v1", "view": "/views/review",
-        "slots": {"task": task()}})
-    .to_string();
-    assert_eq!(
-        put(&scenario, &partial),
-        Err((Code::UiSlotMismatch, Some("/slots".to_owned())))
-    );
-    assert_eq!(put(&scenario, &binding(markdown(), task())), Ok(()));
-}
-
-#[test]
-fn a_binding_whose_view_is_not_a_view_is_refused_and_one_naming_a_view_is_admitted() {
-    let scenario = scenario();
-    let full = binding(markdown(), task());
-    let wrong = full.replace("/views/review", "/tasks/a");
-    assert_eq!(
-        put(&scenario, &wrong),
-        Err((Code::RefWrongType, Some("/view".to_owned())))
-    );
-    assert_eq!(put(&scenario, &full), Ok(()));
-}
-
-#[test]
 fn a_page_reads_each_slot_in_view_order_and_reports_a_slot_that_fails() {
     let scenario = scenario();
     put(&scenario, &binding(json!({"ref": "/summaries/a"}), task())).unwrap();
@@ -161,30 +105,6 @@ fn a_page_that_names_nothing_is_not_found() {
 }
 
 #[test]
-fn a_binding_whose_view_does_not_resolve_says_to_put_the_view_first_and_one_whose_view_resolves_is_admitted()
- {
-    let scenario = scenario();
-    let full = binding(markdown(), task());
-    let refused = open(&scenario)
-        .put(
-            &path("/bindings/review"),
-            Expect::Any,
-            full.replace("/views/review", "/views/later").as_bytes(),
-        )
-        .unwrap_err();
-    assert_eq!(
-        (refused.code(), refused.fields().pointer.as_deref()),
-        (Code::RefDangling, Some("/view"))
-    );
-    assert!(
-        refused
-            .to_string()
-            .contains("put the view in an earlier put")
-    );
-    assert_eq!(put(&scenario, &full), Ok(()));
-}
-
-#[test]
 fn a_binding_outside_bindings_is_not_opened_and_the_same_binding_under_bindings_is() {
     let scenario = scenario();
     let full = binding(markdown(), task());
@@ -214,36 +134,6 @@ fn diff_scenario() -> Scenario {
 }
 
 #[test]
-fn a_diff_slot_whose_patch_does_not_parse_is_refused_and_one_that_parses_is_admitted() {
-    let scenario = diff_scenario();
-    let short = PATCH.replace(" }\n", "");
-    assert_eq!(
-        put(&scenario, &diff_binding(&json!({"data": {"patch": short}}))),
-        Err((
-            Code::UiSlotInvalid,
-            Some("/slots/change/data/patch".to_owned())
-        ))
-    );
-    assert_eq!(
-        put(&scenario, &diff_binding(&json!({"data": {"patch": PATCH}}))),
-        Ok(())
-    );
-}
-
-#[test]
-fn a_diff_slot_given_by_reference_is_refused_and_the_same_slot_given_as_data_is_admitted() {
-    let scenario = diff_scenario();
-    assert_eq!(
-        put(&scenario, &diff_binding(&json!({"ref": "/tasks/a"}))),
-        Err((Code::RefWrongType, Some("/slots/change/ref".to_owned())))
-    );
-    assert_eq!(
-        put(&scenario, &diff_binding(&json!({"data": {"patch": PATCH}}))),
-        Ok(())
-    );
-}
-
-#[test]
 fn a_page_draws_a_diff_slot_as_its_files_with_numbered_lines() {
     let scenario = diff_scenario();
     put(&scenario, &diff_binding(&json!({"data": {"patch": PATCH}}))).unwrap();
@@ -259,4 +149,207 @@ fn a_page_draws_a_diff_slot_as_its_files_with_numbered_lines() {
             ]}],
         }]}))
     );
+}
+
+/// A code and the pointer it names, or `None` for a binding that fits.
+type Judged = Option<(Code, Option<String>)>;
+
+/// What check says of the binding at `/bindings/review`.
+fn checked(scenario: &Scenario) -> Judged {
+    let report = open(scenario).check(None, None).unwrap();
+    let entry = report
+        .entries
+        .into_iter()
+        .find(|entry| entry.path == "bindings/review.json")
+        .unwrap();
+    match entry.status {
+        Status::Ok => None,
+        Status::Degraded(code) => Some((code, entry.detail.and_then(|detail| detail.pointer))),
+    }
+}
+
+/// What put says of `record` written at `/bindings/review`.
+fn degraded(report: &PutReport) -> Judged {
+    (report.writes[0].degraded.clone()).map(|(code, detail)| (code, detail.pointer))
+}
+
+/// What put, and then check, say of `record` put at `/bindings/review`.
+fn judged(scenario: &Scenario, record: &str) -> (Judged, Judged) {
+    let report = open(scenario)
+        .put(&path("/bindings/review"), Expect::Any, record.as_bytes())
+        .unwrap();
+    (degraded(&report), checked(scenario))
+}
+
+fn at(code: Code, pointer: &str) -> (Code, Option<String>) {
+    (code, Some(pointer.to_owned()))
+}
+
+#[test]
+fn put_and_check_share_one_rule_and_give_a_binding_that_does_not_fit_the_same_code_and_pointer() {
+    let full = binding(markdown(), task());
+    let partial =
+        json!({"$type": "ui/binding/v1", "view": "/views/review", "slots": {"task": task()}});
+    let short = PATCH.replace(" }\n", "");
+    let cases = [
+        (
+            binding(json!({"data": {"text": "x"}}), task()),
+            Some(at(Code::UiSlotInvalid, "/slots/summary/data")),
+        ),
+        (
+            binding(json!({"ref": "/tasks/a"}), task()),
+            Some(at(Code::RefWrongType, "/slots/summary/ref")),
+        ),
+        (
+            binding(markdown(), json!({"ref": "/tasks/b"})),
+            Some(at(Code::RefDangling, "/slots/task/ref")),
+        ),
+        (
+            partial.to_string(),
+            Some(at(Code::UiSlotMismatch, "/slots")),
+        ),
+        (
+            full.replace("/views/review", "/tasks/a"),
+            Some(at(Code::RefWrongType, "/view")),
+        ),
+        (
+            full.replace("/views/review", "/views/later"),
+            Some(at(Code::RefDangling, "/view")),
+        ),
+        (
+            diff_binding(&json!({"data": {"patch": short}})),
+            Some(at(Code::UiSlotInvalid, "/slots/change/data/patch")),
+        ),
+        (
+            diff_binding(&json!({"ref": "/tasks/a"})),
+            Some(at(Code::RefWrongType, "/slots/change/ref")),
+        ),
+    ];
+    let scenario = diff_scenario();
+    for (record, expected) in cases {
+        assert_eq!(
+            judged(&scenario, &record),
+            (expected.clone(), expected),
+            "{record}"
+        );
+    }
+}
+
+#[test]
+fn put_and_check_share_one_rule_and_admit_a_binding_that_fits_alike() {
+    let scenario = diff_scenario();
+    for record in [
+        binding(markdown(), task()),
+        binding(json!({"ref": "/summaries/a"}), task()),
+        diff_binding(&json!({"data": {"patch": PATCH}})),
+    ] {
+        assert_eq!(judged(&scenario, &record), (None, None), "{record}");
+    }
+}
+
+#[test]
+fn check_degrades_a_binding_whose_reference_is_deleted_after_put_and_not_an_untouched_one() {
+    let scenario = scenario();
+    put(&scenario, &binding(markdown(), task())).unwrap();
+    assert_eq!(checked(&scenario), None);
+    scenario.write("tasks/a.json", Item::Deleted);
+    assert_eq!(
+        checked(&scenario),
+        Some(at(Code::RefDangling, "/slots/task/ref"))
+    );
+    let report = open(&scenario).check(None, None).unwrap();
+    let entry = (report.entries.iter())
+        .find(|entry| entry.path == "bindings/review.json")
+        .unwrap();
+    let reason = &entry.detail.as_ref().unwrap().reason;
+    assert!(
+        reason.contains("/tasks/a, at /slots/task/ref, does not resolve: "),
+        "{reason}"
+    );
+}
+
+#[test]
+fn a_check_with_a_warm_index_degrades_a_binding_whose_view_changed_and_admits_it_once_restored() {
+    let scenario = scenario();
+    put(&scenario, &binding(markdown(), task())).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let status = || {
+        let report = open(&scenario).check(None, Some(cache.path())).unwrap();
+        let entry = (report.entries.into_iter())
+            .find(|entry| entry.path == "bindings/review.json")
+            .unwrap();
+        entry.status
+    };
+    assert_eq!(status(), Status::Ok, "cold");
+    let grown = VIEW.replace(
+        r#"{"name": "task", "kind": "record"}"#,
+        r#"{"name": "task", "kind": "record"}, {"name": "notes", "kind": "markdown"}"#,
+    );
+    scenario.write("views/review.json", Item::File(&grown));
+    assert_eq!(status(), Status::Degraded(Code::UiSlotMismatch), "changed");
+    scenario.write("views/review.json", Item::File(VIEW));
+    assert_eq!(status(), Status::Ok, "restored");
+}
+
+#[test]
+fn check_degrades_a_binding_whose_view_gains_a_slot_after_put_and_not_an_untouched_one() {
+    let scenario = scenario();
+    put(&scenario, &binding(markdown(), task())).unwrap();
+    assert_eq!(checked(&scenario), None);
+    let grown = VIEW.replace(
+        r#"{"name": "task", "kind": "record"}"#,
+        r#"{"name": "task", "kind": "record"}, {"name": "notes", "kind": "markdown"}"#,
+    );
+    scenario.write("views/review.json", Item::File(&grown));
+    assert_eq!(checked(&scenario), Some(at(Code::UiSlotMismatch, "/slots")));
+}
+
+fn line(path: &str, record: &str) -> String {
+    format!(r#"{{"path": "{path}", "record": {record}}}"#) + "\n"
+}
+
+#[test]
+fn a_binding_and_its_view_put_in_one_batch_fit_in_either_order_and_a_binding_without_its_view_is_degraded()
+ {
+    let view = line(
+        "/views/later",
+        &serde_json::from_str::<Value>(VIEW).unwrap().to_string(),
+    );
+    let bound = line(
+        "/bindings/review",
+        &binding(markdown(), task()).replace("/views/review", "/views/later"),
+    );
+    for input in [view.clone() + &bound, bound.clone() + &view] {
+        let scenario = scenario();
+        let report = open(&scenario).put_batch(&mut input.as_bytes()).unwrap();
+        let fits: Vec<_> = (report.writes.iter())
+            .map(|written| &written.degraded)
+            .collect();
+        assert_eq!(fits, [&None, &None], "{input}");
+        assert_eq!(checked(&scenario), None, "{input}");
+    }
+    let scenario = scenario();
+    let report = open(&scenario).put_batch(&mut bound.as_bytes()).unwrap();
+    assert_eq!(degraded(&report), Some(at(Code::RefDangling, "/view")));
+}
+
+/// How many files a warm check of `scenario` opens: the second of two.
+fn warm(scenario: &Scenario) -> usize {
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(scenario);
+    board.check(None, Some(cache.path())).unwrap();
+    let before = board.repository().files_opened();
+    board.check(None, Some(cache.path())).unwrap();
+    board.repository().files_opened() - before
+}
+
+#[test]
+fn a_warm_check_reads_a_binding_its_view_and_its_references_and_nothing_without_a_binding() {
+    let scenario = scenario();
+    assert_eq!(warm(&scenario), 0, "no binding");
+    let fitted = binding(json!({"ref": "/summaries/a"}), task());
+    scenario.write("bindings/review.json", Item::File(&fitted));
+    // The binding, its view, the summary and the task, each opened once to
+    // resolve its path and once to read it.
+    assert_eq!(warm(&scenario), 8, "one binding");
 }

@@ -22,7 +22,7 @@ use crate::check::{Detail, Tally, follow, unresolved};
 use crate::effects::{Change, EffectError, Shape};
 use crate::snapshot::read_type;
 use crate::types::TypeError;
-use crate::ui::BindingError;
+use crate::ui::fitted;
 use crate::verdict::{self, Admitted, Fault, SchemaFound};
 
 /// What a put expects to find where it writes.
@@ -46,7 +46,8 @@ pub struct Written {
     pub previous: Option<ObjectId>,
     pub blob: ObjectId,
     /// What `check` finds wrong with the written record: a pointer or
-    /// reference that does not resolve, or reaches the wrong type.
+    /// reference that does not resolve, or reaches the wrong type, or a
+    /// binding that does not fit its view.
     pub degraded: Option<(Code, Detail)>,
 }
 
@@ -245,10 +246,6 @@ impl Board {
             refused,
         };
         let admitted = admitted.map_err(refuse)?;
-        if let Some(binding) = admitted.binding() {
-            self.fit(view, &binding)
-                .map_err(|error| refuse(Refused::Binding(error)))?;
-        }
         let target = target?;
         let canonical = canonical_json(&admitted.value).into_bytes();
         let change = Change::Put(&canonical, &admitted, Shape::Record);
@@ -476,7 +473,8 @@ impl Board {
             );
             tally.add(&reference.pointer, failure.as_ref());
         }
-        tally.first()
+        let (binding, repositories) = (item.admitted.binding(), self.repositories());
+        (tally.first()).or_else(|| fitted((display, Some(binding?)), repositories, root, resolve))
     }
 
     /// What `check` finds wrong with `item` when nothing can be resolved
@@ -504,9 +502,6 @@ pub enum Refused {
     Frontmatter(#[from] FrontmatterError),
     #[error(transparent)]
     Fault(#[from] Fault),
-    /// A binding that does not fit its view.
-    #[error(transparent)]
-    Binding(BindingError),
     #[error("it is empty")]
     Empty,
     #[error("it is not a json object")]
@@ -521,7 +516,6 @@ impl Refused {
             Self::Json(error) => error.code(),
             Self::Frontmatter(error) => error.code(),
             Self::Fault(fault) => fault.code(),
-            Self::Binding(error) => error.code(),
             Self::Empty => Code::JsonParse,
             Self::NotAnObject | Self::NoType => Code::PutInvalid,
         }
@@ -532,7 +526,6 @@ impl Refused {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Fault(fault) => fault.fields(),
-            Self::Binding(error) => error.fields(),
             Self::Json(_)
             | Self::Frontmatter(_)
             | Self::Empty

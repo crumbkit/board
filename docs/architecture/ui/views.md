@@ -26,7 +26,9 @@ JSON Schema and the record types a `ref` may name (`*` is any).
 
 - `check` and `put` validate each `ui` record's shape. A view naming a kind
   outside the catalogue is `board::ui::unknown_kind`, at the kind's pointer.
-- `put` of a binding also fits it to its view, read from the working tree:
+- `check` and `put` fit a binding to its view by one rule. Each reads the
+  view and every `ref` in the binding's own board. A binding that does not
+  fit is written and reported degraded, never refused:
   - a view that is missing is `ref::dangling`; one that is not a
     `ui/view/v1` record is `ref::wrong_type`, at `/view`;
   - slots that differ from the view's are `board::ui::slot_mismatch`, at
@@ -35,26 +37,26 @@ JSON Schema and the record types a `ref` may name (`*` is any).
     `ref::dangling` or `ref::wrong_type`, at `/slots/<name>/ref`;
   - data, or a referenced record, that fails the kind's schema is
     `board::ui::slot_invalid`, at `/slots/<name>/data` or `/ref`.
-- `check` does not fit bindings to views, and the index does not record a
+- `check` fits each binding again on every run, so it reports a binding
+  whose view or records changed after the put. The index does not record a
   binding's `ref`s as references.
-- A binding put in the same batch as its view is refused, because the view
-  is read from the working tree before the batch writes. The reason says to
-  put the view in an earlier put.
+- A binding and its view can go in one batch, in either order: the fit runs
+  after the batch writes.
 - The `record` kind links only strings that start with `/bindings/`, which
   open that binding's page; other paths show as text.
 - The `diff` kind's `patch` is a unified diff, as `git diff` or `diff -u`
   prints it.
   - Like `git apply`, it skips lines outside a file diff, such as a commit
     message.
-  - `put` refuses, with `board::ui::slot_invalid` at
-    `/slots/<name>/data/patch`:
+  - `check` and `put` report the binding degraded, with
+    `board::ui::slot_invalid` at `/slots/<name>/data/patch`, for:
     - a patch of more than 20,000 lines;
     - a patch with no file diff, or a hunk before any file header;
     - a malformed `@@` header;
     - a hunk that ends before its header's counts, a hunk line that starts
       with none of ` `, `+`, `-` or `\`, or a line past one side's count
       while the other side still has lines left.
-  - A page shows such a slot as failed, with the same refusal.
+  - A page shows such a slot as failed, with the same code.
   - Each line keeps a `\r` before its `\n`, so a change to line endings
     shows. Quoted git paths are unquoted. A combined diff of a merge
     (`diff --cc`) is not read.

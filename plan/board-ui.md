@@ -39,8 +39,9 @@ listener, so they also get an adversarial security review.
    - Content derived for a page, such as a model-written summary, is its own
      record. It lists the records it came from and names the agent and model
      that wrote it. The binding cites it by `ref`. Its type is `ui/derived/v1`.
-   - `put` checks every slot's data or referenced record against its kind's
-     schema and refuses a mismatch with a `board::ui::` code.
+   - `put` and `check` check every slot's data or referenced record against
+     its kind's schema and report a mismatch as degraded with a `board::ui::`
+     code.
 4. **Commands.**
    - `board ui kinds` lists the catalogue, with each kind's JSON Schema and the
      record types it draws directly.

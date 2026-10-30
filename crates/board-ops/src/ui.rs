@@ -1,20 +1,24 @@
-//! Pages that `board serve` draws: a binding fitted to its view when it is
-//! put, and a binding with every slot read for the app
-//! (docs/architecture/ui/views.md).
+//! Pages that `board serve` draws: a binding fitted to its view, by one rule
+//! that `put` and `check` share, and a binding with every slot read for the
+//! app (docs/architecture/ui/views.md).
 
 use std::collections::BTreeSet;
 
 use board_model::{
-    BINDING_TYPE, Binding, Code, ComponentKind, Fields, Fill, LogicalPath, Refusal, UiError,
-    VIEW_TYPE, View,
+    BINDING_TYPE, Binding, Classified, Code, ComponentKind, Content, Fields, Fill, Location,
+    LogicalPath, Object, Refusal, UiError, VIEW_TYPE, View, classify,
 };
-use board_tree::Resolver;
+use board_tree::{Reader, Repositories, ResolveError, Resolver, latest};
 use board_validate::Schema;
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::board::Board;
+use crate::check::Detail;
 use crate::read::{ReadError, read_at};
+
+/// Reads the record at a path, or gives the code and reason it cannot.
+type Read<'a> = dyn FnMut(&LogicalPath) -> Result<Value, (Code, String)> + 'a;
 
 /// Why a binding does not fit its view.
 #[derive(Debug, thiserror::Error)]
@@ -164,17 +168,26 @@ impl Board {
     pub fn page(&self, path: &LogicalPath) -> Result<Page, PageError> {
         let mut view = self.working_view()?;
         let binding = self.binding_in(&mut view, path)?;
+        let read = &mut |target: &LogicalPath| {
+            let read = (self.locate_in(&mut view, target))
+                .and_then(|location| read_at(&mut view, location, target, true))
+                .map_err(|error| match error.code() {
+                    Code::PathNotFound => (Code::RefDangling, "does not resolve".to_owned()),
+                    code => (code, error.to_string()),
+                })?;
+            (read.record).map_err(|_| (Code::RefWrongType, "is not a record".to_owned()))
+        };
         let at = |source| PageError::View {
             path: path.clone(),
             source,
         };
-        let slots = self.view_of(&mut view, &binding).map_err(at)?;
+        let slots = view_of(&binding, read).map_err(at)?;
         let slots = slots
             .into_iter()
             .map(|(name, kind)| {
                 let fill = binding.slots.get(&name);
                 let drawn = match fill {
-                    Some(fill) => self.draw(&mut view, &name, kind, fill),
+                    Some(fill) => draw(read, &name, kind, fill),
                     None => Err(BindingError::Mismatch {
                         view: binding.view.clone(),
                         expected: vec![name.clone()],
@@ -205,31 +218,6 @@ impl Board {
         })
     }
 
-    /// Checks that `binding` fills exactly the slots its view names, and
-    /// that each slot's data or referenced record satisfies its kind.
-    pub(crate) fn fit(
-        &self,
-        view: &mut Resolver<'_, '_>,
-        binding: &Binding,
-    ) -> Result<(), BindingError> {
-        let slots = self.view_of(view, binding)?;
-        let expected: BTreeSet<&String> = slots.iter().map(|(name, _)| name).collect();
-        let found: BTreeSet<&String> = binding.slots.keys().collect();
-        if expected != found {
-            return Err(BindingError::Mismatch {
-                view: binding.view.clone(),
-                expected: expected.into_iter().cloned().collect(),
-                found: found.into_iter().cloned().collect(),
-            });
-        }
-        for (name, kind) in &slots {
-            if let Some(fill) = binding.slots.get(name) {
-                self.draw(view, name, *kind, fill)?;
-            }
-        }
-        Ok(())
-    }
-
     fn binding_in(
         &self,
         view: &mut Resolver<'_, '_>,
@@ -250,101 +238,144 @@ impl Board {
             source,
         })
     }
+}
 
-    /// The slots of the view `binding` names, in order.
-    fn view_of(
-        &self,
-        view: &mut Resolver<'_, '_>,
-        binding: &Binding,
-    ) -> Result<Vec<(String, ComponentKind)>, BindingError> {
-        let value = self.target(view, "/view", &binding.view, &[VIEW_TYPE])?;
-        let parsed = View::from_value(&value).map_err(BindingError::View)?;
-        Ok(parsed
-            .slots
-            .into_iter()
-            .map(|slot| (slot.name, slot.kind))
-            .collect())
+/// The first way `binding`, or when `None` the binding at `path`, does not fit
+/// its view, with each path found by `resolve` and read in its own board.
+pub(crate) fn fitted(
+    (path, binding): (&LogicalPath, Option<Binding>),
+    repositories: &Repositories,
+    root: &mut Reader<'_>,
+    resolve: &mut dyn FnMut(&LogicalPath) -> Result<Location, ResolveError>,
+) -> Option<(Code, Detail)> {
+    let read = &mut |path: &LogicalPath| {
+        let location = (resolve(path))
+            .map_err(|error| (Code::RefDangling, format!("does not resolve: {error}")))?;
+        let reason = match location.object {
+            Object::Blob(blob) => match latest(repositories.read(root, &location, blob)) {
+                Ok(None) => "is too large to read",
+                Ok(Some(read)) => match classify(&location.path, Some(&read.bytes)) {
+                    Classified {
+                        content: Content::Record { value, .. },
+                        code: None,
+                    } => return Ok(value),
+                    _ => "is not a record",
+                },
+                Err(_) => "cannot be read",
+            },
+            Object::Directory => "is not a record",
+        };
+        Err((Code::RefWrongType, reason.to_owned()))
+    };
+    let binding = binding.or_else(|| Binding::from_value(&read(path).ok()?).ok())?;
+    let error = fit(&binding, read).err()?;
+    let fields = error.fields();
+    let detail = Detail {
+        pointer: fields.pointer,
+        reason: format!("does not fit its view: {error}"),
+        failures: 1,
+        target: fields.target,
+        ..Detail::default()
+    };
+    Some((error.code(), detail))
+}
+
+/// Checks that `binding` fills exactly the slots its view names, and that
+/// each slot's data or referenced record satisfies its kind.
+fn fit(binding: &Binding, read: &mut Read<'_>) -> Result<(), BindingError> {
+    let slots = view_of(binding, read)?;
+    let expected: BTreeSet<&String> = slots.iter().map(|(name, _)| name).collect();
+    let found: BTreeSet<&String> = binding.slots.keys().collect();
+    if expected != found {
+        return Err(BindingError::Mismatch {
+            view: binding.view.clone(),
+            expected: expected.into_iter().cloned().collect(),
+            found: found.into_iter().cloned().collect(),
+        });
     }
-
-    /// The value a slot draws, checked against its kind's schema.
-    fn draw(
-        &self,
-        view: &mut Resolver<'_, '_>,
-        name: &str,
-        kind: ComponentKind,
-        fill: &Fill,
-    ) -> Result<Value, BindingError> {
-        let (value, pointer) = match fill {
-            Fill::Data(data) => (data.clone(), format!("/slots/{name}/data")),
-            Fill::Ref(target) => {
-                let pointer = format!("/slots/{name}/ref");
-                (self.target(view, &pointer, target, kind.draws())?, pointer)
-            }
-        };
-        let invalid = |reason: String| BindingError::Invalid {
-            pointer: pointer.clone(),
-            slot: name.to_owned(),
-            kind: kind.name(),
-            reason,
-        };
-        let schema = Schema::compile(kind.schema()).map_err(|error| invalid(error.to_string()))?;
-        schema
-            .validate(&value)
-            .map_err(|error| invalid(error.reason()))?;
-        kind.drawn(value).map_err(|error| BindingError::Invalid {
-            pointer: format!("{pointer}/patch"),
-            slot: name.to_owned(),
-            kind: kind.name(),
-            reason: error.to_string(),
-        })
+    for (name, kind) in &slots {
+        if let Some(fill) = binding.slots.get(name) {
+            draw(read, name, *kind, fill)?;
+        }
     }
+    Ok(())
+}
 
-    /// The record at `target`, which must be of one of `types`, where `*`
-    /// is any type.
-    fn target(
-        &self,
-        view: &mut Resolver<'_, '_>,
-        pointer: &str,
-        target: &LogicalPath,
-        types: &[&str],
-    ) -> Result<Value, BindingError> {
-        let refused = |code, reason: String| BindingError::Target {
-            pointer: pointer.to_owned(),
-            target: target.clone(),
-            code,
-            reason,
-        };
-        if types.is_empty() {
-            return Err(refused(
-                Code::RefWrongType,
-                "is a reference, and this kind takes only data".to_owned(),
-            ));
+/// The slots of the view `binding` names, in order.
+fn view_of(
+    binding: &Binding,
+    read: &mut Read<'_>,
+) -> Result<Vec<(String, ComponentKind)>, BindingError> {
+    let value = target(read, "/view", &binding.view, &[VIEW_TYPE])?;
+    let parsed = View::from_value(&value).map_err(BindingError::View)?;
+    Ok(parsed
+        .slots
+        .into_iter()
+        .map(|slot| (slot.name, slot.kind))
+        .collect())
+}
+
+/// The value a slot draws, checked against its kind's schema.
+fn draw(
+    read: &mut Read<'_>,
+    name: &str,
+    kind: ComponentKind,
+    fill: &Fill,
+) -> Result<Value, BindingError> {
+    let (value, pointer) = match fill {
+        Fill::Data(data) => (data.clone(), format!("/slots/{name}/data")),
+        Fill::Ref(path) => {
+            let pointer = format!("/slots/{name}/ref");
+            (target(read, &pointer, path, kind.draws())?, pointer)
         }
-        let read = self
-            .locate_in(view, target)
-            .and_then(|location| read_at(view, location, target, true))
-            .map_err(|error| match error.code() {
-                // A put checks a binding against the tree before its batch,
-                // so a view put in the same batch is not there yet.
-                Code::PathNotFound if pointer == "/view" => refused(
-                    Code::RefDangling,
-                    "does not resolve; put the view in an earlier put".to_owned(),
-                ),
-                Code::PathNotFound => refused(Code::RefDangling, "does not resolve".to_owned()),
-                code => refused(code, error.to_string()),
-            })?;
-        let value = read
-            .record
-            .map_err(|_| refused(Code::RefWrongType, "is not a record".to_owned()))?;
-        let found = value.get("$type").and_then(Value::as_str).unwrap_or("");
-        if types.contains(&"*") || types.contains(&found) {
-            return Ok(value);
-        }
-        Err(refused(
+    };
+    let invalid = |reason: String| BindingError::Invalid {
+        pointer: pointer.clone(),
+        slot: name.to_owned(),
+        kind: kind.name(),
+        reason,
+    };
+    let schema = Schema::compile(kind.schema()).map_err(|error| invalid(error.to_string()))?;
+    schema
+        .validate(&value)
+        .map_err(|error| invalid(error.reason()))?;
+    kind.drawn(value).map_err(|error| BindingError::Invalid {
+        pointer: format!("{pointer}/patch"),
+        slot: name.to_owned(),
+        kind: kind.name(),
+        reason: error.to_string(),
+    })
+}
+
+/// The record at `path`, which must be of one of `types`, where `*` is any
+/// type.
+fn target(
+    read: &mut Read<'_>,
+    pointer: &str,
+    path: &LogicalPath,
+    types: &[&str],
+) -> Result<Value, BindingError> {
+    let refused = |(code, reason)| BindingError::Target {
+        pointer: pointer.to_owned(),
+        target: path.clone(),
+        code,
+        reason,
+    };
+    if types.is_empty() {
+        return Err(refused((
             Code::RefWrongType,
-            format!("is a {found} record, and this draws {}", types.join(" or ")),
-        ))
+            "is a reference, and this kind takes only data".to_owned(),
+        )));
     }
+    let value = read(path).map_err(refused)?;
+    let found = value.get("$type").and_then(Value::as_str).unwrap_or("");
+    if types.contains(&"*") || types.contains(&found) {
+        return Ok(value);
+    }
+    Err(refused((
+        Code::RefWrongType,
+        format!("is a {found} record, and this draws {}", types.join(" or ")),
+    )))
 }
 
 #[cfg(test)]

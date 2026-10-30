@@ -69,7 +69,7 @@ pub struct Detail {
     /// The mount point of the mounted board that holds the file at fault,
     /// which Board cannot write; `None` when the root board holds it.
     pub mount: Option<LogicalPath>,
-    /// The text of a symlink that leads to no file.
+    /// The text of a symlink that leads to no file, or the path a misfit binding names.
     pub target: Option<String>,
 }
 

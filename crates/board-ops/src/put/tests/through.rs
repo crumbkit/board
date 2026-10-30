@@ -133,6 +133,29 @@ fn a_put_through_a_mount_of_a_board_commits_there_and_moves_the_pin_and_one_into
 }
 
 #[test]
+fn a_binding_put_through_a_mount_fits_the_view_in_the_mounted_board_and_one_whose_view_is_missing_there_is_degraded()
+ {
+    let (library, _) = library();
+    let view = r#"{"$type": "ui/view/v1", "slots": [{"name": "s", "kind": "markdown"}]}"#;
+    let commit = commit_in(&library, &[("views/v.json", view)]);
+    let scenario = mounting(&library, commit);
+    let binding = |view: &str| {
+        format!(
+            r#"{{"$type": "ui/binding/v1", "view": "{view}", "slots": {{"s": {{"data": {{"markdown": "x"}}}}}}}}"#
+        )
+    };
+    let degraded = |at: &str, view: &str| {
+        let report = put(&scenario, at, Expect::Absent, &binding(view)).unwrap();
+        (report.writes[0].degraded.clone()).map(|(code, detail)| (code, detail.pointer))
+    };
+    assert_eq!(degraded("/vendor/bindings/a", "/views/v"), None);
+    assert_eq!(
+        degraded("/vendor/bindings/b", "/views/w"),
+        Some((Code::RefDangling, Some("/view".to_owned())))
+    );
+}
+
+#[test]
 fn a_root_that_commits_its_puts_commits_the_moved_pin() {
     let (library, commit) = library();
     let scenario = mounting(&library, commit);

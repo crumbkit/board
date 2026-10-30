@@ -388,6 +388,16 @@ board check /symlinked
   fails with board::json::parse
   hint
 
+board check /ui/invalid
+  fails with board::ui::slot_invalid
+  run board ui kinds --long --json
+    exits 0
+
+board check /ui/mismatch
+  fails with board::ui::slot_mismatch
+  run board get /ui/view
+    exits 0
+
 board check /ui/unknown
   fails with board::ui::unknown_kind
   run board ui kinds
@@ -594,16 +604,6 @@ board put --batch
 board put /projects/new
   fails with board::ui::unknown_kind
   run board ui kinds
-    exits 0
-
-board put /ui/b
-  fails with board::ui::slot_mismatch
-  run board get /ui/view
-    exits 0
-
-board put /ui/b
-  fails with board::ui::slot_invalid
-  run board ui kinds --long --json
     exits 0
 
 board ui open /projects/p
