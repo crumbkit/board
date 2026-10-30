@@ -216,13 +216,14 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
     // A decision an agent wrote needs a reason; a hook's stub may leave it empty.
     let mut empty = decision.clone();
     empty["why"] = json!("");
-    assert!(compile("plans/decision/v1").validate(&empty).is_err());
+    let refused = compile("plans/decision/v1").validate(&empty).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
     empty["written_by"] = json!("runs/pr-create");
     assert!(compile("plans/decision/v1").validate(&empty).is_ok());
 }
 
-/// `open` reads the fields of a question it returns, and its query names the
-/// question type by the struct's constant.
+/// The question schema declares every field `open` returns, and `open`'s
+/// query names the type `QuestionRecord::TYPE` gives.
 #[test]
 fn open_reads_fields_the_question_struct_declares() {
     let question = &Plans.schemas()[0].1;

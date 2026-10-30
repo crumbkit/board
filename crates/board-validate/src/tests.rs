@@ -272,24 +272,30 @@ fn references_are_found_through_the_searched_keywords_in_document_order() {
     assert_eq!(found, expected);
 }
 
-/// A reference under `keyword`, and its twin under `allOf`.
+/// A schema with a reference under `keyword`, and its twin with the
+/// reference under `allOf`, or behind a `$ref` for `$dynamicRef`.
 fn placed(keyword: &str) -> (Value, Value) {
     let reference = json!({"type": "string", "format": "board-ref"});
     let hidden = match keyword {
         "anyOf" | "oneOf" => json!({keyword: [reference, {"type": "null"}]}),
         "dependentSchemas" => json!({"dependentSchemas": {"a": {"properties": {"r": reference}}}}),
-        "if" | "then" | "else" | "not" => json!({keyword: reference}),
-        _ => unreachable!("{keyword}"),
+        "$dynamicRef" => json!({"$dynamicRef": "#/$defs/reference"}),
+        _ => json!({keyword: reference}),
     };
-    let searched = json!({"allOf": [reference]});
+    let searched = if keyword == "$dynamicRef" {
+        json!({"$ref": "#/$defs/reference"})
+    } else {
+        json!({"allOf": [reference]})
+    };
+    let defs = json!({"reference": reference});
     (
-        json!({"properties": {"r": hidden}}),
-        json!({"properties": {"r": searched}}),
+        json!({"$defs": defs, "properties": {"r": hidden}}),
+        json!({"$defs": defs, "properties": {"r": searched}}),
     )
 }
 
 #[test]
-fn a_reference_under_a_keyword_board_never_searches_is_refused_and_its_all_of_twin_admitted() {
+fn a_reference_under_a_keyword_board_never_searches_is_refused_and_its_searched_twin_admitted() {
     for keyword in [
         "anyOf",
         "oneOf",
@@ -298,6 +304,11 @@ fn a_reference_under_a_keyword_board_never_searches_is_refused_and_its_all_of_tw
         "then",
         "else",
         "dependentSchemas",
+        "contains",
+        "propertyNames",
+        "unevaluatedItems",
+        "unevaluatedProperties",
+        "$dynamicRef",
     ] {
         let (hidden, searched) = placed(keyword);
         let refused = Schema::compile(hidden).unwrap_err();
@@ -318,10 +329,31 @@ fn a_reference_reached_through_a_ref_under_any_of_is_refused_and_the_bare_ref_ad
         "$defs": defs,
         "properties": {"s": {"anyOf": [{"$ref": "#/$defs/S"}, {"type": "null"}]}}
     });
-    assert_eq!(compile_code(nullable), Code::SchemaInvalid);
+    let refused = Schema::compile(nullable).unwrap_err();
+    assert!(
+        matches!(refused, SchemaError::HiddenReference { keyword: "anyOf" }),
+        "{refused}"
+    );
     let bare = Schema::compile(json!({"$defs": defs, "properties": {"s": {"$ref": "#/$defs/S"}}}))
         .unwrap();
     assert_eq!(bare.references(&json!({"s": {"r": "/x"}})).len(), 1);
+}
+
+#[test]
+fn a_ref_cycle_under_any_of_ends_and_is_refused_and_its_bare_twin_admitted() {
+    let defs = json!({"L": {"properties": {
+        "next": {"$ref": "#/$defs/L"},
+        "r": {"type": "string", "format": "board-ref"}
+    }}});
+    let hidden = json!({"$defs": defs, "properties": {"l": {"anyOf": [{"$ref": "#/$defs/L"}]}}});
+    assert!(matches!(
+        Schema::compile(hidden).unwrap_err(),
+        SchemaError::HiddenReference { keyword: "anyOf" }
+    ));
+    let bare = Schema::compile(json!({"$defs": defs, "properties": {"l": {"$ref": "#/$defs/L"}}}))
+        .unwrap();
+    let record = json!({"l": {"r": "/a", "next": {"r": "/b"}}});
+    assert_eq!(bare.references(&record).len(), 2);
 }
 
 #[test]

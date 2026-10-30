@@ -130,9 +130,6 @@ fn absent_not_null(schema: &mut Schema) {
                 }
             }
         }
-        if property.get("default") == Some(&Value::Null) {
-            property.remove("default");
-        }
     }
 }
 

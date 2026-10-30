@@ -14,9 +14,11 @@ needs to know.
    `x-board-type`: a string for one type, a list for several, or nothing for
    any entry, Markdown files and mounts included.
 4. A list of references puts the reference schema in `items`.
-5. A reference is never under `anyOf`, `oneOf`, `if`, `then`, `else`, `not`
-   or `dependentSchemas`. Board never searches them, and refuses such a
-   schema with `schema::invalid`.
+5. A reference sits only under `properties`, `patternProperties`,
+   `additionalProperties`, `items`, `prefixItems`, `allOf` and local `$ref`.
+   Board searches nothing else, and refuses a schema that marks a reference
+   under any other keyword that applies subschemas, or behind a
+   `$dynamicRef`, with `schema::invalid`.
 6. References and URLs never share a field. URLs go in a field named `urls`,
    whose items match `^https?://`.
 7. A field that names a repository is a reference to that repository's mount
@@ -31,6 +33,9 @@ needs to know.
     tool co-writes.
 11. Every property has a `description`. No property has a `title`.
 12. No `$schema` key. Draft 2020-12, committed in canonical form.
+
+Until they migrate, plans decision `refs` breaks rule 6, and plans question
+`repo`, changes `repo`, prompts/repos and evals `repos` break rule 7.
 
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11 and 12 on every committed
 record schema. It lists the schemas that break a rule today, until their
