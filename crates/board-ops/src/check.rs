@@ -11,6 +11,7 @@ use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
 use crate::index::{RefreshError, Refreshed};
+use crate::snapshot::Need;
 
 /// One entry as `check` reports it.
 #[derive(Clone, Debug, PartialEq)]
@@ -165,7 +166,7 @@ impl Board {
         cache: Option<&Path>,
     ) -> Result<CheckReport, CheckError> {
         let index = self.index(cache)?;
-        Ok(self.snapshot(index, scope)?.report)
+        Ok(self.snapshot(index, scope, Need::Report)?.report)
     }
 }
 

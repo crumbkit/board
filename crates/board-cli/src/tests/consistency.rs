@@ -1,9 +1,10 @@
 //! The commands agree about each entry: `check`, `query`, `ls` and `get`
-//! give it the same source, status and code.
+//! give it the same source, status and code. A warm index answers `check`
+//! and each view as a cold one, after any sequence of changes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_scenario::generated::{Generated, generated};
+use board_scenario::generated::{Generated, generated, steps};
 use proptest::prelude::*;
 
 use super::*;
@@ -160,6 +161,58 @@ fn agree(run: &impl Fn(&[&str]) -> Output) -> Result<(), TestCaseError> {
         }
     }
     Ok(())
+}
+
+/// What `query` prints for each view a check's entries reach: `entries`
+/// and `records` in the order they give, `refs` and `links` in their keys'
+/// order. Each answer starts with the exit code.
+fn viewed(run: &impl Fn(&[&str]) -> Output) -> Vec<String> {
+    [
+        "SELECT * FROM entries",
+        "SELECT * FROM records",
+        "SELECT * FROM refs ORDER BY record, schema, ordinal",
+        "SELECT * FROM links ORDER BY blob, ordinal",
+    ]
+    .into_iter()
+    .map(|sql| printed(&run(&["query", sql, "--all", "--json"])))
+    .collect()
+}
+
+/// What `check --all --json` prints, then each view.
+fn answered(run: &impl Fn(&[&str]) -> Output) -> Vec<String> {
+    let mut answers = vec![printed(&run(&["check", "--all", "--json"]))];
+    answers.extend(viewed(run));
+    answers
+}
+
+fn printed(output: &Output) -> String {
+    format!("{}\n{}", output.code, text(&output.stdout))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn a_warm_index_answers_check_and_each_view_as_a_cold_one_after_each_change_in_a_sequence(
+        first in generated(),
+        steps in steps(),
+        committed: bool,
+    ) {
+        let mut generated = Generated::new(CONFIG, &first, committed);
+        let cache = tempfile::tempdir().unwrap();
+        let directory = generated.scenario().workdir().to_path_buf();
+        let warm = |arguments: &[&str]| board_cached(&directory, Some(cache.path()), arguments);
+        let cold = |arguments: &[&str]| board_cached(&directory, None, arguments);
+        prop_assert_eq!(answered(&warm), answered(&cold));
+        for step in &steps {
+            generated.apply(step);
+            let cold = answered(&cold);
+            // Queries read what the last check kept before this check
+            // decides again, and what this check kept after it.
+            prop_assert_eq!(&viewed(&warm), &cold[1..], "{:?}", step);
+            prop_assert_eq!(&answered(&warm), &cold, "{:?}", step);
+        }
+    }
 }
 
 proptest! {

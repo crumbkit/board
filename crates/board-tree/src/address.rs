@@ -106,6 +106,8 @@ pub(crate) struct Pointers<'p> {
     pub(crate) entered: HashMap<(PathBuf, ObjectId), (Decoded, Chains<ObjectId>)>,
     /// How many files were read to learn what they hold as a pointer.
     pub(crate) read: usize,
+    /// Each mount crossed or tried, in order, until taken.
+    pub(crate) crossed: Vec<crate::Crossing>,
 }
 
 /// What a record holds as a pointer: one, none, or why it is not a valid one.

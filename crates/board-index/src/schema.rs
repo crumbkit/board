@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 19;
+pub const INDEX_VERSION: u32 = 20;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -86,12 +86,45 @@ CREATE TABLE links (
     destination TEXT NOT NULL,
     PRIMARY KEY (blob, ordinal)
 ) WITHOUT ROWID;
+-- A row with an empty path says the list under `scan` is stored.
+CREATE TABLE pointers (
+    scan TEXT NOT NULL,
+    path TEXT NOT NULL,
+    logical TEXT,
+    blob TEXT,
+    PRIMARY KEY (scan, path)
+) WITHOUT ROWID;
+CREATE TABLE decided (
+    key TEXT NOT NULL,
+    path TEXT NOT NULL,
+    logical TEXT,
+    blob TEXT,
+    size INTEGER,
+    role TEXT,
+    schema TEXT,
+    kind TEXT NOT NULL,
+    code TEXT,
+    PRIMARY KEY (key, path)
+) WITHOUT ROWID;
+";
+
+/// Each mounted source a run reached: the key its decision is kept under
+/// when the index holds it, and the key of its pointer list. Every
+/// transaction starts with it empty.
+pub(crate) const REACHED: &str = "
+CREATE TEMP TABLE IF NOT EXISTS reached (
+    source TEXT PRIMARY KEY,
+    key TEXT,
+    scan TEXT NOT NULL
+) WITHOUT ROWID;
+DELETE FROM temp.reached;
 ";
 
 /// Deletes the facts nothing current reaches: each tree beneath a source's
 /// root, each object those trees hold, and each working-tree blob. A
-/// validation and its references go unless both blobs are reached.
-pub(crate) const PRUNE: [&str; 6] = [
+/// validation and its references go unless both blobs are reached, and a
+/// decision or pointer list unless this run reached its key.
+pub(crate) const PRUNE: [&str; 8] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
@@ -99,6 +132,9 @@ pub(crate) const PRUNE: [&str; 6] = [
     "DELETE FROM main.validations
      WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
+    "DELETE FROM main.decided
+     WHERE key NOT IN (SELECT key FROM temp.reached WHERE key IS NOT NULL)",
+    "DELETE FROM main.pointers WHERE scan NOT IN (SELECT scan FROM temp.reached)",
 ];
 
 /// Counts a prune in `state`, so a run can tell when another process has
@@ -128,16 +164,17 @@ UNION SELECT blob FROM main.worktree WHERE blob IS NOT NULL;
 ";
 
 /// What one run decides about each entry, the view agents query, and each
-/// fact table filtered to what the current entries reach. All live on the
-/// connection that made them, so nothing decided per run is stored. An
-/// unqualified name finds a temporary view before a table, so a query sees
-/// the same rows warm as cold. A body shows only while an entry holds its
+/// fact table filtered to what the current entries reach. `resolved` is
+/// every entry: each reached source's rows the index keeps, in source
+/// order, then `fresh`, the rows decided this run and not kept. All live on
+/// the connection that made them. An unqualified name finds a temporary
+/// view before a table, so a query sees the same rows warm as cold. A body shows only while an entry holds its
 /// blob as a record: the cache keeps it after the same bytes move to a path
 /// where they are not one. `main.<table>` is the whole cache, which keeps
 /// facts about content no longer in the tree so branches share them, until a
 /// prune deletes what nothing current reaches.
 pub(crate) const RESOLVED: &str = "
-CREATE TEMP TABLE IF NOT EXISTS resolved (
+CREATE TEMP TABLE IF NOT EXISTS fresh (
     source TEXT NOT NULL,
     path TEXT NOT NULL,
     logical TEXT,
@@ -150,7 +187,17 @@ CREATE TEMP TABLE IF NOT EXISTS resolved (
     change TEXT NOT NULL,
     PRIMARY KEY (source, path)
 ) WITHOUT ROWID;
-DELETE FROM temp.resolved;
+DELETE FROM temp.fresh;
+CREATE TEMP VIEW IF NOT EXISTS resolved AS
+SELECT r.source, d.path, d.logical, d.blob, d.size, d.role, d.schema, d.kind, d.code,
+    'committed' AS change
+FROM temp.reached AS r CROSS JOIN main.decided AS d ON d.key = r.key
+UNION ALL
+SELECT * FROM temp.fresh;
+CREATE TEMP VIEW IF NOT EXISTS decided AS
+SELECT * FROM main.decided WHERE key IN (SELECT key FROM temp.reached);
+CREATE TEMP VIEW IF NOT EXISTS pointers AS
+SELECT * FROM main.pointers WHERE scan IN (SELECT scan FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS entries AS
 SELECT
     r.source,

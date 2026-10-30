@@ -716,8 +716,11 @@ fn refs(
 }
 
 /// The board holding `start`, or else the one known board with a mount
-/// whose repository holds `start`, and `start`'s logical path in that board.
+/// whose repository holds `start`, and `start`'s logical path in that board,
+/// opened as this build.
 fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
-    board_ops::open(start, home, cache, || context.known())
+    let (mut board, prefix) = board_ops::open(start, home, cache, || context.known())?;
+    board.built_by(crate::timing::DECIDER);
+    Ok((board, prefix))
 }

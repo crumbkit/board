@@ -1,7 +1,7 @@
 //! Deciding each entry of one source: its path, then parsing, then its
 //! schema, validation and references, or for a pointer its target.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
 
@@ -10,7 +10,9 @@ use board_model::{
     BINDING_TYPE, Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId,
     POINTER_TYPE, RecordType, Role, Source, classify,
 };
-use board_tree::{Entry, Mounted, Reader, Refused, Repositories, ResolveError, Status, latest};
+use board_tree::{
+    Contents, Entry, GitError, Mounted, Reader, Refused, Repositories, ResolveError, Status, latest,
+};
 
 use super::Facts;
 use crate::check::{Checked, Detail, Failure, Tally, follow, unresolved};
@@ -193,6 +195,9 @@ pub(super) struct Decide<'a> {
     pub(super) resolve: RefCell<Resolve<'a>>,
     /// The root repository's reader, for a reference into the working tree.
     pub(super) reader: RefCell<Reader<'a>>,
+    /// Whether a read or resolution failed for a reason that may pass, so
+    /// that what was decided must not be kept.
+    pub(super) failed: Cell<bool>,
 }
 
 impl Decide<'_> {
@@ -395,7 +400,19 @@ impl Decide<'_> {
     }
 
     fn resolve(&self, path: &LogicalPath) -> Result<Location, ResolveError> {
-        (self.resolve.borrow_mut())(path)
+        let resolved = (self.resolve.borrow_mut())(path);
+        if let Err(ResolveError::Git(_) | ResolveError::Unreadable { .. }) = resolved {
+            self.failed.set(true);
+        }
+        resolved
+    }
+
+    /// The bytes of `blob` at `location`, read in its own board.
+    fn read(&self, location: &Location, blob: ObjectId) -> Result<Option<Contents>, GitError> {
+        let root = &mut self.reader.borrow_mut();
+        let read = latest(self.repositories.read(root, location, blob));
+        self.failed.set(self.failed.get() || read.is_err());
+        read
     }
 
     /// The mount point of the source, from the root; `None` for the root.
@@ -456,17 +473,17 @@ impl Decide<'_> {
     }
 
     fn read_type(&self, location: &Location, blob: ObjectId) -> Option<RecordType> {
-        let root = &mut self.reader.borrow_mut();
-        read_type(self.repositories, root, location, blob)
+        type_of(&location.path, &self.read(location, blob).ok()??)
     }
 
     /// The first way `entry`, when it is a binding, does not fit its view,
     /// read in the source being checked.
     fn fitted(&self, entry: &Entry, record: &Indexed) -> Option<Failure> {
         (record.fact.record_type.as_ref()?.as_str() == BINDING_TYPE).then_some(())?;
-        let (root, path) = (&mut self.reader.borrow_mut(), entry.logical.as_ref()?);
+        let path = entry.logical.as_ref()?;
         let resolve = &mut |path: &LogicalPath| self.resolve(path);
-        let fitted = fitted((path, None), self.repositories, root, resolve);
+        let read = &mut |location: &Location, blob| self.read(location, blob);
+        let fitted = fitted((path, None), read, resolve);
         fitted.map(|(code, detail)| (code, Some(detail)))
     }
 }
@@ -479,7 +496,12 @@ pub(crate) fn read_type(
     blob: ObjectId,
 ) -> Option<RecordType> {
     let contents = latest(repositories.read(root, location, blob)).ok()??;
-    match classify(&location.path, Some(&contents.bytes)) {
+    type_of(&location.path, &contents)
+}
+
+/// The `$type` of the record `contents` hold at `path`.
+fn type_of(path: &str, contents: &Contents) -> Option<RecordType> {
+    match classify(path, Some(&contents.bytes)) {
         Classified {
             content: Content::Record { record_type, .. },
             code: None,

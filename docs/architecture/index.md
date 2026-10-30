@@ -24,6 +24,8 @@ directory of each other board whose recorded root it can see is gone.
 | `refs` | references a valid record makes, in order: JSON pointer, target path, accepted types | record blob, schema blob, ordinal |
 | `links` | a Markdown file's links to board paths outside its frontmatter, in order, as written | blob, ordinal |
 | `mounts` | each mount point and the commit it reaches, or its code | source, path |
+| `pointers` | a mounted tree's mount pointers | scan key, path |
+| `decided` | a mounted source's entries as decided ([performance/decisions.md](performance/decisions.md)) | decision key, path |
 | `state` | index format, and when the last refresh that hashed or recorded a file began | key |
 
 The `entries` view joins these across the root and its mounts, one row per

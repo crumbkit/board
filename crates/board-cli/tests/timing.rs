@@ -89,12 +89,10 @@ fn a_run_appends_a_record_of_its_command_and_phases_and_a_failed_run_its_error_c
     let build = version.strip_prefix(env!("CARGO_PKG_VERSION")).unwrap();
     // A build outside a git checkout has no suffix.
     if let Some(build) = build.strip_prefix('+') {
-        let commit = build.strip_suffix(".dirty").unwrap_or(build);
+        let (commit, changes) = build.split_once(".dirty.").unwrap_or((build, "0"));
         assert_eq!(commit.len(), 12, "{version}");
-        assert!(
-            commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "{version}"
-        );
+        let hex = |text: &str| text.bytes().all(|byte| byte.is_ascii_hexdigit());
+        assert!(hex(commit) && hex(changes), "{version}");
     } else {
         assert_eq!(build, "", "{version}");
     }

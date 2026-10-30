@@ -6,9 +6,9 @@ use std::collections::BTreeSet;
 
 use board_model::{
     BINDING_TYPE, Binding, Classified, Code, ComponentKind, Content, Fields, Fill, Location,
-    LogicalPath, Object, Refusal, UiError, VIEW_TYPE, View, classify,
+    LogicalPath, Object, ObjectId, Refusal, UiError, VIEW_TYPE, View, classify,
 };
-use board_tree::{Reader, Repositories, ResolveError, Resolver, latest};
+use board_tree::{Contents, GitError, ResolveError, Resolver};
 use board_validate::Schema;
 use serde::Serialize;
 use serde_json::Value;
@@ -240,19 +240,22 @@ impl Board {
     }
 }
 
+/// Reads a blob at a location in its own board.
+pub(crate) type ReadBlob<'a> =
+    dyn FnMut(&Location, ObjectId) -> Result<Option<Contents>, GitError> + 'a;
+
 /// The first way `binding`, or when `None` the binding at `path`, does not fit
-/// its view, with each path found by `resolve` and read in its own board.
+/// its view, with each path found by `resolve` and read by `read_blob`.
 pub(crate) fn fitted(
     (path, binding): (&LogicalPath, Option<Binding>),
-    repositories: &Repositories,
-    root: &mut Reader<'_>,
+    read_blob: &mut ReadBlob<'_>,
     resolve: &mut dyn FnMut(&LogicalPath) -> Result<Location, ResolveError>,
 ) -> Option<(Code, Detail)> {
     let read = &mut |path: &LogicalPath| {
         let location = (resolve(path))
             .map_err(|error| (Code::RefDangling, format!("does not resolve: {error}")))?;
         let reason = match location.object {
-            Object::Blob(blob) => match latest(repositories.read(root, &location, blob)) {
+            Object::Blob(blob) => match read_blob(&location, blob) {
                 Ok(None) => "is too large to read",
                 Ok(Some(read)) => match classify(&location.path, Some(&read.bytes)) {
                     Classified {

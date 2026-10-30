@@ -16,6 +16,7 @@ use crate::attachment::FetchError;
 use crate::board::Board;
 use crate::check::CheckError;
 use crate::index::Refreshed;
+use crate::snapshot::Need;
 
 /// A file as `get` returns it: where it is, its stored bytes, and its parsed
 /// record or the refusal that says why it has none.
@@ -98,7 +99,7 @@ impl Board {
         let display = display(&location, path);
         let index = self.index(cache).map_err(CheckError::from);
         let snapshot = index
-            .and_then(|index| self.snapshot(index, Some(&display)))
+            .and_then(|index| self.snapshot(index, Some(&display), Need::Report))
             .map_err(|source| ReadError::Check { source })?;
         let checked: HashMap<(&Source, &str), (Kind, Status)> = snapshot
             .report

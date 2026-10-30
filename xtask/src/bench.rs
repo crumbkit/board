@@ -277,7 +277,10 @@ pub(crate) fn run(
 /// The board at `root`, checked once into a new cache directory, and what
 /// the check found.
 pub(crate) fn warmed(root: &Path) -> Result<(Board, tempfile::TempDir, CheckReport), BenchError> {
-    let board = Board::open(root, None).map_err(|error| failed(&error))?;
+    let mut board = Board::open(root, None).map_err(|error| failed(&error))?;
+    // One name serves every build, as each bench's cache is a new temporary
+    // directory.
+    board.built_by("xtask-bench");
     let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
     let checked = board
         .check(None, Some(warm.path()))

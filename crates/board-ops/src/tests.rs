@@ -35,8 +35,12 @@ pub(crate) fn board() -> Scenario {
     scenario
 }
 
+/// The board in `scenario`, decided by a named build so that it keeps
+/// decisions as an installed one does.
 pub(crate) fn open(scenario: &Scenario) -> Board {
-    Board::open(scenario.workdir(), None).unwrap()
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.built_by("test");
+    board
 }
 
 /// A library board that a board mounts at `/vendor`, with a task of the

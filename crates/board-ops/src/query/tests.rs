@@ -7,6 +7,7 @@ use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
 use crate::query::retried;
+use crate::snapshot::Need;
 use crate::tests::{board, open, task};
 use crate::{Board, QueryReport};
 use board_index::{Index, IndexError};
@@ -216,7 +217,7 @@ fn queried_while_another_handle_prunes(
             scenario.write("tasks/a.json", Item::File(&title));
             let other = open(&scenario);
             let second = || Index::open(Some(cache.path()), other.repository().path()).unwrap();
-            other.snapshot(second(), None).unwrap();
+            other.snapshot(second(), None, Need::Report).unwrap();
             if runs <= prunes {
                 let writer = second().write().unwrap();
                 writer.prune().unwrap();

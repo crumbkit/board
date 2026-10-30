@@ -7,13 +7,18 @@ use board_tree::Status;
 use serde_json::{Value, json};
 
 use crate::index::{Kept, Refreshed, facts, transact};
+use crate::snapshot::Need;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
 
 /// Refreshes the index of `scenario` in `cache`.
 fn build(scenario: &Scenario, cache: &std::path::Path) -> Refreshed {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
-    board.snapshot(index, None).unwrap().report.work
+    board
+        .snapshot(index, None, Need::Report)
+        .unwrap()
+        .report
+        .work
 }
 
 /// The board, plus two tasks with the same bytes and one invalid task.
@@ -70,7 +75,7 @@ fn opened(scenario: &Scenario, cache: &std::path::Path) -> usize {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
     let before = board.repository().files_opened();
-    board.snapshot(index, None).unwrap();
+    board.snapshot(index, None, Need::Report).unwrap();
     board.repository().files_opened() - before
 }
 
@@ -116,7 +121,7 @@ fn a_file_that_does_not_parse_is_opened_once_cold_and_a_warm_check_still_says_wh
     let board = open(&scenario);
     let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
     let before = board.repository().files_opened();
-    let report = board.snapshot(index, None).unwrap().report;
+    let report = board.snapshot(index, None, Need::Report).unwrap().report;
     assert_eq!(board.repository().files_opened() - before, 0, "warm");
     let bad = report
         .entries
@@ -194,7 +199,7 @@ fn read(scenario: &Scenario, cache: &std::path::Path, sql: &str) -> Vec<Value> {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
     let view = board
-        .view(board.snapshot(index, None).unwrap().decided)
+        .view(board.snapshot(index, None, Need::View).unwrap().decided)
         .unwrap();
     let rows = view.query(sql, 10_000, None).unwrap().rows;
     rows.into_iter().map(Value::from).collect()

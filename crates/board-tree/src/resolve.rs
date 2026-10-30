@@ -284,6 +284,8 @@ impl Repositories {
         pointers: &mut Pointers,
     ) -> Result<Location, ResolveError> {
         let at = trail.last_pointer();
+        let crossing = (from.to_path_buf(), mount.repo.clone(), mount.commit);
+        pointers.crossed.push(crossing);
         let mounted = self
             .mounted(from, mount)
             .ok_or_else(|| ResolveError::RepoMissing {
@@ -467,6 +469,11 @@ impl<'r> InCommit<'r> {
     /// pointer.
     pub fn pointers_read(&self) -> usize {
         self.pointers.read
+    }
+
+    /// Each mount its resolutions crossed or tried since the last call.
+    pub fn crossed(&mut self) -> Vec<crate::Crossing> {
+        std::mem::take(&mut self.pointers.crossed)
     }
 
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {

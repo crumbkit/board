@@ -9,6 +9,17 @@ use serde_json::{Value, json};
 use crate::config::Context;
 use crate::report::Output;
 
+/// Board's version and the build it came from, which the timing log records.
+pub(crate) const BUILD: &str = concat!(env!("CARGO_PKG_VERSION"), env!("BOARD_BUILD"));
+
+/// What keys the decisions an index keeps: [`BUILD`], or nothing, which
+/// keeps none, for a build that does not know its commit.
+pub(crate) const DECIDER: &str = if env!("BOARD_BUILD").is_empty() {
+    ""
+} else {
+    BUILD
+};
+
 #[derive(Debug, Default)]
 pub(crate) struct Ran {
     /// None when the command line was not parsed; such a run is not recorded.
@@ -44,7 +55,7 @@ pub(crate) fn record(started: Instant, ran: &Ran, output: &Output, depth: u32) -
     Some(json!({
         "$type": "board/timing/v1",
         "at_ms": micros(at) / 1000,
-        "version": concat!(env!("CARGO_PKG_VERSION"), env!("BOARD_BUILD")),
+        "version": BUILD,
         "command": command,
         "capability": ran.trace.capability,
         "depth": depth,
