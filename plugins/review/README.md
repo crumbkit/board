@@ -3,9 +3,9 @@
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
 change, and records what it found as a report. `review.post` comments a report
-on a pull request once the owner approves the comment. `review.covered` checks that a
-committed report covers a pull request's commits, so CI can require a review
-of each pull request.
+on a pull request once the owner approves the comment. `review.covered` checks
+that a committed report covers a pull request's commits, so CI can require a
+review of each pull request.
 
 ## Records
 
