@@ -92,8 +92,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   refuse, cut until two plugins need them (`git show
   5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
   levels, read gating, learning from corrections and the mandate layer.
-- **Record shape migration.** Make notes `covers` and prompts `runs_in.repo`
-  references to mounts (docs/architecture/records/shapes.md, rule 7).
+- **Record shape migration.** Rename prompts `runs_in.repo` to say what it
+  matches (docs/architecture/records/shapes.md, rule 7).
 - **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
   and docs/architecture.md has split into docs/architecture/. Still open are
   how the review of each docs change runs and a tool check that each leaf is
