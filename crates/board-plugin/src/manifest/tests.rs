@@ -148,10 +148,9 @@ fn only_a_built_in_manifest_may_leave_run_out() {
     let mut without = manifest();
     without.as_object_mut().unwrap().remove("run");
     assert!(Manifest::built_in(without.clone()).unwrap().run.is_empty());
-    assert!(matches!(
-        Manifest::from_value(without).unwrap_err(),
-        ManifestError::EmptyRun
-    ));
+    let refused = Manifest::from_value(without).unwrap_err();
+    assert_eq!(refused.code(), Code::PluginBadManifest);
+    assert!(matches!(refused, ManifestError::EmptyRun));
     assert!(Manifest::from_value(manifest()).is_ok());
 }
 

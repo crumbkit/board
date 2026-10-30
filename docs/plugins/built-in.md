@@ -42,6 +42,7 @@ have the same code for both: `too_deep`, `not_installed`, `not_enabled`,
 plugin's name), and the plugin's own code.
 
 A built-in plugin runs in Board's process, so it has no time or size limit
-and never gives `not_started`, `failed`, `timeout` or `too_large`. Its
+and never gives `not_started`, `failed`, `timeout` or `too_large`. It must
+not panic: a panic ends Board's run instead of refusing the call. Its
 refusal carries an empty `stderr`. The `plugin.call` phase of the timing
 log includes the queries it makes, and `started` counts no process.

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, PluginName, RecordType, Source, TYPES_DIRECTORY, canonical_json};
-use board_plugin::{DiscoveryError, ManifestError, Origin};
+use board_plugin::{DiscoveryError, ManifestError};
 use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 
@@ -60,14 +60,10 @@ impl Board {
         let found = (self.offered(plugins)?.into_iter())
             .find(|installed| installed.name == name.as_str())
             .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
-        if let Origin::BuiltIn {
-            shadows: Some(directory),
-            ..
-        } = found.origin
-        {
+        if let Some(directory) = found.origin.shadows() {
             return Err(EnableError::Duplicate {
                 name: name.clone(),
-                directory,
+                directory: directory.to_path_buf(),
             });
         }
         if let Err(source) = found.manifest {

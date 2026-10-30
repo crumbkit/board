@@ -3,8 +3,8 @@
 This file holds detail for docs/plugins.md. It says what `board plugin list`
 and `board plugin find` print.
 
-`board plugin list` prints every built-in and installed plugin, its
-capabilities, and whether the board enables it. Its columns are `status`, `name`, `version`,
+`board plugin list` prints every installed plugin, its capabilities, and
+whether the board enables it. Its columns are `status`, `name`, `version`,
 `enabled` and `offers`, the capability names. In text, `status` reads `ok` or
 `degraded` and the problem's code; JSON holds that code in `code`. `--long` adds
 `description`, the plugin's description from its manifest, and the problem
@@ -12,8 +12,7 @@ text: `message` for a refused manifest and `schemas` for schema problems. The ta
 or `--fields` asks for the table. It exits 1 on a broken install
 (`board::plugin::bad_manifest`), an enabled name not installed
 (`not_installed`), or an enabled plugin's schema that the board lacks
-(`schema_missing`) or holds differently (`schema_differs`), naming the file,
-or a built-in plugin that is also installed (`duplicate`).
+(`schema_missing`) or holds differently (`schema_differs`), naming the file.
 `board plugin find [--capability <name>] [--meta <key>=<value>]…` lists the
 capabilities of working installs, a line each with its description. Each filter
 narrows the list to the capabilities that match it; with none, it lists them all.

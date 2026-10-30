@@ -18,7 +18,6 @@ pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
         directory: context.plugins.as_deref(),
         environment: context.environment.clone(),
         limits: Limits::default(),
-        cache: context.cache.as_deref(),
     }
 }
 use clap::{CommandFactory, Parser, Subcommand};

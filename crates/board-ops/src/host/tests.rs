@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use board_model::{Code, PluginName, RefusalCode};
-use board_plugin::{CallReport, Environment, Limits, Origin, Target};
+use board_plugin::{CallReport, Environment, Limits, Target};
 use board_scenario::{Item, Scenario};
 use serde_json::json;
 
@@ -482,13 +482,7 @@ fn a_built_in_plugin_is_listed_found_and_enabled_as_an_installed_one_is() {
         panic!("{listed:?}")
     };
     assert_eq!((entry.name.as_str(), entry.enabled), ("fixture", false));
-    assert_eq!(
-        entry.origin,
-        Some(Origin::BuiltIn {
-            index: 0,
-            shadows: None
-        })
-    );
+    assert_eq!((entry.code(), &entry.shadows), (None, &None));
     let due = "due".parse().unwrap();
     let found = board.plugin_find(None, Some(&due), &[]).unwrap();
     assert_eq!(found.plugins.len(), 1);

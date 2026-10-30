@@ -162,14 +162,20 @@ fn a_built_in_plugin_must_ship_a_compiling_schema_for_each_declared_type() {
     );
     let missing = built_in(3, manifest(), &[]);
     assert_eq!(missing.name, "tasks");
-    assert!(matches!(
-        missing.manifest.unwrap_err(),
-        ManifestError::ShippedMissing { .. }
-    ));
+    let refused = missing.manifest.unwrap_err();
+    assert_eq!(refused.code(), Code::PluginBadManifest);
+    assert_eq!(
+        refused.to_string(),
+        "the schema the plugin ships for tasks/task/v1 is missing or cannot be read"
+    );
     let broken = built_in(3, manifest(), &shipped(serde_json::json!({"type": 5})));
-    assert!(matches!(
-        broken.manifest.unwrap_err(),
-        ManifestError::ShippedSchema { .. }
-    ));
     assert!(broken.schemas.is_empty());
+    let refused = broken.manifest.unwrap_err();
+    assert_eq!(refused.code(), Code::PluginBadManifest);
+    assert!(
+        refused
+            .to_string()
+            .starts_with("the schema the plugin ships for tasks/task/v1 does not compile: "),
+        "{refused}"
+    );
 }

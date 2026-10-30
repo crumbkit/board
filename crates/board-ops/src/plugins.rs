@@ -13,14 +13,12 @@ use serde_json::Value;
 use crate::Board;
 use crate::types::Held;
 
-/// Where plugins are installed, what they inherit and what a run may take,
-/// and where a built-in plugin's queries keep the index.
+/// Where plugins are installed, what they inherit and what a run may take.
 #[derive(Clone, Debug, Default)]
 pub struct Plugins<'a> {
     pub directory: Option<&'a Path>,
     pub environment: Environment,
     pub limits: Limits,
-    pub cache: Option<&'a Path>,
 }
 
 /// A call that failed: the plugin's or Board's refusal.
@@ -34,14 +32,8 @@ pub enum CallFailed {
     )]
     Schema {
         plugin: PluginName,
-        /// The shipped schema's file; `None` for a built-in plugin.
         shipped: Option<PathBuf>,
         problem: SchemaProblem,
-    },
-    #[error("plugin {plugin} is built into Board and also installed at {}", directory.display())]
-    Duplicate {
-        plugin: PluginName,
-        directory: PathBuf,
     },
     #[error(transparent)]
     Call {
@@ -64,14 +56,6 @@ impl CallFailed {
                     plugin: Some(plugin.clone()),
                     record_type: Some(problem.record_type.clone()),
                     schema: Some(problem.path.clone()),
-                    ..Fields::default()
-                },
-            ),
-            Self::Duplicate { plugin, .. } => Refusal::new(
-                Code::PluginDuplicate,
-                self,
-                &Fields {
-                    plugin: Some(plugin.clone()),
                     ..Fields::default()
                 },
             ),
@@ -98,8 +82,8 @@ impl PluginListReport {
 pub struct PluginEntry {
     /// The plugins directory's entry, or the name the board enables.
     pub name: String,
-    /// Where its code is; `None` when it is not installed.
-    pub origin: Option<Origin>,
+    /// The installed plugin that shares a built-in one's name.
+    pub shadows: Option<PathBuf>,
     /// Whether the board's configuration names it.
     pub enabled: bool,
     pub state: PluginState,
@@ -127,17 +111,7 @@ pub enum PluginState {
 impl PluginEntry {
     pub fn code(&self) -> Option<Code> {
         match &self.state {
-            PluginState::Installed(_)
-                if matches!(
-                    self.origin,
-                    Some(Origin::BuiltIn {
-                        shadows: Some(_),
-                        ..
-                    })
-                ) =>
-            {
-                Some(Code::PluginDuplicate)
-            }
+            PluginState::Installed(_) if self.shadows.is_some() => Some(Code::PluginDuplicate),
             PluginState::Installed(_) => self.schemas.first().map(|problem| problem.code),
             PluginState::BadManifest(error) => Some(error.code()),
             PluginState::NotInstalled => Some(Code::PluginNotInstalled),
@@ -171,14 +145,12 @@ impl Board {
             None => Vec::new(),
         };
         for plugin in installed {
-            let same = offered
-                .iter_mut()
-                .find(|offered| offered.name == plugin.name);
-            match (same.map(|same| &mut same.origin), plugin.origin) {
+            let same = offered.iter_mut().find(|same| same.name == plugin.name);
+            match (same.map(|same| &mut same.origin), &plugin.origin) {
                 (Some(Origin::BuiltIn { shadows, .. }), Origin::Directory(directory)) => {
-                    *shadows = Some(directory);
+                    *shadows = Some(directory.clone());
                 }
-                (_, origin) => offered.push(Installed { origin, ..plugin }),
+                _ => offered.push(plugin),
             }
         }
         offered.sort_by(|a, b| a.name.cmp(&b.name));
@@ -209,7 +181,7 @@ impl Board {
                 PluginEntry {
                     enabled,
                     name: installed.name,
-                    origin: Some(installed.origin),
+                    shadows: installed.origin.shadows().map(Path::to_path_buf),
                     state: match installed.manifest {
                         Ok(manifest) => PluginState::Installed(manifest),
                         Err(error) => PluginState::BadManifest(error),
@@ -224,7 +196,7 @@ impl Board {
             .collect();
         listed.extend(missing.into_iter().map(|name| PluginEntry {
             name: name.to_string(),
-            origin: None,
+            shadows: None,
             enabled: true,
             state: PluginState::NotInstalled,
             schemas: Vec::new(),

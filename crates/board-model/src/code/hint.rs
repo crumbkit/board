@@ -175,31 +175,26 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
     })
 }
 
-/// The hint for a `plugin` code that names the plugin, and the capability
-/// where the hint shows a call.
+/// The hint for a `plugin` code that names the plugin.
 fn plugin(code: Code, fields: &Fields) -> Option<String> {
     let plugin = fields.plugin.as_ref()?;
-    let capability = fields.capability.as_ref();
+    let capability = || fields.capability.as_ref();
     Some(match code {
         Code::PluginNotEnabled => format!("add `{plugin}` to `plugins` in `.board/board.json`"),
         Code::PluginSchemaDiffers => format!(
             "run `board plugin enable {plugin}`, which replaces the board's copy with the schema the plugin ships"
         ),
-        Code::PluginAmbiguous => {
-            let capability = capability?;
-            format!(
-                "name the plugin as well, as in `board call {plugin}.{capability}`; `board plugin find --capability {capability}` lists the plugins that offer it"
-            )
-        }
+        Code::PluginAmbiguous => format!(
+            "name the plugin as well, as in `board call {plugin}.{0}`; `board plugin find --capability {0}` lists the plugins that offer it",
+            capability()?
+        ),
         Code::PluginDuplicate => format!(
             "remove the installed copy, the directory `$XDG_DATA_HOME/board/plugins/{plugin}`; this Board has the plugin built in"
         ),
-        Code::PluginBadInput => {
-            let capability = capability?;
-            format!(
-                "give the input as the flags that `board call {plugin}.{capability} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {capability} --json` shows the schema"
-            )
-        }
+        Code::PluginBadInput => format!(
+            "give the input as the flags that `board call {plugin}.{0} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {0} --json` shows the schema",
+            capability()?
+        ),
         _ => return None,
     })
 }

@@ -4,10 +4,8 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use board_model::{PluginCode, PluginCodeError};
 use board_plugin::{
-    BadOutput, CallError, CallReport, Chosen, Context, Origin, PluginFailure, Target,
-    shipped_schema_path,
+    CallError, CallReport, Chosen, Context, Origin, PluginFailure, Target, shipped_schema_path,
 };
 use serde_json::Value;
 
@@ -31,15 +29,12 @@ impl Board {
             .offered(plugins.directory)
             .map_err(|source| CallError::Discovery { source })?;
         let chosen = board_plugin::choose(offered, &self.config().plugins, target)?;
-        if let Origin::BuiltIn {
-            shadows: Some(directory),
-            ..
-        } = &chosen.origin
-        {
-            return Err(CallFailed::Duplicate {
-                plugin: chosen.manifest.name,
-                directory: directory.clone(),
-            });
+        if let Some(directory) = chosen.origin.shadows() {
+            return Err(CallError::Duplicate {
+                plugin: chosen.manifest.name.clone(),
+                directory: directory.to_path_buf(),
+            }
+            .into());
         }
         // A record Board admits must be one the plugin's own schema admits.
         let reader = &mut self.repository().reader();
@@ -60,27 +55,29 @@ impl Board {
             });
         }
         let _timed = self.timed("plugin.call");
-        let input = board_plugin::input(&chosen, input)?;
+        let input = board_plugin::input(&chosen, input);
         match &chosen.origin {
             Origin::Directory(directory) => {
                 let spawned = RefCell::default();
-                let report = board_plugin::invoke(
-                    &chosen,
-                    directory,
-                    &input,
-                    &Context {
-                        root: self.repository().path(),
-                        environment: &plugins.environment,
-                        limits: plugins.limits,
-                        spawned: &spawned,
-                    },
-                );
+                let report = input.and_then(|input| {
+                    board_plugin::invoke(
+                        &chosen,
+                        directory,
+                        &input,
+                        &Context {
+                            root: self.repository().path(),
+                            environment: &plugins.environment,
+                            limits: plugins.limits,
+                            spawned: &spawned,
+                        },
+                    )
+                });
                 self.trace.borrow_mut().started(spawned.take());
                 Ok(report?)
             }
             Origin::BuiltIn { index, .. } => {
                 self.trace.borrow_mut().started(Vec::new());
-                Ok(self.hosted(&chosen, *index, input, plugins)?)
+                Ok(self.hosted(&chosen, *index, input?, plugins)?)
             }
         }
     }
@@ -97,7 +94,6 @@ impl Board {
         let environment = &plugins.environment;
         let host = Hosted {
             board: self,
-            cache: plugins.cache,
             settings: Settings {
                 now: SystemTime::now(),
                 day_start: (environment.day_start.as_ref())
@@ -105,37 +101,30 @@ impl Board {
                 caller: environment.caller.as_ref().map(PathBuf::from),
             },
         };
-        let plugin = chosen.manifest.name.clone();
-        let capability = chosen.capability().name.clone();
+        let plugin = &chosen.manifest.name;
+        let capability = &chosen.capability().name;
         let bad = |reason| CallError::BadOutput {
             plugin: plugin.clone(),
             reason,
             stderr: Vec::new(),
         };
-        let output = match self.built_in.0[index].call(&host, &capability, input) {
+        let output = match self.built_in.0[index].call(&host, capability, input) {
             Ok(output) => board_plugin::output(chosen, output).map_err(bad)?,
             Err(PluginError {
                 code,
                 message,
                 fields,
             }) => {
-                return Err(match PluginCode::parse(&plugin, code) {
-                    Ok(code) => CallError::Plugin {
-                        plugin: plugin.clone(),
-                        failure: PluginFailure {
-                            code,
-                            message,
-                            fields,
-                        },
-                        stderr: Vec::new(),
-                    },
-                    Err(PluginCodeError { code }) => bad(BadOutput::Code { code }),
+                return Err(CallError::Plugin {
+                    plugin: plugin.clone(),
+                    failure: PluginFailure::parse(plugin, code, message, fields).map_err(bad)?,
+                    stderr: Vec::new(),
                 });
             }
         };
         Ok(CallReport {
-            plugin,
-            capability,
+            plugin: plugin.clone(),
+            capability: capability.clone(),
             output,
         })
     }

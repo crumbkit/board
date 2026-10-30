@@ -2,7 +2,7 @@
 //! (docs/plugins/built-in.md).
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::SystemTime;
 
 use board_model::{CapabilityName, RecordType};
@@ -85,13 +85,12 @@ impl fmt::Debug for BuiltIn {
 /// The host a built-in plugin sees during one call.
 pub(crate) struct Hosted<'a> {
     pub(crate) board: &'a Board,
-    pub(crate) cache: Option<&'a Path>,
     pub(crate) settings: Settings,
 }
 
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
-        self.board.query(sql, limit.0, None, self.cache)
+        self.board.query(sql, limit.0, None, None)
     }
 
     fn settings(&self) -> &Settings {

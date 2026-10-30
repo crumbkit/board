@@ -2,7 +2,7 @@
 //! manifest).
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -439,10 +439,10 @@ pub enum ManifestError {
         side: Side,
         source: SchemaError,
     },
-    #[error("the schema the plugin ships for {record_type} at {} is missing or cannot be read", path.display())]
+    #[error("the schema the plugin ships for {record_type}{} is missing or cannot be read", at(path.as_deref()))]
     ShippedMissing {
         record_type: RecordType,
-        path: PathBuf,
+        path: Option<PathBuf>,
     },
     #[error("the schema the plugin ships for {record_type} at {} is not strict JSON: {source}", path.display())]
     ShippedJson {
@@ -450,12 +450,17 @@ pub enum ManifestError {
         path: PathBuf,
         source: JsonError,
     },
-    #[error("the schema the plugin ships for {record_type} at {} does not compile: {source}", path.display())]
+    #[error("the schema the plugin ships for {record_type}{} does not compile: {source}", at(path.as_deref()))]
     ShippedSchema {
         record_type: RecordType,
-        path: PathBuf,
+        path: Option<PathBuf>,
         source: SchemaError,
     },
+}
+
+/// ` at <path>`, or nothing for a schema built into Board.
+fn at(path: Option<&Path>) -> String {
+    path.map_or_else(String::new, |path| format!(" at {}", path.display()))
 }
 
 impl ManifestError {

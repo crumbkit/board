@@ -527,6 +527,11 @@ pub enum CallError {
     },
     #[error("plugin {plugin} is installed but this board does not enable it")]
     NotEnabled { plugin: PluginName },
+    #[error("plugin {plugin} is built into Board and also installed at {}", directory.display())]
+    Duplicate {
+        plugin: PluginName,
+        directory: PathBuf,
+    },
     #[error(
         "capability {capability} is offered by more than one enabled plugin: {}",
         list(plugins)
@@ -644,6 +649,7 @@ impl CallError {
             }
             Self::BadManifest { plugin, .. } => (Code::PluginBadManifest, Some(plugin), None),
             Self::NotEnabled { plugin } => (Code::PluginNotEnabled, Some(plugin), None),
+            Self::Duplicate { plugin, .. } => (Code::PluginDuplicate, Some(plugin), None),
             Self::Ambiguous {
                 capability,
                 plugins,

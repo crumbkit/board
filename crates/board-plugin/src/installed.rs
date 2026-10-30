@@ -39,30 +39,30 @@ pub enum Origin {
     },
 }
 
+impl Origin {
+    /// The directory of an installed plugin that shares a built-in one's
+    /// name.
+    pub fn shadows(&self) -> Option<&Path> {
+        match self {
+            Self::BuiltIn { shadows, .. } => shadows.as_deref(),
+            Self::Directory(_) => None,
+        }
+    }
+}
+
 /// The plugin built into Board at `index`, with `manifest` and the schema
-/// it ships for each type, each compiled. A declared type without one
-/// makes the manifest refused.
+/// it ships for each type.
 pub fn built_in(index: usize, manifest: Manifest, schemas: &[(RecordType, Value)]) -> Installed {
-    let compiled = manifest
-        .types
-        .iter()
-        .map(|record_type| {
-            let path = PathBuf::from(shipped_schema_path(record_type));
-            let (_, schema) = schemas
-                .iter()
-                .find(|(shipped, _)| shipped == record_type)
-                .ok_or_else(|| ManifestError::ShippedMissing {
-                    record_type: record_type.clone(),
-                    path: path.clone(),
-                })?;
-            compiled(record_type, path, schema.clone())
-        })
-        .collect();
     let name = manifest.name.to_string();
-    let (manifest, schemas) = match compiled {
-        Ok(schemas) => (Ok(manifest), schemas),
-        Err(error) => (Err(error), Vec::new()),
-    };
+    let (manifest, schemas) = shipped(manifest, |record_type| {
+        let (_, schema) = (schemas.iter())
+            .find(|(shipped, _)| shipped == record_type)
+            .ok_or_else(|| ManifestError::ShippedMissing {
+                record_type: record_type.clone(),
+                path: None,
+            })?;
+        Ok((schema.clone(), None))
+    });
     Installed {
         name,
         origin: Origin::BuiltIn {
@@ -93,15 +93,23 @@ pub fn installed(plugins: &Path) -> Result<Vec<Installed>, DiscoveryError> {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let loaded = read_bounded(&directory.join(MANIFEST_FILE))
+        let parsed = read_bounded(&directory.join(MANIFEST_FILE))
             .ok_or(ManifestError::Missing)
-            .and_then(|bytes| Manifest::parse(&name, &bytes))
-            .and_then(|manifest| {
-                let schemas = shipped(&directory, &manifest)?;
-                Ok((manifest, schemas))
-            });
-        let (manifest, schemas) = match loaded {
-            Ok((manifest, schemas)) => (Ok(manifest), schemas),
+            .and_then(|bytes| Manifest::parse(&name, &bytes));
+        let (manifest, schemas) = match parsed {
+            Ok(manifest) => shipped(manifest, |record_type| {
+                let path = directory.join(shipped_schema_path(record_type));
+                let bytes = read_bounded(&path).ok_or_else(|| ManifestError::ShippedMissing {
+                    record_type: record_type.clone(),
+                    path: Some(path.clone()),
+                })?;
+                let schema = parse_json(&bytes).map_err(|source| ManifestError::ShippedJson {
+                    record_type: record_type.clone(),
+                    path: path.clone(),
+                    source,
+                })?;
+                Ok((schema, Some(path)))
+            }),
             Err(error) => (Err(error), Vec::new()),
         };
         found.push(Installed {
@@ -121,44 +129,28 @@ pub fn shipped_schema_path(record_type: &RecordType) -> String {
     format!("types/{}.schema.json", record_type.as_str())
 }
 
-/// The schema the plugin in `directory` ships for each of `manifest`'s types,
-/// each parsed and compiled.
+/// `manifest`, and the schema `load` finds for each of its types, with the
+/// schema's file if it has one, each compiled; the manifest is refused when
+/// one is missing or does not compile.
 fn shipped(
-    directory: &Path,
-    manifest: &Manifest,
-) -> Result<Vec<(RecordType, Value)>, ManifestError> {
-    manifest
-        .types
-        .iter()
+    manifest: Manifest,
+    load: impl Fn(&RecordType) -> Result<(Value, Option<PathBuf>), ManifestError>,
+) -> (Result<Manifest, ManifestError>, Vec<(RecordType, Value)>) {
+    let schemas = (manifest.types.iter())
         .map(|record_type| {
-            let path = directory.join(shipped_schema_path(record_type));
-            let bytes = read_bounded(&path).ok_or_else(|| ManifestError::ShippedMissing {
+            let (schema, path) = load(record_type)?;
+            Schema::compile(schema.clone()).map_err(|source| ManifestError::ShippedSchema {
                 record_type: record_type.clone(),
-                path: path.clone(),
-            })?;
-            let schema = parse_json(&bytes).map_err(|source| ManifestError::ShippedJson {
-                record_type: record_type.clone(),
-                path: path.clone(),
+                path,
                 source,
             })?;
-            compiled(record_type, path, schema)
+            Ok((record_type.clone(), schema))
         })
-        .collect()
-}
-
-/// `schema`, the one a plugin ships for `record_type` at `path`, once it
-/// compiles.
-fn compiled(
-    record_type: &RecordType,
-    path: PathBuf,
-    schema: Value,
-) -> Result<(RecordType, Value), ManifestError> {
-    Schema::compile(schema.clone()).map_err(|source| ManifestError::ShippedSchema {
-        record_type: record_type.clone(),
-        path,
-        source,
-    })?;
-    Ok((record_type.clone(), schema))
+        .collect();
+    match schemas {
+        Ok(schemas) => (Ok(manifest), schemas),
+        Err(error) => (Err(error), Vec::new()),
+    }
 }
 
 /// A file's bytes, one past the record bound so the parse sees one too
