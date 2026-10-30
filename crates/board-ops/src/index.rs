@@ -4,7 +4,7 @@
 //! validated again only against a schema blob it has not met.
 //! A refresh that finds nothing changed writes nothing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use board_index::{
     BlobFact, Decided, Index, IndexError, RefFact, Resolved, ValidationFact, Writer,
@@ -70,6 +70,21 @@ pub(crate) struct Indexed {
     /// What checking a record against its schema found, when the index
     /// holds it.
     pub(crate) validation: Option<ValidationFact>,
+}
+
+/// The blobs whose facts in `sources` say they hold no pointer
+/// ([`board_model::holds_no_pointer`]), so resolution need not read them.
+pub(crate) fn plain<'f>(
+    sources: impl IntoIterator<Item = &'f HashMap<String, Indexed>>,
+) -> HashSet<ObjectId> {
+    let facts = sources.into_iter().flat_map(HashMap::values);
+    facts
+        .filter(|indexed| {
+            let BlobFact { kind, code, .. } = &indexed.fact;
+            board_model::holds_no_pointer(indexed.role, *kind, *code)
+        })
+        .map(|indexed| indexed.blob)
+        .collect()
 }
 
 /// What a refresh found, for a snapshot to decide each entry's status.

@@ -324,7 +324,7 @@ impl Repositories {
 pub struct Resolver<'r, 'k> {
     repositories: &'r Repositories,
     tree: WorkingTree<'r, 'k>,
-    pointers: Pointers,
+    pointers: Pointers<'k>,
     pub(crate) chains: Chains<std::path::PathBuf>,
 }
 
@@ -337,7 +337,15 @@ impl std::fmt::Debug for Resolver<'_, '_> {
     }
 }
 
-impl Resolver<'_, '_> {
+impl<'k> Resolver<'_, 'k> {
+    /// This resolver, taking each blob in `plain` to hold no pointer
+    /// without reading it, as an index's facts can tell.
+    #[must_use]
+    pub fn knowing(mut self, plain: &'k HashSet<ObjectId>) -> Self {
+        self.pointers = self.pointers.knowing(plain);
+        self
+    }
+
     pub(crate) fn repository(&self) -> &Repository {
         self.repositories.root()
     }
@@ -437,11 +445,19 @@ impl Resolver<'_, '_> {
 pub struct InCommit<'r> {
     repositories: &'r Repositories,
     tree: CommitTree<'r>,
-    pointers: Pointers,
+    pointers: Pointers<'r>,
     pub(crate) chains: Chains<ObjectId>,
 }
 
-impl InCommit<'_> {
+impl<'r> InCommit<'r> {
+    /// This resolver, taking each blob in `plain` to hold no pointer
+    /// without reading it, as [`Resolver::knowing`] does.
+    #[must_use]
+    pub fn knowing(mut self, plain: &'r HashSet<ObjectId>) -> Self {
+        self.pointers = self.pointers.knowing(plain);
+        self
+    }
+
     /// How many files this resolver has read to learn what they hold as a
     /// pointer.
     pub fn pointers_read(&self) -> usize {

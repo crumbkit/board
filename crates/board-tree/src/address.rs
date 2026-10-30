@@ -2,7 +2,7 @@
 //! (docs/architecture/paths.md, Logical paths). Pure decisions over one
 //! directory, given what a record beside a directory holds.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -98,8 +98,10 @@ pub(crate) fn classify<'a, D, E>(
 /// and a repository and commit name a tree, so an entry is true in every
 /// source, and it lives only as long as the run that made it.
 #[derive(Debug, Default)]
-pub(crate) struct Pointers {
+pub(crate) struct Pointers<'p> {
     parsed: HashMap<ObjectId, Parsed>,
+    /// Blobs known to hold no pointer, which are not read.
+    plain: Option<&'p HashSet<ObjectId>>,
     /// Each mounted commit entered, by its repository's path and the commit.
     pub(crate) entered: HashMap<(PathBuf, ObjectId), (Decoded, Chains<ObjectId>)>,
     /// How many files were read to learn what they hold as a pointer.
@@ -109,7 +111,16 @@ pub(crate) struct Pointers {
 /// What a record holds as a pointer: one, none, or why it is not a valid one.
 pub(crate) type Parsed = Result<Option<Pointer>, Arc<PointerError>>;
 
-impl Pointers {
+impl<'p> Pointers<'p> {
+    /// These pointers, taking each blob in `plain` to hold none without
+    /// reading it.
+    pub(crate) fn knowing(self, plain: &'p HashSet<ObjectId>) -> Self {
+        Self {
+            plain: Some(plain),
+            ..self
+        }
+    }
+
     /// What the file `entry` holds as a pointer, parsed at most once per
     /// blob. `read` gives its bytes, or `None` when it is too large to be one.
     pub(crate) fn parse<D, E>(
@@ -128,6 +139,9 @@ impl Pointers {
         };
         if let Some(known) = self.parsed.get(&blob) {
             return Ok(known.clone());
+        }
+        if self.plain.is_some_and(|plain| plain.contains(&blob)) {
+            return Ok(Ok(None));
         }
         let parsed = parse()?;
         Ok(self.parsed.entry(blob).or_insert(parsed).clone())

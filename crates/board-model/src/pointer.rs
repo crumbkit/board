@@ -9,6 +9,7 @@ use crate::code::Code;
 use crate::json::{JsonError, canonical_json, parse_json};
 use crate::location::ObjectId;
 use crate::path::LogicalPath;
+use crate::record::{Kind, Role};
 
 /// The `$type` of a pointer.
 pub const POINTER_TYPE: &str = "board/mount/v1";
@@ -58,7 +59,9 @@ struct RawPointer {
 /// object, is not a pointer; deciding what it is instead is not this
 /// function's job. A pointer must also pass the strict parse.
 pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
-    if bytes.len() > MAX_RECORD_BYTES {
+    // A struct deserializes from a sequence too, which would read
+    // `["board/mount/v1"]` as tagged.
+    if bytes.len() > MAX_RECORD_BYTES || bytes.trim_ascii_start().first() != Some(&b'{') {
         return Ok(None);
     }
     match serde_json::from_slice::<RawTag>(bytes) {
@@ -67,6 +70,17 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
     }
     let value = parse_json(bytes).map_err(|source| PointerError::Json { source })?;
     pointer_from_value(&value).map(Some)
+}
+
+/// Whether a file of `role` that [`Role::classify`] gave `kind` and `code`
+/// holds no pointer, so that [`pointer`] answers `Ok(None)` for its bytes at
+/// any path: it is JSON that parsed strictly, and has no `$type` or one
+/// that is valid and not [`POINTER_TYPE`]. The index stores `kind` and
+/// `code` by blob, and resolution trusts them instead of reading the file,
+/// so a change to [`pointer`] or [`Role::classify`] that finds a pointer in
+/// bytes this calls plain must bump the index's `INDEX_VERSION`.
+pub fn holds_no_pointer(role: Role, kind: Kind, code: Option<Code>) -> bool {
+    role == Role::Json && code.is_none() && matches!(kind, Kind::Json | Kind::Record)
 }
 
 /// The pointer a parsed record of type [`POINTER_TYPE`] holds.
@@ -153,7 +167,88 @@ impl PointerError {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
+
+    /// A JSON document built from parts that decide whether it is a
+    /// pointer: its `$type`, its other fields, a duplicate key, an escaped
+    /// key, a byte order mark, or not being an object at all.
+    fn documents() -> impl Strategy<Value = String> {
+        let tag = prop_oneof![
+            Just(None),
+            Just(Some(r#""board/mount/v1""#)),
+            Just(Some(r#""lr/task/v1""#)),
+            Just(Some(r#""board/nope/v1""#)),
+            Just(Some(r#""not a type""#)),
+            Just(Some("7")),
+            Just(Some("null")),
+            Just(Some(r#"["board/mount/v1"]"#)),
+        ];
+        let field = prop_oneof![
+            Just(r#""path": "/x""#),
+            Just(r#""path": "x""#),
+            Just(
+                r#""repo": "/r", "follow": "main", "commit": "abababababababababababababababababababab""#
+            ),
+            Just(r#""repo": "https://h/r", "follow": "main", "commit": "ab""#),
+            Just(r#""title": "t""#),
+        ];
+        let fields = prop::collection::vec(field, 0..3);
+        let shape = (tag, fields, any::<bool>(), any::<bool>(), any::<bool>());
+        let object = shape.prop_map(|(tag, fields, duplicate, escaped, bom)| {
+            let mut parts: Vec<String> = fields.into_iter().map(str::to_owned).collect();
+            let key = if escaped {
+                r#""\u0024type""#
+            } else {
+                r#""$type""#
+            };
+            if let Some(tag) = tag {
+                parts.insert(0, format!("{key}: {tag}"));
+                if duplicate {
+                    parts.push(format!(r#""$type": {tag}"#));
+                }
+            }
+            let bom = if bom { "\u{feff}" } else { "" };
+            format!("{bom}{{{}}}", parts.join(", "))
+        });
+        prop_oneof![
+            8 => object,
+            1 => Just(r#"["board/mount/v1"]"#.to_owned()),
+            1 => Just(r#""board/mount/v1""#.to_owned()),
+        ]
+    }
+
+    proptest! {
+        #[test]
+        fn a_file_whose_classification_holds_no_pointer_is_no_pointer(text in documents()) {
+            let bytes = text.as_bytes();
+            let classified = Role::Json.classify(Some(bytes));
+            let (kind, code) = (classified.content.kind(), classified.code);
+            if holds_no_pointer(Role::Json, kind, code) {
+                prop_assert_eq!(pointer(bytes).ok(), Some(None), "{}", text);
+            }
+            if let Ok(Some(_)) = pointer(bytes) {
+                prop_assert_eq!((kind, code), (Kind::Pointer, None), "{}", text);
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_json_file_that_parsed_and_is_no_pointer_is_known_to_hold_none() {
+        let kinds = [Kind::Json, Kind::Record];
+        for kind in kinds {
+            assert!(holds_no_pointer(Role::Json, kind, None), "{kind:?}");
+            for role in [Role::Schema, Role::ReservedSchema, Role::Markdown] {
+                assert!(!holds_no_pointer(role, kind, None), "{role:?}");
+            }
+            let refused = Some(Code::RecordBadType);
+            assert!(!holds_no_pointer(Role::Json, kind, refused), "{kind:?}");
+        }
+        for kind in [Kind::Pointer, Kind::Schema, Kind::File] {
+            assert!(!holds_no_pointer(Role::Json, kind, None), "{kind:?}");
+        }
+    }
 
     fn link(path: &str) -> Pointer {
         Pointer::Link(path.parse().unwrap())
@@ -173,6 +268,7 @@ mod tests {
             br#"{"$type": 1}"#,
             b"not json",
             b"[]",
+            br#"["board/mount/v1", "/work/x"]"#,
         ] {
             assert_eq!(pointer(bytes).unwrap(), None);
         }

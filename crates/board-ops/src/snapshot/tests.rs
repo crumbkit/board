@@ -620,3 +620,65 @@ fn a_snapshot_mounts_then_decides_then_commits_within_its_own_time() {
         "{parts:?} in {start:?}..{end:?}"
     );
 }
+
+/// Where each reference of `report`'s run led: the record that makes it,
+/// the path it reached and how many pointers it followed.
+fn led(references: &[Referenced]) -> Vec<(String, Option<(String, usize)>)> {
+    let mut led: Vec<_> = references
+        .iter()
+        .map(|referenced| {
+            let location = referenced.reached.location.as_ref();
+            let reached = location.map(|location| (location.path.clone(), location.pointers.len()));
+            (referenced.path.clone(), reached)
+        })
+        .collect();
+    led.sort();
+    led
+}
+
+#[test]
+fn pointer_bytes_at_a_schema_path_a_json_path_and_behind_a_symlink_are_followed_and_a_plain_record_is_not_read()
+ {
+    // Three pointers to the project, each its own blob.
+    let to_p = |pad: usize| {
+        let pad = " ".repeat(pad);
+        format!(r#"{{"$type": "board/mount/v1", "path": "/projects/p"}}{pad}"#)
+    };
+    let scenario = board();
+    let see = |target: &str| task(&format!(r#", "see": "{target}""#));
+    scenario
+        .write(".board/types/lr/ln/v1.schema.json", Item::File(&to_p(0)))
+        .write("links/l.json", Item::File(&to_p(1)))
+        .write("raw.txt", Item::File(&to_p(2)))
+        .write("x.json", Item::Symlink("raw.txt"))
+        .write(
+            "tasks/a.json",
+            Item::File(&see("/.board/types/lr/ln/v1.schema")),
+        )
+        .write("tasks/b.json", Item::File(&see("/links/l")))
+        .write("tasks/c.json", Item::File(&see("/x")))
+        .write("tasks/d.json", Item::File(&see("/projects/p")));
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let root = board.repository().path().to_path_buf();
+    for _cold_then_warm in 0..2 {
+        let index = Index::open(Some(cache.path()), &root).unwrap();
+        let snapshot = board.snapshot(index, None).unwrap();
+        let through = |task: &str| {
+            (
+                format!("tasks/{task}.json"),
+                Some(("projects/p.json".to_owned(), 1)),
+            )
+        };
+        let direct = (
+            "tasks/d.json".to_owned(),
+            Some(("projects/p.json".to_owned(), 0)),
+        );
+        assert_eq!(
+            led(&snapshot.references),
+            [through("a"), through("b"), through("c"), direct]
+        );
+        // Each pointer once, and not the project its facts call plain.
+        assert_eq!(snapshot.report.work.pointers_read, 3);
+    }
+}

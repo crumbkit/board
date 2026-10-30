@@ -350,6 +350,7 @@ fn a_warm_check_reads_a_binding_its_view_and_its_references_and_nothing_without_
     let fitted = binding(json!({"ref": "/summaries/a"}), task());
     scenario.write("bindings/review.json", Item::File(&fitted));
     // The binding, its view, the summary and the task, each opened once to
-    // resolve its path and once to read it.
-    assert_eq!(warm(&scenario), 8, "one binding");
+    // read it. Resolving their paths opens none, because their facts say
+    // none holds a pointer.
+    assert_eq!(warm(&scenario), 4, "one binding");
 }

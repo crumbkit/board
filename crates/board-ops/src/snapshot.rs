@@ -26,7 +26,8 @@ use board_tree::{
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{
-    Indexed, Kept, RefreshError, Refreshed, Run, attempt, facts, schema_of, schema_type, transact,
+    Indexed, Kept, RefreshError, Refreshed, Run, attempt, facts, plain, schema_of, schema_type,
+    transact,
 };
 use crate::ui::fitted;
 use crate::verdict::{Fault, SchemaFound};
@@ -140,8 +141,10 @@ impl Board {
         drop(timed);
         let _timed = self.timed("snapshot.decide");
         let scopes = mounts.scopes(scope);
+        let plain =
+            plain(std::iter::once(&refresh.facts).chain(mounts.sources.iter().map(|m| &m.facts)));
         let mut known = known(&refresh.entries, &mut work.hashed);
-        let mut resolver = self.repositories().resolver(&mut known)?;
+        let mut resolver = self.repositories().resolver(&mut known)?.knowing(&plain);
         let mut decided = Decisions::default();
         let root = Decide {
             repositories: self.repositories(),
@@ -177,8 +180,8 @@ impl Board {
         drop(known);
         for mounted in &mounts.sources {
             let source = Source::Commit(mounted.commit);
-            let mut in_commit =
-                (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
+            let in_commit = (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
+            let mut in_commit = in_commit.knowing(&plain);
             let decide = Decide {
                 repositories: self.repositories(),
                 mounted: Some(mounted),
