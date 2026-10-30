@@ -35,7 +35,8 @@ pub use crate::path::{
     is_hidden,
 };
 pub use crate::pointer::{
-    MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, pointer, repinned,
+    MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, holds_no_pointer, pointer,
+    repinned,
 };
 pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RESERVED_NAMESPACES, RecordType,

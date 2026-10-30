@@ -271,7 +271,7 @@ fn a_file_whose_blob_is_known_is_not_hashed_and_the_rest_are() {
     let stand_in = scenario.blob("not what the file holds");
     let mut asked = Vec::new();
     let mut kept = Vec::new();
-    let entries = scenario
+    let (entries, _) = scenario
         .open()
         .walk_working_tree(
             &mut |path, stat| {
@@ -325,7 +325,7 @@ fn walked_on(scenario: &Scenario, threads: usize) -> (Vec<Entry>, Vec<(String, C
     let repository = scenario.open();
     repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
     let mut kept = Vec::new();
-    let entries = repository
+    let (entries, _) = repository
         .walk_working_tree(
             &mut |_, _| None,
             &|path, contents| (path.to_owned(), contents),
@@ -396,7 +396,7 @@ fn an_ignored_directory_is_never_listed_however_many_threads_list() {
     for threads in [1, 4] {
         let repository = scenario.open();
         repository.set_threads(std::num::NonZeroUsize::new(threads).unwrap());
-        let entries = repository
+        let (entries, _) = repository
             .walk_working_tree(&mut |_, _| None, &|_, _| {}, &mut |()| {
                 Ok::<(), GitError>(())
             })
@@ -650,7 +650,9 @@ fn resolution_takes_a_known_blob_as_given_and_hashes_the_rest() {
     let repository = scenario.repositories();
     let mut known =
         |path: &str, _: &board_model::Stat| (path == "work/known.md").then_some(stand_in);
-    let mut resolver = repository.resolver(&mut known).unwrap();
+    let mut resolver = repository
+        .resolver(&mut known, crate::Listings::default())
+        .unwrap();
     let mut resolve = |text: &str| resolver.resolve(&path(text)).unwrap().object;
     assert_eq!(resolve("/work/known.md"), Object::Blob(stand_in));
     assert_eq!(resolve("/work/other"), Object::Blob(scenario.blob("[]")));
@@ -914,7 +916,9 @@ fn a_resolver_classifies_only_the_entries_a_path_names_in_a_directory() {
         asked.push(path.to_owned());
         None
     };
-    let mut resolver = repositories.resolver(&mut known).unwrap();
+    let mut resolver = repositories
+        .resolver(&mut known, crate::Listings::default())
+        .unwrap();
     let found = resolver.resolve(&path("/d/x")).unwrap();
     let missing = resolver.resolve(&path("/d/missing")).unwrap_err();
     let again = resolver.resolve(&path("/d/x")).unwrap();

@@ -24,9 +24,14 @@ steps left are the owner's:
 
 M7 is done when the owner says so.
 
-After M7, real numbers decide whether to land the three measured warm-check
-speedups (#33; warm `check` is about 20 µs per entry). The long-chain numbers
-are in #57 and in commit 9d557d1 of the separate stress-test repository.
+A warm `call plans.open --limit 20` takes about 89 ms on a copy of the
+owner's board; the target is 50 ms. Reaching it needs a per-mount decision
+cache keyed by the mounted commit's tree (F1), designed next. F1's design
+also decides whether to open mounts in parallel or only on demand.
+
+Two smaller items each get their own pull request. A scoped check walks
+every mount; fixing that needs a design. Compiling manifest schemas once
+per run saves `call` 3 to 4 ms.
 
 ## Then: runs
 

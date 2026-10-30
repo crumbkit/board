@@ -10,7 +10,7 @@ use std::rc::Rc;
 use board_model::{Code, LogicalPath, ObjectId, Source};
 
 use crate::address::{self, Pointers};
-use crate::git::{GitError, Repository};
+use crate::git::{GitError, Repository, Sizes};
 use crate::tree::{Indexed, Kind, RawEntry, Tree};
 use crate::walk::{Entry, walk_in};
 
@@ -211,7 +211,7 @@ impl Repository {
             if is_empty(id) || known(id) || trees.iter().any(|tree| tree.id == id) {
                 continue;
             }
-            let entries = match self.tree_entries(id) {
+            let entries = match self.tree_entries(id, Sizes::All) {
                 Ok(entries) => entries,
                 Err(error) if id == root => return Err(error),
                 Err(_) => continue,

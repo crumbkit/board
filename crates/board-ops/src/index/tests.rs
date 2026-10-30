@@ -89,11 +89,10 @@ fn a_markdown_file_is_parsed_from_the_bytes_hashed_and_only_again_when_it_change
     let scenario = tasks();
     scenario.write("notes/a.md", Item::File("[p](/projects/p)"));
     let cache = tempfile::tempdir().unwrap();
-    // The nine files hashed are each opened once. Every run follows the link
-    // and so opens the project's file once more, as following a record's
-    // reference does.
-    assert_eq!(opened(&scenario, cache.path()), 10, "cold");
-    assert_eq!(opened(&scenario, cache.path()), 1, "warm");
+    // The nine files hashed are each opened once. Following the link opens
+    // nothing more, because the project's facts say it holds no pointer.
+    assert_eq!(opened(&scenario, cache.path()), 9, "cold");
+    assert_eq!(opened(&scenario, cache.path()), 0, "warm");
     scenario.write("notes/a.md", Item::File("[q](/projects/q)"));
     let work = build(&scenario, cache.path());
     assert_eq!((work.hashed, work.parsed), (1, 1));
@@ -545,6 +544,7 @@ fn unkept(board: &crate::Board) -> Result<Vec<board_tree::Entry>, board_tree::Gi
     board
         .repository()
         .walk_working_tree(&mut |_, _| None, &|_, _| {}, &mut |()| Ok(()))
+        .map(|(entries, _)| entries)
 }
 
 #[test]

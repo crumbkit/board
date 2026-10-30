@@ -9,6 +9,7 @@ use crate::code::Code;
 use crate::json::{JsonError, canonical_json, parse_json};
 use crate::location::ObjectId;
 use crate::path::LogicalPath;
+use crate::record::{Kind, Role};
 
 /// The `$type` of a pointer.
 pub const POINTER_TYPE: &str = "board/mount/v1";
@@ -58,7 +59,9 @@ struct RawPointer {
 /// object, is not a pointer; deciding what it is instead is not this
 /// function's job. A pointer must also pass the strict parse.
 pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
-    if bytes.len() > MAX_RECORD_BYTES {
+    // A struct deserializes from a sequence too, which would read
+    // `["board/mount/v1"]` as tagged.
+    if bytes.len() > MAX_RECORD_BYTES || bytes.trim_ascii_start().first() != Some(&b'{') {
         return Ok(None);
     }
     match serde_json::from_slice::<RawTag>(bytes) {
@@ -67,6 +70,18 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
     }
     let value = parse_json(bytes).map_err(|source| PointerError::Json { source })?;
     pointer_from_value(&value).map(Some)
+}
+
+/// Whether a file of `role` that [`Role::classify`] gave `kind` and `code`
+/// holds no pointer: it is JSON that parsed strictly, and has no `$type` or
+/// one that is valid and not [`POINTER_TYPE`]. Resolution trusts this in
+/// place of reading the file, so [`pointer()`] must answer `Ok(None)` for
+/// every file this calls plain, and the property test checks it. The
+/// index's stored facts and tree-row codes depend on [`pointer()`] and
+/// [`Role::classify`], so any change to what either answers bumps the
+/// index's `INDEX_VERSION`.
+pub fn holds_no_pointer(role: Role, kind: Kind, code: Option<Code>) -> bool {
+    role == Role::Json && code.is_none() && matches!(kind, Kind::Json | Kind::Record)
 }
 
 /// The pointer a parsed record of type [`POINTER_TYPE`] holds.
@@ -152,152 +167,4 @@ impl PointerError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn link(path: &str) -> Pointer {
-        Pointer::Link(path.parse().unwrap())
-    }
-
-    #[test]
-    fn a_link_is_a_pointer_record_with_one_path() {
-        let bytes = br#"{"$type": "board/mount/v1", "path": "/work/x"}"#;
-        assert_eq!(pointer(bytes).unwrap(), Some(link("/work/x")));
-    }
-
-    #[test]
-    fn a_record_of_another_type_is_not_a_pointer() {
-        for bytes in [
-            &br#"{"$type": "lr/task/v1", "path": "/work/x"}"#[..],
-            br#"{"path": "/work/x"}"#,
-            br#"{"$type": 1}"#,
-            b"not json",
-            b"[]",
-        ] {
-            assert_eq!(pointer(bytes).unwrap(), None);
-        }
-    }
-
-    #[test]
-    fn a_pointer_with_an_unknown_field_is_invalid() {
-        let admitted = br#"{"$type": "board/mount/v1", "path": "/x"}"#;
-        assert!(pointer(admitted).is_ok());
-        let refused = br#"{"$type": "board/mount/v1", "path": "/x", "note": 1}"#;
-        assert_eq!(pointer(refused).unwrap_err().code(), Code::MountInvalid);
-    }
-
-    #[test]
-    fn a_pointer_whose_path_is_malformed_or_missing_is_invalid() {
-        for refused in [
-            &br#"{"$type": "board/mount/v1", "path": "x"}"#[..],
-            br#"{"$type": "board/mount/v1"}"#,
-        ] {
-            assert_eq!(pointer(refused).unwrap_err().code(), Code::MountInvalid);
-        }
-    }
-
-    #[test]
-    fn a_pointer_must_pass_the_strict_parse() {
-        let admitted = br#"{"$type": "board/mount/v1", "path": "/x"}"#;
-        assert!(pointer(admitted).is_ok());
-        let refused = br#"{"$type": "board/mount/v1", "path": "/x", "path": "/y"}"#;
-        assert_eq!(pointer(refused).unwrap_err().code(), Code::JsonDuplicateKey);
-    }
-
-    #[test]
-    fn the_record_limit_is_sixteen_mebibytes() {
-        assert_eq!(MAX_RECORD_BYTES, 16_777_216);
-    }
-
-    #[test]
-    fn a_record_over_the_size_limit_is_never_read_as_a_pointer() {
-        let small = format!(
-            r#"{{"$type": "board/mount/v1", "path": "/x"}}{}"#,
-            " ".repeat(64)
-        );
-        assert!(pointer(small.as_bytes()).unwrap().is_some());
-        let large = format!(
-            r#"{{"$type": "board/mount/v1", "path": "/x"}}{}"#,
-            " ".repeat(MAX_RECORD_BYTES)
-        );
-        assert_eq!(pointer(large.as_bytes()).unwrap(), None);
-    }
-
-    fn mount(repo: &str) -> String {
-        format!(
-            r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{}"}}"#,
-            "ab".repeat(20)
-        )
-    }
-
-    #[test]
-    fn a_mount_names_a_local_repository_at_a_commit() {
-        let parsed = pointer(mount("~/src/board").as_bytes()).unwrap();
-        assert_eq!(
-            parsed,
-            Some(Pointer::Mount(Mount {
-                repo: "~/src/board".to_owned(),
-                follow: "main".to_owned(),
-                commit: ObjectId::Sha1([0xab; 20]),
-            }))
-        );
-    }
-
-    #[test]
-    fn a_remote_repository_cannot_be_mounted() {
-        for local in ["/srv/board", "../board", "~/src/board", "dir:with-colon"] {
-            assert!(
-                pointer(mount(local).as_bytes()).unwrap().is_some(),
-                "{local}"
-            );
-        }
-        for remote in [
-            "https://example.com/board.git",
-            "ssh://host/board",
-            "git@example.com:board.git",
-        ] {
-            let error = pointer(mount(remote).as_bytes()).unwrap_err();
-            assert_eq!(error.code(), Code::MountRemoteUnsupported, "{remote}");
-        }
-    }
-
-    #[test]
-    fn a_pointer_holds_a_link_or_a_mount_never_both_or_neither() {
-        let commit = "ab".repeat(20);
-        for refused in [
-            r#"{"$type": "board/mount/v1"}"#.to_owned(),
-            format!(
-                r#"{{"$type": "board/mount/v1", "path": "/x", "repo": "/r", "follow": "main", "commit": "{commit}"}}"#
-            ),
-            format!(r#"{{"$type": "board/mount/v1", "repo": "/r", "commit": "{commit}"}}"#),
-            r#"{"$type": "board/mount/v1", "repo": "/r", "follow": "main"}"#.to_owned(),
-        ] {
-            assert_eq!(
-                pointer(refused.as_bytes()).unwrap_err().code(),
-                Code::MountInvalid,
-                "{refused}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_mount_commit_must_be_a_full_lowercase_id() {
-        assert!(pointer(mount("/r").as_bytes()).unwrap().is_some());
-        for commit in [
-            "AB".repeat(20),
-            "ab".repeat(19),
-            "zz".repeat(20),
-            "abc".to_owned(),
-        ] {
-            let bytes = format!(
-                r#"{{"$type": "board/mount/v1", "repo": "/r", "follow": "main", "commit": "{commit}"}}"#
-            );
-            assert_eq!(
-                pointer(bytes.as_bytes()).unwrap_err().code(),
-                Code::MountInvalid,
-                "{commit}"
-            );
-        }
-        assert!(ObjectId::from_hex(&"cd".repeat(32)).is_some());
-    }
-}
+mod tests;

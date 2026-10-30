@@ -37,7 +37,7 @@ pub(crate) enum RawKind {
 
 /// One item of a directory as `read_dir` gives it, before any `lstat`: its
 /// name as git spells it, and its type, `None` when that cannot be read.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Item {
     pub(crate) name: Vec<u8>,
     pub(super) file_type: Option<fs::FileType>,

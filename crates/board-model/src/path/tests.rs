@@ -58,7 +58,9 @@ fn a_path_beneath_another_follows_it_and_the_root_adds_nothing() {
     while deep.as_str().len() + long.as_str().len() <= MAX_PATH_BYTES {
         deep = deep.beneath(&long).unwrap();
     }
-    assert!(deep.beneath(&long).is_err());
+    let joined = format!("{deep}{long}");
+    let refused = deep.beneath(&long).unwrap_err();
+    assert_eq!(refused, joined.parse::<LogicalPath>().unwrap_err());
 }
 
 #[test]
@@ -303,6 +305,24 @@ fn segment() -> impl Strategy<Value = String> {
 }
 
 proptest! {
+    #[test]
+    fn a_path_beneath_another_is_the_two_joined_and_parsed(
+        route in proptest::collection::vec(segment(), 0..40),
+        inside in proptest::collection::vec(segment(), 0..40),
+    ) {
+        let path = |segments: &[String]| format!("/{}", segments.join("/"));
+        let (route, inside) = (path(&route), path(&inside));
+        let joined = match (route.as_str(), inside.as_str()) {
+            ("/", inside) => inside.to_owned(),
+            (route, "/") => route.to_owned(),
+            (route, inside) => format!("{route}{inside}"),
+        };
+        let (route, inside) = (route.parse::<LogicalPath>(), inside.parse::<LogicalPath>());
+        if let (Ok(route), Ok(inside)) = (route, inside) {
+            prop_assert_eq!(route.beneath(&inside), joined.parse::<LogicalPath>());
+        }
+    }
+
     #[test]
     fn a_valid_path_round_trips_through_its_display(
         segments in proptest::collection::vec(segment(), 0..16),

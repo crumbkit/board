@@ -6,7 +6,7 @@
 use board_model::MAX_RECORD_BYTES;
 
 use super::*;
-use crate::{Contents, Directory, GitError, Working};
+use crate::{Contents, Directory, GitError, Listings, Working};
 
 /// The blob the walk of `repository`'s working tree gave each file.
 fn walked(repository: &Repository) -> impl Fn(&str) -> ObjectId {
@@ -175,7 +175,9 @@ fn a_pointer_changed_after_it_was_hashed_is_unreadable_and_its_unchanged_twin_is
         .write("to_b.json", Item::File(&to("/b")));
     let repository = scenario.repositories();
     let mut known = |_: &str, _: &board_model::Stat| None;
-    let mut resolver = repository.resolver(&mut known).unwrap();
+    let mut resolver = repository
+        .resolver(&mut known, Listings::default())
+        .unwrap();
     // Hashes both pointers, without following them, before one changes.
     resolver.resolve_pointer(&path("/to_a")).unwrap();
     resolver.resolve_pointer(&path("/to_b")).unwrap();

@@ -229,6 +229,21 @@ fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError
     Ok(warm.report)
 }
 
+/// Checks only the mounted library's tasks of `scenario` through `warm` and
+/// through a cold index, and requires them to agree, failing or not.
+fn scoped_agrees(scenario: &Scenario, warm: Index) -> Result<(), TestCaseError> {
+    let board = open(scenario);
+    let cold = Index::open(None, board.repository().path()).unwrap();
+    let scope = "/vendor/tasks".parse().unwrap();
+    let [warm, cold] = [warm, cold].map(|index| {
+        let snapshot = board.snapshot(index, Some(&scope));
+        snapshot.map(|snapshot| (snapshot.report.entries, snapshot.references))
+    });
+    let code = |error: crate::CheckError| error.code();
+    prop_assert_eq!(warm.map_err(code), cold.map_err(code));
+    Ok(())
+}
+
 /// Decides the board `before` describes warm, changes it to `after`, and
 /// requires a warm index to decide as a cold one, again after a prune, and
 /// to do no work when nothing changed.
@@ -247,6 +262,7 @@ fn warm_decides_as_cold(
     agrees(generated.scenario(), warm())?;
     let again = agrees(generated.scenario(), warm())?;
     prop_assert_eq!(again.work, decided_only(again.work), "nothing changed");
+    scoped_agrees(generated.scenario(), warm())?;
 
     prune(warm());
     generated.write(before);
@@ -603,4 +619,114 @@ fn a_snapshot_mounts_then_decides_then_commits_within_its_own_time() {
         start <= parts[0].0 && parts[2].1 <= end,
         "{parts:?} in {start:?}..{end:?}"
     );
+}
+
+/// Where each reference of `report`'s run led: the record that makes it,
+/// the path it reached and how many pointers it followed.
+fn led(references: &[Referenced]) -> Vec<(String, Option<(String, usize)>)> {
+    let mut led: Vec<_> = references
+        .iter()
+        .map(|referenced| {
+            let location = referenced.reached.location.as_ref();
+            let reached = location.map(|location| (location.path.clone(), location.pointers.len()));
+            (referenced.path.clone(), reached)
+        })
+        .collect();
+    led.sort();
+    led
+}
+
+#[test]
+fn pointer_bytes_at_a_schema_path_a_json_path_and_behind_a_symlink_are_followed_and_a_plain_record_is_not_read()
+ {
+    // Three pointers to the project, each its own blob.
+    let to_p = |pad: usize| {
+        let pad = " ".repeat(pad);
+        format!(r#"{{"$type": "board/mount/v1", "path": "/projects/p"}}{pad}"#)
+    };
+    let scenario = board();
+    let see = |target: &str| task(&format!(r#", "see": "{target}""#));
+    scenario
+        .write(".board/types/lr/ln/v1.schema.json", Item::File(&to_p(0)))
+        .write("links/l.json", Item::File(&to_p(1)))
+        .write("raw.txt", Item::File(&to_p(2)))
+        .write("x.json", Item::Symlink("raw.txt"))
+        .write(
+            "tasks/a.json",
+            Item::File(&see("/.board/types/lr/ln/v1.schema")),
+        )
+        .write("tasks/b.json", Item::File(&see("/links/l")))
+        .write("tasks/c.json", Item::File(&see("/x")))
+        .write("tasks/d.json", Item::File(&see("/projects/p")));
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let root = board.repository().path().to_path_buf();
+    for _cold_then_warm in 0..2 {
+        let index = Index::open(Some(cache.path()), &root).unwrap();
+        let snapshot = board.snapshot(index, None).unwrap();
+        let through = |task: &str| {
+            (
+                format!("tasks/{task}.json"),
+                Some(("projects/p.json".to_owned(), 1)),
+            )
+        };
+        let direct = (
+            "tasks/d.json".to_owned(),
+            Some(("projects/p.json".to_owned(), 0)),
+        );
+        assert_eq!(
+            led(&snapshot.references),
+            [through("a"), through("b"), through("c"), direct]
+        );
+        // Each pointer once, and not the project its facts call plain.
+        assert_eq!(snapshot.report.work.pointers_read, 3);
+    }
+}
+
+#[test]
+fn a_check_lists_each_directory_once_and_a_scoped_one_lists_the_directory_holding_its_scope_once_more()
+ {
+    let scenario = board();
+    let see = |target: &str| task(&format!(r#", "see": "{target}""#));
+    scenario
+        .write("tasks/a.json", Item::File(&see("/projects/p")))
+        .write("tasks/b.json", Item::File(&see("/tasks/a")))
+        .write(
+            "notes/n.md",
+            Item::File("[a](/tasks/a) [p](../projects/p.json)"),
+        );
+    let board = open(&scenario);
+    let cache = tempfile::tempdir().unwrap();
+    let listed = |scope: Option<&str>| {
+        let scope = scope.map(|scope| scope.parse().unwrap());
+        let before = board.repository().directories_listed();
+        board.check(scope.as_ref(), Some(cache.path())).unwrap();
+        board.repository().directories_listed() - before
+    };
+    // The root, `.board`, its `types`, `lr`, `task` and `project`, then
+    // `projects`, `tasks` and `notes`, cold and warm.
+    assert_eq!([listed(None), listed(None)], [9, 9]);
+    // Resolving the scope before the snapshot lists the root once more.
+    assert_eq!(listed(Some("/tasks")), 9 + 1);
+}
+
+#[test]
+fn a_file_added_between_warm_runs_is_resolved_by_the_second() {
+    let scenario = board();
+    let see = |target: &str| task(&format!(r#", "see": "{target}""#));
+    scenario.write("tasks/a.json", Item::File(&see("/projects/new")));
+    let cache = tempfile::tempdir().unwrap();
+    let root = open(&scenario).repository().path().to_path_buf();
+    let warm = || Index::open(Some(cache.path()), &root).unwrap();
+    let led = |scenario: &Scenario| {
+        agrees(scenario, warm()).unwrap();
+        led(&filled(&open(scenario), warm()).references)
+    };
+    assert_eq!(led(&scenario), [("tasks/a.json".to_owned(), None)]);
+    scenario.write(
+        "projects/new.json",
+        Item::File(r#"{"$type": "lr/project/v1"}"#),
+    );
+    let reached = Some(("projects/new.json".to_owned(), 0));
+    assert_eq!(led(&scenario), [("tasks/a.json".to_owned(), reached)]);
 }

@@ -60,9 +60,11 @@ unread because they changed after the check (it does not name them),
 `started`, the plugin processes a call started, `repositories`, the
 repositories a snapshot opened from disk besides the board's own, and
 `pointers_read`, the files `snapshot.decide` read to learn whether they
-are pointers, once per blob in each source. `pointers_read` leaves out the
-pointers read while walking mounts and while resolving a path before the
-snapshot. When another process holds the index, a snapshot runs again: the
+are pointers, once per blob in each source. It leaves out a file whose
+facts in the index say it is JSON that parsed and has no `$type`, or a
+valid one other than a pointer's, because such a file holds no pointer. It
+also leaves out the pointers read while walking mounts and while resolving
+a path before the snapshot. When another process holds the index, a snapshot runs again: the
 second run waits for the index's write lock, and runs in memory only if that
 wait times out. The counts are those of the run that answered, except
 `repositories`, which counts each repository opened in either run once. `plugin.reply` includes the

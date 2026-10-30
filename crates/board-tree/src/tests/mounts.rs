@@ -499,3 +499,105 @@ fn pinning_a_symlink_to_a_mount_is_refused_naming_the_symlink_and_pinning_its_mo
     assert_eq!(error.fields(), board_model::Fields::at(&path("/s")));
     assert_eq!(outer.repositories().pin(&path("/m")).unwrap().new, pinned);
 }
+
+#[test]
+fn resolving_into_a_mount_reads_the_size_of_each_symlink_listed_and_of_no_file_while_a_walk_reads_every_size()
+ {
+    let inner = Scenario::new();
+    let names: Vec<String> = (0..50).map(|n| format!("d/r{n}.json")).collect();
+    let mut items: Vec<(&[u8], Item<'_>)> = names
+        .iter()
+        .map(|name| (name.as_bytes(), Item::File("{}")))
+        .collect();
+    // Over 4,096 bytes, so it dangles without its text being read.
+    let long = format!("{}r0.json", "./".repeat(2100));
+    items.push((b"d/s.json", Item::Symlink("r0.json")));
+    items.push((b"d/long.json", Item::Symlink(&long)));
+    let pinned = inner.commit_items(&items);
+    let outer = Scenario::new();
+    let commit = outer.commit(&[("m.json", &mount(&inner.path(), pinned))]);
+    let repositories = outer.repositories();
+    let mounted = repositories
+        .repository(&Board {
+            repository: inner.open().path().to_path_buf(),
+            source: Source::Commit(pinned),
+        })
+        .unwrap();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    for n in 0..50 {
+        in_commit.resolve(&path(&format!("/m/d/r{n}"))).unwrap();
+    }
+    let symlink = in_commit.resolve(&path("/m/d/s")).unwrap();
+    assert_eq!(symlink.object, Object::Blob(inner.blob("{}")));
+    let refused = in_commit.resolve(&path("/m/d/long")).unwrap_err();
+    assert_eq!(refused.code(), Code::SymlinkDangling);
+    // The mounted root and `d`, decoded once, and only the two symlinks in
+    // `d` have a size read.
+    let decoded = mounted.trees_decoded();
+    assert_eq!((decoded, mounted.sizes_read()), (2, 2));
+    assert_eq!(repositories.root().sizes_read(), 0);
+    // A walk gives every file its size: the 50 files and both symlinks.
+    let walked = mounted.walk(&Source::Commit(pinned)).unwrap();
+    let sized = walked.iter().filter(|entry| entry.size.is_some()).count();
+    assert_eq!(sized, 51, "every file but the dangling symlink");
+    assert_eq!(mounted.sizes_read() - decoded, 52);
+}
+
+#[test]
+fn references_into_one_mounted_commit_decode_its_trees_once_and_the_same_commit_of_another_repository_once_more()
+ {
+    let files: Vec<(String, String)> = (0..50)
+        .map(|n| (format!("a/b/r{n}.json"), "{}".to_owned()))
+        .collect();
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    let (one, two) = (Scenario::new(), Scenario::new());
+    let (a, b) = (one.commit(&files), two.commit(&files));
+    let outer = Scenario::new();
+    let commit = outer.commit(&[
+        ("m.json", &mount(&one.path(), a)),
+        ("n.json", &mount(&one.path(), a)),
+        ("o.json", &mount(&two.path(), b)),
+    ]);
+    let repositories = outer.repositories();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    for n in 0..50 {
+        for mount in ["m", "n", "o"] {
+            in_commit
+                .resolve(&path(&format!("/{mount}/a/b/r{n}")))
+                .unwrap();
+        }
+    }
+    let decoded = |scenario: &Scenario, commit| {
+        let board = Board {
+            repository: scenario.open().path().to_path_buf(),
+            source: Source::Commit(commit),
+        };
+        repositories.repository(&board).unwrap().trees_decoded()
+    };
+    // The root, `a` and `a/b` of each repository.
+    assert_eq!((decoded(&one, a), decoded(&two, b)), (3, 3));
+}
+
+#[test]
+fn two_mounts_of_one_repository_at_different_commits_each_resolve_in_their_own_commit() {
+    let inner = Scenario::new();
+    let (first, second) = (
+        inner.commit(&[("x.json", "1")]),
+        inner.commit(&[("x.json", "2")]),
+    );
+    let outer = Scenario::new();
+    let commit = outer.commit(&[
+        ("m.json", &mount(&inner.path(), first)),
+        ("n.json", &mount(&inner.path(), second)),
+    ]);
+    let repositories = outer.repositories();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    let m = in_commit.resolve(&path("/m/x")).unwrap();
+    let n = in_commit.resolve(&path("/n/x")).unwrap();
+    assert_eq!(m.object, Object::Blob(inner.blob("1")));
+    assert_eq!(n.object, Object::Blob(inner.blob("2")));
+    assert_eq!(n.board.source, Source::Commit(second));
+}

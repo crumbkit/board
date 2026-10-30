@@ -256,7 +256,8 @@ impl Role {
 
     /// Classifies `bytes` read in this role, or `None` when they are over
     /// the size limit. Board's own types are checked here; other records
-    /// wait for their schema.
+    /// wait for their schema. A change to what this answers bumps the
+    /// index's `INDEX_VERSION` ([`crate::holds_no_pointer`] says why).
     pub fn classify(self, bytes: Option<&[u8]>) -> Classified {
         if self == Self::Markdown {
             return markdown(bytes);

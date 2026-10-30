@@ -7,10 +7,21 @@ use super::*;
 /// Runs `board` in `directory` with the binary's built-in plugins and those
 /// installed in `data`, if any, and returns what the run recorded.
 fn built_in(directory: &Path, data: Option<&Scenario>, arguments: &[&str]) -> (Output, Ran) {
+    cached(directory, data, None, arguments)
+}
+
+/// Runs `board` as [`built_in`] does, keeping its index in `cache`, or in
+/// memory without one.
+fn cached(
+    directory: &Path,
+    data: Option<&Scenario>,
+    cache: Option<&Path>,
+    arguments: &[&str],
+) -> (Output, Ran) {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
-        cache: None,
+        cache: cache.map(Path::to_path_buf),
         plugins: data.map(|data| data.workdir().join("plugins")),
         boards: None,
         signer: None,
@@ -118,6 +129,48 @@ fn call_plans_open_reads_its_path_flag_from_the_current_directory_and_starts_no_
         assert_eq!(questions[0]["path"], expected);
         assert_eq!(ran.trace.work.get("started"), Some(&0));
     }
+}
+
+/// A question of plans in `status`, as its schema admits it.
+fn question(status: &str) -> String {
+    let question = json!({
+        "$type": "plans/question/v1",
+        "question": "Which way?",
+        "session": "local_0a1b",
+        "asked": "2026-10-01T09:00:00Z",
+        "status": status,
+    });
+    question.to_string()
+}
+
+#[test]
+fn call_plans_open_answers_from_a_warm_index_as_from_a_cold_one_after_the_mount_moves() {
+    let board = questions();
+    let library = Scenario::new();
+    let first = library.commit(&[("questions/l.json", &question("open"))]);
+    let second = library.commit(&[("notes.md", "No questions.")]);
+    let mount = |commit| {
+        let repo = library.path();
+        let mount =
+            json!({"$type": "board/mount/v1", "repo": repo, "follow": "main", "commit": commit});
+        mount.to_string()
+    };
+    board.write("vendor.json", Item::File(&mount(first.to_string())));
+    let cache = tempfile::tempdir().unwrap();
+    let answer = |cache: Option<&Path>| {
+        let arguments = ["--json", "call", "plans.open", "--limit", "20"];
+        let (output, _) = cached(board.workdir(), None, cache, &arguments);
+        assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        json(&output)["data"]["output"].clone()
+    };
+    let before = answer(Some(cache.path()));
+    board
+        .write("vendor.json", Item::File(&mount(second.to_string())))
+        .write("projects/c/questions/q.json", Item::File(&question("open")))
+        .write("projects/a/questions/q.json", Item::Deleted);
+    let warm = answer(Some(cache.path()));
+    assert_ne!(warm, before, "the change is seen");
+    assert_eq!(warm, answer(None));
 }
 
 #[test]

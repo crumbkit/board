@@ -117,8 +117,9 @@ fn a_check_opens_a_repository_two_mounts_name_once_and_counts_it_and_the_pointer
     let trace = board.take_trace().work;
     assert_eq!(trace.get("repositories"), Some(&1));
     assert_eq!(trace.get("pointers_read"), Some(&work.pointers_read));
-    // One pointer in the working tree and one in the mounted commit.
-    assert_eq!(work.pointers_read, 2);
+    // The pointer in the working tree. The project the mounted task refers
+    // to is not read, because its facts say it holds no pointer.
+    assert_eq!(work.pointers_read, 1);
 }
 
 #[test]
@@ -427,14 +428,15 @@ fn decoded_for(notes: usize) -> usize {
 }
 
 #[test]
-fn each_link_through_a_mount_decodes_the_trees_on_its_path_once_however_long_a_symlink_text_on_it()
-{
-    // Listing the mount decodes its four directories. Each note then adds
-    // the three on each of its two paths: the root, `notes` and `deep` or
-    // `other`. The symlink's 400 passes through `deep` decode nothing more.
+fn links_through_a_mount_decode_each_tree_on_their_paths_once_however_many_and_however_long_a_symlink_text_on_them()
+ {
+    // Listing the mount decodes its four directories. Following the links
+    // decodes them once more in all, however many notes link: the root,
+    // `notes`, `deep` and `other`. The symlink's 400 passes through `deep`
+    // decode nothing more.
     assert_eq!(decoded_for(0), 4);
-    assert_eq!(decoded_for(1), 4 + 6);
-    assert_eq!(decoded_for(20), 4 + 20 * 6);
+    assert_eq!(decoded_for(1), 4 + 4);
+    assert_eq!(decoded_for(20), 4 + 4);
 }
 
 #[test]
@@ -517,4 +519,56 @@ fn a_binding_in_a_mounted_board_fits_the_view_in_its_own_board_and_one_whose_vie
         };
         assert_eq!(found, expected);
     }
+}
+
+#[test]
+fn a_plain_record_that_becomes_a_link_between_warm_runs_is_followed_in_the_working_tree_and_in_a_mount()
+ {
+    let library = Scenario::new();
+    let project = r#"{"$type": "lr/project/v1"}"#;
+    let to_q = r#"{"$type": "board/mount/v1", "path": "/projects/q"}"#;
+    let files = |p: &'static str| {
+        [
+            (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+            ("projects/p.json", p),
+            ("projects/q.json", project),
+        ]
+    };
+    let (plain, linked) = (
+        library.commit(&files(project)),
+        library.commit(&files(to_q)),
+    );
+    let scenario = board();
+    let refer = |target: &str| task(&format!(r#", "project": "{target}""#));
+    scenario
+        .write("projects/q.json", Item::File(project))
+        .write("vendor.json", Item::File(&mount(&library.path(), plain)))
+        .write("tasks/a.json", Item::File(&refer("/projects/p")))
+        .write("tasks/b.json", Item::File(&refer("/vendor/projects/p")));
+    let cache = tempfile::tempdir().unwrap();
+    let root = open(&scenario).repository().path().to_path_buf();
+    let warm = || board_index::Index::open(Some(cache.path()), &root).unwrap();
+    let led = |scenario: &Scenario| {
+        super::agrees(scenario, warm()).unwrap();
+        super::led(&super::filled(&open(scenario), warm()).references)
+    };
+    let reached = |task: &str, path: &str, pointers| {
+        (
+            format!("tasks/{task}.json"),
+            Some((path.to_owned(), pointers)),
+        )
+    };
+    let before = [
+        reached("a", "projects/p.json", 0),
+        reached("b", "projects/p.json", 1),
+    ];
+    assert_eq!(led(&scenario), before);
+    scenario
+        .write("projects/p.json", Item::File(to_q))
+        .write("vendor.json", Item::File(&mount(&library.path(), linked)));
+    let after = [
+        reached("a", "projects/q.json", 1),
+        reached("b", "projects/q.json", 2),
+    ];
+    assert_eq!(led(&scenario), after);
 }
