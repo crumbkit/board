@@ -89,17 +89,19 @@ def test_an_eval_names_each_repository_by_its_mount_and_one_the_board_does_not_h
 ) -> None:
     crumbkit, commit = repository(tmp_path, "crumbkit", {})
     mount(board, "repos/crumbkit.json", crumbkit, commit)
-    board.write("evals/mounted.json", experiment("M?", ["crumbkit"], repos=["/repos/crumbkit"]))
+    board.write("evals/mounted.json", experiment("M?", ["crumbkit"], mounts=["/repos/crumbkit"]))
     board.write("evals/none.json", experiment("N?", ["crumbkit"]))
-    board.write("evals/missing.json", experiment("L?", ["crumbkit"], repos=["/repos/crumbkit", "/repos/gone"]))
-    board.write("evals/by-name.json", experiment("B?", ["crumbkit"], repos=["crumbkit/crumbkit"]))
-    board.write("evals/not-a-list.json", experiment("S?", ["crumbkit"], repos="/repos/crumbkit"))
+    board.write("evals/missing.json", experiment("L?", ["crumbkit"], mounts=["/repos/crumbkit", "/repos/gone"]))
+    board.write("evals/by-name.json", experiment("B?", ["crumbkit"], mounts=["crumbkit/crumbkit"]))
+    board.write("evals/not-a-list.json", experiment("S?", ["crumbkit"], mounts="/repos/crumbkit"))
+    board.write("evals/old-key.json", experiment("O?", ["crumbkit"], repos=["/repos/crumbkit"]))
     assert checked(board) == {
         "/evals/mounted": None,
         "/evals/none": None,
         "/evals/missing": "board::ref::dangling",
         "/evals/by-name": "board::ref::malformed",
         "/evals/not-a-list": INVALID,
+        "/evals/old-key": INVALID,
     }
 
 
@@ -110,17 +112,17 @@ def test_board_refs_on_a_repositorys_mount_lists_the_evals_that_name_it_and_no_o
         # Each holds a file of its own; two identical repositories would share one commit and be one object.
         root, commit = repository(tmp_path, name, {"README.md": name})
         mount(board, f"repos/{name}.json", root, commit)
-    board.write("evals/a.json", experiment("A?", ["crumbkit"], repos=["/repos/crumbkit"]))
-    board.write("evals/b.json", experiment("B?", ["crumbkit", "clap"], repos=["/repos/clap", "/repos/crumbkit"]))
-    board.write("evals/c.json", experiment("C?", ["clap"], repos=["/repos/clap"]))
+    board.write("evals/a.json", experiment("A?", ["crumbkit"], mounts=["/repos/crumbkit"]))
+    board.write("evals/b.json", experiment("B?", ["crumbkit", "clap"], mounts=["/repos/clap", "/repos/crumbkit"]))
+    board.write("evals/c.json", experiment("C?", ["clap"], mounts=["/repos/clap"]))
     board.write("evals/d.json", experiment("D?", ["crumbkit"]))
 
     def naming(path: str) -> list[tuple[str, list[str]]]:
         report = board.json("refs", path)
         return sorted((link["logical"], link["pointers"]) for link in report["data"][0]["to"])
 
-    assert naming("/repos/crumbkit") == [("/evals/a", ["/repos/0"]), ("/evals/b", ["/repos/1"])]
-    assert naming("/repos/clap") == [("/evals/b", ["/repos/0"]), ("/evals/c", ["/repos/0"])]
+    assert naming("/repos/crumbkit") == [("/evals/a", ["/mounts/0"]), ("/evals/b", ["/mounts/1"])]
+    assert naming("/repos/clap") == [("/evals/b", ["/mounts/0"]), ("/evals/c", ["/mounts/0"])]
 
 
 def test_an_eval_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else(board: Board) -> None:

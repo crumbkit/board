@@ -161,6 +161,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         "asked": "2026-10-01T09:00:00Z",
         "status": "open",
         "options": [{"id": "a", "text": "A"}],
+        "mount": "/repos/dispatch",
         "context_path": "/projects/a/notes/background",
     });
     let answer = json!({
@@ -202,6 +203,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         found,
         [
             ("plans/question/v1", "/context_path".to_owned(), None),
+            ("plans/question/v1", "/mount".to_owned(), None),
             (
                 "plans/answer/v1",
                 "/question".to_owned(),
@@ -247,6 +249,38 @@ fn a_decision_keeps_board_paths_in_refs_and_web_addresses_in_urls() {
     let refused = schema.validate(&decision("urls", path)).unwrap_err();
     assert_eq!(refused.code(), board_model::Code::RecordInvalid);
     assert!(schema.validate(&decision("refs", path)).is_ok());
+}
+
+/// A question names its repository by a reference to the repository's
+/// mount; a GitHub owner/name there, or the old `repo` key, is refused.
+#[test]
+fn a_question_names_its_repository_by_a_reference_to_its_mount() {
+    let schema = board_validate::Schema::compile(Plans.schemas()[0].1.clone()).unwrap();
+    let question = |field: &str, value: &str| {
+        json!({
+            "$type": "plans/question/v1",
+            "question": "Which way?",
+            "session": "local_0a1b",
+            "asked": "2026-10-01T09:00:00Z",
+            "status": "open",
+            field: value,
+        })
+    };
+    let code = |field, value| {
+        schema
+            .validate(&question(field, value))
+            .err()
+            .map(|e| e.code())
+    };
+    assert_eq!(
+        code("mount", "example/app"),
+        Some(board_model::Code::RefMalformed)
+    );
+    assert_eq!(
+        code("repo", "/repos/app"),
+        Some(board_model::Code::RecordInvalid)
+    );
+    assert_eq!(code("mount", "/repos/app"), None);
 }
 
 /// The question schema declares every field `open` returns, and `open`'s

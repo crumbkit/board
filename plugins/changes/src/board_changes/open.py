@@ -31,7 +31,7 @@ def open_changes(request: CallRequest) -> dict[str, object]:
             {
                 "path": path,
                 "title": change["title"],
-                "repo": change["repo"],
+                "mount": change["mount"],
                 "phase": change["phase"],
                 "route": change.get("route"),
             }

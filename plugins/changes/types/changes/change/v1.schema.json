@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `repo`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
+  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
   "properties": {
     "$type": {
       "const": "changes/change/v1",
@@ -15,6 +15,11 @@
     "issue": {
       "pattern": "^https?://",
       "title": "Issue",
+      "type": "string"
+    },
+    "mount": {
+      "format": "board-ref",
+      "title": "Mount",
       "type": "string"
     },
     "phase": {
@@ -47,11 +52,6 @@
       "title": "Records",
       "type": "array"
     },
-    "repo": {
-      "format": "board-ref",
-      "title": "Repo",
-      "type": "string"
-    },
     "route": {
       "enum": [
         "owner",
@@ -70,7 +70,7 @@
   "required": [
     "$type",
     "title",
-    "repo",
+    "mount",
     "phase"
   ],
   "title": "ChangeRecord",

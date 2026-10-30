@@ -74,10 +74,10 @@ prompt. A longer text belongs in the prompt itself or in a separate brief.
 
 Prompts come from the board's own tree and from the mounts the board marks.
 `/prompts/repos.json` in the board's own tree is a `prompts/repos/v1` record
-that lists the marked mounts by path:
+that lists the marked mounts in `mounts`, as references:
 
 ```json
-{"$type": "prompts/repos/v1", "repos": ["/repos/notes-personal", "/repos/notes-work"]}
+{"$type": "prompts/repos/v1", "mounts": ["/repos/notes-personal", "/repos/notes-work"]}
 ```
 
 A mount counts only when its `board/mount/v1` pointer is in the board's own
@@ -130,7 +130,8 @@ that are not a valid prompt. `repos` names the repos read, and
 - `prompts::prompt::outside_scope`: the file is in a mount the board does not
   mark.
 - `prompts::repos::invalid`: `/prompts/repos.json` is not a valid
-  `prompts/repos/v1` record. `board check /prompts/repos` says what is wrong.
+  `prompts/repos/v1` record, or names a mount the board does not have.
+  `board check /prompts/repos` says what is wrong.
 - `prompts::runs_in::invalid`: the rendered `runs_in` is not an `owner/name`,
   or not an absolute path without a `..` segment. `fields.inputs` names the
   inputs it used.

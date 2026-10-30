@@ -31,9 +31,9 @@ pub struct QuestionRecord {
     /// `open` until an answer is recorded, then `answered`; `withdrawn` when
     /// the question no longer matters.
     pub status: Status,
-    /// The repository the question concerns, as a GitHub owner/name such as
-    /// `crumbkit/board`, when there is one.
-    pub repo: Option<String>,
+    /// The mount of the repository the question concerns, such as
+    /// `/repos/board`, when there is one.
+    pub mount: Option<Ref>,
     /// The answers the owner may choose from.
     #[serde(default)]
     pub options: Vec<Choice>,

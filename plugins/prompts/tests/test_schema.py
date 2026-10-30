@@ -2,7 +2,7 @@
 
 import json
 
-from conftest import Board, prompt
+from conftest import Board, mount, prompt
 
 
 def checked(board: Board) -> dict[str, str | None]:
@@ -81,8 +81,14 @@ def test_a_directory_starting_with_an_input_is_the_input_alone_or_followed_by_a_
     }
 
 
-def test_the_list_of_marked_repos_names_mount_paths(board: Board) -> None:
-    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", "repos": ["/repos/notes"]}))
-    assert board.run("check", "/prompts/repos").returncode == 0
-    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", "repos": ["repos/notes"]}))
-    assert board.run("check", "/prompts/repos").returncode != 0
+def marks_code(board: Board, field: str, at: str) -> str | None:
+    """`board check`'s code for a list of marked repos holding `at` under `field`; `None` when it is valid."""
+    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", field: [at]}))
+    return checked(board)["/prompts/repos"]
+
+
+def test_the_list_of_marked_repos_references_mounts_and_refuses_a_path_that_is_not_a_reference(board: Board) -> None:
+    mount(board, "notes", {"prompts/a.md": prompt("Notes")}, marked=False)
+    assert marks_code(board, "mounts", "/repos/notes") is None
+    assert marks_code(board, "mounts", "repos/notes") == "board::ref::malformed"
+    assert marks_code(board, "repos", "/repos/notes") == "board::record::invalid"

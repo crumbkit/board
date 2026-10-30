@@ -74,13 +74,13 @@ def check_suite(board: Board, repo: str) -> str | None:
     return suite_in(board, repo, files(board, repo, DOCS))
 
 
-def exists(board: Board, repo: str) -> None:
-    """Refuse a repository path that holds nothing with `changes::repo::not_found`."""
-    [answer] = board.refs([repo])
+def exists(board: Board, mount: str) -> None:
+    """Refuse a mount path that holds nothing with `changes::mount::not_found`."""
+    [answer] = board.refs([mount])
     if answer is None:
         raise PluginError(
-            "changes::repo::not_found",
-            f"nothing is at {repo}; name the repository by the logical path of its mount, such as /repos/<name>, "
+            "changes::mount::not_found",
+            f"nothing is at {mount}; name the repository by the logical path of its mount, such as /repos/<name>, "
             "and see what is mounted with `board ls /repos`",
-            {"repo": repo},
+            {"mount": mount},
         )

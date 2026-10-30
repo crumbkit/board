@@ -9,7 +9,7 @@
       "description": "The evals that name a subject, or that name a repository's mount or live in it, whatever their status, here and in mounted boards.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "The evals that name this `subject` or this `repo`, at most `limit` of them.\n\nA subject matches ignoring case for ASCII letters. A repo is a mount's path, such as `/repos/crumbkit`. It matches\nan eval whose `repos` include that exact path, or whose own path lies under it.",
+        "description": "The evals that name this `subject` or this `mount`, at most `limit` of them.\n\nA subject matches ignoring case for ASCII letters. A mount is a path such as `/repos/crumbkit`. It matches\nan eval whose `mounts` include that exact path, or whose own path lies under it.",
         "oneOf": [
           {
             "required": [
@@ -18,7 +18,7 @@
           },
           {
             "required": [
-              "repo"
+              "mount"
             ]
           }
         ],
@@ -31,16 +31,16 @@
             "title": "Limit",
             "type": "integer"
           },
-          "repo": {
+          "mount": {
             "default": null,
-            "description": "A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it; give subject or repo, not both.",
+            "description": "A repository's mount, such as /repos/crumbkit, to list the evals that name it or live in it; give subject or mount, not both.",
             "minLength": 1,
-            "title": "Repo",
+            "title": "Mount",
             "type": "string"
           },
           "subject": {
             "default": null,
-            "description": "The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case; give subject or repo, not both.",
+            "description": "The name of what is tested, such as crumbkit or clap, matched ignoring ASCII case; give subject or mount, not both.",
             "minLength": 1,
             "title": "Subject",
             "type": "string"

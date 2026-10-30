@@ -157,24 +157,24 @@ def test_a_mounted_eval_the_mounted_boards_schemas_refuse_is_not_listed_and_one_
     assert board.paths("about", {"subject": "gix"}) == ["/repos/repo/evals/good"]
 
 
-def test_about_a_repo_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
+def test_about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
     board: Board, tmp_path: Path
 ) -> None:
     crumbkit, crumbkit_commit = repository(
         tmp_path,
         "crumbkit",
         {
-            "evals/regression.json": experiment("Still green?", ["crumbkit"], repos=["/repos/crumbkit"]),
+            "evals/regression.json": experiment("Still green?", ["crumbkit"], mounts=["/repos/crumbkit"]),
         },
     )
     mount(board, "repos/crumbkit.json", crumbkit, crumbkit_commit)
     board.write(
         "evals/clap.json",
-        experiment("Does clap fit?", ["clap"], repos=["/repos/crumbkit"], decision="Pick a parser."),
+        experiment("Does clap fit?", ["clap"], mounts=["/repos/crumbkit"], decision="Pick a parser."),
     )
     board.write("evals/named-only.json", experiment("Named only?", ["crumbkit"]))
-    board.write("evals/other.json", experiment("Other repo?", ["clap"], repos=["/repos/clap"]))
-    output = board.call("about", {"repo": "/repos/crumbkit"})
+    board.write("evals/other.json", experiment("Other repo?", ["clap"], mounts=["/repos/clap"]))
+    output = board.call("about", {"mount": "/repos/crumbkit"})
     assert output["evals"] == [
         {
             "path": "/evals/clap",
@@ -194,47 +194,48 @@ def test_about_a_repo_lists_the_evals_that_name_its_mount_here_and_in_mounted_bo
         },
     ]
     assert (output["total"], output["truncated"]) == (2, False)
-    assert board.paths("about", {"repo": "/repos/crumb"}) == []
+    assert board.paths("about", {"mount": "/repos/crumb"}) == []
     assert board.paths("about", {"subject": "/repos/crumbkit"}) == []
     shutil.rmtree(board.cache)
-    assert board.call("about", {"repo": "/repos/crumbkit"}) == output
+    assert board.call("about", {"mount": "/repos/crumbkit"}) == output
 
 
-def test_about_a_repo_shows_at_most_its_limit_and_says_how_many_it_left_out(board: Board) -> None:
+def test_about_a_mount_shows_at_most_its_limit_and_says_how_many_it_left_out(board: Board) -> None:
     for name in ("a", "b", "c"):
-        board.write(f"evals/{name}.json", experiment(name.upper() + "?", repos=["/repos/x"]))
-    cut = board.call("about", {"repo": "/repos/x", "limit": 2})
+        board.write(f"evals/{name}.json", experiment(name.upper() + "?", mounts=["/repos/x"]))
+    cut = board.call("about", {"mount": "/repos/x", "limit": 2})
     assert [item["path"] for item in cut["evals"]] == ["/evals/a", "/evals/b"]
     assert (cut["total"], cut["truncated"]) == (3, True)
 
 
-def test_about_takes_exactly_one_of_subject_and_repo_and_board_refuses_anything_else_before_the_plugin_runs(
+def test_about_takes_exactly_one_of_subject_and_mount_and_board_refuses_anything_else_before_the_plugin_runs(
     board: Board,
 ) -> None:
-    board.write("evals/a.json", experiment("A?", ["gix"], repos=["/repos/x"]))
+    board.write("evals/a.json", experiment("A?", ["gix"], mounts=["/repos/x"]))
     for refused in (
         {},
         {"limit": 5},
-        {"subject": "gix", "repo": "/repos/x"},
-        {"repo": ""},
-        {"repo": "/repos/x", "x": 1},
+        {"subject": "gix", "mount": "/repos/x"},
+        {"repo": "/repos/x"},
+        {"mount": ""},
+        {"mount": "/repos/x", "x": 1},
     ):
         error = board.json("call", "evals.about", stdin=json.dumps(refused))
         assert error["code"] == "board::plugin::bad_input", (refused, error)
-    for admitted in ({"subject": "gix"}, {"repo": "/repos/x"}, {"repo": "/repos/x", "limit": 5}):
+    for admitted in ({"subject": "gix"}, {"mount": "/repos/x"}, {"mount": "/repos/x", "limit": 5}):
         assert board.call("about", admitted)["total"] == 1, admitted
 
 
-def test_about_a_repo_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount_sharing_its_prefix(
+def test_about_a_mount_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount_sharing_its_prefix(
     board: Board, tmp_path: Path
 ) -> None:
-    # Evals in a repository's own board leave `repos` out; they are found by where they live.
+    # Evals in a repository's own board leave `mounts` out; they are found by where they live.
     crumbkit, crumbkit_commit = repository(
         tmp_path,
         "crumbkit",
         {
             "evals/own.json": experiment("Own?", ["crumbkit"]),
-            "evals/names-clap.json": experiment("Names clap?", ["crumbkit"], repos=["/repos/clap"]),
+            "evals/names-clap.json": experiment("Names clap?", ["crumbkit"], mounts=["/repos/clap"]),
         },
     )
     sibling, sibling_commit = repository(tmp_path, "crumbkit-extra", {"evals/near.json": experiment("Near?")})
@@ -243,24 +244,24 @@ def test_about_a_repo_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_
     mount(board, "repos/crumbkit-extra.json", sibling, sibling_commit)
     mount(board, "repos/crumb_it.json", wild, wild_commit)
     inside = ["/repos/crumbkit/evals/names-clap", "/repos/crumbkit/evals/own"]
-    assert board.paths("about", {"repo": "/repos/crumbkit"}) == inside
-    assert board.paths("about", {"repo": "/repos/crumbkit-extra"}) == ["/repos/crumbkit-extra/evals/near"]
-    assert board.paths("about", {"repo": "/repos/crumb"}) == []
-    assert board.paths("about", {"repo": "/repos/crumb_it"}) == ["/repos/crumb_it/evals/wild"]
-    assert board.paths("about", {"repo": "/repos/crumb%"}) == []
-    assert board.paths("about", {"repo": "/repos/crumbkit/evals/own"}) == []
+    assert board.paths("about", {"mount": "/repos/crumbkit"}) == inside
+    assert board.paths("about", {"mount": "/repos/crumbkit-extra"}) == ["/repos/crumbkit-extra/evals/near"]
+    assert board.paths("about", {"mount": "/repos/crumb"}) == []
+    assert board.paths("about", {"mount": "/repos/crumb_it"}) == ["/repos/crumb_it/evals/wild"]
+    assert board.paths("about", {"mount": "/repos/crumb%"}) == []
+    assert board.paths("about", {"mount": "/repos/crumbkit/evals/own"}) == []
     shutil.rmtree(board.cache)
-    assert board.paths("about", {"repo": "/repos/crumbkit"}) == inside
+    assert board.paths("about", {"mount": "/repos/crumbkit"}) == inside
 
 
-def test_about_a_repo_counts_and_limits_the_evals_in_its_mount_with_those_that_name_it(
+def test_about_a_mount_counts_and_limits_the_evals_in_its_mount_with_those_that_name_it(
     board: Board, tmp_path: Path
 ) -> None:
     mounted, commit = repository(
-        tmp_path, "x", {"evals/b.json": experiment("B?"), "evals/c.json": experiment("C?", repos=["/repos/x"])}
+        tmp_path, "x", {"evals/b.json": experiment("B?"), "evals/c.json": experiment("C?", mounts=["/repos/x"])}
     )
     mount(board, "repos/x.json", mounted, commit)
-    board.write("evals/a.json", experiment("A?", repos=["/repos/x"]))
-    cut = board.call("about", {"repo": "/repos/x", "limit": 2})
+    board.write("evals/a.json", experiment("A?", mounts=["/repos/x"]))
+    cut = board.call("about", {"mount": "/repos/x", "limit": 2})
     assert [item["path"] for item in cut["evals"]] == ["/evals/a", "/repos/x/evals/b"]
     assert (cut["total"], cut["truncated"]) == (3, True)

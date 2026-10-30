@@ -1,6 +1,6 @@
 ---
 name: changes
-description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --repo /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # changes
@@ -10,7 +10,7 @@ The gate is the contract. `next` says what the current phase still lacks;
 
 ## Steps
 
-1. Run `board -C <board> call changes.start --repo /repos/<name> --title '<title>'`.
+1. Run `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`.
    Add `--handle @<you>` so the route reflects who owns what. Read every path
    in `docs`. Treat each `ask_first` pattern as a file to ask about before
    changing.
@@ -53,6 +53,6 @@ The gate is the contract. `next` says what the current phase still lacks;
   first.
 - `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
-- `changes::repo::not_found`: run `board ls /repos` to find the mount.
+- `changes::mount::not_found`: run `board ls /repos` to find the mount.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

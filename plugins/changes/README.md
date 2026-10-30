@@ -13,7 +13,7 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 {
   "$type": "changes/change/v1",
   "title": "Let a suite declare a timeout",
-  "repo": "/repos/board",
+  "mount": "/repos/board",
   "phase": "build",
   "route": "owner",
   "plan": "/changes/suite-timeout/plan.md",
@@ -22,20 +22,20 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 }
 ```
 
-- `title`, `repo` and `phase` are required.
+- `title`, `mount` and `phase` are required.
 - `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
   change early.
 - To drop a change, `board put` it with `phase` set to `dropped`.
 - `route`: `owner` (nobody else owns a CODEOWNERS pattern), `ask-first`
   (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
-- `repo`, `plan` and each of `records` are references, so `board check`
+- `mount`, `plan` and each of `records` are references, so `board check`
   reports one that reaches nothing.
 - `issue` and `pull_request` are URLs. `head` is the commit under test and
   review.
 
 ## Capabilities
 
-- `start --repo /repos/<name> --title '<title>' [--name <name>] [--handle @<you>]`
+- `start --mount /repos/<name> --title '<title>' [--name <name>] [--handle @<you>]`
   creates the change in `plan` and a plan with empty Problem, Outcome and
   Out of scope sections. It reads `CODEOWNERS` (`.github/`, root, `docs/`,
   the first found) to set the route and list `ask_first` patterns. `docs`
@@ -44,7 +44,7 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   inline-code path in them that holds a `runs/suite/v1`, looked up in the
   repository's own board first. Refuses an existing name
   (`changes::change::exists`) and a repository path holding nothing
-  (`changes::repo::not_found`).
+  (`changes::mount::not_found`).
 - `next --path /changes/<name>`: read-only. The phase, each gate check as
   `pass` or `missing` with a detail, and the instruction.
 - `attach --path /changes/<name> [--ref <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`

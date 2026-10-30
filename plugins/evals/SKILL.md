@@ -51,10 +51,10 @@ of the repository you are in before you test.
 ## Steps
 
 1. Before testing anything, look for earlier evals. Run
-   `board call evals.about --repo /repos/<name>` with the repository's
+   `board call evals.about --mount /repos/<name>` with the repository's
    mount, and `board call evals.about --subject <name>` with each thing you
-   will test. The `repo` lookup finds the evals that
-   name the mount in `repos` and the evals stored in the repository's own
+   will test. The `mount` lookup finds the evals that
+   name it in `mounts` and the evals stored in the repository's own
    board. It reads that board through the mount at the mount's `commit`, so
    it misses evals the repository added after that commit. To see them, run
    `git -C <path> fetch`, then `board mount update /repos/<name>`, which
@@ -68,12 +68,12 @@ of the repository you are in before you test.
    evidence, write `evals/eval/v1` with `board put /evals/<name> < eval.json`.
    Give the question, the subjects and `status: planned`. The subjects are
    the names of what is tested, such as `crumbkit` or `clap`. Put
-   `repos: ["/repos/<name>"]` with the mount of each repository the eval
-   concerns, so an agent working there finds it. A `repos` path is read in
+   `mounts: ["/repos/<name>"]` with the mount of each repository the eval
+   concerns, so an agent working there finds it. A `mounts` path is read in
    the board that holds the eval, and `board check` reports
    `board::ref::dangling` when that board has no such mount. In the
    repository's own board, or a shared board without the mount, leave
-   `repos` out.
+   `mounts` out.
 3. Say how it is tested in a `runs/suite/v1` at `/suites/<suite>`: the
    subjects, the method, the cases and the measures, each with its unit.
    `board ls /suites` lists the suites; reuse one that already tests this.

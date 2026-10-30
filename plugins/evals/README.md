@@ -18,7 +18,7 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
   "$type": "evals/eval/v1",
   "question": "Can gix resolve a ref faster than git2?",
   "subjects": ["gix", "git2"],
-  "repos": ["/repos/board"],
+  "mounts": ["/repos/board"],
   "suites": ["/suites/gix-refs"],
   "runs": ["/suites/gix-refs/runs/20261001T090000Z-a3f9"],
   "decision": "Which git library board-tree uses.",
@@ -30,10 +30,10 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 
 - `question`, `subjects` and `status` are required.
 - `subjects` are the names of what is tested, without versions, such as `gix`
-  or a model family. A repository the eval concerns goes in `repos`, by its
+  or a model family. A repository the eval concerns goes in `mounts`, by its
   mount, and never as `owner/name` here. `evals.about` matches subjects
   without regard to case. A run holds the versions used.
-- `repos` references the mount of each repository the eval concerns, such as
+- `mounts` references the mount of each repository the eval concerns, such as
   `/repos/board`, a `board/mount/v1` record at `/repos/board.json`. `check`
   reports `board::ref::dangling` for a path the board does not have, and
   `board refs /repos/board` lists the evals that name it.
@@ -54,8 +54,8 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 ## Capabilities
 
 `board call evals.about --subject gix` returns the evals that name that
-subject, whatever their status. `board call evals.about --repo /repos/board`
-returns the evals whose `repos` include that exact path, and the
+subject, whatever their status. `board call evals.about --mount /repos/board`
+returns the evals whose `mounts` include that exact path, and the
 evals stored in that mounted board, whose paths start with `/repos/board/`.
 Board refuses input with both or neither as `board::plugin::bad_input`.
 `board call evals.open` returns the evals whose status is

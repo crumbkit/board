@@ -145,8 +145,8 @@ def repo(board: Board, name: str, files: dict[str, str], *, schema: bool = True)
 def mark(board: Board, *roots: str) -> None:
     """Add `roots` to the board's `/prompts/repos.json`, the list of the mounts whose prompts it admits."""
     marks = board.root / "prompts" / "repos.json"
-    listed: list[str] = json.loads(marks.read_text())["repos"] if marks.exists() else []
-    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", "repos": [*listed, *roots]}))
+    listed: list[str] = json.loads(marks.read_text())["mounts"] if marks.exists() else []
+    board.write("prompts/repos.json", json.dumps({"$type": "prompts/repos/v1", "mounts": [*listed, *roots]}))
 
 
 def mount(board: Board, name: str, files: dict[str, str], *, marked: bool = True, schema: bool = True) -> Path:

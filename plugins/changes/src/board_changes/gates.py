@@ -136,7 +136,7 @@ def run_missing(observed: Observed) -> str | None:
     """
     head = observed.change.get("head")
     if observed.suite is None:
-        return f"no contributing doc in {observed.change['repo']} names a runs/suite/v1 path as its check suite"
+        return f"no contributing doc in {observed.change['mount']} names a runs/suite/v1 path as its check suite"
     if head is None:
         return "the change records no head commit; attach one with --head"
     runs = observed.suite + "/runs/"

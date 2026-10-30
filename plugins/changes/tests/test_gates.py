@@ -22,7 +22,7 @@ def observed(
     **fields: Any,  # noqa: ANN401 - the change's other fields
 ) -> Observed:
     """What a gate reads for a change in `phase` with a plan at /changes/t/plan.md."""
-    change: Change = {"$type": "changes/change/v1", "title": "T", "repo": "/repos/x", "phase": phase}
+    change: Change = {"$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": phase}
     change["plan"] = "/changes/t/plan.md"
     change.update(fields)  # type: ignore[typeddict-item]
     return Observed(path=PATH, change=change, records=records or {}, plan=plan, suite=suite)

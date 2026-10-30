@@ -87,7 +87,7 @@ def marks(plugin: str, rows: list[list[Any]]) -> set[str]:
             f"mount's prompts are admitted; run `board check /{MARKS}` to see what is wrong"
         )
         raise PluginError(f"{plugin}::repos::invalid", why, {"path": f"/{MARKS}", "code": code})
-    return {repos.root(str(at)) for at in json.loads(body)["repos"]}
+    return {repos.root(str(at)) for at in json.loads(body)["mounts"]}
 
 
 def get(request: CallRequest) -> dict[str, object]:
