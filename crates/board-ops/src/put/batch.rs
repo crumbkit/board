@@ -2,8 +2,8 @@
 //! one commit that writes and removes, in this board or through one mount (docs/architecture.md,
 //! Writes; docs/architecture/writes.md).
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Read};
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use board_model::{
 use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
 use serde_json::Value;
 
+use super::new::{Draw, REDRAWS, drawn, folder_text, redrawing, taken};
 use super::through::{Crossing, Sent};
 use super::{Expect, Failure, Prepared, PutError, PutReport, Removal, Schemas, Unmatched};
 use crate::board::Board;
@@ -27,7 +28,10 @@ pub const MAX_BATCH_LINES: usize = 10_000;
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawLine {
-    path: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    new: Option<String>,
     #[serde(default)]
     expect: Option<String>,
     #[serde(default)]
@@ -44,16 +48,20 @@ struct RawLine {
 pub(crate) type ReadLine = Result<(usize, Line), Lined>;
 
 /// One batch line, read but not yet checked: `shown` is its path as the
-/// caller gave it, and `path` where it is checked.
+/// caller gave it, and `path` where it is checked. `new` is the folder of a
+/// line that `new` names.
+#[derive(Clone)]
 pub(crate) struct Line {
     path: LogicalPath,
     shown: LogicalPath,
     expect: Expect,
     content: Content,
+    new: Option<LogicalPath>,
 }
 
 /// What a batch line writes: a record, or a file's bytes as given; or
 /// that it removes the file.
+#[derive(Clone)]
 enum Content {
     Record(Vec<u8>),
     File(Vec<u8>),
@@ -100,11 +108,11 @@ impl Line {
 }
 
 impl Board {
-    /// Reads JSON Lines of `{path, expect, record}`, `{path, expect, text}`
-    /// or `{path, expect, remove: true}` from `input`, then takes the lock,
-    /// waiting up to [`LOCK_WAIT`], checks every line and compares every
-    /// expect, and writes and removes them only if none refuses, with one
-    /// commit.
+    /// Reads JSON Lines of `{path, expect, record}`, `{path, expect, text}`,
+    /// `{path, expect, remove: true}` or `{new, record}` from `input`, then
+    /// takes the lock, waiting up to [`LOCK_WAIT`], checks every line and
+    /// compares every expect, and writes and removes them only if none
+    /// refuses, with one commit.
     pub fn put_batch(&self, input: &mut dyn BufRead) -> Result<PutReport, PutError> {
         self.put_batch_waiting(input, LOCK_WAIT)
     }
@@ -116,6 +124,17 @@ impl Board {
         input: &mut dyn BufRead,
         wait: Duration,
     ) -> Result<PutReport, PutError> {
+        self.put_batch_named(input, wait, &mut drawn())
+    }
+
+    /// [`Board::put_batch_waiting`], naming each `new` line with the names
+    /// `draw` gives, and drawing again while only those names are taken.
+    pub(crate) fn put_batch_named(
+        &self,
+        input: &mut dyn BufRead,
+        wait: Duration,
+        draw: Draw<'_>,
+    ) -> Result<PutReport, PutError> {
         let lines = Self::read_lines(input)?;
         if lines.is_empty() {
             return Ok(PutReport::new(Vec::new(), None));
@@ -126,6 +145,33 @@ impl Board {
                 refusals: lines.into_iter().filter_map(Result::err).collect(),
             });
         }
+        let new: HashMap<usize, LogicalPath> = (lines.iter().flatten())
+            .filter_map(|(number, line)| Some((*number, line.new.clone()?)))
+            .collect();
+        if new.is_empty() {
+            return self.write_lines(lines, wait);
+        }
+        let taken_only = |error: &PutError| match error {
+            PutError::Batch { code, refusals } => {
+                *code == Code::PutStale && refusals.iter().all(|line| new.contains_key(&line.line))
+            }
+            _ => false,
+        };
+        let put = || self.write_lines(named(&lines, &mut *draw)?, wait);
+        match redrawing(put, taken_only) {
+            Err(error) if taken_only(&error) => {
+                let refusals = error.fields().refusals;
+                let lines = refusals
+                    .iter()
+                    .map(|line| (line.line, taken(&new[&line.line])));
+                Err(refused_lines(&lines.collect::<Vec<_>>()))
+            }
+            put => put,
+        }
+    }
+
+    /// Writes `lines` as [`Board::put_batch_waiting`] says.
+    fn write_lines(&self, lines: Vec<ReadLine>, wait: Duration) -> Result<PutReport, PutError> {
         let lock = self.repository().lock(wait)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let (prepared, removals, absent, numbers) =
@@ -311,6 +357,7 @@ impl Board {
             shown,
             expect,
             content,
+            ..
         } = line;
         let bytes = match content {
             Content::File(bytes) => {
@@ -373,7 +420,7 @@ impl Board {
         let invalid = |reason: String| PutError::Line {
             code: Code::PutInvalid,
             reason: format!(
-                "the line is not {{path, expect, record}}, {{path, expect, text}} or {{path, expect, remove}}: {reason}"
+                "the line is not {{path, expect, record}}, {{path, expect, text}}, {{path, expect, remove}} or {{new, record}}: {reason}"
             ),
         };
         let value = parse_json(line).map_err(|error| PutError::Line {
@@ -382,10 +429,24 @@ impl Board {
         })?;
         let raw: RawLine =
             serde_json::from_value(value).map_err(|error| invalid(error.to_string()))?;
-        let path: LogicalPath = raw
-            .path
+        let (given, new) = match (&raw.path, &raw.new) {
+            (Some(path), None) => (path, false),
+            (None, Some(folder)) => (folder, true),
+            (Some(_), Some(_)) => return Err(invalid("it holds both path and new".to_owned())),
+            (None, None) => return Err(invalid("it holds no path or new".to_owned())),
+        };
+        let text = if new { folder_text(given) } else { given };
+        let path: LogicalPath = text
             .parse()
-            .map_err(|_| invalid(format!("{:?} is not a logical path", raw.path)))?;
+            .map_err(|_| invalid(format!("{given:?} is not a logical path")))?;
+        if new && !given.ends_with('/') {
+            return Err(PutError::NotAFolder { folder: path });
+        }
+        if new && (raw.expect.is_some() || raw.record.is_none()) {
+            return Err(invalid(
+                "a new line holds a record and no expect, since its name is new".to_owned(),
+            ));
+        }
         let expect = match raw.expect.as_deref() {
             None => Expect::Any,
             Some("none") => Expect::Absent,
@@ -425,11 +486,31 @@ impl Board {
         };
         Ok(Line {
             shown: path.clone(),
+            new: new.then(|| path.clone()),
             path,
-            expect,
+            expect: if new { Expect::Absent } else { expect },
             content,
         })
     }
+}
+
+/// `lines`, each `new` line with a path drawn under its folder, drawn
+/// again up to [`REDRAWS`] times when an earlier line has it.
+fn named(lines: &[ReadLine], draw: Draw<'_>) -> Result<Vec<ReadLine>, PutError> {
+    let mut held = HashSet::new();
+    let mut named = lines.to_vec();
+    for (_, line) in named.iter_mut().flatten() {
+        let Some(folder) = &line.new else { continue };
+        line.path = folder.join(&draw())?;
+        for _ in 0..REDRAWS {
+            if held.insert(line.path.clone()) {
+                break;
+            }
+            line.path = folder.join(&draw())?;
+        }
+        line.shown = line.path.clone();
+    }
+    Ok(named)
 }
 
 /// A refusal for each line in another board than the batch's lowest-numbered

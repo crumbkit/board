@@ -128,6 +128,14 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "only a record is put without `--file`, and nothing is put beneath a file; `board ls {}` shows what is there",
             path?
         ),
+        Code::PutNotAFolder => format!(
+            "add the trailing slash: `board put --new {}/`",
+            path?.as_str().trim_end_matches('/')
+        ),
+        Code::PutNameTaken => format!(
+            "run the put again, which draws new names; `board ls {}` lists the names taken",
+            path?
+        ),
         Code::RefMalformed => format!(
             "change the reference at `{}` to a logical path that starts with `/`, such as `/projects/p`",
             pointer?
@@ -463,6 +471,10 @@ fn generic(code: Code) -> &'static str {
         Code::PutHeadMoved => {
             "the files are written but not committed; check them with `git status` and commit them"
         }
+        Code::PutNotAFolder => {
+            "give --new a folder that ends in `/`, such as /projects/board/questions/"
+        }
+        Code::PutNameTaken => "run the put again, which draws new names",
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
         }

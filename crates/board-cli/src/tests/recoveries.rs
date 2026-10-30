@@ -346,12 +346,13 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     starts.untwinned(&nul, Code::PutNul, "put /notes/n.md --file", PUT_NUL);
     if !starts.twins {
         // Following these hints runs `mount update` or a put that succeeds.
-        let writing: [(Code, &str); 5] = [
+        let writing: [(Code, &str); 6] = [
             (Code::MountCommitMissing, "get /mount/commit/x"),
             (Code::PutThroughMount, "put /mount/m/new"),
             (Code::PutStale, "put /projects/p --expect none"),
             (Code::PutStale, &format!("put /projects/q {unknown}")),
             (Code::RmDirectory, "rm /projects"),
+            (Code::PutNotAFolder, "put --new /projects"),
         ];
         for (code, line) in writing {
             let own = starts.seed().stdin(project);
@@ -361,8 +362,13 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     }
     // The admitted lines write, so these twins have a board of their own.
     let own = starts.seed().stdin(project);
-    let pairs: [(Code, &str, &str); 7] = [
+    let pairs: [(Code, &str, &str); 8] = [
         (Code::PathMalformed, "put /.git/x", "put /projects/x"),
+        (
+            Code::PutNotAFolder,
+            "put --new /projects",
+            "put --new /projects/",
+        ),
         (
             Code::PutNotAFile,
             "put /projects/p --file",

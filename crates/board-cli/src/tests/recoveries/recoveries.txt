@@ -648,6 +648,11 @@ board rm /projects
   run board ls /projects
     exits 0
 
+board put --new /projects
+  fails with board::put::not_a_folder
+  run board put --new /projects/
+    exits 0
+
 board check
   fails with board::config::not_found
   run board init
@@ -829,6 +834,7 @@ codes that no start provokes:
   board::index::failed: the index fails only when SQLite does, even in memory; board-index/src/tests.rs maps SQLite's failures to it
   board::put::no_identity: whether git has an identity depends on the machine's configuration; board-cli/tests/identity.rs runs board in a child process with an empty HOME
   board::put::head_moved: HEAD must move in the middle of a put; board-tree/src/tests/commits.rs moves it between staging and commit
+  board::put::name_taken: every name a put draws must be taken, and the CLI draws from the clock and a random source; board-ops/src/put/tests/new.rs draws fixed names
   board::refs::target_changed: a target must change between the check and the read of its fields; board-cli/src/tests/refs.rs changes one between two answers
   board::sync::timeout: the CLI's 60-second git limit is too slow for a test; board-tree/src/tests/syncing.rs uses a 5-second limit
   board::sync::kept: a file must be edited during the sync's push; board-ops/src/sync/tests.rs edits one in a pre-push hook
