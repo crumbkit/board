@@ -60,6 +60,10 @@ struct Listed {
     /// differently, as its `type`, `path` and `code`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     schemas: Vec<Value>,
+    /// The directory of an installed plugin named like this built-in one,
+    /// which `call` and `plugin enable` refuse until it is removed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    shadows: Option<String>,
     /// `ok`, or `degraded` when the plugin has a problem. Text adds the
     /// problem's code, which JSON holds in `code`.
     status: Health,
@@ -117,13 +121,14 @@ impl Listed {
             metadata: manifest.map(|manifest| json!(manifest.metadata)),
             name: plugin.name.clone(),
             offers,
-            run: manifest.map(|manifest| manifest.run.clone()),
+            run: (manifest.map(|manifest| manifest.run.clone())).filter(|run| !run.is_empty()),
             schemas: (plugin.schemas.iter())
                 .map(|problem| {
                     json!({"type": problem.record_type.to_string(),
                         "path": problem.path, "code": problem.code.as_str()})
                 })
                 .collect(),
+            shadows: (plugin.shadows.as_ref()).map(|directory| directory.display().to_string()),
             status,
             version,
             line,
@@ -162,16 +167,17 @@ const LIST_REPORT: Document<Listing<Listed>> = Document::new(
 
 pub(super) const LIST: Leaf = Leaf::new(&["plugin", "list"]).document(LIST_REPORT);
 
-/// A refused manifest's message, or each schema problem as its code and
-/// file, after `: `; empty when none.
+/// A refused manifest's message, or the directory of an installed copy of a
+/// built-in plugin and each schema problem as its code and file, after
+/// `: `; empty when none.
 fn problems(plugin: &PluginEntry) -> String {
     if let PluginState::BadManifest(error) = &plugin.state {
         return format!(": {error}");
     }
-    let problems: Vec<String> = plugin
-        .schemas
-        .iter()
-        .map(|problem| format!("{} {}", problem.code, problem.path))
+    let shadows = (plugin.shadows.iter())
+        .map(|directory| format!("installed again at {}", directory.display()));
+    let problems: Vec<String> = shadows
+        .chain((plugin.schemas.iter()).map(|problem| format!("{} {}", problem.code, problem.path)))
         .collect();
     if problems.is_empty() {
         String::new()

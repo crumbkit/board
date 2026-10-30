@@ -1,0 +1,16 @@
+[package]
+name = "board-plugins"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+plans = ["dep:board-plugin-plans"]
+
+[dependencies]
+board-ops.workspace = true
+board-plugin-plans = { workspace = true, optional = true }
+
+[lints]
+workspace = true

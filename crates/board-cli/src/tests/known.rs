@@ -93,6 +93,7 @@ fn inside(
         browser: None,
         binary: None,
         cursor: None,
+        built_in: board_ops::BuiltIn::default(),
     };
     let arguments = std::iter::once(BINARY_NAME)
         .chain(arguments.iter().copied())
@@ -408,6 +409,7 @@ fn answering(xdg: &Scenario, signer: &Signer, arguments: &[&str], stdin: &[u8]) 
         browser: None,
         binary: None,
         cursor: None,
+        built_in: board_ops::BuiltIn::default(),
     };
     let arguments = [BINARY_NAME, "answer"]
         .iter()

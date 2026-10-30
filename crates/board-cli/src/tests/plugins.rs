@@ -105,7 +105,7 @@ fn plugin_list_fields_admits_description_and_refuses_an_unknown_field() {
     assert_eq!(
         text(&output.stderr),
         "error: --fields names an unknown field 'summary'\n  \
-         help:  use the valid fields: capabilities, code, description, enabled, message, metadata, name, offers, run, schemas, status, version\n  \
+         help:  use the valid fields: capabilities, code, description, enabled, message, metadata, name, offers, run, schemas, shadows, status, version\n  \
          code:  board::cli::usage\n"
     );
 }

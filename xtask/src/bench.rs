@@ -284,6 +284,7 @@ fn call(board: &Board, warm: &Path, path: OsString, host: &Host) -> Result<Durat
             ..Environment::default()
         },
         limits: Limits::default(),
+        cache: Some(warm),
     };
     let target: Target = "tasks.available".parse().map_err(|error| failed(&error))?;
     let once = || {

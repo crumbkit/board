@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::Path;
 
 use board_model::LogicalPath;
+use board_ops::BuiltIn;
 use board_plugin::{Capability, Target};
 use clap::builder::{BoolValueParser, StringValueParser};
 use clap::builder::{TypedValueParser as _, ValueParser};
@@ -94,8 +95,13 @@ pub(crate) fn resolve(
     }
 }
 
-/// The `<plugin>.<capability>` that `arguments` name after `call`.
-pub(crate) fn find(arguments: &[OsString], plugins: Option<&Path>) -> Option<Grafted> {
+/// The `<plugin>.<capability>` that `arguments` name after `call`, from the
+/// plugins `built_in` or, after them, those installed in `plugins`.
+pub(crate) fn find(
+    arguments: &[OsString],
+    built_in: BuiltIn,
+    plugins: Option<&Path>,
+) -> Option<Grafted> {
     let mut words = arguments.iter().filter_map(|word| word.to_str());
     words.position(|word| word == "call")?;
     let (name, plugin, capability) = words.find_map(|word| match word.parse() {
@@ -103,12 +109,18 @@ pub(crate) fn find(arguments: &[OsString], plugins: Option<&Path>) -> Option<Gra
         _ => None,
     })?;
     let offered = || {
-        let installed = board_plugin::installed(plugins?).ok()?.into_iter();
-        let manifest = installed
-            .into_iter()
-            .find(|entry| entry.name == plugin.as_str())?
-            .manifest
-            .ok()?;
+        let built = (built_in.0.iter()).map(|built| built.manifest());
+        let installed = || {
+            let installed = board_plugin::installed(plugins?).ok()?.into_iter();
+            installed
+                .into_iter()
+                .find(|entry| entry.name == plugin.as_str())?
+                .manifest
+                .ok()
+        };
+        let manifest = (built.into_iter())
+            .find(|manifest| manifest.name == plugin)
+            .or_else(installed)?;
         let offered = manifest
             .capabilities
             .iter()

@@ -5,7 +5,7 @@ use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 
 use board_model::Refusal;
-use board_ops::KnownBoards;
+use board_ops::{BuiltIn, KnownBoards};
 use board_plugin::Environment;
 
 /// What the binary learns from its environment.
@@ -46,6 +46,9 @@ pub(crate) struct Context {
     /// variables from the environment itself, the one exception to this
     /// module owning the environment.
     pub(crate) cursor: Option<usize>,
+    /// The plugins built into this binary, which the in-process tests leave
+    /// out.
+    pub(crate) built_in: BuiltIn,
 }
 
 impl Context {
@@ -100,6 +103,7 @@ impl Context {
             cursor: std::env::var("_CLAP_COMPLETE_INDEX")
                 .ok()
                 .and_then(|index| index.parse().ok()),
+            built_in: board_plugins::BUILT_IN,
         }
     }
 

@@ -584,3 +584,91 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
         (&Value::Null, &Value::Null)
     );
 }
+
+/// `fixture` answering the query `sql` with how many rows it returned and
+/// whether its index was in memory, or with the query's refusal.
+fn querying(sql: &'static str) -> Fixture {
+    answering(
+        "fixture",
+        Box::new(move |host| match host.query(sql, Limit::ALL) {
+            Ok(report) => {
+                Ok(json!({"count": report.rows.len(), "memory": report.memory.is_some()}))
+            }
+            Err(error) => Err(PluginError::board_refused(
+                "fixture",
+                "query",
+                &error.refusal(),
+            )),
+        }),
+    )
+}
+
+#[test]
+fn a_failing_host_query_reaches_the_call_as_the_plugins_board_refused_with_boards_code_and_its_twin_answers()
+ {
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    let bad = "SELECT logical FROM nowhere";
+    let expected = (open(&scenario).query(bad, 1, None, None))
+        .unwrap_err()
+        .refusal();
+    for (sql, refused) in [(bad, true), ("SELECT logical FROM entries", false)] {
+        let mut board = open(&scenario);
+        board.build_in(built(vec![querying(sql)]));
+        let called = call_base(&board, &Plugins::default());
+        if !refused {
+            assert!(called.unwrap().output["count"].as_u64().unwrap() > 0);
+            continue;
+        }
+        let refusal = called.unwrap_err().refusal();
+        assert_eq!(refusal.code.as_str(), "fixture::board::refused");
+        assert_eq!(refusal.fields["code"], json!(expected.code.as_str()));
+        let start = format!("`board query` refused with {}: ", expected.code.as_str());
+        assert!(refusal.message.starts_with(&start), "{}", refusal.message);
+    }
+}
+
+#[test]
+fn a_built_ins_queries_use_the_callers_index_cache_and_answer_as_a_cold_index_does() {
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    scenario.write("notes/a.md", Item::File("a\n"));
+    let cache = tempfile::tempdir().unwrap();
+    let call = |cache: Option<&std::path::Path>| {
+        let mut board = open(&scenario);
+        board.build_in(built(vec![querying("SELECT logical FROM entries")]));
+        let plugins = Plugins {
+            cache,
+            ..Plugins::default()
+        };
+        let output = call_base(&board, &plugins).unwrap().output;
+        (output, board.take_trace().work.get("parsed").copied())
+    };
+    let (cold, _) = call(None);
+    assert_eq!(
+        cold["memory"], true,
+        "without a cache the index is in memory"
+    );
+    let (first, _) = call(Some(cache.path()));
+    let (warm, parsed) = call(Some(cache.path()));
+    assert_eq!(parsed.unwrap_or(0), 0, "a warm index parses no blob again");
+    assert_eq!(
+        (&first["memory"], &warm["memory"]),
+        (&json!(false), &json!(false))
+    );
+    assert_eq!(warm["count"], cold["count"]);
+}
+
+#[test]
+fn plugin_find_leaves_out_a_built_in_plugin_installed_again_and_finds_one_installed_under_another_name()
+ {
+    for (installed, found) in [("fixture", 0), ("other", 2)] {
+        let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+        let data = Scenario::new();
+        install(&data, installed, true, BASE.reply);
+        let mut board = open(&scenario);
+        board.build_in(built(vec![fixture("fixture")]));
+        let directory = data.workdir().join("plugins");
+        let due = "due".parse().unwrap();
+        let report = (board.plugin_find(Some(&directory), Some(&due), &[])).unwrap();
+        assert_eq!(report.plugins.len(), found, "{installed}");
+    }
+}

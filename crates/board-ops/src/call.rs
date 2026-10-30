@@ -100,6 +100,7 @@ impl Board {
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
             },
+            cache: plugins.cache,
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;

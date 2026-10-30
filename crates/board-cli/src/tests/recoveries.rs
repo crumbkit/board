@@ -599,6 +599,29 @@ fn calling_plugins(starts: &mut Starts) {
     }
 }
 
+/// A call to plans, which the binary has built in, on a board that enables
+/// it and tasks, with a copy of plans installed too.
+#[cfg(feature = "plans")]
+fn installed_again(starts: &mut Starts) {
+    let xdg = Scenario::new();
+    let plugins = "xdg/data/board/plugins";
+    let plans = TASKS.replace(r#""tasks""#, r#""plans""#);
+    xdg.write(&format!("{plugins}/plans/plugin.json"), Item::File(&plans))
+        .write(&format!("{plugins}/tasks/plugin.json"), Item::File(TASKS))
+        .write(
+            &format!("{plugins}/tasks/run"),
+            Item::Executable(&answering(RESULT, 0)),
+        );
+    let place = starts
+        .share(enabling(r#""plans", "tasks""#))
+        .stdin("{}")
+        .xdg(xdg.workdir().join("xdg"));
+    starts.kept.push(Box::new(xdg));
+    let line = "call plans.open";
+    starts.add(&place, Code::PluginDuplicate, line);
+    starts.pair(&place, Code::PluginDuplicate, line, "call tasks.due");
+}
+
 /// A call to a plugin whose schema the board holds otherwise, and `plugin
 /// list` on a board lacking an enabled plugin's schema.
 fn enabling_plugins(starts: &mut Starts) {
@@ -913,6 +936,8 @@ fn starts(twins: bool) -> Starts {
     on_the_seed(&mut starts);
     unopened(&mut starts);
     calling_plugins(&mut starts);
+    #[cfg(feature = "plans")]
+    installed_again(&mut starts);
     enabling_plugins(&mut starts);
     apart(&mut starts);
     through_mounts(&mut starts);

@@ -1,6 +1,6 @@
 # plans
 
-A Board plugin for the questions an agent session asks the owner, the owner's
+A plugin built into Board for the questions an agent session asks the owner, the owner's
 answers, and the decisions sessions record. Each schema's description holds
 the full meaning of every field.
 
@@ -57,11 +57,16 @@ another, and it needs this plugin enabled there.
 [docs/plugins/plans-claude-code.md](../../docs/plugins/plans-claude-code.md)
 explains the design.
 
-## Installing
+## Enabling
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/plans"
+Board has the plugin built in, so nothing is installed:
+
     board plugin enable plans
+
+An older install at `${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/plans`
+makes `call` and `plugin enable` fail with `board::plugin::duplicate`.
+Remove it; it is usually a symlink to a checkout, so remove the link, not the
+checkout.
 
 `board plugin enable plans` writes the three schemas to `.board/types/plans/`,
 replacing any hand-kept copies, and names the plugin in `.board/board.json`.
@@ -70,9 +75,12 @@ such a change, run `board plugin enable plans` again.
 
 ## Developing
 
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the shipped schemas are
-generated from the models in `src/board_plans/models.py` by
-`board_plans.manifest`, and a test checks that the committed files match.
+The plugin is the crate `crates/board-plugin-plans`. It ships the schemas in
+its `types/` directory as they are, and builds the manifest's input and
+output schemas from its Rust types.
+
+This directory keeps the mod and a uv project that only tests the plugin
+through the real binary. The gates, which CI runs: `uv run ruff format --check .`,
+`uv run ruff check .`, `uv run pyright` and `uv run pytest`. The tests drive
+`$BOARD_BIN`, by default the workspace's `target/debug/board`, so build it
+first with `cargo build -p board-cli`.

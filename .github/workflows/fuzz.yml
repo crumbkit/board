@@ -18,6 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        package: [board-model]
         target:
           - json::tests::bolero_any_bytes_parse_to_a_value_that_parses_back_to_itself
           - json::tests::bolero_canonical_output_reads_back_as_the_same_value_and_bytes
@@ -25,6 +26,9 @@ jobs:
           - path::tests::bolero_any_text_is_admitted_exactly_or_refused_as_malformed
           - markdown::tests::bolero_any_bytes_give_links_that_name_paths
           - frontmatter::tests::bolero_any_bytes_give_frontmatter_or_an_error_with_its_code
+        include:
+          - package: board-plugin-plans
+            target: open::asked::tests::bolero_any_text_is_read_as_an_instant_only_in_the_shape_of_one
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -34,10 +38,10 @@ jobs:
       - run: rustup toolchain install nightly --profile minimal
       # Pinned so its flags cannot drift; -T is the total run time.
       - run: cargo +nightly install cargo-bolero --version 0.13.5 --locked
-      - run: cargo +nightly bolero test --package board-model -T 10min ${{ matrix.target }}
+      - run: cargo +nightly bolero test --package ${{ matrix.package }} -T 10min ${{ matrix.target }}
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: crashes-${{ strategy.job-index }}
-          path: crates/board-model/src/**/__fuzz__/*/crashes/
+          path: crates/${{ matrix.package }}/src/**/__fuzz__/*/crashes/
           if-no-files-found: ignore

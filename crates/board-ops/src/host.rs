@@ -2,10 +2,10 @@
 //! (docs/plugins/built-in.md).
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use board_model::{CapabilityName, RecordType};
+use board_model::{CapabilityName, RecordType, Refusal};
 use board_plugin::Manifest;
 use serde_json::{Map, Value};
 
@@ -69,9 +69,30 @@ pub struct PluginError {
     pub fields: Map<String, Value>,
 }
 
+impl PluginError {
+    /// `<plugin>::board::refused`: Board refused the `board <command>` a
+    /// plugin asked for with `refusal`. Its fields are the refusal's and
+    /// its `code`, as a process plugin's Python helper reports it.
+    pub fn board_refused(plugin: &str, command: &str, refusal: &Refusal) -> Self {
+        let code = refusal.code.as_str();
+        let then = (refusal.hint.as_deref().filter(|hint| !hint.is_empty()))
+            .map_or_else(String::new, |hint| format!("; {hint}"));
+        let mut fields = refusal.fields.clone();
+        fields.insert("code".to_owned(), Value::from(code));
+        Self {
+            code: format!("{plugin}::board::refused"),
+            message: format!(
+                "`board {command}` refused with {code}: {}{then}",
+                refusal.message
+            ),
+            fields,
+        }
+    }
+}
+
 /// The plugins built into a Board.
 #[derive(Clone, Copy, Default)]
-pub(crate) struct BuiltIn(pub(crate) &'static [&'static dyn Plugin]);
+pub struct BuiltIn(pub &'static [&'static dyn Plugin]);
 
 impl fmt::Debug for BuiltIn {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -86,11 +107,13 @@ impl fmt::Debug for BuiltIn {
 pub(crate) struct Hosted<'a> {
     pub(crate) board: &'a Board,
     pub(crate) settings: Settings,
+    /// Where the caller keeps the index.
+    pub(crate) cache: Option<&'a Path>,
 }
 
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
-        self.board.query(sql, limit.0, None, None)
+        self.board.query(sql, limit.0, None, self.cache)
     }
 
     fn settings(&self) -> &Settings {

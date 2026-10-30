@@ -9,10 +9,15 @@ publish.workspace = true
 name = "board"
 path = "src/main.rs"
 
+[features]
+default = ["plans"]
+plans = ["board-plugins/plans"]
+
 [dependencies]
 board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
+board-plugins.workspace = true
 board-serve.workspace = true
 board-tree.workspace = true
 clap.workspace = true

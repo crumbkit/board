@@ -18,6 +18,7 @@ pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
         directory: context.plugins.as_deref(),
         environment: context.environment.clone(),
         limits: Limits::default(),
+        cache: context.cache.as_deref(),
     }
 }
 use clap::{CommandFactory, Parser, Subcommand};
@@ -387,7 +388,7 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
-    let found = graft::find(&arguments, context.plugins.as_deref());
+    let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
@@ -451,6 +452,7 @@ pub(crate) fn run(
         Ok(opened) => opened,
         Err(refusal) => return render::refused(printer, *refusal),
     };
+    board.build_in(context.built_in.0);
     // Only a plugin's decide writes in the personal board.
     let asks = match cli.command {
         Command::Put { .. } | Command::Rm { .. } => Some(false),
