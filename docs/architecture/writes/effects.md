@@ -82,7 +82,8 @@ the op will write. They exclude each other.
 - The effect holds the content and its digest, so the id covers it. An
   approval admits only those bytes. Other content is another pending
   effect, and the earlier one stays open.
-- Content is at most 1 MiB. More is refused with `board::json::too_large`.
+- The input and the content as shown, a record's canonical JSON, are each
+  at most 1 MiB. More is refused with `board::json::too_large`.
 - Text that is not UTF-8 is refused with `board::json::not_utf8`.
 - A record that does not parse is refused with its `board::json::*` code,
   and one that is not an object with `board::record::not_a_record`. No
@@ -92,7 +93,9 @@ the op will write. They exclude each other.
   plugin that passes the content it will write.
 - The text `{}` plus a newline and the record `{}` share a digest and an
   id, but their statements differ, so one's signature does not verify the
-  other.
+  other. Once the owner approves a `--record` decide, a `--text` decide of
+  that record's canonical JSON finds the approval and is refused with
+  `board::settings::unsigned`; it is not asked again.
 
 ## `board answer`
 

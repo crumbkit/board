@@ -141,8 +141,9 @@ pub enum Shown {
     Record(Vec<u8>),
 }
 
-/// The record or text `shown` holds, refused when it is over `limit` bytes,
-/// text that is not UTF-8, or a record that is not one JSON object.
+/// The record or text `shown` holds, refused when its input or its shown
+/// form, the record's canonical JSON, is over `limit` bytes, when text is
+/// not UTF-8, or when a record is not one JSON object.
 pub(super) fn shows(
     shown: Option<&Shown>,
     limit: usize,
@@ -156,8 +157,8 @@ pub(super) fn shows(
         let why = format!("the {what} to decide on {why}");
         EffectError::Unshown { code, why }
     };
+    let over = format!("is over the limit of {limit} bytes");
     if bytes.len() > limit {
-        let over = format!("is {} bytes, over the limit of {limit}", bytes.len());
         return Err(unshown(Code::JsonTooLarge, &over));
     }
     if let Some(Shown::Text(bytes)) = shown {
@@ -165,9 +166,14 @@ pub(super) fn shows(
         return text.map_err(|_| unshown(Code::JsonNotUtf8, "is not UTF-8"));
     }
     match parse_json(bytes) {
-        Ok(record) if record.is_object() => Ok((Some(record), None)),
-        Ok(_) => Err(unshown(Code::RecordNotARecord, "is not a JSON object")),
-        Err(error) => Err(unshown(error.code(), &format!("is not JSON: {error}"))),
+        Ok(record) if !record.is_object() => {
+            Err(unshown(Code::RecordNotARecord, "is not a JSON object"))
+        }
+        Ok(record) if canonical_json(&record).as_bytes().len() > limit => {
+            Err(unshown(Code::JsonTooLarge, &over))
+        }
+        Ok(record) => Ok((Some(record), None)),
+        Err(error) => Err(unshown(error.code(), &format!("is refused: {error}"))),
     }
 }
 
