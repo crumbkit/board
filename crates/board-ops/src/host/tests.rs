@@ -474,6 +474,10 @@ fn a_plugin_both_built_in_and_installed_is_refused_and_one_installed_under_anoth
 #[test]
 fn a_built_in_plugin_is_listed_found_and_enabled_as_an_installed_one_is() {
     let scenario = board(&[], &[], Holds::Same);
+    scenario.write(
+        ".git/config",
+        Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+    );
     let plugins = built(vec![fixture("fixture")]);
     let mut board = open(&scenario);
     board.build_in(plugins);

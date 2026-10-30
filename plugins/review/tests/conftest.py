@@ -161,9 +161,15 @@ def _personal(fixture: Repo) -> None:
     fixture.personal.mkdir()
     (fixture.personal / ".board").mkdir()
     (fixture.personal / ".board" / "board.json").write_text(json.dumps({"$type": "board/config/v1"}))
-    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
-    for arguments in (["init", "-q", "-b", "main"], ["add", "."], ["commit", "-qm", "personal"]):
-        subprocess.run([*git, *arguments], cwd=fixture.personal, env=os.environ | ISOLATED, check=True)
+    # The identity goes in the repository's own config, so Board's commits to it need no global one.
+    for arguments in (
+        ["init", "-q", "-b", "main"],
+        ["config", "user.name", "t"],
+        ["config", "user.email", "t@t"],
+        ["add", "."],
+        ["commit", "-qm", "personal"],
+    ):
+        subprocess.run(["git", *arguments], cwd=fixture.personal, env=os.environ | ISOLATED, check=True)
     fixture.bin.mkdir()
     for name, script in (("board", SHIM.format(board=board_binary())), ("gh", GH.format(url=COMMENT_URL))):
         (fixture.bin / name).write_text(script)
