@@ -67,20 +67,20 @@ pub(crate) fn put(
 }
 
 /// `call`: the target, or the capability alone, with the input as flags or,
-/// when no flag is given, on stdin. A terminal on stdin, or nothing read
-/// from it, is no input.
+/// when no flag is given, on `stdin` unless the call reads none. A terminal
+/// on stdin, or nothing read from it, is no input.
 pub(crate) fn call(
     board: &Board,
     context: &Context,
     printer: Printer,
     target: &Target,
     flags: Option<Map<String, Value>>,
-    stdin: &mut dyn Read,
+    stdin: Option<&mut dyn Read>,
 ) -> Output {
-    let read = match flags.filter(|flags| !flags.is_empty()) {
-        Some(flags) => Ok(Value::Object(flags).to_string().into_bytes()),
-        None if context.terminal => Ok(Vec::new()),
-        None => bounded(stdin),
+    let read = match (flags.filter(|flags| !flags.is_empty()), stdin) {
+        (Some(flags), _) => Ok(Value::Object(flags).to_string().into_bytes()),
+        (None, Some(stdin)) if !context.terminal => bounded(stdin),
+        (None, _) => Ok(Vec::new()),
     };
     let input = match read.map_err(|error| unreadable(Code::PluginBadInput, &error)) {
         Ok(input) if input.trim_ascii().is_empty() => b"{}".to_vec(),

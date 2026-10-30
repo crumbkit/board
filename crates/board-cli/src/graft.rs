@@ -22,6 +22,8 @@ use crate::run::{Cli, Prefix};
 pub(crate) struct Grafted {
     name: String,
     offered: Option<(String, Vec<Flag>, String)>,
+    /// Whether an input property can go only on stdin.
+    stdin: bool,
 }
 
 /// The long flags that a grafted call takes for itself, which no input
@@ -32,6 +34,9 @@ pub(crate) const RESERVED_FLAGS: &[&str] =
 /// How a grafted call takes stdin, as its help says.
 const STDIN: &str =
     "Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.";
+
+/// How a grafted call whose input properties are all flags takes stdin.
+const NO_STDIN: &str = "Every input property is a flag, so Board does not read stdin.";
 
 /// The format that marks a string input property as a logical path, which
 /// a flag gives relative to the run's prefix.
@@ -130,16 +135,32 @@ pub(crate) fn find(
             .map(|(name, _)| name.as_str()))
         .filter(|name| flags.iter().all(|(flag, ..)| flag != name))
         .collect();
-        let stdin = match rest.as_slice() {
-            [] => STDIN.to_owned(),
+        // A schema that admits properties it does not name takes them only on stdin.
+        let open = document.get("additionalProperties") != Some(&Value::Bool(false))
+            || document.get("patternProperties").is_some();
+        let help = match rest.as_slice() {
+            [] if open => STDIN.to_owned(),
+            [] => NO_STDIN.to_owned(),
             rest => format!("{STDIN} These properties go on stdin: {}.", rest.join(", ")),
         };
-        Some((offered.description.clone(), flags, stdin))
+        let stdin = open || !rest.is_empty();
+        Some(((offered.description.clone(), flags, help), stdin))
     };
+    // Board refuses a target nobody offers, whatever its input.
+    let (offered, stdin) =
+        offered().map_or((None, false), |(offered, stdin)| (Some(offered), stdin));
     Some(Grafted {
         name: name.to_owned(),
-        offered: offered(),
+        offered,
+        stdin,
     })
+}
+
+/// Whether the call `found` names reads stdin when no flag is given: when
+/// it names no target, or a capability whose schema admits a property that
+/// is not a flag.
+pub(crate) fn reads_stdin(found: Option<&Grafted>) -> bool {
+    found.is_none_or(|found| found.stdin)
 }
 
 /// Each top-level string, integer, number or boolean input property whose
@@ -199,11 +220,12 @@ pub(crate) fn command(grafted: Option<&Grafted>) -> Command {
                     Arg::new(name.clone())
                         .long(name.clone())
                         .value_parser(parser.clone())
+                        .allow_negative_numbers(true)
                         .help(help.clone()),
                 )
             })
         }
-        // Its words are values, so a flag among them keeps stdin unread.
+        // Its words are values; Board refuses the target whatever they are.
         None => leaf.disable_help_flag(true).arg(
             Arg::new("words")
                 .value_parser(StringValueParser::new().map(Value::from))

@@ -107,5 +107,5 @@ def test_start_refuses_a_repository_path_that_holds_nothing_and_admits_a_mounted
 
 def test_start_refuses_the_old_repo_input_and_admits_the_same_path_as_mount(board: Board) -> None:
     mount = mount_repo(board, {"README.md": "x"})
-    assert board.refusal("start", {"repo": mount, "title": "T"})["code"] == "board::plugin::bad_input"
+    assert board.refusal("start", {"repo": mount, "title": "T"})["code"] == "board::cli::usage"
     assert board.call("start", {"mount": mount, "title": "T"})["path"] == "/changes/t"

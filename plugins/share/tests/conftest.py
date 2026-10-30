@@ -30,6 +30,17 @@ def git(root: Path, *arguments: str) -> str:
     return ran.stdout.strip()
 
 
+def flags(given: dict[str, Any]) -> list[str]:
+    """`given` as the flags of `board call`; a value no flag can give, such as None or a list, is refused."""
+    parts: list[str] = []
+    for name, value in given.items():
+        if not isinstance(value, str | int | float):
+            message = f"{name} is {value!r}, which no flag can give"
+            raise TypeError(message)
+        parts += [f"--{name}", json.dumps(value) if isinstance(value, bool) else str(value)]
+    return parts
+
+
 @dataclass(frozen=True)
 class Boards:
     """`personal`, which mounts `team` at `/team`, and the plugin directory and cache their runs use."""
@@ -69,7 +80,7 @@ class Boards:
 
     def share(self, **given: Any) -> tuple[int, dict[str, Any]]:  # noqa: ANN401 - the call's input, as JSON
         """`board --json call share.to` from the personal board: its exit code and its document."""
-        ran = self.run(self.personal, "--json", "call", "share.to", stdin=json.dumps({"to": "/team", **given}))
+        ran = self.run(self.personal, "--json", "call", "share.to", *flags({"to": "/team", **given}))
         document: dict[str, Any] = json.loads(ran.stdout)
         return ran.returncode, document
 

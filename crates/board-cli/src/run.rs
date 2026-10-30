@@ -285,10 +285,13 @@ Examples:
     #[command(
         group = clap::ArgGroup::new("callee").required(true).args(["target", "capability"]),
         after_help = "\
-Board reads stdin only when no flag is given.
+Board reads stdin only when no flag is given and the capability admits an
+input property that is not a flag; `-h` on the capability says which. With
+--capability, the input goes on stdin.
 
 Examples:
-  board call tasks.available < input.json
+  board call tasks.available
+  board call tasks.add < input.json
   board call --capability available < input.json
   board call tasks.available -h")]
     Call {
@@ -474,6 +477,7 @@ pub(crate) fn run(
     let output = match grafted {
         Some((target, mut flags)) => {
             graft::resolve(found.as_ref(), &mut flags, prefix);
+            let stdin = graft::reads_stdin(found.as_ref()).then_some(stdin);
             call(&board, context, printer, &target, Some(flags), stdin)
         }
         None => match cli.command {
@@ -583,7 +587,7 @@ fn command(
                 (None, Some(capability)) => Target::Capability(capability),
                 (None, None) => unreachable!("clap requires a target or a capability"),
             };
-            call(board, context, printer, &target, None, stdin)
+            call(board, context, printer, &target, None, Some(stdin))
         }
         Command::Serve { idle } => crate::ui::serve(board, context, printer, idle),
         Command::Ui(command) => crate::ui::ui(command, board, context, printer, prefix),

@@ -1,6 +1,5 @@
 """The `open` capability, through the real `board`."""
 
-import json
 import shutil
 from pathlib import Path
 
@@ -59,9 +58,7 @@ def test_open_shows_at_most_its_limit_and_says_how_many_it_left_out(board: Board
     assert [item["path"] for item in cut["evals"]] == ["/evals/a", "/evals/b"]
     assert (cut["total"], cut["truncated"]) == (3, True)
     for refused in (0, 101):
-        assert (
-            board.json("call", "evals.open", stdin=json.dumps({"limit": refused}))["code"] == "board::plugin::bad_input"
-        )
+        assert board.json("call", "evals.open", "--limit", str(refused))["code"] == "board::plugin::bad_input"
     for admitted in (1, 100):
         assert board.call("open", {"limit": admitted})["total"] == len("abc")
 

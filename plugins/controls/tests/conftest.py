@@ -19,6 +19,17 @@ def board_binary() -> Path:
     return Path(os.environ.get("BOARD_BIN", REPOSITORY / "target" / "debug" / "board")).resolve()
 
 
+def flags(given: dict[str, Any]) -> list[str]:
+    """`given` as the flags of `board call`; a value no flag can give, such as None or a list, is refused."""
+    parts: list[str] = []
+    for name, value in given.items():
+        if not isinstance(value, str | int | float):
+            message = f"{name} is {value!r}, which no flag can give"
+            raise TypeError(message)
+        parts += [f"--{name}", json.dumps(value) if isinstance(value, bool) else str(value)]
+    return parts
+
+
 @dataclass(frozen=True)
 class Board:
     """A git repository holding a board, with this plugin installed for it alone."""
@@ -62,7 +73,7 @@ class Board:
 
     def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
         """Run `board --json call controls.<capability>` and read its one document."""
-        ran = self.run("--json", "call", f"controls.{capability}", stdin=json.dumps(given))
+        ran = self.run("--json", "call", f"controls.{capability}", *flags(given))
         document: dict[str, Any] = json.loads(ran.stdout)
         return document
 
