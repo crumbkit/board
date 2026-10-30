@@ -3,9 +3,11 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use board_model::ObjectId;
 use proptest::prelude::*;
+use tempfile::TempDir;
 
 use crate::{Item, Scenario};
 
@@ -135,6 +137,7 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             vec![
                 "MOUNT first".to_owned(),
                 "MOUNT second".to_owned(),
+                "MOUNT third".to_owned(),
                 "MOUNT gone".to_owned(),
             ],
         ),
@@ -157,19 +160,165 @@ pub fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
     choices
 }
 
+/// Where the library repository is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Place {
+    /// Where it was made, beside the inner repository.
+    Home,
+    /// One directory deeper, where its relative nested mount names nothing.
+    Moved,
+    /// Nowhere a pointer names.
+    Gone,
+}
+
+/// One change to a generated board or to the repositories it mounts.
+#[derive(Clone, Debug)]
+pub enum Step {
+    /// Writes the files [`generated`] chose over the working tree.
+    Write(Vec<Option<usize>>),
+    /// Puts the library in a place, and rewrites the pointers to name it
+    /// unless it is gone.
+    Library(Place),
+    /// Deletes the inner repository, or brings it back.
+    InnerGone(bool),
+    /// Loses the first commit of the library and of the inner board, or
+    /// brings them back.
+    FirstLost(bool),
+    /// Mounts the board holding a long path under a route short enough to
+    /// name it, under one too long, or nowhere.
+    LongRoute(Option<bool>),
+}
+
+/// A sequence of one to eight changes.
+pub fn steps() -> impl Strategy<Value = Vec<Step>> {
+    let place = prop_oneof![Just(Place::Home), Just(Place::Moved), Just(Place::Gone)];
+    let step = prop_oneof![
+        1 => generated().prop_map(Step::Write),
+        1 => place.prop_map(Step::Library),
+        1 => any::<bool>().prop_map(Step::InnerGone),
+        1 => any::<bool>().prop_map(Step::FirstLost),
+        1 => any::<Option<bool>>().prop_map(Step::LongRoute),
+    ];
+    prop::collection::vec(step, 1..9)
+}
+
+/// A pointer that mounts `commit` from the repository at `repo`.
+fn mount(repo: &Path, commit: ObjectId) -> String {
+    let repo = repo.to_str().unwrap();
+    format!(
+        r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
+    )
+}
+
+/// A path that fits under `/l` and not under `/longer/route`: nineteen
+/// segments of 204 bytes and one of 195.
+fn long_path() -> String {
+    let mut segments = vec!["a".repeat(204); 19];
+    segments.push("b".repeat(195));
+    format!("{}.json", segments.join("/"))
+}
+
+/// Where the repositories a [`Generated`] board mounts are, so a step can
+/// move them and the board can put them back.
+#[derive(Debug)]
+struct Places {
+    /// Holds the library when it is moved, and whatever is gone.
+    aside: TempDir,
+    library: PathBuf,
+    inner: PathBuf,
+    place: Place,
+    inner_gone: bool,
+    /// The first commits of the library and of the inner board.
+    firsts: [ObjectId; 2],
+    first_lost: bool,
+}
+
+impl Places {
+    fn library_at(&self) -> PathBuf {
+        match self.place {
+            Place::Home => self.library.clone(),
+            Place::Moved => self.aside.path().join("moved").join("library"),
+            Place::Gone => self.aside.path().join("library"),
+        }
+    }
+
+    fn put(&mut self, place: Place) {
+        let from = self.library_at();
+        self.place = place;
+        let to = self.library_at();
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::rename(from, to).unwrap();
+    }
+
+    fn inner_at(&self) -> PathBuf {
+        if self.inner_gone {
+            self.aside.path().join("inner")
+        } else {
+            self.inner.clone()
+        }
+    }
+
+    fn inner(&mut self, gone: bool) {
+        let from = self.inner_at();
+        self.inner_gone = gone;
+        fs::rename(from, self.inner_at()).unwrap();
+    }
+
+    /// Moves the loose object of each first commit out of its repository,
+    /// wherever that is, or back in.
+    fn lose(&mut self, lost: bool) {
+        if lost == self.first_lost {
+            return;
+        }
+        let repositories = [self.library_at(), self.inner_at()];
+        for (index, (repository, commit)) in repositories.iter().zip(self.firsts).enumerate() {
+            let hex = commit.to_string();
+            let object = repository
+                .join(".git/objects")
+                .join(&hex[..2])
+                .join(&hex[2..]);
+            let aside = self.aside.path().join(format!("lost-{index}"));
+            let (from, to) = if lost {
+                (&object, &aside)
+            } else {
+                (&aside, &object)
+            };
+            fs::rename(from, to).unwrap();
+        }
+        self.first_lost = lost;
+    }
+}
+
 /// A board with `config` as its `board.json` and the files [`generated`]
-/// chose, and a library board with two commits for it to mount. The second
-/// adds a valid task and an invalid one, makes its project a link to
+/// chose, and a library board with three commits for it to mount. The
+/// second adds a valid task and an invalid one, makes its project a link to
 /// another, changes the links of its note, and mounts an inner board that
-/// a task refers into.
+/// a task refers into. The third mounts the inner board's next commit by a
+/// relative path. A third board holds a long path, which [`Step::LongRoute`]
+/// mounts.
 #[derive(Debug)]
 pub struct Generated {
     scenario: Scenario,
-    library: Scenario,
+    _library: Scenario,
     _inner: Scenario,
+    long_board: Scenario,
     first: ObjectId,
     second: ObjectId,
+    third: ObjectId,
+    long: ObjectId,
     present: BTreeMap<String, bool>,
+    choice: Vec<Option<usize>>,
+    places: Places,
+}
+
+impl Drop for Generated {
+    fn drop(&mut self) {
+        // Puts every repository back, so each temporary directory deletes
+        // what it made.
+        self.places.lose(false);
+        self.places.inner(false);
+        self.places.put(Place::Home);
+    }
 }
 
 impl Generated {
@@ -204,13 +353,37 @@ impl Generated {
         more.push(("tasks/ok.json", &ok));
         more.push(("tasks/invalid.json", r#"{"$type": "lr/task/v1"}"#));
         let second = library.commit(&more);
+        let next = inner.commit(&[("projects/p.json", project), ("projects/r.json", project)]);
+        let name = inner.workdir().file_name().unwrap().to_str().unwrap();
+        let to_next = format!(
+            r#"{{"$type": "board/mount/v1", "repo": "../{name}", "follow": "main", "commit": "{next}"}}"#
+        );
+        more[2] = ("inner.json", &to_next);
+        let third = library.commit(&more);
+        let long_board = Scenario::new();
+        let path = long_path();
+        let long = long_board.commit(&[schemas[1], (path.as_str(), project)]);
+        let places = Places {
+            aside: tempfile::tempdir().unwrap(),
+            library: library.workdir().to_path_buf(),
+            inner: inner.workdir().to_path_buf(),
+            place: Place::Home,
+            inner_gone: false,
+            firsts: [first, inner_commit],
+            first_lost: false,
+        };
         let mut generated = Self {
             scenario: Scenario::new(),
-            library,
+            _library: library,
             _inner: inner,
+            long_board,
             first,
             second,
+            third,
+            long,
             present: BTreeMap::new(),
+            choice: Vec::new(),
+            places,
         };
         generated
             .scenario
@@ -240,8 +413,36 @@ impl Generated {
         &self.scenario
     }
 
+    /// Makes one change.
+    pub fn apply(&mut self, step: &Step) {
+        match step {
+            Step::Write(choice) => self.write(choice),
+            Step::Library(place) => {
+                self.places.put(*place);
+                if *place != Place::Gone {
+                    let choice = self.choice.clone();
+                    self.write(&choice);
+                }
+            }
+            Step::InnerGone(gone) => self.places.inner(*gone),
+            Step::FirstLost(lost) => self.places.lose(*lost),
+            Step::LongRoute(too_long) => {
+                let pointer = mount(self.long_board.workdir(), self.long);
+                for (path, at) in [("l.json", Some(false)), ("longer/route.json", Some(true))] {
+                    if *too_long == at {
+                        self.scenario.write(path, Item::File(&pointer));
+                    } else {
+                        // The pointer may not be there.
+                        let _ = fs::remove_file(self.scenario.workdir().join(path));
+                    }
+                }
+            }
+        }
+    }
+
     /// Writes the files `choice` names over whatever the working tree holds.
     pub fn write(&mut self, choice: &[Option<usize>]) {
+        self.choice = choice.to_vec();
         for ((path, contents), chosen) in variants().into_iter().zip(choice) {
             let was = self.present.insert(path.to_owned(), chosen.is_some()) == Some(true);
             match chosen {
@@ -267,15 +468,12 @@ impl Generated {
 
     /// `content` with a mount placeholder made real.
     fn materialize(&self, content: &str) -> String {
-        let mount = |repo: &str, commit: ObjectId| {
-            format!(
-                r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
-            )
-        };
+        let library = self.places.library_at();
         match content {
-            "MOUNT first" => mount(&self.library.path(), self.first),
-            "MOUNT second" => mount(&self.library.path(), self.second),
-            "MOUNT gone" => mount("/no/such/repository", self.first),
+            "MOUNT first" => mount(&library, self.first),
+            "MOUNT second" => mount(&library, self.second),
+            "MOUNT third" => mount(&library, self.third),
+            "MOUNT gone" => mount(Path::new("/no/such/repository"), self.first),
             _ => content.to_owned(),
         }
     }
