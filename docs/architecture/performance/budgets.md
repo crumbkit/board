@@ -13,7 +13,7 @@ the other reference board.
 | `board ls` of a record's directory, warm | 500 ms |
 | `board check`, warm, nothing changed | 500 ms |
 | simple `board query`, warm | 500 ms |
-| simple `board query`, warm, 20 mounts | 4 s |
+| simple `board query`, warm, 20 mounts | 200 ms |
 | full index, cold | 1 s |
 | `board call tasks.available --repo /`, warm | 500 ms |
 | `board put` of a small record, warm | 300 ms |
@@ -50,9 +50,8 @@ mounted repositories, one for each 500 records, and mounts each at
 `/repos/r<n>`. Each repository is a generated board of a fortieth as many
 tasks, with 100 directories of source files. At 10,000 records the board
 decides about 13,300 entries, 11,100 of them mounted. Its budget is the
-measured median on an M-series laptop, 3.7 s, rounded up; the row shows
-that deciding the references into mounts costs more than the rest of the
-board. The generated repositories hold their objects loose, from one
+measured median on an M-series laptop, about 103 ms, doubled and rounded
+up. The generated repositories hold their objects loose, from one
 commit, where a real repository's are mostly packed. On a board given with
 `--board`, bench skips the row and says why.
 
@@ -94,3 +93,4 @@ enforced yet:
 | --- | --- |
 | `board check`, warm, nothing changed | 100 ms |
 | simple `board query`, warm | 100 ms |
+| `board call plans.open --limit 20`, warm, on the owner's board | 50 ms |
