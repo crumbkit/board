@@ -99,7 +99,8 @@ impl KnownBoards {
             return Ok(None);
         };
         let canonical = root.canonicalize().ok();
-        let found = match Board::open(&root, home.map(Path::to_path_buf)) {
+        // Opened only to learn its root, so no build decides for it.
+        let found = match Board::open(&root, home.map(Path::to_path_buf), "") {
             Ok(board) => Some(board.repository().path().to_path_buf()),
             Err(OpenError::NotFound { .. } | OpenError::NoRepository { .. }) => None,
             Err(error) => {
@@ -153,12 +154,12 @@ pub fn asker(
 /// holds `start` and `start` is in a git repository, since outside one no
 /// mount can hold it.
 pub fn open(
-    start: &Path,
+    (start, build): (&Path, &'static str),
     home: Option<&Path>,
     cache: Option<&Path>,
     known: impl FnOnce() -> Result<KnownBoards, Box<Refusal>>,
 ) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
-    let error = match Board::open(start, home.map(Path::to_path_buf)) {
+    let error = match Board::open(start, home.map(Path::to_path_buf), build) {
         Ok(board) => return Ok((board, board_tree::within(start))),
         Err(error) => error,
     };
@@ -167,7 +168,8 @@ pub fn open(
     if !matches!(error, OpenError::NotFound { .. }) {
         return Err(Box::new(refusal));
     }
-    find(&known()?, start, home, cache, refusal).map(|(board, prefix)| (board, Some(prefix)))
+    let found = find(&known()?, (start, build), home, cache, refusal);
+    found.map(|(board, prefix)| (board, Some(prefix)))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git
@@ -207,7 +209,7 @@ fn shown(file: Option<&Path>) -> String {
 /// several spellings counts once.
 fn find(
     known: &KnownBoards,
-    start: &Path,
+    (start, build): (&Path, &'static str),
     home: Option<&Path>,
     cache: Option<&Path>,
     lost: Refusal,
@@ -217,7 +219,7 @@ fn find(
     let shown = shown(file);
     let (mut seen, mut skipped, mut named, mut chosen) = (HashSet::new(), vec![], vec![], None);
     for root in listed.iter().map(|root| against(file, root)) {
-        let opened = Board::open(&root, home.map(Path::to_path_buf));
+        let opened = Board::open(&root, home.map(Path::to_path_buf), build);
         let found = opened.map(|board| (board.places(start, cache), board));
         let Ok((Ok(places), board)) = found else {
             skipped.push(root.display().to_string());

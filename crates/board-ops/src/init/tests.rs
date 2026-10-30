@@ -15,12 +15,12 @@ fn config(scenario: &Scenario) -> Option<Vec<u8>> {
 #[test]
 fn init_writes_a_minimal_board_json_that_opens_as_a_board() {
     let scenario = Scenario::new();
-    assert!(Board::open(scenario.workdir(), None).is_err());
+    assert!(Board::open(scenario.workdir(), None, "").is_err());
     let report = init(scenario.workdir()).unwrap();
     assert!(report.created);
     assert_eq!(report.root, scenario.workdir().canonicalize().unwrap());
     assert_eq!(config(&scenario).as_deref(), Some(CONFIG));
-    assert!(Board::open(scenario.workdir(), None).is_ok());
+    assert!(Board::open(scenario.workdir(), None, "").is_ok());
 }
 
 #[test]

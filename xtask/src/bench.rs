@@ -25,6 +25,8 @@ const PER_DIRECTORY: usize = 100;
 const AGAINST_RUNS: usize = 15;
 /// The most repositories a generated mounted board mounts.
 const MOUNTS: usize = 20;
+/// The build the bench's boards are decided by.
+const BUILD: &str = "xtask-bench";
 
 /// The tasks plugin's tasks in a generated board: as many as one section of
 /// `tasks.available` shows.
@@ -277,7 +279,7 @@ pub(crate) fn run(
 /// The board at `root`, checked once into a new cache directory, and what
 /// the check found.
 pub(crate) fn warmed(root: &Path) -> Result<(Board, tempfile::TempDir, CheckReport), BenchError> {
-    let board = Board::open(root, None).map_err(|error| failed(&error))?;
+    let board = Board::open(root, None, BUILD).map_err(|error| failed(&error))?;
     let warm = tempfile::tempdir().map_err(|error| failed(&error))?;
     let checked = board
         .check(None, Some(warm.path()))
@@ -473,7 +475,7 @@ pub(crate) fn settle() {
 /// Commits `files`, already in the working tree at `root`, in one commit,
 /// so that git's index holds every record as a real board's does.
 fn commit(root: &Path, files: &[(String, String)]) -> std::io::Result<ObjectId> {
-    let board = Board::open(root, None).map_err(std::io::Error::other)?;
+    let board = Board::open(root, None, BUILD).map_err(std::io::Error::other)?;
     let repository = board.repository();
     let lock = repository
         .lock(board_tree::LOCK_WAIT)

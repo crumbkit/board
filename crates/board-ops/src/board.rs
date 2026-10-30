@@ -91,7 +91,13 @@ impl Board {
     /// Opens the board whose root is `start` or the nearest directory above
     /// it holding `.board/board.json`. That directory must be the root of its
     /// repository's working tree. `home` is what a mount's `~/` means.
-    pub fn open(start: &Path, home: Option<PathBuf>) -> Result<Self, OpenError> {
+    /// `build` names the build deciding for it, such as board-cli's version,
+    /// so the index keeps no decision across builds.
+    pub fn open(
+        start: &Path,
+        home: Option<PathBuf>,
+        build: &'static str,
+    ) -> Result<Self, OpenError> {
         let not_found = || {
             let start = start.to_path_buf();
             match board_tree::repository_root(&start) {
@@ -122,7 +128,7 @@ impl Board {
             trace: RefCell::default(),
             asker: Asker::default(),
             built_in: BuiltIn::default(),
-            build: "",
+            build,
         })
     }
 
@@ -136,12 +142,6 @@ impl Board {
 
     pub fn config(&self) -> &Config {
         &self.config
-    }
-
-    /// Names the build deciding for this board, such as board-cli's
-    /// version, so the index keeps no decision across builds.
-    pub fn built_by(&mut self, build: &'static str) {
-        self.build = build;
     }
 }
 

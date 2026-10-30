@@ -787,7 +787,7 @@ fn two_puts_with_the_same_expect_make_one_write_and_one_stale() {
                 let record = format!(r#"{{"$type": "lr/task/v1", "title": "{title}"}}"#);
                 let root = scenario.workdir().to_path_buf();
                 scope.spawn(move || {
-                    crate::Board::open(&root, None)
+                    crate::Board::open(&root, None, "")
                         .unwrap()
                         .put(&path("/tasks/a"), Expect::Blob(first), record.as_bytes())
                         .map_err(|error| error.code())
@@ -888,7 +888,7 @@ fn ten_concurrent_puts_all_land_each_in_its_own_commit() {
         let puts: Vec<_> = (0..10)
             .map(|n| {
                 scope.spawn(move || {
-                    let board = Board::open(root, None).unwrap();
+                    let board = Board::open(root, None, "").unwrap();
                     let report = board
                         .put_waiting(
                             &path(&format!("/tasks/t{n}")),

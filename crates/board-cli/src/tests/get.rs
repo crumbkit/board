@@ -159,7 +159,7 @@ fn get_help_names_the_budget_and_the_path_limit_the_cli_uses() {
 /// `paths`, each read from `scenario` and rendered as `board get` renders
 /// them, within `budget` bytes of output.
 fn rendered(scenario: &Scenario, paths: &[&str], format: bool, budget: usize) -> Output {
-    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let board = board_ops::Board::open(scenario.workdir(), None, "").unwrap();
     let paths: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
     render::get(
         Printer::of(format, budget, &["get"]),
@@ -261,7 +261,7 @@ fn a_path_after_the_budget_is_spent_is_answered_with_its_error_in_its_slot_and_f
 fn an_over_budget_get_recovers_with_the_callers_flags_and_without_its_words_names_the_command() {
     let scenario = three_files();
     scenario.write("sub/keep.md", Item::File("k"));
-    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let board = board_ops::Board::open(scenario.workdir(), None, "").unwrap();
     let paths = ["/a.md", "/b.md", "/c.md"];
     let asked: Vec<LogicalPath> = paths.iter().map(|path| path.parse().unwrap()).collect();
     let ran = |json: bool, budget: usize, words: &[&str]| {

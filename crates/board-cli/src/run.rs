@@ -720,7 +720,7 @@ fn refs(
 /// opened as this build.
 fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
-    let (mut board, prefix) = board_ops::open(start, home, cache, || context.known())?;
-    board.built_by(crate::timing::BUILD);
-    Ok((board, prefix))
+    board_ops::open((start, crate::timing::BUILD), home, cache, || {
+        context.known()
+    })
 }

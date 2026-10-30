@@ -70,7 +70,7 @@ fn asker(plugin: Option<&str>, personal: Option<&Scenario>) -> Asker {
 
 /// `scenario` opened as `plugin` would open it, with `personal`.
 fn opened(scenario: &Scenario, plugin: Option<&str>, personal: Option<&Scenario>) -> Board {
-    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    let mut board = Board::open(scenario.workdir(), None, "").unwrap();
     board.ask_as(asker(plugin, personal));
     board
 }
@@ -724,7 +724,7 @@ fn a_hold_after_the_owner_answers_writes_no_pending_effect_and_a_hold_before_wri
     let file = format!("effects/pending/{id}.json");
     let text = std::fs::read_to_string(mine.workdir().join(&file)).unwrap();
     let effect = Effect::from_value(&serde_json::from_str(&text).unwrap()).unwrap();
-    let personal = Board::open(mine.workdir(), None).unwrap();
+    let personal = Board::open(mine.workdir(), None, "").unwrap();
     answer(&owner, &id, Answer::Refuse, None, None).unwrap();
     hold(&personal, &effect).unwrap();
     assert!(!exists(&mine, &file));
@@ -983,7 +983,7 @@ fn owned(scenario: &Scenario, mine: &Scenario, signer: Option<&Path>) -> Board {
     if let Some(signer) = signer {
         owner.signing.signer = Some(signer.as_os_str().to_owned());
     }
-    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    let mut board = Board::open(scenario.workdir(), None, "").unwrap();
     board.ask_as(owner);
     board
 }
@@ -1088,7 +1088,7 @@ fn boards_own_writes_of_a_pending_effect_and_an_answer_need_no_owner_signature()
     let mut plugin = asker(Some("review"), Some(&mine));
     plugin.sign_owner_writes = true;
     plugin.signing.signer = Some(decline.clone().into_os_string());
-    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    let mut board = Board::open(scenario.workdir(), None, "").unwrap();
     board.ask_as(plugin);
     let id = asked(decide(&board, "/pulls/7"));
     assert!(exists(&mine, &format!("effects/pending/{id}.json")));

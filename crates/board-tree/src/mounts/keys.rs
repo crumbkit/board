@@ -1,12 +1,12 @@
 //! The keys a cache keeps mounted sources' decisions and pointer lists
 //! under (docs/architecture/performance/decisions.md).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use board_model::{Code, Digest, ObjectId, Source};
 
-use super::Reached;
+use super::{Crossing, Reached};
 
 /// A mount pointer as probed: what it names, and the repository it opened
 /// or why it could not be read.
@@ -41,16 +41,47 @@ impl<F> Reached<F> {
                 ]))
             })
             .collect();
-        for (mounted, key) in self.sources.iter_mut().zip(keys) {
+        let crossings: Vec<HashSet<Crossing>> = (self.sources.iter())
+            .map(|mounted| self.crossings(mounted.commit))
+            .collect();
+        for ((mounted, key), crossings) in self.sources.iter_mut().zip(keys).zip(crossings) {
             mounted.key = key;
+            mounted.crossings = crossings;
         }
+    }
+
+    /// Each mount the probes of `commit`'s source and of every source it
+    /// opens hold.
+    fn crossings(&self, commit: ObjectId) -> HashSet<Crossing> {
+        let mut held = HashSet::new();
+        let mut pending = vec![commit];
+        let mut seen = HashSet::new();
+        while let Some(commit) = pending.pop() {
+            let Some(mounted) = (self.sources.iter()).find(|mounted| mounted.commit == commit)
+            else {
+                continue;
+            };
+            if !seen.insert(commit) {
+                continue;
+            }
+            let from = Source::Commit(commit);
+            for probe in self.probes.iter().filter(|probe| probe.from == from) {
+                let repository = mounted.repository.path().to_path_buf();
+                held.insert((repository, probe.repo.clone(), probe.commit));
+                if probe.landed.is_ok() {
+                    pending.push(probe.commit);
+                }
+            }
+        }
+        held
     }
 
     /// What deciding the source of `commit` reads, hashed: its root tree,
     /// the repository it was read from, and for each of its mounts what
-    /// the pointer names and what it reached. `None` when one of its mounts
-    /// is not walked, or reaches a commit through a repository other than
-    /// the one that commit was walked in.
+    /// the pointer names and what it reached. `None` when one of its
+    /// pointers could not be read, when one of its mounts is not walked, or
+    /// when one reaches a commit through a repository other than the one
+    /// that commit was walked in.
     fn closure(
         &self,
         commit: ObjectId,
@@ -66,6 +97,9 @@ impl<F> Reached<F> {
             .iter()
             .find(|mounted| mounted.commit == commit)?;
         let from = Source::Commit(commit);
+        if self.unread.contains(&from) {
+            return None;
+        }
         let mut probes: Vec<&Probe> = (self.probes.iter())
             .filter(|probe| probe.from == from)
             .collect();

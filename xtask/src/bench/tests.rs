@@ -115,7 +115,7 @@ fn a_generated_board_holds_valid_open_tasks_and_one_in_five_waits_on_the_first()
     let sql = "SELECT count(*), count(json_extract(body, '$.after')) FROM records \
         WHERE type = 'tasks/task/v2' AND code IS NULL \
         AND json_extract(body, '$.status') = 'open'";
-    let report = Board::open(root.path(), None)
+    let report = Board::open(root.path(), None, "")
         .unwrap()
         .query(sql, 1, None, Some(cache.path()))
         .unwrap();
@@ -136,7 +136,7 @@ fn a_generated_mounted_board_mounts_each_repository_at_its_pinned_commit_and_eve
         .to_vec();
     let cache = tempfile::tempdir().unwrap();
     let query = |sql: &str| {
-        let board = Board::open(&board, None).unwrap();
+        let board = Board::open(&board, None, "").unwrap();
         board
             .query(sql, 100, None, Some(cache.path()))
             .unwrap()
@@ -273,7 +273,7 @@ fn a_generated_board_is_committed_and_a_put_commits_onto_it_as_its_own_identity(
     let main = root.path().join(".git/refs/heads/main");
     let generated = std::fs::read_to_string(&main).unwrap();
     assert_eq!(generated.trim().len(), 40, "{generated:?}");
-    let board = Board::open(root.path(), None).unwrap();
+    let board = Board::open(root.path(), None, "").unwrap();
     let report = board
         .put(
             &"/put/first".parse().unwrap(),
@@ -303,7 +303,7 @@ fn the_put_row_writes_a_record_each_run_on_a_generated_board_and_skips_a_given_o
     let timed = run(root.path(), &budgets, &host, Some(root.path())).unwrap();
     assert!(matches!(timed[0].took, Took::Median(_)), "{timed:?}");
     let cache = tempfile::tempdir().unwrap();
-    let report = Board::open(root.path(), None)
+    let report = Board::open(root.path(), None, "")
         .unwrap()
         .query(
             "SELECT count(*) FROM records WHERE path LIKE 'put/%' AND code IS NULL",

@@ -22,8 +22,7 @@ fn mount(repo: &str, commit: ObjectId) -> String {
 /// cold one, requires every table and an unordered, bounded query to
 /// answer alike, and returns the warm run's work.
 fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed {
-    let mut board = open(scenario);
-    board.built_by(build);
+    let board = crate::Board::open(scenario.workdir(), None, build).unwrap();
     let root = board.repository().path().to_path_buf();
     let warm = filled(&board, Index::open(Some(cache), &root).unwrap());
     let cold = filled(&board, Index::open(None, &root).unwrap());
@@ -284,8 +283,7 @@ fn another_build_lists_pointers_and_decides_again_and_the_same_build_keeps_both(
         let cache = tempfile::tempdir().unwrap();
         query_as(&scenario, cache.path(), "a");
         assert_eq!(query_as(&scenario, cache.path(), second).kept, expected);
-        let mut board = open(&scenario);
-        board.built_by(second);
+        let board = crate::Board::open(scenario.workdir(), None, second).unwrap();
         let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
         let sql = "SELECT count(DISTINCT scan) FROM main.pointers";
         let rows = filled(&board, index).view.query(sql, 1, None).unwrap().rows;
@@ -333,4 +331,48 @@ fn a_source_holding_a_mount_whose_route_is_too_long_is_never_kept_and_its_shorte
         kept(&scenario, cache.path());
         assert_eq!(kept(&scenario, cache.path()), expected, "{last}");
     }
+}
+
+/// A board mounting a library whose note links through a pointer at
+/// `pointer`, into a board mounted there. Returns the board, the library
+/// and the board the link reaches.
+fn linked_through(pointer: &str) -> (Scenario, Scenario, Scenario) {
+    let (target, t) = library(&[]);
+    let through = pointer.strip_suffix(".json").unwrap();
+    let note = format!("[p](/{through}/projects/p)");
+    let (library, l) = library(&[(pointer, &mount(&target.path(), t)), ("notes/n.md", &note)]);
+    let scenario = board();
+    scenario.write("l.json", Item::File(&mount(&library.path(), l)));
+    (scenario, library, target)
+}
+
+#[test]
+fn a_source_linking_through_a_pointer_in_a_schema_file_is_never_kept_and_its_twin_in_a_record_file_is()
+ {
+    for (pointer, expected) in [
+        (".board/types/acme/thing/v1.schema.json", 0),
+        ("things/t.json", 2),
+    ] {
+        let (scenario, _library, _target) = linked_through(pointer);
+        let cache = tempfile::tempdir().unwrap();
+        kept(&scenario, cache.path());
+        assert_eq!(kept(&scenario, cache.path()), expected, "{pointer}");
+    }
+}
+
+#[test]
+fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_once_its_repository_is_gone() {
+    let (scenario, _library, target) = linked_through(".board/types/acme/thing/v1.schema.json");
+    let cache = tempfile::tempdir().unwrap();
+    let code = |scenario: &Scenario| {
+        query_as(scenario, cache.path(), "");
+        let board = open(scenario);
+        let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+        let sql = "SELECT code FROM entries WHERE path = 'notes/n.md'";
+        filled(&board, index).view.query(sql, 1, None).unwrap().rows
+    };
+    assert_eq!(code(&scenario), [[serde_json::Value::Null]]);
+    assert_eq!(code(&scenario), [[serde_json::Value::Null]]);
+    target.write(".git", Item::Deleted);
+    assert_eq!(code(&scenario), [["board::ref::dangling"]]);
 }

@@ -75,12 +75,19 @@ pub struct Mounted<F> {
     pub key: Option<Digest>,
     /// The key of its list of pointers.
     pub scan: Digest,
+    /// Each mount its decision may cross because its key holds that
+    /// mount's probe.
+    pub crossings: HashSet<Crossing>,
     /// Whether the cache holds its decision under `key`.
     pub kept: bool,
     /// Its entries and the cache's facts about them, or `None` when it is
     /// kept and the walk was asked to skip what is kept.
     pub walked: Option<(Vec<Entry>, F)>,
 }
+
+/// A mount a resolution crossed or tried to: the repository holding the
+/// pointer, the pointer's `repo`, and its commit.
+pub type Crossing = (PathBuf, String, ObjectId);
 
 impl<F> Mounted<F> {
     /// The display path of `logical`, a path inside this source.
@@ -115,6 +122,8 @@ pub struct Reached<F> {
     pub points: Vec<MountPoint>,
     edges: Vec<Edge>,
     probes: Vec<Probe>,
+    /// Each source holding a pointer whose blob could not be read.
+    unread: Vec<Source>,
 }
 
 /// A mount found but not yet walked.
@@ -145,6 +154,7 @@ impl Repositories {
             points: Vec::new(),
             edges: Vec::new(),
             probes: Vec::new(),
+            unread: Vec::new(),
         };
         let mut candidates = Vec::new();
         let root = self.root();
@@ -184,7 +194,10 @@ impl Repositories {
                 }
                 (Some((entries, facts)), held)
             };
-            let found = mounts_in(&repository, &source, &held);
+            let (found, unread) = mounts_in(&repository, &source, &held);
+            if unread {
+                reached.unread.push(source.clone());
+            }
             let from = repository.path();
             reached.add(self, from, &source, &route, found, &mut candidates);
             reached.sources.push(Mounted {
@@ -194,6 +207,7 @@ impl Repositories {
                 route,
                 key: None,
                 scan,
+                crossings: HashSet::new(),
                 kept: false,
                 walked,
             });
@@ -511,7 +525,7 @@ fn pointers(
     entries: &[Entry],
     is_pointer: &dyn Fn(&str) -> bool,
 ) -> Vec<(LogicalPath, String, Mount)> {
-    mounts_in(repository, source, &held(entries, is_pointer))
+    mounts_in(repository, source, &held(entries, is_pointer)).0
 }
 
 /// The entries among `entries` that hold a pointer that parses.
@@ -529,22 +543,27 @@ fn held(entries: &[Entry], is_pointer: &dyn Fn(&str) -> bool) -> Vec<Held> {
         .collect()
 }
 
-/// The mounts among the pointers `held` in `source`.
+/// The mounts among the pointers `held` in `source`, and whether the blob
+/// of one could not be read.
 fn mounts_in(
     repository: &Repository,
     source: &Source,
     held: &[Held],
-) -> Vec<(LogicalPath, String, Mount)> {
+) -> (Vec<(LogicalPath, String, Mount)>, bool) {
     let reader = &mut repository.reader();
-    held.iter()
+    let mut unread = false;
+    let found = held
+        .iter()
         .filter_map(|held| {
-            let contents = reader.read(source, &held.path, held.blob).ok()??;
-            match board_model::pointer(&contents.bytes) {
+            let read = reader.read(source, &held.path, held.blob);
+            unread |= read.is_err();
+            match board_model::pointer(&read.ok()??.bytes) {
                 Ok(Some(Pointer::Mount(mount))) => {
                     Some((held.logical.clone(), held.path.clone(), mount))
                 }
                 _ => None,
             }
         })
-        .collect()
+        .collect();
+    (found, unread)
 }

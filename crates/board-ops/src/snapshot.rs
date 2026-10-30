@@ -263,12 +263,17 @@ impl Board {
         }
         let failed = decide.failed.get();
         drop(decide);
+        // A mount no probe holds, such as one in a file not listed as a
+        // pointer, may change without changing the key.
+        let probed =
+            (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
         let whole = scopes
             .get(&source)
             .is_some_and(|states| states.contains(&None));
         // A file that could not be read may be read next run.
         let storable = whole
+            && probed
             && !failed
             && !rows
                 .iter()

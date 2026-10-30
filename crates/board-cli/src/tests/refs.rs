@@ -193,7 +193,7 @@ fn paths(texts: &[&str]) -> Vec<LogicalPath> {
 /// `paths`, answered from `scenario` and rendered as `board refs` renders
 /// them, within `budget` bytes of output.
 fn rendered(scenario: &Scenario, texts: &[&str], format: bool, budget: usize) -> Output {
-    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let board = board_ops::Board::open(scenario.workdir(), None, "").unwrap();
     let paths = paths(texts);
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
     render::refs(
@@ -233,7 +233,7 @@ fn refs_answers_a_path_while_the_run_has_printed_less_than_its_budget_and_always
 fn a_path_after_the_budget_is_spent_is_left_unanswered_with_its_error_in_its_slot() {
     let scenario = hub();
     let asked = ["/projects/p", "/hub", "/projects/p"];
-    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let board = board_ops::Board::open(scenario.workdir(), None, "").unwrap();
     let paths = paths(&asked);
     let mut pulled = 0;
     let answers = board.refs(&paths, Absent::Refuse, &[], None, None).unwrap();
@@ -371,7 +371,7 @@ fn a_check_that_cannot_run_refuses_the_whole_run_and_a_path_refused_alone_does_n
 /// record the run would append.
 fn changed_between(change: bool, format: bool) -> (Output, serde_json::Value) {
     let scenario = hub();
-    let board = board_ops::Board::open(scenario.workdir(), None).unwrap();
+    let board = board_ops::Board::open(scenario.workdir(), None, "").unwrap();
     let paths = paths(&["/projects/p", "/hub"]);
     let fields = ["/status".to_owned()];
     let mut answered = 0;

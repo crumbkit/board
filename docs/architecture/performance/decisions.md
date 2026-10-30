@@ -16,7 +16,8 @@ each mounted source's decision so a warm query neither walks nor decides it.
 A source's key hashes:
 
 - the build: board-cli's version and commit, and for a build with
-  uncommitted changes a hash of them;
+  uncommitted changes a hash of them; outside a git checkout, a hash of
+  the source files;
 - the source's route, the display path its entries are named under;
 - its root tree and the repository it was read from;
 - for each mount pointer in it: its path, `repo` and commit, and the
@@ -41,7 +42,9 @@ These sources are decided on every run:
   failed with a git error, which may pass;
 - one holding a mount whose route is too long to name;
 - one that reaches a commit through another repository than the one that
-  commit was walked in.
+  commit was walked in;
+- one whose resolution crossed a mount that no probe holds, such as a
+  pointer in a schema file.
 
 ## Order and pruning
 

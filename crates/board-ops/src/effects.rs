@@ -220,7 +220,9 @@ impl Asker {
     pub(crate) fn personal(&self, what: impl FnOnce() -> String) -> Result<Board, EffectError> {
         let root =
             (self.personal.as_ref()).ok_or_else(|| EffectError::NoPersonal { what: what() })?;
-        Board::open(root, self.home.clone()).map_err(|source| EffectError::Open { source })
+        // It reads and writes pending effects and answers, which no index
+        // decision holds, so no build decides for it.
+        Board::open(root, self.home.clone(), "").map_err(|source| EffectError::Open { source })
     }
 }
 

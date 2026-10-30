@@ -62,7 +62,7 @@ impl Board {
                 ..
             }) => {
                 let home = self.repositories().home().map(Into::into);
-                let mut mounted = Board::open(&inside.repository, home)
+                let mut mounted = Board::open(&inside.repository, home, self.build)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
                 let mut report = mounted.decide_op(op, &inside.path, shown)?;
