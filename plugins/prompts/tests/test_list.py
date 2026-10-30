@@ -28,7 +28,7 @@ def test_list_shows_each_prompt_as_written_by_repo_then_title(board: Board) -> N
         "path": "/prompts/b.md",
         "title": "B",
         "purpose": "A clean-context review of one pull request.",
-        "runs_in": {"repo": "example-org/widgets"},
+        "runs_in": {"remote": "example-org/widgets"},
         "inputs": {"pr": "The number."},
     }
     assert (output["total"], output["degraded"], output["repos"]) == (3, 0, ["/", "/repos/notes"])

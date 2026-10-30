@@ -38,8 +38,6 @@ needs to know.
 11. Every property has a `description`. No property has a `title`.
 12. No `$schema` key. Draft 2020-12, committed in canonical form.
 
-Until it is renamed `remote`, prompts `runs_in.repo` breaks rule 7.
-
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11 and 12 on every committed
 record schema. It lists the schemas that break a rule today, until their
 plugins are ported.

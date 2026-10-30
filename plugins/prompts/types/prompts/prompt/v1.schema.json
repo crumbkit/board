@@ -1,5 +1,22 @@
 {
   "$defs": {
+    "InClone": {
+      "additionalProperties": false,
+      "description": "Work that starts in a clone of the GitHub repository whose remote is `remote`.",
+      "properties": {
+        "remote": {
+          "description": "owner/name, or an input such as {repo}.",
+          "pattern": "^(\\{[a-z][a-z0-9_]{0,31}\\}|[^/\\s]+/[^/\\s]+)$",
+          "title": "Remote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "remote"
+      ],
+      "title": "InClone",
+      "type": "object"
+    },
     "InDirectory": {
       "additionalProperties": false,
       "description": "Work that starts in a directory that is not one repository.",
@@ -15,23 +32,6 @@
         "directory"
       ],
       "title": "InDirectory",
-      "type": "object"
-    },
-    "InRepo": {
-      "additionalProperties": false,
-      "description": "Work that starts in a clone of a GitHub repository.",
-      "properties": {
-        "repo": {
-          "description": "owner/name, or an input such as {repo}.",
-          "pattern": "^(\\{[a-z][a-z0-9_]{0,31}\\}|[^/\\s]+/[^/\\s]+)$",
-          "title": "Repo",
-          "type": "string"
-        }
-      },
-      "required": [
-        "repo"
-      ],
-      "title": "InRepo",
       "type": "object"
     }
   },
@@ -61,7 +61,7 @@
     "runs_in": {
       "anyOf": [
         {
-          "$ref": "#/$defs/InRepo"
+          "$ref": "#/$defs/InClone"
         },
         {
           "$ref": "#/$defs/InDirectory"

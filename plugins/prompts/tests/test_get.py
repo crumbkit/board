@@ -5,7 +5,7 @@ import json
 from conftest import Board, git, mark, mount, prompt, repo
 
 REVIEW = prompt(
-    runs_in={"repo": "{repo}"},
+    runs_in={"remote": "{repo}"},
     inputs={"repo": "The repository.", "pr": "The pull request number.", "focus": "Never named."},
     body='You are reviewing #{pr} in {repo}. Keep {prr} and {"a": 1}.\n',
 )
@@ -37,7 +37,7 @@ def test_get_renders_the_body_and_runs_in_and_names_the_blob_and_the_worktree(bo
         "repo": "/",
         "title": "Review a pull request",
         "purpose": "A clean-context review of one pull request.",
-        "runs_in": {"repo": "example-org/widgets"},
+        "runs_in": {"remote": "example-org/widgets"},
         "text": 'You are reviewing #2140 in example-org/widgets. Keep {prr} and {"a": 1}.\n',
         "blob": git(board.root, "hash-object", "prompts/review-pr.md"),
         "source": "worktree",
@@ -141,11 +141,15 @@ def test_a_runs_in_given_on_stdin_replaces_the_prompts_and_is_rendered_and_check
     assert (code, output.get("runs_in")) == (0, {"directory": "~/Code/2140"}), output
     code, refused = board.call("get", stdin=running_in("/prompts/review-pr.md", {"directory": "{pr}"}))
     assert (code, refused["code"]) == (1, "prompts::runs_in::invalid"), refused
+    code, output = board.call("get", stdin=running_in("/prompts/review-pr.md", {"remote": "{repo}"}))
+    assert (code, output.get("runs_in")) == (0, {"remote": "example-org/widgets"}), output
+    code, refused = board.call("get", stdin=running_in("/prompts/review-pr.md", {"repo": "{repo}"}))
+    assert (code, refused["code"]) == (1, "board::plugin::bad_input"), refused
 
 
 def test_runs_in_is_checked_after_rendering_so_an_input_cannot_make_it_relative_or_climb_out(board: Board) -> None:
     board.write("prompts/dir.md", prompt(runs_in={"directory": "{base}/work"}, inputs={"base": "A directory."}))
-    board.write("prompts/repo.md", prompt(runs_in={"repo": "{repo}"}, inputs={"repo": "The repository."}))
+    board.write("prompts/repo.md", prompt(runs_in={"remote": "{repo}"}, inputs={"repo": "The repository."}))
     for path, value in (("/prompts/dir.md", {"base": "/srv"}), ("/prompts/repo.md", {"repo": "example-org/widgets"})):
         assert board.call("get", stdin=given(path, **value))[0] == 0, path
     cases = [

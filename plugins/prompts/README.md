@@ -35,7 +35,7 @@ $type: prompts/prompt/v1
 title: Review a pull request
 purpose: A clean-context review of one pull request, leaning towards simpler code.
 runs_in:
-  repo: "{repo}"
+  remote: "{repo}"
 inputs:
   repo: The repository, as owner/name, such as example-org/widgets.
   pr: The pull request number, such as 2140.
@@ -44,7 +44,7 @@ You are reviewing pull request #{pr} in {repo}. ...
 ```
 
 - `title` and `purpose` are required.
-- `runs_in` is required and holds exactly one key. `repo` is a GitHub
+- `runs_in` is required and holds exactly one key. `remote` is a GitHub
   `owner/name`. `directory` is an absolute path or a path starting `~/`. Either
   value may name an input, such as `"{repo}"`.
 - `inputs` maps each input's name to a description of its value. A name
@@ -104,7 +104,7 @@ echo '{"path": "/prompts/review-pr.md", "inputs": {"repo": "example-org/widgets"
 ```
 
 A prompt without inputs takes `--path` alone. A `runs_in` in the input, with
-exactly one of `repo` or `directory`, replaces the prompt's own, so a task can
+exactly one of `remote` or `directory`, replaces the prompt's own, so a task can
 run a prompt in another repository. `get` returns `path` and
 `repo`, the repo that holds the prompt; `title` and `purpose`; `runs_in` and
 `text`, rendered; `blob`, the git blob id of the prompt file; `source`, the

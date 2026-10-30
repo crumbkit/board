@@ -30,14 +30,14 @@ def test_a_misspelt_field_is_refused(board: Board) -> None:
     assert checked(board) == {"/prompts/spelt.md": None, "/prompts/misspelt.md": "board::record::invalid"}
 
 
-def test_runs_in_holds_exactly_one_of_repo_and_directory(board: Board) -> None:
-    board.write("prompts/repo.md", prompt(runs_in={"repo": "example-org/widgets"}))
+def test_runs_in_holds_exactly_one_of_remote_and_directory(board: Board) -> None:
+    board.write("prompts/remote.md", prompt(runs_in={"remote": "example-org/widgets"}))
     board.write("prompts/directory.md", prompt(runs_in={"directory": "/srv/{name}"}, inputs={"name": "A name."}))
-    board.write("prompts/both.md", prompt(runs_in={"repo": "example-org/widgets", "directory": "/srv"}))
+    board.write("prompts/both.md", prompt(runs_in={"remote": "example-org/widgets", "directory": "/srv"}))
     board.write("prompts/neither.md", prompt(runs_in={}))
     board.write("prompts/other.md", prompt(runs_in={"host": "x"}))
     assert checked(board) == {
-        "/prompts/repo.md": None,
+        "/prompts/remote.md": None,
         "/prompts/directory.md": None,
         "/prompts/both.md": "board::record::invalid",
         "/prompts/neither.md": "board::record::invalid",
@@ -45,9 +45,15 @@ def test_runs_in_holds_exactly_one_of_repo_and_directory(board: Board) -> None:
     }
 
 
-def test_a_repo_is_owner_slash_name_or_an_input_and_a_directory_is_absolute_or_under_home(board: Board) -> None:
-    board.write("prompts/owner.md", prompt(runs_in={"repo": "example-org/{name}"}, inputs={"name": "A name."}))
-    board.write("prompts/bare-name.md", prompt(runs_in={"repo": "widgets"}))
+def test_a_runs_in_naming_its_remote_repo_is_refused_and_its_twin_naming_it_remote_is_admitted(board: Board) -> None:
+    board.write("prompts/remote.md", prompt(runs_in={"remote": "{repo}"}, inputs={"repo": "The repository."}))
+    board.write("prompts/repo.md", prompt(runs_in={"repo": "{repo}"}, inputs={"repo": "The repository."}))
+    assert checked(board) == {"/prompts/remote.md": None, "/prompts/repo.md": "board::record::invalid"}
+
+
+def test_a_remote_is_owner_slash_name_or_an_input_and_a_directory_is_absolute_or_under_home(board: Board) -> None:
+    board.write("prompts/owner.md", prompt(runs_in={"remote": "example-org/{name}"}, inputs={"name": "A name."}))
+    board.write("prompts/bare-name.md", prompt(runs_in={"remote": "widgets"}))
     board.write("prompts/home.md", prompt(runs_in={"directory": "~/Code"}))
     board.write("prompts/relative.md", prompt(runs_in={"directory": "Code/home"}))
     assert checked(board) == {

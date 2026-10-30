@@ -63,8 +63,8 @@ def test_a_format_character_such_as_a_direction_override_or_zero_width_space_is_
 @pytest.mark.parametrize(
     "runs_in",
     [
-        {"repo": "example-org/.."},
-        {"repo": "example-org/."},
+        {"remote": "example-org/.."},
+        {"remote": "example-org/."},
         {"directory": "/srv/\u202eexe.txt"},
         {"directory": "/a\r/b"},
         {"directory": "/a\tb"},
@@ -79,6 +79,6 @@ def test_a_runs_in_naming_dot_or_dot_dot_or_holding_a_control_or_format_characte
 
 
 def test_a_runs_in_with_dots_inside_a_name_or_path_is_admitted() -> None:
-    assert placed({"repo": "example-org/.github"}, {}) == {"repo": "example-org/.github"}
-    assert placed({"repo": "example-org/a..b"}, {}) == {"repo": "example-org/a..b"}
+    assert placed({"remote": "example-org/.github"}, {}) == {"remote": "example-org/.github"}
+    assert placed({"remote": "example-org/a..b"}, {}) == {"remote": "example-org/a..b"}
     assert placed({"directory": "/srv/a..b/.config"}, {}) == {"directory": "/srv/a..b/.config"}
