@@ -73,11 +73,11 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
 }
 
 /// Whether a file of `role` that [`Role::classify`] gave `kind` and `code`
-/// holds no pointer, so that [`pointer`] answers `Ok(None)` for its bytes at
+/// holds no pointer, so that [`pointer()`] answers `Ok(None)` for its bytes at
 /// any path: it is JSON that parsed strictly, and has no `$type` or one
 /// that is valid and not [`POINTER_TYPE`]. The index stores `kind` and
 /// `code` by blob, and resolution trusts them instead of reading the file,
-/// so a change to [`pointer`] or [`Role::classify`] that finds a pointer in
+/// so a change to [`pointer()`] or [`Role::classify`] that finds a pointer in
 /// bytes this calls plain must bump the index's `INDEX_VERSION`.
 pub fn holds_no_pointer(role: Role, kind: Kind, code: Option<Code>) -> bool {
     role == Role::Json && code.is_none() && matches!(kind, Kind::Json | Kind::Record)
