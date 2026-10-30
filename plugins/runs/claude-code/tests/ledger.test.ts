@@ -117,7 +117,7 @@ test('gh pr create writes a decision stub and asks the agent for its why and alt
     why: '',
     session: 'session-1',
     decided: '2026-10-25T09:30:00Z',
-    refs: [URL],
+    urls: [URL],
     review: 'wanted',
     written_by: 'runs/pr-create',
   })

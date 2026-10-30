@@ -19,8 +19,10 @@ the meaning of every field.
   `plans/pane-answer`.
 - `plans/decision/v1`, wherever the writer keeps decisions, such as
   `/projects/<project>/decisions/<id>`. `decision`, `why`, `session` and
-  `decided` are required; `alternatives`, `refs`, `review` (`wanted` or
-  `none`) and `written_by` are optional.
+  `decided` are required; `alternatives`, `refs`, `urls`, `review`
+  (`wanted` or `none`) and `written_by` are optional. `refs` lists board
+  entries the decision concerns, such as an answer; `urls` lists web pages,
+  such as a pull request.
 
 ```json
 {

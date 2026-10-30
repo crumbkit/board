@@ -130,7 +130,7 @@ export const REPORT_SQL = [
   `WHERE a.type = 'plans/answer/v1' AND ${within('a', 'answered')}`,
   `UNION ALL SELECT 'run', r.logical, ${field('r', 'finished')}, coalesce(${field('r', 'summary')}, ${field('r', 'by')}), ${field('r', 'by')}`,
   `FROM w, records r WHERE r.type = 'runs/run/v1' AND ${within('r', 'finished')}`,
-  `UNION ALL SELECT 'stub', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, ${field('r', 'refs[0]')}`,
+  `UNION ALL SELECT 'stub', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, ${field('r', 'urls[0]')}`,
   `FROM records r WHERE r.type = 'plans/decision/v1' AND ${field('r', 'written_by')} IS NOT NULL AND ${field('r', 'why')} = ''`,
   'ORDER BY 1, 3',
 ].join('\n')

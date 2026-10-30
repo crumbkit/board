@@ -177,7 +177,8 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         "why": "It is simpler.",
         "session": "s",
         "decided": "2026-10-01T10:00:00Z",
-        "refs": ["https://example.com/pull/1"],
+        "refs": ["/projects/a/answers/q"],
+        "urls": ["https://example.com/pull/1"],
     });
     let mut found = Vec::new();
     for (name, record) in [
@@ -206,6 +207,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
                 "/question".to_owned(),
                 Some(vec!["plans/question/v1".to_owned()])
             ),
+            ("plans/decision/v1", "/refs/0".to_owned(), None),
         ]
     );
     // An optional field holds no null; the same record without it is admitted.
@@ -220,6 +222,31 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
     assert_eq!(refused.code(), board_model::Code::RecordInvalid);
     empty["written_by"] = json!("runs/pr-create");
     assert!(compile("plans/decision/v1").validate(&empty).is_ok());
+}
+
+/// A web address belongs in a decision's `urls`, and a board path in its
+/// `refs`; each is refused in the other's field with its exact code.
+#[test]
+fn a_decision_keeps_board_paths_in_refs_and_web_addresses_in_urls() {
+    let schema = board_validate::Schema::compile(Plans.schemas()[2].1.clone()).unwrap();
+    let decision = |field: &str, value: &str| {
+        json!({
+            "$type": "plans/decision/v1",
+            "decision": "A",
+            "why": "It is simpler.",
+            "session": "s",
+            "decided": "2026-10-01T10:00:00Z",
+            field: [value],
+        })
+    };
+    let url = "https://example.com/pull/1";
+    let path = "/projects/a/answers/q";
+    let refused = schema.validate(&decision("refs", url)).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RefMalformed);
+    assert!(schema.validate(&decision("urls", url)).is_ok());
+    let refused = schema.validate(&decision("urls", path)).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
+    assert!(schema.validate(&decision("refs", path)).is_ok());
 }
 
 /// The question schema declares every field `open` returns, and `open`'s

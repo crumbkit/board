@@ -44,10 +44,24 @@ def test_written_by_names_a_plugin_and_a_hook_and_nothing_else(board: Board) -> 
 
 
 def test_a_decision_keeps_the_fields_it_had_and_refuses_others(board: Board) -> None:
-    full = decision(alternatives=["Wait."], refs=["https://example.com/pull/1"], review="none")
+    full = decision(alternatives=["Wait."], urls=["https://example.com/pull/1"], review="none")
     board.write("decisions/full.json", full)
     board.write("decisions/extra.json", decision(owner="someone"))
     assert checked(board, "/decisions/") == {"/decisions/full": None, "/decisions/extra": INVALID}
+
+
+def test_a_decision_refers_to_board_entries_in_refs_and_to_web_pages_in_urls(board: Board) -> None:
+    board.write("projects/a/questions/q.json", question("answered"))
+    board.write("decisions/ref.json", decision(refs=["/projects/a/questions/q"]))
+    board.write("decisions/ref-url.json", decision(refs=["https://example.com/pull/1"]))
+    board.write("decisions/url.json", decision(urls=["https://example.com/pull/1"]))
+    board.write("decisions/url-path.json", decision(urls=["/projects/a/questions/q"]))
+    assert checked(board, "/decisions/") == {
+        "/decisions/ref": None,
+        "/decisions/ref-url": "board::ref::malformed",
+        "/decisions/url": None,
+        "/decisions/url-path": INVALID,
+    }
 
 
 def test_a_question_has_one_of_three_statuses_and_an_asking_session(board: Board) -> None:

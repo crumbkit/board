@@ -126,7 +126,7 @@ async function stub($: EngineInterface, { board, decisionsTemplate }: Config, st
       why: '',
       session: await $.session.id(),
       decided: iso(now),
-      refs: [pr.url],
+      urls: [pr.url],
       review: 'wanted',
       written_by: 'runs/pr-create',
     }

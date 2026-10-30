@@ -32,9 +32,9 @@
       "type": "string"
     },
     "refs": {
-      "default": [],
-      "description": "What the decision concerns, such as a pull request's URL or a\nrecord's path.",
+      "description": "Entries in the board the decision concerns, such as an answer.",
       "items": {
+        "format": "board-ref",
         "type": "string"
       },
       "type": "array"
@@ -50,6 +50,15 @@
     "session": {
       "description": "The session that decided.",
       "type": "string"
+    },
+    "urls": {
+      "default": [],
+      "description": "Web pages the decision concerns, such as a pull request.",
+      "items": {
+        "pattern": "^https?://",
+        "type": "string"
+      },
+      "type": "array"
     },
     "why": {
       "description": "The reason for it.",

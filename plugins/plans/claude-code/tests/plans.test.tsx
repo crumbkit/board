@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { questionSql, report } from '../hooks/plans'
+import { questionSql, report, REPORT_SQL } from '../hooks/plans'
 
 // These prove what the band and the panes draw, which `board` commands the
 // mod runs, the batch it hands `board put`, and what the asking session is
@@ -298,6 +298,11 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
   expect(result.text).toBe('board: 1 decision, 0 questions asked, 0 answered, 1 run and 0 decision stubs that want a why, since 2026-10-24 07:00.')
   const ui = await $.ui.mount({ ...pane('yesterday'), surface: 'desktop' })
   expect((await ui.find({ type: 'Markdown' }))?.text).toContain('- Keep the types at v1. `/projects/board/decisions/d1`, review wanted')
+})
+
+test("a stub's detail in the report is the first of its urls, where the runs mod writes the pull request", () => {
+  expect(REPORT_SQL).toContain("json_extract(r.body, '$.urls[0]')")
+  expect(REPORT_SQL).not.toContain('$.refs')
 })
 
 test('the report lists each kind of record under its heading, and says none where there is none', () => {
