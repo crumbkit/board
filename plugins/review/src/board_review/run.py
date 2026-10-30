@@ -115,11 +115,12 @@ def _command() -> list[str]:
     except ValueError:
         parsed = None
     parts = cast("list[object]", parsed) if isinstance(parsed, list) else []
-    if not parts or not all(isinstance(part, str) and part for part in parts):
+    # An argument may be empty, as in `--tools ""`; the program may not.
+    if not parts or not parts[0] or not all(isinstance(part, str) for part in parts):
         raise PluginError(
             "review::agent::invalid",
-            f"{AGENT_VARIABLE} is {text[:200]!r}, which is not a non-empty JSON array of non-empty strings; set it"
-            ' to one, such as ["claude", "-p"]',
+            f"{AGENT_VARIABLE} is {text[:200]!r}, which is not a JSON array of strings whose first names a program;"
+            ' set it to one, such as ["claude", "-p"]',
             {"variable": AGENT_VARIABLE},
         )
     return [str(part) for part in parts]
@@ -204,7 +205,8 @@ def _agent(command: list[str], prompt: str, directory: str, timeout: float) -> s
         stderr = err.decode(errors="replace")[-TAIL:]
         raise PluginError(
             "review::agent::failed",
-            f"the agent {command[0]!r} exited {agent.returncode}; its stderr ends: {stderr.strip()[-200:]}",
+            f"the agent {command[0]!r} exited {agent.returncode}; its stdout ends: {stdout.strip()[-200:]}; its"
+            f" stderr ends: {stderr.strip()[-200:]}",
             {"exit": agent.returncode, "stderr": stderr, "stdout": stdout[-TAIL:]},
         )
     return stdout
