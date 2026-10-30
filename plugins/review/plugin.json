@@ -67,6 +67,62 @@
     },
     {
       "_meta": {},
+      "description": "Comment a report on a GitHub pull request with gh, once the owner approves the whole comment through `board decide`, and set the report's source to the comment's URL. A report whose source is set is skipped.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Post a report as a comment on a pull request, once the owner approves the comment.",
+        "properties": {
+          "pr": {
+            "description": "The pull request to comment on, by its URL, such as https://github.com/o/r/pull/7.",
+            "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$",
+            "title": "Pr",
+            "type": "string"
+          },
+          "report": {
+            "description": "The report to post, by its logical path, such as /reviews/fix-sync/report.",
+            "format": "board-path",
+            "pattern": "^/reviews/[^/]+/report$",
+            "title": "Report",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report",
+          "pr"
+        ],
+        "title": "PostInput",
+        "type": "object"
+      },
+      "name": "post",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The comment's URL, from the report's `source` when it was already posted, and whether this call posted it.",
+        "properties": {
+          "comment": {
+            "title": "Comment",
+            "type": "string"
+          },
+          "posted": {
+            "title": "Posted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "comment",
+          "posted"
+        ],
+        "title": "PostOutput",
+        "type": "object"
+      },
+      "timeout": 60
+    },
+    {
+      "_meta": {},
       "annotations": {
         "readOnlyHint": true
       },
@@ -135,7 +191,7 @@
       }
     }
   ],
-  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.covered --base <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in the plugin's directory says more.",
+  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment; `board call review.covered --base <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in the plugin's directory says more.",
   "metadata": {
     "area": "review"
   },
@@ -149,5 +205,5 @@
     "review/brief/v1",
     "review/report/v1"
   ],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

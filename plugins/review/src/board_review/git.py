@@ -136,7 +136,10 @@ class Repository:
         return self.git("diff", *DIFF, "--end-of-options", base, head)
 
     def review_only(self, commit: str) -> bool:
-        """Whether `commit` only adds briefs and reports at their paths under /reviews/."""
+        """Whether `commit` only adds briefs and reports at their paths under /reviews/, or sets a report's `source`.
+
+        `review.post` sets `source` to the comment's URL, which changes nothing the report covers.
+        """
         prefix = self.git("rev-parse", "--show-prefix").strip()
         listed = (
             "diff-tree",
@@ -150,7 +153,18 @@ class Repository:
         )
         changed = self.git(*listed, commit).split("\0")[:-1]
         added = self.git(*listed[:-1], "--diff-filter=A", "--end-of-options", commit).split("\0")[:-1]
-        return bool(changed) and changed == added and all(self._record(commit, prefix, path) for path in changed)
+        return bool(changed) and all(
+            self._record(commit, prefix, path) and (path in added or self._sourced(commit, path)) for path in changed
+        )
+
+    def _sourced(self, commit: str, path: str) -> bool:
+        """Whether `commit` changes only the `source` of the report at `path`."""
+        try:
+            before, after = (json.loads(self.git("cat-file", "blob", f"{at}:{path}")) for at in (f"{commit}^", commit))
+        except (PluginError, ValueError):
+            return False
+        unset = {"source": None}
+        return path.endswith("/report.json") and isinstance(before, dict) and before | unset == after | unset
 
     def _record(self, commit: str, prefix: str, path: str) -> bool:
         """Whether `path` in `commit` is a brief or a report at /reviews/<id>/ of the type its name gives."""

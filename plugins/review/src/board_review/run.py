@@ -57,9 +57,7 @@ def run(request: CallRequest) -> RunOutput:
     """
     board = Board(request.board.root, "review")
     path = str(request.input["brief"])
-    brief = cast(
-        "BriefRecord", _record(board, f"source = 'worktree' AND logical = {literal(path)}", BRIEF_TYPE, "brief", path)
-    )
+    brief = cast("BriefRecord", read_record(board, path, BRIEF_TYPE, "brief")[0])
     report_path = path.removesuffix("brief") + "report"
     if board.rows(f"SELECT 1 FROM entries WHERE logical = {literal(report_path)}"):  # noqa: S608 - literal quoted
         raise PluginError(
@@ -127,11 +125,15 @@ def _command() -> list[str]:
     return [str(part) for part in parts]
 
 
-def _record(board: Board, where: str, record_type: str, area: str, path: str) -> dict[str, Any]:
-    """The one valid record of `record_type` the query `where` finds, or `review::<area>::not_found`."""
+def read_record(board: Board, path: str, record_type: str, area: str) -> tuple[dict[str, Any], str]:
+    """The valid record of `record_type` at `path` in the board's own tree, and its blob.
+
+    Else `review::<area>::not_found`.
+    """
     codes = ", ".join(literal(code) for code in TREE_CODES)
+    where = f"source = 'worktree' AND logical = {literal(path)}"
     rows = board.rows(
-        f"SELECT body FROM records WHERE {where} AND type = {literal(record_type)}"  # noqa: S608 - literals quoted
+        f"SELECT body, blob FROM records WHERE {where} AND type = {literal(record_type)}"  # noqa: S608 - literals quoted
         f" AND (status = 'ok' OR code IN ({codes}))"
     )
     if not rows:
@@ -141,7 +143,7 @@ def _record(board: Board, where: str, record_type: str, area: str, path: str) ->
             " show what is there, and README.md says what the record holds",
             {"path": path},
         )
-    return cast("dict[str, Any]", json.loads(rows[0][0]))
+    return cast("dict[str, Any]", json.loads(rows[0][0])), str(rows[0][1])
 
 
 def _prompt(path: str, brief: BriefRecord, base: str, head: str, diff: str) -> str:

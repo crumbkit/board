@@ -53,7 +53,13 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         for capability in capabilities
         for name, field in capability["inputSchema"]["properties"].items()
     }
-    assert set(descriptions) == {("run", "brief"), ("covered", "base"), ("covered", "head")}
+    assert set(descriptions) == {
+        ("run", "brief"),
+        ("post", "report"),
+        ("post", "pr"),
+        ("covered", "base"),
+        ("covered", "head"),
+    }
     for key, description in descriptions.items():
         assert isinstance(description, str), key
         assert description.endswith("."), key
@@ -66,3 +72,10 @@ def test_board_lists_the_plugin_as_working_with_its_types_installed(repo: Repo) 
     checked = json.loads(repo.run("--json", "check").stdout)
     status = {entry["logical"]: entry["status"] for entry in checked["data"]}
     assert status["/.board/types/review/report/v1.schema"] == "ok"
+
+
+def test_post_reads_only_ghs_credentials_and_has_a_minute() -> None:
+    capabilities = cast("list[dict[str, Any]]", manifest()["capabilities"])
+    [post] = [capability for capability in capabilities if capability["name"] == "post"]
+    assert post["env"] == ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]
+    assert post["timeout"] == 60  # noqa: PLR2004 - the manifest's figure

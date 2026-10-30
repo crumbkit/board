@@ -2,7 +2,8 @@
 
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
-change, and records what it found as a report. `review.covered` checks that a
+change, and records what it found as a report. `review.post` comments a report
+on a pull request once the owner approves the comment. `review.covered` checks that a
 committed report covers a pull request's commits, so CI can require a review
 of each pull request.
 
@@ -87,16 +88,55 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   and the ends of stdout and stderr), `review::agent::timeout` or
   `review::agent::bad_output`.
 
+`board call review.post --report /reviews/<id>/report --pr <url>`:
+
+- `--pr` is the pull request's full URL, `https://github.com/<owner>/<repo>/pull/<n>`.
+- Reads the report from the board's own tree. A report that is not there,
+  or that its schema refuses, fails with `review::report::not_found` before
+  anything is asked.
+- Skips a report whose `source` is set, without asking or posting, and
+  returns that URL as `comment` with `posted: false`. A posted report, or
+  one recorded from a GitHub review, has one. A report is posted once, to
+  the pull request its `source` names.
+- Builds the comment from the report: the verdict, `by`, the range, each
+  finding with its severity, file and line, and the report it follows. A
+  footer names the report and the pull request. Every `@` is followed by a
+  zero-width joiner, so text an agent wrote from an untrusted diff mentions
+  no one.
+- Asks the owner with `board decide --op review.post --path <report> --text -`,
+  showing the whole comment. Until the owner approves, it fails with
+  `review::board::refused` carrying Board's `board::settings::asked` or
+  `board::settings::refused`, its message and the `effect` id. The effect's
+  id covers the text, and the footer puts the pull request in the text, so
+  an approval admits only that comment on that pull request. A changed
+  report, or another pull request, asks again.
+- Once approved, runs `gh pr comment <url> --body-file -` with the comment on
+  stdin, then sets the report's `source` to the URL gh printed, and returns
+  it as `comment` with `posted: true`. gh reads its login from its own
+  config, or `GH_TOKEN`, `GITHUB_TOKEN` or `GH_CONFIG_DIR` when Board has
+  them. Commit the report afterwards; `review.covered` skips a commit that
+  only sets, changes or removes a report's `source`.
+- The approval stays, so a re-run of a report that has no `source` posts
+  again without asking.
+- Fails with `review::gh::failed` when gh cannot start, runs past 40
+  seconds, exits non-zero, or prints something other than a comment URL on
+  the pull request. The message carries gh's stderr. The report is
+  unchanged. gh may still have posted the comment, so check the pull
+  request for it before posting again.
+- If gh posted but the report could not be written, posting again posts a
+  second comment.
+
 `board call review.covered --base <commit> [--head <commit>]`:
 
 - Checks each commit from the merge base of `--base` and the head to the head.
   `--base` is required, so CI cannot check the tip alone. The head is HEAD by
   default.
-- A commit that only adds briefs and reports needs no report, so committing
-  one leaves the head covered. Each added file must be a `review/brief/v1` at
+- A commit that only adds briefs and reports, or only sets, changes or
+  removes a report's `source`, needs no report, so committing one leaves the
+  head covered. Each added file must be a `review/brief/v1` at
   `reviews/<id>/brief.json` or a `review/report/v1` at
-  `reviews/<id>/report.json`. A commit that adds any other file, a merge, or a
-  commit that changes or deletes a file always needs one.
+  `reviews/<id>/report.json`. A merge, a commit that adds any other file,
+  changes any other field or deletes a file always needs one.
 - A report with the verdict `changes` never covers.
 - Another report covers each commit its range contains, and each commit whose
   patch id it lists, as after a rebase. A merge or an empty commit has no
@@ -148,6 +188,8 @@ The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 `uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
 the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. The tests start a stub agent script, never a
-model. `plugin.json` and the shipped schemas are generated from the shapes in
+model, and a stub gh, never GitHub. An approval needs the owner's
+signature, so the approved tests put a `board` shim on PATH that runs the
+plugin's decide as the owner, whom Board admits. `plugin.json` and the shipped schemas are generated from the shapes in
 `src/board_review/shapes.py` by `board_review.manifest`, and a test checks that
 the committed files match.

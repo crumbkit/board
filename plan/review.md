@@ -12,7 +12,7 @@ file is deleted.
    a capability may read.
 2. `review/brief/v1`, `review/report/v1` and `review.run`.
 3. `review.post` posts a report as a pull request comment through the effect
-   check, asking with `board decide`.
+   check, asking with `board decide`. Built.
 4. `review.covered`, which CI calls to check a pull request is covered by
    reports.
 
@@ -56,8 +56,11 @@ repositories join as it proves itself.
 6. **Anyone may post a report.** A person's GitHub review counts as review
    evidence and is recorded as a report with `source` set to its URL.
 7. **Posting is an effect.** `review.post` asks `board decide --op
-   review.post --path <report path>`, and the ask shows the whole comment,
-   since an agent wrote it from an untrusted diff.
+   review.post --path <report path> --text -`, and the ask shows the whole
+   comment, since an agent wrote it from an untrusted diff. The comment names
+   the pull request, so an approval binds the text and the target. Posting
+   sets the report's `source` to the comment's URL, and a report with a
+   `source` is not posted again.
 8. **The coverage check** is `review.covered --base <sha> --head <sha>`,
    which CI runs on each pull request.
    - It passes when reports cover every commit from the merge base to the
@@ -66,9 +69,8 @@ repositories join as it proves itself.
    - A report whose verdict is `changes` does not count.
    - It reads reports committed to the repository's own board.
    - It skips commits that only add valid `review/*` records under
-     `/reviews/`, so committing a report does not make a new head that no
-     report covers. A merge, or a commit that changes or deletes a file, is
-     never skipped.
+     `/reviews/`, or only set, change or remove a report's `source`, so
+     committing a report does not make a new head that no report covers.
    - It proves that reports cover the head. It does not prove a review
      happened: anyone who can add a commit to the pull request, from a fork
      too, can commit an approving report, and the workflow that runs the

@@ -239,6 +239,20 @@ def test_a_commit_changing_a_review_record_is_not_skipped_and_one_adding_a_recor
     assert (code, output["skipped"], output["reports"]) == (0, 3, [path])
 
 
+def test_a_commit_setting_only_a_reports_source_is_skipped_and_one_also_changing_its_findings_is_not(
+    repo: Repo,
+) -> None:
+    _, _, path = reviewed(repo)
+    source = {"source": "https://github.com/o/r/pull/7#issuecomment-1"}
+    finding = {"severity": "low", "text": "Later."}
+    changed = repo.commit("reviews/change/report.json", json.dumps(repo.get(path) | source | {"findings": [finding]}))
+    assert uncovered(repo)["uncovered"] == [changed]
+    repo.git("reset", "-q", "--hard", "HEAD~1")
+    repo.commit("reviews/change/report.json", json.dumps(repo.get(path) | source))
+    code, output = repo.call("covered", "--base", "main")
+    assert (code, output["skipped"], output["reports"]) == (0, 3, [path])
+
+
 def test_a_commit_adding_a_record_of_another_type_or_at_another_path_is_not_skipped_and_a_brief_at_its_path_is(
     repo: Repo,
 ) -> None:

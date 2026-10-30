@@ -8,11 +8,14 @@ from pydantic_core import core_schema
 from board_review.shapes import (
     AGENT_VARIABLE,
     BRIEF_TYPE,
+    POST_TIMEOUT,
     REPORT_TYPE,
     RUN_TIMEOUT,
     BriefRecord,
     CoveredInput,
     CoveredOutput,
+    PostInput,
+    PostOutput,
     ReportRecord,
     RunInput,
     RunOutput,
@@ -20,6 +23,8 @@ from board_review.shapes import (
 
 # What `run` reads: the agent to start, and what that agent may read, besides what Board passes every plugin.
 RUN_ENV = [AGENT_VARIABLE, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
+# What `post` passes gh: its token, or the directory that holds its login.
+POST_ENV = ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]
 
 
 class _Closed(GenerateJsonSchema):
@@ -39,11 +44,13 @@ def manifest() -> dict[str, JsonValue]:
     return {
         "$type": "board/plugin-manifest/v1",
         "name": "review",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "description": (
             "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is"
             " covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range"
-            " with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.covered --base"
+            " with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report"
+            " /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment;"
+            " `board call review.covered --base"
             " <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in"
             " the plugin's directory says more."
         ),
@@ -62,6 +69,19 @@ def manifest() -> dict[str, JsonValue]:
                 "_meta": {},
                 "timeout": RUN_TIMEOUT,
                 "env": list[JsonValue](RUN_ENV),
+            },
+            {
+                "name": "post",
+                "description": (
+                    "Comment a report on a GitHub pull request with gh, once the owner approves the whole comment"
+                    " through `board decide`, and set the report's source to the comment's URL. A report whose"
+                    " source is set is skipped."
+                ),
+                "inputSchema": _schema(PostInput),
+                "outputSchema": _schema(PostOutput),
+                "_meta": {},
+                "timeout": POST_TIMEOUT,
+                "env": list[JsonValue](POST_ENV),
             },
             {
                 "name": "covered",
