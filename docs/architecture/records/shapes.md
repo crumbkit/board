@@ -25,9 +25,9 @@ needs to know.
 7. A field that names a repository is a reference to that repository's mount
    record at `/repos/<name>`, named for what it is, such as `mount` or
    `mounts`. A pinned version is a sibling field, such as `commit`. A field
-   that matches git remotes (`owner/name` or `owner/*`) is not a repository
-   reference; it is named `remote`, or for what it matches, such as notes
-   `covers`.
+   whose values are matched against GitHub remotes (`owner/name` or
+   `owner/*`) is not a mount reference; it is named `remote`, or for what it
+   matches, such as notes `covers`.
 8. An enum is inline, `{"type": "string", "enum": [...]}`, in lowercase or
    kebab case. A union of scalars, such as a date or one of a few words, is
    allowed when it holds no reference.
@@ -38,8 +38,7 @@ needs to know.
 11. Every property has a `description`. No property has a `title`.
 12. No `$schema` key. Draft 2020-12, committed in canonical form.
 
-Until it is renamed to say what it matches, prompts `runs_in.repo` breaks
-rule 7.
+Until it is renamed `remote`, prompts `runs_in.repo` breaks rule 7.
 
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11 and 12 on every committed
 record schema. It lists the schemas that break a rule today, until their
