@@ -175,7 +175,7 @@ fn paths(start: Option<PathBuf>, shell: &'static str, context: &Context) -> ArgV
     ArgValueCompleter::new(move |current: &OsStr| {
         let board = start
             .as_deref()
-            .and_then(|start: &Path| Board::open(start, home.clone(), crate::timing::BUILD).ok());
+            .and_then(|start: &Path| Board::open(start, home.clone()).ok());
         match (board, current.to_str()) {
             (Some(board), Some(typed)) => board
                 .complete(&unescape(typed))

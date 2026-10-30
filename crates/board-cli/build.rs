@@ -1,16 +1,16 @@
 //! Sets `BOARD_BUILD`, the suffix the timing log adds to Board's version:
 //! `+<commit>`, with `.dirty.<hash>` when the source differs from it, or
-//! `+source.<hash>` outside a git checkout
+//! nothing outside a git checkout, so that a build there keeps no decisions
 //! (docs/architecture/performance/timing.md).
 #![expect(
     clippy::disallowed_methods,
-    reason = "the build script asks git which commit it builds and hashes the source it builds; no other code runs at build time"
+    reason = "the build script asks git which commit it builds and how the source differs from it; no other code runs at build time"
 )]
 
 use std::ffi::OsStr;
 use std::hash::{DefaultHasher, Hasher};
 use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 const SOURCE: [&str; 4] = ["crates", "Cargo.toml", "Cargo.lock", "rust-toolchain.toml"];
 const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
@@ -58,32 +58,6 @@ fn changes() -> String {
     format!("{:016x}", hasher.finish())
 }
 
-/// A hash of the name and bytes of every source file, for a build outside a
-/// git checkout.
-fn source() -> String {
-    let root = Path::new(ROOT);
-    let mut pending: Vec<PathBuf> = SOURCE.iter().map(|path| root.join(path)).collect();
-    let mut files = Vec::new();
-    while let Some(path) = pending.pop() {
-        match std::fs::read_dir(&path) {
-            Ok(entries) => pending.extend(entries.flatten().map(|entry| entry.path())),
-            Err(_) => files.push(path),
-        }
-    }
-    files.sort();
-    let mut hasher = DefaultHasher::new();
-    for file in files {
-        hasher.write(
-            file.strip_prefix(root)
-                .unwrap_or(&file)
-                .as_os_str()
-                .as_bytes(),
-        );
-        hasher.write(&std::fs::read(&file).unwrap_or_default());
-    }
-    format!("{:016x}", hasher.finish())
-}
-
 fn main() {
     let status = [
         &["--no-optional-locks", "status", "--porcelain", "--"],
@@ -94,7 +68,7 @@ fn main() {
     let build = match text(&["rev-parse", "--short=12", "HEAD"]) {
         Some(commit) if dirty => format!("+{commit}.dirty.{}", changes()),
         Some(commit) => format!("+{commit}"),
-        None => format!("+source.{}", source()),
+        None => String::new(),
     };
     println!("cargo::rustc-env=BOARD_BUILD={build}");
     // A commit appends to HEAD's reflog, or moves HEAD where git keeps no

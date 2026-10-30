@@ -293,7 +293,7 @@ fn a_store_setting_names_a_backend_board_offers_and_a_location_and_any_other_is_
     ] {
         let config = format!(r#"{{"$type": "board/config/v1", "store": {invalid}}}"#);
         scenario.write(".board/board.json", Item::File(&config));
-        let error = Board::open(scenario.workdir(), None, "").unwrap_err();
+        let error = Board::open(scenario.workdir(), None).unwrap_err();
         assert!(
             matches!(error, OpenError::Config { .. }),
             "{invalid}: {error}"

@@ -54,7 +54,7 @@ impl Board {
             return Err(refused(&first.path, mount, Through::Own));
         }
         let home = self.repositories().home().map(Into::into);
-        let mut mounted = match Board::open(&inside.repository, home, self.build) {
+        let mut mounted = match Board::open(&inside.repository, home) {
             Ok(mounted) if mounted.repository().path() == inside.repository => mounted,
             _ => return Err(refused(&first.path, mount, Through::NotABoard)),
         };

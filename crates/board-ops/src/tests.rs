@@ -35,8 +35,12 @@ pub(crate) fn board() -> Scenario {
     scenario
 }
 
+/// The board in `scenario`, decided by a named build so that it keeps
+/// decisions as an installed one does.
 pub(crate) fn open(scenario: &Scenario) -> Board {
-    Board::open(scenario.workdir(), None, "").unwrap()
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.built_by("test");
+    board
 }
 
 /// A library board that a board mounts at `/vendor`, with a task of the
@@ -174,7 +178,7 @@ pub(crate) fn locked(scenario: &Scenario, path: &str, item: Item<'_>) -> bool {
 fn a_board_is_found_from_any_directory_inside_it() {
     let scenario = board();
     scenario.write("work/deep/x.md", Item::File(""));
-    let from_inside = Board::open(&scenario.workdir().join("work/deep"), None, "").unwrap();
+    let from_inside = Board::open(&scenario.workdir().join("work/deep"), None).unwrap();
     assert_eq!(
         from_inside.repository().path(),
         open(&scenario).repository().path()
@@ -186,19 +190,19 @@ fn a_board_is_found_from_any_directory_inside_it() {
 #[test]
 fn outside_a_repository_or_without_board_json_at_its_root_there_is_no_board() {
     let outside = tempfile::tempdir().unwrap();
-    let error = Board::open(outside.path(), None, "").unwrap_err();
+    let error = Board::open(outside.path(), None).unwrap_err();
     assert!(matches!(error, OpenError::NoRepository { .. }), "{error}");
     assert_eq!(error.code(), Code::ConfigNotFound);
     let plain = Scenario::new();
     plain.write("x.json", Item::File("{}"));
-    let error = Board::open(plain.workdir(), None, "").unwrap_err();
+    let error = Board::open(plain.workdir(), None).unwrap_err();
     assert!(matches!(error, OpenError::NotFound { .. }), "{error}");
     assert_eq!(error.code(), Code::ConfigNotFound);
     let nested = Scenario::new();
     nested.write("sub/.board/board.json", Item::File(CONFIG));
-    let error = Board::open(&nested.workdir().join("sub"), None, "").unwrap_err();
+    let error = Board::open(&nested.workdir().join("sub"), None).unwrap_err();
     assert_eq!(error.code(), Code::ConfigNotFound);
-    assert!(Board::open(board().workdir(), None, "").is_ok());
+    assert!(Board::open(board().workdir(), None).is_ok());
 }
 
 /// A board whose root holds several files beside `.board`, one of them
@@ -224,7 +228,7 @@ fn opening_a_board_opens_only_its_configuration_and_an_unreadable_one_is_invalid
     assert_eq!(board.repository().files_opened(), 3);
     let locked = board_beside_large_files();
     if unreadable(&locked, ".board/board.json", CONFIG) {
-        let error = Board::open(locked.workdir(), None, "").unwrap_err();
+        let error = Board::open(locked.workdir(), None).unwrap_err();
         assert_eq!(error.code(), Code::ConfigInvalid);
     }
 }
@@ -233,11 +237,11 @@ fn opening_a_board_opens_only_its_configuration_and_an_unreadable_one_is_invalid
 fn a_board_directory_spelled_in_another_case_is_no_board() {
     let scenario = Scenario::new();
     scenario.write(".board/board.json", Item::File(CONFIG));
-    assert!(Board::open(scenario.workdir(), None, "").is_ok());
+    assert!(Board::open(scenario.workdir(), None).is_ok());
     scenario
         .write(".board", Item::Deleted)
         .write(".Board/board.json", Item::File(CONFIG));
-    let error = Board::open(scenario.workdir(), None, "").unwrap_err();
+    let error = Board::open(scenario.workdir(), None).unwrap_err();
     assert_eq!(error.code(), Code::ConfigNotFound);
 }
 
@@ -254,7 +258,7 @@ fn a_board_json_board_cannot_read_is_invalid() {
     ] {
         let scenario = Scenario::new();
         scenario.write(".board/board.json", Item::File(bad));
-        let error = Board::open(scenario.workdir(), None, "").unwrap_err();
+        let error = Board::open(scenario.workdir(), None).unwrap_err();
         assert_eq!(error.code(), Code::ConfigInvalid, "{bad}");
     }
     let scenario = Scenario::new();
@@ -1549,7 +1553,7 @@ fn a_board_whose_configuration_is_reached_through_a_symlink_out_of_its_repositor
         (directory, "../outside"),
         (file, "../../outside/board.json"),
     ] {
-        let refused = Board::open(linked.workdir(), None, "").unwrap_err();
+        let refused = Board::open(linked.workdir(), None).unwrap_err();
         assert_eq!(refused.code(), Code::SymlinkOutside);
         assert!(refused.to_string().contains("\"../"), "{refused}");
         let fields = refused.fields();
@@ -1560,26 +1564,26 @@ fn a_board_whose_configuration_is_reached_through_a_symlink_out_of_its_repositor
     inside
         .write(".board/config.json", Item::File(CONFIG))
         .write(".board/board.json", Item::Symlink("config.json"));
-    assert!(Board::open(inside.workdir(), None, "").is_ok());
+    assert!(Board::open(inside.workdir(), None).is_ok());
     let invalid = Scenario::within(&outer);
     invalid.write(".board/board.json", Item::File("{}"));
-    let refused = Board::open(invalid.workdir(), None, "").unwrap_err();
+    let refused = Board::open(invalid.workdir(), None).unwrap_err();
     assert_eq!(refused.code(), Code::ConfigInvalid);
     assert_eq!(refused.fields().path, None);
     let real = Scenario::within(&outer);
     real.write(".board/board.json", Item::File(CONFIG));
-    assert!(Board::open(real.workdir(), None, "").is_ok());
+    assert!(Board::open(real.workdir(), None).is_ok());
 }
 
 #[test]
 fn a_board_whose_configuration_is_a_dangling_symlink_names_the_symlink_and_one_to_a_file_opens() {
     let dangling = Scenario::new();
     dangling.write(".board/board.json", Item::Symlink("config.json"));
-    let refused = Board::open(dangling.workdir(), None, "").unwrap_err();
+    let refused = Board::open(dangling.workdir(), None).unwrap_err();
     assert_eq!(refused.code(), Code::SymlinkDangling);
     let fields = refused.fields();
     assert_eq!(fields.path, Some("/.board/board".parse().unwrap()));
     assert_eq!(fields.target.as_deref(), Some("config.json"));
     dangling.write(".board/config.json", Item::File(CONFIG));
-    assert!(Board::open(dangling.workdir(), None, "").is_ok());
+    assert!(Board::open(dangling.workdir(), None).is_ok());
 }

@@ -27,7 +27,7 @@ it was built from, then `.dirty.` and a hash of the changes when `crates/`,
 `Cargo.toml`, `Cargo.lock` or `rust-toolchain.toml` differed from that
 commit, untracked files included, such as
 `0.0.0+45aafa9e1b2c.dirty.3f0c2a9b8d7e6f15`. A build outside a git checkout
-adds `+source.` and a hash of those files. board-cli's build script asks git, and cargo runs it again
+has no suffix, and keeps no decisions. board-cli's build script asks git, and cargo runs it again
 after each commit, so board-cli recompiles after every commit.
 `board --version` prints the version alone.
 

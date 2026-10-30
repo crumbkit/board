@@ -18,11 +18,15 @@ fn mount(repo: &str, commit: ObjectId) -> String {
     )
 }
 
+/// The build these tests decide as, unless one says otherwise.
+const BUILD: &str = "test";
+
 /// Queries `scenario` as `build` through the index in `cache` and through a
 /// cold one, requires every table and an unordered, bounded query to
 /// answer alike, and returns the warm run's work.
 fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed {
-    let board = crate::Board::open(scenario.workdir(), None, build).unwrap();
+    let mut board = open(scenario);
+    board.built_by(build);
     let root = board.repository().path().to_path_buf();
     let warm = filled(&board, Index::open(Some(cache), &root).unwrap());
     let cold = filled(&board, Index::open(None, &root).unwrap());
@@ -37,7 +41,7 @@ fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed
 /// How many mounted sources a warm query kept, after answering as a cold
 /// one.
 fn kept(scenario: &Scenario, cache: &Path) -> usize {
-    query_as(scenario, cache, "").kept
+    query_as(scenario, cache, BUILD).kept
 }
 
 /// A library board holding the types, a project and `files`, committed.
@@ -71,7 +75,7 @@ fn a_warm_query_keeps_every_mounted_source_and_after_one_moves_decides_only_that
         0,
         "a cold index keeps nothing"
     );
-    let warm = query_as(&scenario, cache.path(), "");
+    let warm = query_as(&scenario, cache.path(), BUILD);
     assert_eq!((warm.kept, warm.trees), (2, 0));
     // The move also turns the library's plain project into a link.
     vendor.moved(&scenario);
@@ -283,7 +287,8 @@ fn another_build_lists_pointers_and_decides_again_and_the_same_build_keeps_both(
         let cache = tempfile::tempdir().unwrap();
         query_as(&scenario, cache.path(), "a");
         assert_eq!(query_as(&scenario, cache.path(), second).kept, expected);
-        let board = crate::Board::open(scenario.workdir(), None, second).unwrap();
+        let mut board = open(&scenario);
+        board.built_by(second);
         let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
         let sql = "SELECT count(DISTINCT scan) FROM main.pointers";
         let rows = filled(&board, index).view.query(sql, 1, None).unwrap().rows;
@@ -365,7 +370,7 @@ fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_once_its_repos
     let (scenario, _library, target) = linked_through(".board/types/acme/thing/v1.schema.json");
     let cache = tempfile::tempdir().unwrap();
     let code = |scenario: &Scenario| {
-        query_as(scenario, cache.path(), "");
+        query_as(scenario, cache.path(), BUILD);
         let board = open(scenario);
         let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
         let sql = "SELECT code FROM entries WHERE path = 'notes/n.md'";
@@ -375,4 +380,21 @@ fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_once_its_repos
     assert_eq!(code(&scenario), [[serde_json::Value::Null]]);
     target.write(".git", Item::Deleted);
     assert_eq!(code(&scenario), [["board::ref::dangling"]]);
+}
+
+#[test]
+fn an_empty_build_keeps_and_stores_nothing_and_a_named_one_keeps_each_source() {
+    for (build, expected, stored) in [("", 0, 0), (BUILD, 1, 1)] {
+        let scenario = board();
+        let _vendor = Library::mounted(&scenario);
+        let cache = tempfile::tempdir().unwrap();
+        query_as(&scenario, cache.path(), build);
+        assert_eq!(query_as(&scenario, cache.path(), build).kept, expected);
+        let mut board = open(&scenario);
+        board.built_by(build);
+        let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
+        let sql = "SELECT (SELECT count(*) FROM main.decided) + (SELECT count(DISTINCT scan) FROM main.pointers) > 0";
+        let rows = filled(&board, index).view.query(sql, 1, None).unwrap().rows;
+        assert_eq!(rows, [[stored]], "{build:?}");
+    }
 }

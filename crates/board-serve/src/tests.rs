@@ -474,7 +474,7 @@ fn with_server<T>(
     cache: &std::path::Path,
     during: impl FnOnce(u16, Token) -> T,
 ) -> (T, Served) {
-    let root = Board::open(workdir, None, "")
+    let root = Board::open(workdir, None)
         .unwrap()
         .repository()
         .path()
@@ -482,7 +482,7 @@ fn with_server<T>(
     let stop = AtomicBool::new(false);
     std::thread::scope(|scope| {
         let server = scope.spawn(|| {
-            let board = Board::open(workdir, None, "").unwrap();
+            let board = Board::open(workdir, None).unwrap();
             serve(&board, cache, Duration::from_mins(1), &stop)
         });
         let (port, token) = loop {
@@ -516,7 +516,7 @@ fn a_server_answers_over_a_socket_and_removes_its_file_when_stopped() {
         assert!(page.starts_with("HTTP/1.1 200"), "{page}");
     });
     assert_eq!(served.requests, 3);
-    let root = Board::open(&workdir, None, "")
+    let root = Board::open(&workdir, None)
         .unwrap()
         .repository()
         .path()
@@ -528,7 +528,7 @@ fn a_server_answers_over_a_socket_and_removes_its_file_when_stopped() {
 fn a_server_with_no_authorised_request_exits_when_idle() {
     let scenario = board_scenario();
     let cache = tempfile::tempdir().unwrap();
-    let board = Board::open(scenario.workdir(), None, "").unwrap();
+    let board = Board::open(scenario.workdir(), None).unwrap();
     let start = Instant::now();
     let served = serve(
         &board,
@@ -573,7 +573,7 @@ fn opening_a_page_with_no_server_running_is_refused_and_opening_it_with_one_runn
     let cache = tempfile::tempdir().unwrap();
     let (launch, opened_file) = launch(&scenario, cache.path());
     let workdir = scenario.workdir().to_owned();
-    let board = Board::open(&workdir, None, "").unwrap();
+    let board = Board::open(&workdir, None).unwrap();
     let path: LogicalPath = "/bindings/b".parse().unwrap();
 
     let refused = open(&board, &launch, &path).unwrap_err();
@@ -616,7 +616,7 @@ fn a_server_file_whose_server_cannot_prove_its_token_is_not_reused_and_a_true_on
     let cache = tempfile::tempdir().unwrap();
     let (launch, _) = launch(&scenario, cache.path());
     let workdir = scenario.workdir().to_owned();
-    let board = Board::open(&workdir, None, "").unwrap();
+    let board = Board::open(&workdir, None).unwrap();
     let root = board.repository().path().to_owned();
     let path: LogicalPath = "/bindings/b".parse().unwrap();
 
@@ -643,7 +643,7 @@ fn opening_a_binding_outside_bindings_is_refused_and_one_under_bindings_is_admit
     let cache = tempfile::tempdir().unwrap();
     let (launch, _) = launch(&scenario, cache.path());
     let workdir = scenario.workdir().to_owned();
-    let board = Board::open(&workdir, None, "").unwrap();
+    let board = Board::open(&workdir, None).unwrap();
     let ((refused, admitted), _) = with_server(&workdir, cache.path(), |_, _| {
         (
             open(&board, &launch, &"/pages/b".parse().unwrap()),

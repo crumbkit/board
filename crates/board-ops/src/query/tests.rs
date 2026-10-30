@@ -202,12 +202,12 @@ fn queried_while_another_handle_prunes(
     let root = scenario.workdir().to_path_buf();
     let sql = "SELECT path, blob, type, status FROM entries ORDER BY path";
     let cold = || {
-        let board = Board::open(&root, None, "").unwrap();
+        let board = Board::open(&root, None).unwrap();
         board.query(sql, 100, None, None).unwrap().rows
     };
     let before = cold();
     let cache = tempfile::tempdir().unwrap();
-    let board = Board::open(&root, None, "").unwrap();
+    let board = Board::open(&root, None).unwrap();
     let mut runs = 0;
     let warm = retried(|| {
         let (view, memory) = board.decided(Some(cache.path()))?;

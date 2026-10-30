@@ -152,3 +152,6 @@ fn hashed<T: AsRef<[u8]>>(fields: &[T]) -> Digest {
     }
     Digest::of(&bytes)
 }
+
+#[cfg(test)]
+mod tests;

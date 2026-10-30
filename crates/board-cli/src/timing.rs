@@ -9,9 +9,16 @@ use serde_json::{Value, json};
 use crate::config::Context;
 use crate::report::Output;
 
-/// Board's version and the build it came from, which the timing log records
-/// and which keys the decisions an index keeps.
+/// Board's version and the build it came from, which the timing log records.
 pub(crate) const BUILD: &str = concat!(env!("CARGO_PKG_VERSION"), env!("BOARD_BUILD"));
+
+/// What keys the decisions an index keeps: [`BUILD`], or nothing, which
+/// keeps none, for a build that does not know its commit.
+pub(crate) const DECIDER: &str = if env!("BOARD_BUILD").is_empty() {
+    ""
+} else {
+    BUILD
+};
 
 #[derive(Debug, Default)]
 pub(crate) struct Ran {

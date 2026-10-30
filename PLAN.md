@@ -28,7 +28,7 @@ The index keeps each mounted source's decision
 ([docs](docs/architecture/performance/decisions.md)). On a copy of the
 owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
 51 ms, down from 96 ms; the target is 50 ms. Opening mounts in parallel
-(C5) comes next, in its own pull request.
+comes next, in its own pull request.
 
 Two smaller items each get their own pull request. A scoped check walks
 every mount; fixing that needs a design. Compiling manifest schemas once

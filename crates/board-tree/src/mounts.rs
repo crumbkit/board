@@ -141,7 +141,9 @@ impl Repositories {
     /// then walked from it. A repository that several pointers name is
     /// opened once. A source whose pointers `cache` lists is walked only
     /// when its decision is not kept, or when `skip_kept` is false. `build`
-    /// names the code that decides, for the keys.
+    /// names the code that decides, for the keys; with an empty `build`
+    /// nothing is read from or stored in the cache's pointer lists or kept
+    /// decisions.
     pub fn walk_mounts<C: Cache>(
         &self,
         entries: &[Entry],
@@ -156,6 +158,7 @@ impl Repositories {
             probes: Vec::new(),
             unread: Vec::new(),
         };
+        let keeping = !build.is_empty();
         let mut candidates = Vec::new();
         let root = self.root();
         let is_pointer = |path: &str| C::is_pointer(facts, path);
@@ -184,12 +187,13 @@ impl Repositories {
             } = candidate;
             let source = Source::Commit(commit);
             let scan = scan(build, root);
-            let (walked, held) = if let Some(held) = cache.pointers(&scan) {
+            let listed = if keeping { cache.pointers(&scan) } else { None };
+            let (walked, held) = if let Some(held) = listed {
                 (None, held)
             } else {
                 let (entries, facts) = walk(&repository, commit, root, cache)?;
                 let held = held(&entries, &|path| C::is_pointer(&facts, path));
-                if C::complete(&facts, &entries) {
+                if keeping && C::complete(&facts, &entries) {
                     cache.put_pointers(&scan, &held)?;
                 }
                 (Some((entries, facts)), held)
@@ -212,7 +216,9 @@ impl Repositories {
                 walked,
             });
         }
-        reached.key(build);
+        if keeping {
+            reached.key(build);
+        }
         for mounted in &mut reached.sources {
             mounted.kept = mounted.key.as_ref().is_some_and(|key| cache.kept(key));
             if mounted.walked.is_none() && !(skip_kept && mounted.kept) {

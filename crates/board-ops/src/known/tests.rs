@@ -64,7 +64,7 @@ fn known(xdg: &Scenario) -> Result<KnownBoards, Box<Refusal>> {
 /// Opens the board for `start` with `xdg`'s known boards and `cache`, and
 /// gives the logical path it starts at, or the refusal.
 fn opened(start: &Path, xdg: &Scenario, cache: Option<&Path>) -> Result<String, Box<Refusal>> {
-    let (_, prefix) = open((start, ""), None, cache, || known(xdg))?;
+    let (_, prefix) = open(start, None, cache, || known(xdg))?;
     Ok(match prefix {
         Some(Ok(path)) => path.to_string(),
         other => format!("{other:?}"),
@@ -179,7 +179,7 @@ fn a_known_boards_file_that_is_not_a_list_is_refused_and_a_list_is_admitted() {
 fn outside_a_repository_the_known_boards_are_not_read_and_inside_one_they_are() {
     let library = library();
     let outside = tempfile::tempdir().unwrap();
-    let unread = open((outside.path(), ""), None, None, || {
+    let unread = open(outside.path(), None, None, || {
         panic!("read the known boards")
     });
     let lost = *unread.unwrap_err();

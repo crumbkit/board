@@ -20,7 +20,7 @@ fn answered(
     limit: usize,
     budget: usize,
 ) -> Result<QueryReport, QueryError> {
-    let board = Board::open(scenario.workdir(), None, "").unwrap();
+    let board = Board::open(scenario.workdir(), None).unwrap();
     let budget = Some(render::rows_budget(budget));
     board.query(sql, limit, budget, None)
 }

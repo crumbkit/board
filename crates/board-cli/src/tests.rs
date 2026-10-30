@@ -524,7 +524,7 @@ fn check_gives_each_seed_exhibit_its_code_from_a_warm_index_and_a_cold_one() {
     let cold = json(&board_cached(dir, Some(cache.path()), &arguments));
     // A warm check hashes, parses and writes nothing, and opens only the
     // schema it could not read.
-    let rechecked = board_ops::Board::open(dir, None, "")
+    let rechecked = board_ops::Board::open(dir, None)
         .unwrap()
         .check(None, Some(cache.path()))
         .unwrap();

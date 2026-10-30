@@ -856,7 +856,7 @@ fn a_home_mount_in_the_mounted_board_resolves_against_the_roots_home_and_without
     let record = task(r#", "project": "/other/projects/p""#);
     let at = path("/vendor/tasks/a");
     let degraded = |home| {
-        Board::open(scenario.workdir(), home, "")
+        Board::open(scenario.workdir(), home)
             .unwrap()
             .put(&at, Expect::Any, record.as_bytes())
             .unwrap()

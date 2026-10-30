@@ -337,7 +337,7 @@ fn plans_board(questions: &[(&str, Value)]) -> (Scenario, Board) {
         ".board/board.json",
         Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
     );
-    let mut board = Board::open(scenario.workdir(), None, "").unwrap();
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Plans]);
     board
         .plugin_enable(None, None, &"plans".parse().unwrap())
@@ -345,7 +345,7 @@ fn plans_board(questions: &[(&str, Value)]) -> (Scenario, Board) {
     for (path, body) in questions {
         scenario.write(&format!("{path}.json"), Item::File(body.as_str().unwrap()));
     }
-    let mut board = Board::open(scenario.workdir(), None, "").unwrap();
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Plans]);
     (scenario, board)
 }

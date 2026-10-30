@@ -58,7 +58,7 @@ fn batch_while_locked(
     let (done, read) = mpsc::channel();
     std::thread::scope(|scope| {
         let put = scope.spawn(move || {
-            crate::Board::open(&root, None, "")
+            crate::Board::open(&root, None)
                 .unwrap()
                 .put_batch(&mut Signalling {
                     bytes: input.as_bytes(),
