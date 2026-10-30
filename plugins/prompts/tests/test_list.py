@@ -44,9 +44,22 @@ def test_a_prompt_record_under_prompts_that_is_not_valid_is_counted_as_degraded(
     assert (titles(output), output["degraded"]) == ([("/", "Good"), ("/", "Linked")], 1)
 
 
+def test_a_file_under_prompts_whose_frontmatter_does_not_parse_or_names_an_unknown_type_is_counted(
+    board: Board,
+) -> None:
+    board.write("prompts/good.md", prompt("Good"))
+    board.write("prompts/unparsed.md", '---\n$type: "prompts/prompt/v1\ntitle: [Broken\n---\n')
+    board.write("prompts/misspelt.md", prompt("Misspelt", **{"$type": "prompts/promt/v1"}))
+    board.write("prompts/later.md", prompt("Later", **{"$type": "prompts/prompt/v2"}))
+    code, output = board.call("list")
+    assert code == 0, output
+    assert (titles(output), output["degraded"]) == ([("/", "Good")], 3)
+
+
 def test_a_markdown_file_under_prompts_that_is_no_prompt_record_is_not_counted(board: Board) -> None:
     board.write("prompts/good.md", prompt("Good"))
     board.write("prompts/untyped.md", "# A note\n")
+    board.write("prompts/linking.md", "# A note\n\n[gone](/gone.md)\n")
     board.write("evals/x/evidence/prompts/scorer.md", "# A scorer's prompt, kept as evidence\n")
     code, output = board.call("list")
     assert code == 0, output
