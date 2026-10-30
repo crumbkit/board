@@ -499,3 +499,46 @@ fn pinning_a_symlink_to_a_mount_is_refused_naming_the_symlink_and_pinning_its_mo
     assert_eq!(error.fields(), board_model::Fields::at(&path("/s")));
     assert_eq!(outer.repositories().pin(&path("/m")).unwrap().new, pinned);
 }
+
+#[test]
+fn resolving_into_a_mount_reads_the_size_of_each_symlink_listed_and_of_no_file_while_a_walk_reads_every_size()
+ {
+    let inner = Scenario::new();
+    let names: Vec<String> = (0..50).map(|n| format!("d/r{n}.json")).collect();
+    let mut items: Vec<(&[u8], Item<'_>)> = names
+        .iter()
+        .map(|name| (name.as_bytes(), Item::File("{}")))
+        .collect();
+    // Over 4,096 bytes, so it dangles without its text being read.
+    let long = format!("{}r0.json", "./".repeat(2100));
+    items.push((b"d/s.json", Item::Symlink("r0.json")));
+    items.push((b"d/long.json", Item::Symlink(&long)));
+    let pinned = inner.commit_items(&items);
+    let outer = Scenario::new();
+    let commit = outer.commit(&[("m.json", &mount(&inner.path(), pinned))]);
+    let repositories = outer.repositories();
+    let mounted = repositories
+        .repository(&Board {
+            repository: inner.open().path().to_path_buf(),
+            source: Source::Commit(pinned),
+        })
+        .unwrap();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    for n in 0..50 {
+        in_commit.resolve(&path(&format!("/m/d/r{n}"))).unwrap();
+    }
+    let symlink = in_commit.resolve(&path("/m/d/s")).unwrap();
+    assert_eq!(symlink.object, Object::Blob(inner.blob("{}")));
+    let refused = in_commit.resolve(&path("/m/d/long")).unwrap_err();
+    assert_eq!(refused.code(), Code::SymlinkDangling);
+    // Each resolution decodes the mounted root and `d` together, and only
+    // the two symlinks in `d` have a size read: two for each pair decoded.
+    let decoded = mounted.trees_decoded();
+    assert_eq!(mounted.sizes_read(), decoded);
+    assert_eq!(repositories.root().sizes_read(), 0);
+    // A walk gives every file its size: the 50 files and both symlinks.
+    let walked = mounted.walk(&Source::Commit(pinned)).unwrap();
+    let sized = walked.iter().filter(|entry| entry.size.is_some()).count();
+    assert_eq!(sized, 51, "every file but the dangling symlink");
+    assert_eq!(mounted.sizes_read() - decoded, 52);
+}

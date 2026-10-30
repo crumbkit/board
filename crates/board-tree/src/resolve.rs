@@ -11,7 +11,7 @@ use board_model::{
 };
 
 use crate::address::{Named, Pointers};
-use crate::git::{CommitTree, Contents, GitError, Repository};
+use crate::git::{CommitTree, Contents, GitError, Repository, Sizes};
 use crate::repositories::Repositories;
 use crate::symlink::{Chains, End, Node, ROOT, Refused};
 use crate::tree::{Kind, RawEntry, Tree};
@@ -80,7 +80,7 @@ impl Repositories {
     ) -> Result<InCommit<'r>, GitError> {
         Ok(InCommit {
             repositories: self,
-            tree: repository.commit_tree(commit)?,
+            tree: repository.commit_tree(commit)?.sizing(Sizes::Symlinks),
             pointers: Pointers::default(),
             chains: Chains::default(),
         })
@@ -285,13 +285,13 @@ impl Repositories {
                 path: at.clone(),
                 repo: mount.repo.clone(),
             })?;
-        let mut tree =
-            mounted
-                .commit_tree(mount.commit)
-                .map_err(|_| ResolveError::CommitMissing {
-                    path: at,
-                    commit: mount.commit,
-                })?;
+        let mut tree = mounted
+            .commit_tree(mount.commit)
+            .map_err(|_| ResolveError::CommitMissing {
+                path: at,
+                commit: mount.commit,
+            })?
+            .sizing(Sizes::Symlinks);
         let board = Board {
             repository: mounted.path().to_path_buf(),
             source: tree.source(),

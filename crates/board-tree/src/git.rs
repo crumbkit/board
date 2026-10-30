@@ -43,11 +43,29 @@ pub struct Repository {
     listed: AtomicUsize,
     /// How many working-tree files it opened to hash or read.
     opened: AtomicUsize,
-    /// How many trees it decoded from the object database, shared by every
-    /// `Repository` that [`Repositories`](crate::Repositories) lends for it.
-    decoded: Arc<AtomicUsize>,
+    /// What it read from the object database, shared by every `Repository`
+    /// that [`Repositories`](crate::Repositories) lends for it.
+    reads: Arc<ObjectReads>,
     /// How many threads a walk lists directories and hashes files on.
     threads: AtomicUsize,
+}
+
+/// What a repository read from its object database. Work-count tests
+/// assert it.
+#[derive(Debug, Default)]
+pub(crate) struct ObjectReads {
+    trees: AtomicUsize,
+    sizes: AtomicUsize,
+}
+
+/// Which entries of a tree get their size from the object database.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Sizes {
+    /// Every file and symlink, as a walk reports them.
+    All,
+    /// Symlinks only: resolution needs a symlink's size to tell whether to
+    /// read its text, and no file's.
+    Symlinks,
 }
 
 /// A commit's tree, read from the object database. Each directory is
@@ -58,6 +76,7 @@ pub(crate) struct CommitTree<'r> {
     commit: ObjectId,
     root: ObjectId,
     listed: HashMap<ObjectId, Indexed<ObjectId>>,
+    sizes: Sizes,
 }
 
 impl Repository {
@@ -76,13 +95,13 @@ impl Repository {
     }
 
     /// The repository at the canonical `path` that `git` has open.
-    pub(crate) fn lent(path: PathBuf, git: gix::Repository, decoded: Arc<AtomicUsize>) -> Self {
+    pub(crate) fn lent(path: PathBuf, git: gix::Repository, reads: Arc<ObjectReads>) -> Self {
         Self {
             path,
             git,
             listed: AtomicUsize::new(0),
             opened: AtomicUsize::new(0),
-            decoded,
+            reads,
             threads: AtomicUsize::new(default_threads()),
         }
     }
@@ -157,17 +176,23 @@ impl Repository {
         self.opened.load(Ordering::Relaxed)
     }
 
-    /// The count of trees decoded, for each `Repository` lent for this one
-    /// to add to.
-    pub(crate) fn decodes(&self) -> Arc<AtomicUsize> {
-        Arc::clone(&self.decoded)
+    /// The counts of what was read from the object database, for each
+    /// `Repository` lent for this one to add to.
+    pub(crate) fn reads(&self) -> Arc<ObjectReads> {
+        Arc::clone(&self.reads)
     }
 
     /// How many trees this repository decoded from the object database,
     /// through this `Repository` or any other lent for it. Work-count tests
     /// assert it.
     pub fn trees_decoded(&self) -> usize {
-        self.decoded.load(Ordering::Relaxed)
+        self.reads.trees.load(Ordering::Relaxed)
+    }
+
+    /// How many blob sizes this repository read from the object database,
+    /// counted as [`Repository::trees_decoded`] is.
+    pub fn sizes_read(&self) -> usize {
+        self.reads.sizes.load(Ordering::Relaxed)
     }
 
     /// Counts one working-tree file opened.
@@ -210,46 +235,51 @@ impl Repository {
             commit,
             root: model_id(&tree),
             listed: HashMap::new(),
+            sizes: Sizes::All,
         })
     }
 
     /// The entries of `tree`, in git's order.
-    fn list_tree(&self, tree: ObjectId) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
+    fn list_tree(&self, tree: ObjectId, sizes: Sizes) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
         Ok(self
-            .tree_entries(tree)?
+            .tree_entries(tree, sizes)?
             .into_iter()
             .map(|(entry, _, _)| entry)
             .collect())
     }
 
     /// The entries of `tree`, in git's order, each with git's mode and the
-    /// object it names.
+    /// object it names, and the size `sizes` asks for.
     pub(crate) fn tree_entries(
         &self,
         tree: ObjectId,
+        sizes: Sizes,
     ) -> Result<Vec<(RawEntry<ObjectId>, u32, ObjectId)>, GitError> {
         let found = self
             .git
             .find_tree(self.gix_id(tree)?)
             .map_err(|error| self.missing(tree, error))?;
         let decoded = found.decode().map_err(|error| self.missing(tree, error))?;
-        self.decoded.fetch_add(1, Ordering::Relaxed);
+        self.reads.trees.fetch_add(1, Ordering::Relaxed);
         Ok(decoded
             .entries
             .iter()
             .map(|entry| {
                 let id = model_id(entry.oid);
-                let size = matches!(
-                    entry.mode.kind(),
-                    EntryKind::Blob | EntryKind::BlobExecutable | EntryKind::Link
-                )
-                .then(|| {
-                    self.git
-                        .find_header(entry.oid)
-                        .ok()
-                        .map(|header| header.size())
-                })
-                .flatten();
+                let wanted = matches!(
+                    (entry.mode.kind(), sizes),
+                    (EntryKind::Link, _)
+                        | (EntryKind::Blob | EntryKind::BlobExecutable, Sizes::All)
+                );
+                let size = wanted
+                    .then(|| {
+                        self.reads.sizes.fetch_add(1, Ordering::Relaxed);
+                        self.git
+                            .find_header(entry.oid)
+                            .ok()
+                            .map(|header| header.size())
+                    })
+                    .flatten();
                 let raw = RawEntry {
                     name: entry.filename.to_vec(),
                     kind: match entry.mode.kind() {
@@ -301,6 +331,14 @@ impl Repository {
     }
 }
 
+impl CommitTree<'_> {
+    /// This tree, giving the entries it lists the sizes `sizes` asks for.
+    pub(crate) fn sizing(mut self, sizes: Sizes) -> Self {
+        self.sizes = sizes;
+        self
+    }
+}
+
 impl Tree for CommitTree<'_> {
     type Directory = ObjectId;
 
@@ -320,7 +358,7 @@ impl Tree for CommitTree<'_> {
         if let Some(listed) = self.listed.get(directory) {
             return Ok(Rc::clone(&listed.entries));
         }
-        let listed: Rc<[_]> = self.repository.list_tree(*directory)?.into();
+        let listed: Rc<[_]> = self.repository.list_tree(*directory, self.sizes)?.into();
         self.listed
             .insert(*directory, Indexed::new(Rc::clone(&listed)));
         Ok(listed)

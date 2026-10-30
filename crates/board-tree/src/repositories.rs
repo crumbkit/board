@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use board_model::{Board, Location, Mount, ObjectId, Source};
 
-use crate::git::{Contents, GitError, Repository};
+use crate::git::{Contents, GitError, ObjectReads, Repository};
 use crate::worktree::Reader;
 
 /// The repository a board is in, and a cache of every repository its mounts
@@ -33,7 +33,7 @@ pub struct Repositories {
 struct Opened {
     path: PathBuf,
     git: gix::ThreadSafeRepository,
-    decoded: Arc<AtomicUsize>,
+    reads: Arc<ObjectReads>,
 }
 
 impl Opened {
@@ -41,7 +41,7 @@ impl Opened {
         Self {
             path: repository.path().to_path_buf(),
             git: repository.git().clone().into_sync(),
-            decoded: repository.decodes(),
+            reads: repository.reads(),
         }
     }
 
@@ -61,7 +61,7 @@ impl Opened {
         Repository::lent(
             self.path.clone(),
             self.git.to_thread_local(),
-            Arc::clone(&self.decoded),
+            Arc::clone(&self.reads),
         )
     }
 }
