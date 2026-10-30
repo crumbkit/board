@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::Board;
 use crate::board::config_file;
+use crate::snapshot::Need;
 use crate::check::CheckError;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
 use crate::types::{Held, schema_at};
@@ -183,7 +184,7 @@ impl Board {
             quoted.join(", ")
         );
         let index = self.index(cache).map_err(CheckError::from)?;
-        let view = self.view(self.snapshot(index, None)?.decided);
+        let view = self.view(self.snapshot(index, None, Need::View)?.decided);
         let rows = (view.and_then(|view| view.query(&sql, orphans.len(), None)))
             .map_err(CheckError::from)?
             .rows;

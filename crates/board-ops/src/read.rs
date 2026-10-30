@@ -14,6 +14,7 @@ use serde_json::Value;
 
 use crate::attachment::FetchError;
 use crate::board::Board;
+use crate::snapshot::Need;
 use crate::check::CheckError;
 use crate::index::Refreshed;
 
@@ -98,7 +99,7 @@ impl Board {
         let display = display(&location, path);
         let index = self.index(cache).map_err(CheckError::from);
         let snapshot = index
-            .and_then(|index| self.snapshot(index, Some(&display)))
+            .and_then(|index| self.snapshot(index, Some(&display), Need::Report))
             .map_err(|source| ReadError::Check { source })?;
         let checked: HashMap<(&Source, &str), (Kind, Status)> = snapshot
             .report

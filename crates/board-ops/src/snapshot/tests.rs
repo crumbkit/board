@@ -16,7 +16,7 @@ use crate::tests::{board, open, task};
 use crate::{CheckReport, Checked, Refreshed};
 use board_scenario::generated::{Generated, generated};
 
-use super::{Decide, Facts, Indexing, Referenced, Snapshot, known};
+use super::{Decide, Facts, Indexing, Need, Referenced, Snapshot, known};
 
 /// A snapshot with its views filled, as a query reads it.
 struct Filled {
@@ -32,7 +32,7 @@ fn filled(board: &crate::Board, index: Index) -> Filled {
         report,
         references,
         ..
-    } = board.snapshot(index, None).unwrap();
+    } = board.snapshot(index, None, Need::View).unwrap();
     Filled {
         view: board.view(decided).unwrap(),
         report,
@@ -48,7 +48,7 @@ fn looked_up(scenario: &Scenario, cache: &std::path::Path) -> (usize, usize) {
     let board = open(scenario);
     let index = Index::open(Some(cache), board.repository().path()).unwrap();
     let (read, _, _) = crate::index::transact(index, |writer| {
-        let (_, entries) = board.decide(writer, None)?;
+        let (_, entries) = board.decide(writer, None, Need::Report)?;
         Ok(((writer.validations_read(), writer.blobs_read()), entries))
     })
     .unwrap();
@@ -97,7 +97,7 @@ fn a_check_looks_up_each_records_validation_once_cold_and_warm() {
 /// Decides every entry of `scenario` through `index`, and returns what it
 /// reported.
 fn decided(scenario: &Scenario, index: Index) -> CheckReport {
-    open(scenario).snapshot(index, None).unwrap().report
+    open(scenario).snapshot(index, None, Need::Report).unwrap().report
 }
 
 /// What `entries` shows, as check reports it.
@@ -141,8 +141,11 @@ fn viewed(view: &View) -> Vec<Checked> {
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time, and the index's size after
 /// its last prune.
-const EVERY_TABLE: [&str; 12] = [
+const EVERY_TABLE: [&str; 15] = [
     "SELECT * FROM entries ORDER BY source, path",
+    "SELECT * FROM entries",
+    "SELECT * FROM decided ORDER BY key, path",
+    "SELECT * FROM pointers ORDER BY scan, path",
     "SELECT * FROM records ORDER BY source, path",
     "SELECT * FROM bodies ORDER BY blob",
     "SELECT * FROM blobs ORDER BY blob, role",
@@ -201,32 +204,35 @@ fn prune(index: Index) -> usize {
     pruned
 }
 
-/// Decides `scenario` through `warm` and through a cold index, and requires
-/// them to agree: the same entries, the
-/// same references, views that show those entries, and every table alike.
-/// Returns what the warm index reported.
-fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError> {
+/// Decides `scenario` through an index `warm` opens and through a cold one,
+/// first for views, as a query does, then for a report, as a check does,
+/// and requires them to agree: the same entries, the same references, views
+/// that show those entries, and every table alike. Returns what the warm
+/// index reported.
+fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, TestCaseError> {
     let board = open(scenario);
-    let cold = Index::open(None, board.repository().path()).unwrap();
-    let warm = filled(&board, warm);
-    let cold = filled(&board, cold);
-    for snapshot in [&warm, &cold] {
-        prop_assert_eq!(
-            viewed(&snapshot.view),
-            sorted(snapshot.report.entries.clone())
-        );
+    let cold = || Index::open(None, board.repository().path()).unwrap();
+    let (warm_view, cold_view) = (filled(&board, warm()), filled(&board, cold()));
+    let [warm, cold] = [warm(), cold()].map(|index| {
+        let snapshot = board.snapshot(index, None, Need::Report).unwrap();
+        (snapshot.report, snapshot.references)
+    });
+    for (view, report) in [(&warm_view.view, &warm.0), (&cold_view.view, &cold.0)] {
+        prop_assert_eq!(viewed(view), sorted(report.entries.clone()));
     }
-    prop_assert_eq!(&warm.report.entries, &cold.report.entries);
-    prop_assert_eq!(&warm.references, &cold.references);
+    prop_assert_eq!(&warm.0.entries, &cold.0.entries);
+    prop_assert_eq!(&warm.1, &cold.1);
+    let (warm_view, cold_view) = (warm_view.view, cold_view.view);
+    let warm = warm.0;
     for sql in EVERY_TABLE {
         prop_assert_eq!(
-            warm.view.query(sql, 10_000, None).unwrap(),
-            cold.view.query(sql, 10_000, None).unwrap(),
+            warm_view.query(sql, 10_000, None).unwrap(),
+            cold_view.query(sql, 10_000, None).unwrap(),
             "{}",
             sql
         );
     }
-    Ok(warm.report)
+    Ok(warm)
 }
 
 /// Checks only the mounted library's tasks of `scenario` through `warm` and
@@ -236,7 +242,7 @@ fn scoped_agrees(scenario: &Scenario, warm: Index) -> Result<(), TestCaseError> 
     let cold = Index::open(None, board.repository().path()).unwrap();
     let scope = "/vendor/tasks".parse().unwrap();
     let [warm, cold] = [warm, cold].map(|index| {
-        let snapshot = board.snapshot(index, Some(&scope));
+        let snapshot = board.snapshot(index, Some(&scope), Need::Report);
         snapshot.map(|snapshot| (snapshot.report.entries, snapshot.references))
     });
     let code = |error: crate::CheckError| error.code();
@@ -259,21 +265,23 @@ fn warm_decides_as_cold(
     filled(&open(generated.scenario()), warm());
     generated.write(after);
 
-    agrees(generated.scenario(), warm())?;
-    let again = agrees(generated.scenario(), warm())?;
+    agrees(generated.scenario(), &warm)?;
+    let again = agrees(generated.scenario(), &warm)?;
     prop_assert_eq!(again.work, decided_only(again.work), "nothing changed");
     scoped_agrees(generated.scenario(), warm())?;
 
     prune(warm());
     generated.write(before);
-    agrees(generated.scenario(), warm())?;
+    agrees(generated.scenario(), &warm)?;
     prune(warm());
-    let again = agrees(generated.scenario(), warm())?;
-    prop_assert_eq!(
-        again.work,
-        decided_only(again.work),
-        "a prune keeps what the tree reaches"
-    );
+    let again = agrees(generated.scenario(), &warm)?;
+    // A prune outside a run reaches no decision, so the next run keeps
+    // each one again.
+    let wrote = Refreshed {
+        wrote: false,
+        ..again.work
+    };
+    prop_assert_eq!(wrote, decided_only(again.work), "a prune keeps what the tree reaches");
     Ok(())
 }
 
@@ -308,7 +316,7 @@ fn built_on(scenario: &Scenario, threads: usize) -> (CheckReport, Vec<Referenced
         .repository()
         .set_threads(std::num::NonZeroUsize::new(threads).unwrap());
     let cold = Index::open(None, board.repository().path()).unwrap();
-    let snapshot = board.snapshot(cold, None).unwrap();
+    let snapshot = board.snapshot(cold, None, Need::Report).unwrap();
     let view = board.view(snapshot.decided).unwrap();
     let tables = EVERY_TABLE
         .iter()
@@ -534,6 +542,7 @@ fn a_pointer_the_index_does_not_hold_is_read_as_the_pointer_type_and_a_record_as
             panic!("reading a type resolves nothing")
         })),
         reader: std::cell::RefCell::new(board.repository().reader()),
+        failed: std::cell::Cell::new(false),
     };
     let at = |path: &str, text: &str| {
         let location = Location {
@@ -568,6 +577,7 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
             panic!("a record with no references resolves nothing")
         })),
         reader: std::cell::RefCell::new(board.repository().reader()),
+        failed: std::cell::Cell::new(false),
     };
     let blob = ObjectId::from_hex("0123456789abcdef0123456789abcdef01234567").unwrap();
     let record = |validation| Indexed {
@@ -663,7 +673,7 @@ fn pointer_bytes_at_a_schema_path_a_json_path_and_behind_a_symlink_are_followed_
     let root = board.repository().path().to_path_buf();
     for _cold_then_warm in 0..2 {
         let index = Index::open(Some(cache.path()), &root).unwrap();
-        let snapshot = board.snapshot(index, None).unwrap();
+        let snapshot = board.snapshot(index, None, Need::Report).unwrap();
         let through = |task: &str| {
             (
                 format!("tasks/{task}.json"),
@@ -719,7 +729,7 @@ fn a_file_added_between_warm_runs_is_resolved_by_the_second() {
     let root = open(&scenario).repository().path().to_path_buf();
     let warm = || Index::open(Some(cache.path()), &root).unwrap();
     let led = |scenario: &Scenario| {
-        agrees(scenario, warm()).unwrap();
+        agrees(scenario, &warm).unwrap();
         led(&filled(&open(scenario), warm()).references)
     };
     assert_eq!(led(&scenario), [("tasks/a.json".to_owned(), None)]);

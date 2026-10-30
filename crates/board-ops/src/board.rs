@@ -73,6 +73,9 @@ pub struct Board {
     pub(crate) trace: RefCell<Trace>,
     pub(crate) asker: Asker,
     pub(crate) built_in: BuiltIn,
+    /// What built the code that decides, which keys the decisions the index
+    /// keeps.
+    pub(crate) build: &'static str,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -119,6 +122,7 @@ impl Board {
             trace: RefCell::default(),
             asker: Asker::default(),
             built_in: BuiltIn::default(),
+            build: "",
         })
     }
 
@@ -132,6 +136,12 @@ impl Board {
 
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Names the build deciding for this board, such as board-cli's
+    /// version, so the index keeps no decision across builds.
+    pub fn built_by(&mut self, build: &'static str) {
+        self.build = build;
     }
 }
 

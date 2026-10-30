@@ -8,6 +8,7 @@ use board_tree::Status;
 use serde_json::{Value, json};
 
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, task};
+use crate::snapshot::Need;
 use crate::{Absent, Board, Fielded, RefsError, RefsReport};
 
 fn path(text: &str) -> LogicalPath {
@@ -784,7 +785,7 @@ fn a_target_that_resolved_to_another_blob_than_the_walk_listed_is_target_changed
     let answered = |rewrite: bool| {
         let scenario = linked();
         let board = open(&scenario);
-        let mut snapshot = board.snapshot(board.index(None).unwrap(), None).unwrap();
+        let mut snapshot = board.snapshot(board.index(None).unwrap(), None, Need::Report).unwrap();
         if rewrite {
             let new = r#"{"$type": "lr/project/v1", "title": "new"}"#;
             scenario.write("projects/p.json", Item::File(new));

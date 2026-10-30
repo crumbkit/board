@@ -8,13 +8,15 @@
 //! snapshot is a decided run over the index; `Repositories::snapshot` is a
 //! different thing, a view of the git working tree for resolving paths.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 
 use board_index::{Decided, Index, IndexError, Storage, View, Writer};
-use board_model::{Change, Kind, LogicalPath, ObjectId, Source, Stat};
-use board_tree::{Cache, Entry, Place, Repository, TreeRow, TreeRows, in_scope};
+use board_model::{Change, Code, Digest, Kind, LogicalPath, ObjectId, Role, Source, Stat};
+use board_tree::{
+    Cache, Entry, Held, Mounted, Place, Repository, Scopes, TreeRow, TreeRows, in_scope,
+};
 
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport};
@@ -40,6 +42,17 @@ pub(crate) struct Snapshot {
     pub(crate) walked: Walked,
 }
 
+/// What a snapshot is for, which decides whether it reads decisions the
+/// index keeps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Need {
+    /// Views of every entry. A mounted source whose decision the index
+    /// keeps is neither walked nor decided, and its kept rows fill the views.
+    View,
+    /// A report, references and walk of every entry, all decided now.
+    Report,
+}
+
 impl Board {
     /// Decides every entry of the working tree and of each board it mounts,
     /// or only those at or beneath `scope`, after refreshing `index`. An
@@ -50,6 +63,7 @@ impl Board {
         &self,
         index: Index,
         scope: Option<&LogicalPath>,
+        need: Need,
     ) -> Result<Snapshot, CheckError> {
         let _timed = self.timed("snapshot");
         let opened = self.repositories().opened();
@@ -60,7 +74,7 @@ impl Board {
                 .map_err(|source| CheckError::Scope { source })?;
         }
         let ((mut report, references, walked), wrote, writer, entries) =
-            attempt(index, |writer| self.decide(writer, scope))?;
+            attempt(index, |writer| self.decide(writer, scope, need))?;
         let timed = self.timed("snapshot.commit");
         let decided = writer.decide(entries)?;
         drop(timed);
@@ -79,6 +93,7 @@ impl Board {
         trace.count("trees", work.trees);
         trace.count("repositories", work.repositories);
         trace.count("pointers_read", work.pointers_read);
+        trace.count("kept", work.kept);
         drop(trace);
         Ok(Snapshot {
             decided,
@@ -119,6 +134,7 @@ impl Board {
         &self,
         writer: &Writer,
         scope: Option<&LogicalPath>,
+        need: Need,
     ) -> Run<(CheckReport, Vec<Referenced>, Walked)> {
         let refresh = self.refresh(writer)?;
         let mut work = refresh.work;
@@ -130,12 +146,13 @@ impl Board {
                 writer,
                 work: &mut work,
             },
+            (self.build, need == Need::View),
         )?;
         drop(timed);
         let _timed = self.timed("snapshot.decide");
         let scopes = mounts.scopes(scope);
-        let plain =
-            plain(std::iter::once(&refresh.facts).chain(mounts.sources.iter().map(|m| &m.facts)));
+        let facts = mounts.sources.iter().filter_map(|m| Some(&m.walked.as_ref()?.1));
+        let plain = plain(std::iter::once(&refresh.facts).chain(facts));
         let mut known = known(&refresh.entries, &mut work.hashed);
         let resolver = self.repositories().resolver(&mut known, refresh.listings)?;
         let mut resolver = resolver.knowing(&plain);
@@ -148,6 +165,7 @@ impl Board {
             facts: &refresh.facts,
             resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
             reader: RefCell::new(self.repositories().root().reader()),
+            failed: Cell::new(false),
         };
         for entry in &refresh.entries {
             if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
@@ -173,30 +191,15 @@ impl Board {
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
-            let source = Source::Commit(mounted.commit);
-            let in_commit = (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
-            let mut in_commit = in_commit.knowing(&plain);
-            let decide = Decide {
-                repositories: self.repositories(),
-                mounted: Some(mounted),
-                writer,
-                listed: &mounted.entries,
-                facts: &mounted.facts,
-                resolve: RefCell::new(Box::new(|path: &LogicalPath| in_commit.resolve(path))),
-                reader: RefCell::new(self.repositories().root().reader()),
+            let Some(walked) = (mounted.walked.as_ref()).filter(|_| !(need == Need::View && mounted.kept))
+            else {
+                work.kept += 1;
+                let source = Source::Commit(mounted.commit);
+                writer.reach(&source, mounted.key.as_ref(), &mounted.scan)?;
+                continue;
             };
-            for entry in &mounted.entries {
-                if !in_scope(&scopes, &source, entry.logical.as_ref()) {
-                    continue;
-                }
-                let logical = entry
-                    .logical
-                    .as_ref()
-                    .and_then(|logical| mounted.display(logical));
-                decided.push(&decide, &source, entry, logical, Change::Committed)?;
-            }
-            drop(decide);
-            work.pointers_read += in_commit.pointers_read();
+            let read = (writer, &plain, &scopes);
+            work.pointers_read += self.decide_mounted(read, mounted, walked, &mut decided)?;
         }
         record(&mounts, writer, self.repository())?;
         // Every source is now stored, so a prune keeps what this run reached.
@@ -209,11 +212,70 @@ impl Board {
             work,
         };
         let mut walked = vec![(Source::WorkingTree, refresh.entries)];
-        walked.extend(
-            (mounts.sources.into_iter())
-                .map(|mounted| (Source::Commit(mounted.commit), mounted.entries)),
-        );
+        walked.extend((mounts.sources.into_iter()).filter_map(|mounted| {
+            Some((Source::Commit(mounted.commit), mounted.walked?.0))
+        }));
         Ok(((report, decided.references, walked), decided.resolved))
+    }
+
+    /// Decides each entry of `mounted` in scope into `decided`, and keeps
+    /// its rows in the index under its key when they are its whole decision
+    /// and nothing failed to read. Rows the index keeps leave `decided`'s
+    /// rows, as the views read them from the index. Returns the pointers its
+    /// resolver read.
+    fn decide_mounted(
+        &self,
+        (writer, plain, scopes): (&Writer, &std::collections::HashSet<ObjectId>, &Scopes),
+        mounted: &Mounted<Facts>,
+        (entries, facts): &(Vec<Entry>, Facts),
+        decided: &mut Decisions,
+    ) -> Result<usize, RefreshError> {
+        let source = Source::Commit(mounted.commit);
+        let in_commit = (self.repositories()).in_commit(&mounted.repository, mounted.commit)?;
+        let mut in_commit = in_commit.knowing(plain);
+        let decide = Decide {
+            repositories: self.repositories(),
+            mounted: Some(mounted),
+            writer,
+            listed: entries,
+            facts,
+            resolve: RefCell::new(Box::new(|path: &LogicalPath| in_commit.resolve(path))),
+            reader: RefCell::new(self.repositories().root().reader()),
+            failed: Cell::new(false),
+        };
+        let start = decided.resolved.len();
+        for entry in entries {
+            if !in_scope(scopes, &source, entry.logical.as_ref()) {
+                continue;
+            }
+            let logical = entry
+                .logical
+                .as_ref()
+                .and_then(|logical| mounted.display(logical));
+            decided.push(&decide, &source, entry, logical, Change::Committed)?;
+        }
+        let failed = decide.failed.get();
+        drop(decide);
+        let rows = &decided.resolved[start..];
+        let whole = scopes.get(&source).is_some_and(|states| states.contains(&None));
+        // A file that could not be read may be read next run.
+        let storable = whole
+            && !failed
+            && !rows.iter().any(|row| row.code == Some(Code::RepoUnreadable));
+        let kept = match &mounted.key {
+            Some(_) if mounted.kept => true,
+            Some(key) if storable => {
+                writer.put_decision(key, rows)?;
+                true
+            }
+            _ => false,
+        };
+        if kept {
+            decided.resolved.truncate(start);
+        }
+        let key = mounted.key.as_ref().filter(|_| kept);
+        writer.reach(&source, key, &mounted.scan)?;
+        Ok(in_commit.pointers_read())
     }
 }
 
@@ -279,6 +341,24 @@ impl Cache for Indexing<'_> {
         facts.get(path).is_some_and(|indexed| {
             indexed.fact.kind == Kind::Pointer && indexed.fact.code.is_none()
         })
+    }
+
+    fn complete(facts: &Facts, entries: &[Entry]) -> bool {
+        entries.iter().all(|entry| {
+            entry.blob.is_none() || Role::of(&entry.path).is_none() || facts.contains_key(&entry.path)
+        })
+    }
+
+    fn pointers(&mut self, scan: &Digest) -> Option<Vec<Held>> {
+        self.writer.pointers(scan).ok().flatten()
+    }
+
+    fn put_pointers(&mut self, scan: &Digest, held: &[Held]) -> Result<(), RefreshError> {
+        Ok(self.writer.put_pointers(scan, held)?)
+    }
+
+    fn kept(&mut self, key: &Digest) -> bool {
+        self.writer.has_decision(key).unwrap_or(false)
     }
 }
 

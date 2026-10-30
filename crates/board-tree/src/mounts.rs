@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Code, Fields, LogicalPath, Malformation, Mount, Object, ObjectId, PathError, Pointer, Source,
+    Code, Digest, Fields, LogicalPath, Malformation, Mount, Object, ObjectId, PathError, Pointer,
+    Source,
 };
 
 use crate::git::{Contents, GitError, Repository, latest};
@@ -15,6 +16,10 @@ use crate::tree::Tree;
 use crate::trees::{TreeRow, TreeRows, walk_stored};
 use crate::walk::{Entry, Status};
 use crate::write::{Target, WriteError};
+
+mod keys;
+
+use keys::{Probe, scan};
 
 /// What a cache, such as the index, holds about trees and blobs, so a walk
 /// through mounts reads only what it does not hold.
@@ -36,6 +41,22 @@ pub trait Cache {
     ) -> Result<Self::Facts, Self::Error>;
     /// Whether the entry at the physical `path` holds a pointer that parses.
     fn is_pointer(facts: &Self::Facts, path: &str) -> bool;
+    /// Whether `facts` hold every entry of `entries` that has a role, so
+    /// that the pointers found among them are all there are.
+    fn complete(facts: &Self::Facts, entries: &[Entry]) -> bool;
+    /// The pointers a walk listed under `scan`, or `None` when not held.
+    fn pointers(&mut self, scan: &Digest) -> Option<Vec<Held>>;
+    fn put_pointers(&mut self, scan: &Digest, held: &[Held]) -> Result<(), Self::Error>;
+    /// Whether the cache holds the decision of the source keyed `key`.
+    fn kept(&mut self, key: &Digest) -> bool;
+}
+
+/// An entry holding a pointer that parses, as a walk listed it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Held {
+    pub path: String,
+    pub logical: LogicalPath,
+    pub blob: ObjectId,
 }
 
 /// A mounted commit, its entries and the cache's facts about them.
@@ -49,8 +70,16 @@ pub struct Mounted<F> {
     /// The display path of its first route, by shortest display path and
     /// then lexically; its entries are named beneath it.
     pub route: LogicalPath,
-    pub entries: Vec<Entry>,
-    pub facts: F,
+    /// Everything its decision depends on, hashed, or `None` when that is
+    /// not known without deciding it.
+    pub key: Option<Digest>,
+    /// The key of its list of pointers.
+    pub scan: Digest,
+    /// Whether the cache holds its decision under `key`.
+    pub kept: bool,
+    /// Its entries and the cache's facts about them, or `None` when it is
+    /// kept and the walk was asked to skip what is kept.
+    pub walked: Option<(Vec<Entry>, F)>,
 }
 
 impl<F> Mounted<F> {
@@ -85,6 +114,7 @@ pub struct Reached<F> {
     pub sources: Vec<Mounted<F>>,
     pub points: Vec<MountPoint>,
     edges: Vec<Edge>,
+    probes: Vec<Probe>,
 }
 
 /// A mount found but not yet walked.
@@ -100,17 +130,21 @@ impl Repositories {
     /// whose entries are `entries` with the cache's `facts` about them. Each
     /// mounted commit's trees that `cache` does not hold are stored in it,
     /// then walked from it. A repository that several pointers name is
-    /// opened once.
+    /// opened once. A source whose pointers `cache` lists is walked only
+    /// when its decision is not kept, or when `skip_kept` is false. `build`
+    /// names the code that decides, for the keys.
     pub fn walk_mounts<C: Cache>(
         &self,
         entries: &[Entry],
         facts: &C::Facts,
         cache: &mut C,
+        (build, skip_kept): (&str, bool),
     ) -> Result<Reached<C::Facts>, C::Error> {
         let mut reached = Reached {
             sources: Vec::new(),
             points: Vec::new(),
             edges: Vec::new(),
+            probes: Vec::new(),
         };
         let mut candidates = Vec::new();
         let root = self.root();
@@ -132,19 +166,46 @@ impl Repositories {
             if !seen.insert(candidate.commit) {
                 continue;
             }
-            let mounted = walk(candidate, cache)?;
-            let source = Source::Commit(mounted.commit);
-            let is_pointer = |path: &str| C::is_pointer(&mounted.facts, path);
-            let found = pointers(&mounted.repository, &source, &mounted.entries, &is_pointer);
-            reached.add(
-                self,
-                mounted.repository.path(),
-                &source,
-                &mounted.route,
-                found,
-                &mut candidates,
-            );
-            reached.sources.push(mounted);
+            let Candidate {
+                route,
+                commit,
+                root,
+                repository,
+            } = candidate;
+            let source = Source::Commit(commit);
+            let scan = scan(build, root);
+            let (walked, held) = match cache.pointers(&scan) {
+                Some(held) => (None, held),
+                None => {
+                    let (entries, facts) = walk(&repository, commit, root, cache)?;
+                    let held = held(&entries, &|path| C::is_pointer(&facts, path));
+                    if C::complete(&facts, &entries) {
+                        cache.put_pointers(&scan, &held)?;
+                    }
+                    (Some((entries, facts)), held)
+                }
+            };
+            let found = mounts_in(&repository, &source, &held);
+            let from = repository.path();
+            reached.add(self, from, &source, &route, found, &mut candidates);
+            reached.sources.push(Mounted {
+                commit,
+                root,
+                repository,
+                route,
+                key: None,
+                scan,
+                kept: false,
+                walked,
+            });
+        }
+        reached.key(build);
+        for mounted in &mut reached.sources {
+            mounted.kept = mounted.key.as_ref().is_some_and(|key| cache.kept(key));
+            if mounted.walked.is_none() && !(skip_kept && mounted.kept) {
+                let walked = walk(&mounted.repository, mounted.commit, mounted.root, cache)?;
+                mounted.walked = Some(walked);
+            }
         }
         Ok(reached)
     }
@@ -328,6 +389,15 @@ impl<F> Reached<F> {
                 let root = tree.map_err(|_| Code::MountCommitMissing)?.root();
                 Ok((route, mounted, root))
             });
+            self.probes.push(Probe {
+                from: source.clone(),
+                path: path.clone(),
+                repo: mount.repo.clone(),
+                commit: mount.commit,
+                landed: (mounted.as_ref())
+                    .map(|(_, mounted, _)| mounted.path().to_path_buf())
+                    .map_err(|code| *code),
+            });
             self.points.push(MountPoint {
                 source: source.clone(),
                 path,
@@ -419,26 +489,18 @@ fn first(candidates: &[Candidate]) -> Option<usize> {
 
 /// Stores a mounted commit's trees that `cache` does not hold, walks it from
 /// `cache`, and gets the cache's facts about its entries.
-fn walk<C: Cache>(candidate: Candidate, cache: &mut C) -> Result<Mounted<C::Facts>, C::Error> {
-    let Candidate {
-        route,
-        commit,
-        root,
-        repository,
-    } = candidate;
+fn walk<C: Cache>(
+    repository: &Repository,
+    commit: ObjectId,
+    root: ObjectId,
+    cache: &mut C,
+) -> Result<(Vec<Entry>, C::Facts), C::Error> {
     for tree in repository.trees(root, &mut |tree| cache.has_tree(tree))? {
         cache.put_tree(&tree)?;
     }
-    let entries = walk_stored(&repository, commit, root, &mut |tree| cache.rows(tree))?;
-    let facts = cache.facts(&repository, &Source::Commit(commit), &entries)?;
-    Ok(Mounted {
-        commit,
-        root,
-        repository,
-        route,
-        entries,
-        facts,
-    })
+    let entries = walk_stored(repository, commit, root, &mut |tree| cache.rows(tree))?;
+    let facts = cache.facts(repository, &Source::Commit(commit), &entries)?;
+    Ok((entries, facts))
 }
 
 /// Every mount among `entries` of `source`: its logical and physical paths
@@ -450,15 +512,37 @@ fn pointers(
     entries: &[Entry],
     is_pointer: &dyn Fn(&str) -> bool,
 ) -> Vec<(LogicalPath, String, Mount)> {
-    let reader = &mut repository.reader();
+    mounts_in(repository, source, &held(entries, is_pointer))
+}
+
+/// The entries among `entries` that hold a pointer that parses.
+fn held(entries: &[Entry], is_pointer: &dyn Fn(&str) -> bool) -> Vec<Held> {
     entries
         .iter()
         .filter(|entry| entry.status == Status::Ok && is_pointer(&entry.path))
         .filter_map(|entry| {
-            let contents = reader.read(source, &entry.path, entry.blob?).ok()??;
+            Some(Held {
+                path: entry.path.clone(),
+                logical: entry.logical.clone()?,
+                blob: entry.blob?,
+            })
+        })
+        .collect()
+}
+
+/// The mounts among the pointers `held` in `source`.
+fn mounts_in(
+    repository: &Repository,
+    source: &Source,
+    held: &[Held],
+) -> Vec<(LogicalPath, String, Mount)> {
+    let reader = &mut repository.reader();
+    held.iter()
+        .filter_map(|held| {
+            let contents = reader.read(source, &held.path, held.blob).ok()??;
             match board_model::pointer(&contents.bytes) {
                 Ok(Some(Pointer::Mount(mount))) => {
-                    Some((entry.logical.clone()?, entry.path.clone(), mount))
+                    Some((held.logical.clone(), held.path.clone(), mount))
                 }
                 _ => None,
             }

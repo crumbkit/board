@@ -45,6 +45,9 @@ pub struct Refreshed {
     pub pointers_read: usize,
     /// Repositories a snapshot opened from disk, not counting the board's own.
     pub repositories: usize,
+    /// Mounted sources whose rows a snapshot read from the index's kept
+    /// decisions, without walking or deciding them.
+    pub kept: usize,
 }
 
 /// What this refresh learnt from the blobs it read in full, so it need not

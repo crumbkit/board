@@ -8,6 +8,7 @@ use board_model::{Code, Fields, Known, Refusal};
 use serde_json::Value;
 
 use crate::board::Board;
+use crate::snapshot::Need;
 use crate::check::CheckError;
 
 /// The most rows `query` returns, and the most entries a listing shows,
@@ -59,7 +60,7 @@ impl Board {
         cache: Option<&Path>,
     ) -> Result<(View, Option<Fallback>), QueryError> {
         let index = self.index(cache).map_err(QueryError::from)?;
-        let snapshot = self.snapshot(index, None)?;
+        let snapshot = self.snapshot(index, None, Need::View)?;
         let view = self.view(snapshot.decided)?;
         Ok((view, snapshot.report.memory))
     }

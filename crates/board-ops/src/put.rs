@@ -13,7 +13,7 @@ use board_model::{
 };
 use board_tree::{
     Directory, GitError, LOCK_WAIT, Lock, PinError, Reader, ResolveError, Resolver, Working,
-    WriteError,
+    WriteError, latest,
 };
 use board_validate::Schema;
 
@@ -474,7 +474,8 @@ impl Board {
             tally.add(&reference.pointer, failure.as_ref());
         }
         let (binding, repositories) = (item.admitted.binding(), self.repositories());
-        (tally.first()).or_else(|| fitted((display, Some(binding?)), repositories, root, resolve))
+        let read = &mut |location: &Location, blob| latest(repositories.read(root, location, blob));
+        (tally.first()).or_else(|| fitted((display, Some(binding?)), read, resolve))
     }
 
     /// What `check` finds wrong with `item` when nothing can be resolved

@@ -4,6 +4,7 @@
 //! hash again (git's racy-clean rule). Deleting it changes no answer, only
 //! speed.
 
+mod decisions;
 mod open;
 mod query;
 mod schema;

@@ -456,6 +456,7 @@ pub(crate) fn run(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     board.build_in(context.built_in.0);
+    board.built_by(crate::timing::BUILD);
     // Only a plugin's decide writes in the personal board.
     let asks = match cli.command {
         Command::Put { .. } | Command::Rm { .. } => Some(false),

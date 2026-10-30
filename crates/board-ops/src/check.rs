@@ -10,6 +10,7 @@ use board_model::{Change, Code, Fields, Kind, Location, LogicalPath, RecordType,
 use board_tree::{ResolveError, Status};
 
 use crate::board::Board;
+use crate::snapshot::Need;
 use crate::index::{RefreshError, Refreshed};
 
 /// One entry as `check` reports it.
@@ -165,7 +166,7 @@ impl Board {
         cache: Option<&Path>,
     ) -> Result<CheckReport, CheckError> {
         let index = self.index(cache)?;
-        Ok(self.snapshot(index, scope)?.report)
+        Ok(self.snapshot(index, scope, Need::Report)?.report)
     }
 }
 

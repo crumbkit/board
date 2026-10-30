@@ -162,6 +162,7 @@ mod tests {
                 ("trees", work.trees),
                 ("repositories", work.repositories),
                 ("pointers_read", work.pointers_read),
+                ("kept", work.kept),
             ])
         );
         assert!(report.entries.len() > 1 && work.parsed > 0);

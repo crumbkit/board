@@ -14,7 +14,7 @@ use rusqlite::types::{ToSqlOutput, ValueRef};
 use rusqlite::{Connection, OptionalExtension, TransactionState, params};
 
 use crate::open::{Index, IndexError, Storage};
-use crate::schema::{COUNTED, KEPT, PRUNE, PRUNES, RESOLVED};
+use crate::schema::{COUNTED, KEPT, PRUNE, PRUNES, REACHED};
 
 /// What parsing one blob in one role found. For a schema, the code includes
 /// whether it compiles.
@@ -150,10 +150,10 @@ pub struct Writer {
 pub struct Decided {
     pub(crate) index: Index,
     /// The prune count the run decided under.
-    prunes: i64,
-    /// The entries the run decided, which [`Decided::view`] fills the views
-    /// with.
-    entries: Vec<Resolved>,
+    pub(crate) prunes: i64,
+    /// The entries the run decided and the index does not keep, which
+    /// [`Decided::view`] fills the views with.
+    pub(crate) entries: Vec<Resolved>,
 }
 
 /// The index once its views are filled with what a run decided. Only a view
@@ -185,50 +185,11 @@ impl Index {
 
     fn begin(self, sql: &str) -> Result<Writer, IndexError> {
         self.connection.execute_batch(sql)?;
+        self.connection.execute_batch(REACHED)?;
         Ok(Writer {
             index: self,
             validations_read: Cell::new(0),
             blobs_read: Cell::new(0),
-        })
-    }
-}
-
-impl Decided {
-    pub fn storage(&self) -> &Storage {
-        self.index.storage()
-    }
-
-    /// Fills the views with the entries this run decided, and returns the
-    /// index as a view of them.
-    pub fn view(self) -> Result<View, IndexError> {
-        let connection = &self.index.connection;
-        // One transaction, so the inserts commit together.
-        let fill = connection.unchecked_transaction()?;
-        fill.execute_batch(RESOLVED)?;
-        let mut statement = fill.prepare_cached(
-            "INSERT INTO temp.resolved
-             (source, path, logical, blob, size, role, schema, kind, code, change)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-        )?;
-        for entry in &self.entries {
-            statement.execute(params![
-                source_name(&entry.source),
-                entry.path,
-                entry.logical.as_ref().map(ToString::to_string),
-                entry.blob.map(|blob| blob.to_string()),
-                entry.size.map(u64::cast_signed),
-                entry.role.map(Role::as_str),
-                entry.schema.map(|schema| schema.to_string()),
-                entry.kind.as_str(),
-                entry.code.map(Code::as_str),
-                entry.change.as_str(),
-            ])?;
-        }
-        drop(statement);
-        fill.commit()?;
-        Ok(View {
-            index: self.index,
-            prunes: self.prunes,
         })
     }
 }

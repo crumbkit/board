@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::board::Board;
 use crate::check::CheckError;
 use crate::read::{ReadError, display, join, read_at};
-use crate::snapshot::{Referenced, Snapshot};
+use crate::snapshot::{Need, Referenced, Snapshot};
 
 /// One reference the record or Markdown file makes.
 #[derive(Clone, Debug, PartialEq)]
@@ -159,7 +159,7 @@ impl Answering<'_> {
             snapshot
         } else {
             let index = self.board.index(self.cache).map_err(CheckError::from)?;
-            self.board.snapshot(index, None)?
+            self.board.snapshot(index, None, Need::Report)?
         };
         let mut report = answer(&snapshot, location, path);
         if !self.fields.is_empty() {
