@@ -427,14 +427,15 @@ fn decoded_for(notes: usize) -> usize {
 }
 
 #[test]
-fn each_link_through_a_mount_decodes_the_trees_on_its_path_once_however_long_a_symlink_text_on_it()
-{
-    // Listing the mount decodes its four directories. Each note then adds
-    // the three on each of its two paths: the root, `notes` and `deep` or
-    // `other`. The symlink's 400 passes through `deep` decode nothing more.
+fn links_through_a_mount_decode_each_tree_on_their_paths_once_however_many_and_however_long_a_symlink_text_on_them()
+ {
+    // Listing the mount decodes its four directories. Following the links
+    // decodes them once more in all, however many notes link: the root,
+    // `notes`, `deep` and `other`. The symlink's 400 passes through `deep`
+    // decode nothing more.
     assert_eq!(decoded_for(0), 4);
-    assert_eq!(decoded_for(1), 4 + 6);
-    assert_eq!(decoded_for(20), 4 + 20 * 6);
+    assert_eq!(decoded_for(1), 4 + 4);
+    assert_eq!(decoded_for(20), 4 + 4);
 }
 
 #[test]

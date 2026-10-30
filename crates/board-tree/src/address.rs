@@ -3,10 +3,13 @@
 //! directory, given what a record beside a directory holds.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use board_model::{Code, LogicalPath, ObjectId, Pointer, PointerError};
 
+use crate::git::Decoded;
+use crate::symlink::Chains;
 use crate::tree::{Kind, RawEntry};
 
 /// The segment that addresses an entry, if its name is UTF-8: a file's or
@@ -90,12 +93,15 @@ pub(crate) fn classify<'a, D, E>(
     })
 }
 
-/// What each `.json` blob read during one run holds as a pointer, by blob id.
-/// A blob id names its bytes, so an entry is true in every source, and it
-/// lives only as long as the run that made it.
+/// What each `.json` blob read during one run holds as a pointer, by blob id,
+/// and what each mounted commit entered decoded. A blob id names its bytes,
+/// and a repository and commit name a tree, so an entry is true in every
+/// source, and it lives only as long as the run that made it.
 #[derive(Debug, Default)]
 pub(crate) struct Pointers {
     parsed: HashMap<ObjectId, Parsed>,
+    /// Each mounted commit entered, by its repository's path and the commit.
+    pub(crate) entered: HashMap<(PathBuf, ObjectId), (Decoded, Chains<ObjectId>)>,
     /// How many files were read to learn what they hold as a pointer.
     pub(crate) read: usize,
 }

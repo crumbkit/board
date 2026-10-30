@@ -285,13 +285,20 @@ impl Repositories {
                 path: at.clone(),
                 repo: mount.repo.clone(),
             })?;
-        let mut tree = mounted
-            .commit_tree(mount.commit)
-            .map_err(|_| ResolveError::CommitMissing {
-                path: at,
-                commit: mount.commit,
-            })?
-            .sizing(Sizes::Symlinks);
+        let key = (mounted.path().to_path_buf(), mount.commit);
+        let (mut tree, mut chains) = if let Some((decoded, chains)) = pointers.entered.remove(&key)
+        {
+            (mounted.resume(mount.commit, decoded), chains)
+        } else {
+            let tree =
+                mounted
+                    .commit_tree(mount.commit)
+                    .map_err(|_| ResolveError::CommitMissing {
+                        path: at,
+                        commit: mount.commit,
+                    })?;
+            (tree.sizing(Sizes::Symlinks), Chains::default())
+        };
         let board = Board {
             repository: mounted.path().to_path_buf(),
             source: tree.source(),
@@ -299,13 +306,16 @@ impl Repositories {
         // Mounts alone cannot cycle: each pins a commit, and no commit can
         // hold its own id. A cycle needs a link, and the hop limit bounds
         // the rest; this key catches a link cycle met through a mount.
-        if !trail.visited.insert((board, remaining.clone())) {
-            return Err(ResolveError::Cycle {
+        let followed = if trail.visited.insert((board, remaining.clone())) {
+            let chains = &mut chains;
+            self.follow(&mut tree, remaining, from_link, trail, (pointers, chains))
+        } else {
+            Err(ResolveError::Cycle {
                 path: trail.path.clone(),
-            });
-        }
-        let chains = &mut Chains::default();
-        self.follow(&mut tree, remaining, from_link, trail, (pointers, chains))
+            })
+        };
+        pointers.entered.insert(key, (tree.decoded(), chains));
+        followed
     }
 }
 

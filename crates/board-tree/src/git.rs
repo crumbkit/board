@@ -239,6 +239,23 @@ impl Repository {
         })
     }
 
+    /// The tree of `commit` as `decoded`, which a tree of the same commit of
+    /// this repository decoded, so nothing is looked up again.
+    pub(crate) fn resume(&self, commit: ObjectId, decoded: Decoded) -> CommitTree<'_> {
+        let Decoded {
+            root,
+            listed,
+            sizes,
+        } = decoded;
+        CommitTree {
+            repository: self,
+            commit,
+            root,
+            listed,
+            sizes,
+        }
+    }
+
     /// The entries of `tree`, in git's order.
     fn list_tree(&self, tree: ObjectId, sizes: Sizes) -> Result<Vec<RawEntry<ObjectId>>, GitError> {
         Ok(self
@@ -337,6 +354,24 @@ impl CommitTree<'_> {
         self.sizes = sizes;
         self
     }
+
+    /// What this tree has decoded, for [`Repository::resume`] to go on from
+    /// in another `Repository` lent for the same one.
+    pub(crate) fn decoded(self) -> Decoded {
+        Decoded {
+            root: self.root,
+            listed: self.listed,
+            sizes: self.sizes,
+        }
+    }
+}
+
+/// A commit's root tree and the directories a [`CommitTree`] decoded.
+#[derive(Debug)]
+pub(crate) struct Decoded {
+    root: ObjectId,
+    listed: HashMap<ObjectId, Indexed<ObjectId>>,
+    sizes: Sizes,
 }
 
 impl Tree for CommitTree<'_> {

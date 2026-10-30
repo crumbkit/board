@@ -56,6 +56,8 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             vec![
                 r#"{"$type": "lr/project/v1"}"#.to_owned(),
                 r#"{"$type": "lr/task/v1", "title": "t"}"#.to_owned(),
+                // A plain record that becomes a link, here into the mount.
+                link("/vendor/projects/p"),
             ],
         ),
         (
@@ -73,6 +75,7 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
             vec![
                 task(r#", "see": "/tasks/a""#),
                 task(r#", "project": "/links/l""#),
+                task(r#", "project": "/vendor/projects/p", "see": "/vendor/tasks/ok""#),
             ],
         ),
         (
@@ -88,6 +91,8 @@ fn variants() -> Vec<(&'static str, Vec<String>)> {
                 "[a](./tasks/a.json) `[b](/tasks/b)`".to_owned(),
                 // Links through symlinks, to a record and to a note.
                 "[c](/tasks/c) [n](linked.md)".to_owned(),
+                // Links into the mount, to a record and to a note.
+                "[ok](/vendor/tasks/ok) [n](/vendor/notes.md)".to_owned(),
                 // A task in its frontmatter, whose references and links are
                 // both followed, one its schema refuses, and frontmatter
                 // that does not parse.
@@ -154,7 +159,8 @@ pub fn generated() -> impl Strategy<Value = Vec<Option<usize>>> {
 
 /// A board with `config` as its `board.json` and the files [`generated`]
 /// chose, and a library board with two commits for it to mount. The second
-/// adds a valid task and an invalid one.
+/// adds a valid task and an invalid one, makes its project a link to
+/// another, and changes the links of its note.
 #[derive(Debug)]
 pub struct Generated {
     scenario: Scenario,
@@ -169,14 +175,21 @@ impl Generated {
     /// `committed`.
     pub fn new(config: &str, choice: &[Option<usize>], committed: bool) -> Self {
         let library = Scenario::new();
-        let files = [
+        let schemas = [
             (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
             (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
-            ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
         ];
+        let project = r#"{"$type": "lr/project/v1"}"#;
+        let mut files = schemas.to_vec();
+        files.push(("projects/p.json", project));
+        files.push(("notes.md", "[p](projects/p.json) [ok](/tasks/ok)"));
         let first = library.commit(&files);
         let ok = task(r#", "project": "/projects/p""#);
-        let mut more = files.to_vec();
+        let to_q = r#"{"$type": "board/mount/v1", "path": "/projects/q"}"#;
+        let mut more = schemas.to_vec();
+        more.push(("projects/p.json", to_q));
+        more.push(("projects/q.json", project));
+        more.push(("notes.md", "[ok](tasks/ok.json) [gone](/gone)"));
         more.push(("tasks/ok.json", &ok));
         more.push(("tasks/invalid.json", r#"{"$type": "lr/task/v1"}"#));
         let second = library.commit(&more);

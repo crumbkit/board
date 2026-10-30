@@ -531,14 +531,52 @@ fn resolving_into_a_mount_reads_the_size_of_each_symlink_listed_and_of_no_file_w
     assert_eq!(symlink.object, Object::Blob(inner.blob("{}")));
     let refused = in_commit.resolve(&path("/m/d/long")).unwrap_err();
     assert_eq!(refused.code(), Code::SymlinkDangling);
-    // Each resolution decodes the mounted root and `d` together, and only
-    // the two symlinks in `d` have a size read: two for each pair decoded.
+    // The mounted root and `d`, decoded once, and only the two symlinks in
+    // `d` have a size read.
     let decoded = mounted.trees_decoded();
-    assert_eq!(mounted.sizes_read(), decoded);
+    assert_eq!((decoded, mounted.sizes_read()), (2, 2));
     assert_eq!(repositories.root().sizes_read(), 0);
     // A walk gives every file its size: the 50 files and both symlinks.
     let walked = mounted.walk(&Source::Commit(pinned)).unwrap();
     let sized = walked.iter().filter(|entry| entry.size.is_some()).count();
     assert_eq!(sized, 51, "every file but the dangling symlink");
     assert_eq!(mounted.sizes_read() - decoded, 52);
+}
+
+#[test]
+fn references_into_one_mounted_commit_decode_its_trees_once_and_the_same_commit_of_another_repository_once_more()
+ {
+    let files: Vec<(String, String)> = (0..50)
+        .map(|n| (format!("a/b/r{n}.json"), "{}".to_owned()))
+        .collect();
+    let files: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    let (one, two) = (Scenario::new(), Scenario::new());
+    let (a, b) = (one.commit(&files), two.commit(&files));
+    let outer = Scenario::new();
+    let commit = outer.commit(&[
+        ("m.json", &mount(&one.path(), a)),
+        ("n.json", &mount(&one.path(), a)),
+        ("o.json", &mount(&two.path(), b)),
+    ]);
+    let repositories = outer.repositories();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    for n in 0..50 {
+        for mount in ["m", "n", "o"] {
+            in_commit
+                .resolve(&path(&format!("/{mount}/a/b/r{n}")))
+                .unwrap();
+        }
+    }
+    let decoded = |scenario: &Scenario, commit| {
+        let board = Board {
+            repository: scenario.open().path().to_path_buf(),
+            source: Source::Commit(commit),
+        };
+        repositories.repository(&board).unwrap().trees_decoded()
+    };
+    // The root, `a` and `a/b` of each repository.
+    assert_eq!((decoded(&one, a), decoded(&two, b)), (3, 3));
 }

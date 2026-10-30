@@ -229,6 +229,21 @@ fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError
     Ok(warm.report)
 }
 
+/// Checks only the mounted library's tasks of `scenario` through `warm` and
+/// through a cold index, and requires them to agree, failing or not.
+fn scoped_agrees(scenario: &Scenario, warm: Index) -> Result<(), TestCaseError> {
+    let board = open(scenario);
+    let cold = Index::open(None, board.repository().path()).unwrap();
+    let scope = "/vendor/tasks".parse().unwrap();
+    let [warm, cold] = [warm, cold].map(|index| {
+        let snapshot = board.snapshot(index, Some(&scope));
+        snapshot.map(|snapshot| (snapshot.report.entries, snapshot.references))
+    });
+    let code = |error: crate::CheckError| error.code();
+    prop_assert_eq!(warm.map_err(code), cold.map_err(code));
+    Ok(())
+}
+
 /// Decides the board `before` describes warm, changes it to `after`, and
 /// requires a warm index to decide as a cold one, again after a prune, and
 /// to do no work when nothing changed.
@@ -247,6 +262,7 @@ fn warm_decides_as_cold(
     agrees(generated.scenario(), warm())?;
     let again = agrees(generated.scenario(), warm())?;
     prop_assert_eq!(again.work, decided_only(again.work), "nothing changed");
+    scoped_agrees(generated.scenario(), warm())?;
 
     prune(warm());
     generated.write(before);
