@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -197,6 +198,15 @@ def test_an_agent_that_fails_is_refused_and_one_that_succeeds_runs(repo: Repo) -
     assert repo.call("run", "--brief", brief)[0] == 0
 
 
+def test_an_agent_that_fails_with_its_error_on_stdout_carries_that_error_in_the_message(repo: Repo) -> None:
+    base, head = changed(repo)
+    brief = repo.brief("fix-sync", f"{base}..{head}")
+    repo.answers('{"type": "result", "is_error": true, "result": "Credit balance is too low"}', exit_code=1)
+    code, document = repo.call("run", "--brief", brief)
+    assert (code, document["code"]) == (1, "review::agent::failed")
+    assert "Credit balance is too low" in document["message"]
+
+
 def test_an_answer_without_a_valid_verdict_and_findings_is_refused_and_a_valid_one_runs(repo: Repo) -> None:
     base, head = changed(repo)
     brief = repo.brief("fix-sync", f"{base}..{head}")
@@ -226,10 +236,31 @@ def test_an_agent_variable_unset_or_not_an_array_of_strings_is_refused_and_one_t
     brief = repo.brief("fix-sync", f"{base}..{head}")
     code, document = repo.call("run", "--brief", brief, extra={"BOARD_REVIEW_AGENT": ""})
     assert (code, document["code"]) == (1, "review::agent::not_set")
-    for value in ["sh agent.sh", "[]", '["sh", ""]', '"sh"', "[1]"]:
+    for value in ["sh agent.sh", "[]", '["", "agent.sh"]', '"sh"', "[1]"]:
         code, document = repo.call("run", "--brief", brief, extra={"BOARD_REVIEW_AGENT": value})
         assert (code, document["code"]) == (1, "review::agent::invalid"), value
     assert repo.call("run", "--brief", brief)[0] == 0
+
+
+def test_the_readme_s_agent_with_an_empty_argument_runs_and_one_with_an_empty_program_is_refused(repo: Repo) -> None:
+    base, head = changed(repo)
+    brief = repo.brief("fix-sync", f"{base}..{head}")
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    found = re.search(r"export BOARD_REVIEW_AGENT='(.*)'", readme)
+    assert found is not None, "README.md shows BOARD_REVIEW_AGENT"
+    example: list[str] = json.loads(found.group(1))
+    assert example[0] == "claude"
+    assert "" in example[1:]
+    # A `claude` on PATH that records its argv, one argument a line, and runs the stub agent.
+    claude = repo.bin / "claude"
+    claude.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{repo.agent}/argv.txt"\nexec sh "{repo.agent}/agent.sh"\n')
+    claude.chmod(0o755)
+    empty_program = json.dumps(["", *example[1:]])
+    code, document = repo.call("run", "--brief", brief, extra={"BOARD_REVIEW_AGENT": empty_program})
+    assert (code, document["code"]) == (1, "review::agent::invalid")
+    code, output = repo.call("run", "--brief", brief, extra={"BOARD_REVIEW_AGENT": json.dumps(example)})
+    assert code == 0, output
+    assert (repo.agent / "argv.txt").read_text().split("\n")[:-1] == example[1:]
 
 
 def test_an_agent_named_in_the_board_s_tree_is_never_started(repo: Repo) -> None:

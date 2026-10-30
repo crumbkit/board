@@ -42,7 +42,8 @@ of each pull request.
 ## The agent
 
 `review.run` starts the argv in `BOARD_REVIEW_AGENT`, a JSON array of strings
-the user sets:
+the user sets. The first string names the program and must not be empty; an
+argument may be empty:
 
 ```sh
 export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--setting-sources", "user", "--tools", "", "--strict-mcp-config"]'
