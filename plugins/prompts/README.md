@@ -77,7 +77,7 @@ Prompts come from the board's own tree and from the mounts the board marks.
 that lists the marked mounts by path:
 
 ```json
-{"$type": "prompts/repos/v1", "repos": ["/repos/notes-personal", "/repos/notes-example-org"]}
+{"$type": "prompts/repos/v1", "repos": ["/repos/notes-personal", "/repos/notes-work"]}
 ```
 
 A mount counts only when its `board/mount/v1` pointer is in the board's own
