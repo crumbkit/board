@@ -335,7 +335,11 @@ fn an_approval_of_a_shown_record_admits_it_and_its_digest_is_that_of_its_canonic
     assert_eq!(shown.digest, Some(Digest::of(canonical.as_bytes())));
     answer(&owner, &id, Answer::Approve, None, None).unwrap();
     let report = decide_with(&plugin, "/pulls/7", &record).unwrap();
-    assert_eq!(report.effect, Some(id));
+    assert_eq!(report.effect, Some(id.clone()));
+    // Its canonical JSON as text has the same id, so the record's approval
+    // is found and does not verify for the text's statement.
+    let as_text = decide_with(&plugin, "/pulls/7", &text(canonical.as_str()));
+    assert_eq!(named(as_text), (Code::SettingsUnsigned, Some(id)));
 }
 
 #[test]
@@ -355,9 +359,66 @@ fn content_over_the_limit_is_refused_as_too_large_and_content_at_it_is_admitted(
     let refused = shows(&text("abcde")).unwrap_err().refusal();
     assert_eq!(
         refused.message,
-        "the text to decide on is 5 bytes, over the limit of 4"
+        "the text to decide on is over the limit of 4 bytes"
     );
     assert_eq!(super::decide::shows(None, 0).unwrap(), (None, None));
+}
+
+#[test]
+fn a_record_whose_canonical_json_is_over_the_limit_is_refused_though_its_input_is_under_it_and_a_smaller_one_is_admitted()
+ {
+    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 20);
+    // 11 bytes in, 37 bytes pretty-printed.
+    let nested = shows(r#"{"a":[[1]]}"#).unwrap_err();
+    assert_eq!(nested.code(), Code::JsonTooLarge);
+    assert_eq!(
+        nested.to_string(),
+        "the record to decide on is over the limit of 20 bytes"
+    );
+    // 7 bytes in, 13 bytes pretty-printed.
+    assert_eq!(shows(r#"{"a":1}"#).unwrap(), (Some(json!({"a": 1})), None));
+}
+
+#[test]
+fn an_answer_to_a_pending_effect_that_shows_a_record_and_text_without_a_digest_is_refused_and_the_record_alone_is_admitted()
+ {
+    let mine = personal();
+    let owner = asker(None, Some(&mine));
+    let record = json!({"a": 1});
+    let effect = Effect::new(
+        "/b".to_owned(),
+        "review".parse().unwrap(),
+        OP.to_owned(),
+        "/pulls/7".to_owned(),
+    );
+    let mut both = effect.clone().showing(Some(record.clone()), None);
+    (both.text, both.digest) = (Some("t".to_owned()), None);
+    pending(&mine, &both.id(), &both);
+    let refused = answer(&owner, &both.id(), Answer::Approve, None, None).unwrap_err();
+    assert_eq!(refused.code(), Code::SettingsNotFound);
+    assert!(refused.to_string().contains("its digest"), "{refused}");
+    let alone = effect.showing(Some(record), None);
+    pending(&mine, &alone.id(), &alone);
+    answer(&owner, &alone.id(), Answer::Approve, None, None).unwrap();
+}
+
+#[test]
+fn a_record_that_repeats_a_key_or_holds_a_lossy_number_says_so_with_its_code_and_its_twin_is_admitted()
+ {
+    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 64);
+    let repeated = shows(r#"{"a":1,"a":2}"#).unwrap_err();
+    assert_eq!(repeated.code(), Code::JsonDuplicateKey);
+    assert_eq!(
+        repeated.to_string(),
+        r#"the record to decide on is refused: json repeats the key "a" in one object"#
+    );
+    let lossy = shows(r#"{"a":123456789012345678901}"#).unwrap_err();
+    assert_eq!(lossy.code(), Code::JsonLossyNumber);
+    assert!(
+        lossy.to_string().contains("cannot be held exactly"),
+        "{lossy}"
+    );
+    shows(r#"{"a":1,"b":1e4}"#).unwrap();
 }
 
 #[test]
