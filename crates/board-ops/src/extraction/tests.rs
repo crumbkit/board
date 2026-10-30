@@ -306,7 +306,7 @@ fn a_database_that_cannot_be_kept_beside_the_index_is_a_noted_temporary_file() {
         report
             .fallbacks
             .iter()
-            .map(board_plugin::PluginName::as_str)
+            .map(board_model::PluginName::as_str)
             .collect::<Vec<_>>(),
         ["tasks"]
     );

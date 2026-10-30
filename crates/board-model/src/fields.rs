@@ -5,7 +5,7 @@ use std::fmt;
 
 use serde_json::{Map, Value, json};
 
-use crate::{Code, LogicalPath, ObjectId, RecordType};
+use crate::{CapabilityName, Code, LogicalPath, ObjectId, PluginName, RecordType};
 
 /// What an error knows about the values at fault, for a failure's
 /// `fields` and for filling in its hint. Each is `None` when unknown.
@@ -23,8 +23,8 @@ pub struct Fields {
     pub record_type: Option<RecordType>,
     /// A schema's path from the board's root.
     pub schema: Option<String>,
-    pub plugin: Option<String>,
-    pub capability: Option<String>,
+    pub plugin: Option<PluginName>,
+    pub capability: Option<CapabilityName>,
     /// A directory whose code refuses a write beneath it, by its path from
     /// the board's root, without a leading `/`.
     pub directory: Option<String>,
@@ -97,8 +97,11 @@ impl Fields {
             ("pointer", self.pointer.clone()),
             ("type", self.record_type.as_ref().map(ToString::to_string)),
             ("schema", self.schema.clone()),
-            ("plugin", self.plugin.clone()),
-            ("capability", self.capability.clone()),
+            ("plugin", self.plugin.as_ref().map(ToString::to_string)),
+            (
+                "capability",
+                self.capability.as_ref().map(ToString::to_string),
+            ),
             ("directory", self.directory.clone()),
             ("target", self.target.clone()),
             ("effect", self.effect.clone()),
@@ -166,7 +169,7 @@ mod tests {
         assert_eq!(Fields::default().json(), Map::new());
         let fields = Fields {
             pointer: Some("/title".to_owned()),
-            plugin: Some("tasks".to_owned()),
+            plugin: Some("tasks".parse().unwrap()),
             directory: Some("tasks".to_owned()),
             ..Fields::default()
         };
@@ -263,8 +266,8 @@ mod tests {
             pointer: Some("/title".to_owned()),
             record_type: Some("lr/note/v1".parse().unwrap()),
             schema: Some(".board/types/lr/note/v1.schema.json".to_owned()),
-            plugin: Some("tasks".to_owned()),
-            capability: Some("due".to_owned()),
+            plugin: Some("tasks".parse().unwrap()),
+            capability: Some("due".parse().unwrap()),
             directory: Some("tasks".to_owned()),
             known: Some(Known::Tables(Vec::new())),
             found: Some(Found::Nothing),

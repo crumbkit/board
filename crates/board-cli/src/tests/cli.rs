@@ -209,8 +209,8 @@ fn every_command_a_hint_names_parses() {
         pointer: Some("/title".to_owned()),
         record_type: Some("lr/task/v1".parse().unwrap()),
         schema: Some(".board/types/lr/task/v1.schema.json".to_owned()),
-        plugin: Some("tasks".to_owned()),
-        capability: Some("due".to_owned()),
+        plugin: Some("tasks".parse().unwrap()),
+        capability: Some("due".parse().unwrap()),
         directory: Some("tasks".to_owned()),
         known: Some(board_model::Known::Columns(
             std::collections::BTreeMap::new(),
@@ -439,6 +439,23 @@ fn a_refused_command_line_is_an_error_document_when_json_is_asked_for() {
     let admitted = board_in(scenario.workdir(), &["get", "/projects/p", "--json"]);
     assert_eq!(admitted.code, 0);
     assert_eq!(json(&admitted)["schema"], "board/get-report/v2");
+}
+
+#[test]
+fn an_op_whose_plugin_or_capability_is_not_a_name_is_refused_and_a_plugins_op_is_admitted() {
+    let scenario = board();
+    let decide = |op: &str| {
+        let arguments = ["--json", "decide", "--op", op, "--path", "/projects/p"];
+        board_in(scenario.workdir(), &arguments)
+    };
+    for refused in ["Review.comment", "a_b.c", "a.b.c"] {
+        let output = decide(refused);
+        assert_eq!(output.code, 2, "{refused}");
+        assert_eq!(json(&output)["code"], "board::cli::usage", "{refused}");
+    }
+    let admitted = decide("review.comment");
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+    assert_eq!(json(&admitted)["data"]["op"], "review.comment");
 }
 
 #[test]

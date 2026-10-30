@@ -2,10 +2,8 @@
 
 use std::path::Path;
 
-use board_model::{Code, RecordType};
-use board_plugin::{
-    CapabilityName, DiscoveryError, Manifest, ManifestError, MetaFilter, PluginName, installed,
-};
+use board_model::{CapabilityName, Code, PluginName, RecordType};
+use board_plugin::{DiscoveryError, Manifest, ManifestError, MetaFilter, installed};
 use board_tree::Reader;
 use serde_json::Value;
 

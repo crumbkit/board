@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, Source, classify,
+    CONFIG_TYPE, Classified, Code, Content, Fields, LogicalPath, Object, ObjectId, PluginName,
+    Source, classify,
 };
-use board_plugin::PluginName;
 use board_tree::{GitError, Repositories, Repository, ResolveError, latest};
 use serde::Deserialize;
 use serde::de::IgnoredAny;

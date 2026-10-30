@@ -138,9 +138,7 @@ impl Board {
 
 /// The logical path of `record_type`'s schema, which a put names.
 pub(crate) fn schema_at(record_type: &RecordType) -> Result<LogicalPath, PathError> {
-    let physical = record_type.schema_path();
-    let stem = physical.strip_suffix(".json").unwrap_or(&physical);
-    format!("/{stem}").parse()
+    LogicalPath::of_physical(&record_type.schema_path())
 }
 
 /// How the board holds a type's schema: not at all, as an equal schema

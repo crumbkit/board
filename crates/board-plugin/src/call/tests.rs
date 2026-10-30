@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use board_model::PluginCode;
 use board_model::RefusalCode::{self, Board};
 use serde_json::json;
 
@@ -412,10 +413,10 @@ fn input_that_fails_the_schema_is_refused_naming_where() {
 /// Asserts that Board refuses `error` with `code`, naming `fields`, with the
 /// hint `code` gives for the plugin and capability it names, and `stderr`.
 fn assert_refused(error: &CallError, code: Code, fields: &Value, stderr: &[u8]) {
-    let named = |key: &str| fields.get(key).and_then(Value::as_str).map(str::to_owned);
+    let named = |key: &str| fields.get(key).and_then(Value::as_str);
     let hinted = Fields {
-        plugin: named("plugin"),
-        capability: named("capability"),
+        plugin: named("plugin").map(|name| name.parse().unwrap()),
+        capability: named("capability").map(|name| name.parse().unwrap()),
         ..Fields::default()
     };
     assert_eq!(
@@ -638,7 +639,7 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
     let expected = |stderr: &str| Refusal {
         stderr: stderr.as_bytes().to_vec(),
         ..Refusal::plugin(
-            "tasks::date::bad".to_owned(),
+            PluginCode::parse(&tasks, "tasks::date::bad".to_owned()).unwrap(),
             "no such date".to_owned(),
             json!({"date": "x", "plugin": "tasks", "stderr": stderr})
                 .as_object()

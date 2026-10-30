@@ -7,12 +7,12 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use board_model::{Code, Fields, Refusal};
+use board_model::{Code, Fields, PluginName, Refusal};
 use board_ops::{Asker, Board, OpenError, Signing};
-use board_plugin::PluginName;
 use serde::Deserialize;
 
 use crate::config::Context;
+use crate::run::Prefix;
 
 /// The file's shape: `{"boards": ["/Users/me/Code/board"], "personal":
 /// "/Users/me/Code/board"}`. A relative path is read against the file's
@@ -126,15 +126,12 @@ pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refu
 }
 
 /// The plugin `BOARD_PLUGIN` names, refused unless it is a plugin's name.
-pub(crate) fn plugin(context: &Context) -> Result<Option<String>, Box<Refusal>> {
+pub(crate) fn plugin(context: &Context) -> Result<Option<PluginName>, Box<Refusal>> {
     let Some(name) = &context.environment.plugin else {
         return Ok(None);
     };
     let variable = board_plugin::PLUGIN_VARIABLE;
-    let named = name
-        .to_str()
-        .filter(|name| name.parse::<PluginName>().is_ok());
-    let Some(named) = named else {
+    let Some(named) = name.to_str().and_then(|name| name.parse().ok()) else {
         let message = format!(
             "{variable} is {:?}, which is not a plugin's name",
             name.to_string_lossy()
@@ -145,7 +142,7 @@ pub(crate) fn plugin(context: &Context) -> Result<Option<String>, Box<Refusal>> 
         let refusal = Refusal::new(Code::ConfigInvalid, message, &Fields::default());
         return Err(Box::new(refusal.with_hint(hint)));
     };
-    Ok(Some(named.to_owned()))
+    Ok(Some(named))
 }
 
 /// `root` read against the directory of `file`, the known boards file.
@@ -169,7 +166,7 @@ pub(crate) fn find(
     context: &Context,
     start: &Path,
     lost: Refusal,
-) -> Result<(Board, String), Box<Refusal>> {
+) -> Result<(Board, Prefix), Box<Refusal>> {
     let file = context.boards.as_deref();
     let listed = read(file)?.boards;
     let shown = shown(file);
@@ -185,7 +182,10 @@ pub(crate) fn find(
         if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.to_path_buf())) {
             continue;
         }
-        let at = |place: &board_tree::Place| format!("{} at {}", root.display(), place.prefix());
+        let at = |place: &board_tree::Place| match place.prefix() {
+            Ok(prefix) => format!("{} at {prefix}", root.display()),
+            Err(error) => format!("{} at a mount where {error}", root.display()),
+        };
         named.extend(places.iter().map(at));
         if let Some(place) = places.first() {
             chosen = Some((board, place.prefix()));

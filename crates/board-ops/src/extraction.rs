@@ -4,10 +4,9 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use board_index::{DatabaseError, IndexError, PluginDatabase, Storage, View};
-use board_model::{Content, Fields, RecordType, Refusal, classify};
+use board_model::{Content, Fields, PluginName, RecordType, Refusal, classify};
 use board_plugin::{
-    CallError, Context, Environment, Installed, Limits, Manifest, PluginName, Record, extract,
-    installed,
+    CallError, Context, Environment, Installed, Limits, Manifest, Record, extract, installed,
 };
 
 use crate::board::Board;
@@ -165,7 +164,7 @@ impl CallFailed {
                 problem.code,
                 self,
                 &Fields {
-                    plugin: Some(plugin.to_string()),
+                    plugin: Some(plugin.clone()),
                     record_type: Some(problem.record_type.clone()),
                     schema: Some(problem.path.clone()),
                     ..Fields::default()

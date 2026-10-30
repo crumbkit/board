@@ -61,7 +61,7 @@ fn signing() -> Signing {
 
 fn asker(plugin: Option<&str>, personal: Option<&Scenario>) -> Asker {
     Asker {
-        plugin: plugin.map(str::to_owned),
+        plugin: plugin.map(|plugin| plugin.parse().unwrap()),
         personal: personal.map(|personal| personal.workdir().to_path_buf()),
         signing: signing(),
         ..Asker::default()
@@ -216,6 +216,16 @@ fn mounted() -> (Scenario, Scenario) {
 }
 
 #[test]
+fn a_decide_whose_landing_has_no_logical_path_is_refused_as_malformed_and_one_that_has_is_named() {
+    let asked = path("/alias");
+    let refused = super::decide::landed(&asked, "/a\u{202e}b".parse()).unwrap_err();
+    assert_eq!(refused.code(), Code::PathMalformed);
+    assert_eq!(refused.fields().path, Some(asked.clone()));
+    let admitted = super::decide::landed(&asked, "/ab".parse()).unwrap();
+    assert_eq!(admitted, path("/ab"));
+}
+
+#[test]
 fn deciding_through_a_link_or_a_mount_names_where_a_put_would_land_and_its_twin_names_the_path() {
     let ((scenario, library), mine) = (mounted(), personal());
     scenario
@@ -296,7 +306,7 @@ fn a_plugins_put_of_an_effect_or_seen_record_is_refused_in_any_board_and_the_own
     let (scenario, mine) = (board(), personal());
     let effect = Effect::new(
         "/b".to_owned(),
-        "tasks".to_owned(),
+        "tasks".parse().unwrap(),
         OP.to_owned(),
         "/x".to_owned(),
     );
@@ -567,7 +577,7 @@ fn an_answer_to_a_pending_effect_that_is_not_the_one_its_id_names_is_refused_and
     let approve = |id: &str| answer(&owner, id, Answer::Approve, None, None);
     let mut effect = Effect::new(
         "/b".to_owned(),
-        "tasks".to_owned(),
+        "tasks".parse().unwrap(),
         "put".to_owned(),
         "/x".to_owned(),
     );

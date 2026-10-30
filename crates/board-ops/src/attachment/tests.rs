@@ -307,7 +307,7 @@ fn a_plugins_file_put_where_only_the_owner_writes_uploads_nothing_and_its_twin_u
     let scenario = stored(Path::new("store"));
     let mut board = open(&scenario);
     board.ask_as(crate::Asker {
-        plugin: Some("tasks".to_owned()),
+        plugin: Some("tasks".parse().unwrap()),
         ..crate::Asker::default()
     });
     let bytes = b"\xff\xfe";

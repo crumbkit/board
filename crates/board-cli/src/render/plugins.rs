@@ -1,8 +1,8 @@
 //! `plugin list` and `plugin find`.
 
-use board_model::{Code, canonical_json};
+use board_model::{Code, PluginName, canonical_json};
 use board_ops::{Called, Plugin, PluginFindReport, PluginListReport, PluginState};
-use board_plugin::{Capability, PluginName};
+use board_plugin::Capability;
 use board_tree::Status;
 use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose, Row};

@@ -4,316 +4,133 @@ use std::fmt;
 
 mod hint;
 
-/// A code, `board::<area>::<reason>`, which changes as STANDARDS.md 3 and 4
-/// say. docs/architecture/errors.md lists the codes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Code {
-    JsonParse,
-    JsonMergeConflict,
-    JsonDuplicateKey,
-    JsonTooLarge,
-    JsonNotUtf8,
-    JsonLossyNumber,
-    FrontmatterParse,
-    FrontmatterUnsupported,
-    RecordBadType,
-    RecordUnknownType,
-    RecordInvalid,
-    RecordNotARecord,
-    ConfigNotFound,
-    ConfigInvalid,
-    ConfigAmbiguous,
-    SchemaInvalid,
-    SchemaDiffers,
-    RefMalformed,
-    RefWrongType,
-    PathMalformed,
-    PathNotFound,
-    PathShadowed,
-    PathCaseCollision,
-    RefDangling,
-    MountInvalid,
-    MountRepoMissing,
-    MountCommitMissing,
-    MountRemoteUnsupported,
-    MountFollowMissing,
-    MountNotAncestor,
-    MountStale,
-    ResolveCycle,
-    ResolveTooManyHops,
-    RepoUnreadable,
-    RepoSubmodule,
-    SymlinkOutside,
-    SymlinkLoop,
-    SymlinkDangling,
-    IndexFailed,
-    QueryInvalid,
-    QueryTimeout,
-    OutputOverBudget,
-    PutStale,
-    PutLocked,
-    PutThroughMount,
-    PutSymlink,
-    PutInvalid,
-    PutNotAFile,
-    PutNul,
-    PutNoIdentity,
-    PutHeadMoved,
-    PutFailed,
-    RmDirectory,
-    SyncNoRemote,
-    SyncFailed,
-    SyncConflict,
-    SyncEdited,
-    SyncKept,
-    SyncGaveUp,
-    SyncTimeout,
-    RefsTargetChanged,
-    AttachmentMissing,
-    AttachmentMismatch,
-    PluginNotInstalled,
-    PluginBadManifest,
-    PluginNotEnabled,
-    PluginSchemaMissing,
-    PluginSchemaDiffers,
-    PluginAmbiguous,
-    PluginBadInput,
-    PluginBadOutput,
-    PluginFailed,
-    PluginNoDatabase,
-    PluginNotStarted,
-    PluginTimeout,
-    PluginTooLarge,
-    PluginTooDeep,
-    SettingsAsked,
-    SettingsRefused,
-    SettingsFromPlugin,
-    SettingsNotFound,
-    SettingsNoPersonal,
-    SettingsUnsigned,
-    UiUnknownKind,
-    UiSlotMismatch,
-    UiSlotInvalid,
-    UiNotABinding,
-    UiOpenFailed,
-    ServeHost,
-    ServeOrigin,
-    ServeToken,
-    ServeCodeUnknown,
-    ServeCodeUsed,
-    ServeCodeExpired,
-    ServeUnknownRoute,
-    ServeFailed,
-    CliUsage,
+/// Declares `Code` and `ALL` in one order, with each code's spelling.
+macro_rules! codes {
+    ($($variant:ident => $spelling:literal,)*) => {
+        /// A code, `board::<area>::<reason>`, which changes as STANDARDS.md 3 and 4
+        /// say. docs/architecture/errors.md lists the codes.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        pub enum Code {
+            $($variant,)*
+        }
+
+        impl Code {
+            /// Every code, so a spelling can be read back.
+            pub const ALL: [Code; [$($spelling),*].len()] = [$(Self::$variant),*];
+
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $spelling,)*
+                }
+            }
+        }
+    };
+}
+
+codes! {
+    JsonParse => "board::json::parse",
+    JsonMergeConflict => "board::json::merge_conflict",
+    JsonDuplicateKey => "board::json::duplicate_key",
+    JsonTooLarge => "board::json::too_large",
+    JsonNotUtf8 => "board::json::not_utf8",
+    JsonLossyNumber => "board::json::lossy_number",
+    FrontmatterParse => "board::frontmatter::parse",
+    FrontmatterUnsupported => "board::frontmatter::unsupported",
+    RecordBadType => "board::record::bad_type",
+    RecordUnknownType => "board::record::unknown_type",
+    RecordInvalid => "board::record::invalid",
+    RecordNotARecord => "board::record::not_a_record",
+    ConfigNotFound => "board::config::not_found",
+    ConfigInvalid => "board::config::invalid",
+    ConfigAmbiguous => "board::config::ambiguous",
+    SchemaInvalid => "board::schema::invalid",
+    SchemaDiffers => "board::schema::differs",
+    RefMalformed => "board::ref::malformed",
+    RefWrongType => "board::ref::wrong_type",
+    PathMalformed => "board::path::malformed",
+    PathNotFound => "board::path::not_found",
+    PathShadowed => "board::path::shadowed",
+    PathCaseCollision => "board::path::case_collision",
+    RefDangling => "board::ref::dangling",
+    MountInvalid => "board::mount::invalid",
+    MountRepoMissing => "board::mount::repo_missing",
+    MountCommitMissing => "board::mount::commit_missing",
+    MountRemoteUnsupported => "board::mount::remote_unsupported",
+    MountFollowMissing => "board::mount::follow_missing",
+    MountNotAncestor => "board::mount::not_ancestor",
+    MountStale => "board::mount::stale",
+    ResolveCycle => "board::resolve::cycle",
+    ResolveTooManyHops => "board::resolve::too_many_hops",
+    RepoUnreadable => "board::repo::unreadable",
+    RepoSubmodule => "board::repo::submodule",
+    SymlinkOutside => "board::symlink::outside",
+    SymlinkLoop => "board::symlink::loop",
+    SymlinkDangling => "board::symlink::dangling",
+    IndexFailed => "board::index::failed",
+    QueryInvalid => "board::query::invalid",
+    QueryTimeout => "board::query::timeout",
+    OutputOverBudget => "board::output::over_budget",
+    PutStale => "board::put::stale",
+    PutLocked => "board::put::locked",
+    PutThroughMount => "board::put::through_mount",
+    PutSymlink => "board::put::symlink",
+    PutInvalid => "board::put::invalid",
+    PutNotAFile => "board::put::not_a_file",
+    PutNul => "board::put::nul",
+    PutNoIdentity => "board::put::no_identity",
+    PutHeadMoved => "board::put::head_moved",
+    PutFailed => "board::put::failed",
+    RmDirectory => "board::rm::directory",
+    SyncNoRemote => "board::sync::no_remote",
+    SyncFailed => "board::sync::failed",
+    SyncConflict => "board::sync::conflict",
+    SyncEdited => "board::sync::edited",
+    SyncKept => "board::sync::kept",
+    SyncGaveUp => "board::sync::gave_up",
+    SyncTimeout => "board::sync::timeout",
+    RefsTargetChanged => "board::refs::target_changed",
+    AttachmentMissing => "board::attachment::missing",
+    AttachmentMismatch => "board::attachment::mismatch",
+    PluginNotInstalled => "board::plugin::not_installed",
+    PluginBadManifest => "board::plugin::bad_manifest",
+    PluginNotEnabled => "board::plugin::not_enabled",
+    PluginSchemaMissing => "board::plugin::schema_missing",
+    PluginSchemaDiffers => "board::plugin::schema_differs",
+    PluginAmbiguous => "board::plugin::ambiguous",
+    PluginBadInput => "board::plugin::bad_input",
+    PluginBadOutput => "board::plugin::bad_output",
+    PluginFailed => "board::plugin::failed",
+    PluginNoDatabase => "board::plugin::no_database",
+    PluginNotStarted => "board::plugin::not_started",
+    PluginTimeout => "board::plugin::timeout",
+    PluginTooLarge => "board::plugin::too_large",
+    PluginTooDeep => "board::plugin::too_deep",
+    SettingsAsked => "board::settings::asked",
+    SettingsRefused => "board::settings::refused",
+    SettingsFromPlugin => "board::settings::from_plugin",
+    SettingsNotFound => "board::settings::not_found",
+    SettingsNoPersonal => "board::settings::no_personal",
+    SettingsUnsigned => "board::settings::unsigned",
+    UiUnknownKind => "board::ui::unknown_kind",
+    UiSlotMismatch => "board::ui::slot_mismatch",
+    UiSlotInvalid => "board::ui::slot_invalid",
+    UiNotABinding => "board::ui::not_a_binding",
+    UiOpenFailed => "board::ui::open_failed",
+    ServeHost => "board::serve::host",
+    ServeOrigin => "board::serve::origin",
+    ServeToken => "board::serve::token",
+    ServeCodeUnknown => "board::serve::code_unknown",
+    ServeCodeUsed => "board::serve::code_used",
+    ServeCodeExpired => "board::serve::code_expired",
+    ServeUnknownRoute => "board::serve::unknown_route",
+    ServeFailed => "board::serve::failed",
+    CliUsage => "board::cli::usage",
 }
 
 impl Code {
-    /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 97] = [
-        Self::JsonParse,
-        Self::JsonMergeConflict,
-        Self::JsonDuplicateKey,
-        Self::JsonTooLarge,
-        Self::JsonNotUtf8,
-        Self::JsonLossyNumber,
-        Self::FrontmatterParse,
-        Self::FrontmatterUnsupported,
-        Self::RecordBadType,
-        Self::RecordUnknownType,
-        Self::RecordInvalid,
-        Self::RecordNotARecord,
-        Self::ConfigNotFound,
-        Self::ConfigInvalid,
-        Self::ConfigAmbiguous,
-        Self::SchemaInvalid,
-        Self::SchemaDiffers,
-        Self::RefMalformed,
-        Self::RefWrongType,
-        Self::PathMalformed,
-        Self::PathNotFound,
-        Self::PathShadowed,
-        Self::PathCaseCollision,
-        Self::RefDangling,
-        Self::MountInvalid,
-        Self::MountRepoMissing,
-        Self::MountCommitMissing,
-        Self::MountRemoteUnsupported,
-        Self::MountFollowMissing,
-        Self::MountNotAncestor,
-        Self::MountStale,
-        Self::ResolveCycle,
-        Self::ResolveTooManyHops,
-        Self::RepoUnreadable,
-        Self::RepoSubmodule,
-        Self::SymlinkOutside,
-        Self::SymlinkLoop,
-        Self::SymlinkDangling,
-        Self::IndexFailed,
-        Self::QueryInvalid,
-        Self::QueryTimeout,
-        Self::OutputOverBudget,
-        Self::PutStale,
-        Self::PutLocked,
-        Self::PutThroughMount,
-        Self::PutSymlink,
-        Self::PutInvalid,
-        Self::PutNotAFile,
-        Self::PutNul,
-        Self::PutNoIdentity,
-        Self::PutHeadMoved,
-        Self::PutFailed,
-        Self::RmDirectory,
-        Self::SyncNoRemote,
-        Self::SyncFailed,
-        Self::SyncConflict,
-        Self::SyncEdited,
-        Self::SyncKept,
-        Self::SyncGaveUp,
-        Self::SyncTimeout,
-        Self::RefsTargetChanged,
-        Self::AttachmentMissing,
-        Self::AttachmentMismatch,
-        Self::PluginNotInstalled,
-        Self::PluginBadManifest,
-        Self::PluginNotEnabled,
-        Self::PluginSchemaMissing,
-        Self::PluginSchemaDiffers,
-        Self::PluginAmbiguous,
-        Self::PluginBadInput,
-        Self::PluginBadOutput,
-        Self::PluginFailed,
-        Self::PluginNoDatabase,
-        Self::PluginNotStarted,
-        Self::PluginTimeout,
-        Self::PluginTooLarge,
-        Self::PluginTooDeep,
-        Self::SettingsAsked,
-        Self::SettingsRefused,
-        Self::SettingsFromPlugin,
-        Self::SettingsNotFound,
-        Self::SettingsNoPersonal,
-        Self::SettingsUnsigned,
-        Self::UiUnknownKind,
-        Self::UiSlotMismatch,
-        Self::UiSlotInvalid,
-        Self::UiNotABinding,
-        Self::UiOpenFailed,
-        Self::ServeHost,
-        Self::ServeOrigin,
-        Self::ServeToken,
-        Self::ServeCodeUnknown,
-        Self::ServeCodeUsed,
-        Self::ServeCodeExpired,
-        Self::ServeUnknownRoute,
-        Self::ServeFailed,
-        Self::CliUsage,
-    ];
-
     /// The code spelled `text`.
     pub fn parse(text: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|code| code.as_str() == text)
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::JsonParse => "board::json::parse",
-            Self::JsonMergeConflict => "board::json::merge_conflict",
-            Self::JsonDuplicateKey => "board::json::duplicate_key",
-            Self::JsonTooLarge => "board::json::too_large",
-            Self::JsonNotUtf8 => "board::json::not_utf8",
-            Self::JsonLossyNumber => "board::json::lossy_number",
-            Self::FrontmatterParse => "board::frontmatter::parse",
-            Self::FrontmatterUnsupported => "board::frontmatter::unsupported",
-            Self::RecordBadType => "board::record::bad_type",
-            Self::RecordUnknownType => "board::record::unknown_type",
-            Self::RecordInvalid => "board::record::invalid",
-            Self::RecordNotARecord => "board::record::not_a_record",
-            Self::ConfigNotFound => "board::config::not_found",
-            Self::ConfigInvalid => "board::config::invalid",
-            Self::ConfigAmbiguous => "board::config::ambiguous",
-            Self::SchemaInvalid => "board::schema::invalid",
-            Self::SchemaDiffers => "board::schema::differs",
-            Self::RefMalformed => "board::ref::malformed",
-            Self::RefWrongType => "board::ref::wrong_type",
-            Self::PathMalformed => "board::path::malformed",
-            Self::PathNotFound => "board::path::not_found",
-            Self::PathShadowed => "board::path::shadowed",
-            Self::PathCaseCollision => "board::path::case_collision",
-            Self::RefDangling => "board::ref::dangling",
-            Self::MountInvalid => "board::mount::invalid",
-            Self::MountRepoMissing => "board::mount::repo_missing",
-            Self::MountCommitMissing => "board::mount::commit_missing",
-            Self::MountRemoteUnsupported => "board::mount::remote_unsupported",
-            Self::MountFollowMissing => "board::mount::follow_missing",
-            Self::MountNotAncestor => "board::mount::not_ancestor",
-            Self::MountStale => "board::mount::stale",
-            Self::ResolveCycle => "board::resolve::cycle",
-            Self::ResolveTooManyHops => "board::resolve::too_many_hops",
-            Self::RepoUnreadable => "board::repo::unreadable",
-            Self::RepoSubmodule => "board::repo::submodule",
-            Self::SymlinkOutside => "board::symlink::outside",
-            Self::SymlinkLoop => "board::symlink::loop",
-            Self::SymlinkDangling => "board::symlink::dangling",
-            Self::IndexFailed => "board::index::failed",
-            Self::QueryInvalid => "board::query::invalid",
-            Self::QueryTimeout => "board::query::timeout",
-            Self::OutputOverBudget => "board::output::over_budget",
-            Self::PutStale => "board::put::stale",
-            Self::PutLocked => "board::put::locked",
-            Self::PutThroughMount => "board::put::through_mount",
-            Self::PutSymlink => "board::put::symlink",
-            Self::PutInvalid => "board::put::invalid",
-            Self::PutNotAFile => "board::put::not_a_file",
-            Self::PutNul => "board::put::nul",
-            Self::PutNoIdentity => "board::put::no_identity",
-            Self::PutHeadMoved => "board::put::head_moved",
-            Self::PutFailed => "board::put::failed",
-            Self::RmDirectory => "board::rm::directory",
-            Self::SyncNoRemote => "board::sync::no_remote",
-            Self::SyncFailed => "board::sync::failed",
-            Self::SyncConflict => "board::sync::conflict",
-            Self::SyncEdited => "board::sync::edited",
-            Self::SyncKept => "board::sync::kept",
-            Self::SyncGaveUp => "board::sync::gave_up",
-            Self::SyncTimeout => "board::sync::timeout",
-            Self::RefsTargetChanged => "board::refs::target_changed",
-            Self::AttachmentMissing => "board::attachment::missing",
-            Self::AttachmentMismatch => "board::attachment::mismatch",
-            Self::PluginNotInstalled => "board::plugin::not_installed",
-            Self::PluginBadManifest => "board::plugin::bad_manifest",
-            Self::PluginNotEnabled => "board::plugin::not_enabled",
-            Self::PluginSchemaMissing => "board::plugin::schema_missing",
-            Self::PluginSchemaDiffers => "board::plugin::schema_differs",
-            Self::PluginAmbiguous => "board::plugin::ambiguous",
-            Self::PluginBadInput => "board::plugin::bad_input",
-            Self::PluginBadOutput => "board::plugin::bad_output",
-            Self::PluginFailed => "board::plugin::failed",
-            Self::PluginNoDatabase => "board::plugin::no_database",
-            Self::PluginNotStarted => "board::plugin::not_started",
-            Self::PluginTimeout => "board::plugin::timeout",
-            Self::PluginTooLarge => "board::plugin::too_large",
-            Self::PluginTooDeep => "board::plugin::too_deep",
-            Self::SettingsAsked => "board::settings::asked",
-            Self::SettingsRefused => "board::settings::refused",
-            Self::SettingsFromPlugin => "board::settings::from_plugin",
-            Self::SettingsNotFound => "board::settings::not_found",
-            Self::SettingsNoPersonal => "board::settings::no_personal",
-            Self::SettingsUnsigned => "board::settings::unsigned",
-            Self::UiUnknownKind => "board::ui::unknown_kind",
-            Self::UiSlotMismatch => "board::ui::slot_mismatch",
-            Self::UiSlotInvalid => "board::ui::slot_invalid",
-            Self::UiNotABinding => "board::ui::not_a_binding",
-            Self::UiOpenFailed => "board::ui::open_failed",
-            Self::ServeHost => "board::serve::host",
-            Self::ServeOrigin => "board::serve::origin",
-            Self::ServeToken => "board::serve::token",
-            Self::ServeCodeUnknown => "board::serve::code_unknown",
-            Self::ServeCodeUsed => "board::serve::code_used",
-            Self::ServeCodeExpired => "board::serve::code_expired",
-            Self::ServeUnknownRoute => "board::serve::unknown_route",
-            Self::ServeFailed => "board::serve::failed",
-            Self::CliUsage => "board::cli::usage",
-        }
     }
 }
 
@@ -330,113 +147,9 @@ mod tests {
     use super::*;
     use crate::{Fields, LogicalPath, MAX_SYMLINKS};
 
-    /// Fails to compile when a variant is added, so `ALL` stays complete.
-    fn listed(code: Code) {
-        match code {
-            Code::JsonParse
-            | Code::JsonMergeConflict
-            | Code::JsonDuplicateKey
-            | Code::JsonTooLarge
-            | Code::JsonNotUtf8
-            | Code::JsonLossyNumber
-            | Code::FrontmatterParse
-            | Code::FrontmatterUnsupported
-            | Code::RecordBadType
-            | Code::RecordUnknownType
-            | Code::RecordInvalid
-            | Code::RecordNotARecord
-            | Code::ConfigNotFound
-            | Code::ConfigInvalid
-            | Code::ConfigAmbiguous
-            | Code::SchemaInvalid
-            | Code::SchemaDiffers
-            | Code::RefMalformed
-            | Code::RefWrongType
-            | Code::PathMalformed
-            | Code::PathNotFound
-            | Code::PathShadowed
-            | Code::PathCaseCollision
-            | Code::RefDangling
-            | Code::MountInvalid
-            | Code::MountRepoMissing
-            | Code::MountCommitMissing
-            | Code::MountRemoteUnsupported
-            | Code::MountFollowMissing
-            | Code::MountNotAncestor
-            | Code::MountStale
-            | Code::ResolveCycle
-            | Code::ResolveTooManyHops
-            | Code::RepoUnreadable
-            | Code::RepoSubmodule
-            | Code::SymlinkOutside
-            | Code::SymlinkLoop
-            | Code::SymlinkDangling
-            | Code::IndexFailed
-            | Code::QueryInvalid
-            | Code::QueryTimeout
-            | Code::OutputOverBudget
-            | Code::PutStale
-            | Code::PutLocked
-            | Code::PutThroughMount
-            | Code::PutSymlink
-            | Code::PutInvalid
-            | Code::PutNotAFile
-            | Code::PutNul
-            | Code::PutNoIdentity
-            | Code::PutHeadMoved
-            | Code::PutFailed
-            | Code::RmDirectory
-            | Code::SyncNoRemote
-            | Code::SyncFailed
-            | Code::SyncConflict
-            | Code::SyncEdited
-            | Code::SyncKept
-            | Code::SyncGaveUp
-            | Code::SyncTimeout
-            | Code::RefsTargetChanged
-            | Code::AttachmentMissing
-            | Code::AttachmentMismatch
-            | Code::PluginNotInstalled
-            | Code::PluginBadManifest
-            | Code::PluginNotEnabled
-            | Code::PluginSchemaMissing
-            | Code::PluginSchemaDiffers
-            | Code::PluginAmbiguous
-            | Code::PluginBadInput
-            | Code::PluginBadOutput
-            | Code::PluginFailed
-            | Code::PluginNoDatabase
-            | Code::PluginNotStarted
-            | Code::PluginTimeout
-            | Code::PluginTooLarge
-            | Code::PluginTooDeep
-            | Code::SettingsAsked
-            | Code::SettingsRefused
-            | Code::SettingsFromPlugin
-            | Code::SettingsNotFound
-            | Code::SettingsNoPersonal
-            | Code::SettingsUnsigned
-            | Code::UiUnknownKind
-            | Code::UiSlotMismatch
-            | Code::UiSlotInvalid
-            | Code::UiNotABinding
-            | Code::UiOpenFailed
-            | Code::ServeHost
-            | Code::ServeOrigin
-            | Code::ServeToken
-            | Code::ServeCodeUnknown
-            | Code::ServeCodeUsed
-            | Code::ServeCodeExpired
-            | Code::ServeUnknownRoute
-            | Code::ServeFailed
-            | Code::CliUsage => {}
-        }
-    }
-
     #[test]
     fn every_code_is_board_area_reason_in_snake_case() {
         for code in Code::ALL {
-            listed(code);
             let parts: Vec<&str> = code.as_str().split("::").collect();
             assert_eq!(parts.len(), 3, "{code}");
             assert_eq!(parts[0], "board", "{code}");

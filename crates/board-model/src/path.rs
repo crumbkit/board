@@ -60,6 +60,31 @@ impl LogicalPath {
         }
     }
 
+    /// The logical path of `physical`, a path from the board's root: `/`,
+    /// then `physical` without a final `.json`.
+    pub fn of_physical(physical: &str) -> Result<Self, PathError> {
+        format!("/{}", physical.strip_suffix(".json").unwrap_or(physical)).parse()
+    }
+
+    /// `inside`, a path from the root of a board mounted at this path, as a
+    /// path from this path's root.
+    pub fn beneath(&self, inside: &Self) -> Result<Self, PathError> {
+        match (self.as_str(), inside.as_str()) {
+            ("/", _) => Ok(inside.clone()),
+            (_, "/") => Ok(self.clone()),
+            (route, inside) => format!("{route}{inside}").parse(),
+        }
+    }
+
+    /// The directory that holds this path; the root's parent is the root.
+    #[must_use]
+    pub fn parent(&self) -> Self {
+        match self.0.rsplit_once('/') {
+            Some(("", _)) | None => Self::root(),
+            Some((parent, _)) => Self(parent.to_owned()),
+        }
+    }
+
     /// The path of the first `depth` segments: the root for 0, the whole
     /// path for `depth` past its last segment.
     #[must_use]

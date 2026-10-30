@@ -605,7 +605,7 @@ impl Decide<'_> {
 
     /// The mount point of the source, from the root; `None` for the root.
     fn route(&self) -> Option<LogicalPath> {
-        self.mounted?.route.parse().ok()
+        Some(self.mounted?.route.clone())
     }
 
     /// `path`, a path in the source, from the root.
@@ -620,11 +620,7 @@ impl Decide<'_> {
     /// `at`, a path in the source: the board the directory above `at`
     /// resolves into. `None` when that is the root board.
     fn mount(&self, at: &LogicalPath) -> Option<LogicalPath> {
-        let parent = match at.as_str().rsplit_once('/') {
-            Some(("", _)) | None => "/",
-            Some((parent, _)) => parent,
-        };
-        let location = self.resolve(&parent.parse().ok()?).ok()?;
+        let location = self.resolve(&at.parent()).ok()?;
         if location.board.source == Source::WorkingTree {
             return None;
         }

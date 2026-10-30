@@ -5,13 +5,12 @@
 use std::fmt;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, Refusal};
+use board_model::{Code, Fields, Location, LogicalPath, PluginName, Refusal};
 use board_ops::MAX_LIMIT;
 use board_ops::{
     Budget, CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport,
     MountUpdateReport, PutReport, QueryReport, source_name,
 };
-use board_plugin::PluginName;
 use board_tree::{Status, Synced};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use crumbkit::help::Leaf;

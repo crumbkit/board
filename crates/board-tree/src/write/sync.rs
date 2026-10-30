@@ -400,11 +400,7 @@ struct Change {
 
 /// Fields naming the logical path of the file at `path`.
 fn fields_at(path: &str) -> Fields {
-    let logical = path.strip_suffix(".json").unwrap_or(path);
-    format!("/{logical}")
-        .parse::<LogicalPath>()
-        .map(|path| Fields::at(&path))
-        .unwrap_or_default()
+    LogicalPath::of_physical(path).map_or_else(|_| Fields::default(), |path| Fields::at(&path))
 }
 
 /// A sync that stopped. The local commits stay where they are.

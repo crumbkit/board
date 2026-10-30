@@ -848,7 +848,7 @@ fn effects(starts: &mut Starts) {
     let effect = |board: &str, plugin: &str, op: &str, path: &str| {
         let effect = board_model::Effect::new(
             board.to_owned(),
-            plugin.to_owned(),
+            plugin.parse().unwrap(),
             op.to_owned(),
             path.to_owned(),
         );

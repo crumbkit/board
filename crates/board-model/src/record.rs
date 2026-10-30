@@ -44,11 +44,12 @@ impl RecordType {
     /// Whether the type is in a namespace reserved for Board's own records:
     /// `board`, or `ui` for the pages `board serve` draws.
     pub fn is_reserved(&self) -> bool {
-        RESERVED_NAMESPACES.iter().any(|namespace| {
-            self.0
-                .strip_prefix(namespace)
-                .is_some_and(|rest| rest.starts_with('/'))
-        })
+        RESERVED_NAMESPACES.contains(&self.namespace())
+    }
+
+    /// The part before the first `/`.
+    pub fn namespace(&self) -> &str {
+        self.0.split('/').next().unwrap_or_default()
     }
 
     /// Whether Board reads this type by its Rust type, needing no schema.

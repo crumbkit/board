@@ -44,7 +44,7 @@ fn the_root_of_a_mounted_repository_is_placed_at_its_mount_and_an_unmounted_one_
     let board = board(&[("repos/lib.json", &mounted)]);
     let found = places(&board, mounted.workdir());
     assert_eq!(found, [place("/repos/lib", "/")]);
-    assert_eq!(found[0].prefix(), "/repos/lib");
+    assert_eq!(found[0].prefix(), Ok(path("/repos/lib")));
     assert_eq!(places(&board, unmounted.workdir()), []);
 }
 
@@ -101,7 +101,7 @@ fn a_subdirectory_is_placed_beneath_its_mount() {
     let board = board(&[("repos/lib.json", &mounted)]);
     let found = places(&board, &mounted.workdir().join("docs/deep"));
     assert_eq!(found, [place("/repos/lib", "/docs/deep")]);
-    assert_eq!(found[0].prefix(), "/repos/lib/docs/deep");
+    assert_eq!(found[0].prefix(), Ok(path("/repos/lib/docs/deep")));
 }
 
 #[test]

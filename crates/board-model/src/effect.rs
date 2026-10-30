@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 
 use crate::attachment::Digest;
 use crate::json::canonical_json;
+use crate::name::PluginName;
 use crate::path::escaped;
 
 /// The `$type` of a pending effect, a request waiting for the owner.
@@ -61,12 +62,6 @@ impl FromStr for Answer {
     }
 }
 
-/// Whether `op` is a plugin's own op, `<plugin>.<name>`.
-pub fn is_op(op: &str) -> bool {
-    op.split_once('.')
-        .is_some_and(|(plugin, name)| !plugin.is_empty() && !name.is_empty())
-}
-
 /// Whether `text` is spelled as an effect id: 64 lowercase hex digits.
 pub fn is_effect_id(text: &str) -> bool {
     text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
@@ -81,7 +76,7 @@ pub struct Effect {
     record_type: String,
     /// The root of the board the effect targets.
     pub board: String,
-    pub plugin: String,
+    pub plugin: PluginName,
     pub op: String,
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,7 +92,7 @@ pub struct Effect {
 
 impl Effect {
     /// A request of `op` at `path` by `plugin` in `board`, with no content.
-    pub fn new(board: String, plugin: String, op: String, path: String) -> Self {
+    pub fn new(board: String, plugin: PluginName, op: String, path: String) -> Self {
         Self {
             record_type: EFFECT_TYPE.to_owned(),
             board,
@@ -145,56 +140,60 @@ impl Effect {
         let mut statement = format!(
             "{APPROVAL_HEADER}\neffect: {}\nplugin: {}\nop: {}\npath: {}\nboard: {}\n",
             self.id(),
-            escaped(&self.plugin),
+            escaped(self.plugin.as_str()),
             escaped(&self.op),
             escaped(&self.path),
             escaped(&self.board),
         );
-        self.show_content(&mut statement);
+        show_content(&mut statement, self.record.as_ref(), self.text.as_deref());
         statement
     }
 
-    /// The statement the owner signs to let their own put of this effect's
-    /// content write: its path and board, then the content as
-    /// [`Effect::approval`] shows it. Board asks for it as the put runs and
-    /// keeps no signature of it, so its layout is not frozen.
-    pub fn owner_write(&self) -> String {
+    /// The statement the owner signs to let their own `op` of `record` or
+    /// `text` at `path` in `board` write: its path and board, then the
+    /// content as [`Effect::approval`] shows it. Board asks for it as the
+    /// put runs and keeps no signature of it.
+    pub fn owner_write(
+        board: &str,
+        op: &str,
+        path: &str,
+        record: Option<&Value>,
+        text: Option<&str>,
+    ) -> String {
         let mut statement = format!(
             "{WRITE_HEADER}\nop: {}\npath: {}\nboard: {}\n",
-            escaped(&self.op),
-            escaped(&self.path),
-            escaped(&self.board),
+            escaped(op),
+            escaped(path),
+            escaped(board),
         );
-        self.show_content(&mut statement);
+        show_content(&mut statement, record, text);
         statement
     }
+}
 
-    /// Appends the content's size, then the record, pretty-printed with its
-    /// keys sorted, or the text, split at each `\n`, with hidden characters
-    /// escaped.
-    fn show_content(&self, statement: &mut String) {
-        let sorted = |record: &Value| {
-            serde_json::from_slice::<Value>(canonical_json(record).as_bytes()).ok()
-        };
-        let content = match (&self.record, &self.text) {
-            (Some(record), _) => {
-                sorted(record).and_then(|record| serde_json::to_string_pretty(&record).ok())
-            }
-            (None, Some(text)) => Some(text.clone()),
-            (None, None) => None,
-        };
-        if let Some(content) = content {
-            let lines: Vec<&str> = content.split('\n').collect();
-            let _ = writeln!(
-                statement,
-                "content: {} bytes in {} lines",
-                content.len(),
-                lines.len()
-            );
-            for line in lines {
-                statement.push_str(&escaped(line));
-                statement.push('\n');
-            }
+/// Appends the content's size, then `record`, pretty-printed with its keys
+/// sorted, or `text`, split at each `\n`, with hidden characters escaped.
+fn show_content(statement: &mut String, record: Option<&Value>, text: Option<&str>) {
+    let sorted =
+        |record: &Value| serde_json::from_slice::<Value>(canonical_json(record).as_bytes()).ok();
+    let content = match (record, text) {
+        (Some(record), _) => {
+            sorted(record).and_then(|record| serde_json::to_string_pretty(&record).ok())
+        }
+        (None, Some(text)) => Some(text.to_owned()),
+        (None, None) => None,
+    };
+    if let Some(content) = content {
+        let lines: Vec<&str> = content.split('\n').collect();
+        let _ = writeln!(
+            statement,
+            "content: {} bytes in {} lines",
+            content.len(),
+            lines.len()
+        );
+        for line in lines {
+            statement.push_str(&escaped(line));
+            statement.push('\n');
         }
     }
 }

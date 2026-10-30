@@ -13,7 +13,7 @@ fn an_effect_id_is_the_same_for_the_same_request_and_differs_for_another_body_pa
         prior: prior.map(str::to_owned),
         ..Effect::new(
             "/b".to_owned(),
-            "tasks".to_owned(),
+            "tasks".parse().unwrap(),
             "put".to_owned(),
             path.to_owned(),
         )
@@ -32,7 +32,7 @@ fn an_effect_id_is_the_same_for_the_same_request_and_differs_for_another_body_pa
 fn an_effect_and_a_seen_record_read_back_as_written_and_refuse_an_extra_field() {
     let mut effect = Effect::new(
         "/b".to_owned(),
-        "tasks".to_owned(),
+        "tasks".parse().unwrap(),
         "put".to_owned(),
         "/x".to_owned(),
     );
@@ -65,18 +65,10 @@ fn an_answer_reads_from_its_word() {
 }
 
 #[test]
-fn only_a_plugins_own_op_is_an_op() {
-    assert!(is_op("review.comment"));
-    for refused in ["put", "rm", "review.", ".comment", "review"] {
-        assert!(!is_op(refused), "{refused}");
-    }
-}
-
-#[test]
 fn an_approval_names_the_effect_by_its_id_and_shows_hidden_characters_escaped() {
     let effect = Effect::new(
         "/Users/o/b\u{202e}d".to_owned(),
-        "review".to_owned(),
+        "review".parse().unwrap(),
         "review.comment".to_owned(),
         "/pulls/7".to_owned(),
     );
@@ -98,7 +90,7 @@ fn an_approval_names_the_effect_by_its_id_and_shows_hidden_characters_escaped() 
 fn an_approval_of_a_put_keeps_its_frozen_layout_byte_for_byte() {
     let mut put = Effect::new(
         "/b".to_owned(),
-        "tasks".to_owned(),
+        "tasks".parse().unwrap(),
         "put".to_owned(),
         "/t/a".to_owned(),
     );
@@ -116,7 +108,7 @@ fn an_approval_of_a_put_keeps_its_frozen_layout_byte_for_byte() {
 fn an_approval_shows_text_split_at_each_newline_so_a_carriage_return_and_a_final_newline_show() {
     let mut file = Effect::new(
         "/b".to_owned(),
-        "notes".to_owned(),
+        "notes".parse().unwrap(),
         "put".to_owned(),
         "/n/a".to_owned(),
     );
@@ -140,21 +132,40 @@ fn an_approval_shows_text_split_at_each_newline_so_a_carriage_return_and_a_final
 
 #[test]
 fn an_owners_write_names_its_path_and_board_and_shows_its_content_and_never_reads_as_an_approval() {
+    let record = json!({"answer": "refuse"});
+    let write = Effect::owner_write("/b", "put", "/effects/seen/r\u{202e}", Some(&record), None);
+    assert_eq!(
+        write,
+        "board/write/v1\nop: put\npath: /effects/seen/r\\u{202e}\nboard: /b\ncontent: 24 bytes in 3 lines\n{\n  \"answer\": \"refuse\"\n}\n"
+    );
     let mut put = Effect::new(
         "/b".to_owned(),
-        String::new(),
+        "tasks".parse().unwrap(),
         "put".to_owned(),
         "/effects/seen/r\u{202e}".to_owned(),
     );
-    put.record = Some(json!({"answer": "refuse"}));
-    assert_eq!(
-        put.owner_write(),
-        "board/write/v1\nop: put\npath: /effects/seen/r\\u{202e}\nboard: /b\ncontent: 24 bytes in 3 lines\n{\n  \"answer\": \"refuse\"\n}\n"
-    );
-    assert_ne!(put.owner_write(), put.approval());
-    assert!(!put.owner_write().starts_with(APPROVAL_HEADER));
-    assert_eq!(signature_namespace(&put.owner_write()), "board/write/v1");
+    put.record = Some(record);
+    assert_ne!(write, put.approval());
+    assert!(!write.starts_with(APPROVAL_HEADER));
+    assert_eq!(signature_namespace(&write), "board/write/v1");
     assert_eq!(signature_namespace(&put.approval()), "board/approve/v1");
+}
+
+#[test]
+fn an_effect_reads_only_when_its_plugin_is_a_plugins_name() {
+    let effect = Effect::new(
+        "/b".to_owned(),
+        "tasks".parse().unwrap(),
+        "tasks.close".to_owned(),
+        "/t/a".to_owned(),
+    );
+    let mut value = serde_json::to_value(&effect).unwrap();
+    assert_eq!(Effect::from_value(&value).unwrap(), effect);
+    value["plugin"] = json!("Tasks");
+    assert_eq!(
+        effect_record(EFFECT_TYPE, &value).unwrap(),
+        Err(r#""Tasks" is not a name: use lowercase ASCII letters, digits and hyphens"#.to_owned())
+    );
 }
 
 #[test]

@@ -6,10 +6,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use board_model::{
-    BINARY_NAME, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, PathError, Refusal,
+    BINARY_NAME, CapabilityName, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, PathError,
+    Refusal,
 };
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
-use board_plugin::{CapabilityName, Limits, Target};
+use board_plugin::{Limits, Target};
 
 /// What a plugin run gets from this command line's context.
 pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
@@ -729,7 +730,7 @@ fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<
     if !matches!(error, board_ops::OpenError::NotFound { .. }) {
         return Err(Box::new(refusal));
     }
-    known::find(context, start, refusal).map(|(board, prefix)| (board, Some(prefix.parse())))
+    known::find(context, start, refusal).map(|(board, prefix)| (board, Some(prefix)))
 }
 
 /// The refusal when a board cannot be opened or made. `outside` a git

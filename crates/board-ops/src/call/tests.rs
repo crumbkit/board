@@ -519,10 +519,8 @@ fn a_plugins_own_error_is_reported_with_its_code_and_fields() {
     let error = r#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "the date 2026-13-01 is not a date", "fields": {"date": "2026-13-01"}}"#;
     let fixture = Fixture::tasks(&answering(error, 1));
     let refused = fixture.call("tasks.due", r#"{"n": 1}"#).unwrap_err();
-    assert_eq!(
-        refused.refusal().code,
-        RefusalCode::Plugin("tasks::date::bad".to_owned())
-    );
+    assert!(matches!(refused.refusal().code, RefusalCode::Plugin(_)));
+    assert_eq!(refused.refusal().code.as_str(), "tasks::date::bad");
     assert_eq!(refused.to_string(), "the date 2026-13-01 is not a date");
     assert_eq!(
         Value::Object(refused.refusal().fields),

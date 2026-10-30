@@ -201,6 +201,50 @@ fn a_path_too_long_under_its_mount_point_is_malformed_and_its_shorter_twin_is_ok
 }
 
 #[test]
+fn a_mount_whose_mount_point_is_too_long_under_its_own_mount_is_malformed_and_not_walked_and_its_shorter_twin_is()
+ {
+    // As above: the pointer's logical path is 4091 bytes in the library
+    // when `last` is 195, and 4102 under /vendor/lib. With 170 it is 4077
+    // there, and the inner board's /projects/p, 11 bytes, still fits.
+    let path = |last: usize| {
+        let mut segments = vec!["a".repeat(204); 19];
+        segments.push("b".repeat(last));
+        format!("{}.json", segments.join("/"))
+    };
+    let inner = Scenario::new();
+    let inner_commit = inner.commit(&[
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+        ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
+    ]);
+    let pointer = mount(&inner.path(), inner_commit);
+    for (last, walked) in [(195, false), (170, true)] {
+        let library = Scenario::new();
+        let commit = library.commit(&[(&path(last), &pointer)]);
+        let scenario = board();
+        scenario.write(
+            "vendor/lib.json",
+            Item::File(&mount(&library.path(), commit)),
+        );
+        let report = check(&scenario, None);
+        let status = |source: &Source, path: &str| {
+            let found = report.entries.iter();
+            let mut found = found.filter(|entry| &entry.source == source && entry.path == path);
+            found.next().map(|entry| entry.status)
+        };
+        let expected = if walked {
+            Status::Ok
+        } else {
+            Status::Degraded(Code::PathMalformed)
+        };
+        let library = Source::Commit(commit);
+        assert_eq!(status(&library, &path(last)), Some(expected), "{last}");
+        let inner = Source::Commit(inner_commit);
+        let project = walked.then_some(Status::Ok);
+        assert_eq!(status(&inner, "projects/p.json"), project, "{last}");
+    }
+}
+
+#[test]
 fn a_check_opens_a_repository_mounted_at_two_commits_once_and_two_repositories_twice() {
     let (one, first) = library();
     let second = one.commit(&[("tasks/later.json", &task(""))]);
@@ -300,7 +344,10 @@ fn a_board_places_a_directory_of_a_repository_it_mounts_and_not_one_of_another()
     let board = open(&scenario);
     for _cold_then_warm in 0..2 {
         let places = board.places(library.workdir(), Some(cache.path())).unwrap();
-        let prefixes: Vec<String> = places.iter().map(board_tree::Place::prefix).collect();
+        let prefixes: Vec<String> = places
+            .iter()
+            .map(|place| place.prefix().unwrap().into())
+            .collect();
         assert_eq!(prefixes, ["/vendor/lib"]);
         let elsewhere = board.places(other.workdir(), Some(cache.path())).unwrap();
         assert_eq!(elsewhere, []);

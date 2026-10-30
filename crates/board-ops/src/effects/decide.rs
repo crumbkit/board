@@ -1,7 +1,7 @@
 //! `board decide` and `board answer`.
 
 use board_model::{
-    Answer, BINARY_NAME, Digest, Effect, LogicalPath, Seen, canonical_json, is_effect_id,
+    Answer, BINARY_NAME, Digest, Effect, LogicalPath, PathError, Seen, canonical_json, is_effect_id,
 };
 use serde_json::json;
 
@@ -46,7 +46,7 @@ impl Board {
         let landed = match view.target(path, false) {
             Ok(target) => {
                 let on_disk = self.repository().landing(&target.path);
-                Some(on_disk.strip_suffix(".json").unwrap_or(&on_disk).to_owned())
+                Some(landed(path, LogicalPath::of_physical(&on_disk))?)
             }
             Err(WriteError::ThroughMount {
                 inside: Some(inside),
@@ -70,10 +70,10 @@ impl Board {
                 .resolve(path)
                 .ok()
                 .filter(|location| location.board.source == board_model::Source::WorkingTree)
-                .map(|location| location.path),
+                .map(|location| landed(path, format!("/{}", location.path).parse()))
+                .transpose()?,
         };
-        let landed = landed.map_or_else(|| path.to_string(), |file| format!("/{file}"));
-        self.decide_at(op, path, &landed)
+        self.decide_at(op, path, landed.unwrap_or_else(|| path.clone()))
     }
 
     /// [`Board::decide`] for `op` at `landed`, the path in this board where
@@ -82,27 +82,22 @@ impl Board {
         &self,
         op: &str,
         path: &LogicalPath,
-        landed: &str,
+        landed: LogicalPath,
     ) -> Result<DecideReport, EffectError> {
         let mut report = DecideReport {
             op: op.to_owned(),
             path: path.clone(),
             effect: None,
         };
-        let Some(plugin) = self.asker.plugin.as_deref() else {
+        let Some(plugin) = &self.asker.plugin else {
             return Ok(report);
         };
         let personal = self
             .asker
             .personal(|| format!("{op} {path} needs a pending effect in the personal board"))?;
-        let effect = Effect::new(
-            root(self),
-            plugin.to_owned(),
-            op.to_owned(),
-            landed.to_owned(),
-        );
+        let effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into());
         let id = effect.id();
-        let (plugin, op, path) = (plugin.to_owned(), op.to_owned(), path.clone());
+        let (plugin, op, path) = (plugin.clone(), op.to_owned(), path.clone());
         match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
             Some(Answer::Approve) => {
                 report.effect = Some(id);
@@ -125,6 +120,19 @@ impl Board {
             }
         }
     }
+}
+
+/// `parsed`, the logical path of the file where `path` lands, or the
+/// refusal when that file has none: the owner would otherwise approve a
+/// statement that names another path than the one written.
+pub(super) fn landed(
+    path: &LogicalPath,
+    parsed: Result<LogicalPath, PathError>,
+) -> Result<LogicalPath, EffectError> {
+    parsed.map_err(|source| EffectError::Unlanded {
+        path: path.clone(),
+        source,
+    })
 }
 
 /// Writes the owner's `answer` to the pending effect `id` in the personal
@@ -158,7 +166,8 @@ pub fn answer(
             None => signed(asker, &personal, &effect)?,
         });
     }
-    let records = [(format!("/{SEEN}/{id}"), json!(seen), Expect::Absent)];
+    let at = format!("/{SEEN}/{id}").parse().map_err(|_| not_found())?;
+    let records = [(at, json!(seen), Expect::Absent)];
     let pending = Removal {
         path: format!("/{PENDING}/{id}")
             .parse()
@@ -252,7 +261,7 @@ impl Board {
     /// lock and in one commit.
     fn write_answer(
         &self,
-        records: &[(String, serde_json::Value, Expect)],
+        records: &[(LogicalPath, serde_json::Value, Expect)],
         pending: &Removal,
         message: &str,
     ) -> Result<PutReport, PutError> {
@@ -260,14 +269,13 @@ impl Board {
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
         let mut schemas = Schemas::default();
         let mut prepared = Vec::with_capacity(records.len());
-        for (at, record, expect) in records {
-            let path: LogicalPath = at.parse().expect("an answer writes well-formed paths");
+        for (path, record, expect) in records {
             let bytes = canonical_json(record);
             prepared.push(self.prepare(
                 &lock,
                 &mut view,
                 &mut schemas,
-                &path,
+                path,
                 *expect,
                 bytes.as_bytes(),
             )?);

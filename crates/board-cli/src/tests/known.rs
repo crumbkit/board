@@ -611,7 +611,12 @@ fn a_write_command_the_put_check_does_not_cover_is_refused_under_a_plugin_and_ad
 /// names it, the effect and the file that holds it.
 fn one_pending() -> (Scenario, Scenario, Effect, String) {
     let personal = uncommitted();
-    let effect = Effect::new("/b".into(), "tasks".into(), "put".into(), "/x".into());
+    let effect = Effect::new(
+        "/b".into(),
+        "tasks".parse().unwrap(),
+        "put".into(),
+        "/x".into(),
+    );
     let pending = format!("effects/pending/{}.json", effect.id());
     let text = serde_json::to_string(&effect).unwrap();
     personal.write(&pending, Item::File(&text));

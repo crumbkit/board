@@ -102,7 +102,8 @@ fn a_duration_is_recorded_in_whole_microseconds() {
 fn a_refusal_names_its_code_for_the_record_in_text_and_json() {
     let boards = Refusal::new(Code::PutInvalid, "refused", &Fields::default());
     let plugins = Refusal::plugin(
-        "tasks::date::bad".to_owned(),
+        board_model::PluginCode::parse(&"tasks".parse().unwrap(), "tasks::date::bad".to_owned())
+            .unwrap(),
         "bad date".to_owned(),
         serde_json::Map::new(),
     );

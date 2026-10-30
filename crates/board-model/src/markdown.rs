@@ -63,12 +63,7 @@ pub fn reached(file: &LogicalPath, destination: &str) -> Option<LogicalPath> {
             decoded => segments.push(decoded.to_owned()),
         }
     }
-    if let Some(last) = segments.last_mut()
-        && let Some(stem) = last.strip_suffix(".json")
-    {
-        *last = stem.to_owned();
-    }
-    format!("/{}", segments.join("/")).parse().ok()
+    LogicalPath::of_physical(&segments.join("/")).ok()
 }
 
 /// `destination` without its query and fragment.

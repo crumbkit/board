@@ -45,6 +45,14 @@ fn a_record_type_names_its_schema_path() {
 }
 
 #[test]
+fn a_record_types_namespace_is_its_first_part() {
+    for (record_type, namespace) in [("lr/task/v1", "lr"), ("board-x/mount/v1", "board-x")] {
+        let record_type: RecordType = record_type.parse().unwrap();
+        assert_eq!(record_type.namespace(), namespace);
+    }
+}
+
+#[test]
 fn a_schema_path_names_its_record_type_and_any_other_path_names_none() {
     let record_type: RecordType = "lr/task/v2".parse().unwrap();
     assert_eq!(

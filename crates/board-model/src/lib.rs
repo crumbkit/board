@@ -9,6 +9,7 @@ mod frontmatter;
 mod json;
 mod location;
 mod markdown;
+mod name;
 mod path;
 mod pointer;
 mod record;
@@ -21,13 +22,14 @@ pub use crate::attachment::{ATTACHMENT_TYPE, Attachment, Digest, media_type};
 pub use crate::code::Code;
 pub use crate::effect::{
     APPROVAL_HEADER, Answer, EFFECT_TYPE, EFFECT_TYPES, Effect, PUT_OP, RM_OP, SEEN_TYPE, Seen,
-    WRITE_HEADER, effect_record, is_effect_id, is_op, signature_namespace,
+    WRITE_HEADER, effect_record, is_effect_id, signature_namespace,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};
 pub use crate::json::{Canonical, JsonError, canonical_json, parse_json};
 pub use crate::location::{Board, Location, Object, ObjectId, Source};
 pub use crate::markdown::{links, reached};
+pub use crate::name::{CapabilityName, NameError, PluginCode, PluginCodeError, PluginName};
 pub use crate::path::{
     LogicalPath, MAX_PATH_BYTES, MAX_SEGMENT_BYTES, MAX_SYMLINKS, Malformation, PathError, escaped,
     is_hidden,

@@ -65,9 +65,17 @@ fn effect() -> Effect {
 fn board_builds_the_approval_and_owner_write_statements_byte_for_byte() {
     let manifest = manifest();
     assert_eq!(manifest.version, 1);
+    let effect = effect();
+    let write = Effect::owner_write(
+        &effect.board,
+        &effect.op,
+        &effect.path,
+        effect.record.as_ref(),
+        effect.text.as_deref(),
+    );
     let built = [
-        ("approval.statement", effect().approval()),
-        ("write.statement", effect().owner_write()),
+        ("approval.statement", effect.approval()),
+        ("write.statement", write),
     ];
     for (name, statement) in built {
         assert_eq!(statement, read(name), "{name}");

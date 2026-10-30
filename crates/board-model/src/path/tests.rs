@@ -35,6 +35,59 @@ fn the_root_is_a_path_with_no_segments() {
 }
 
 #[test]
+fn a_paths_parent_is_the_directory_that_holds_it_and_the_roots_parent_is_the_root() {
+    for (path, parent) in [("/work/board/x", "/work/board"), ("/work", "/"), ("/", "/")] {
+        let path: LogicalPath = path.parse().unwrap();
+        assert_eq!(path.parent().as_str(), parent, "{path}");
+    }
+}
+
+#[test]
+fn a_path_beneath_another_follows_it_and_the_root_adds_nothing() {
+    let path = |text: &str| text.parse::<LogicalPath>().unwrap();
+    for (route, inside, beneath) in [
+        ("/vendor/m", "/tasks/a", "/vendor/m/tasks/a"),
+        ("/vendor/m", "/", "/vendor/m"),
+        ("/", "/tasks/a", "/tasks/a"),
+        ("/", "/", "/"),
+    ] {
+        assert_eq!(path(route).beneath(&path(inside)).unwrap(), path(beneath));
+    }
+    let long = path(&format!("/{}", "a".repeat(MAX_SEGMENT_BYTES)));
+    let mut deep = long.clone();
+    while deep.as_str().len() + long.as_str().len() <= MAX_PATH_BYTES {
+        deep = deep.beneath(&long).unwrap();
+    }
+    assert!(deep.beneath(&long).is_err());
+}
+
+#[test]
+fn a_physical_path_is_logical_with_a_slash_before_it_and_without_a_final_json() {
+    for (physical, logical) in [
+        ("tasks/a.json", "/tasks/a"),
+        ("notes/a.md", "/notes/a.md"),
+        ("a.json/b", "/a.json/b"),
+        ("", "/"),
+    ] {
+        assert_eq!(
+            LogicalPath::of_physical(physical).unwrap().as_str(),
+            logical
+        );
+    }
+    let error = LogicalPath::of_physical("tasks//a.json").unwrap_err();
+    assert!(
+        matches!(
+            error,
+            PathError::Malformed {
+                reason: Malformation::EmptySegment,
+                ..
+            }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn segments_come_back_in_order() {
     let path: LogicalPath = "/work/board/x".parse().unwrap();
     assert_eq!(path.segments().collect::<Vec<_>>(), ["work", "board", "x"]);

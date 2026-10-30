@@ -253,7 +253,7 @@ fn dangling(fields: &Fields) -> Option<String> {
         ),
         None => format!(
             "create the file the link at {path} names, or change the link's `path`; `board ls {}` shows the link",
-            parent(path)
+            path.parent()
         ),
     })
 }
@@ -296,14 +296,6 @@ fn query(known: &Known) -> String {
 
 /// What to do about a refused batch, whatever refused its lines.
 const BATCH: &str = "fix each line listed, then send the whole batch again; nothing was written";
-
-/// The directory that holds `path`: `/` for a path at the root.
-fn parent(path: &LogicalPath) -> &str {
-    match path.as_str().rsplit_once('/') {
-        Some(("", _)) | None => "/",
-        Some((parent, _)) => parent,
-    }
-}
 
 /// The hint for `code` alone. A command it names in backticks, with
 /// `<path>`, `<name>`, `<command>` or `<plugin>.<capability>` filled in,

@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use board_index::{Budget, Fallback, IndexError, View};
-use board_model::{Code, Fields, Known, Refusal};
-use board_plugin::{Installed, PluginName};
+use board_model::{Code, Fields, Known, PluginName, Refusal};
+use board_plugin::Installed;
 use serde_json::Value;
 
 use crate::board::Board;

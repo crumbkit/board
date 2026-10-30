@@ -112,15 +112,7 @@ fn checking_the_content_alone_ignores_the_directory() {
 }
 
 #[test]
-fn names_are_lowercase_ascii_letters_digits_and_hyphens() {
-    for good in ["tasks", "reading-list", "v2", "-"] {
-        assert!(good.parse::<PluginName>().is_ok(), "{good}");
-        assert!(good.parse::<CapabilityName>().is_ok(), "{good}");
-    }
-    for bad in ["", "Tasks", "reading_list", "tasks.due", "ä", "a b"] {
-        assert!(bad.parse::<PluginName>().is_err(), "{bad}");
-        assert!(bad.parse::<CapabilityName>().is_err(), "{bad}");
-    }
+fn a_capability_name_the_manifest_gives_must_be_a_name() {
     assert!(matches!(
         refused(&with("/capabilities/0/name", json!("Due"))),
         ManifestError::Shape { .. }

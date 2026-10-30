@@ -7,15 +7,15 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use board_model::{Code, Fields, JsonError, RecordType, Refusal, parse_json};
+use board_model::{
+    CapabilityName, Code, Fields, JsonError, NameError, PluginName, RecordType, Refusal, parse_json,
+};
 use board_validate::RecordError;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 
 use crate::installed::{DiscoveryError, Installed};
-use crate::manifest::{
-    Capability, CapabilityName, Manifest, ManifestError, NameError, PluginName, VariableName,
-};
+use crate::manifest::{Capability, Manifest, ManifestError, VariableName};
 use crate::process::{self, Limits, Scope, Spawned, Stopped};
 use crate::protocol::{self, BadOutput, CALL_RESULT_TYPE, PluginFailure, RawCallResult, Reply};
 
@@ -620,10 +620,10 @@ impl CallError {
                 let mut fields = failure.fields.clone();
                 fields.insert("plugin".to_owned(), json!(plugin));
                 fields.extend(extra);
-                let (code, message) = (failure.code.as_str(), failure.message.clone());
+                let (code, message) = (failure.code.clone(), failure.message.clone());
                 return Refusal {
                     stderr: stderr.cloned().unwrap_or_default(),
-                    ..Refusal::plugin(code.to_owned(), message, fields)
+                    ..Refusal::plugin(code, message, fields)
                 };
             }
             Self::Discovery { source } => (source.code(), None, None),
@@ -679,8 +679,8 @@ impl CallError {
             Self::BadOutput { plugin, .. } => (Code::PluginBadOutput, Some(plugin), None),
         };
         let fields = Fields {
-            plugin: plugin.map(ToString::to_string),
-            capability: capability.map(ToString::to_string),
+            plugin: plugin.cloned(),
+            capability: capability.cloned(),
             pointer: at,
             ..Fields::default()
         };
@@ -688,7 +688,7 @@ impl CallError {
         json.extend(extra);
         // An ambiguous capability's hint shows a call naming the first plugin.
         let hinted = Fields {
-            plugin: first.map(ToString::to_string).or(fields.plugin),
+            plugin: first.cloned().or(fields.plugin),
             ..fields
         };
         Refusal {

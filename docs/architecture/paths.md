@@ -17,17 +17,17 @@ like another:
 - no line or paragraph separator (U+2028, U+2029);
 - no Hangul filler (U+115F, U+1160, U+3164, U+FFA0).
 
-The zero-width joiner and non-joiner (U+200D, U+200C) are allowed, because
-emoji sequences and scripts such as Persian and Hindi need them.
+The zero-width joiner and non-joiner (U+200D, U+200C) are allowed for emoji
+and scripts such as Persian.
 
-A path typed on the command line or sent in a put is refused with a message
-that names the first such character as U+XXXX. A file already in the tree
+A path on the command line or in a put is refused, naming the first such
+character as U+XXXX. A file already in the tree
 with such a name is degraded with `board::path::malformed`, and `check` and
 `ls` print its name with each such character escaped, as `\u{202e}`.
 
 A path is at most 4,096 bytes. A record's file name adds `.json`, so its
 segment is at most 250 bytes.
-Paths are absolute and are read against the root of the board that holds them.
+Paths are read from the root of the board that holds them.
 The working tree must also fit the OS's `PATH_MAX` (1,024 bytes on macOS, 4,096
 on Linux) with its checkout prefix; Board keeps its own limit because paths
 read through mounts never touch the file system.
@@ -48,7 +48,8 @@ directory whether or not it is a valid pointer, degrades each with
 one directory that differ only by ASCII case are degraded with
 `board::path::case_collision`, because a macOS working tree cannot hold both;
 resolution still matches names exactly. A name that is not a valid segment is
-`board::path::malformed` and cannot be reached. A path that names nothing,
+`board::path::malformed` and cannot be reached; so is a mount nested past the
+path limit, which is not walked. A path that names nothing,
 including one that continues through a file, is `board::path::not_found`. A
 repository that cannot be opened, or a missing or corrupt object, is
 `board::repo::unreadable`.

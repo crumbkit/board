@@ -1,15 +1,14 @@
 //! The documents Board and a plugin exchange (docs/plugins.md, Calling a
 //! capability). Every one carries `$type` and refuses unknown fields.
 
-use std::fmt;
 use std::path::Path;
 
-use board_model::{JsonError, canonical_json, parse_json};
+use board_model::{
+    CapabilityName, JsonError, PluginCode, PluginCodeError, PluginName, canonical_json, parse_json,
+};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
-
-use crate::manifest::{CapabilityName, PluginName};
 
 pub const CALL_TYPE: &str = "board/call/v1";
 pub const CALL_RESULT_TYPE: &str = "board/call-result/v1";
@@ -34,39 +33,6 @@ pub(crate) fn request(
         },
     }))
     .into_bytes()
-}
-
-/// A plugin's error code, `<plugin>::<area>::<reason>`, where area and
-/// reason are lowercase ASCII letters, digits and underscores.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PluginCode(String);
-
-impl PluginCode {
-    fn parse(plugin: &PluginName, text: String) -> Result<Self, BadOutput> {
-        let parts: Vec<&str> = text.split("::").collect();
-        let snake = |part: &str| {
-            !part.is_empty()
-                && part
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-        };
-        match parts[..] {
-            [owner, area, reason] if owner == plugin.as_str() && snake(area) && snake(reason) => {
-                Ok(Self(text))
-            }
-            _ => Err(BadOutput::Code { code: text }),
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for PluginCode {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
 }
 
 /// A refusal the plugin reported in `board/error/v1`.
@@ -129,7 +95,8 @@ pub(crate) fn reply<T: DeserializeOwned>(
         Some(ERROR_TYPE) => {
             let raw = RawError::deserialize(value).map_err(shape)?;
             Ok(Reply::Error(PluginFailure {
-                code: PluginCode::parse(plugin, raw.code)?,
+                code: PluginCode::parse(plugin, raw.code)
+                    .map_err(|PluginCodeError { code }| BadOutput::Code { code })?,
                 message: raw.message,
                 fields: raw.fields,
             }))

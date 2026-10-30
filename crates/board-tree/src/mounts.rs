@@ -48,7 +48,7 @@ pub struct Mounted<F> {
     pub repository: Repository,
     /// The display path of its first route, by shortest display path and
     /// then lexically; its entries are named beneath it.
-    pub route: String,
+    pub route: LogicalPath,
     pub entries: Vec<Entry>,
     pub facts: F,
 }
@@ -56,7 +56,7 @@ pub struct Mounted<F> {
 impl<F> Mounted<F> {
     /// The display path of `logical`, a path inside this source.
     pub fn display(&self, logical: &LogicalPath) -> Option<LogicalPath> {
-        join(&self.route, logical).parse().ok()
+        self.route.beneath(logical).ok()
     }
 }
 
@@ -89,7 +89,7 @@ pub struct Reached<F> {
 
 /// A mount found but not yet walked.
 struct Candidate {
-    route: String,
+    route: LogicalPath,
     commit: ObjectId,
     root: ObjectId,
     repository: Repository,
@@ -117,7 +117,15 @@ impl Repositories {
         let is_pointer = |path: &str| C::is_pointer(facts, path);
         let found = pointers(root, &Source::WorkingTree, entries, &is_pointer);
         let from = root.path();
-        reached.add(self, from, &Source::WorkingTree, "", found, &mut candidates);
+        let route = LogicalPath::root();
+        reached.add(
+            self,
+            from,
+            &Source::WorkingTree,
+            &route,
+            found,
+            &mut candidates,
+        );
         let mut seen: HashSet<ObjectId> = HashSet::new();
         while let Some(at) = first(&candidates) {
             let candidate = candidates.swap_remove(at);
@@ -188,8 +196,8 @@ pub struct Place {
 impl Place {
     /// The directory's logical path in the board, such as
     /// `/repos/crumbkit/docs`.
-    pub fn prefix(&self) -> String {
-        join(self.mount.as_str(), &self.within)
+    pub fn prefix(&self) -> Result<LogicalPath, PathError> {
+        self.mount.beneath(&self.within)
     }
 }
 
@@ -301,38 +309,35 @@ impl PinError {
 
 impl<F> Reached<F> {
     /// Records the mounts `found` in `source` of the repository at `from`,
-    /// whose route is `route`, and adds each one that can be read as a
-    /// candidate.
+    /// whose route is `route`, and adds each one that can be read, and whose
+    /// route is a logical path, as a candidate.
     fn add(
         &mut self,
         repositories: &Repositories,
         from: &Path,
         source: &Source,
-        route: &str,
+        route: &LogicalPath,
         found: Vec<(LogicalPath, String, Mount)>,
         candidates: &mut Vec<Candidate>,
     ) {
         for (at, path, mount) in found {
-            let mounted = repositories
-                .mounted(from, &mount)
-                .ok_or(Code::MountRepoMissing)
-                .and_then(|mounted| {
-                    let root = mounted
-                        .commit_tree(mount.commit)
-                        .map_err(|_| Code::MountCommitMissing)?
-                        .root();
-                    Ok((mounted, root))
-                });
+            let route = route.beneath(&at).map_err(|_| Code::PathMalformed);
+            let mounted = route.and_then(|route| {
+                let mounted = (repositories.mounted(from, &mount)).ok_or(Code::MountRepoMissing)?;
+                let tree = mounted.commit_tree(mount.commit);
+                let root = tree.map_err(|_| Code::MountCommitMissing)?.root();
+                Ok((route, mounted, root))
+            });
             self.points.push(MountPoint {
                 source: source.clone(),
                 path,
                 target: mounted.as_ref().map(|_| mount.commit).map_err(|code| *code),
             });
-            let Ok((mounted, root)) = mounted else {
+            let Ok((route, mounted, root)) = mounted else {
                 continue;
             };
             candidates.push(Candidate {
-                route: join(route, &at),
+                route,
                 commit: mount.commit,
                 root,
                 repository: mounted,
@@ -408,7 +413,7 @@ fn first(candidates: &[Candidate]) -> Option<usize> {
     candidates
         .iter()
         .enumerate()
-        .min_by(|(_, a), (_, b)| (a.route.len(), &a.route).cmp(&(b.route.len(), &b.route)))
+        .min_by_key(|(_, candidate)| (candidate.route.as_str().len(), &candidate.route))
         .map(|(at, _)| at)
 }
 
@@ -459,18 +464,4 @@ fn pointers(
             }
         })
         .collect()
-}
-
-/// `logical`, a path inside a source, under that source's `route`.
-fn join(route: &str, logical: &LogicalPath) -> String {
-    let inside = logical.to_string();
-    if inside == "/" {
-        if route.is_empty() {
-            "/".to_owned()
-        } else {
-            route.to_owned()
-        }
-    } else {
-        format!("{route}{inside}")
-    }
 }

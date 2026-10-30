@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use board_model::ObjectId;
 use board_ops::{Expect, Removing, Unmatched};
+use board_plugin::Target;
 
 /// What `board rm`'s `-r`, `--expect` and `--ignore-unmatch` ask it to do.
 pub(crate) fn removal(
@@ -33,9 +34,9 @@ pub(crate) fn expect(text: &str) -> Result<Expect, String> {
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
 }
 
-/// A plugin's own op, `<plugin>.<capability>`.
+/// A plugin's own op, `<plugin>.<capability>`, each part a name.
 pub(crate) fn op(text: &str) -> Result<String, String> {
-    board_model::is_op(text)
+    matches!(text.parse(), Ok(Target::Named { .. }))
         .then(|| text.to_owned())
         .ok_or_else(|| "must be `<plugin>.<capability>`, such as review.comment".to_owned())
 }

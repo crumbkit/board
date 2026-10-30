@@ -5,8 +5,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Answer, Code, Digest, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_RECORD_BYTES,
-    ObjectId, PUT_OP, RM_OP, Refusal, SEEN_TYPE, Seen, canonical_json, parse_json,
+    Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_RECORD_BYTES,
+    ObjectId, PUT_OP, PathError, PluginName, RM_OP, Refusal, SEEN_TYPE, Seen, canonical_json,
+    parse_json,
 };
 use board_tree::{GitError, Removes, Target, Working, WriteError};
 use serde_json::Value;
@@ -19,7 +20,7 @@ use crate::verdict::Admitted;
 #[derive(Clone, Debug, Default)]
 pub struct Asker {
     /// `BOARD_PLUGIN`: the plugin a Board runs inside, if any.
-    pub plugin: Option<String>,
+    pub plugin: Option<PluginName>,
     /// The personal board's root, if the known boards file names one. With
     /// none, a plugin's decide is refused.
     pub personal: Option<PathBuf>,
@@ -59,23 +60,30 @@ const EFFECTS: &str = "effects";
 pub enum EffectError {
     #[error("plugin {plugin} may not {op} {path} until the owner answers pending effect {id}")]
     Asked {
-        plugin: String,
+        plugin: PluginName,
         op: String,
         path: LogicalPath,
         id: String,
     },
     #[error("plugin {plugin} may not {op} {path}: the owner refused pending effect {id}")]
     Refused {
-        plugin: String,
+        plugin: PluginName,
         op: String,
         path: LogicalPath,
         id: String,
     },
     #[error("plugin {plugin} may not {what}; only the owner may, outside a plugin")]
     FromPlugin {
-        plugin: String,
+        plugin: PluginName,
         path: Option<LogicalPath>,
         what: String,
+    },
+    #[error(
+        "{path} lands at a file with no logical path, so no pending effect can name it: {source}"
+    )]
+    Unlanded {
+        path: LogicalPath,
+        source: PathError,
     },
     #[error("{what}, but the known boards file names no personal board")]
     NoPersonal { what: String },
@@ -112,6 +120,7 @@ impl EffectError {
             Self::Refused { .. } => Code::SettingsRefused,
             Self::FromPlugin { .. } => Code::SettingsFromPlugin,
             Self::NoPersonal { .. } => Code::SettingsNoPersonal,
+            Self::Unlanded { source, .. } => source.code(),
             Self::TooLarge { .. } => Code::JsonTooLarge,
             Self::Resolve { source } => source.code(),
             Self::NotFound { .. } | Self::Forged { .. } => Code::SettingsNotFound,
@@ -139,6 +148,7 @@ impl EffectError {
                 path: path.clone(),
                 ..Fields::default()
             },
+            Self::Unlanded { path, .. } => Fields::at(path),
             Self::NotFound { id } | Self::Forged { id, .. } | Self::Unsigned { id, .. } => Fields {
                 effect: Some(id.clone()),
                 ..Fields::default()
@@ -448,21 +458,19 @@ impl Board {
             path: landed.clone(),
             why,
         };
-        let op = change.op().to_owned();
-        let mut effect = Effect::new(root(self), String::new(), op, landed.clone());
+        let (mut record, mut text) = (None, None);
         if let Change::Put(canonical, admitted, shape) = change {
-            effect.digest = Some(Digest::of(canonical));
             if shape == Shape::File {
-                let text = std::str::from_utf8(canonical).map_err(|_| {
+                text = Some(std::str::from_utf8(canonical).map_err(|_| {
                     unsigned("its bytes are not UTF-8, so no statement can show them".to_owned())
-                })?;
-                effect.text = Some(text.to_owned());
+                })?);
             } else {
-                effect.record = Some(admitted.value.clone());
+                record = Some(&admitted.value);
             }
         }
         let root = root(self);
-        decide::signature(&self.asker.signing, Path::new(&root), &effect.owner_write())
+        let statement = Effect::owner_write(&root, change.op(), &landed, record, text);
+        decide::signature(&self.asker.signing, Path::new(&root), &statement)
             .map(|_| ())
             .map_err(unsigned)
     }

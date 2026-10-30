@@ -7,81 +7,10 @@ use std::str::FromStr;
 use std::time::Duration;
 
 pub use board_model::MANIFEST_TYPE;
-use board_model::{Code, JsonError, RecordType, parse_json};
+use board_model::{CapabilityName, Code, JsonError, PluginName, RecordType, parse_json};
 use board_validate::{Schema, SchemaError};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-
-/// Lowercase ASCII letters, digits and hyphens, at least one.
-fn is_name(text: &str) -> bool {
-    !text.is_empty()
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-macro_rules! name {
-    ($(#[$doc:meta])* $type:ident) => {
-        $(#[$doc])*
-        #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
-        #[serde(try_from = "String", into = "String")]
-        pub struct $type(String);
-
-        impl $type {
-            pub fn as_str(&self) -> &str {
-                &self.0
-            }
-        }
-
-        impl TryFrom<String> for $type {
-            type Error = NameError;
-
-            fn try_from(text: String) -> Result<Self, NameError> {
-                if is_name(&text) {
-                    Ok(Self(text))
-                } else {
-                    Err(NameError { text })
-                }
-            }
-        }
-
-        impl FromStr for $type {
-            type Err = NameError;
-
-            fn from_str(text: &str) -> Result<Self, NameError> {
-                Self::try_from(text.to_owned())
-            }
-        }
-
-        impl From<$type> for String {
-            fn from(name: $type) -> Self {
-                name.0
-            }
-        }
-
-        impl fmt::Display for $type {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                formatter.write_str(&self.0)
-            }
-        }
-    };
-}
-
-name!(
-    /// A plugin's name, which is also its directory's name.
-    PluginName
-);
-name!(
-    /// A capability's name, unique within its plugin.
-    CapabilityName
-);
-
-/// Text that is not a plugin or capability name.
-#[derive(Debug, thiserror::Error)]
-#[error("{text:?} is not a name: use lowercase ASCII letters, digits and hyphens")]
-pub struct NameError {
-    text: String,
-}
 
 /// The variables Board sets for every plugin. A capability's `env` may name
 /// none of them.
@@ -338,14 +267,13 @@ impl Manifest {
         if raw.run.is_empty() {
             return Err(ManifestError::EmptyRun);
         }
-        let own = format!("{}/", raw.name);
         for (at, record_type) in raw.types.iter().enumerate() {
             if record_type.is_reserved() {
                 return Err(ManifestError::BoardType {
                     record_type: record_type.clone(),
                 });
             }
-            if !record_type.as_str().starts_with(&own) {
+            if record_type.namespace() != raw.name.as_str() {
                 return Err(ManifestError::ForeignType {
                     record_type: record_type.clone(),
                 });

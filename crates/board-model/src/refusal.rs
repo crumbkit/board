@@ -4,21 +4,21 @@ use std::fmt;
 
 use serde_json::{Map, Value};
 
-use crate::{Code, Fields, Lined};
+use crate::{Code, Fields, Lined, PluginCode};
 
 /// The code a refusal carries: one of Board's, or a plugin's own.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RefusalCode {
     Board(Code),
     /// A plugin's code, `<plugin>::<area>::<reason>`, as the plugin gave it.
-    Plugin(String),
+    Plugin(PluginCode),
 }
 
 impl RefusalCode {
     pub fn as_str(&self) -> &str {
         match self {
             Self::Board(code) => code.as_str(),
-            Self::Plugin(code) => code,
+            Self::Plugin(code) => code.as_str(),
         }
     }
 }
@@ -64,7 +64,7 @@ impl Refusal {
     }
 
     /// A plugin's refusal with its own `code` and `fields`, and no hint.
-    pub fn plugin(code: String, message: String, fields: Map<String, Value>) -> Self {
+    pub fn plugin(code: PluginCode, message: String, fields: Map<String, Value>) -> Self {
         Self {
             code: RefusalCode::Plugin(code),
             message,
@@ -296,8 +296,9 @@ mod tests {
             ("due".to_owned(), json!("2026-10-06")),
             ("refusals".to_owned(), json!([{"line": 1}])),
         ]);
+        let tasks = "tasks".parse().unwrap();
         let refusal = Refusal::plugin(
-            "tasks::due::past".to_owned(),
+            PluginCode::parse(&tasks, "tasks::due::past".to_owned()).unwrap(),
             "the date is past".to_owned(),
             fields.clone(),
         );

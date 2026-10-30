@@ -201,7 +201,7 @@ fn a_board_json_board_cannot_read_is_invalid() {
         .config()
         .plugins
         .iter()
-        .map(board_plugin::PluginName::as_str)
+        .map(board_model::PluginName::as_str)
         .collect();
     assert_eq!(plugins, ["tasks", "notes"]);
 }

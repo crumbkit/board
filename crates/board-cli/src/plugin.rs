@@ -1,7 +1,8 @@
 //! `board plugin list`, `find` and `enable`.
 
+use board_model::{CapabilityName, PluginName};
 use board_ops::Board;
-use board_plugin::{CapabilityName, MetaFilter, PluginName};
+use board_plugin::MetaFilter;
 use clap::Subcommand;
 
 use crate::config::Context;

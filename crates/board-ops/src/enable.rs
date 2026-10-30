@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use board_model::{Code, RecordType, Source, TYPES_DIRECTORY, canonical_json};
-use board_plugin::{DiscoveryError, ManifestError, PluginName, installed};
+use board_model::{Code, PluginName, RecordType, Source, TYPES_DIRECTORY, canonical_json};
+use board_plugin::{DiscoveryError, ManifestError, installed};
 use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 

@@ -1,9 +1,13 @@
 //! How a refusal is printed, from a hand-built value.
 
-use board_model::{Code, Fields, Lined, Refusal};
+use board_model::{Code, Fields, Lined, PluginCode, Refusal};
 use serde_json::{Map, Value, json};
 
 use crate::render::{self, Printer};
+
+fn past() -> PluginCode {
+    PluginCode::parse(&"tasks".parse().unwrap(), "tasks::due::past".to_owned()).unwrap()
+}
 
 fn text(bytes: &[u8]) -> &str {
     std::str::from_utf8(bytes).unwrap()
@@ -21,7 +25,7 @@ fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_j
             Code::PluginFailed,
             "plugin tasks exited 1",
             &Fields {
-                plugin: Some("tasks".to_owned()),
+                plugin: Some("tasks".parse().unwrap()),
                 ..Fields::default()
             },
         )
@@ -56,11 +60,7 @@ fn a_refusal_prints_its_code_message_hint_and_stderr_as_text_and_its_fields_as_j
 
 #[test]
 fn a_plugins_refusal_says_it_has_no_hint_and_a_refused_command_line_exits_2() {
-    let plugin = Refusal::plugin(
-        "tasks::due::past".to_owned(),
-        "the date is past".to_owned(),
-        Map::new(),
-    );
+    let plugin = Refusal::plugin(past(), "the date is past".to_owned(), Map::new());
     let plain = refused(false, &plugin);
     assert_eq!(
         (text(&plain.stderr), plain.code),
@@ -101,11 +101,7 @@ fn a_plugins_refusal_whose_fields_hold_refusals_prints_no_refused_lines() {
     )]);
     let plugin = Refusal {
         stderr: b"a log line".to_vec(),
-        ..Refusal::plugin(
-            "tasks::due::past".to_owned(),
-            "the date is past".to_owned(),
-            fields,
-        )
+        ..Refusal::plugin(past(), "the date is past".to_owned(), fields)
     };
     assert_eq!(
         text(&refused(false, &plugin).stderr),
