@@ -231,3 +231,39 @@ fn shown_text_and_a_shown_record_take_the_digest_of_their_bytes_and_nothing_show
     assert_eq!(shown_digest(None, None), None);
     assert_eq!(shown_digest(Some(&record), Some("x")), None);
 }
+
+#[test]
+fn an_effect_asked_at_another_time_keeps_its_id_and_approval_and_reads_back_with_its_time() {
+    let effect = Effect::new(
+        "/b".to_owned(),
+        "tasks".parse().unwrap(),
+        "put".to_owned(),
+        "/x".to_owned(),
+    )
+    .showing(None, Some("t\n".to_owned()));
+    let asked = Effect {
+        asked: Some(utc(Duration::from_secs(1))),
+        ..effect.clone()
+    };
+    assert_eq!(asked.id(), effect.id());
+    assert_eq!(asked.approval(), effect.approval());
+    let value = serde_json::to_value(&asked).unwrap();
+    assert_eq!(value["asked"], "1970-01-01T00:00:01.000000Z");
+    assert_eq!(Effect::from_value(&value).unwrap(), asked);
+    assert!(
+        serde_json::to_value(&effect)
+            .unwrap()
+            .get("asked")
+            .is_none()
+    );
+}
+
+#[test]
+fn a_utc_time_is_rfc_3339_to_the_microsecond_with_a_fixed_width() {
+    assert_eq!(utc(Duration::ZERO), "1970-01-01T00:00:00.000000Z");
+    let leap = Duration::from_secs(1_709_251_199);
+    assert_eq!(utc(leap), "2024-02-29T23:59:59.000000Z");
+    let now = Duration::from_micros(1_793_400_294_102_864);
+    assert_eq!(utc(now), "2026-10-30T22:44:54.102864Z");
+    assert!(utc(leap) < utc(now));
+}

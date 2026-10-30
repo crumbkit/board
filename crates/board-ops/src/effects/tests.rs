@@ -134,6 +134,15 @@ fn asked(result: Result<DecideReport, EffectError>) -> String {
     }
 }
 
+/// The time `offset` seconds from now, as Board writes `asked`.
+fn now(offset: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let shifted = now.as_secs().checked_add_signed(offset).unwrap();
+    board_model::utc(std::time::Duration::from_secs(shifted))
+}
+
 fn link(to: &str) -> String {
     format!(r#"{{"$type": "board/mount/v1", "path": "{to}"}}"#)
 }
@@ -154,14 +163,24 @@ fn a_plugins_decide_with_no_answer_writes_a_pending_effect_and_is_refused_as_ask
         )
     );
     let id = refused.fields().effect.unwrap();
-    let effect = read(&mine, &format!("effects/pending/{id}.json"));
+    let mut effect = read(&mine, &format!("effects/pending/{id}.json"));
+    let asked_at = effect.as_object_mut().unwrap().remove("asked").unwrap();
+    let asked_at = asked_at.as_str().unwrap();
+    let (before, after) = (now(-60), now(60));
+    assert!(
+        before.as_str() < asked_at && asked_at < after.as_str(),
+        "{asked_at}"
+    );
     let root = plugin.repository().path().display().to_string();
     assert_eq!(
         effect,
         json!({"$type": "board/effect/v1", "board": root, "plugin": "review", "op": OP, "path": "/pulls/7"})
     );
-    // Asking again finds the same pending effect.
+    // Asking again finds the same pending effect and keeps when it was asked.
+    let held = std::fs::read(mine.workdir().join(format!("effects/pending/{id}.json"))).unwrap();
     assert_eq!(asked(decide(&plugin, "/pulls/7")), id);
+    let again = std::fs::read(mine.workdir().join(format!("effects/pending/{id}.json"))).unwrap();
+    assert_eq!(held, again);
     let admitted = decide(&owner, "/pulls/7").unwrap();
     assert_eq!(admitted.effect, None);
 }
@@ -494,7 +513,12 @@ fn a_plugins_put_under_effects_is_refused_in_the_personal_board_and_another_and_
     let (scenario, mine) = (board(), personal());
     for board in [&mine, &scenario] {
         let plugin = opened(board, Some("tasks"), Some(&mine));
-        for at in ["/effects/pending/x", "/effects/seen/x", "/Effects/x"] {
+        for at in [
+            "/effects/pending/x",
+            "/effects/seen/x",
+            "/effects/answered/x",
+            "/Effects/x",
+        ] {
             let refused = put(&plugin, at, &task("")).unwrap_err();
             assert_eq!(refused.code(), Code::SettingsFromPlugin, "{at}");
         }
@@ -654,7 +678,7 @@ fn a_batch_with_a_line_only_the_owner_writes_is_refused_naming_the_line_and_its_
 }
 
 #[test]
-fn an_answer_removes_its_pending_effect_in_the_commit_that_writes_the_seen_record_and_an_unanswered_one_stays()
+fn an_answer_moves_its_pending_effect_to_answered_in_the_commit_that_writes_the_seen_record_and_an_unanswered_one_stays()
  {
     let scenario = board();
     let mine = Scenario::new();
@@ -670,6 +694,7 @@ fn an_answer_removes_its_pending_effect_in_the_commit_that_writes_the_seen_recor
     let answered = asked(decide(&board, "/pulls/7"));
     let unanswered = asked(decide(&board, "/pulls/8"));
     let pending = |id: &str| format!("effects/pending/{id}.json");
+    let asked_bytes = std::fs::read(mine.workdir().join(pending(&answered))).unwrap();
     let before = mine.head().unwrap();
     let owner = asker(None, Some(&mine));
     let report = answer(&owner, &answered, Answer::Approve, None, None).unwrap();
@@ -683,10 +708,38 @@ fn an_answer_removes_its_pending_effect_in_the_commit_that_writes_the_seen_recor
     );
     assert!(!head.files.contains_key(&pending(&answered)));
     assert!(!exists(&mine, &pending(&answered)));
+    let kept = format!("effects/answered/{answered}.json");
+    assert_eq!(head.files.get(&kept), Some(&asked_bytes));
+    assert!(!exists(
+        &mine,
+        &format!("effects/answered/{unanswered}.json")
+    ));
     assert!(head.files.contains_key(&pending(&unanswered)));
     assert!(exists(&mine, &pending(&unanswered)));
     // The approved op finds the seen record by its id and is admitted.
     decide(&board, "/pulls/7").unwrap();
+}
+
+/// The owner removes an answer, the plugin asks again, and the owner
+/// answers again: the second answer keeps the effect as it was asked the
+/// second time.
+#[test]
+fn an_effect_asked_again_after_its_answer_is_removed_replaces_the_answered_copy_when_answered() {
+    let (scenario, mine) = (board(), personal());
+    let board = opened(&scenario, Some("review"), Some(&mine));
+    let owner = asker(None, Some(&mine));
+    let id = asked(decide(&board, "/pulls/7"));
+    answer(&owner, &id, Answer::Refuse, None, None).unwrap();
+    let kept = format!("effects/answered/{id}.json");
+    let mut first = read(&mine, &kept);
+    first["asked"] = json!("1970-01-01T00:00:00.000000Z");
+    mine.write(&kept, Item::File(&first.to_string()))
+        .write(&format!("effects/seen/{id}.json"), Item::Deleted);
+    assert_eq!(asked(decide(&board, "/pulls/7")), id);
+    let again = read(&mine, &format!("effects/pending/{id}.json"));
+    answer(&owner, &id, Answer::Refuse, None, None).unwrap();
+    assert_eq!(read(&mine, &kept), again);
+    assert_ne!(again, first);
 }
 
 #[test]
@@ -1021,6 +1074,7 @@ fn an_owners_put_under_effects_is_refused_unless_they_sign_it_and_a_put_elsewher
     let declining = owned(&mine, &mine, Some(&decline));
     for (at, file) in [
         ("/effects/seen/s", "effects/seen/s.json"),
+        ("/effects/answered/a", "effects/answered/a.json"),
         ("/Effects/r", "Effects/r.json"),
     ] {
         let error = put(&declining, at, &task("")).unwrap_err();
@@ -1082,7 +1136,8 @@ fn an_owners_file_put_under_effects_needs_their_signature_and_a_signed_one_write
 }
 
 #[test]
-fn boards_own_writes_of_a_pending_effect_and_an_answer_need_no_owner_signature() {
+fn boards_own_writes_of_a_pending_effect_an_answer_and_an_answered_effect_need_no_owner_signature()
+{
     let (scenario, mine) = (board(), personal());
     let (_tools, decline, _keep) = owner_signers();
     let mut plugin = asker(Some("review"), Some(&mine));
@@ -1097,6 +1152,7 @@ fn boards_own_writes_of_a_pending_effect_and_an_answer_need_no_owner_signature()
     owner.signing.signer = Some(decline.into_os_string());
     answer(&owner, &id, Answer::Refuse, None, None).unwrap();
     assert!(exists(&mine, &format!("effects/seen/{id}.json")));
+    assert!(exists(&mine, &format!("effects/answered/{id}.json")));
 }
 
 #[test]
@@ -1104,6 +1160,7 @@ fn the_owner_signs_a_put_under_effects_in_any_case_or_a_first_directory_that_is_
     for (given, on_disk, signs) in [
         ("effects/pending/e.json", "effects/pending/e.json", true),
         ("EFFECTS/seen/s.json", "EFFECTS/seen/s.json", true),
+        ("effects/answered/a.json", "effects/answered/a.json", true),
         ("eff/r.json", "effects/r.json", true),
         ("effect\u{017f}/r.json", "effect\u{017f}/r.json", true),
         ("effects.json", "effects.json", false),

@@ -25,6 +25,11 @@ Each is a Board type, checked by its Rust type, with no schema file.
   personal board. It names the board root, plugin, op and path.
   - It may also hold `record` or `text`, `digest` and `prior`. A decide
     given content sets `record` or `text` and `digest`.
+  - `asked` is when the decide first wrote it: RFC 3339 in UTC to the
+    microsecond, such as `2026-10-30T22:44:54.102864Z`. Every such time has
+    the same width, so text order is time order. Neither the id nor the
+    approval covers it. An effect written before Board set it has none; a
+    reader that orders effects puts those first, in id order.
   - `digest` is the SHA-256 of the text's exact bytes, a final newline
     included, or of the record's canonical JSON.
   - An answer refuses an effect that shows content without its digest.
@@ -32,6 +37,7 @@ Each is a Board type, checked by its Rust type, with no schema file.
 - `board/seen/v1`: the owner's answer at `/effects/seen/<id>`: `approve` or
   `refuse`, with an optional `reason`. An approval holds the owner's
   `signature`.
+- An answered effect moves to `/effects/answered/<id>`, unchanged.
 - The id is the 64 hex digits of the SHA-256 of the canonical JSON of the
   board root, plugin, op, path, digest and prior blob.
 
@@ -100,16 +106,20 @@ the op will write. They exclude each other.
 ## `board answer`
 
 `board answer <id> approve|refuse [--reason <text>] [--signature <file>]`
-writes the seen record and removes the pending effect, in one commit.
+writes the seen record and moves the pending effect to
+`/effects/answered/<id>`, in one commit.
 
-- The records under `/effects/pending/` are the open effects. Git history
-  keeps an answered one.
+- The records under `/effects/pending/` are the open effects. Those under
+  `/effects/answered/` were answered. Effects answered before Board kept
+  them are only in Git history.
 - A repeated decide finds the seen record by the id.
 - Answering the same id again is refused with `not_found`, whose hint says
   the effect was answered or never asked. The owner changes an answer by
   deleting its seen record, or editing it with a new signature.
+- After the owner deletes a seen record, the same decide asks again with a
+  new `asked`. Its answer replaces the copy under `/effects/answered/`.
 - The seen record is written only where none is, and the pending effect is
-  removed only if it is unchanged. Of two answers at once, the second is
+  moved only if it is unchanged. Of two answers at once, the second is
   refused with `board::put::stale`.
 - A decide writes no pending effect if the owner answered after it read
   the answer.
@@ -156,7 +166,8 @@ of it does not.
   `board::settings::unsigned`, whose `path` field is the logical path, and
   nothing is written. A file put whose bytes are not UTF-8 cannot be shown,
   so it is refused the same way.
-- Board's own writes of a pending effect and of a seen record do not ask.
+- Board's own writes of a pending effect, a seen record and an answered
+  effect do not ask.
 
 ## Limits
 

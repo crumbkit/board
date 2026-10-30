@@ -49,9 +49,11 @@ pub struct Signing {
     pub environment: Vec<(&'static str, OsString)>,
 }
 
-/// The directories of pending effects and answers in the personal board.
+/// The directories of pending effects, answers and answered effects in the
+/// personal board.
 const PENDING: &str = "effects/pending";
 const SEEN: &str = "effects/seen";
+const ANSWERED: &str = "effects/answered";
 /// The directory that holds them, in any board.
 const EFFECTS: &str = "effects";
 
