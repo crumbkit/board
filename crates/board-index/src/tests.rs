@@ -10,6 +10,7 @@ use super::*;
 use crate::store::{MountRow, SourceRow};
 
 mod cache;
+mod format;
 mod prune;
 mod worktree;
 

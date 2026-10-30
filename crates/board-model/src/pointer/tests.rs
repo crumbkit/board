@@ -99,6 +99,7 @@ fn a_record_of_another_type_is_not_a_pointer() {
         br#"{"$type": 1}"#,
         b"not json",
         b"[]",
+        br#"["board/mount/v1"]"#,
         br#"["board/mount/v1", "/work/x"]"#,
     ] {
         assert_eq!(pointer(bytes).unwrap(), None);
