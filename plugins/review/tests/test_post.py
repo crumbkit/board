@@ -72,18 +72,17 @@ def test_a_first_post_asks_the_owner_with_the_whole_comment_and_an_approved_one_
     assert f"pending effect {effect}" in asked["message"]
     [effect_file] = pending(repo)
     assert effect_file.stem == effect
-    assert json.loads(effect_file.read_text())["text"] == EXPECTED
+    asked_effect = json.loads(effect_file.read_text())
+    assert (asked_effect["op"], asked_effect["path"]) == ("review.post", "/reviews/r1/report")
+    assert asked_effect["text"] == EXPECTED
     assert gh_calls(repo) == 0
 
     approve(repo)
     code, posted = post(repo)
     assert code == 0, posted
-    assert posted == {"report": "/reviews/r1/report", "pull_request": PR, "comment": COMMENT_URL, "posted": True}
+    assert posted == {"comment": COMMENT_URL, "posted": True}
     assert (repo.bin / "gh-argv.txt").read_text().splitlines() == ["pr", "comment", PR, "--body-file", "-"]
     assert (repo.bin / "gh-stdin.txt").read_text() == EXPECTED
-    environment = (repo.bin / "gh-env.txt").read_text().splitlines()
-    assert "GH_PROMPT_DISABLED=1" in environment
-    assert "GH_NO_UPDATE_NOTIFIER=1" in environment
     assert repo.get("/reviews/r1/report") == REPORT | {"source": COMMENT_URL}
 
 
@@ -111,10 +110,12 @@ def test_a_post_whose_report_has_a_source_skips_and_one_without_a_source_posts(r
     reported(repo)
     approve(repo)
     assert post(repo)[1]["posted"] is True
+    (repo.bin / "approve").unlink()
     code, again = post(repo)
     assert code == 0, again
-    assert again == {"report": "/reviews/r1/report", "pull_request": PR, "comment": COMMENT_URL, "posted": False}
+    assert again == {"comment": COMMENT_URL, "posted": False}
     assert gh_calls(repo) == 1
+    assert pending(repo) == []
 
 
 def test_a_post_whose_gh_fails_records_no_source_and_a_rerun_posts(repo: Repo) -> None:
@@ -152,20 +153,41 @@ def test_a_post_to_another_pull_request_asks_again_under_a_new_effect(repo: Repo
     assert other != first
 
 
-def test_a_report_that_is_not_there_is_refused_with_boards_code_and_one_that_is_there_is_asked(repo: Repo) -> None:
+def test_a_post_whose_gh_prints_another_url_records_no_source_and_one_printing_the_comment_posts(repo: Repo) -> None:
+    reported(repo)
+    approve(repo)
+    (repo.bin / "gh-url.txt").write_text("https://github.com/o/r/pull/70#issuecomment-1\n")
+    code, failed = post(repo)
+    assert (code, failed["code"]) == (1, "review::gh::failed")
+    assert "may have posted the comment" in failed["message"]
+    assert "source" not in repo.get("/reviews/r1/report")
+    (repo.bin / "gh-url.txt").unlink()
+    assert post(repo) == (0, {"comment": COMMENT_URL, "posted": True})
+
+
+def test_a_report_that_is_not_there_is_refused_as_not_found_and_one_that_is_there_is_asked(repo: Repo) -> None:
     code, missing = post(repo)
-    assert code == 1
-    assert missing["code"] == "review::board::refused"
-    assert missing["fields"]["code"] == "board::path::not_found"
+    assert (code, missing["code"]) == (1, "review::report::not_found")
+    reported(repo)
+    assert post(repo)[1]["fields"]["code"] == "board::settings::asked"
+
+
+def test_a_report_its_schema_refuses_is_refused_as_not_found_before_asking_and_a_valid_one_is_asked(
+    repo: Repo,
+) -> None:
+    reported(repo, by="")
+    code, invalid = post(repo)
+    assert (code, invalid["code"]) == (1, "review::report::not_found")
+    assert pending(repo) == []
     reported(repo)
     assert post(repo)[1]["fields"]["code"] == "board::settings::asked"
 
 
 def test_a_pull_request_that_is_not_a_github_pull_request_url_is_refused_and_one_that_is_is_asked(repo: Repo) -> None:
     reported(repo)
-    code, refused = post(repo, pr="7")
-    assert code == 1
-    assert refused["code"] == "board::plugin::bad_input"
+    for pr in ("7", "https://github.com/o/r#x/pull/7"):
+        code, refused = post(repo, pr=pr)
+        assert (code, refused["code"]) == (1, "board::plugin::bad_input"), pr
     assert post(repo)[1]["fields"]["code"] == "board::settings::asked"
 
 

@@ -1,7 +1,6 @@
 """`post`: comment a report on a pull request with gh, once the owner approves the exact comment."""
 
 import json
-import os
 import re
 import subprocess
 from typing import cast
@@ -9,13 +8,11 @@ from typing import cast
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_review.git import Repository
-from board_review.shapes import POST_TIMEOUT, PostOutput, ReportRecord
+from board_review.run import read_record
+from board_review.shapes import POST_TIMEOUT, REPORT_TYPE, PostOutput, ReportRecord
 
 # How long gh may run: less than the capability's timeout, so the plugin can report a stopped gh.
 GH_TIMEOUT = POST_TIMEOUT - 20
-# Keeps gh from waiting on a prompt or checking for its own updates.
-GH_QUIET = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1"}
 # How much of gh's stderr a failure's message carries.
 TAIL = 1000
 
@@ -29,23 +26,16 @@ def post(request: CallRequest) -> PostOutput:
     """
     board = Board(request.board.root, "review")
     path, pr = str(request.input["report"]), str(request.input["pr"])
-    [held] = board.get([path])
-    if isinstance(held, PluginError):
-        raise held
-    report = cast("ReportRecord", json.loads(held))
+    held, blob = read_record(board, path, REPORT_TYPE, "report")
+    report = cast("ReportRecord", held)
     if "source" in report:
-        return {"report": path, "pull_request": pr, "comment": report["source"], "posted": False}
+        return {"comment": report["source"], "posted": False}
     text = comment(path, pr, report)
-    decided = board.document("decide", "--op", "review.post", "--path", path, "--text", "-", stdin=text.encode())
+    board.document("decide", "--op", "review.post", "--path", path, "--text", "-", stdin=text.encode())
     url = _gh(pr, text)
-    blob = Repository(request.board.root).git("hash-object", "--stdin", stdin=held).strip()
     line = {"path": path, "expect": blob, "record": report | {"source": url}}
     board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
-    output: PostOutput = {"report": path, "pull_request": pr, "comment": url, "posted": True}
-    effect = decided.get("data", {}).get("effect")
-    if isinstance(effect, str):
-        output["effect"] = effect
-    return output
+    return {"comment": url, "posted": True}
 
 
 def comment(path: str, pr: str, report: ReportRecord) -> str:
@@ -82,18 +72,21 @@ def _gh(pr: str, text: str) -> str:
             command,
             input=text.encode(),
             capture_output=True,
-            env=os.environ | GH_QUIET,
             timeout=GH_TIMEOUT,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        ran, why = None, f"did not finish: {error}"
+        ran, why = None, f"did not finish, and may have posted the comment: {error}"
     else:
+        url = ran.stdout.decode(errors="replace").strip()
+        if ran.returncode == 0 and url.startswith(pr + "#issuecomment-"):
+            return url
         why = f"exited {ran.returncode}: {ran.stderr.decode(errors='replace').strip()[-TAIL:]}"
-    if ran is not None and ran.returncode == 0:
-        return ran.stdout.decode(errors="replace").strip()
+        if ran.returncode == 0:
+            why = f"printed {url[:200]!r}, not the comment's URL, and may have posted the comment"
     raise PluginError(
         "review::gh::failed",
-        f"`gh pr comment {pr}` {why}; check the pull request, gh on PATH and `gh auth status`, then post again",
+        f"`gh pr comment {pr}` {why}; check gh on PATH and `gh auth status`, and look for the comment on {pr}"
+        " before posting again, since the approval admits the same comment again without asking",
         {"pull_request": pr, "exit": ran.returncode if ran else None},
     )

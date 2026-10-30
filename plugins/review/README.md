@@ -91,9 +91,13 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 `board call review.post --report /reviews/<id>/report --pr <url>`:
 
 - `--pr` is the pull request's full URL, `https://github.com/<owner>/<repo>/pull/<n>`.
+- Reads the report from the board's own tree. A report that is not there,
+  or that its schema refuses, fails with `review::report::not_found` before
+  anything is asked.
 - Skips a report whose `source` is set, without asking or posting, and
-  returns that URL with `posted: false`. A posted report, or one recorded
-  from a GitHub review, has one.
+  returns that URL as `comment` with `posted: false`. A posted report, or
+  one recorded from a GitHub review, has one. A report is posted once, to
+  the pull request its `source` names.
 - Builds the comment from the report: the verdict, `by`, the range, each
   finding with its severity, file and line, and the report it follows. A
   footer names the report and the pull request. Every `@` is followed by a
@@ -107,15 +111,18 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   an approval admits only that comment on that pull request. A changed
   report, or another pull request, asks again.
 - Once approved, runs `gh pr comment <url> --body-file -` with the comment on
-  stdin, then sets the report's `source` to the URL gh printed. gh reads its
-  login from its own config, or `GH_TOKEN`, `GITHUB_TOKEN` or
-  `GH_CONFIG_DIR` when Board has them, and never prompts. Commit the report
-  afterwards; `review.covered` skips a commit that only sets a report's
-  `source`.
+  stdin, then sets the report's `source` to the URL gh printed, and returns
+  it as `comment` with `posted: true`. gh reads its login from its own
+  config, or `GH_TOKEN`, `GITHUB_TOKEN` or `GH_CONFIG_DIR` when Board has
+  them. Commit the report afterwards; `review.covered` skips a commit that
+  only sets, changes or removes a report's `source`.
+- The approval stays, so a re-run of a report that has no `source` posts
+  again without asking.
 - Fails with `review::gh::failed` when gh cannot start, runs past 40
-  seconds, or exits non-zero, with gh's stderr in the message; the report
-  is unchanged, so posting again retries. A report that is not there fails
-  with `review::board::refused` and Board's `board::path::not_found`.
+  seconds, exits non-zero, or prints something other than a comment URL on
+  the pull request. The message carries gh's stderr. The report is
+  unchanged. gh may still have posted the comment, so check the pull
+  request for it before posting again.
 - If gh posted but the report could not be written, posting again posts a
   second comment.
 
@@ -124,12 +131,12 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 - Checks each commit from the merge base of `--base` and the head to the head.
   `--base` is required, so CI cannot check the tip alone. The head is HEAD by
   default.
-- A commit that only adds briefs and reports, or only sets a report's
-  `source`, needs no report, so committing one leaves the head covered. Each
-  added file must be a `review/brief/v1` at `reviews/<id>/brief.json` or a
-  `review/report/v1` at `reviews/<id>/report.json`. A commit that adds any
-  other file, a merge, or a commit that changes any other field or deletes a
-  file always needs one.
+- A commit that only adds briefs and reports, or only sets, changes or
+  removes a report's `source`, needs no report, so committing one leaves the
+  head covered. Each added file must be a `review/brief/v1` at
+  `reviews/<id>/brief.json` or a `review/report/v1` at
+  `reviews/<id>/report.json`. A merge, a commit that adds any other file,
+  changes any other field or deletes a file always needs one.
 - A report with the verdict `changes` never covers.
 - Another report covers each commit its range contains, and each commit whose
   patch id it lists, as after a rebase. A merge or an empty commit has no

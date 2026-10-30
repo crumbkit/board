@@ -79,7 +79,7 @@
         "properties": {
           "pr": {
             "description": "The pull request to comment on, by its URL, such as https://github.com/o/r/pull/7.",
-            "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[0-9]+$",
+            "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$",
             "title": "Pr",
             "type": "string"
           },
@@ -101,32 +101,18 @@
       "name": "post",
       "outputSchema": {
         "additionalProperties": false,
-        "description": "The report, the pull request, the comment's URL, and whether this call posted it.\n\n`effect` is the approved effect's id, absent when the call skipped or the owner ran it.",
+        "description": "The comment's URL, from the report's `source` when it was already posted, and whether this call posted it.",
         "properties": {
           "comment": {
             "title": "Comment",
             "type": "string"
           },
-          "effect": {
-            "title": "Effect",
-            "type": "string"
-          },
           "posted": {
             "title": "Posted",
             "type": "boolean"
-          },
-          "pull_request": {
-            "title": "Pull Request",
-            "type": "string"
-          },
-          "report": {
-            "title": "Report",
-            "type": "string"
           }
         },
         "required": [
-          "report",
-          "pull_request",
           "comment",
           "posted"
         ],

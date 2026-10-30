@@ -139,23 +139,17 @@ class PostInput(TypedDict):
     pr: Annotated[
         str,
         Extra(
-            pattern=r"^https://github\.com/[^/]+/[^/]+/pull/[0-9]+$",
+            pattern=r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$",
             description="The pull request to comment on, by its URL, such as https://github.com/o/r/pull/7.",
         ),
     ]
 
 
 class PostOutput(TypedDict):
-    """The report, the pull request, the comment's URL, and whether this call posted it.
+    """The comment's URL, from the report's `source` when it was already posted, and whether this call posted it."""
 
-    `effect` is the approved effect's id, absent when the call skipped or the owner ran it.
-    """
-
-    report: str
-    pull_request: str
     comment: str
     posted: bool
-    effect: NotRequired[str]
 
 
 class CoveredInput(TypedDict):

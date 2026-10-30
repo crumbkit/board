@@ -42,13 +42,12 @@ GH = """#!/bin/sh
 here="$(dirname "$0")"
 printf '%s\\n' "$@" > "$here/gh-argv.txt"
 cat > "$here/gh-stdin.txt"
-env > "$here/gh-env.txt"
 echo call >> "$here/gh-calls.txt"
 code="$(cat "$here/gh-exit.txt" 2>/dev/null || echo 0)"
-if [ "$code" = 0 ]; then echo "{url}"; else echo "HTTP 502: Bad Gateway" >&2; fi
+if [ "$code" != 0 ]; then echo "HTTP 502: Bad Gateway" >&2; else cat "$here/gh-url.txt" 2>/dev/null || echo "{url}"; fi
 exit "$code"
 """
-# The comment URL the stub gh prints.
+# The comment URL the stub gh prints, unless `gh-url.txt` holds another.
 COMMENT_URL = "https://github.com/o/r/pull/7#issuecomment-1"
 
 

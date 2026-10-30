@@ -69,9 +69,8 @@ repositories join as it proves itself.
    - A report whose verdict is `changes` does not count.
    - It reads reports committed to the repository's own board.
    - It skips commits that only add valid `review/*` records under
-     `/reviews/`, or only set a report's `source`, so committing a report
-     does not make a new head that no report covers. A merge, or a commit that changes or deletes a file, is
-     never skipped.
+     `/reviews/`, or only set, change or remove a report's `source`, so
+     committing a report does not make a new head that no report covers.
    - It proves that reports cover the head. It does not prove a review
      happened: anyone who can add a commit to the pull request, from a fork
      too, can commit an approving report, and the workflow that runs the
