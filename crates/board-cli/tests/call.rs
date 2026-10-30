@@ -255,13 +255,17 @@ exit 3
     assert_eq!(shallower["code"], "board::plugin::failed");
 }
 
-/// Installs `tasks` offering `due`, whose input has the properties
-/// `properties` and no others. It keeps the request Board sent it in
-/// `request.json`.
-fn install_due(data: &Scenario, properties: &Value) {
+/// Installs `tasks` offering `due`, whose input is `schema` with `"type":
+/// "object"` and `"additionalProperties": false` added. It keeps the request
+/// Board sent it in `request.json`.
+fn install_due(data: &Scenario, schema: &Value) {
+    let mut input = json!({"type": "object", "additionalProperties": false});
+    input
+        .as_object_mut()
+        .unwrap()
+        .extend(schema.as_object().unwrap().clone());
     let mut manifest: Value = serde_json::from_str(&manifest("tasks", "due")).unwrap();
-    manifest["capabilities"][0]["inputSchema"] =
-        json!({"type": "object", "properties": properties, "additionalProperties": false});
+    manifest["capabilities"][0]["inputSchema"] = input;
     manifest["run"] = json!(["sh", "./run"]);
     let script = format!(
         "{PRELUDE}printf '%s' '{{\"$type\": \"board/call-result/v1\", \"output\": {{}}}}'\n"
@@ -279,26 +283,12 @@ fn sent(data: &Scenario) -> Value {
     serde_json::from_slice::<Value>(&request).unwrap()["input"].clone()
 }
 
-/// What `child` printed, once it exits within `limit`. It is killed, and
-/// the test fails, when it does not.
-fn exited_within(mut child: Child, limit: Duration) -> Output {
-    for _ in 0..limit.as_millis() / 10 {
-        if child.try_wait().unwrap().is_some() {
-            return child.wait_with_output().unwrap();
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    child.kill().unwrap();
-    panic!("board did not answer within {limit:?}");
-}
-
-#[test]
-fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
-    let (board, data) = fixture(&["tasks"]);
-    install_due(&data, &json!({"limit": {"type": "integer"}}));
-    let binary = Path::new(env!("CARGO_BIN_EXE_board"));
-    let mut child = Command::new(binary)
-        .args(["call", "tasks.due"])
+/// What the real `board` printed when run with `arguments` and stdin a pipe
+/// nobody writes to or closes, as an agent's shell can leave it. It must
+/// exit within ten seconds, or it is killed and the test fails.
+fn left_open(board: &Scenario, data: &Scenario, arguments: &[&str]) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_board"))
+        .args(arguments)
         .current_dir(board.workdir())
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -310,10 +300,25 @@ fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // A pipe nobody writes to or closes, as an agent's shell can leave stdin.
-    let open = child.stdin.take();
-    let output = exited_within(child, Duration::from_secs(10));
-    drop(open);
+    let _open = child.stdin.take();
+    for _ in 0..1000 {
+        if child.try_wait().unwrap().is_some() {
+            return child.wait_with_output().unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.kill().unwrap();
+    panic!("board {arguments:?} did not answer within ten seconds");
+}
+
+#[test]
+fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
+    let (board, data) = fixture(&["tasks"]);
+    install_due(
+        &data,
+        &json!({"properties": {"limit": {"type": "integer"}}}),
+    );
+    let output = left_open(&board, &data, &["call", "tasks.due"]);
     assert!(
         output.status.success(),
         "{}",
@@ -323,10 +328,25 @@ fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
 }
 
 #[test]
+fn a_target_nobody_offers_is_refused_with_stdin_left_open_and_the_offered_one_answers() {
+    let (board, data) = fixture(&["tasks"]);
+    install_due(
+        &data,
+        &json!({"properties": {"limit": {"type": "integer"}}}),
+    );
+    let typo = left_open(&board, &data, &["--json", "call", "tasks.dew"]);
+    assert_eq!(typo.status.code(), Some(1));
+    let refused: Value = serde_json::from_slice(&typo.stdout).unwrap();
+    assert_eq!(refused["code"], "board::plugin::not_installed");
+    let offered = left_open(&board, &data, &["--json", "call", "tasks.due"]);
+    assert_eq!(offered.status.code(), Some(0));
+}
+
+#[test]
 fn a_capability_with_an_input_that_cannot_be_a_flag_reads_stdin() {
     let (board, data) = fixture(&["tasks"]);
     let properties = json!({"limit": {"type": "integer"}, "tags": {"type": "array"}});
-    install_due(&data, &properties);
+    install_due(&data, &json!({"properties": properties}));
     let given = board_call(&board, &data, &["call", "tasks.due"], r#"{"tags": ["a"]}"#);
     assert!(
         given.status.success(),
@@ -337,4 +357,23 @@ fn a_capability_with_an_input_that_cannot_be_a_flag_reads_stdin() {
     let torn = board_call(&board, &data, &["--json", "call", "tasks.due"], "{");
     let refused: Value = serde_json::from_slice(&torn.stdout).unwrap();
     assert_eq!(refused["code"], "board::plugin::bad_input");
+}
+
+#[test]
+fn a_capability_whose_schema_admits_properties_by_pattern_reads_stdin() {
+    let (board, data) = fixture(&["tasks"]);
+    install_due(
+        &data,
+        &json!({
+            "properties": {"limit": {"type": "integer"}},
+            "patternProperties": {"^x-": {"type": "integer"}}
+        }),
+    );
+    let given = board_call(&board, &data, &["call", "tasks.due"], r#"{"x-a": 1}"#);
+    assert!(
+        given.status.success(),
+        "{}",
+        String::from_utf8_lossy(&given.stderr)
+    );
+    assert_eq!(sent(&data), json!({"x-a": 1}));
 }

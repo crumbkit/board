@@ -315,6 +315,22 @@ fn a_number_flag_keeps_its_spelling_and_refuses_what_json_cannot_hold() {
 }
 
 #[test]
+fn a_negative_number_is_a_flag_value_and_a_hyphened_word_is_not() {
+    let (board, data) = flagged();
+    let negative = ["call", "tasks.due", "--limit", "-3", "--ratio", "-0.5"];
+    assert_eq!(call(&board, &data, &negative, "").code, 0);
+    assert_eq!(sent(&data), json!({"limit": -3, "ratio": -0.5}));
+    let word = call(
+        &board,
+        &data,
+        &["--json", "call", "tasks.due", "--limit", "-x"],
+        "",
+    );
+    assert_eq!(word.code, 2);
+    assert_eq!(code(&word), "board::cli::usage");
+}
+
+#[test]
 fn an_empty_string_flag_is_sent() {
     let (board, data) = flagged();
     let empty = ["call", "tasks.due", "--before", ""];

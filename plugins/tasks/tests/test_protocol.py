@@ -44,8 +44,12 @@ def test_a_board_that_cannot_run_or_refuses_is_reported_and_a_working_one_answer
     assert (code, document["code"]) == (1, "tasks::board::refused")
     assert document["fields"] == {"code": "board::config::not_found"}
     board.write("tasks/a.md", task_v2("A", due="2026-10-01"))
-    called = board.json("call", "tasks.available", stdin='{"repo": "/"}')
+    called = board.json("call", "tasks.available", "--repo", "/")
     assert called["schema"] == "board/call-report/v2"
+    # A named repo is read without asking the caller's git remote.
+    assert (called["data"]["output"]["repos"], called["data"]["output"]["origin_unread"]) == (["/"], None)
+    unnamed = board.json("call", "tasks.available")["data"]["output"]
+    assert unnamed["origin_unread"] is not None, unnamed
 
 
 def test_a_capability_the_plugin_does_not_offer_is_refused(tmp_path: Path) -> None:

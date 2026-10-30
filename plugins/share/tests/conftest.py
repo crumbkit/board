@@ -31,12 +31,14 @@ def git(root: Path, *arguments: str) -> str:
 
 
 def flags(given: dict[str, Any]) -> list[str]:
-    """`given` as the flags of `board call`, which reads no stdin when every input property is a flag."""
-    return [
-        part
-        for name, value in given.items()
-        for part in (f"--{name}", json.dumps(value) if isinstance(value, bool) else str(value))
-    ]
+    """`given` as the flags of `board call`; a value no flag can give, such as None or a list, is refused."""
+    parts: list[str] = []
+    for name, value in given.items():
+        if not isinstance(value, str | int | float):
+            message = f"{name} is {value!r}, which no flag can give"
+            raise TypeError(message)
+        parts += [f"--{name}", json.dumps(value) if isinstance(value, bool) else str(value)]
+    return parts
 
 
 @dataclass(frozen=True)
