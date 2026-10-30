@@ -272,20 +272,67 @@ fn references_are_found_through_the_searched_keywords_in_document_order() {
     assert_eq!(found, expected);
 }
 
-#[test]
-fn branches_of_any_of_one_of_and_if_are_not_searched() {
+/// A reference under `keyword`, and its twin under `allOf`.
+fn placed(keyword: &str) -> (Value, Value) {
     let reference = json!({"type": "string", "format": "board-ref"});
-    let schema = Schema::compile(json!({
-        "properties": {
-            "any": {"anyOf": [reference]},
-            "one": {"oneOf": [reference]},
-            "cond": {"if": {"type": "string"}, "then": reference}
-        }
-    }))
-    .unwrap();
-    let record = json!({"any": "/a", "one": "/o", "cond": "/c"});
-    assert!(schema.validate(&record).is_ok());
-    assert!(schema.references(&record).is_empty());
+    let hidden = match keyword {
+        "anyOf" | "oneOf" => json!({keyword: [reference, {"type": "null"}]}),
+        "dependentSchemas" => json!({"dependentSchemas": {"a": {"properties": {"r": reference}}}}),
+        "if" | "then" | "else" | "not" => json!({keyword: reference}),
+        _ => unreachable!("{keyword}"),
+    };
+    let searched = json!({"allOf": [reference]});
+    (
+        json!({"properties": {"r": hidden}}),
+        json!({"properties": {"r": searched}}),
+    )
+}
+
+#[test]
+fn a_reference_under_a_keyword_board_never_searches_is_refused_and_its_all_of_twin_admitted() {
+    for keyword in [
+        "anyOf",
+        "oneOf",
+        "not",
+        "if",
+        "then",
+        "else",
+        "dependentSchemas",
+    ] {
+        let (hidden, searched) = placed(keyword);
+        let refused = Schema::compile(hidden).unwrap_err();
+        assert!(
+            matches!(refused, SchemaError::HiddenReference { keyword: named } if named == keyword),
+            "{keyword}: {refused}"
+        );
+        assert_eq!(refused.code(), Code::SchemaInvalid);
+        let schema = Schema::compile(searched).unwrap();
+        assert_eq!(schema.references(&json!({"r": "/x"})).len(), 1, "{keyword}");
+    }
+}
+
+#[test]
+fn a_reference_reached_through_a_ref_under_any_of_is_refused_and_the_bare_ref_admitted() {
+    let defs = json!({"S": {"properties": {"r": {"type": "string", "format": "board-ref"}}}});
+    let nullable = json!({
+        "$defs": defs,
+        "properties": {"s": {"anyOf": [{"$ref": "#/$defs/S"}, {"type": "null"}]}}
+    });
+    assert_eq!(compile_code(nullable), Code::SchemaInvalid);
+    let bare = Schema::compile(json!({"$defs": defs, "properties": {"s": {"$ref": "#/$defs/S"}}}))
+        .unwrap();
+    assert_eq!(bare.references(&json!({"s": {"r": "/x"}})).len(), 1);
+}
+
+#[test]
+fn a_property_named_like_a_keyword_may_hold_a_reference() {
+    let reference = json!({"type": "string", "format": "board-ref"});
+    let schema =
+        Schema::compile(json!({"properties": {"anyOf": reference, "if": reference}})).unwrap();
+    assert_eq!(
+        schema.references(&json!({"anyOf": "/a", "if": "/b"})).len(),
+        2
+    );
 }
 
 #[test]

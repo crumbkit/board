@@ -1,8 +1,10 @@
 //! Finding the references a record makes (docs/architecture.md, Typed
 //! references). The schema is searched through `properties`,
 //! `patternProperties`, `additionalProperties`, `items`, `prefixItems`,
-//! `allOf` and local `$ref`; branches of `anyOf`, `oneOf` and `if` still
-//! validate but are not searched.
+//! `allOf` and local `$ref`. A schema that marks a reference under any
+//! other keyword that applies subschemas is refused.
+
+use std::collections::HashSet;
 
 use board_model::{LogicalPath, RecordType};
 use regex::Regex;
@@ -96,6 +98,96 @@ pub(crate) fn within_expansion(root: &Value, node: &Value, refs: usize, count: &
         }
     }
     true
+}
+
+/// Keywords whose subschemas validate but are never searched for references.
+const UNSEARCHED: [&str; 7] = [
+    "anyOf",
+    "oneOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "dependentSchemas",
+];
+
+/// Refuses a schema that marks a reference under a keyword in
+/// [`UNSEARCHED`], directly or through local `$ref`s, since the record's
+/// reference would validate but never be found.
+pub(crate) fn check_hidden(schema: &Value) -> Result<(), SchemaError> {
+    Hidden {
+        root: schema,
+        followed: HashSet::new(),
+    }
+    .walk(schema, None)
+}
+
+struct Hidden<'a> {
+    root: &'a Value,
+    /// Each `$ref` already followed, with the keyword it sat under.
+    followed: HashSet<(&'a str, Option<&'static str>)>,
+}
+
+impl<'a> Hidden<'a> {
+    /// Walks the subschemas of `node`, which sits under the unsearched
+    /// keyword `under`, if any.
+    fn walk(&mut self, node: &'a Value, under: Option<&'static str>) -> Result<(), SchemaError> {
+        let Value::Object(keywords) = node else {
+            return Ok(());
+        };
+        if let Some(keyword) = under
+            && keywords.get("format").and_then(Value::as_str) == Some(REFERENCE_FORMAT)
+        {
+            return Err(SchemaError::HiddenReference { keyword });
+        }
+        if let Some(target) = keywords.get("$ref").and_then(Value::as_str)
+            && let Some(found) = local(self.root, target)
+            && self.followed.insert((target, under))
+        {
+            self.walk(found, under)?;
+        }
+        for (keyword, value) in keywords {
+            let inner = UNSEARCHED
+                .into_iter()
+                .find(|unsearched| unsearched == keyword)
+                .or(under);
+            match (keyword.as_str(), value) {
+                ("$defs", Value::Object(by_name)) => {
+                    for schema in by_name.values() {
+                        self.walk(schema, None)?;
+                    }
+                }
+                (
+                    "properties" | "patternProperties" | "dependentSchemas",
+                    Value::Object(by_name),
+                ) => {
+                    for schema in by_name.values() {
+                        self.walk(schema, inner)?;
+                    }
+                }
+                ("allOf" | "anyOf" | "oneOf" | "prefixItems", Value::Array(schemas)) => {
+                    for schema in schemas {
+                        self.walk(schema, inner)?;
+                    }
+                }
+                (
+                    "items"
+                    | "additionalProperties"
+                    | "not"
+                    | "if"
+                    | "then"
+                    | "else"
+                    | "contains"
+                    | "propertyNames"
+                    | "unevaluatedItems"
+                    | "unevaluatedProperties",
+                    schema,
+                ) => self.walk(schema, inner)?,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A reference a record makes.

@@ -4,8 +4,9 @@ This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `plans` is built in.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
-  of `board-plugins` that board-cli enables by default. It builds its
-  capabilities' schemas with schemars and embeds its record schemas as files.
+  of `board-plugins` that board-cli enables by default. It generates its
+  record and capability schemas from Rust structs with schemars
+  (docs/architecture/records/shapes.md).
 
 ## The traits
 
