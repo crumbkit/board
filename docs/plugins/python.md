@@ -18,7 +18,10 @@ runs `board`: Board's error becomes `<plugin>::board::refused`, carrying
 Board's code. Its `repos` module finds the board's notes repos and matches a git
 remote to their records, its `day` module dates the person's day by
 `BOARD_DAY_START`, and its `migrate` module builds a migrate capability
-([lifecycle/updating.md](lifecycle/updating.md)).
+([lifecycle/updating.md](lifecycle/updating.md)). Its `writing` module writes a
+notes repo's file through `board put`, retrying a stale or moved write, then
+pushes and moves the mount's pin; its `slug` module turns a note's title into
+the file name Reflect gives it.
 
 Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
 `python/board-plugin/` to a commit, with its lockfile and a committed
