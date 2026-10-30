@@ -24,7 +24,10 @@ Each is a Board type, checked by its Rust type, with no schema file.
 - `board/effect/v1`: a pending effect at `/effects/pending/<id>` in the
   personal board. It names the board root, plugin, op and path.
   - It may also hold `record` or `text`, `digest` and `prior`. A decide
-    sets none of them. Only an owner's signed write by hand can set them.
+    given content sets `record` or `text` and `digest`.
+  - `digest` is the SHA-256 of the text's exact bytes, a final newline
+    included, or of the record's canonical JSON.
+  - An answer refuses an effect that shows content without its digest.
   - Board never sets `prior` yet.
 - `board/seen/v1`: the owner's answer at `/effects/seen/<id>`: `approve` or
   `refuse`, with an optional `reason`. An approval holds the owner's
@@ -72,6 +75,24 @@ plugin `BOARD_PLUGIN` names may run its op at the path.
   writes nothing new.
 - With no personal board named it refuses with `board::settings::no_personal`.
 - The owner's own decide is admitted and writes nothing.
+
+`--text <file>` or `--record <file>`, `-` for stdin, shows the owner what
+the op will write. They exclude each other.
+
+- The effect holds the content and its digest, so the id covers it. An
+  approval admits only those bytes. Other content is another pending
+  effect, and the earlier one stays open.
+- Content is at most 1 MiB. More is refused with `board::json::too_large`.
+- Text that is not UTF-8 is refused with `board::json::not_utf8`.
+- A record that does not parse is refused with its `board::json::*` code,
+  and one that is not an object with `board::record::not_a_record`. No
+  schema is checked.
+- A file that cannot be read is refused with `board::cli::usage`.
+- Decide is a check the plugin runs on itself. Binding protects only a
+  plugin that passes the content it will write.
+- The text `{}` plus a newline and the record `{}` share a digest and an
+  id, but their statements differ, so one's signature does not verify the
+  other.
 
 ## `board answer`
 
@@ -139,8 +160,8 @@ of it does not.
 - A plugin's put never asks the owner. Only the plugin's own decide asks.
 - A plugin that unsets `BOARD_PLUGIN` escapes the check. The check catches
   mistakes by a plugin that keeps it set.
-- An approval names no content, so it admits that op at that path again
-  until the owner removes the seen record.
+- A bare decide's approval names no content, so it admits that op at that
+  path again until the owner removes the seen record.
 - `board call` runs a plugin, which must ask with `decide` itself.
 - A plugin can set `BOARD_PLUGIN` to another installed plugin's name.
 - A plugin sets `XDG_CONFIG_HOME` for the Board it runs, so it picks the

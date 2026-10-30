@@ -5,9 +5,9 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use board_model::{
-    Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_RECORD_BYTES,
-    ObjectId, PUT_OP, PathError, PluginName, RM_OP, Refusal, SEEN_TYPE, Seen, canonical_json,
-    parse_json,
+    Answer, Code, EFFECT_TYPE, EFFECT_TYPES, Effect, Fields, LogicalPath, MAX_DECIDE_BYTES,
+    MAX_RECORD_BYTES, ObjectId, PUT_OP, PathError, PluginName, RM_OP, Refusal, SEEN_TYPE, Seen,
+    canonical_json, parse_json,
 };
 use board_tree::{GitError, Removes, Target, Working, WriteError};
 use serde_json::Value;
@@ -89,6 +89,8 @@ pub enum EffectError {
     NoPersonal { what: String },
     #[error("the record at {path} in the personal board is over {MAX_RECORD_BYTES} bytes")]
     TooLarge { path: String },
+    #[error("{why}")]
+    Unshown { code: Code, why: String },
     #[error("{source}")]
     Resolve { source: Box<WriteError> },
     #[error("no pending effect {id} is in the personal board")]
@@ -122,6 +124,7 @@ impl EffectError {
             Self::NoPersonal { .. } => Code::SettingsNoPersonal,
             Self::Unlanded { source, .. } => source.code(),
             Self::TooLarge { .. } => Code::JsonTooLarge,
+            Self::Unshown { code, .. } => *code,
             Self::Resolve { source } => source.code(),
             Self::NotFound { .. } | Self::Forged { .. } => Code::SettingsNotFound,
             Self::Unsigned { .. } | Self::OwnerUnsigned { .. } => Code::SettingsUnsigned,
@@ -160,14 +163,20 @@ impl EffectError {
             Self::Open { source } => source.fields(),
             Self::Write { source } => source.fields(),
             Self::Resolve { source } => source.fields(),
-            Self::Read { .. } | Self::NoPersonal { .. } | Self::TooLarge { .. } => {
-                Fields::default()
-            }
+            Self::Read { .. }
+            | Self::NoPersonal { .. }
+            | Self::TooLarge { .. }
+            | Self::Unshown { .. } => Fields::default(),
         }
     }
 
     pub fn refusal(&self) -> Refusal {
-        Refusal::new(self.code(), self, &self.fields())
+        let refusal = Refusal::new(self.code(), self, &self.fields());
+        let shown = [Code::JsonTooLarge, Code::RecordNotARecord].contains(&self.code());
+        match self {
+            Self::Unshown { .. } if shown => refusal.with_hint(format!("a decide shows the owner a JSON object, or UTF-8 text, of at most {MAX_DECIDE_BYTES} bytes; give the content the op will write")),
+            _ => refusal,
+        }
     }
 }
 
@@ -483,7 +492,7 @@ fn root(board: &Board) -> String {
 
 mod decide;
 
-pub use decide::{AnswerReport, DecideReport, answer};
+pub use decide::{AnswerReport, DecideReport, Shown, answer};
 
 #[cfg(test)]
 mod tests;

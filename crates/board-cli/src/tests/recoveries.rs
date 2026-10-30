@@ -812,11 +812,16 @@ fn known_boards(starts: &mut Starts) {
 }
 
 /// Effects a plugin asks for: a decide the owner has not answered or
-/// refused, answers to pending effects in the personal board, and a decide
-/// when no personal board is named or the known boards file cannot be read.
+/// refused, answers to pending effects in the personal board, a decide
+/// when no personal board is named or the known boards file cannot be read,
+/// and a decide shown content it cannot show.
 fn effects(starts: &mut Starts) {
     let board = board();
-    identified(&board).write("empty.sig", Item::File(""));
+    identified(&board)
+        .write("empty.sig", Item::File(""))
+        .write("list.txt", Item::File("[]"))
+        .write("open.txt", Item::File("{"))
+        .write("latin1.txt", Item::Bytes(b"caf\xe9"));
     let effect = |board: &str, plugin: &str, op: &str, path: &str| {
         let effect = board_model::Effect::new(
             board.to_owned(),
@@ -883,6 +888,20 @@ fn effects(starts: &mut Starts) {
     starts.variable(&unnamed, Code::SettingsNoPersonal, line, "BOARD_PLUGIN");
     starts.add(&unreadable, Code::ConfigInvalid, line);
     starts.variable(&unreadable, Code::ConfigInvalid, line, "BOARD_PLUGIN");
+    for (code, refused, admitted) in [
+        (Code::CliUsage, "--text missing.txt", "--text list.txt"),
+        (
+            Code::RecordNotARecord,
+            "--record list.txt",
+            "--text list.txt",
+        ),
+        (Code::JsonParse, "--record open.txt", "--text open.txt"),
+        (Code::JsonNotUtf8, "--text latin1.txt", "--text list.txt"),
+    ] {
+        let (refused, admitted) = (format!("{line} {refused}"), format!("{line} {admitted}"));
+        starts.add(&answering, code, &refused);
+        starts.pair(&answering, code, &refused, &admitted);
+    }
     starts
         .kept
         .extend([personal, xdg, broken].map(|kept| Box::new(kept) as Box<dyn std::any::Any>));
