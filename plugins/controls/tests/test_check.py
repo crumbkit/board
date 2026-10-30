@@ -339,12 +339,12 @@ def test_a_budget_over_its_max_fails_a_path_it_applies_under_and_not_one_it_does
 ) -> None:
     scoped(board, tmp_path)
     board.write("src/b.rs", "five six seven")
-    over = board.run("--json", "call", "controls.check", stdin='{"path": "/src"}')
+    over = board.run("--json", "call", "controls.check", "--path", "/src")
     assert over.returncode == 1, over.stdout
     refused = json.loads(over.stdout)
     assert refused["code"] == "controls::budget::exceeded", refused
     assert [item["control"] for item in refused["fields"]["controls"]] == ["/controls/src-budget"]
-    within = board.run("--json", "call", "controls.check", stdin='{"path": "/docs"}')
+    within = board.run("--json", "call", "controls.check", "--path", "/docs")
     assert within.returncode == 0, within.stdout
     assert names(json.loads(within.stdout)) == (["/controls/docs-budget"], ["/controls/docs-style"])
 

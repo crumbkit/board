@@ -19,6 +19,15 @@ def board_binary() -> Path:
     return Path(os.environ.get("BOARD_BIN", REPOSITORY / "target" / "debug" / "board")).resolve()
 
 
+def flags(given: dict[str, Any]) -> list[str]:
+    """`given` as the flags of `board call`, which reads no stdin when every input property is a flag."""
+    return [
+        part
+        for name, value in given.items()
+        for part in (f"--{name}", json.dumps(value) if isinstance(value, bool) else str(value))
+    ]
+
+
 @dataclass(frozen=True)
 class Board:
     """A git repository holding a board, with its own data and cache directories."""
@@ -62,14 +71,14 @@ class Board:
 
     def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
         """The output of `board call plans.<capability>`."""
-        report = self.json("call", f"plans.{capability}", stdin=json.dumps(given))
+        report = self.json("call", f"plans.{capability}", *flags(given))
         assert report["schema"] == "board/call-report/v2", report
         output: dict[str, Any] = report["data"]["output"]
         return output
 
     def refusal(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
         """The failure `board call plans.<capability>` prints when the plugin refuses."""
-        ran = self.run("--json", "call", f"plans.{capability}", stdin=json.dumps(given))
+        ran = self.run("--json", "call", f"plans.{capability}", *flags(given))
         assert ran.returncode != 0, ran.stdout
         failure: dict[str, Any] = json.loads(ran.stdout)
         return failure

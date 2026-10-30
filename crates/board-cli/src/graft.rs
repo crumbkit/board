@@ -22,6 +22,8 @@ use crate::run::{Cli, Prefix};
 pub(crate) struct Grafted {
     name: String,
     offered: Option<(String, Vec<Flag>, String)>,
+    /// Whether an input property can go only on stdin.
+    stdin: bool,
 }
 
 /// The long flags that a grafted call takes for itself, which no input
@@ -32,6 +34,9 @@ pub(crate) const RESERVED_FLAGS: &[&str] =
 /// How a grafted call takes stdin, as its help says.
 const STDIN: &str =
     "Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.";
+
+/// How a grafted call whose input properties are all flags takes stdin.
+const NO_STDIN: &str = "Every input property is a flag, so Board does not read stdin.";
 
 /// The format that marks a string input property as a logical path, which
 /// a flag gives relative to the run's prefix.
@@ -130,16 +135,30 @@ pub(crate) fn find(
             .map(|(name, _)| name.as_str()))
         .filter(|name| flags.iter().all(|(flag, ..)| flag != name))
         .collect();
-        let stdin = match rest.as_slice() {
-            [] => STDIN.to_owned(),
+        // A schema that admits properties it does not name takes them only on stdin.
+        let open = document.get("additionalProperties") != Some(&Value::Bool(false));
+        let help = match rest.as_slice() {
+            [] if open => STDIN.to_owned(),
+            [] => NO_STDIN.to_owned(),
             rest => format!("{STDIN} These properties go on stdin: {}.", rest.join(", ")),
         };
-        Some((offered.description.clone(), flags, stdin))
+        let stdin = open || !rest.is_empty();
+        Some(((offered.description.clone(), flags, help), stdin))
     };
+    let (offered, stdin) =
+        offered().map_or((None, true), |(offered, stdin)| (Some(offered), stdin));
     Some(Grafted {
         name: name.to_owned(),
-        offered: offered(),
+        offered,
+        stdin,
     })
+}
+
+/// Whether the call `found` names reads stdin when no flag is given: unless
+/// the capability it offers names every input property its schema admits
+/// and each is a flag.
+pub(crate) fn reads_stdin(found: Option<&Grafted>) -> bool {
+    found.is_none_or(|found| found.stdin)
 }
 
 /// Each top-level string, integer, number or boolean input property whose

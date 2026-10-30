@@ -94,6 +94,7 @@ const ALLOW: &[Allow] = &[
     Allow::example("serve", &["--idle", "2m"], SERVES),
     Allow::example("ui open", &["/bindings/review"], SERVES),
     Allow::example("call", &["tasks.available"], NO_CALL),
+    Allow::example("call", &["tasks.add"], NO_CALL),
     Allow::example("call", &["--capability", "available"], NO_CALL),
     Allow::example(
         "put",

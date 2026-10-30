@@ -9,7 +9,7 @@ Options:
       --repo <repo>        One repo's tasks: / for the board's own tree, or a notes repo's mount path such as /repos/notes-personal; the caller's git remote chooses the repos when left out.
   -h, --help               Print help (see more with '--help')
 
-Without a flag, Board reads the input as JSON on stdin; with one, it ignores stdin.
+Every input property is a flag, so Board does not read stdin.
 
 Examples:
   board call tasks.available

@@ -4,7 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
-from conftest import Board, experiment, mount, repository, run, suite
+from conftest import Board, experiment, flags, mount, repository, run, suite
 
 
 def test_about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_question_and_verdict(
@@ -77,7 +77,7 @@ def test_board_refuses_the_call_when_its_eval_schema_is_looser_and_answers_with_
     loosened = json.loads(schema.read_text())
     del loosened["if"], loosened["then"]
     schema.write_text(json.dumps(loosened))
-    refused = board.json("call", "evals.about", stdin=json.dumps({"subject": "gix"}))
+    refused = board.json("call", "evals.about", "--subject", "gix")
     assert refused["code"] == "board::plugin::schema_differs", refused
     assert refused["fields"]["schema"] == ".board/types/evals/eval/v1.schema.json"
 
@@ -113,9 +113,9 @@ def test_a_limit_outside_one_to_a_hundred_or_an_empty_subject_is_refused_by_boar
 ) -> None:
     board.write("evals/a.json", experiment("A?"))
     for refused in (0, 101):
-        error = board.json("call", "evals.about", stdin=json.dumps({"subject": "gix", "limit": refused}))
+        error = board.json("call", "evals.about", "--subject", "gix", "--limit", str(refused))
         assert error["code"] == "board::plugin::bad_input", error
-    error = board.json("call", "evals.about", stdin=json.dumps({"subject": ""}))
+    error = board.json("call", "evals.about", "--subject", "")
     assert error["code"] == "board::plugin::bad_input", error
     for admitted in (1, 100):
         assert board.call("about", {"subject": "gix", "limit": admitted})["total"] == 1
@@ -212,16 +212,12 @@ def test_about_takes_exactly_one_of_subject_and_mount_and_board_refuses_anything
     board: Board,
 ) -> None:
     board.write("evals/a.json", experiment("A?", ["gix"], mounts=["/repos/x"]))
-    for refused in (
-        {},
-        {"limit": 5},
-        {"subject": "gix", "mount": "/repos/x"},
-        {"repo": "/repos/x"},
-        {"mount": ""},
-        {"mount": "/repos/x", "x": 1},
-    ):
-        error = board.json("call", "evals.about", stdin=json.dumps(refused))
+    for refused in ({}, {"limit": 5}, {"subject": "gix", "mount": "/repos/x"}, {"mount": ""}):
+        error = board.json("call", "evals.about", *flags(refused))
         assert error["code"] == "board::plugin::bad_input", (refused, error)
+    for unknown in ({"repo": "/repos/x"}, {"mount": "/repos/x", "x": 1}):
+        error = board.json("call", "evals.about", *flags(unknown))
+        assert error["code"] == "board::cli::usage", (unknown, error)
     for admitted in ({"subject": "gix"}, {"mount": "/repos/x"}, {"mount": "/repos/x", "limit": 5}):
         assert board.call("about", admitted)["total"] == 1, admitted
 

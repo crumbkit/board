@@ -254,3 +254,87 @@ exit 3
         serde_json::from_slice(&std::fs::read(plugin.join("nested-7.json")).unwrap()).unwrap();
     assert_eq!(shallower["code"], "board::plugin::failed");
 }
+
+/// Installs `tasks` offering `due`, whose input has the properties
+/// `properties` and no others. It keeps the request Board sent it in
+/// `request.json`.
+fn install_due(data: &Scenario, properties: &Value) {
+    let mut manifest: Value = serde_json::from_str(&manifest("tasks", "due")).unwrap();
+    manifest["capabilities"][0]["inputSchema"] =
+        json!({"type": "object", "properties": properties, "additionalProperties": false});
+    manifest["run"] = json!(["sh", "./run"]);
+    let script = format!(
+        "{PRELUDE}printf '%s' '{{\"$type\": \"board/call-result/v1\", \"output\": {{}}}}'\n"
+    );
+    data.write(
+        "board/plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    )
+    .write("board/plugins/tasks/run", Item::File(&script));
+}
+
+/// The input Board sent `tasks`.
+fn sent(data: &Scenario) -> Value {
+    let request = std::fs::read(data.workdir().join("board/plugins/tasks/request.json")).unwrap();
+    serde_json::from_slice::<Value>(&request).unwrap()["input"].clone()
+}
+
+/// What `child` printed, once it exits within `limit`. It is killed, and
+/// the test fails, when it does not.
+fn exited_within(mut child: Child, limit: Duration) -> Output {
+    for _ in 0..limit.as_millis() / 10 {
+        if child.try_wait().unwrap().is_some() {
+            return child.wait_with_output().unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    child.kill().unwrap();
+    panic!("board did not answer within {limit:?}");
+}
+
+#[test]
+fn a_capability_whose_inputs_are_all_flags_answers_with_stdin_left_open() {
+    let (board, data) = fixture(&["tasks"]);
+    install_due(&data, &json!({"limit": {"type": "integer"}}));
+    let binary = Path::new(env!("CARGO_BIN_EXE_board"));
+    let mut child = Command::new(binary)
+        .args(["call", "tasks.due"])
+        .current_dir(board.workdir())
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("XDG_DATA_HOME", data.workdir())
+        .env("XDG_CACHE_HOME", data.workdir().join("cache"))
+        .env("XDG_CONFIG_HOME", data.workdir().join("config"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // A pipe nobody writes to or closes, as an agent's shell can leave stdin.
+    let open = child.stdin.take();
+    let output = exited_within(child, Duration::from_secs(10));
+    drop(open);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(sent(&data), json!({}));
+}
+
+#[test]
+fn a_capability_with_an_input_that_cannot_be_a_flag_reads_stdin() {
+    let (board, data) = fixture(&["tasks"]);
+    let properties = json!({"limit": {"type": "integer"}, "tags": {"type": "array"}});
+    install_due(&data, &properties);
+    let given = board_call(&board, &data, &["call", "tasks.due"], r#"{"tags": ["a"]}"#);
+    assert!(
+        given.status.success(),
+        "{}",
+        String::from_utf8_lossy(&given.stderr)
+    );
+    assert_eq!(sent(&data), json!({"tags": ["a"]}));
+    let torn = board_call(&board, &data, &["--json", "call", "tasks.due"], "{");
+    let refused: Value = serde_json::from_slice(&torn.stdout).unwrap();
+    assert_eq!(refused["code"], "board::plugin::bad_input");
+}
