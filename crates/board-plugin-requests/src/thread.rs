@@ -44,8 +44,7 @@ pub(crate) struct Output {
 
 /// One version of the request. `asked` is null for an effect written before
 /// Board recorded it. `pending` is true while it waits for an answer; the
-/// newest pending version is `latest`, and each older pending one is
-/// `replaced_by` it.
+/// newest pending version is `latest`, and replaces each older pending one.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ThreadVersion")]
@@ -56,7 +55,6 @@ struct Version {
     text: Option<String>,
     pending: bool,
     latest: bool,
-    replaced_by: Option<String>,
     answer: Option<Answered>,
 }
 
@@ -65,16 +63,13 @@ struct Version {
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ThreadAnswer")]
 struct Answered {
-    answer: Word,
+    #[schemars(schema_with = "answer_schema")]
+    answer: Answer,
     reason: Option<String>,
 }
 
-#[derive(Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-#[schemars(inline)]
-enum Word {
-    Approve,
-    Refuse,
+fn answer_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({"type": "string", "enum": ["approve", "refuse"]})
 }
 
 /// A reply of the owner's, by path, with the version it answers.
@@ -83,12 +78,6 @@ enum Word {
 #[schemars(rename = "ThreadReply")]
 struct Reply {
     path: String,
-    effect: String,
-    text: String,
-}
-
-#[derive(Deserialize)]
-struct StoredReply {
     effect: String,
     text: String,
 }
@@ -135,12 +124,8 @@ pub(crate) fn thread(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
             text: effect.text.clone(),
             pending: *pending,
             latest: latest.as_ref() == Some(*id),
-            replaced_by: latest.clone().filter(|latest| *pending && latest != *id),
             answer: answers.get(*id).map(|seen| Answered {
-                answer: match seen.answer {
-                    Answer::Approve => Word::Approve,
-                    Answer::Refuse => Word::Refuse,
-                },
+                answer: seen.answer,
                 reason: seen.reason.clone(),
             }),
         })
@@ -215,7 +200,8 @@ fn effects(host: &dyn Host) -> Result<(Effects, BTreeMap<String, Seen>), PluginE
     Ok((effects, answers))
 }
 
-/// The replies to `versions`, ordered by file name, then by path.
+/// The replies to `versions`, ordered by file name, then by path. A reply
+/// counts only under `/requests/replies/<its effect>/` in this board.
 fn replies(host: &dyn Host, versions: &[Version]) -> Result<Vec<Reply>, PluginError> {
     // Each id was computed as 64 hex digits, so it is safe in SQL.
     let ids: Vec<String> = (versions.iter())
@@ -223,13 +209,15 @@ fn replies(host: &dyn Host, versions: &[Version]) -> Result<Vec<Reply>, PluginEr
         .collect();
     let sql = format!(
         "SELECT logical, body FROM records WHERE code IS NULL AND type = '{}' \
-         AND json_extract(body, '$.effect') IN ({})",
+         AND json_extract(body, '$.effect') IN ({}) \
+         AND logical LIKE '/requests/replies/' || json_extract(body, '$.effect') || '/%'",
         ReplyRecord::TYPE,
         ids.join(", ")
     );
     let mut replies: Vec<Reply> = (rows(host, &sql)?.into_iter())
         .filter_map(|(path, body)| {
-            let StoredReply { effect, text } = StoredReply::deserialize(&body).ok()?;
+            let text = |key: &str| Some(body.get(key)?.as_str()?.to_owned());
+            let (effect, text) = (text("effect")?, text("text")?);
             Some(Reply { path, effect, text })
         })
         .collect();

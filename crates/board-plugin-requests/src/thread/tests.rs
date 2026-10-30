@@ -51,7 +51,7 @@ fn held(scenario: &Scenario, directory: &str, effect: &Effect) -> String {
 fn answered(scenario: &Scenario, effect: &Effect, answer: Answer, reason: Option<&str>) -> String {
     let id = held(scenario, "answered", effect);
     let seen = Seen::new(
-        format!("/effects/pending/{id}"),
+        format!("/effects/answered/{id}"),
         answer,
         reason.map(str::to_owned),
     );
@@ -113,13 +113,14 @@ fn two_pending_versions_and_a_reply_are_one_thread_with_the_newer_version_latest
         let versions = &output["versions"];
         assert_eq!(versions[0]["text"], "one\n");
         assert_eq!(
-            (&versions[0]["latest"], &versions[0]["replaced_by"]),
-            (&json!(false), &json!(second))
+            (&versions[0]["pending"], &versions[0]["latest"]),
+            (&json!(true), &json!(false))
         );
         assert_eq!(
-            (&versions[1]["latest"], &versions[1]["replaced_by"]),
-            (&json!(true), &Value::Null)
+            (&versions[1]["pending"], &versions[1]["latest"]),
+            (&json!(true), &json!(true))
         );
+        assert_eq!(versions[0].get("replaced_by"), None);
         assert_eq!(versions[1]["answer"], Value::Null);
         assert_eq!(
             output["replies"],
@@ -160,18 +161,14 @@ fn an_answered_version_carries_its_answer_and_an_effect_without_asked_comes_firs
     );
     let versions = &output["versions"];
     assert_eq!(versions[0]["asked"], Value::Null);
-    assert_eq!(versions[0]["replaced_by"], json!(latest));
+    assert_eq!(versions[2]["latest"], json!(true));
     assert_eq!(
         versions[1]["answer"],
         json!({"answer": "refuse", "reason": "too long"})
     );
     assert_eq!(
-        (
-            &versions[1]["pending"],
-            &versions[1]["latest"],
-            &versions[1]["replaced_by"]
-        ),
-        (&json!(false), &json!(false), &Value::Null)
+        (&versions[1]["pending"], &versions[1]["latest"]),
+        (&json!(false), &json!(false))
     );
     let texts: Vec<&str> = (output["replies"].as_array().unwrap().iter())
         .map(|reply| reply["text"].as_str().unwrap())
@@ -196,7 +193,7 @@ fn an_id_that_names_only_a_seen_record_or_a_misnamed_effect_is_refused_as_not_fo
     let scenario = personal();
     let one = effect("/x", "one\n", None);
     let id = one.id();
-    let seen = Seen::new(format!("/effects/pending/{id}"), Answer::Refuse, None);
+    let seen = Seen::new(format!("/effects/answered/{id}"), Answer::Refuse, None);
     let seen = serde_json::to_string(&seen).unwrap();
     scenario.write(&format!("effects/seen/{id}.json"), Item::File(&seen));
     assert_eq!(
@@ -236,5 +233,36 @@ fn a_pending_effect_beside_an_answered_copy_of_the_same_id_is_one_pending_versio
             &json!(true),
             &json!(true)
         )
+    );
+}
+
+/// A reply counts only under `/requests/replies/<its effect>/`: one placed
+/// elsewhere in the board, or in another effect's directory, joins no
+/// thread, and its twin in its own directory does.
+#[test]
+fn a_reply_outside_its_effects_replies_directory_is_left_out_and_its_twin_inside_is_read() {
+    let scenario = personal();
+    let id = held(&scenario, "pending", &effect("/x", "one\n", None));
+    let other = held(&scenario, "pending", &effect("/y", "one\n", None));
+    let record = json!({"$type": "requests/reply/v1", "effect": id, "text": "Why?"});
+    let record = record.to_string();
+    for path in [
+        "notes/20261030T093000Z.json".to_owned(),
+        format!("requests/{id}/20261030T093000Z.json"),
+        format!("requests/replies/{other}/20261030T093000Z.json"),
+        format!("repos/requests/replies/{id}/20261030T093000Z.json"),
+    ] {
+        scenario.write(&path, Item::File(&record));
+    }
+    assert_eq!(thread(&scenario, &id).unwrap()["replies"], json!([]));
+    reply(&scenario, &id, "20261030T093000Z", "Why?");
+    let replies = &thread(&scenario, &id).unwrap()["replies"];
+    assert_eq!(
+        replies,
+        &json!([{
+            "path": format!("/requests/replies/{id}/20261030T093000Z"),
+            "effect": id,
+            "text": "Why?",
+        }])
     );
 }

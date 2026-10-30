@@ -29,10 +29,12 @@ version, pending or answered.
 - Each version has its id, `asked`, `record`, `text` and the owner's
   `answer` and `reason`, from `/effects/seen/<id>`, or null.
 - `pending` is true under `/effects/pending/` with no answer. The newest
-  pending version is `latest`; each older one is `replaced_by` it.
+  pending version is `latest`, and replaces each older pending one.
 - A file whose name is not its content's id is left out, as
   `board answer` refuses it. A pending effect wins over an answered copy
   of the same id.
-- `replies` are the replies to those versions, ordered by file name.
+- `replies` are the replies to those versions, ordered by file name. A
+  reply counts only under `/requests/replies/<its effect>/` in this board,
+  not in a mounted one.
 - An id that is not 64 lowercase hex digits, or names no effect there, is
   refused with `requests::effect::not_found`.
