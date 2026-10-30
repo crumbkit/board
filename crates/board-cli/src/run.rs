@@ -30,7 +30,7 @@ use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::stdin::{TypeCommand, call, put};
 use crate::timing::Ran;
-use crate::values::{duration, expect, op, pointer, removal};
+use crate::values::{duration, expect, pointer, removal};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -305,17 +305,14 @@ answer, decide writes a pending effect in the personal board and refuses with
 board::settings::asked; the owner answers it with board answer. The owner's
 own op, with BOARD_PLUGIN unset, is admitted.
 
+--text or --record shows the owner what the op writes; an approval admits
+only those bytes.
+
 Examples:
   board decide --op review.comment --path /reviews/r1
+  board decide --op review.comment --path /reviews/r1 --text - < comment.md
   board decide --op review.comment --path /reviews/r1 --json")]
-    Decide {
-        /// A plugin's `<plugin>.<capability>`, such as review.comment.
-        #[arg(long, value_parser = op)]
-        op: String,
-        /// The logical path the op acts on, such as /tasks/a.
-        #[arg(long)]
-        path: Given,
-    },
+    Decide(effects::Deciding),
     /// Answer a pending effect.
     #[command(after_help = "\
 `board --personal ls /effects/pending` lists the pending effects. An answer
@@ -457,7 +454,7 @@ pub(crate) fn run(
     // Only a plugin's decide writes in the personal board.
     let asks = match cli.command {
         Command::Put { .. } | Command::Rm { .. } => Some(false),
-        Command::Decide { .. } => Some(context.environment.plugin.is_some()),
+        Command::Decide(_) => Some(context.environment.plugin.is_some()),
         _ => None,
     };
     if let Some(personal) = asks {
@@ -478,7 +475,7 @@ pub(crate) fn run(
             call(&board, context, printer, &target, Some(flags), stdin)
         }
         None => match cli.command {
-            Command::Decide { op, path } => effects::decide(&board, printer, prefix, &op, &path),
+            Command::Decide(deciding) => effects::decide(&board, printer, prefix, &deciding, stdin),
             command => self::command(command, &board, context, printer, prefix, stdin),
         },
     };
@@ -512,7 +509,7 @@ fn command(
     match command {
         // `run` takes these before this match: init and answer open no
         // board, and decide is matched there to keep this function short.
-        Command::Init | Command::Answer(_) | Command::Decide { .. } => unreachable!(),
+        Command::Init | Command::Answer(_) | Command::Decide(_) => unreachable!(),
         Command::Check { path, page } => {
             let path = or_refuse!(path.map(|path| read(prefix, &path, "check")).transpose());
             match board.check(path.as_ref(), cache) {

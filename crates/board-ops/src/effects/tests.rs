@@ -11,7 +11,7 @@ use board_scenario::signer::Signer;
 use board_scenario::{Item, Scenario};
 use serde_json::{Value, json};
 
-use super::{Asker, DecideReport, EffectError, Signing, answer, hold};
+use super::{Asker, DecideReport, EffectError, Shown, Signing, answer, hold};
 use crate::Board;
 use crate::put::{Expect, PutError, PutReport, Removing, Unmatched};
 use crate::tests::{TASK_SCHEMA, task};
@@ -94,7 +94,16 @@ fn rm(board: &Board, at: &str) -> Result<PutReport, EffectError> {
 
 /// `board decide --op review.comment --path <at>`.
 fn decide(board: &Board, at: &str) -> Result<DecideReport, EffectError> {
-    board.decide_op(OP, &path(at))
+    board.decide_op(OP, &path(at), None)
+}
+
+/// [`decide`] showing `shown`, as `--text` or `--record` gives it.
+fn decide_with(board: &Board, at: &str, shown: &Shown) -> Result<DecideReport, EffectError> {
+    board.decide_op(OP, &path(at), Some(shown))
+}
+
+fn text(text: &str) -> Shown {
+    Shown::Text(text.as_bytes().to_vec())
 }
 
 /// The effects refusal of a put.
@@ -260,6 +269,202 @@ fn deciding_through_a_link_or_a_mount_names_where_a_put_would_land_and_its_twin_
         (plain["board"].as_str(), plain["path"].as_str()),
         (Some(&*root), Some("/k/7"))
     );
+    // Text shown through the mount reaches the mounted board's effect.
+    let id = asked(decide_with(&plugin, "/m/notes/y", &text("t")));
+    let shown = read(&mine, &format!("effects/pending/{id}.json"));
+    assert_eq!(
+        (shown["board"].as_str(), shown["text"].as_str()),
+        (Some(&*inner), Some("t"))
+    );
+    assert_eq!(shown["digest"], Digest::of(b"t").to_string());
+    assert_ne!(id, asked(decide(&plugin, "/m/notes/y")));
+}
+
+#[test]
+fn a_decide_showing_other_text_at_the_same_path_is_another_pending_effect_and_the_same_text_is_the_same_one()
+ {
+    let (scenario, mine) = (board(), personal());
+    let plugin = opened(&scenario, Some("review"), Some(&mine));
+    let a = asked(decide_with(&plugin, "/pulls/7", &text("a")));
+    let b = asked(decide_with(&plugin, "/pulls/7", &text("b")));
+    assert_ne!(a, b);
+    assert_eq!(asked(decide_with(&plugin, "/pulls/7", &text("a"))), a);
+    let shown = pending_effect(&mine, &a);
+    assert_eq!(
+        (shown.text.as_deref(), shown.digest),
+        (Some("a"), Some(Digest::of(b"a")))
+    );
+    // The earlier pending effect stays open.
+    assert!(exists(&mine, &format!("effects/pending/{b}.json")));
+}
+
+#[test]
+fn an_approval_of_shown_text_admits_only_that_text_and_moved_to_other_text_is_refused_as_unsigned()
+{
+    let (scenario, mine) = (board(), personal());
+    let plugin = opened(&scenario, Some("review"), Some(&mine));
+    let owner = asker(None, Some(&mine));
+    let a = asked(decide_with(&plugin, "/pulls/7", &text("a")));
+    answer(&owner, &a, Answer::Approve, None, None).unwrap();
+    let report = decide_with(&plugin, "/pulls/7", &text("a")).unwrap();
+    assert_eq!(report.effect.as_deref(), Some(a.as_str()));
+    let b = asked(decide_with(&plugin, "/pulls/7", &text("b")));
+    assert_ne!(b, a);
+    // A bare decide names no content, so it is another request.
+    assert_ne!(asked(decide(&plugin, "/pulls/7")), a);
+    // A's approval at B's id signs A's statement, which is not B's.
+    let seen = read(&mine, &format!("effects/seen/{a}.json"));
+    mine.write(
+        &format!("effects/seen/{b}.json"),
+        Item::File(&seen.to_string()),
+    );
+    let moved = decide_with(&plugin, "/pulls/7", &text("b"));
+    assert_eq!(named(moved), (Code::SettingsUnsigned, Some(b)));
+}
+
+#[test]
+fn an_approval_of_a_shown_record_admits_it_and_its_digest_is_that_of_its_canonical_json() {
+    let (scenario, mine) = (board(), personal());
+    let plugin = opened(&scenario, Some("review"), Some(&mine));
+    let owner = asker(None, Some(&mine));
+    let record = Shown::Record(br#"{"b": 1, "a": 2}"#.to_vec());
+    let id = asked(decide_with(&plugin, "/pulls/7", &record));
+    let shown = pending_effect(&mine, &id);
+    assert_eq!(shown.record, Some(json!({"a": 2, "b": 1})));
+    let canonical = canonical_json(shown.record.as_ref().unwrap());
+    assert_eq!(shown.digest, Some(Digest::of(canonical.as_bytes())));
+    answer(&owner, &id, Answer::Approve, None, None).unwrap();
+    let report = decide_with(&plugin, "/pulls/7", &record).unwrap();
+    assert_eq!(report.effect, Some(id.clone()));
+    // Its canonical JSON as text has the same id, so the record's approval
+    // is found and does not verify for the text's statement.
+    let as_text = decide_with(&plugin, "/pulls/7", &text(canonical.as_str()));
+    assert_eq!(named(as_text), (Code::SettingsUnsigned, Some(id)));
+}
+
+#[test]
+fn content_over_the_limit_is_refused_as_too_large_and_content_at_it_is_admitted() {
+    let shows = |shown: &Shown| super::decide::shows(Some(shown), 4);
+    for over in [text("abcde"), Shown::Record(b"{ } \n".to_vec())] {
+        assert_eq!(code(shows(&over)), Code::JsonTooLarge);
+    }
+    assert_eq!(
+        shows(&text("abcd")).unwrap(),
+        (None, Some("abcd".to_owned()))
+    );
+    assert_eq!(
+        shows(&Shown::Record(b"{  }".to_vec())).unwrap(),
+        (Some(json!({})), None)
+    );
+    let refused = shows(&text("abcde")).unwrap_err().refusal();
+    assert_eq!(
+        refused.message,
+        "the text to decide on is over the limit of 4 bytes"
+    );
+    assert_eq!(super::decide::shows(None, 0).unwrap(), (None, None));
+}
+
+#[test]
+fn a_record_whose_canonical_json_is_over_the_limit_is_refused_though_its_input_is_under_it_and_a_smaller_one_is_admitted()
+ {
+    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 20);
+    // 11 bytes in, 37 bytes pretty-printed.
+    let nested = shows(r#"{"a":[[1]]}"#).unwrap_err();
+    assert_eq!(nested.code(), Code::JsonTooLarge);
+    assert_eq!(
+        nested.to_string(),
+        "the record to decide on is over the limit of 20 bytes"
+    );
+    // 7 bytes in, 13 bytes pretty-printed.
+    assert_eq!(shows(r#"{"a":1}"#).unwrap(), (Some(json!({"a": 1})), None));
+}
+
+#[test]
+fn an_answer_to_a_pending_effect_that_shows_a_record_and_text_without_a_digest_is_refused_and_the_record_alone_is_admitted()
+ {
+    let mine = personal();
+    let owner = asker(None, Some(&mine));
+    let record = json!({"a": 1});
+    let effect = Effect::new(
+        "/b".to_owned(),
+        "review".parse().unwrap(),
+        OP.to_owned(),
+        "/pulls/7".to_owned(),
+    );
+    let mut both = effect.clone().showing(Some(record.clone()), None);
+    (both.text, both.digest) = (Some("t".to_owned()), None);
+    pending(&mine, &both.id(), &both);
+    let refused = answer(&owner, &both.id(), Answer::Approve, None, None).unwrap_err();
+    assert_eq!(refused.code(), Code::SettingsNotFound);
+    assert!(refused.to_string().contains("its digest"), "{refused}");
+    let alone = effect.showing(Some(record), None);
+    pending(&mine, &alone.id(), &alone);
+    answer(&owner, &alone.id(), Answer::Approve, None, None).unwrap();
+}
+
+#[test]
+fn a_record_that_repeats_a_key_or_holds_a_lossy_number_says_so_with_its_code_and_its_twin_is_admitted()
+ {
+    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 64);
+    let repeated = shows(r#"{"a":1,"a":2}"#).unwrap_err();
+    assert_eq!(repeated.code(), Code::JsonDuplicateKey);
+    assert_eq!(
+        repeated.to_string(),
+        r#"the record to decide on is refused: json repeats the key "a" in one object"#
+    );
+    let lossy = shows(r#"{"a":123456789012345678901}"#).unwrap_err();
+    assert_eq!(lossy.code(), Code::JsonLossyNumber);
+    assert!(
+        lossy.to_string().contains("cannot be held exactly"),
+        "{lossy}"
+    );
+    shows(r#"{"a":1,"b":1e4}"#).unwrap();
+}
+
+#[test]
+fn content_that_is_not_utf8_or_not_a_json_object_is_refused_with_its_code_and_its_twin_is_admitted()
+{
+    let scenario = board();
+    let owner = opened(&scenario, None, None);
+    let decided = |shown: Shown| decide_with(&owner, "/pulls/7", &shown);
+    let record = |text: &str| Shown::Record(text.as_bytes().to_vec());
+    let cases = [
+        (Shown::Text(vec![b'a', 0xff]), Code::JsonNotUtf8, text("aÿ")),
+        (record("{"), Code::JsonParse, record("{}")),
+        (
+            record(r#"{"a":1,"a":2}"#),
+            Code::JsonDuplicateKey,
+            record(r#"{"a":1}"#),
+        ),
+        (record("[]"), Code::RecordNotARecord, record("{}")),
+        (record(r#""a""#), Code::RecordNotARecord, text(r#""a""#)),
+    ];
+    for (refused, refused_code, admitted) in cases {
+        assert_eq!(code(decided(refused)), refused_code);
+        decided(admitted).unwrap();
+    }
+}
+
+#[test]
+fn an_answer_to_a_pending_effect_that_shows_text_without_its_digest_is_refused_and_one_with_it_is_admitted()
+ {
+    let mine = personal();
+    let owner = asker(None, Some(&mine));
+    let effect = Effect::new(
+        "/b".to_owned(),
+        "review".parse().unwrap(),
+        OP.to_owned(),
+        "/pulls/7".to_owned(),
+    );
+    let mut bare = effect.clone().showing(None, Some("t".to_owned()));
+    bare.digest = None;
+    pending(&mine, &bare.id(), &bare);
+    let refused = answer(&owner, &bare.id(), Answer::Approve, None, None).unwrap_err();
+    assert_eq!(refused.code(), Code::SettingsNotFound);
+    assert!(refused.to_string().contains("its digest"), "{refused}");
+    let digested = effect.showing(None, Some("t".to_owned()));
+    pending(&mine, &digested.id(), &digested);
+    answer(&owner, &digested.id(), Answer::Approve, None, None).unwrap();
 }
 
 #[test]

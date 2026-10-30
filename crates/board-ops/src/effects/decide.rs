@@ -1,9 +1,10 @@
 //! `board decide` and `board answer`.
 
 use board_model::{
-    Answer, BINARY_NAME, Digest, Effect, LogicalPath, PathError, Seen, canonical_json, is_effect_id,
+    Answer, BINARY_NAME, Code, Effect, LogicalPath, MAX_DECIDE_BYTES, PathError, Seen,
+    canonical_json, is_effect_id, parse_json, shown_digest,
 };
-use serde_json::json;
+use serde_json::{Value, json};
 
 use board_tree::{LOCK_WAIT, WriteError};
 
@@ -37,8 +38,16 @@ impl Board {
     /// `path`, named as a put to `path` would land: after links, and through
     /// a mount in the mounted board. The owner's approval admits it, their
     /// refusal refuses it, and with no answer its pending effect is written
-    /// and it is refused as asked. The owner's own op is admitted.
-    pub fn decide_op(&self, op: &str, path: &LogicalPath) -> Result<DecideReport, EffectError> {
+    /// and it is refused as asked. The owner's own op is admitted. With
+    /// `shown`, the effect shows that content and its id covers its digest,
+    /// so an approval admits only the same content.
+    pub fn decide_op(
+        &self,
+        op: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+    ) -> Result<DecideReport, EffectError> {
+        let (record, text) = shows(shown, MAX_DECIDE_BYTES)?;
         let mut view = (self.repositories().snapshot()).map_err(|source| EffectError::Read {
             directory: path.to_string(),
             source,
@@ -56,7 +65,7 @@ impl Board {
                 let mut mounted = Board::open(&inside.repository, home)
                     .map_err(|source| EffectError::Open { source })?;
                 mounted.ask_as(self.asker.clone());
-                let mut report = mounted.decide_op(op, &inside.path)?;
+                let mut report = mounted.decide_op(op, &inside.path, shown)?;
                 report.path = path.clone();
                 return Ok(report);
             }
@@ -73,16 +82,18 @@ impl Board {
                 .map(|location| landed(path, format!("/{}", location.path).parse()))
                 .transpose()?,
         };
-        self.decide_at(op, path, landed.unwrap_or_else(|| path.clone()))
+        let landed = landed.unwrap_or_else(|| path.clone());
+        self.decide_at(op, path, landed, (record, text))
     }
 
-    /// [`Board::decide`] for `op` at `landed`, the path in this board where
-    /// `path` lands.
+    /// [`Board::decide_op`] for `op` at `landed`, the path in this board
+    /// where `path` lands, showing `shown`.
     fn decide_at(
         &self,
         op: &str,
         path: &LogicalPath,
         landed: LogicalPath,
+        (record, text): (Option<Value>, Option<String>),
     ) -> Result<DecideReport, EffectError> {
         let mut report = DecideReport {
             op: op.to_owned(),
@@ -95,7 +106,8 @@ impl Board {
         let personal = self
             .asker
             .personal(|| format!("{op} {path} needs a pending effect in the personal board"))?;
-        let effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into());
+        let effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into())
+            .showing(record, text);
         let id = effect.id();
         let (plugin, op, path) = (plugin.clone(), op.to_owned(), path.clone());
         match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
@@ -119,6 +131,49 @@ impl Board {
                 })
             }
         }
+    }
+}
+
+/// What a decide shows the owner: the bytes of a text, or of a JSON record.
+#[derive(Clone, Debug)]
+pub enum Shown {
+    Text(Vec<u8>),
+    Record(Vec<u8>),
+}
+
+/// The record or text `shown` holds, refused when its input or its shown
+/// form, the record's canonical JSON, is over `limit` bytes, when text is
+/// not UTF-8, or when a record is not one JSON object.
+pub(super) fn shows(
+    shown: Option<&Shown>,
+    limit: usize,
+) -> Result<(Option<Value>, Option<String>), EffectError> {
+    let (what, bytes) = match shown {
+        None => return Ok((None, None)),
+        Some(Shown::Text(bytes)) => ("text", bytes),
+        Some(Shown::Record(bytes)) => ("record", bytes),
+    };
+    let unshown = |code, why: &str| {
+        let why = format!("the {what} to decide on {why}");
+        EffectError::Unshown { code, why }
+    };
+    let over = format!("is over the limit of {limit} bytes");
+    if bytes.len() > limit {
+        return Err(unshown(Code::JsonTooLarge, &over));
+    }
+    if let Some(Shown::Text(bytes)) = shown {
+        let text = String::from_utf8(bytes.clone()).map(|text| (None, Some(text)));
+        return text.map_err(|_| unshown(Code::JsonNotUtf8, "is not UTF-8"));
+    }
+    match parse_json(bytes) {
+        Ok(record) if !record.is_object() => {
+            Err(unshown(Code::RecordNotARecord, "is not a JSON object"))
+        }
+        Ok(record) if canonical_json(&record).as_bytes().len() > limit => {
+            Err(unshown(Code::JsonTooLarge, &over))
+        }
+        Ok(record) => Ok((Some(record), None)),
+        Err(error) => Err(unshown(error.code(), &format!("is refused: {error}"))),
     }
 }
 
@@ -207,12 +262,9 @@ fn read_pending(
     if effect.id() != id {
         return Err(forged(format!("its request has the id {}", effect.id())));
     }
-    let shown = match (&effect.record, &effect.text) {
-        (Some(record), None) => Some(Digest::of(canonical_json(record).as_bytes())),
-        (None, Some(text)) => Some(Digest::of(text.as_bytes())),
-        _ => None,
-    };
-    if effect.digest.is_some() && shown != effect.digest {
+    let shown = shown_digest(effect.record.as_ref(), effect.text.as_deref());
+    let both = effect.record.is_some() && effect.text.is_some();
+    if shown != effect.digest || both {
         return Err(forged(
             "its digest is not that of the record or text it shows".to_owned(),
         ));

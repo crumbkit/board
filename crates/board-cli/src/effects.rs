@@ -3,30 +3,73 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use board_model::{APPROVAL_HEADER, Answer, Code, Fields, PluginName, Refusal};
-use board_ops::{AnswerReport, Asker, Board, EffectError, Signing};
+use board_model::{APPROVAL_HEADER, Answer, Code, Fields, MAX_DECIDE_BYTES, PluginName, Refusal};
+use board_ops::{AnswerReport, Asker, Board, EffectError, Shown, Signing};
 
 use crate::config::{ALLOWED_SIGNERS, Context};
 use crate::render::{self, Printer};
 use crate::report::Output;
 use crate::run::{Given, Prefix, plain, read};
 use crate::timing::Ran;
+use crate::values::op;
 
-/// `board decide`: whether the plugin may run `op` at `path`, read from
-/// `prefix`.
+/// The arguments of `board decide`.
+#[derive(Debug, clap::Args)]
+pub(crate) struct Deciding {
+    /// A plugin's `<plugin>.<capability>`, such as review.comment.
+    #[arg(long, value_parser = op)]
+    op: String,
+    /// The logical path the op acts on, such as /tasks/a.
+    #[arg(long)]
+    path: Given,
+    /// The UTF-8 text the op writes: this file, or - for stdin.
+    #[arg(long, value_name = "FILE", conflicts_with = "record")]
+    text: Option<PathBuf>,
+    /// The JSON object the op writes: this file, or - for stdin.
+    #[arg(long, value_name = "FILE")]
+    record: Option<PathBuf>,
+}
+
+/// `board decide`: whether the plugin may run its op at its path, read
+/// from `prefix`, showing the text or record its file holds.
 pub(crate) fn decide(
     board: &Board,
     printer: Printer,
     prefix: Option<&Prefix>,
-    op: &str,
-    path: &Given,
+    deciding: &Deciding,
+    stdin: &mut dyn Read,
 ) -> Output {
-    let decided = read(prefix, path, "decide")
-        .and_then(|path| board.decide_op(op, &path).map_err(|error| refusal(&error)));
+    let shown = match (&deciding.text, &deciding.record) {
+        (Some(file), _) => Some(shown(file, "text", stdin).map(Shown::Text)),
+        (None, Some(file)) => Some(shown(file, "record", stdin).map(Shown::Record)),
+        (None, None) => None,
+    };
+    let decided = (shown.transpose()).and_then(|shown| {
+        let path = read(prefix, &deciding.path, "decide")?;
+        (board.decide_op(&deciding.op, &path, shown.as_ref())).map_err(|error| refusal(&error))
+    });
     match decided {
         Ok(report) => render::decide(printer, &report),
         Err(refusal) => render::refused(printer, *refusal),
     }
+}
+
+/// The bytes of the `what` that `file` holds, or stdin for `-`, read to one
+/// byte past the most a decide shows, so that more is refused.
+fn shown(file: &Path, what: &str, stdin: &mut dyn Read) -> Result<Vec<u8>, Box<Refusal>> {
+    let mut bytes = Vec::new();
+    let limit = MAX_DECIDE_BYTES as u64 + 1;
+    let read = if file.as_os_str() == "-" {
+        stdin.take(limit).read_to_end(&mut bytes)
+    } else {
+        std::fs::File::open(file).and_then(|opened| opened.take(limit).read_to_end(&mut bytes))
+    };
+    read.map(|_| bytes).map_err(|error| {
+        let message = format!("the {what} in {} cannot be read: {error}", file.display());
+        let hint =
+            format!("give --{what} the file that holds the {what}, or - and the {what} on stdin");
+        Box::new(plain(Code::CliUsage, &message).with_hint(hint))
+    })
 }
 
 /// The arguments of `board answer`.

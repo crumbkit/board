@@ -314,7 +314,7 @@ replays this clone's commits onto the branch it follows.
 | `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
 | `board type add <type>` | compile the schema on stdin and write it to `.board/types/`; see Writes |
 | `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
-| `board decide --op <plugin>.<capability> --path <path>` | ask the owner to admit a plugin's op at a path; see docs/architecture/writes/effects.md |
+| `board decide --op <plugin>.<capability> --path <path> [--text\|--record <file>]` | ask the owner to admit a plugin's op at a path, bound to the content it will write; see docs/architecture/writes/effects.md |
 | `board answer <id> <answer>` | the owner answers a plugin's pending effect; see docs/architecture/writes/effects.md |
 | `board serve` | serve this board's pages to a browser on 127.0.0.1 |
 | `board ui kinds` / `template` / `open` | the component kinds, a slot to fill, and a binding's page in a browser; see [architecture/ui/views.md](architecture/ui/views.md) |

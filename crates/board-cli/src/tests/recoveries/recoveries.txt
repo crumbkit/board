@@ -782,6 +782,22 @@ board decide --op review.comment --path /y (with BOARD_PLUGIN=tasks)
   fails with board::config::invalid
   hint
 
+board decide --op review.comment --path /y --text missing.txt
+  fails with board::cli::usage
+  hint
+
+board decide --op review.comment --path /y --record list.txt
+  fails with board::record::not_a_record
+  hint
+
+board decide --op review.comment --path /y --record open.txt
+  fails with board::json::parse
+  hint
+
+board decide --op review.comment --path /y --text latin1.txt
+  fails with board::json::not_utf8
+  hint
+
 board sync
   fails with board::sync::no_remote
   hint

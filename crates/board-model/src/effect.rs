@@ -106,6 +106,15 @@ impl Effect {
         }
     }
 
+    /// This request showing `record` or `text`, with their digest, so its id
+    /// and its approval cover them.
+    #[must_use]
+    pub fn showing(mut self, record: Option<Value>, text: Option<String>) -> Self {
+        self.digest = shown_digest(record.as_ref(), text.as_deref());
+        (self.record, self.text) = (record, text);
+        self
+    }
+
     pub fn from_value(value: &Value) -> Result<Self, serde_json::Error> {
         Self::deserialize(value)
     }
@@ -168,6 +177,19 @@ impl Effect {
         );
         show_content(&mut statement, record, text);
         statement
+    }
+}
+
+/// The most bytes of text or record a decide shows.
+pub const MAX_DECIDE_BYTES: usize = 1024 * 1024;
+
+/// The digest of the content an effect shows: of `text`'s bytes, or of
+/// `record`'s canonical JSON. `None` when it shows neither, or both.
+pub fn shown_digest(record: Option<&Value>, text: Option<&str>) -> Option<Digest> {
+    match (record, text) {
+        (Some(record), None) => Some(Digest::of(canonical_json(record).as_bytes())),
+        (None, Some(text)) => Some(Digest::of(text.as_bytes())),
+        _ => None,
     }
 }
 

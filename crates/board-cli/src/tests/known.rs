@@ -225,6 +225,84 @@ fn a_plugins_decide_is_refused_when_the_known_boards_file_cannot_be_read_and_the
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }
 
+/// `board decide --op review.comment --path /notes/n` with `extra`, as the
+/// owner, with `stdin`.
+fn decide_showing(board: &Scenario, extra: &[&str], stdin: &[u8]) -> Output {
+    let arguments = ["decide", "--op", "review.comment", "--path", "/notes/n"];
+    let arguments: Vec<&str> = arguments.iter().chain(extra).copied().collect();
+    inside(
+        None,
+        board.workdir(),
+        &config(None),
+        None,
+        &arguments,
+        stdin,
+    )
+    .0
+}
+
+#[test]
+fn a_decide_given_both_text_and_a_record_is_refused_as_usage_and_one_given_text_is_admitted() {
+    let board = uncommitted();
+    let arguments = [
+        "--json", "decide", "--op", "a.b", "--path", "/n", "--text", "-", "--record", "-",
+    ];
+    let both = board_with(board.workdir(), None, &arguments, b"{}");
+    assert_eq!(both.code, 2);
+    assert_eq!(json(&both)["code"], "board::cli::usage");
+    let admitted = decide_showing(&board, &["--text", "-"], b"{}");
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn a_decide_whose_text_file_cannot_be_read_is_refused_as_usage_and_text_on_stdin_is_admitted() {
+    let board = uncommitted();
+    let missing = decide_showing(&board, &["--text", "missing.md"], b"");
+    assert_eq!(code(&missing), "board::cli::usage");
+    let stderr = text(&missing.stderr);
+    assert!(
+        stderr.contains("the text in missing.md cannot be read"),
+        "{stderr}"
+    );
+    let admitted = decide_showing(&board, &["--text", "-"], b"t\n");
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn a_plugins_decide_showing_text_writes_a_pending_effect_that_get_shows_with_its_digest() {
+    let (board, personal) = (uncommitted(), uncommitted());
+    let xdg = naming(&personal);
+    let arguments = [
+        "--json",
+        "decide",
+        "--op",
+        "review.comment",
+        "--path",
+        "/notes/n",
+        "--text",
+        "-",
+    ];
+    let plugin = Some(OsString::from("review"));
+    let (asked, _) = inside(plugin, board.workdir(), &xdg, None, &arguments, b"hi\n");
+    let asked = json(&asked);
+    assert_eq!(asked["code"], "board::settings::asked");
+    let id = asked["fields"]["effect"].as_str().unwrap();
+    let pending = format!("/effects/pending/{id}");
+    let (got, _) = known(
+        board.workdir(),
+        &xdg,
+        None,
+        &["--personal", "get", &pending, "--json"],
+    );
+    assert_eq!(got.code, 0, "{}", text(&got.stderr));
+    let record = &json(&got)["data"][0]["record"];
+    assert_eq!(record["text"], "hi\n");
+    assert_eq!(
+        record["digest"],
+        board_model::Digest::of(b"hi\n").to_string()
+    );
+}
+
 #[test]
 fn a_plugin_name_that_is_empty_not_utf8_or_not_a_name_is_refused_and_a_name_is_admitted() {
     use std::os::unix::ffi::OsStringExt;

@@ -184,3 +184,50 @@ fn only_a_statement_whose_whole_first_line_is_the_write_header_is_signed_as_a_wr
         "board/approve/v1"
     );
 }
+
+/// A decide that shows text: its id covers the digest, and its approval
+/// shows the bytes exactly, the final newline as an empty last line.
+#[test]
+fn a_decide_showing_text_pins_its_id_and_approval_and_the_same_decide_with_other_text_differs() {
+    let shown = |text: &str| {
+        Effect::new(
+            "/Users/o/board".to_owned(),
+            "review".parse().unwrap(),
+            "review.post".to_owned(),
+            "/pulls/7".to_owned(),
+        )
+        .showing(None, Some(text.to_owned()))
+    };
+    let effect = shown("Looks good.\n");
+    assert_eq!(effect.digest, Some(Digest::of(b"Looks good.\n")));
+    // SHA-256 of the canonical JSON of the request, digest included.
+    let id = "0bbec96799c1d0ea001469c436608a49ddede4809cfcbfe781553ab505f04571";
+    assert_eq!(effect.id(), id);
+    assert_eq!(
+        effect.approval(),
+        format!(
+            "board/approve/v1\neffect: {id}\nplugin: review\nop: review.post\npath: /pulls/7\nboard: /Users/o/board\ncontent: 12 bytes in 2 lines\nLooks good.\n\n"
+        )
+    );
+    assert_ne!(shown("Looks good.").id(), id);
+}
+
+#[test]
+fn shown_text_and_a_shown_record_take_the_digest_of_their_bytes_and_nothing_shown_takes_none() {
+    let record = json!({"b": 1, "a": 2});
+    assert_eq!(
+        shown_digest(Some(&record), None),
+        Some(Digest::of(b"{\n  \"a\": 2,\n  \"b\": 1\n}\n"))
+    );
+    // A record's canonical JSON ends in a newline, which text may not.
+    assert_eq!(
+        shown_digest(None, Some("{}\n")),
+        shown_digest(Some(&json!({})), None)
+    );
+    assert_ne!(
+        shown_digest(None, Some("{}")),
+        shown_digest(Some(&json!({})), None)
+    );
+    assert_eq!(shown_digest(None, None), None);
+    assert_eq!(shown_digest(Some(&record), Some("x")), None);
+}
