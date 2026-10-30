@@ -332,6 +332,12 @@ impl Resolver<'_, '_> {
         self.repositories.root()
     }
 
+    /// How many files this resolver has read to learn what they hold as a
+    /// pointer. Work-count tests and the timing log read it.
+    pub fn pointers_read(&self) -> usize {
+        self.pointers.read
+    }
+
     /// Resolves `path` as [`Repositories::resolve`] does in the working
     /// tree.
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
@@ -426,6 +432,12 @@ pub struct InCommit<'r> {
 }
 
 impl InCommit<'_> {
+    /// How many files this resolver has read to learn what they hold as a
+    /// pointer.
+    pub fn pointers_read(&self) -> usize {
+        self.pointers.read
+    }
+
     pub fn resolve(&mut self, path: &LogicalPath) -> Result<Location, ResolveError> {
         self.repositories.resolve_tree(
             &mut self.tree,

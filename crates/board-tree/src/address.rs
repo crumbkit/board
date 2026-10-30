@@ -3,7 +3,6 @@
 //! directory, given what a record beside a directory holds.
 
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
 use std::sync::Arc;
 
 use board_model::{Code, LogicalPath, ObjectId, Pointer, PointerError};
@@ -95,7 +94,11 @@ pub(crate) fn classify<'a, D, E>(
 /// A blob id names its bytes, so an entry is true in every source, and it
 /// lives only as long as the run that made it.
 #[derive(Debug, Default)]
-pub(crate) struct Pointers(HashMap<ObjectId, Parsed>);
+pub(crate) struct Pointers {
+    parsed: HashMap<ObjectId, Parsed>,
+    /// How many files were read to learn what they hold as a pointer.
+    pub(crate) read: usize,
+}
 
 /// What a record holds as a pointer: one, none, or why it is not a valid one.
 pub(crate) type Parsed = Result<Option<Pointer>, Arc<PointerError>>;
@@ -109,6 +112,7 @@ impl Pointers {
         read: impl FnOnce() -> Result<Option<Vec<u8>>, E>,
     ) -> Result<Parsed, E> {
         let parse = || -> Result<Parsed, E> {
+            self.read += 1;
             Ok(read()?.map_or(Ok(None), |bytes| {
                 board_model::pointer(&bytes).map_err(Arc::new)
             }))
@@ -116,10 +120,11 @@ impl Pointers {
         let Kind::File(blob) = entry.kind else {
             return parse();
         };
-        Ok(match self.0.entry(blob) {
-            Entry::Occupied(known) => known.get().clone(),
-            Entry::Vacant(unknown) => unknown.insert(parse()?).clone(),
-        })
+        if let Some(known) = self.parsed.get(&blob) {
+            return Ok(known.clone());
+        }
+        let parsed = parse()?;
+        Ok(self.parsed.entry(blob).or_insert(parsed).clone())
     }
 
     /// Whether `record`, beside a directory, shadows it: it is a readable

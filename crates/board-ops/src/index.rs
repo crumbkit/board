@@ -40,6 +40,11 @@ pub struct Refreshed {
     pub wrote: bool,
     /// Rows a prune deleted.
     pub pruned: usize,
+    /// Files a snapshot's resolvers read to learn what they hold as a
+    /// pointer. Pointers read while walking mounts are not counted.
+    pub pointers_read: usize,
+    /// Repositories a snapshot opened from disk, not counting the board's own.
+    pub repositories: usize,
 }
 
 /// What this refresh learnt from the blobs it read in full, so it need not
@@ -175,8 +180,18 @@ pub(crate) type Run<T> = Result<(T, Vec<Resolved>), RefreshError>;
 /// mode, which opening requires of a file, nothing else blocks it.
 pub(crate) fn transact<T>(
     index: Index,
-    mut run: impl FnMut(&Writer) -> Run<T>,
+    run: impl FnMut(&Writer) -> Run<T>,
 ) -> Result<(T, bool, Decided), RefreshError> {
+    let (value, wrote, writer, entries) = attempt(index, run)?;
+    Ok((value, wrote, writer.decide(entries)?))
+}
+
+/// [`transact`] up to its commit: what `run` returned, whether it wrote, and
+/// the writer and entries to commit.
+pub(crate) fn attempt<T>(
+    index: Index,
+    mut run: impl FnMut(&Writer) -> Run<T>,
+) -> Result<(T, bool, Writer, Vec<Resolved>), RefreshError> {
     let writer = index.deferred()?;
     let first = run(&writer);
     let (writer, result) = if busy(&first) {
@@ -191,7 +206,7 @@ pub(crate) fn transact<T>(
     };
     let (value, entries) = result?;
     let wrote = writer.wrote()?;
-    Ok((value, wrote, writer.decide(entries)?))
+    Ok((value, wrote, writer, entries))
 }
 
 /// Whether `result` failed because another process held the index.

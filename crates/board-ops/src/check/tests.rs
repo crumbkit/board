@@ -92,7 +92,11 @@ fn a_check_with_nothing_changed_does_no_work_and_reads_while_another_process_wri
     let writing = other.write().unwrap();
     let warm = board.check(None, Some(cache.path())).unwrap();
     assert_eq!(warm.memory, None, "it used the file without waiting");
-    assert_eq!(warm.work, Refreshed::default());
+    let decided = Refreshed {
+        pointers_read: 1,
+        ..Refreshed::default()
+    };
+    assert_eq!(warm.work, decided, "only deciding reads a pointer again");
     assert_eq!(warm.entries, cold.entries);
     drop(writing);
 }

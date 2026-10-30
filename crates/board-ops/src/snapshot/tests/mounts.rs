@@ -103,6 +103,25 @@ fn a_board_mounted_twice_is_indexed_once_under_its_first_route_and_in_scope_on_e
 }
 
 #[test]
+fn a_check_opens_a_repository_two_mounts_name_once_and_counts_it_and_the_pointers_each_source_read()
+{
+    let (library, commit) = library();
+    let scenario = board();
+    let to_library = mount(&library.path(), commit);
+    scenario
+        .write("b.json", Item::File(&to_library))
+        .write("a.json", Item::File(&to_library));
+    let board = open(&scenario);
+    let work = board.check(None, None).unwrap().work;
+    assert_eq!(work.repositories, 1);
+    let trace = board.take_trace().work;
+    assert_eq!(trace.get("repositories"), Some(&1));
+    assert_eq!(trace.get("pointers_read"), Some(&work.pointers_read));
+    // One pointer in the working tree and one in the mounted commit.
+    assert_eq!(work.pointers_read, 2);
+}
+
+#[test]
 fn a_mount_inside_a_mounted_board_is_followed_and_reads_against_its_own_repository() {
     let (library, commit) = library();
     let middle = Scenario::new();

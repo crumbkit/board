@@ -26,7 +26,7 @@ use board_tree::{
 use crate::board::Board;
 use crate::check::{CheckError, CheckReport, Checked, Detail, Failure, Tally, follow, unresolved};
 use crate::index::{
-    Indexed, Kept, RefreshError, Refreshed, Run, facts, schema_of, schema_type, transact,
+    Indexed, Kept, RefreshError, Refreshed, Run, attempt, facts, schema_of, schema_type, transact,
 };
 use crate::ui::fitted;
 use crate::verdict::{Fault, SchemaFound};
@@ -64,9 +64,14 @@ impl Board {
                 .resolve(&Source::WorkingTree, scope)
                 .map_err(|source| CheckError::Scope { source })?;
         }
-        let ((mut report, references, walked), wrote, decided) =
-            transact(index, |writer| self.decide(writer, scope))?;
+        let opened = self.repositories().opened();
+        let ((mut report, references, walked), wrote, writer, entries) =
+            attempt(index, |writer| self.decide(writer, scope))?;
+        let timed = self.timed("snapshot.commit");
+        let decided = writer.decide(entries)?;
+        drop(timed);
         report.work.wrote = wrote;
+        report.work.repositories = self.repositories().opened() - opened;
         report.memory = match decided.storage() {
             Storage::Memory(fallback) => Some(*fallback),
             Storage::File(_) => None,
@@ -78,6 +83,8 @@ impl Board {
         trace.count("parsed", work.parsed);
         trace.count("validated", work.validated);
         trace.count("trees", work.trees);
+        trace.count("repositories", work.repositories);
+        trace.count("pointers_read", work.pointers_read);
         drop(trace);
         Ok(Snapshot {
             decided,
@@ -121,6 +128,7 @@ impl Board {
     ) -> Run<(CheckReport, Vec<Referenced>, Walked)> {
         let refresh = self.refresh(writer)?;
         let mut work = refresh.work;
+        let timed = self.timed("snapshot.mounts");
         let mounts = self.repositories().walk_mounts(
             &refresh.entries,
             &refresh.facts,
@@ -129,6 +137,8 @@ impl Board {
                 work: &mut work,
             },
         )?;
+        drop(timed);
+        let _timed = self.timed("snapshot.decide");
         let scopes = mounts.scopes(scope);
         let mut known = known(&refresh.entries, &mut work.hashed);
         let mut resolver = self.repositories().resolver(&mut known)?;
@@ -162,6 +172,7 @@ impl Board {
             )?;
         }
         drop(root);
+        work.pointers_read += resolver.pointers_read();
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
@@ -187,6 +198,8 @@ impl Board {
                     .and_then(|logical| mounted.display(logical));
                 decided.push(&decide, &source, entry, logical, Change::Committed)?;
             }
+            drop(decide);
+            work.pointers_read += in_commit.pointers_read();
         }
         record(&mounts, writer, self.repository())?;
         // Every source is now stored, so a prune keeps what this run reached.

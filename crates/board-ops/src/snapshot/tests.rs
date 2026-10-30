@@ -246,7 +246,7 @@ fn warm_decides_as_cold(
 
     agrees(generated.scenario(), warm())?;
     let again = agrees(generated.scenario(), warm())?;
-    prop_assert_eq!(again.work, Refreshed::default(), "nothing changed");
+    prop_assert_eq!(again.work, decided_only(again.work), "nothing changed");
 
     prune(warm());
     generated.write(before);
@@ -255,10 +255,20 @@ fn warm_decides_as_cold(
     let again = agrees(generated.scenario(), warm())?;
     prop_assert_eq!(
         again.work,
-        Refreshed::default(),
+        decided_only(again.work),
         "a prune keeps what the tree reaches"
     );
     Ok(())
+}
+
+/// The counts of `work` that every snapshot does again, because whether a
+/// pointer resolves depends on the whole tree; nothing else.
+fn decided_only(work: Refreshed) -> Refreshed {
+    Refreshed {
+        pointers_read: work.pointers_read,
+        repositories: work.repositories,
+        ..Refreshed::default()
+    }
 }
 
 proptest! {
