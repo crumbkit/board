@@ -72,7 +72,14 @@ impl LogicalPath {
         match (self.as_str(), inside.as_str()) {
             ("/", _) => Ok(inside.clone()),
             (_, "/") => Ok(self.clone()),
-            (route, inside) => format!("{route}{inside}").parse(),
+            // Both paths are valid, so only the joined length can break a rule.
+            (route, inside) => match format!("{route}{inside}") {
+                path if path.len() > MAX_PATH_BYTES => Err(PathError::Malformed {
+                    reason: Malformation::TooLong { bytes: path.len() },
+                    path,
+                }),
+                path => Ok(Self(path)),
+            },
         }
     }
 
