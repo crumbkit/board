@@ -450,7 +450,7 @@ pub(crate) fn mount_update(printer: Printer, report: &MountUpdateReport) -> Outp
 }
 
 /// `sync`: as text, a line for the fetch, each replayed commit, the push
-/// and where HEAD moved.
+/// where HEAD moved and each file kept as edited, with its hint on stderr.
 pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
     let upstream = &report.upstream;
     let mut text = format!(
@@ -479,6 +479,18 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
         Some(_) => writeln!(text, "HEAD is at {} already", report.new),
         None => writeln!(text, "checked out {}", report.new),
     };
+    let (mut kept, mut hints) = (Vec::new(), Vec::new());
+    for fields in &report.kept {
+        let (code, hint) = (Code::SyncKept, Code::SyncKept.hint(fields));
+        let path = fields.path.as_ref().map(ToString::to_string);
+        let path = path.unwrap_or_default();
+        let _ = writeln!(
+            text,
+            "kept {path} as edited, without the remote's change: {code}"
+        );
+        hints.push(Note::Text(format!("hint: {path}: {hint}")));
+        kept.push(json!({"path": path, "code": code.as_str(), "hint": hint}));
+    }
     let replayed: Vec<Value> = report
         .replayed
         .iter()
@@ -498,8 +510,9 @@ pub(crate) fn sync(printer: Printer, report: &Synced) -> Output {
         "replayed": replayed,
         "pushed": report.pushed,
         "attempts": report.attempts,
+        "kept": kept,
     });
-    printer.print(SYNC, Ok(said(value, text)))
+    printer.noted(SYNC, said(value, text), hints)
 }
 
 /// A refusal of a run that has no answer of its own to print.

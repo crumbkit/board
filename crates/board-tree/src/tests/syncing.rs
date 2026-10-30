@@ -29,6 +29,7 @@ fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
             replayed: Vec::new(),
             pushed: false,
             attempts: 1,
+            kept: Vec::new(),
         }
     );
     assert_eq!(clone.head().unwrap().id, tip);
@@ -37,6 +38,34 @@ fn a_clone_without_a_commit_checks_out_the_remote_branch_without_pushing() {
         std::fs::read_to_string(clone.workdir().join("d/b.json")).unwrap(),
         "[]"
     );
+}
+
+/// An index that cannot be read stands in for one another writer is
+/// rewriting: a sync that read it before taking the lock fails on it.
+#[test]
+fn a_held_index_lock_stops_a_sync_before_the_index_is_read_and_a_free_one_is_admitted() {
+    let remote = Scenario::new();
+    remote.commit(&[("a.json", "{}")]);
+    let clone = Scenario::clone_of(&remote);
+    let before = clone.head().unwrap().id;
+    remote.commit(&[("a.json", "{}"), ("b.json", "[]")]);
+    // git fetch reads the index only to find submodules to fetch.
+    clone
+        .write(
+            ".git/config",
+            Item::Appended("[fetch]\n\trecurseSubmodules = false\n"),
+        )
+        .write(".git/index", Item::File("not an index"))
+        .write(".git/index.lock", Item::File(""));
+    let repository = clone.open();
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let error = repository.sync(&lock, false, GIT_DEADLINE).unwrap_err();
+    assert_eq!(error.code(), Code::PutLocked, "{error}");
+    assert_eq!(clone.head().unwrap().id, before);
+    clone
+        .write(".git/index", Item::Deleted)
+        .write(".git/index.lock", Item::Deleted);
+    assert!(repository.sync(&lock, false, GIT_DEADLINE).is_ok());
 }
 
 #[test]

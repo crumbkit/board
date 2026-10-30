@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 17] = [
+pub const NOT_REPRODUCED: [(Code, &str); 18] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -57,6 +57,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 17] = [
         Code::SyncTimeout,
         "the CLI's 60-second git limit is too slow for a test; \
          board-tree/src/tests/syncing.rs uses a 5-second limit",
+    ),
+    (
+        Code::SyncKept,
+        "a file must be edited during the sync's push; \
+         board-ops/src/sync/tests.rs edits one in a pre-push hook",
     ),
     (
         Code::PluginTimeout,
@@ -95,7 +100,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 64] = [
+pub const NOT_CHECKED: [(Code, &str); 65] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -142,6 +147,7 @@ pub const NOT_CHECKED: [(Code, &str); 64] = [
     (Code::SyncFailed, SYNC),
     (Code::SyncConflict, SYNC),
     (Code::SyncEdited, SYNC),
+    (Code::SyncKept, SYNC),
     (Code::SyncGaveUp, SYNC),
     (Code::SyncTimeout, SYNC),
     (

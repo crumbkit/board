@@ -65,6 +65,7 @@ pub enum Code {
     SyncFailed,
     SyncConflict,
     SyncEdited,
+    SyncKept,
     SyncGaveUp,
     SyncTimeout,
     RefsTargetChanged,
@@ -108,7 +109,7 @@ pub enum Code {
 
 impl Code {
     /// Every code, so a spelling can be read back.
-    pub const ALL: [Code; 96] = [
+    pub const ALL: [Code; 97] = [
         Self::JsonParse,
         Self::JsonMergeConflict,
         Self::JsonDuplicateKey,
@@ -166,6 +167,7 @@ impl Code {
         Self::SyncFailed,
         Self::SyncConflict,
         Self::SyncEdited,
+        Self::SyncKept,
         Self::SyncGaveUp,
         Self::SyncTimeout,
         Self::RefsTargetChanged,
@@ -271,6 +273,7 @@ impl Code {
             Self::SyncFailed => "board::sync::failed",
             Self::SyncConflict => "board::sync::conflict",
             Self::SyncEdited => "board::sync::edited",
+            Self::SyncKept => "board::sync::kept",
             Self::SyncGaveUp => "board::sync::gave_up",
             Self::SyncTimeout => "board::sync::timeout",
             Self::RefsTargetChanged => "board::refs::target_changed",
@@ -387,6 +390,7 @@ mod tests {
             | Code::SyncFailed
             | Code::SyncConflict
             | Code::SyncEdited
+            | Code::SyncKept
             | Code::SyncGaveUp
             | Code::SyncTimeout
             | Code::RefsTargetChanged

@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use board_model::{Code, Location, LogicalPath, ObjectId, Source};
 
 use crate::git::{GitError, Repository, model_id};
-use crate::worktree::Working;
 use crate::write::WriteError;
 
 /// The most commits a put walks back from the mounted HEAD looking for the
@@ -155,12 +154,7 @@ impl Repository {
                 .filter(|entry| entry.mode().is_blob())
                 .map(|entry| model_id(entry.oid())))
         };
-        let working = match self.read_working(file)? {
-            Working::Missing => None,
-            Working::Read(contents) => Some(contents.blob),
-            Working::TooLarge => Some(self.working_blob(file)?),
-        };
-        Ok([at(pin)?, at(head)?, working])
+        Ok([at(pin)?, at(head)?, self.working_held(file)?])
     }
 }
 

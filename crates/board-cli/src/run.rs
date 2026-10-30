@@ -243,7 +243,8 @@ Examples:
 Board fetches the remote branch HEAD's branch follows, replays each commit
 only this board has onto it, pushes the result, and moves HEAD, git's index
 and the working tree to it. A commit that changed a file the remote also
-changed is refused. A fetch runs the `git` executable, so git's remotes,
+changed is refused. A file edited during the sync keeps its edit and is
+listed as kept. A fetch runs the `git` executable, so git's remotes,
 credentials and SSH settings apply.
 
 Examples:

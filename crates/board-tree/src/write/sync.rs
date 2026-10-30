@@ -15,7 +15,6 @@ use super::entries::{stage_entry, unstage_entry};
 use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
 use crate::transport::{self, Pushed, Upstream};
-use crate::worktree::Working;
 
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
@@ -34,6 +33,8 @@ pub struct Synced {
     pub replayed: Vec<Replayed>,
     pub pushed: bool,
     pub attempts: u32,
+    /// Each file edited during the sync, kept without the remote's change.
+    pub kept: Vec<Fields>,
 }
 
 /// A commit replayed onto the fetched branch: `to` is its new id, or
@@ -87,8 +88,9 @@ impl Repository {
     /// remote moved meanwhile, up to [`ATTEMPTS`] times. Then HEAD, the
     /// index and the working tree move to the result. A file the remote
     /// changed that is edited here stops the sync before it pushes or
-    /// writes. `lock` is the board lock. Each fetch and push that runs past
-    /// `deadline` is stopped.
+    /// writes; one edited after that, such as during the push, is kept as
+    /// edited and listed in `kept`. `lock` is the board lock. Each fetch
+    /// and push that runs past `deadline` is stopped.
     pub fn sync(&self, lock: &Lock, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
         let old = self.head()?;
@@ -115,9 +117,11 @@ impl Repository {
                 reason,
             });
         };
-        if old != Some(new) {
-            self.check_out(lock, old, new, changes)?;
-        }
+        let kept = if old == Some(new) {
+            Vec::new()
+        } else {
+            self.check_out(lock, old, new, changes)?
+        };
         Ok(Synced {
             upstream,
             fetched,
@@ -126,6 +130,7 @@ impl Repository {
             replayed,
             pushed,
             attempts,
+            kept,
         })
     }
 
@@ -327,49 +332,53 @@ impl Repository {
             if let Some(symlink) = symlink {
                 return Err(SyncError::Symlink { path, symlink });
             }
-            let held = match self.read_working(&path)? {
-                Working::Read(contents) => Some(contents.blob),
-                Working::TooLarge => Some(self.working_blob(&path)?),
-                Working::Missing => None,
-            };
+            let held = self.working_held(&path)?;
             if held != was && held != now {
                 return Err(SyncError::Edited { path });
             }
-            changes.push(Change { path, blob: now });
+            changes.push(Change { path, was, now });
         }
         Ok(changes)
     }
 
     /// Moves HEAD from `old` to `new` and makes the working tree and index
     /// follow: each changed file is written or removed, then HEAD moves,
-    /// then the index is written, as a put finishes.
+    /// then the index is written, as a put finishes. Returns each file
+    /// edited since `changes` compared it, which it leaves as edited.
     fn check_out(
         &self,
         lock: &Lock,
         old: Option<ObjectId>,
         new: ObjectId,
         changes: Vec<Change>,
-    ) -> Result<(), SyncError> {
+    ) -> Result<Vec<Fields>, SyncError> {
+        let (index_lock, index) = self.lock_index()?;
         let mut staged = Staged {
             commit: new,
             parent: old,
-            index: self.load_index()?,
-            index_lock: self.lock_index()?,
+            index,
+            index_lock,
         };
+        let mut kept = Vec::new();
         for change in changes {
-            if let Some(blob) = change.blob {
+            let held = self.working_held(&change.path)?;
+            if held != change.was && held != change.now {
+                kept.push(fields_at(&change.path));
+            } else if let Some(blob) = change.now {
                 let bytes = self
                     .read_blob(blob)?
                     .ok_or_else(|| self.missing(blob, "the blob is over the size limit"))?;
                 self.write_file(lock, &change.path, &bytes)?;
-                stage_entry(&mut staged.index, &change.path, self.gix_id(blob)?);
             } else {
                 self.remove_file(lock, &change.path)?;
-                unstage_entry(&mut staged.index, &change.path);
+            }
+            match change.now {
+                Some(blob) => stage_entry(&mut staged.index, &change.path, self.gix_id(blob)?),
+                None => unstage_entry(&mut staged.index, &change.path),
             }
         }
         self.finish(lock, staged, "board sync")?;
-        Ok(())
+        Ok(kept)
     }
 
     fn unreadable(&self, source: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> SyncError {
@@ -381,10 +390,21 @@ impl Repository {
     }
 }
 
-/// A working-tree file to write or remove.
+/// A working-tree file to write or remove: its blob in the old commit and
+/// in the new one, where `None` is no file.
 struct Change {
     path: String,
-    blob: Option<ObjectId>,
+    was: Option<ObjectId>,
+    now: Option<ObjectId>,
+}
+
+/// Fields naming the logical path of the file at `path`.
+fn fields_at(path: &str) -> Fields {
+    let logical = path.strip_suffix(".json").unwrap_or(path);
+    format!("/{logical}")
+        .parse::<LogicalPath>()
+        .map(|path| Fields::at(&path))
+        .unwrap_or_default()
 }
 
 /// A sync that stopped. The local commits stay where they are.
@@ -443,11 +463,7 @@ impl SyncError {
     pub fn fields(&self) -> Fields {
         match self {
             Self::Conflict { path } | Self::Edited { path } | Self::Symlink { path, .. } => {
-                let logical = path.strip_suffix(".json").unwrap_or(path);
-                format!("/{logical}")
-                    .parse::<LogicalPath>()
-                    .map(|path| Fields::at(&path))
-                    .unwrap_or_default()
+                fields_at(path)
             }
             Self::Write(error) => error.fields(),
             _ => Fields::default(),

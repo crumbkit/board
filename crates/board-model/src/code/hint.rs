@@ -442,7 +442,7 @@ fn generic(code: Code) -> &'static str {
             "after `plugin enable`, run it again; after a put, read the record again with `board get <path>`, reapply your change, and put it with `--expect` set to the blob this error names"
         }
         Code::PutLocked => {
-            "wait for the other write to finish, or give `put --wait` longer than 5s; or finish the merge, rebase, revert or cherry-pick in progress, then try again"
+            "wait for the other write to finish, or give `put --wait` longer than 5s; if no board process is running, remove the lock file the message names; or finish the merge, rebase, revert or cherry-pick in progress, then try again"
         }
         Code::PutThroughMount => {
             "write in the mounted repository and run `board mount update <path>`; a put writes through one mount whose board commits its puts and whose HEAD is on the branch the mount follows"
@@ -480,6 +480,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::SyncEdited => {
             "the file was edited after its last commit and the remote changed it too; commit the edit with git or discard it with `git checkout -- <file>`, then sync again"
+        }
+        Code::SyncKept => {
+            "the file was edited here during the sync, so it holds that edit without the remote's change. If `git status` shows it modified, `git diff -- <file>` shows the edit against HEAD, undoing the remote's change, so merge that change into it before you commit, or discard the edit with `git checkout -- <file>`. If it shows it untracked, the remote removed it: delete the file, or `git add` it to keep it"
         }
         Code::SyncGaveUp => {
             "the remote refused every push; `board sync --no-push` brings this board up to date without pushing, and the commits stay for the next sync"

@@ -184,6 +184,16 @@ impl Repository {
         Ok(Some(Directory::Entries))
     }
 
+    /// The blob the working-tree file at `relative` holds, or `None` for
+    /// none.
+    pub(crate) fn working_held(&self, relative: &str) -> Result<Option<ObjectId>, GitError> {
+        Ok(match self.read_working(relative)? {
+            Working::Missing => None,
+            Working::Read(contents) => Some(contents.blob),
+            Working::TooLarge => Some(self.working_blob(relative)?),
+        })
+    }
+
     /// The blob of the working-tree file at `relative`, hashed in constant
     /// memory, for a file too large to read.
     pub fn working_blob(&self, relative: impl AsRef<Path>) -> Result<ObjectId, GitError> {

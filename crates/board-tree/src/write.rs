@@ -412,11 +412,12 @@ impl Repository {
         if let Some(operation) = operation {
             return Err(WriteError::InProgress { operation });
         }
+        let (index_lock, index) = self.lock_index()?;
         let mut staged = Staged {
             commit: ObjectId::Sha1([0; 20]),
             parent: self.head()?,
-            index: self.load_index()?,
-            index_lock: self.lock_index()?,
+            index,
+            index_lock,
         };
         let failed =
             |source: Box<dyn std::error::Error + Send + Sync>| WriteError::Commit { source };
@@ -544,27 +545,21 @@ impl Repository {
         Ok(staged.commit)
     }
 
-    /// Git's index for this working tree, or an empty one before the first
-    /// `git add`.
-    fn load_index(&self) -> Result<gix::index::File, WriteError> {
+    /// Takes git's `index.lock` without waiting, then reads git's index for
+    /// this working tree, or an empty one before the first `git add`.
+    fn lock_index(&self) -> Result<(gix::lock::File, gix::index::File), WriteError> {
         let git = self.git();
-        if git.index_path().exists() {
+        let index = git.index_path();
+        let lock = gix::lock::File::acquire_to_update_resource(&index, Fail::Immediately, None)
+            .map_err(|error| lock_refused(error, index.with_extension("lock")))?;
+        let read = if index.exists() {
             git.open_index().map_err(|error| WriteError::Commit {
                 source: error.into(),
-            })
+            })?
         } else {
-            Ok(gix::index::File::from_state(
-                gix::index::State::new(git.object_hash()),
-                git.index_path(),
-            ))
-        }
-    }
-
-    /// Takes git's `index.lock` without waiting.
-    fn lock_index(&self) -> Result<gix::lock::File, WriteError> {
-        let index = self.git().index_path();
-        gix::lock::File::acquire_to_update_resource(&index, Fail::Immediately, None)
-            .map_err(|error| lock_refused(error, index.with_extension("lock")))
+            gix::index::File::from_state(gix::index::State::new(git.object_hash()), index)
+        };
+        Ok((lock, read))
     }
 }
 
@@ -690,7 +685,7 @@ pub enum WriteError {
     Beneath { path: LogicalPath, beneath: Beneath },
     #[error("{path} cannot be written: {symlink} is a symlink")]
     Symlink { path: LogicalPath, symlink: String },
-    #[error("{lock:?} is held; if no put is running, remove it")]
+    #[error("{lock:?} is held; if no board process is running, remove it")]
     Locked { lock: PathBuf },
     #[error("{path:?} could not be written")]
     Io {

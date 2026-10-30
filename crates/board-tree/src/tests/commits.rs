@@ -186,3 +186,32 @@ fn a_commit_during_a_merge_or_rebase_is_refused_and_a_clean_one_is_admitted() {
         );
     }
 }
+
+/// An index that cannot be read stands in for one another writer is
+/// rewriting: a commit that read it before taking the lock fails on it.
+#[test]
+fn a_held_index_lock_refuses_a_commit_before_the_index_is_read_and_a_free_one_is_admitted() {
+    let scenario = identified();
+    scenario
+        .write(".git/index", Item::File("not an index"))
+        .write(".git/index.lock", Item::File(""));
+    let repository = scenario.open();
+    let lock = repository.lock(LOCK_WAIT).unwrap();
+    let error = repository
+        .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+        .unwrap_err();
+    assert_eq!(error.code(), Code::PutLocked, "{error}");
+    let held = repository.git_dir().join("index.lock");
+    assert_eq!(
+        error.to_string(),
+        format!("{held:?} is held; if no board process is running, remove it")
+    );
+    scenario
+        .write(".git/index", Item::Deleted)
+        .write(".git/index.lock", Item::Deleted);
+    assert!(
+        repository
+            .stage_commit(&lock, &[("b.json", Some(b"{}\n"))], "board put /b")
+            .is_ok()
+    );
+}

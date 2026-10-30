@@ -83,6 +83,14 @@ board's lock, so no put runs meanwhile, and then:
    are neither its old blob nor its new one is an edit, and the sync stops
    before it pushes or writes, with `board::sync::edited`. A symlink on disk
    at or above a file stops it the same way, with `board::put::symlink`.
+   Each file is compared again just before its write. One edited since,
+   such as during the push, keeps its edit and is listed in `kept` with
+   `board::sync::kept`. The index takes the new blob; a file the remote
+   removed is left untracked. Committing the edit undoes the remote's
+   change. This breaks STANDARDS.md 17, since the push cannot be undone. An
+   edit after the second compare is overwritten. A kept file the remote
+   made a directory fails the sync after the push, and the next sync
+   refuses with `board::sync::edited`.
 
 A branch that follows no remote branch is `board::sync::no_remote`, and a
 fetch or push git itself refuses is `board::sync::failed`, which carries the
@@ -92,5 +100,5 @@ SIGTERM, on which git removes its lock files, kills it a second later if it
 is still running, and lets the board lock go. The commits here stay for the
 next sync. The report is `board/sync-report/v2`: `remote`, `branch`,
 `fetched`, `old` (null before the first commit), `new`, `replayed` (each
-commit's `from` and its `to`, null when it made none), `pushed` and
-`attempts`.
+commit's `from` and its `to`, null when it made none), `pushed`,
+`attempts` and `kept` (each kept file's `path`, `code` and `hint`).
