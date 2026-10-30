@@ -155,7 +155,7 @@ fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchErro
         bench::Corpus::Given => None,
     };
     let rows = against::rows(board, sample.as_str(), directory.as_str(), mounted);
-    let compared = against::compare([base, new], &rows, options.runs, &host)?;
+    let compared = against::compare(&[base, new], &rows, options.runs, &host)?;
     report::emit(&Output::Against(&compared));
     Ok(against::passed(&compared))
 }

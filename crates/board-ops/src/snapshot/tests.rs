@@ -582,3 +582,25 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
     let valid = record(Some(board_index::ValidationFact::Valid(Vec::new())));
     assert_eq!(judged(&valid), None);
 }
+
+#[test]
+fn a_snapshot_mounts_then_decides_then_commits_within_its_own_time() {
+    let scenario = board();
+    let board = open(&scenario);
+    board.check(None, None).unwrap();
+    let trace = board.take_trace();
+    let phase = |name: &str| {
+        let phase = trace.phases.iter().find(|phase| phase.name == name);
+        phase.map(|phase| (phase.started, phase.started + phase.took))
+    };
+    let (start, end) = phase("snapshot").unwrap();
+    let parts =
+        ["snapshot.mounts", "snapshot.decide", "snapshot.commit"].map(|name| phase(name).unwrap());
+    for pair in parts.windows(2) {
+        assert!(pair[0].1 <= pair[1].0, "{parts:?}");
+    }
+    assert!(
+        start <= parts[0].0 && parts[2].1 <= end,
+        "{parts:?} in {start:?}..{end:?}"
+    );
+}

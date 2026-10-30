@@ -194,28 +194,6 @@ mod tests {
     }
 
     #[test]
-    fn a_snapshot_mounts_then_decides_then_commits_within_its_own_time() {
-        let scenario = crate::tests::board();
-        let board = crate::tests::open(&scenario);
-        board.check(None, None).unwrap();
-        let trace = board.take_trace();
-        let phase = |name: &str| {
-            let phase = trace.phases.iter().find(|phase| phase.name == name);
-            phase.map(|phase| (phase.started, phase.started + phase.took))
-        };
-        let (start, end) = phase("snapshot").unwrap();
-        let parts = ["snapshot.mounts", "snapshot.decide", "snapshot.commit"]
-            .map(|name| phase(name).unwrap());
-        for pair in parts.windows(2) {
-            assert!(pair[0].1 <= pair[1].0, "{parts:?}");
-        }
-        assert!(
-            start <= parts[0].0 && parts[2].1 <= end,
-            "{parts:?} in {start:?}..{end:?}"
-        );
-    }
-
-    #[test]
     fn counts_of_one_name_add_up_and_extending_appends_phases_and_counts_and_keeps_the_first_capability()
      {
         let mut trace = Trace::default();

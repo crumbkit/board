@@ -247,10 +247,7 @@ pub(crate) fn run(
                         .map(drop)
                         .map_err(|e| failed(&e)),
                     "simple `board query`, warm" => count(&board, warm.path()),
-                    MOUNTED => match &mounted {
-                        Some((board, warm, _)) => count(board, warm.path()),
-                        None => Ok(()),
-                    },
+                    MOUNTED => (mounted.as_ref()).map_or(Ok(()), |(b, w, _)| count(b, w.path())),
                     "full index, cold" => board
                         .check(None, Some(cold.path()))
                         .map(drop)

@@ -59,15 +59,14 @@ pub(crate) fn run(root: &Path, profile: &Profile) -> Result<(), ProfileError> {
 }
 
 fn status(command: &mut Command) -> Result<(), ProfileError> {
+    let code = command.status().ok().map(|status| status.code());
     let program = command.get_program().to_owned();
-    let status = (command.status()).map_err(|_| ProfileError::Failed {
-        program: program.clone(),
-        code: None,
-    })?;
-    status.success().then_some(()).ok_or(ProfileError::Failed {
-        program,
-        code: status.code(),
-    })
+    (code == Some(Some(0)))
+        .then_some(())
+        .ok_or(ProfileError::Failed {
+            program,
+            code: code.flatten(),
+        })
 }
 
 #[derive(Debug, thiserror::Error)]

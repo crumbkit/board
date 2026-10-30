@@ -8,8 +8,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
-use tempfile::TempDir;
-
 use super::{BenchError, Host, MOUNTED, failed, median};
 use crate::process;
 
@@ -60,28 +58,36 @@ pub(crate) fn rows(
     directory: &str,
     mounted: Option<&Path>,
 ) -> Vec<Row> {
-    let on = |board: &Path, words: &[&str]| {
-        let mut arguments = vec!["-C".into(), board.into()];
-        arguments.extend(words.iter().map(OsString::from));
-        arguments
+    let row = |name, board: &Path, words: &[&str], cold| -> Row {
+        let words = words.iter().map(OsString::from);
+        (
+            name,
+            ["-C".into(), board.into()]
+                .into_iter()
+                .chain(words)
+                .collect(),
+            cold,
+        )
     };
     let query = ["query", "SELECT count(*) FROM entries"];
     let mut rows = vec![
-        ("`board get`, warm", on(plain, &["get", sample]), false),
-        (
+        row("`board get`, warm", plain, &["get", sample], false),
+        row(
             "`board ls` of a record's directory, warm",
-            on(plain, &["ls", directory]),
+            plain,
+            &["ls", directory],
             false,
         ),
-        (
+        row(
             "`board check`, warm, nothing changed",
-            on(plain, &["check"]),
+            plain,
+            &["check"],
             false,
         ),
-        ("simple `board query`, warm", on(plain, &query), false),
-        ("full index, cold", on(plain, &["check"]), true),
+        row("simple `board query`, warm", plain, &query, false),
+        row("full index, cold", plain, &["check"], true),
     ];
-    rows.extend(mounted.map(|mounted| (MOUNTED, on(mounted, &query), false)));
+    rows.extend(mounted.map(|mounted| row(MOUNTED, mounted, &query, false)));
     rows
 }
 
@@ -133,49 +139,32 @@ pub(crate) fn passed(compared: &[Compared]) -> bool {
 
 /// `path`, when it names a file.
 pub(crate) fn base(path: &Path) -> Result<PathBuf, BenchError> {
-    if path.is_file() {
-        Ok(path.to_owned())
-    } else {
-        Err(BenchError::NoAgainst {
-            path: path.to_owned(),
-        })
-    }
+    let path = path.to_owned();
+    path.is_file()
+        .then(|| path.clone())
+        .ok_or(BenchError::NoAgainst { path })
 }
 
-/// One arm's binary and the caches and empty directories its runs get.
-struct Binary {
-    path: PathBuf,
-    cache: TempDir,
-    empty: TempDir,
-}
-
-/// Runs every row `runs` rounds on `binaries` (base, new), after one
-/// discarded run of each.
+/// Runs every row `runs` rounds on `binaries` (base, new), each with its own
+/// cache, after one discarded run of each.
 pub(crate) fn compare(
-    binaries: [PathBuf; 2],
+    binaries: &[PathBuf; 2],
     rows: &[Row],
     runs: usize,
     host: &Host,
 ) -> Result<Vec<Compared>, BenchError> {
     let temporary = || tempfile::tempdir().map_err(BenchError::Write);
-    let [base, new] = binaries.map(|path| -> Result<Binary, BenchError> {
-        Ok(Binary {
-            path,
-            cache: temporary()?,
-            empty: temporary()?,
-        })
-    });
-    let arms = [base?, new?];
+    let (empty, caches) = (temporary()?, [temporary()?, temporary()?]);
     let mut compared = Vec::with_capacity(rows.len());
     for (name, arguments, cold) in rows {
         let mut times = [Vec::with_capacity(runs), Vec::with_capacity(runs)];
         let mut verdict = None;
         for round in 0..=runs {
             for arm in order(round) {
-                let binary = &arms[arm as usize];
                 let cold = cold.then(temporary).transpose()?;
-                let cache = cold.as_ref().map_or(binary.cache.path(), TempDir::path);
-                let (took, exit) = time(binary, arguments, cache, host)?;
+                let cache = cold.as_ref().unwrap_or(&caches[arm as usize]).path();
+                let directories = [cache, empty.path()];
+                let (took, exit) = time(&binaries[arm as usize], arguments, directories, host)?;
                 if exit != 0 {
                     verdict = verdict.or(Some(Verdict::Failed(arm, exit)));
                 }
@@ -194,27 +183,21 @@ pub(crate) fn compare(
     Ok(compared)
 }
 
-/// The wall time and exit code of `binary` with `arguments`, its cache in
-/// `cache`, and nothing else from this machine but `PATH` and `HOME`.
+/// The wall time and exit code of `binary` with `arguments`, a cache and an
+/// empty config and data directory, and nothing else from this machine but
+/// `PATH` and `HOME`.
 fn time(
-    binary: &Binary,
+    binary: &Path,
     arguments: &[OsString],
-    cache: &Path,
+    [cache, empty]: [&Path; 2],
     host: &Host,
 ) -> Result<(Duration, i32), BenchError> {
-    let mut command = process::command(&binary.path);
-    command
-        .args(arguments)
-        .env_clear()
-        .env("PATH", &host.path)
-        .env("XDG_CACHE_HOME", cache)
-        .env("XDG_CONFIG_HOME", binary.empty.path())
-        .env("XDG_DATA_HOME", binary.empty.path())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    if let Some(home) = &host.home {
-        command.env("HOME", home);
-    }
+    let mut command = process::command(binary);
+    command.args(arguments).env_clear().env("PATH", &host.path);
+    command.envs(host.home.iter().map(|home| ("HOME", home)));
+    command.env("XDG_CACHE_HOME", cache);
+    command.envs(["XDG_CONFIG_HOME", "XDG_DATA_HOME"].map(|name| (name, empty)));
+    command.stdout(Stdio::null()).stderr(Stdio::null());
     let started = Instant::now();
     let status = command.status().map_err(|error| failed(&error))?;
     Ok((started.elapsed(), status.code().unwrap_or(-1)))
