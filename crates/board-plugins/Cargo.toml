@@ -7,10 +7,12 @@ publish.workspace = true
 
 [features]
 plans = ["dep:board-plugin-plans"]
+requests = ["dep:board-plugin-requests"]
 
 [dependencies]
 board-ops.workspace = true
 board-plugin-plans = { workspace = true, optional = true }
+board-plugin-requests = { workspace = true, optional = true }
 
 [lints]
 workspace = true

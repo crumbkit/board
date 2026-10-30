@@ -186,8 +186,8 @@ with `board::plugin::too_deep`.
 
 The plugins here are written in Python through the shared library in
 `python/board-plugin/`. There are nine: `controls`, `tasks`, `evals`,
-`runs`, `share`, `notes`, `changes`, `review` and `prompts`. `plans` is built
-into Board ([plugins/built-in.md](plugins/built-in.md)). The README in each `plugins/<name>/` describes its records and
+`runs`, `share`, `notes`, `changes`, `review` and `prompts`. `plans` and
+`requests` are built into Board ([plugins/built-in.md](plugins/built-in.md)). The README in each `plugins/<name>/` describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains the design of
 `share`, [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
 the controls mod, and [plugins/plans-claude-code.md](plugins/plans-claude-code.md)
