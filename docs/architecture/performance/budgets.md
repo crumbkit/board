@@ -74,13 +74,13 @@ cache, an empty config and data directory, and only `HOME` and `PATH` from
 this machine. After one discarded run of each, every round runs both, base
 first in even rounds and new first in odd ones, 15 rounds by default. Each
 round gives the change `(new - base) / base`. A row is slower when the
-median change is over 5% and new was slower in at least 12 of 15 rounds, a
-sign test whose chance of calling a row slower by luck is under 2.5%;
-faster is the same rule the other way, and any other row is the same. A row
-whose base exits with an error is reported and not judged. The command
-exits 1 when a row is slower or new fails where base passed. A missing base
-fails with `xtask::bench::no_against`. The report names each binary's
-version from its own timing log.
+median change is over 5% and new was slower in at least 12 rounds. Over 15
+rounds that is a sign test that calls a row slower by luck under 2% of the
+time; with fewer than 12 rounds no row is slower. Faster is the same rule
+the other way, and any other row is the same. A row whose base exits with
+an error is reported and not judged. The command exits 1 when a row is
+slower or new fails where base passed. A missing base fails with
+`xtask::bench::no_against`.
 
 Targets are the speed an agent loop or a web view needs. None is met or
 enforced yet:

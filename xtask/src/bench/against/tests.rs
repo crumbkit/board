@@ -22,10 +22,10 @@ fn rounds_alternate_which_arm_runs_first_and_each_arm_runs_once_a_round() {
 }
 
 #[test]
-fn a_sign_test_over_15_rounds_needs_12_in_one_direction_and_3_rounds_can_never_decide() {
-    assert_eq!(needed(15), Some(12));
-    assert_eq!(needed(3), None);
-    assert_eq!(needed(6), Some(6));
+fn eleven_rounds_all_much_slower_are_the_same_and_twelve_are_slower() {
+    let judged = |rounds| judge(&millis(&vec![100; rounds]), &millis(&vec![200; rounds]));
+    assert_eq!(judged(11).verdict, Verdict::Same);
+    assert_eq!(judged(12).verdict, Verdict::Slower);
 }
 
 #[test]
@@ -98,9 +98,8 @@ fn each_row_prints_its_verdict_medians_and_rounds_and_a_failure_names_its_arm() 
         },
     ];
     assert_eq!(
-        crate::report::render_against(&["0.0.0+a", "0.0.0+b"], &compared),
-        "base  0.0.0+a\nnew   0.0.0+b\n\
-         SLOWER  base      1.2 ms  new      1.5 ms   +20.0%  13/15 rounds slower  `board get`, warm\n\
+        crate::report::render_against(&compared),
+        "SLOWER  base      1.2 ms  new      1.5 ms   +20.0%  13/15 rounds slower  `board get`, warm\n\
          skip    base failed (exit 1)  `board check`, warm, nothing changed\n"
     );
 }

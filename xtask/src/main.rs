@@ -13,13 +13,12 @@ mod profile;
 mod report;
 mod signing;
 mod source;
-mod timing;
 mod words;
 
 #[cfg(test)]
 mod tests;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use crate::bench::against;
@@ -47,18 +46,6 @@ fn main() -> ExitCode {
         }
         Some("bench") => match bench::Options::parse(arguments) {
             Some(options) => finish(bench(root, &options), bench::BenchError::code),
-            None => usage(),
-        },
-        Some("timing") => match timing::Filter::parse(arguments) {
-            Some(filter) => {
-                let home = process::var("HOME").map(|home| Path::new(&home).join(".cache"));
-                let cache = process::var("XDG_CACHE_HOME").map(PathBuf::from).or(home);
-                let summary = timing::summarize(&timing::read(&cache.unwrap_or_default()), &filter);
-                let words = [Some(filter.command.as_str()), filter.capability.as_deref()];
-                let words = words.into_iter().flatten().collect::<Vec<_>>().join(" ");
-                report::emit(&Output::Timing(&words, &summary));
-                ExitCode::SUCCESS
-            }
             None => usage(),
         },
         Some("profile") => match profile::Profile::parse(arguments) {
@@ -168,8 +155,8 @@ fn bench(root: &Path, options: &bench::Options) -> Result<bool, bench::BenchErro
         bench::Corpus::Given => None,
     };
     let rows = against::rows(board, sample.as_str(), directory.as_str(), mounted);
-    let (versions, compared) = against::compare([base, new], &rows, options.runs, &host)?;
-    report::emit(&Output::Against(&versions, &compared));
+    let compared = against::compare([base, new], &rows, options.runs, &host)?;
+    report::emit(&Output::Against(&compared));
     Ok(against::passed(&compared))
 }
 

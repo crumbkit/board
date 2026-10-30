@@ -31,7 +31,7 @@ fn bench_times_a_generated_board_and_skips_the_plugin_call_without_uv() {
 }
 
 #[test]
-fn bench_against_the_board_beside_xtask_gives_every_row_a_verdict() {
+fn bench_against_the_board_beside_xtask_finds_every_row_the_same_in_too_few_rounds_to_decide() {
     let xtask = std::path::Path::new(env!("CARGO_BIN_EXE_xtask"));
     let board = xtask.with_file_name("board");
     let output = Command::new(xtask)
@@ -41,34 +41,9 @@ fn bench_against_the_board_beside_xtask_gives_every_row_a_verdict() {
         .output()
         .unwrap();
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(matches!(output.status.code(), Some(0 | 1)), "{stdout}");
-    let rows: Vec<&str> = stdout.lines().skip(2).collect();
-    assert_eq!(rows.len(), 6, "{stdout}");
-    for row in rows {
-        let verdict = row.split_whitespace().next().unwrap();
-        assert!(["same", "SLOWER", "faster"].contains(&verdict), "{stdout}");
+    assert!(output.status.success(), "{stdout}");
+    assert_eq!(stdout.lines().count(), 6, "{stdout}");
+    for row in stdout.lines() {
+        assert!(row.starts_with("same  "), "{stdout}");
     }
-    assert!(stdout.starts_with("base  0.0.0"), "{stdout}");
-}
-
-#[test]
-fn timing_prints_the_median_phases_of_the_last_runs_of_a_command() {
-    let cache = tempfile::tempdir().unwrap();
-    std::fs::create_dir(cache.path().join("board")).unwrap();
-    let line = r#"{"command": "get", "depth": 0, "version": "1", "total_us": 2000, "phases": [{"name": "open", "us": 1000}]}"#;
-    std::fs::write(
-        cache.path().join("board/timings.jsonl"),
-        format!("{line}\n"),
-    )
-    .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_xtask"))
-        .args(["timing", "get"])
-        .env("XDG_CACHE_HOME", cache.path())
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        String::from_utf8(output.stdout).unwrap(),
-        "get: 1 runs of 1\ntotal           2.0 ms\nopen            1.0 ms  1 runs\n"
-    );
 }

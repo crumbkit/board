@@ -80,14 +80,15 @@ before you attach it to a bug report.
 
 ## Reading the log and profiling
 
-`cargo xtask timing <command> [--last <n>]` reads both log files under
-`$XDG_CACHE_HOME`, or `~/.cache`, and prints the median total time and the
-median of each phase of the last 20 runs of `<command>`, such as `query` or
-`plugin find`. A last word with a dot, such as `call tasks.available`,
-chooses the calls of that capability. It counts only runs at `depth` 0 and
-of the newest version in the log, so runs of an older build do not mix in.
-Each phase says how many of the runs entered it, and the report counts the
-lines that are not JSON.
+The median time of each phase over the last 20 top-level runs of `query`
+(use `select(.capability == "tasks.available")` for a call):
+
+    cat ~/.cache/board/timings.jsonl.1 ~/.cache/board/timings.jsonl 2>/dev/null |
+      jq -s '[.[] | select(.command == "query" and .depth == 0)] | .[-20:]
+        | [.[].phases[]] | group_by(.name)
+        | map({name: .[0].name, runs: length, ms: ((map(.us) | sort)[length / 2 | floor] / 1000)})'
+
+Check `version` first, so that runs of an older build do not mix in.
 
 `cargo xtask profile [--save <file>] -- <board arguments>` builds `board`
 in the `profiling` cargo profile, which is release with line tables, runs

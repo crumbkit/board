@@ -15,8 +15,10 @@ use crate::process;
 
 /// How far the median round must move before a row is slower or faster.
 const THRESHOLD: f64 = 0.05;
-/// The one-sided chance a sign test may call a row slower by luck.
-const SIGNIFICANCE: f64 = 0.025;
+/// The rounds that must move one way for a row to be slower or faster: a
+/// sign test over 15 rounds that calls a row slower by luck under 2% of the
+/// time. With fewer rounds, no row is.
+const AGREE: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Arm {
@@ -92,22 +94,6 @@ pub(crate) fn order(round: usize) -> [Arm; 2] {
     }
 }
 
-/// The fewest of `rounds` that must move one way for a sign test to call
-/// it a change, or none when no count could.
-pub(crate) fn needed(rounds: usize) -> Option<usize> {
-    let rounds = i32::try_from(rounds).ok()?;
-    let chance = |at_least: i32| -> f64 {
-        let ways = |k: i32| {
-            (0..k).fold(1.0, |ways, i| {
-                ways * f64::from(rounds - i) / f64::from(i + 1)
-            })
-        };
-        (at_least..=rounds).map(ways).sum::<f64>() / 2_f64.powi(rounds)
-    };
-    let needed = (0..=rounds).find(|at_least| chance(*at_least) <= SIGNIFICANCE)?;
-    usize::try_from(needed).ok()
-}
-
 /// Judges paired rounds: each round's change is `(new - base) / base`.
 pub(crate) fn judge(base: &[Duration], new: &[Duration]) -> Compared {
     let deltas: Vec<f64> = base
@@ -120,10 +106,9 @@ pub(crate) fn judge(base: &[Duration], new: &[Duration]) -> Compared {
     let delta = sorted.get(sorted.len() / 2).copied().unwrap_or_default();
     let slower = deltas.iter().filter(|delta| **delta > 0.0).count();
     let faster = deltas.iter().filter(|delta| **delta < 0.0).count();
-    let needed = needed(deltas.len()).unwrap_or(usize::MAX);
-    let verdict = if delta > THRESHOLD && slower >= needed {
+    let verdict = if delta > THRESHOLD && slower >= AGREE {
         Verdict::Slower
-    } else if delta < -THRESHOLD && faster >= needed {
+    } else if delta < -THRESHOLD && faster >= AGREE {
         Verdict::Faster
     } else {
         Verdict::Same
@@ -165,13 +150,13 @@ struct Binary {
 }
 
 /// Runs every row `runs` rounds on `binaries` (base, new), after one
-/// discarded run of each, and returns each binary's version from its log.
+/// discarded run of each.
 pub(crate) fn compare(
     binaries: [PathBuf; 2],
     rows: &[Row],
     runs: usize,
     host: &Host,
-) -> Result<([String; 2], Vec<Compared>), BenchError> {
+) -> Result<Vec<Compared>, BenchError> {
     let temporary = || tempfile::tempdir().map_err(BenchError::Write);
     let [base, new] = binaries.map(|path| -> Result<Binary, BenchError> {
         Ok(Binary {
@@ -206,8 +191,7 @@ pub(crate) fn compare(
             ..judged
         });
     }
-    let version = |binary: &Binary| crate::timing::version(binary.cache.path());
-    Ok((arms.each_ref().map(version), compared))
+    Ok(compared)
 }
 
 /// The wall time and exit code of `binary` with `arguments`, its cache in
