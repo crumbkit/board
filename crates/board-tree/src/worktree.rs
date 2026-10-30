@@ -79,24 +79,15 @@ pub(crate) struct WorkingTree<'r, 'k, T = ()> {
 /// What one snapshot of the working tree listed and hashed, so that a later
 /// view of the same snapshot reads none of it again: a resolver that starts
 /// from a walk's listings lists each directory once in a run.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Listings {
     listed: HashMap<PathBuf, Listing>,
     settled: HashMap<PathBuf, (Kind<PathBuf>, Option<Stat>)>,
 }
 
-impl std::fmt::Debug for Listings {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let listed = self.listed.len();
-        formatter
-            .debug_struct("Listings")
-            .field("listed", &listed)
-            .finish_non_exhaustive()
-    }
-}
-
 /// One directory's items, each classified the first time a lookup returns
 /// it, so that it keeps one answer in this snapshot.
+#[derive(Debug)]
 struct Listing {
     items: Vec<Item>,
     /// Each item as git sees it, once classified: `None` when git does not
