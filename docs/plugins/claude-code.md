@@ -71,7 +71,7 @@ After a Bash call that runs `gh pr create` succeeds, the mod reads the last
 pull request URL in its output and asks `gh pr view` for the title. It writes
 a `plans/decision/v1` stub at `<directory>/<time>-<repo>-<number>`. The
 directory is `decisions_template` with the repository's name in place of
-`{repo}`. The stub holds the title as `decision`, the URL in `refs`,
+`{repo}`. The stub holds the title as `decision`, the URL in `urls`,
 `review: "wanted"`, the session id, and an empty `why`. It then appends a row
 the person does not see to the conversation of the agent that ran `gh`,
 asking it to fill in `why` and `alternatives`.

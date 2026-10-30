@@ -155,10 +155,13 @@ pub struct DecisionRecord {
     /// What was not chosen.
     #[serde(default)]
     pub alternatives: Vec<String>,
-    /// What the decision concerns, such as a pull request's URL or a
-    /// record's path.
+    /// Entries in the board the decision concerns, such as an answer.
     #[serde(default)]
-    pub refs: Vec<String>,
+    pub refs: Vec<Ref>,
+    /// Web pages the decision concerns, such as a pull request.
+    #[serde(default)]
+    #[schemars(inner(regex(pattern = r"^https?://")))]
+    pub urls: Vec<String>,
     /// `wanted` when the owner should look at the decision.
     pub review: Option<Review>,
     /// The plugin and hook that wrote this stub without an agent, such as

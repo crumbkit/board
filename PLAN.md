@@ -87,10 +87,9 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   refuse, cut until two plugins need them (`git show
   5a34ac92:docs/architecture/writes/effects.md`), then offers, attention
   levels, read gating, learning from corrections and the mandate layer.
-- **Record shape migration.** Split plans decision `refs` into references
-  and `urls`, and make the repository fields (plans question `repo`, changes
-  `repo`, prompts/repos, evals `repos`) references to mounts
-  (docs/architecture/records/shapes.md, rules 6 and 7).
+- **Record shape migration.** Make the repository fields (plans question
+  `repo`, changes `repo`, prompts/repos, evals `repos`) references to mounts
+  (docs/architecture/records/shapes.md, rule 7).
 - **Docs as a tree.** The per-directory word budget is built (STANDARDS.md 22),
   and docs/architecture.md has split into docs/architecture/. Still open are
   how the review of each docs change runs and a tool check that each leaf is
