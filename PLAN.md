@@ -27,8 +27,8 @@ M7 is done when the owner says so.
 The index keeps each mounted source's decision
 ([docs](docs/architecture/performance/decisions.md)). On a copy of the
 owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
-51 ms, down from 96 ms; the target is 50 ms. Opening mounts in parallel
-comes next, in its own pull request.
+51 ms, down from 96 ms; the target is 50 ms. Mounted repositories are opened
+in parallel.
 
 Two smaller items each get their own pull request. A scoped check walks
 every mount; fixing that needs a design. Compiling manifest schemas once

@@ -400,6 +400,11 @@ impl<F> Reached<F> {
         found: Vec<(LogicalPath, String, Mount)>,
         candidates: &mut Vec<Candidate>,
     ) {
+        let wanted: Vec<_> = (found.iter())
+            .filter(|(at, _, _)| route.beneath(at).is_ok())
+            .filter_map(|(_, _, mount)| Some((repositories.named(from, mount)?, mount.commit)))
+            .collect();
+        repositories.open_all(&wanted);
         for (at, path, mount) in found {
             let route = route.beneath(&at).map_err(|_| Code::PathMalformed);
             let mounted = route.and_then(|route| {

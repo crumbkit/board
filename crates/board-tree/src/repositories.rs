@@ -123,11 +123,56 @@ impl Repositories {
     /// its `repo` read against `from`, or against the home directory for
     /// `~/`. `None` when it cannot be opened.
     pub(crate) fn mounted(&self, from: &Path, mount: &Mount) -> Option<Repository> {
-        let path = match mount.repo.strip_prefix("~/") {
+        self.lend(&self.named(from, mount)?).ok()
+    }
+
+    /// The path of the repository `mount`, a pointer in the repository at
+    /// `from`, names, or `None` for a `~/` path without a home.
+    pub(crate) fn named(&self, from: &Path, mount: &Mount) -> Option<PathBuf> {
+        Some(match mount.repo.strip_prefix("~/") {
             Some(rest) => self.home.as_deref()?.join(rest),
             None => from.join(&mount.repo),
+        })
+    }
+
+    /// Opens each repository among `wanted` not yet open, one thread each,
+    /// and looks up its commits there, so that [`Repositories::lend`] finds
+    /// it open and its object database warm. Several paths that open one
+    /// repository open and count it once. A path that cannot be opened, or
+    /// the only one not yet open, is left to `lend`.
+    pub(crate) fn open_all(&self, wanted: &[(PathBuf, ObjectId)]) {
+        let mut closed: HashMap<&Path, Vec<ObjectId>> = HashMap::new();
+        for (path, commit) in wanted {
+            closed.entry(path).or_default().push(*commit);
+        }
+        closed.retain(|path, _| !self.lock().contains_key(*path));
+        if closed.len() < 2 {
+            return;
+        }
+        let open = |(path, commits): (&Path, Vec<ObjectId>)| {
+            let repository = Repository::open(path).ok()?;
+            for commit in commits {
+                let _ = repository.commit_tree(commit);
+            }
+            Some(Opened::of(&repository))
         };
-        self.lend(&path).ok()
+        let opened: Vec<Opened> = std::thread::scope(|scope| {
+            let threads: Vec<_> = closed
+                .into_iter()
+                .map(|each| scope.spawn(move || open(each)))
+                .collect();
+            threads
+                .into_iter()
+                .filter_map(|thread| thread.join().ok()?)
+                .collect()
+        });
+        let mut open = self.lock();
+        for opened in opened {
+            if !open.contains_key(&opened.path) {
+                self.opened.fetch_add(1, Ordering::Relaxed);
+                opened.insert(&mut open);
+            }
+        }
     }
 
     /// The repository at `path`, opened from disk the first time any path

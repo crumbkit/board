@@ -254,9 +254,18 @@ fn a_mount_whose_mount_point_is_too_long_under_its_own_mount_is_malformed_and_no
         ("projects/p.json", r#"{"$type": "lr/project/v1"}"#),
     ]);
     let pointer = mount(&inner.path(), inner_commit);
+    // Two more repositories beside it, so the library's mounts are opened
+    // in parallel, where a malformed mount point is not opened either.
+    let (x, y) = (library(), library());
+    let (to_x, to_y) = (mount(&x.0.path(), x.1), mount(&y.0.path(), y.1));
     for (last, walked) in [(195, false), (170, true)] {
         let library = Scenario::new();
-        let commit = library.commit(&[(&path(last), &pointer)]);
+        let pointers = [
+            (&path(last)[..], &pointer[..]),
+            ("x.json", &to_x),
+            ("y.json", &to_y),
+        ];
+        let commit = library.commit(&pointers);
         let scenario = board();
         scenario.write(
             "vendor/lib.json",
@@ -278,6 +287,8 @@ fn a_mount_whose_mount_point_is_too_long_under_its_own_mount_is_malformed_and_no
         let inner = Source::Commit(inner_commit);
         let project = walked.then_some(Status::Ok);
         assert_eq!(status(&inner, "projects/p.json"), project, "{last}");
+        let opened = 3 + usize::from(walked);
+        assert_eq!(report.work.repositories, opened, "{last}");
     }
 }
 
@@ -303,6 +314,28 @@ fn a_check_opens_a_repository_mounted_at_two_commits_once_and_two_repositories_t
     let board = open(&scenario);
     board.check(None, None).unwrap();
     assert_eq!(board.repositories().opened(), 2);
+}
+
+#[test]
+fn a_check_opens_two_repositories_each_two_mounts_name_once_each_and_answers_warm_as_cold() {
+    let ((one, first), (two, second)) = (library(), library());
+    let scenario = board();
+    scenario
+        .write("a.json", Item::File(&mount(&one.path(), first)))
+        .write("b.json", Item::File(&mount(&one.path(), first)))
+        .write("c.json", Item::File(&mount(&two.path(), second)))
+        .write("d.json", Item::File(&mount(&two.path(), second)));
+    let cache = tempfile::tempdir().unwrap();
+    let checked = |cache: Option<&std::path::Path>| open(&scenario).check(None, cache).unwrap();
+    let cold = checked(None);
+    // Two pointers that name one commit are one blob, read once.
+    assert_eq!(cold.work.repositories, 2);
+    assert_eq!(cold.work.pointers_read, 2);
+    checked(Some(cache.path()));
+    let warm = checked(Some(cache.path()));
+    assert_eq!(warm.work.repositories, 2);
+    assert_eq!(warm.work.pointers_read, 2);
+    assert_eq!(warm.entries, cold.entries);
 }
 
 #[test]

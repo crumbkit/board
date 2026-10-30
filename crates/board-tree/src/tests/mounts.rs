@@ -182,6 +182,51 @@ fn a_linked_worktree_named_by_its_directory_and_by_its_git_file_is_opened_once()
 }
 
 #[test]
+fn opening_in_parallel_opens_a_repository_several_paths_name_once_and_distinct_ones_each_once() {
+    let (one, two, three) = (Scenario::new(), Scenario::new(), Scenario::new());
+    let a = one.commit(&[("x.json", "1")]);
+    let one_path = std::path::PathBuf::from(one.path());
+    let name = one_path.file_name().unwrap().to_str().unwrap();
+    let outer = Scenario::new();
+    let repositories = outer.repositories();
+    let same: Vec<_> = [
+        one.path(),
+        one.path(),
+        format!("{}/../{name}", one.path()),
+        format!("{}/.git", one.path()),
+        format!("{}/nowhere", one.path()),
+    ]
+    .into_iter()
+    .map(|path| (path.into(), a))
+    .collect();
+    repositories.open_all(&same);
+    assert_eq!(repositories.opened(), 1);
+    repositories.open_all(&same);
+    assert_eq!(
+        repositories.opened(),
+        1,
+        "an open repository is not opened again"
+    );
+    let distinct: Vec<_> = [&one, &two, &three]
+        .into_iter()
+        .map(|scenario| (scenario.path().into(), a))
+        .collect();
+    repositories.open_all(&distinct);
+    assert_eq!(repositories.opened(), 3);
+    let to_two = board_model::Mount {
+        repo: two.path(),
+        follow: "main".to_owned(),
+        commit: a,
+    };
+    assert!(repositories.mounted(&one_path, &to_two).is_some());
+    assert_eq!(
+        repositories.opened(),
+        3,
+        "a repository opened in parallel is lent"
+    );
+}
+
+#[test]
 fn a_mount_of_the_boards_own_repository_opens_nothing_and_another_opens_one() {
     let outer = Scenario::new();
     let pinned = outer.commit(&[("x.json", "1")]);
