@@ -233,6 +233,10 @@ struct Places {
     first_lost: bool,
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the scenario builder is the one writer of test files, and moves repositories and objects"
+)]
 impl Places {
     fn library_at(&self) -> PathBuf {
         match self.place {
@@ -431,9 +435,8 @@ impl Generated {
                 for (path, at) in [("l.json", Some(false)), ("longer/route.json", Some(true))] {
                     if *too_long == at {
                         self.scenario.write(path, Item::File(&pointer));
-                    } else {
-                        // The pointer may not be there.
-                        let _ = fs::remove_file(self.scenario.workdir().join(path));
+                    } else if self.scenario.workdir().join(path).exists() {
+                        self.scenario.write(path, Item::Deleted);
                     }
                 }
             }
