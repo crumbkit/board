@@ -60,7 +60,7 @@ plugin's own code carries.
 | `nearest` | string | `plugin::not_installed` when no plugin offers the capability and one offered name is near | the nearest offered name |
 | `plugins` | array of strings | `plugin::ambiguous` | each enabled plugin that offers the capability |
 | `stderr` | string | `plugin::failed`, `plugin::timeout`, `plugin::too_large`, `plugin::bad_output`; every plugin's own code; `sync::failed` | the end of the plugin's stderr, or of git's, with bytes that are not UTF-8 replaced |
-| `tables` | array of strings | `query::invalid` for a missing table | every table and view, and each attached plugin database |
+| `tables` | array of strings | `query::invalid` for a missing table | every table and view |
 | `columns` | object of string arrays | `query::invalid` for a missing column | each table or view the statement names, mapped to its columns; `{}` when it names none |
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |
 | `target` | string | a `symlink` code | the symlink's text, cut to 100 characters and its length when longer, with backslashes and the characters a logical path may not hold escaped |

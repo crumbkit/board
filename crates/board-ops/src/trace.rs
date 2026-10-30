@@ -173,10 +173,9 @@ mod tests {
 
     #[test]
     fn a_query_fills_the_views_of_what_it_decided_and_a_check_does_not() {
-        let plugins = crate::Plugins::default();
         let query = phases_of(|board| {
             board
-                .query("SELECT count(*) FROM entries", 1, None, None, &plugins)
+                .query("SELECT count(*) FROM entries", 1, None, None)
                 .unwrap();
         });
         assert!(query.contains(&"view"), "{query:?}");

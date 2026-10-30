@@ -35,7 +35,7 @@ def request(root: Path, capability: str) -> dict[str, Any]:
         "$type": "board/call/v1",
         "capability": capability,
         "input": {"suite": "/suites/a"},
-        "board": {"root": str(root), "database": str(root / "unused.sqlite")},
+        "board": {"root": str(root)},
     }
 
 

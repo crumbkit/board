@@ -5,7 +5,7 @@
 use std::fmt;
 use std::fmt::Write as _;
 
-use board_model::{Code, Fields, Location, LogicalPath, PluginName, Refusal};
+use board_model::{Code, Fields, Location, LogicalPath, Refusal};
 use board_ops::MAX_LIMIT;
 use board_ops::{
     Budget, CheckReport, Checked, Detail, EnableReport, Fallback, InitReport, Listed, LsReport,
@@ -139,7 +139,7 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
         ),
     );
     let listing = listing.summary(summary);
-    printer.noted(CHECK, listing, notes(report.memory, hints, &[]))
+    printer.noted(CHECK, listing, notes(report.memory, hints))
 }
 
 /// `check`'s document: each entry, degraded first, with the count of
@@ -291,8 +291,7 @@ pub(crate) fn rows_budget(bytes: usize) -> Budget {
     }
 }
 
-/// `query`'s rows: as text, the columns, then one JSON array per row. A
-/// note follows for each plugin that did not extract.
+/// `query`'s rows: as text, the columns, then one JSON array per row.
 pub(crate) fn query(printer: Printer, report: &QueryReport) -> Output {
     let rows: Vec<Whole> = report
         .rows
@@ -302,11 +301,8 @@ pub(crate) fn query(printer: Printer, report: &QueryReport) -> Output {
     let listing = Listing::uncounted(rows, report.truncated)
         .bounded(MAX_LIMIT)
         .described("rows");
-    let plugins: Vec<Value> = (report.plugins.iter())
-        .map(|failed| json!({"plugin": failed.plugin, "code": failed.code, "message": failed.message}))
-        .collect();
     let columns = json!(report.columns);
-    let mut summary = json!({"columns": columns, "plugins": plugins});
+    let mut summary = json!({"columns": columns});
     // Glue: crumbkit cannot tell a cut at the budget, which the index made,
     // from one at the limit, so Board names the budget's code itself.
     let over = Code::OutputOverBudget;
@@ -318,32 +314,20 @@ pub(crate) fn query(printer: Printer, report: &QueryReport) -> Output {
             "note: the next row would take the output past its budget ({over}); {hint}"
         ));
     }
-    lines.extend((report.plugins.iter()).map(|failed| {
-        let (plugin, code) = (&failed.plugin, &failed.code);
-        format!(
-            "note: plugin {plugin} did not extract: {code}: {}",
-            failed.message
-        )
-    }));
     let listing = listing.summary(Said::new(summary, columns.to_string()));
-    let fallbacks = &report.fallbacks;
-    printer.noted(QUERY, listing, notes(report.memory, lines, fallbacks))
+    printer.noted(QUERY, listing, notes(report.memory, lines))
 }
 
-/// `query`'s document: the rows, with the columns and any plugin that did
-/// not extract under `summary`.
+/// `query`'s document: the rows, with the columns under `summary`.
 const QUERY: Document<Listing<Whole, Said>> =
     Document::new("board", "query-report", 2, "The rows a query returned.");
 
 /// The notes for a reader beside a listing: that the index was in memory,
-/// each of `notes`, which say only what the document holds, then each
-/// plugin in `fallbacks` whose database was a temporary file.
-fn notes(memory: Option<Fallback>, notes: Vec<String>, fallbacks: &[PluginName]) -> Vec<Note> {
+/// then each of `notes`, which say only what the document holds.
+fn notes(memory: Option<Fallback>, notes: Vec<String>) -> Vec<Note> {
     let memory = memory.map(|fallback| Note::Always(memory_note(fallback)));
-    let temporary = plugins::temporary(fallbacks).into_iter().map(Note::Always);
     (memory.into_iter())
         .chain(notes.into_iter().map(Note::Text))
-        .chain(temporary)
         .collect()
 }
 
@@ -422,7 +406,7 @@ pub(crate) fn ls(printer: Printer, report: &LsReport, page: &crate::run::Page) -
     let summary = Said::new(json!({"location": at}), format!("{display}:"));
     let listing = page.first_of(rows.collect()).described("entries");
     let listing = listing.summary(summary);
-    printer.noted(LS, listing, notes(report.memory, Vec::new(), &[]))
+    printer.noted(LS, listing, notes(report.memory, Vec::new()))
 }
 
 /// `ls`'s document: the entries, with the directory's `location` under

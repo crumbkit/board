@@ -93,7 +93,7 @@ pub(crate) fn call(
         Ok(start) => start.map(OsString::from),
         Err(refusal) => return render::refused(printer, *refusal),
     };
-    match board.call(target, &input, &plugins, context.cache.as_deref()) {
+    match board.call(target, &input, &plugins) {
         Ok(report) => render::call(printer, &report),
         Err(error) => render::refused(printer, error.refusal()),
     }

@@ -110,42 +110,25 @@ fn stored(writer: &Writer, unreachable: bool) -> usize {
 
 /// The rows of every table a prune may delete from.
 fn counts(index: &Index) -> Vec<(String, i64)> {
-    [
-        "trees",
-        "blobs",
-        "bodies",
-        "validations",
-        "refs",
-        "links",
-        "extracted",
-    ]
-    .into_iter()
-    .map(|table| {
-        let sql = format!("SELECT count(*) FROM main.{table}");
-        let count = index
-            .connection
-            .query_row(&sql, [], |row| row.get(0))
-            .unwrap();
-        (table.to_owned(), count)
-    })
-    .collect()
+    ["trees", "blobs", "bodies", "validations", "refs", "links"]
+        .into_iter()
+        .map(|table| {
+            let sql = format!("SELECT count(*) FROM main.{table}");
+            let count = index
+                .connection
+                .query_row(&sql, [], |row| row.get(0))
+                .unwrap();
+            (table.to_owned(), count)
+        })
+        .collect()
 }
 
-/// `index` holding the facts `stored` gives, and a plugin that handled
-/// blobs 1 and 4, and 3 when `unreachable`. Returns it and the rows nothing
-/// reaches.
+/// `index` holding the facts `stored` gives, with blob 3 unreachable when
+/// `unreachable`. Returns it and the rows nothing reaches.
 fn filled_with(index: Index, unreachable: bool) -> (Index, usize) {
     let writer = index.write().unwrap();
-    let mut rows = stored(&writer, unreachable);
-    let view = writer.decide(Vec::new()).unwrap().view().unwrap();
-    let mut handled = vec![blob(1), blob(4)];
-    if unreachable {
-        handled.push(blob(3));
-        rows += 1;
-    }
-    view.trust("p", "1.0.0", "id").unwrap();
-    view.handled("p", "1.0.0", "id", &handled).unwrap();
-    (view.index, rows)
+    let rows = stored(&writer, unreachable);
+    (writer.decide(Vec::new()).unwrap().index, rows)
 }
 
 /// Prunes `index`, and returns it and the rows the prune deleted.

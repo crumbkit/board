@@ -1,7 +1,7 @@
 //! The byte budget of a `board query` run.
 
 use board_model::Code;
-use board_ops::{Board, Plugins, QueryError, QueryReport};
+use board_ops::{Board, QueryError, QueryReport};
 use board_scenario::Scenario;
 use serde_json::json;
 
@@ -22,7 +22,7 @@ fn answered(
 ) -> Result<QueryReport, QueryError> {
     let board = Board::open(scenario.workdir(), None).unwrap();
     let budget = Some(render::rows_budget(budget));
-    board.query(sql, limit, budget, None, &Plugins::default())
+    board.query(sql, limit, budget, None)
 }
 
 /// [`SQL`] answered as [`answered`] answers it, and rendered as `board query`
@@ -100,7 +100,7 @@ fn a_query_refuses_a_first_row_that_prints_past_its_budget_and_admits_one_that_f
 /// `board query --json` of [`SQL`] when the budget leaves its last row out.
 const GOLDEN: &str = concat!(
     r#"{"schema":"board/query-report/v2","data":[["a"],["b"]],"truncated":true,"#,
-    r#""summary":{"code":"board::output::over_budget","columns":["column1"],"plugins":[]}}"#,
+    r#""summary":{"code":"board::output::over_budget","columns":["column1"]}}"#,
     "\n"
 );
 

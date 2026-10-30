@@ -2,10 +2,8 @@
 
 import json
 import os
-import sqlite3
 import subprocess
 import sys
-from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -28,43 +26,12 @@ def plugin(request: dict[str, Any], cwd: Path) -> tuple[int, dict[str, Any]]:
     return ran.returncode, document
 
 
-def task(title: str, **fields: Any) -> dict[str, Any]:  # noqa: ANN401 - the frontmatter's other fields
-    """A `tasks/task/v2` task's frontmatter, as Board sends it to extraction."""
-    return {"$type": "tasks/task/v2", "title": title, "status": "open", **fields}
-
-
-def extract_request(database: Path, *records: tuple[str, dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "$type": "board/extract/v1",
-        "records": [
-            {"blob": blob, "path": f"/tasks/{blob}.md", "type": "tasks/task/v2", "record": record}
-            for blob, record in records
-        ],
-        "board": {"root": str(database.parent), "database": str(database)},
-    }
-
-
-def rows(database: Path) -> list[tuple[str, str, str, str | None]]:
-    with closing(sqlite3.connect(database)) as connection:
-        return connection.execute("SELECT blob, title, status, due FROM tasks_v2 ORDER BY blob").fetchall()
-
-
-def test_extraction_names_every_blob_and_replaces_each_blobs_row(tmp_path: Path) -> None:
-    database = tmp_path / "tasks@0.1.0.sqlite"
-    code, document = plugin(extract_request(database, ("a1", task("A")), ("b2", task("B", due="2026-10-01"))), tmp_path)
-    assert (code, document) == (0, {"$type": "board/extract-result/v1", "blobs": ["a1", "b2"]})
-    assert rows(database) == [("a1", "A", "open", None), ("b2", "B", "open", "2026-10-01")]
-    code, _ = plugin(extract_request(database, ("a1", task("A again", status="done"))), tmp_path)
-    assert code == 0
-    assert rows(database) == [("a1", "A again", "done", None), ("b2", "B", "open", "2026-10-01")]
-
-
 def call_request(root: Path, capability: str = "available") -> dict[str, Any]:
     return {
         "$type": "board/call/v1",
         "capability": capability,
         "input": {"repo": "/"},
-        "board": {"root": str(root), "database": str(root.parent / "tasks.sqlite")},
+        "board": {"root": str(root)},
     }
 
 
@@ -86,27 +53,10 @@ def test_a_capability_the_plugin_does_not_offer_is_refused(tmp_path: Path) -> No
     assert (code, document["code"]) == (1, "tasks::call::unknown_capability")
 
 
-def test_a_request_board_would_not_send_is_refused(tmp_path: Path) -> None:
-    request = extract_request(tmp_path / "tasks.sqlite", ("a1", task("A")))
-    request["$type"] = "board/other/v1"
+def test_a_request_board_would_not_send_is_refused_and_its_call_twin_is_answered(board: Board, tmp_path: Path) -> None:
+    request = call_request(board.root)
+    request["$type"] = "board/extract/v1"
     code, document = plugin(request, tmp_path)
     assert (code, document["code"]) == (1, "tasks::protocol::bad_request")
-    request["$type"] = "board/extract/v1"
+    request["$type"] = "board/call/v1"
     assert plugin(request, tmp_path)[0] == 0
-
-
-def test_a_record_the_plugin_cannot_read_is_handled_without_a_row_and_logged(tmp_path: Path) -> None:
-    database = tmp_path / "tasks@0.1.0.sqlite"
-    misfit = {"$type": "tasks/task/v2", "title": "Misfit", "status": "someday"}
-    ran = subprocess.run(
-        [sys.executable, "-m", "board_tasks"],
-        cwd=tmp_path,
-        input=json.dumps(extract_request(database, ("a1", task("A")), ("m2", misfit))),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert (ran.returncode, json.loads(ran.stdout)["blobs"]) == (0, ["a1", "m2"])
-    assert rows(database) == [("a1", "A", "open", None)]
-    assert ran.stderr.count("\n") == 1
-    assert "/tasks/m2.md" in ran.stderr

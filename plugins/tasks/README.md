@@ -1,7 +1,7 @@
 # tasks
 
-A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks and extracts
-each task's fields into its database. `available` sorts the tasks of the repos
+A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks through
+`board query`. `available` sorts the tasks of the repos
 in scope into the tasks to work on now, those due soon, the stale ones and
 those an owner holds. `add`, `claim`, `done`, `defer`, `drop` and `reviewed`
 write tasks.
@@ -115,7 +115,7 @@ only then are the tasks read again. So a call where nothing changed starts one
 `board query`, then the syncs beside one `board refs`. `unsynced` lists each
 repo whose sync or pin failed, with its code, and the call reads that repo at
 its pin. `degraded` counts the Markdown files under a `tasks/` directory in
-scope that are not a readable open task. `repos` lists the repos read.
+scope that are not a readable task. `repos` lists the repos read.
 
 An `after` that reaches a task in another repo than its task's own, such as a
 task in `/` naming one in a mount, is not followed and never blocks;
@@ -124,9 +124,10 @@ task in `/` naming one in a mount, is not followed and never blocks;
 clock changes for daylight saving, `from_hour` is counted with the offset in
 force at the call, so it can be an hour off.
 
-`board query` can join `p_tasks.tasks_v2` (`blob`, `title`, `status`, `due`, `defer`,
-`from_hour`, `reviewed`, `contexts` as a JSON list, `waits`, how many
-entries `after` holds, and `owner`), with `entries` on `blob`.
+`available` reads each task's frontmatter from `bodies` and checks it with the
+plugin's model. A task file is degraded, whatever its status, when check
+degrades it for more than a dangling or wrong-typed reference, or when the
+model refuses a record the board's schema admits.
 
 ## Writing tasks
 

@@ -106,6 +106,31 @@ def test_a_task_file_that_is_not_a_readable_task_is_counted_as_degraded(board: B
     assert (output["degraded"], titles(output)) == (3, ["Good"])
 
 
+def test_a_done_task_check_degrades_counts_as_degraded_and_its_valid_done_twin_neither_shows_nor_counts(
+    board: Board,
+) -> None:
+    board.write("tasks/good.md", task_v2("Good", reviewed=RECENT))
+    board.write("tasks/finished.md", task_v2("Finished", status="done", contexts=["home"]))
+    output = call(board)[1]
+    assert (output["degraded"], titles(output)) == (0, ["Good"])
+    board.write("tasks/finished.md", task_v2("Finished", status="done", contexts=["Not A Tag"]))
+    output = call(board)[1]
+    assert (output["degraded"], titles(output)) == (1, ["Good"])
+
+
+def test_a_done_task_the_schema_admits_and_the_model_refuses_counts_as_degraded_and_its_valid_twin_does_not(
+    board: Board,
+) -> None:
+    # JSON Schema's date-time admits a leap second, which the plugin's model refuses.
+    board.write("tasks/good.md", task_v2("Good", reviewed=RECENT))
+    board.write("tasks/finished.md", task_v2("Finished", status="done", defer="2026-06-30T23:59:59Z"))
+    output = call(board)[1]
+    assert (output["degraded"], titles(output)) == (0, ["Good"])
+    board.write("tasks/finished.md", task_v2("Finished", status="done", defer="2026-06-30T23:59:60Z"))
+    output = call(board)[1]
+    assert (output["degraded"], titles(output)) == (1, ["Good"])
+
+
 def test_the_remote_chooses_its_covering_repo_with_the_personal_repo_and_the_boards_own_tree(estate: Board) -> None:
     code, output = call(estate, "--remote", "git@github.com:example-org/home.git")
     assert code == 0, output

@@ -82,8 +82,7 @@ Board's code and hint.
 Both capabilities read the board through `board query`, `board refs` and
 `board get`. They consider only the controls in the board's own working tree,
 never those in mounted boards, though those controls' patterns reach mounted
-files. The plugin extracts nothing and writes nothing to the
-database Board gives it.
+files.
 
 ## Installing
 

@@ -1,8 +1,8 @@
 //! `plugin list` and `plugin find`.
 
-use board_model::{Code, PluginName, canonical_json};
-use board_ops::{Called, Plugin, PluginFindReport, PluginListReport, PluginState};
-use board_plugin::Capability;
+use board_model::{Code, canonical_json};
+use board_ops::{Plugin, PluginFindReport, PluginListReport, PluginState};
+use board_plugin::{CallReport, Capability};
 use board_tree::Status;
 use crumbkit::help::Leaf;
 use crumbkit::{Document, Listing, Prose, Row};
@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 
 use super::Health;
-use super::kit::{Note, Printer, Refused, Said};
+use super::kit::{Printer, Refused, Said};
 use crate::report::Output;
 use crate::run::Page;
 
@@ -42,9 +42,6 @@ struct Listed {
     description: Option<String>,
     /// Whether this board's configuration enables the plugin.
     enabled: bool,
-    /// The record types an installed plugin extracts.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    extract: Option<Value>,
     /// Why the plugin's manifest was refused.
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
@@ -113,7 +110,6 @@ impl Listed {
             code: code.map(Code::as_str),
             description: manifest.map(|manifest| manifest.description.clone()),
             enabled: plugin.enabled,
-            extract: manifest.map(|manifest| json!(manifest.extract)),
             message: match &plugin.state {
                 PluginState::BadManifest(error) => Some(error.to_string()),
                 PluginState::Installed(_) | PluginState::NotInstalled => None,
@@ -319,8 +315,7 @@ fn env(capability: &Capability) -> Option<Vec<String>> {
 }
 
 /// `call`: the output as canonical JSON, and as `data` with `--json`.
-pub(crate) fn call(printer: Printer, called: &Called) -> Output {
-    let report = &called.report;
+pub(crate) fn call(printer: Printer, report: &CallReport) -> Output {
     let value = json!({
         "plugin": report.plugin,
         "capability": report.capability,
@@ -330,13 +325,7 @@ pub(crate) fn call(printer: Printer, called: &Called) -> Output {
         value,
         canonical_json(&report.output).as_str().to_owned(),
     ));
-    let fallbacks = if called.fallback {
-        std::slice::from_ref(&report.plugin)
-    } else {
-        &[]
-    };
-    let notes = temporary(fallbacks).into_iter().map(Note::Always);
-    printer.noted(CALL_REPORT, answer, notes.collect())
+    printer.noted(CALL_REPORT, answer, Vec::new())
 }
 
 pub(crate) const CALL_REPORT: Document<Prose<Said, Refused>> = Document::new(
@@ -347,16 +336,3 @@ pub(crate) const CALL_REPORT: Document<Prose<Said, Refused>> = Document::new(
 );
 
 pub(super) const CALL: Leaf = Leaf::new(&["call"]).document(CALL_REPORT);
-
-/// A note for each plugin whose database is a temporary file though the
-/// index is kept.
-pub(crate) fn temporary(fallbacks: &[PluginName]) -> Vec<String> {
-    (fallbacks.iter())
-        .map(|plugin| {
-            format!(
-                "note: plugin {plugin}'s database is a temporary file for this run: \
-                 no directory for it can be made beside the index"
-            )
-        })
-        .collect()
-}

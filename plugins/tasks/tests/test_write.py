@@ -339,7 +339,7 @@ def racing(monkeypatch: pytest.MonkeyPatch, *codes: str) -> Racing:
     return repo
 
 
-REQUEST = CallRequest("done", {"path": "/repos/work/tasks/report.md"}, BoardContext("/board", "/db"))
+REQUEST = CallRequest("done", {"path": "/repos/work/tasks/report.md"}, BoardContext("/board"))
 
 
 def test_a_stale_put_is_tried_again_on_a_new_read_and_a_landed_one_is_not_written_twice(

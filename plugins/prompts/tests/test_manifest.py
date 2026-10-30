@@ -17,7 +17,7 @@ def test_the_committed_manifest_and_schema_are_the_ones_the_models_generate() ->
         assert (PLUGIN / "types" / path).read_text() == dumped(schema), path
 
 
-CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b", "database": "/d"}}'
+CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b"}}'
 
 
 def loads_pydantic(module: str) -> tuple[bool, str]:

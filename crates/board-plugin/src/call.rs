@@ -270,12 +270,11 @@ pub struct CallReport {
     pub output: Value,
 }
 
-/// Where a call runs: the board's root, the plugin's database and what the
-/// child inherits, and where each process started is added.
+/// Where a call runs: the board's root and what the child inherits, and
+/// where each process started is added.
 #[derive(Debug)]
 pub struct Context<'a> {
     pub root: &'a Path,
-    pub database: &'a Path,
     pub environment: &'a Environment,
     pub limits: Limits,
     pub spawned: &'a RefCell<Vec<Spawned>>,
@@ -303,7 +302,7 @@ pub fn invoke(
             capability: capability.name.clone(),
             source,
         })?;
-    let request = protocol::request(&capability.name, &input, context.root, context.database);
+    let request = protocol::request(&capability.name, &input, context.root);
     let plugin = &chosen.manifest.name;
     let context = Context {
         limits: Limits {
@@ -433,7 +432,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
 }
 
 /// Where a plugin runs: the depth of the call that runs it, and the variables
-/// its capability's `env` names, which an extraction leaves empty.
+/// its capability's `env` names.
 #[derive(Clone, Copy)]
 pub(crate) struct Child<'a> {
     pub(crate) depth: u32,
@@ -486,21 +485,6 @@ fn environment<'a>(
 pub enum CallError {
     #[error(transparent)]
     Discovery { source: DiscoveryError },
-    #[error("plugin {plugin} has no database: {} cannot be made: {source}", path.display())]
-    Database {
-        plugin: PluginName,
-        path: PathBuf,
-        source: std::io::Error,
-    },
-    #[error(
-        "plugin {plugin} has no database: a temporary directory cannot be made in {}: {source}",
-        parent.display()
-    )]
-    NoTemporaryDirectory {
-        plugin: PluginName,
-        parent: PathBuf,
-        source: std::io::Error,
-    },
     #[error("BOARD_CALL_DEPTH {text:?} is not a whole number")]
     BadDepth { text: OsString },
     #[error("this call is nested {depth} deep, and calls nest at most {MAX_DEPTH} deep")]
@@ -668,9 +652,6 @@ impl CallError {
             } => {
                 at = Some(pointer.clone());
                 (Code::PluginBadInput, Some(plugin), Some(capability))
-            }
-            Self::Database { plugin, .. } | Self::NoTemporaryDirectory { plugin, .. } => {
-                (Code::PluginNoDatabase, Some(plugin), None)
             }
             Self::Failed { plugin, .. } => (Code::PluginFailed, Some(plugin), None),
             Self::Start { plugin, .. } => (Code::PluginNotStarted, Some(plugin), None),

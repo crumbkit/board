@@ -16,7 +16,7 @@ def test_the_committed_manifest_and_schema_are_the_ones_the_shapes_generate() ->
     assert (PLUGIN / "types/controls/control/v1.schema.json").read_text() == dumped(schema())
 
 
-CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b", "database": "/d"}}'
+CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b"}}'
 
 
 def loads_pydantic(module: str) -> bool:

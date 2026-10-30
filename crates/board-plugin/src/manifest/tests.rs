@@ -10,7 +10,6 @@ fn manifest() -> Value {
         "description": "Open tasks and their due dates.",
         "run": ["python3", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
-        "extract": ["lr/task/v1"],
         "capabilities": [{
             "name": "due",
             "description": "Open tasks due before a date.",
@@ -44,7 +43,6 @@ fn a_full_manifest_is_admitted_with_its_schemas_compiled() {
     assert_eq!(manifest.name.as_str(), "tasks");
     assert_eq!(manifest.version.as_str(), "0.1.0");
     assert_eq!(manifest.run, ["python3", "-m", "board_tasks"]);
-    assert_eq!(manifest.extract[0].as_str(), "lr/task/v1");
     assert_eq!(manifest.capabilities[0].name.as_str(), "due");
     assert_eq!(
         manifest.capabilities[0].input.document(),
@@ -53,13 +51,13 @@ fn a_full_manifest_is_admitted_with_its_schemas_compiled() {
 }
 
 #[test]
-fn metadata_extract_and_capabilities_may_be_left_out() {
+fn metadata_and_capabilities_may_be_left_out() {
     let mut value = manifest();
-    for key in ["metadata", "extract", "capabilities"] {
+    for key in ["metadata", "capabilities"] {
         value.as_object_mut().unwrap().remove(key);
     }
     let manifest = parse(&value).unwrap();
-    assert!(manifest.metadata.is_empty() && manifest.extract.is_empty());
+    assert!(manifest.metadata.is_empty());
     assert!(manifest.capabilities.is_empty());
 }
 
@@ -303,6 +301,15 @@ fn icons_execution_and_snake_case_schema_keys_are_refused() {
     let capability = value["capabilities"][0].as_object_mut().unwrap();
     let schema = capability.remove("inputSchema").unwrap();
     capability.insert("input_schema".to_owned(), schema);
+    assert!(matches!(refused(&value), ManifestError::Shape { .. }));
+}
+
+#[test]
+fn a_manifest_naming_types_to_extract_is_refused_and_its_twin_without_them_is_admitted() {
+    let admitted = manifest();
+    assert!(parse(&admitted).is_ok());
+    let mut value = admitted;
+    value["extract"] = json!(["tasks/task/v2"]);
     assert!(matches!(refused(&value), ManifestError::Shape { .. }));
 }
 

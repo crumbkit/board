@@ -16,7 +16,7 @@ def test_the_committed_manifest_is_the_one_the_models_generate() -> None:
     assert (PLUGIN / "plugin.json").read_text() == dumped(manifest())
 
 
-CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b", "database": "/d"}}'
+CALL = '{"$type": "board/call/v1", "capability": "none", "input": {}, "board": {"root": "/b"}}'
 
 
 def loads_pydantic(module: str) -> bool:
@@ -38,7 +38,7 @@ def plugin(boards: Boards, capability: str, given: dict[str, Any]) -> tuple[int,
         "$type": "board/call/v1",
         "capability": capability,
         "input": given,
-        "board": {"root": str(boards.personal), "database": str(boards.cache / "unused.sqlite")},
+        "board": {"root": str(boards.personal)},
     }
     path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
     environment = {

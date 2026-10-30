@@ -57,8 +57,7 @@ Tables and views:
             status, code, change, role, schema
   records   entries of kind record, with body, the record as JSON
   refs, links, validations, blobs, trees, worktree, mounts, sources,
-  extracted, state
-  p_<name>  each enabled plugin's database
+  state
 
 Rows stop at 64 MiB of output, even with --all; --json then sets `truncated`
 and `cut.code`, board::output::over_budget, and the text notes it. A first
@@ -575,7 +574,7 @@ fn command(
         Command::Query { sql, page } => {
             let budget = Some(render::rows_budget(printer.view.budget()));
             let limit = page.limit().unwrap_or(usize::MAX);
-            match board.query(&sql, limit, budget, cache, &plugins(context)) {
+            match board.query(&sql, limit, budget, cache) {
                 Ok(report) => render::query(printer, &report),
                 Err(error) => render::refused(printer, error.refusal()),
             }

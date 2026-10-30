@@ -242,7 +242,6 @@ pub(crate) fn run(
                             1,
                             None,
                             Some(warm.path()),
-                            &board_ops::Plugins::default(),
                         )
                         .map(drop)
                         .map_err(|e| failed(&e)),
@@ -271,7 +270,7 @@ pub(crate) fn run(
 
 /// The median of `RUNS` calls of `tasks.available` on the board's own tree,
 /// which syncs no mount and reads no git remote, with the index in `warm`,
-/// after one call whose time is discarded: it extracts, and Python compiles
+/// after one call whose time is discarded: Python compiles
 /// the plugin's bytecode.
 fn call(board: &Board, warm: &Path, path: OsString, host: &Host) -> Result<Duration, BenchError> {
     let directory = host.data.join("board/plugins");
@@ -289,7 +288,7 @@ fn call(board: &Board, warm: &Path, path: OsString, host: &Host) -> Result<Durat
     let target: Target = "tasks.available".parse().map_err(|error| failed(&error))?;
     let once = || {
         board
-            .call(&target, br#"{"repo": "/"}"#, &plugins, Some(warm))
+            .call(&target, br#"{"repo": "/"}"#, &plugins)
             .map(drop)
             .map_err(|error| failed(&error))
     };

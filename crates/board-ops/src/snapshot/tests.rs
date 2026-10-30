@@ -141,7 +141,7 @@ fn viewed(view: &View) -> Vec<Checked> {
 /// Every table and view an agent can name, read whole. `state` leaves out
 /// when the last refresh began, which is a time, and the index's size after
 /// its last prune.
-const EVERY_TABLE: [&str; 13] = [
+const EVERY_TABLE: [&str; 12] = [
     "SELECT * FROM entries ORDER BY source, path",
     "SELECT * FROM records ORDER BY source, path",
     "SELECT * FROM bodies ORDER BY blob",
@@ -154,33 +154,7 @@ const EVERY_TABLE: [&str; 13] = [
     "SELECT * FROM sources ORDER BY source",
     "SELECT * FROM mounts ORDER BY source, path",
     "SELECT * FROM state WHERE key NOT IN ('refreshed_ns', 'pruned_pages', 'prunes') ORDER BY key",
-    "SELECT * FROM extracted ORDER BY plugin, version, blob",
 ];
-
-/// Marks every record the index would send a plugin extracting every type
-/// as handled, as a plugin naming every blob it was sent does.
-fn extract_everything(view: &View) {
-    let types = view
-        .query(
-            "SELECT DISTINCT type FROM entries WHERE type IS NOT NULL",
-            10_000,
-            None,
-        )
-        .unwrap();
-    let types: Vec<&str> = types
-        .rows
-        .iter()
-        .filter_map(|row| row[0].as_str())
-        .collect();
-    let blobs: Vec<_> = view
-        .unhandled("p", "1.0.0", &types)
-        .unwrap()
-        .into_iter()
-        .map(|unhandled| unhandled.blob)
-        .collect();
-    view.trust("p", "1.0.0", "id").unwrap();
-    view.handled("p", "1.0.0", "id", &blobs).unwrap();
-}
 
 #[test]
 fn the_blobs_view_shows_what_the_tree_reaches_while_the_cache_keeps_the_rest() {
@@ -227,8 +201,8 @@ fn prune(index: Index) -> usize {
     pruned
 }
 
-/// Decides `scenario` through `warm` and through a cold index, extracting
-/// everything after each, and requires them to agree: the same entries, the
+/// Decides `scenario` through `warm` and through a cold index, and requires
+/// them to agree: the same entries, the
 /// same references, views that show those entries, and every table alike.
 /// Returns what the warm index reported.
 fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError> {
@@ -237,7 +211,6 @@ fn agrees(scenario: &Scenario, warm: Index) -> Result<CheckReport, TestCaseError
     let warm = filled(&board, warm);
     let cold = filled(&board, cold);
     for snapshot in [&warm, &cold] {
-        extract_everything(&snapshot.view);
         prop_assert_eq!(
             viewed(&snapshot.view),
             sorted(snapshot.report.entries.clone())
@@ -268,7 +241,7 @@ fn warm_decides_as_cold(
     let cache = tempfile::tempdir().unwrap();
     let root = open(generated.scenario()).repository().path().to_path_buf();
     let warm = || Index::open(Some(cache.path()), &root).unwrap();
-    extract_everything(&filled(&open(generated.scenario()), warm()).view);
+    filled(&open(generated.scenario()), warm());
     generated.write(after);
 
     agrees(generated.scenario(), warm())?;

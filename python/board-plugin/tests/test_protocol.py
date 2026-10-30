@@ -2,9 +2,9 @@
 
 import json
 
-from board_plugin.protocol import CallRequest, ExtractRequest, JsonValue, PluginError, serve
+from board_plugin.protocol import CallRequest, JsonValue, PluginError, serve
 
-BOARD = {"root": "/b", "database": "/d.sqlite"}
+BOARD = {"root": "/b"}
 
 
 def echo(request: CallRequest) -> dict[str, JsonValue]:
@@ -14,23 +14,9 @@ def echo(request: CallRequest) -> dict[str, JsonValue]:
     return request.input
 
 
-def blobs(request: ExtractRequest) -> list[str]:
-    """An extraction that handles every blob it is sent."""
-    return [record.blob for record in request.records]
-
-
 def call(given: dict[str, JsonValue]) -> bytes:
     """A `board/call/v1` request holding `given`."""
     return json.dumps({"$type": "board/call/v1", "capability": "x", "input": given, "board": BOARD}).encode()
-
-
-EXTRACT = json.dumps(
-    {
-        "$type": "board/extract/v1",
-        "records": [{"blob": "a1", "path": "/a", "type": "demo/a/v1", "record": {}}],
-        "board": BOARD,
-    }
-).encode()
 
 
 def test_a_call_is_answered_with_a_result_and_a_malformed_one_is_refused() -> None:
@@ -41,11 +27,12 @@ def test_a_call_is_answered_with_a_result_and_a_malformed_one_is_refused() -> No
     assert json.loads(document)["code"] == "demo::protocol::bad_request"
 
 
-def test_an_extraction_is_refused_by_a_plugin_that_extracts_nothing_and_answered_by_one_that_does() -> None:
-    code, document = serve("demo", echo, EXTRACT)
+def test_a_request_of_another_type_is_refused_and_its_call_twin_is_answered() -> None:
+    other = json.dumps({"$type": "board/extract/v1", "capability": "x", "input": {}, "board": BOARD}).encode()
+    code, document = serve("demo", echo, other)
     assert (code, json.loads(document)["code"]) == (1, "demo::protocol::bad_request")
-    code, document = serve("demo", echo, EXTRACT, blobs)
-    assert (code, json.loads(document)) == (0, {"$type": "board/extract-result/v1", "blobs": ["a1"]})
+    code, document = serve("demo", echo, call({}))
+    assert (code, json.loads(document)) == (0, {"$type": "board/call-result/v1", "output": {}})
 
 
 def test_a_plugin_error_is_reported_with_its_code_and_fields() -> None:

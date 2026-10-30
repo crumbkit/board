@@ -1,14 +1,80 @@
 //! `plugin list` and `plugin find` (docs/plugins.md, Finding plugins).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use board_model::{CapabilityName, Code, PluginName, RecordType};
-use board_plugin::{DiscoveryError, Manifest, ManifestError, MetaFilter, installed};
+use board_model::{CapabilityName, Code, Fields, PluginName, RecordType, Refusal};
+use board_plugin::{
+    CallError, DiscoveryError, Environment, Installed, Limits, Manifest, ManifestError, MetaFilter,
+    installed,
+};
 use board_tree::Reader;
 use serde_json::Value;
 
 use crate::Board;
 use crate::types::Held;
+
+/// Where plugins are installed, what they inherit and what a run may take.
+#[derive(Clone, Debug, Default)]
+pub struct Plugins<'a> {
+    pub directory: Option<&'a Path>,
+    pub environment: Environment,
+    pub limits: Limits,
+}
+
+impl Plugins<'_> {
+    /// Every installed plugin; none without a plugins directory.
+    pub(crate) fn installed(&self) -> Result<Vec<Installed>, CallError> {
+        match self.directory {
+            Some(directory) => {
+                installed(directory).map_err(|source| CallError::Discovery { source })
+            }
+            None => Ok(Vec::new()),
+        }
+    }
+}
+
+/// A call that failed: the plugin's or Board's refusal.
+#[derive(Debug, thiserror::Error)]
+pub enum CallFailed {
+    #[error(
+        "the {plugin} plugin ships {} at {}, and the board does not hold the same schema at {}",
+        problem.record_type,
+        shipped.display(),
+        problem.path
+    )]
+    Schema {
+        plugin: PluginName,
+        shipped: PathBuf,
+        problem: SchemaProblem,
+    },
+    #[error(transparent)]
+    Call {
+        #[from]
+        source: CallError,
+    },
+}
+
+impl CallFailed {
+    /// This failure as Board reports it: Board's code or the
+    /// plugin's own, with the end of the plugin's stderr when it ran.
+    pub fn refusal(&self) -> Refusal {
+        match self {
+            Self::Schema {
+                plugin, problem, ..
+            } => Refusal::new(
+                problem.code,
+                self,
+                &Fields {
+                    plugin: Some(plugin.clone()),
+                    record_type: Some(problem.record_type.clone()),
+                    schema: Some(problem.path.clone()),
+                    ..Fields::default()
+                },
+            ),
+            Self::Call { source } => source.refusal(),
+        }
+    }
+}
 
 /// Every installed plugin, and every enabled one that is not installed, in
 /// name order.

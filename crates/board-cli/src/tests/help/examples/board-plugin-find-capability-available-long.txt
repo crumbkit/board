@@ -1,2 +1,2 @@
 PLUGIN  CAPABILITY  ENABLED  DESCRIPTION                                                                                                                                                   VERSION
-tasks   available   false    Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.  0.2.0
+tasks   available   false    Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.  0.3.0

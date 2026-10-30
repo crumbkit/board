@@ -126,7 +126,7 @@ class Board:
             "$type": "board/call/v1",
             "capability": capability,
             "input": given,
-            "board": {"root": str(self.root), "database": str(self.cache / "unused.sqlite")},
+            "board": {"root": str(self.root)},
         }
         path = os.pathsep.join([str(board_binary().parent), os.environ.get("PATH", "")])
         ran = subprocess.run(

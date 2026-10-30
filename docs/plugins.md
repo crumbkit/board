@@ -5,7 +5,7 @@ says what comes next.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
 or a changelog. It is a separate program that Board starts, talking JSON over
-stdin and stdout, with its own disposable SQLite database.
+stdin and stdout. It reads the board through `board query`.
 
 ## Installing and enabling
 
@@ -47,7 +47,6 @@ plugin update proceeds and how a plugin migrates its records.
   "description": "Open tasks to sweep, and the calls that change them.",
   "run": ["uv", "run", "--frozen", "python", "-m", "board_tasks"],
   "metadata": { "area": "planning" },
-  "extract": ["tasks/task/v2"],
   "types": ["tasks/task/v2"],
   "capabilities": [
     {
@@ -74,8 +73,7 @@ match. Each capability is an MCP Tool object (MCP 2025-11-25): `description`,
 `inputSchema` and `outputSchema` are required, and `title`, `annotations`,
 `_meta`, `timeout` and `env` are optional. Each schema's root is `"type": "object"`. `annotations`
 holds only MCP's five hint keys, which Board ignores. `_meta`
-is any JSON object. `icons` and `execution` are refused. `extract`
-lists the record types the plugin reads (see Extraction and databases). `types` lists the
+is any JSON object. `icons` and `execution` are refused. `types` lists the
 types whose schemas the plugin ships, at `types/<namespace>/<kind>/v<n>.schema.json`
 in its directory. Each type's namespace is the plugin's name, never
 `board`. The manifest refuses
@@ -137,7 +135,7 @@ Then Board:
      "$type": "board/call/v1",
      "capability": "available",
      "input": { "repo": "/" },
-     "board": { "root": "/Users/me/board", "database": "/Users/me/.cache/board/…/tasks@0.1.0.sqlite" }
+     "board": { "root": "/Users/me/board" }
    }
    ```
 
@@ -166,20 +164,11 @@ at `board.root`. It never opens Board's index. Board increments `BOARD_CALL_DEPT
 0) and refuses a call arriving at 8, or at a value that is not a whole number,
 with `board::plugin::too_deep`.
 
-## Extraction and databases
-
-A plugin that lists types in `extract` gets each record of those types once per
-blob, in batches, in the refresh before `query`, and writes what it needs into
-its own SQLite database, which `board query` attaches as `p_<name>`. Extraction
-must be a pure function of one record's bytes.
-[plugins/extraction.md](plugins/extraction.md) has the protocol, when it runs,
-and how Board keeps each database.
-
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
 `schema_missing`, `schema_differs`, `ambiguous`,
-`bad_input`, `bad_output`, `failed`, `no_database`, `not_started`, `timeout`,
+`bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 
 ## Writing a plugin in Python

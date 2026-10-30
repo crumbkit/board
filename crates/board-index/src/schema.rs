@@ -3,7 +3,7 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 17;
+pub const INDEX_VERSION: u32 = 18;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
@@ -86,18 +86,12 @@ CREATE TABLE links (
     destination TEXT NOT NULL,
     PRIMARY KEY (blob, ordinal)
 ) WITHOUT ROWID;
-CREATE TABLE extracted (
-    plugin TEXT NOT NULL,
-    version TEXT NOT NULL,
-    blob TEXT NOT NULL,
-    PRIMARY KEY (plugin, version, blob)
-) WITHOUT ROWID;
 ";
 
 /// Deletes the facts nothing current reaches: each tree beneath a source's
 /// root, each object those trees hold, and each working-tree blob. A
 /// validation and its references go unless both blobs are reached.
-pub(crate) const PRUNE: [&str; 7] = [
+pub(crate) const PRUNE: [&str; 6] = [
     "DELETE FROM main.trees WHERE tree NOT IN temp.kept",
     "DELETE FROM main.blobs WHERE blob NOT IN temp.kept",
     "DELETE FROM main.links WHERE blob NOT IN temp.kept",
@@ -105,7 +99,6 @@ pub(crate) const PRUNE: [&str; 7] = [
     "DELETE FROM main.validations
      WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
     "DELETE FROM main.refs WHERE record NOT IN temp.kept OR schema NOT IN temp.kept",
-    "DELETE FROM main.extracted WHERE blob NOT IN temp.kept",
 ];
 
 /// Counts a prune in `state`, so a run can tell when another process has
@@ -194,14 +187,6 @@ WHERE (record, schema) IN (SELECT blob, schema FROM temp.resolved);
 CREATE TEMP VIEW IF NOT EXISTS links AS
 SELECT * FROM main.links
 WHERE blob IN (SELECT blob FROM temp.resolved WHERE role = 'markdown');
-CREATE TEMP VIEW IF NOT EXISTS extracted AS
-SELECT * FROM main.extracted
-WHERE blob IN (
-    SELECT r.blob FROM temp.resolved AS r
-    JOIN main.blobs AS b ON b.blob = r.blob AND b.role = r.role
-    JOIN main.validations AS v ON v.record = r.blob AND v.schema = r.schema
-    WHERE b.code IS NULL AND v.code IS NULL
-);
 CREATE TEMP VIEW IF NOT EXISTS trees AS
 WITH RECURSIVE reached (tree) AS (
     SELECT tree FROM main.sources WHERE tree IS NOT NULL

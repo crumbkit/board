@@ -27,11 +27,10 @@ pwd -P > directory.txt
 printf '%s' '{"$type": "board/call-result/v1", "output": {"count": 2}}'
 "#;
 
-/// A board, a plugins directory and a cache.
+/// A board and a plugins directory.
 struct Fixture {
     board: Scenario,
     data: Scenario,
-    cache: tempfile::TempDir,
 }
 
 impl Fixture {
@@ -45,7 +44,6 @@ impl Fixture {
         Self {
             board,
             data: Scenario::new(),
-            cache: tempfile::tempdir().unwrap(),
         }
     }
 
@@ -138,9 +136,7 @@ impl Fixture {
             limits,
         };
         let board = open(&self.board);
-        let called = board
-            .call(&target, input.as_bytes(), &plugins, Some(self.cache.path()))
-            .map(|called| called.report);
+        let called = board.call(&target, input.as_bytes(), &plugins);
         (called, board.take_trace())
     }
 
@@ -187,14 +183,7 @@ fn a_call_sends_one_request_and_returns_the_checked_output() {
     // Board sends the canonical root; on macOS a temporary directory under
     // /var is reached through the symlink /private/var.
     let root = fixture.board.workdir().canonicalize().unwrap();
-    assert_eq!(request["board"]["root"], root.to_str().unwrap());
-    let database = PathBuf::from(request["board"]["database"].as_str().unwrap());
-    assert!(database.starts_with(fixture.cache.path()), "{database:?}");
-    assert!(
-        database.ends_with("plugins/tasks@0.1.0.sqlite"),
-        "{database:?}"
-    );
-    assert!(database.parent().unwrap().is_dir());
+    assert_eq!(request["board"], json!({"root": root.to_str().unwrap()}));
 
     let ran_in = std::fs::read_to_string(directory.join("directory.txt")).unwrap();
     assert_eq!(
@@ -954,28 +943,6 @@ fn a_call_nested_eight_deep_is_refused() {
     }
     assert!(at("7").is_ok());
     assert!(at("0").is_ok());
-}
-
-#[test]
-fn without_a_cache_the_database_is_a_temporary_file_for_the_run() {
-    let fixture = Fixture::tasks(RECORDING);
-    let target: Target = "tasks.due".parse().unwrap();
-    let directory = fixture.data.workdir().join("plugins");
-    let plugins = Plugins {
-        directory: Some(&directory),
-        environment: environment(),
-        limits: Limits::default(),
-    };
-    open(&fixture.board)
-        .call(&target, br#"{"n": 1}"#, &plugins, None)
-        .unwrap();
-    let request: Value = serde_json::from_slice(
-        &std::fs::read(fixture.plugin("tasks").join("request.json")).unwrap(),
-    )
-    .unwrap();
-    let database = PathBuf::from(request["board"]["database"].as_str().unwrap());
-    assert!(database.ends_with("tasks@0.1.0.sqlite"));
-    assert!(!database.parent().unwrap().exists(), "{database:?}");
 }
 
 #[test]

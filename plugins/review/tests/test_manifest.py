@@ -19,7 +19,7 @@ def test_the_committed_manifest_and_schemas_are_the_ones_the_shapes_generate() -
 
 def request(capability: str) -> str:
     """A call of `capability` against a board that is not there."""
-    board = {"root": "/no-such-board", "database": "/no-such-database"}
+    board = {"root": "/no-such-board"}
     return json.dumps({"$type": "board/call/v1", "capability": capability, "input": {}, "board": board})
 
 

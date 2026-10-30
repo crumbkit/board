@@ -82,13 +82,7 @@ fn a_generated_board_holds_valid_open_tasks_and_one_in_five_waits_on_the_first()
         AND json_extract(body, '$.status') = 'open'";
     let report = Board::open(root.path(), None)
         .unwrap()
-        .query(
-            sql,
-            1,
-            None,
-            Some(cache.path()),
-            &board_ops::Plugins::default(),
-        )
+        .query(sql, 1, None, Some(cache.path()))
         .unwrap();
     assert_eq!(report.rows, [[100, 20]]);
 }
@@ -242,7 +236,6 @@ fn the_put_row_writes_a_record_each_run_on_a_generated_board_and_skips_a_given_o
             1,
             None,
             Some(cache.path()),
-            &board_ops::Plugins::default(),
         )
         .unwrap();
     assert_eq!(report.rows, [[5]]);

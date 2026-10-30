@@ -72,7 +72,7 @@ impl Lined {
 /// The names a statement could have used instead of one that is missing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Known {
-    /// Every table and view, and each attached plugin database.
+    /// Every table and view.
     Tables(Vec<String>),
     /// Each table or view the statement names, with its columns; empty when
     /// it names none.

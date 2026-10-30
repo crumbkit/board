@@ -599,22 +599,6 @@ fn calling_plugins(starts: &mut Starts) {
     }
 }
 
-/// A plugin call whose database has nowhere to be: the cache directory is a
-/// file, and `TMPDIR` names no directory.
-fn unkept(starts: &mut Starts) {
-    let xdg = calling();
-    xdg.write("xdg/cache/board", Item::File(""));
-    let place = starts
-        .keep(enabling(r#""notes""#))
-        .stdin("{}")
-        .xdg(xdg.workdir().join("xdg"));
-    let place = place.env("TMPDIR", "/nonexistent");
-    starts.kept.push(Box::new(xdg));
-    let line = "call notes.due";
-    starts.add(&place, Code::PluginNoDatabase, line);
-    starts.variable(&place, Code::PluginNoDatabase, line, "TMPDIR");
-}
-
 /// A call to a plugin whose schema the board holds otherwise, and `plugin
 /// list` on a board lacking an enabled plugin's schema.
 fn enabling_plugins(starts: &mut Starts) {
@@ -910,7 +894,6 @@ fn starts(twins: bool) -> Starts {
     on_the_seed(&mut starts);
     unopened(&mut starts);
     calling_plugins(&mut starts);
-    unkept(&mut starts);
     enabling_plugins(&mut starts);
     apart(&mut starts);
     through_mounts(&mut starts);

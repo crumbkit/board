@@ -35,7 +35,6 @@ its run entered:
 | `index.refresh.head` | listing `HEAD`'s trees |
 | `view` | filling the views with what the snapshot decided, for `query` |
 | `query.sql` | running the SQL statement |
-| `plugin.extract` | extracting records for one plugin, in `query` |
 | `plugin.call` | running a capability |
 | `plugin.reply` | from starting a plugin process to the first byte of its reply, once for each process that replied |
 | `put.validate` | checking a record before it is written |
@@ -45,11 +44,9 @@ its run entered:
 `work` holds the counts a run has: `entries`, `hashed`, `parsed`, `validated`,
 `trees`, `rows`, `target_changed`, how many targets `refs --field` left
 unread because they changed after the check (it does not name them), and
-`started`, the plugin processes a call or a query's extraction started. Each
-extraction batch and each call starts one. `plugin.reply` includes the
+`started`, the plugin processes a call started. `plugin.reply` includes the
 plugin's own work, such as the `board query` it runs, which records its own
-line one `depth` deeper. In a `query`, it sums the replies of the extraction
-batches. The runs that refused a changed target, from both log files:
+line one `depth` deeper. The runs that refused a changed target, from both log files:
 `cat ~/.cache/board/timings.jsonl.1 ~/.cache/board/timings.jsonl 2>/dev/null | jq -c 'select(.work.target_changed) | {at_ms, root, n: .work.target_changed}'`.
 
 Before a line would take the log past 1 MiB, the log is renamed to

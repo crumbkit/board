@@ -1,16 +1,14 @@
 //! `board query`: one read-only SQL statement over the index
 //! (docs/architecture/index.md).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use board_index::{Budget, Fallback, IndexError, View};
-use board_model::{Code, Fields, Known, PluginName, Refusal};
-use board_plugin::Installed;
+use board_model::{Code, Fields, Known, Refusal};
 use serde_json::Value;
 
 use crate::board::Board;
 use crate::check::CheckError;
-use crate::extraction::{Plugins, database};
 
 /// The most rows `query` returns, and the most entries a listing shows,
 /// unless asked otherwise (STANDARDS.md 23).
@@ -33,28 +31,12 @@ pub struct QueryReport {
     /// rows past their budget.
     pub over_budget: bool,
     pub memory: Option<Fallback>,
-    /// Each enabled plugin that could not extract.
-    pub plugins: Vec<PluginFailed>,
-    /// Each enabled plugin whose database was a temporary file though the
-    /// index is kept.
-    pub fallbacks: Vec<PluginName>,
-}
-
-/// An enabled plugin that could not extract: its code, Board's or its own,
-/// and the message.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PluginFailed {
-    pub plugin: PluginName,
-    pub code: String,
-    pub message: String,
 }
 
 impl Board {
     /// Refreshes the index kept under `cache` and decides every entry, as an
-    /// unscoped check does, extracts for each enabled plugin and attaches its
-    /// database as `p_<name>`, then runs `sql`, returning at most `limit`
-    /// rows, within `budget` when there is one. A plugin that fails is
-    /// reported and the query still runs. When another process prunes what
+    /// unscoped check does, then runs `sql`, returning at most `limit` rows,
+    /// within `budget` when there is one. When another process prunes what
     /// the views show before `sql` runs, it all runs again, three times in
     /// all.
     pub fn query(
@@ -63,131 +45,63 @@ impl Board {
         limit: usize,
         budget: Option<Budget>,
         cache: Option<&Path>,
-        plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
-        let mut tries = 1;
-        loop {
-            match self.query_once(sql, limit, budget, cache, plugins) {
-                Err(QueryError::Index {
-                    source: IndexError::Pruned,
-                }) if tries < TRIES => tries += 1,
-                result => return result,
-            }
-        }
+        retried(|| {
+            let (view, memory) = self.decided(cache)?;
+            self.run(&view, memory, sql, limit, budget)
+        })
     }
 
-    fn query_once(
+    /// The views of every entry, decided through the index kept under
+    /// `cache`, and why that index is in memory when it is.
+    pub(crate) fn decided(
         &self,
+        cache: Option<&Path>,
+    ) -> Result<(View, Option<Fallback>), QueryError> {
+        let index = self.index(cache).map_err(QueryError::from)?;
+        let snapshot = self.snapshot(index, None)?;
+        let view = self.view(snapshot.decided)?;
+        Ok((view, snapshot.report.memory))
+    }
+
+    /// Runs `sql` over `view`, returning at most `limit` rows, within `budget`
+    /// when there is one.
+    pub(crate) fn run(
+        &self,
+        view: &View,
+        memory: Option<Fallback>,
         sql: &str,
         limit: usize,
         budget: Option<Budget>,
-        cache: Option<&Path>,
-        plugins: &Plugins<'_>,
     ) -> Result<QueryReport, QueryError> {
-        let index = self.index(cache).map_err(QueryError::from)?;
-        let snapshot = self.snapshot(index, None)?;
-        let view = &self.view(snapshot.decided)?;
-        let mut report = QueryReport {
-            columns: Vec::new(),
-            rows: Vec::new(),
-            truncated: false,
-            over_budget: false,
-            memory: snapshot.report.memory,
-            plugins: Vec::new(),
-            fallbacks: Vec::new(),
-        };
-        // Held until the query ends, so a temporary database outlives it.
-        let mut databases = Vec::new();
-        let installed = plugins.installed();
-        for name in &self.config().plugins {
-            let failed = |code: &str, message: String| PluginFailed {
-                plugin: name.clone(),
-                code: code.to_owned(),
-                message,
-            };
-            let refused = |refusal: Refusal| failed(refusal.code.as_str(), refusal.message);
-            let found = match &installed {
-                Ok(installed) => installed
-                    .iter()
-                    .find(|installed| installed.name == name.as_str()),
-                Err(error) => {
-                    report.plugins.push(refused(error.refusal()));
-                    continue;
-                }
-            };
-            let (manifest, directory) = match found {
-                Some(Installed {
-                    manifest: Ok(manifest),
-                    directory,
-                    ..
-                }) => (manifest, directory),
-                Some(Installed {
-                    manifest: Err(error),
-                    ..
-                }) => {
-                    report
-                        .plugins
-                        .push(failed(error.code().as_str(), error.to_string()));
-                    continue;
-                }
-                None => {
-                    report.plugins.push(failed(
-                        Code::PluginNotInstalled.as_str(),
-                        format!("plugin {name} is enabled but not installed"),
-                    ));
-                    continue;
-                }
-            };
-            let database = match database(view.storage(), manifest) {
-                Ok(database) => database,
-                Err(error) => {
-                    report.plugins.push(refused(error.refusal()));
-                    continue;
-                }
-            };
-            if let Err(error) = self.extract_into(view, manifest, directory, &database, plugins) {
-                report.plugins.push(refused(error.refusal()));
-            }
-            if database.fallback() {
-                report.fallbacks.push(name.clone());
-            }
-            let alias = format!("p_{}", name.as_str().replace('-', "_"));
-            if let Err(source) = view.attach(&alias, database.path()) {
-                let error = Unattached {
-                    path: database.path().to_path_buf(),
-                    alias,
-                    source,
-                };
-                report
-                    .plugins
-                    .push(failed(Code::PluginNoDatabase.as_str(), error.to_string()));
-            }
-            databases.push(database);
-        }
         let timed = self.timed("query.sql");
         let rows = view
             .query(sql, limit, budget)
             .map_err(|error| unknown(view, sql, error))?;
         drop(timed);
         self.trace.borrow_mut().count("rows", rows.rows.len());
-        report.columns = rows.columns;
-        report.rows = rows.rows;
-        report.truncated = rows.truncated;
-        report.over_budget = rows.over_budget;
-        Ok(report)
+        Ok(QueryReport {
+            columns: rows.columns,
+            rows: rows.rows,
+            truncated: rows.truncated,
+            over_budget: rows.over_budget,
+            memory,
+        })
     }
 }
 
-/// A plugin database `query` could not attach, so its alias is missing.
-#[derive(Debug, thiserror::Error)]
-#[error(
-    "plugin database {} cannot be read, so {alias} is not attached; deleting it is safe: {source}",
-    path.display()
-)]
-struct Unattached {
-    path: PathBuf,
-    alias: String,
-    source: IndexError,
+/// Runs `once` again while another process prunes what its views show
+/// before its statement runs, three times in all.
+pub(crate) fn retried<T>(mut once: impl FnMut() -> Result<T, QueryError>) -> Result<T, QueryError> {
+    let mut tries = 1;
+    loop {
+        match once() {
+            Err(QueryError::Index {
+                source: IndexError::Pruned,
+            }) if tries < TRIES => tries += 1,
+            result => return result,
+        }
+    }
 }
 
 /// A query that could not run.
@@ -228,12 +142,11 @@ impl QueryError {
     }
 }
 
-/// The names a statement can use: the views a run makes, the tables of the
-/// cache, and each attached plugin database.
+/// The names a statement can use: the views a run makes and the tables of
+/// the cache.
 const TABLES: &str = "\
     SELECT name FROM sqlite_temp_schema WHERE type IN ('table', 'view') \
     UNION SELECT name FROM sqlite_schema WHERE type IN ('table', 'view') \
-    UNION SELECT name FROM pragma_database_list WHERE name NOT IN ('main', 'temp') \
     ORDER BY name";
 
 /// `error`, with the names there are when `SQLite` says the statement names a
@@ -266,8 +179,6 @@ fn unknown(view: &View, sql: &str, error: IndexError) -> QueryError {
                     let columns = names(&format!("SELECT name FROM pragma_table_info('{table}')"));
                     (table, columns)
                 })
-                // An attached database's name has no columns; a table has.
-                .filter(|(_, columns)| !columns.is_empty())
                 .collect(),
         )
     } else {

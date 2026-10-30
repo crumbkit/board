@@ -21,7 +21,7 @@ def manifest() -> dict[str, JsonValue]:
     return {
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
-        "version": "0.2.0",
+        "version": "0.3.0",
         # SKILL.md's description, the callout an agent sees first.
         "description": (
             "Sweep the person's tasks one at a time, marking each done, deferring, dropping or editing it, and add a "
@@ -32,7 +32,6 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_tasks"],
         "metadata": {"area": "planning"},
-        "extract": [TASK_TYPE],
         "types": [TASK_TYPE],
         "capabilities": [
             {

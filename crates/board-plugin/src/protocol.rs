@@ -13,24 +13,14 @@ use serde_json::{Map, Value, json};
 pub const CALL_TYPE: &str = "board/call/v1";
 pub const CALL_RESULT_TYPE: &str = "board/call-result/v1";
 pub const ERROR_TYPE: &str = "board/error/v1";
-pub const EXTRACT_TYPE: &str = "board/extract/v1";
-pub const EXTRACT_RESULT_TYPE: &str = "board/extract-result/v1";
 
 /// The `board/call/v1` request's bytes.
-pub(crate) fn request(
-    capability: &CapabilityName,
-    input: &Value,
-    root: &Path,
-    database: &Path,
-) -> Vec<u8> {
+pub(crate) fn request(capability: &CapabilityName, input: &Value, root: &Path) -> Vec<u8> {
     canonical_json(&json!({
         "$type": CALL_TYPE,
         "capability": capability.as_str(),
         "input": input,
-        "board": {
-            "root": root.to_string_lossy(),
-            "database": database.to_string_lossy(),
-        },
+        "board": {"root": root.to_string_lossy()},
     }))
     .into_bytes()
 }
@@ -57,15 +47,6 @@ pub(crate) struct RawCallResult {
     #[serde(rename = "$type")]
     _tag: String,
     pub(crate) output: Value,
-}
-
-/// `board/extract-result/v1`: the blobs the plugin handled.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct RawExtractResult {
-    #[serde(rename = "$type")]
-    _tag: String,
-    pub(crate) blobs: Vec<String>,
 }
 
 #[derive(Deserialize)]

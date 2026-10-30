@@ -20,8 +20,6 @@ T = TypeVar("T")
 LIMIT = 10_000
 # The most paths one `board refs` or `board get` answers: Board's MAX_LIMIT.
 PATHS_PER_RUN = 10_000
-# What a query report lists for a plugin whose database it could not attach.
-NO_DATABASE = "board::plugin::no_database"
 # What `board get` and `board refs` answer for the paths they left out once a run printed its
 # byte budget, and what a query report carries when it left rows out that would pass it.
 OVER_BUDGET = "board::output::over_budget"
@@ -81,26 +79,15 @@ class Board:
 
         Board leaves rows out past `limit` or at its byte budget, and either
         is `True` here, so the caller can ask for the rest by key.
-        When the report lists this plugin's own extraction as failed, its rows
-        may be stale, so that is `<plugin>::board::refused` with the failure's
-        code. `board::plugin::no_database` is not an extraction failure: the
-        database was not attached, and a query that reads it fails on its own.
         """
         return self._query(sql, "--limit", str(limit))
 
     def _query(self, sql: str, *page: str) -> tuple[list[list[Any]], bool]:
         """`query`'s answer, with `page` the flags that say how many rows to return."""
         report = self.document("query", *page, sql)
-        summary = report.get("summary")
-        plugins = cast("dict[str, Any]", summary).get("plugins") if isinstance(summary, dict) else None
         rows, truncated = report.get("data"), report.get("truncated")
-        if not isinstance(rows, list) or not isinstance(truncated, bool) or not isinstance(plugins, list):
+        if not isinstance(rows, list) or not isinstance(truncated, bool):
             raise self._failed(("query",), None, "printed a report without rows")
-        for failed in cast("list[dict[str, Any]]", plugins):
-            code = failed.get("code")
-            if failed.get("plugin") == self.plugin and isinstance(code, str) and code != NO_DATABASE:
-                why = f"{self.plugin} could not extract, so its rows may be stale: {failed.get('message')}"
-                raise self._refused(("query",), code, why, None)
         return cast("list[list[Any]]", rows), truncated
 
     def rows(self, sql: str) -> list[list[Any]]:

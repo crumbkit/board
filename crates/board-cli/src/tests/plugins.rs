@@ -105,7 +105,7 @@ fn plugin_list_fields_admits_description_and_refuses_an_unknown_field() {
     assert_eq!(
         text(&output.stderr),
         "error: --fields names an unknown field 'summary'\n  \
-         help:  use the valid fields: capabilities, code, description, enabled, extract, message, metadata, name, offers, run, schemas, status, version\n  \
+         help:  use the valid fields: capabilities, code, description, enabled, message, metadata, name, offers, run, schemas, status, version\n  \
          code:  board::cli::usage\n"
     );
 }
@@ -121,7 +121,7 @@ fn plugin_list_json_adds_offers_and_is_otherwise_unchanged() {
             r#"{"schema":"board/plugin-list-report/v2","data":["#,
             r#"{"code":"board::plugin::bad_manifest","enabled":false,"message":"the manifest is not a plugin manifest: missing field `$type`","name":"broken","offers":[],"status":"degraded"},"#,
             r#"{"code":"board::plugin::not_installed","enabled":true,"name":"gone","offers":[],"status":"degraded"},"#,
-            r#"{"capabilities":[{"_meta":{},"description":"Open tasks due before a date.","inputSchema":{"type":"object"},"name":"due","outputSchema":{"type":"object"}}],"description":"Open tasks.","enabled":true,"extract":[],"metadata":{"area":"planning"},"name":"tasks","offers":["due"],"run":["./run"],"status":"ok","version":"0.1.0"}"#,
+            r#"{"capabilities":[{"_meta":{},"description":"Open tasks due before a date.","inputSchema":{"type":"object"},"name":"due","outputSchema":{"type":"object"}}],"description":"Open tasks.","enabled":true,"metadata":{"area":"planning"},"name":"tasks","offers":["due"],"run":["./run"],"status":"ok","version":"0.1.0"}"#,
             r#"],"total":3,"truncated":false}"#,
             "\n"
         )
@@ -620,60 +620,19 @@ fn a_call_names_a_target_or_a_capability_but_not_both() {
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
 }
 
+/// A query starts no plugin, so one that would fail does not change its
+/// answer or its stderr.
 #[test]
-fn query_reports_a_plugin_that_did_not_extract_and_still_answers() {
+fn a_query_on_a_board_enabling_a_failing_plugin_answers_as_with_a_working_one() {
     let (board, data) = installed();
-    board
-        .write(
-            ".board/types/lr/task/v1.schema.json",
-            Item::File(r#"{"type": "object"}"#),
-        )
-        .write("tasks/a.json", Item::File(r#"{"$type": "lr/task/v1"}"#));
-    data.write(
-        "plugins/tasks/plugin.json",
-        Item::File(&TASKS.replace(r#""run""#, r#""extract": ["lr/task/v1"], "run""#)),
-    )
-    .write("plugins/tasks/run", Item::Executable(&answering("", 3)));
-    let sql = "SELECT name FROM p_tasks.sqlite_schema";
-    let report = json(&call(&board, &data, &["--json", "query", sql], ""));
-    assert_eq!(report["data"], serde_json::json!([["board_database"]]));
-    assert_eq!(report["summary"]["plugins"][0]["plugin"], "tasks");
-    assert_eq!(
-        report["summary"]["plugins"][0]["code"],
-        "board::plugin::failed"
-    );
-    let output = call(&board, &data, &["query", sql], "");
-    assert_eq!(output.code, 0);
-    assert!(
-        text(&output.stderr).contains("note: plugin tasks did not extract: board::plugin::failed"),
-        "{}",
-        text(&output.stderr)
-    );
-
-    data.write("plugins/tasks/run", Item::Executable(
-        "#!/bin/sh\ncat > /dev/null\nprintf '%s' '{\"$type\": \"board/extract-result/v1\", \"blobs\": []}'\n",
-    ));
-    let report = json(&call(&board, &data, &["--json", "query", sql], ""));
-    assert_eq!(report["summary"]["plugins"], serde_json::json!([]));
-}
-
-#[test]
-fn query_attaches_each_enabled_plugins_database_with_hyphens_as_underscores() {
-    let (board, data) = installed();
-    board.write(
-        ".board/board.json",
-        Item::File(r#"{"$type": "board/config/v1", "plugins": ["reading-list"]}"#),
-    );
-    install(&data, "reading-list", &answering(RESULT, 0));
-    let attached = "SELECT name FROM p_reading_list.sqlite_schema";
-    let output = call(&board, &data, &["--json", "query", attached], "");
-    assert_eq!(
-        json(&output)["data"],
-        serde_json::json!([["board_database"]])
-    );
-    let disabled = "SELECT count(*) FROM p_tasks.sqlite_schema";
-    let output = call(&board, &data, &["--json", "query", disabled], "");
-    assert_eq!(json(&output)["code"], "board::query::invalid");
+    let sql = "SELECT count(*) FROM entries";
+    install(&data, "tasks", &answering(RESULT, 0));
+    let working = call(&board, &data, &["--json", "query", sql], "");
+    install(&data, "tasks", &answering("", 3));
+    let failing = call(&board, &data, &["--json", "query", sql], "");
+    assert_eq!(failing.code, 0);
+    assert_eq!(text(&failing.stdout), text(&working.stdout));
+    assert_eq!(text(&failing.stderr), text(&working.stderr));
 }
 
 /// A plugins directory holding notes, which ships the schema of
@@ -963,29 +922,4 @@ fn input_the_capability_refuses_hints_how_to_see_its_schema_and_valid_input_runs
     let schema = ["plugin", "find", "--capability", "due", "--json"];
     assert_eq!(call(&board, &data, &schema, "").code, 0);
     assert_eq!(call(&board, &data, &["call", "tasks.due"], "{}").code, 0);
-}
-
-/// A call whose plugin database fell back to a temporary file says so on
-/// stderr, in text and in JSON; the same call with its database beside the
-/// index prints no note.
-#[test]
-fn a_call_whose_database_is_temporary_notes_it_and_one_beside_the_index_does_not() {
-    let note = "note: plugin tasks's database is a temporary file for this run: \
-                no directory for it can be made beside the index\n";
-    for json in [false, true] {
-        let stderr = |fallback| {
-            let called = board_ops::Called {
-                report: board_plugin::CallReport {
-                    plugin: "tasks".parse().unwrap(),
-                    capability: "due".parse().unwrap(),
-                    output: json!({"count": 2}),
-                },
-                fallback,
-            };
-            let printer = crate::render::Printer::of(json, 1 << 20, &["call", "tasks.due"]);
-            text(&crate::render::call(printer, &called).stderr)
-        };
-        assert_eq!(stderr(true), note, "json: {json}");
-        assert_eq!(stderr(false), "", "json: {json}");
-    }
 }

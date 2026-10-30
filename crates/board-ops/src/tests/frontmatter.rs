@@ -10,7 +10,7 @@ use board_tree::Status;
 use serde_json::json;
 
 use super::{board, check, open, status};
-use crate::{Absent, Plugins};
+use crate::Absent;
 
 fn path(text: &str) -> LogicalPath {
     text.parse().unwrap()
@@ -160,7 +160,6 @@ fn query_reads_a_markdown_records_frontmatter_as_its_body_and_its_type() {
             10,
             None,
             None,
-            &Plugins::default(),
         )
         .unwrap();
     assert_eq!(

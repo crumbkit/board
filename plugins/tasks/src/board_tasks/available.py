@@ -11,7 +11,7 @@ from board_plugin.board import Board
 from board_plugin.day import day_start, today
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_tasks import tables
+from board_tasks import models
 from board_tasks.models import FIELDS, TASK_TYPE, TREE_CODES
 
 HORIZONS = {"not-today": 1, "not-this-week": 6, "soon": 20, "someday": 90}
@@ -23,39 +23,28 @@ SHOWN = 100
 # is read at its pin.
 SYNC_DEADLINE = 5.0
 SYNC_TIMEOUT = "tasks::repo::sync_timeout"
-# Each Markdown file under a `tasks/` directory of its repo that may be an open task: its repo's root, its
-# path, its Board code, and the open task extracted from it, or NULLs when none was.
-TASK_COLUMNS = (
-    "substr(e.logical, 1, length(e.logical) - length(e.path))",
-    "e.logical",
-    "e.code",
-    "t.title",
-    "t.due",
-    "t.defer",
-    "t.from_hour",
-    "t.reviewed",
-    "t.contexts",
-    "t.waits",
-    "t.owner",
-)
+# Each Markdown file under a `tasks/` directory of its repo that may be a task: its repo's root, its path, its
+# Board code, and its frontmatter as JSON when it is a `tasks/task/v2` record that parses, or NULL.
+TASK_COLUMNS = ("substr(e.logical, 1, length(e.logical) - length(e.path))", "e.logical", "e.code", "b.body")
 TASKS = f"""
 SELECT {", ".join(TASK_COLUMNS)}
-FROM entries AS e LEFT JOIN p_tasks.tasks_v2 AS t ON t.blob = e.blob AND e.type = 'tasks/task/v2'
-WHERE e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/tasks/*' AND (t.blob IS NULL OR t.status = 'open')
+FROM entries AS e LEFT JOIN bodies AS b ON b.blob = e.blob AND e.type = 'tasks/task/v2'
+WHERE e.path GLOB '*.md' AND ('/' || e.path) GLOB '*/tasks/*'
 ORDER BY e.logical
 """  # noqa: S608 - the columns interpolated are constants
-# The notes repos and the task files in one query, since each `board query` costs a `board` run. The repos'
-# rows are padded with NULLs to the tasks' width.
+# The notes repos and the task files in one query, since each `board query` costs a `board` run. The narrower
+# of the two is padded with NULLs to the other's width.
+WIDTH = max(len(repos.COLUMNS), len(TASK_COLUMNS))
 LISTING = f"""
-SELECT 'repo', *{", NULL" * (len(TASK_COLUMNS) - len(repos.COLUMNS))} FROM ({repos.REPOS})
+SELECT 'repo', *{", NULL" * (WIDTH - len(repos.COLUMNS))} FROM ({repos.REPOS})
 UNION ALL
-SELECT 'task', * FROM ({TASKS})
+SELECT 'task', *{", NULL" * (WIDTH - len(TASK_COLUMNS))} FROM ({TASKS})
 """  # noqa: S608 - the queries interpolated are constants
 
 
 @dataclass(frozen=True)
 class Task:
-    """An open task, as extracted, with the repo that holds it."""
+    """An open task, with the repo that holds it. `defer` is as the frontmatter wrote it."""
 
     repo: str
     path: str
@@ -78,7 +67,6 @@ def available(request: CallRequest) -> dict[str, object]:
     one query, then the syncs and the refs together.
     """
     board = Board(request.board.root, "tasks")
-    tables.make(request.board.database)
     name, given = request.input.get("repo"), request.input.get("remote")
     with ThreadPoolExecutor() as pool:
         origin = pool.submit(repos.caller_origin) if name is None and given is None else None
@@ -122,7 +110,7 @@ def listing(board: Board) -> tuple[list[repos.Listed], list[list[Any]]]:
     rows = board.rows(LISTING)
     width = 1 + len(repos.COLUMNS)
     found = repos.parsed(board.plugin, [row[1:width] for row in rows if row[0] == "repo"])
-    return found, [row[1:] for row in rows if row[0] == "task"]
+    return found, [row[1 : 1 + len(TASK_COLUMNS)] for row in rows if row[0] == "task"]
 
 
 def resolve(board: Board, tasks: list[Task]) -> tuple[dict[str, list[str]], list[dict[str, str]]]:
@@ -197,35 +185,45 @@ def pin(repo: repos.Repo) -> str | None:
 
 
 def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
-    """The open tasks in `roots`, and how many of their task files are degraded or hold a date that cannot be read."""
+    """The open tasks in `roots`, and how many of their task files are degraded or hold a value it cannot read.
+
+    A task file is degraded whatever its status when it is no `tasks/task/v2` record, when check degrades it for
+    more than the tree, or when the plugin's model refuses a record the board's schema admitted.
+    """
     tasks: list[Task] = []
     degraded = 0
-    for root, path, code, title, due, defer, hour, reviewed, contexts, waits, owner in rows:
+    for root, path, code, body in rows:
         at = repos.root(str(root))
         if at not in roots:
             continue
-        if title is None or (code is not None and code not in TREE_CODES):
+        if body is None or (code is not None and code not in TREE_CODES):
             degraded += 1
             continue
         try:
+            written: dict[str, Any] = json.loads(body)
+            task = models.Task.model_validate(written)
+            defer = written.get("defer")
+            if task.status != "open":
+                continue
             if defer is not None and defer not in HORIZONS:
-                until(defer)
-            task = Task(
-                at,
-                str(path),
-                str(title),
-                _date(due),
-                defer,
-                hour,
-                _date(reviewed),
-                json.loads(contexts),
-                bool(waits),
-                owner,
-            )
+                until(str(defer))
         except ValueError:
             degraded += 1
             continue
-        tasks.append(task)
+        tasks.append(
+            Task(
+                at,
+                str(path),
+                task.title,
+                task.due,
+                None if defer is None else str(defer),
+                task.from_hour,
+                task.reviewed,
+                list(task.contexts),
+                bool(task.after),
+                task.owner,
+            )
+        )
     return tasks, degraded
 
 
@@ -300,7 +298,3 @@ def opened(hour: int | None, day: dt.date, now: dt.datetime, start: dt.timedelta
     midnight = dt.datetime.combine(day, dt.time(), now.tzinfo)
     at = midnight + dt.timedelta(hours=hour)
     return now >= (at + dt.timedelta(days=1) if at < midnight + start else at)
-
-
-def _date(value: object) -> dt.date | None:
-    return None if value is None else dt.date.fromisoformat(str(value))

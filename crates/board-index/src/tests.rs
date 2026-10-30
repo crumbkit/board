@@ -61,17 +61,6 @@ fn filled(cache: &Path) -> View {
     writer.decide(Vec::new()).unwrap().view().unwrap()
 }
 
-/// `index` once a writer has decided no entries.
-fn decided(index: Index) -> View {
-    index
-        .write()
-        .unwrap()
-        .decide(Vec::new())
-        .unwrap()
-        .view()
-        .unwrap()
-}
-
 fn has_fact(index: Index) -> bool {
     let writer = index.deferred().unwrap();
     writer.blob(blob(1), Role::Json).unwrap().is_some()
@@ -667,7 +656,7 @@ fn a_query_cannot_run_a_pragma_but_can_call_a_pragma_function() {
 }
 
 #[test]
-fn a_query_cannot_attach_a_database_but_a_plugin_database_attaches() {
+fn a_query_cannot_attach_or_detach_a_database_and_one_that_reads_runs() {
     let cache = tempfile::tempdir().unwrap();
     let index = filled(cache.path());
     let target = cache.path().join("x.sqlite");
@@ -677,15 +666,7 @@ fn a_query_cannot_attach_a_database_but_a_plugin_database_attaches() {
     assert!(!target.exists(), "no file is created");
     let refused = index.query("DETACH DATABASE temp", 10, None).unwrap_err();
     assert_eq!(refused.code(), Code::QueryInvalid);
-    let plugin = cache.path().join("plugin.sqlite");
-    rusqlite::Connection::open(&plugin)
-        .unwrap()
-        .execute_batch("CREATE TABLE notes (n INTEGER); INSERT INTO notes VALUES (7)")
-        .unwrap();
-    index.attach("p_notes", &plugin).unwrap();
-    let admitted = index
-        .query("SELECT n FROM p_notes.notes", 10, None)
-        .unwrap();
+    let admitted = index.query("SELECT 7", 10, None).unwrap();
     assert_eq!(admitted.rows, [vec![serde_json::json!(7)]]);
 }
 

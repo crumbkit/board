@@ -10,7 +10,6 @@ use board_tree::LOCK_WAIT;
 
 use super::{board, canonical, file, path, put};
 use crate::Board;
-use crate::extraction::Plugins;
 use crate::put::{Expect, PutError, PutReport};
 
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, open, task};
@@ -970,13 +969,10 @@ fn check_and_query_answer_from_a_warm_index_as_from_a_cold_one_after_a_write_thr
     let (library, commit) = library();
     let scenario = mounting(&library, commit);
     let cache = tempfile::tempdir().unwrap();
-    let plugins = Plugins::default();
     let sql = "SELECT source, path, logical, blob FROM records ORDER BY source, path";
     let board = open(&scenario);
     board.check(None, Some(cache.path())).unwrap();
-    board
-        .query(sql, 100, None, Some(cache.path()), &plugins)
-        .unwrap();
+    board.query(sql, 100, None, Some(cache.path())).unwrap();
     put(&scenario, "/vendor/tasks/a", Expect::Any, &task("")).unwrap();
     let board = open(&scenario);
     let warm = board.check(None, Some(cache.path())).unwrap();
@@ -987,7 +983,7 @@ fn check_and_query_answer_from_a_warm_index_as_from_a_cold_one_after_a_write_thr
             .iter()
             .any(|entry| entry.logical.as_ref() == Some(&path("/vendor/tasks/a")))
     );
-    let rows = |cache| board.query(sql, 100, None, cache, &plugins).unwrap().rows;
+    let rows = |cache| board.query(sql, 100, None, cache).unwrap().rows;
     assert_eq!(rows(Some(cache.path())), rows(None));
 }
 

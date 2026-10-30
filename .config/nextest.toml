@@ -51,7 +51,6 @@ filter = '''
   | test(=put::tests::expect_over_a_file_too_large_to_read_compares_its_whole_blob)
   | test(=put::tests::file::a_file_over_the_size_limit_is_refused_and_one_at_the_limit_is_admitted)
   | test(=tests::get_reads_a_file_of_16_mib_and_refuses_a_larger_one)))
-| (package(board-plugin) & test(=extract::tests::a_batch_holds_at_most_sixteen_mebibytes_of_records))
 | (package(board-tree) & (test(=tests::links::a_record_of_pointer_type_too_large_to_read_does_not_shadow_its_directory) | test(=tests::reading::a_file_of_exactly_the_limit_is_read_and_one_byte_more_is_too_large)))
 | (package(xtask) & (binary_id(xtask::bench) | test(/^bench::tests::/)))
 '''

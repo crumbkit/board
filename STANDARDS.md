@@ -1,6 +1,6 @@
 # Standards
 
-Rules 1 to 29 cover the Rust workspace; P1 to P6 cover Python. Each rule says
+Rules 1 to 29 cover the Rust workspace; P1 to P5 cover Python. Each rule says
 what enforces it. A rule without a gate is still a rule.
 
 ## Types
@@ -230,5 +230,4 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
 - **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`, run in every Python project by `bin/lint` and `bin/test`.
 - **P3. Typed edges.** Board validates a call's input and output, and the records in the board's own tree, against the plugin's schemas (docs/plugins.md), so a plugin types them with TypedDicts and imports pydantic only to generate its schemas. A test compares the committed manifest and schemas with the generated ones, and another that a call loads no pydantic. A plugin that checks more than its schemas state validates with pydantic models with `extra="forbid"`.
 - **P4. Board's contract.** Rules 3, 4 and 17 apply to the protocol: every document carries `$type`, every error a stable code `<plugin>::<area>::<reason>`, the exit code is 0 or 1, and logs go to stderr only.
-- **P5. Pure extraction.** Extraction is a function of one record's bytes. Anything spanning records is a query.
-- **P6. Tests.** Test against real fixture boards and the real protocol. Rule 19 applies: sentences as names, every refusal paired with an admitted twin, no retries.
+- **P5. Tests.** Test against real fixture boards and the real protocol. Rule 19 applies: sentences as names, every refusal paired with an admitted twin, no retries.

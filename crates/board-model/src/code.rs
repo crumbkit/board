@@ -100,7 +100,6 @@ codes! {
     PluginBadInput => "board::plugin::bad_input",
     PluginBadOutput => "board::plugin::bad_output",
     PluginFailed => "board::plugin::failed",
-    PluginNoDatabase => "board::plugin::no_database",
     PluginNotStarted => "board::plugin::not_started",
     PluginTimeout => "board::plugin::timeout",
     PluginTooLarge => "board::plugin::too_large",

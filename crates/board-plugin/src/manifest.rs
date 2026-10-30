@@ -169,8 +169,6 @@ struct RawManifest {
     #[serde(default)]
     metadata: Map<String, Value>,
     #[serde(default)]
-    extract: Vec<RecordType>,
-    #[serde(default)]
     types: Vec<RecordType>,
     #[serde(default)]
     capabilities: Vec<RawCapability>,
@@ -222,7 +220,6 @@ pub struct Manifest {
     /// The program and its arguments; never empty.
     pub run: Vec<String>,
     pub metadata: Map<String, Value>,
-    pub extract: Vec<RecordType>,
     /// The types whose schemas the plugin ships, each in its own namespace.
     pub types: Vec<RecordType>,
     pub capabilities: Vec<Capability>,
@@ -324,7 +321,6 @@ impl Manifest {
             description: raw.description,
             run: raw.run,
             metadata: raw.metadata,
-            extract: raw.extract,
             types: raw.types,
             capabilities,
         })

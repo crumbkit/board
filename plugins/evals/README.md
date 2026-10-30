@@ -69,8 +69,7 @@ Board checks the limit before the plugin runs. Case folding is SQLite's
 `lower`, which folds ASCII letters only.
 
 Each capability makes one `board query` over the `records` view, using
-`json_each` and `json_extract` on the record body. The plugin extracts nothing
-and writes nothing to its database. It lists an eval whose only fault is a
+`json_each` and `json_extract` on the record body. It lists an eval whose only fault is a
 dangling or wrong-typed reference, and leaves out one that Board marks
 degraded for any other reason. It also leaves out an eval that a board's own
 looser schema admits but the plugin's model refuses.

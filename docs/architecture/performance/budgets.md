@@ -28,7 +28,7 @@ calls `tasks.available` with `--repo /`, so it syncs no mount and reads no git
 remote. The call that syncs notes repos waits on git and their remotes, and has
 no budget. The row times the snapshot, the plugin's start, and the `board query` and `board refs`
 runs the plugin makes with the `board` binary beside xtask. The first call is discarded,
-because it extracts and Python compiles the plugin's bytecode. Bench skips the
+because Python compiles the plugin's bytecode then. Bench skips the
 row, and says why, when the board does not enable tasks or `uv` is not on
 `PATH`. With `uv`, a missing `board` beside xtask fails bench with
 `xtask::bench::no_board`. Bench does not rebuild `board` and cannot tell a

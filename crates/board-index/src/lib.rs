@@ -4,8 +4,6 @@
 //! hash again (git's racy-clean rule). Deleting it changes no answer, only
 //! speed.
 
-mod database;
-mod extract;
 mod open;
 mod query;
 mod schema;
@@ -13,8 +11,6 @@ mod server;
 mod store;
 mod timing;
 
-pub use crate::database::{DatabaseError, PluginDatabase};
-pub use crate::extract::Unhandled;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::{Budget, Rows};
 pub use crate::schema::INDEX_VERSION;

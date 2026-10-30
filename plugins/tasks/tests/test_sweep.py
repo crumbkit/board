@@ -1,6 +1,7 @@
 """The sweep's sections at a fixed moment, from tasks as `available` reads them, with no `board` run."""
 
 import datetime as dt
+import json
 from typing import Any
 
 from board_tasks.available import Task, read, sweep
@@ -133,7 +134,8 @@ def test_a_date_defer_ends_when_the_persons_day_starts_and_not_at_midnight() -> 
 
 def test_a_task_whose_dates_cannot_be_read_is_degraded_and_one_whose_dates_can_is_read() -> None:
     def row(defer: str, due: str | None = None) -> list[Any]:
-        return ["", f"/tasks/{defer}.md", None, defer, due, defer, None, "2026-10-25", "[]", 0, None]
+        body = {"$type": "tasks/task/v2", "title": defer, "status": "open", "defer": defer, "reviewed": "2026-10-25"}
+        return ["", f"/tasks/{defer}.md", None, json.dumps(body | ({} if due is None else {"due": due}))]
 
     rows = [row("2026-10-25T25:00:00Z"), row("tomorrow"), row("soon", due="2026-13-01"), row("2026-10-25t10:00:00Z")]
     tasks, degraded = read(rows, ["/"])

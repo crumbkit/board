@@ -5,8 +5,6 @@ where a test mounts a notes repo of its own.
 """
 
 import json
-import sqlite3
-from contextlib import closing
 from typing import Any
 
 from conftest import Board, git, notes_repo, task_v2
@@ -92,20 +90,6 @@ def test_a_commit_mounted_twice_is_one_repo_whose_done_task_unblocks(board: Boar
     assert blocking(board, "/repos/a")["/repos/a/tasks/after.md"] == ["/repos/a/tasks/pending.md"]
     refused = board.json("call", "tasks.available", "--repo", "/repos/z")
     assert (refused["code"], refused["fields"]["repos"]) == ("tasks::repo::not_found", ["/", "/repos/a"])
-
-
-def test_a_call_whose_own_extraction_fails_is_refused_with_its_code_and_one_whose_extraction_works_answers(
-    board: Board,
-) -> None:
-    board.write("tasks/a.md", task_v2("A"))
-    assert available(board)["available"]["total"] == 1
-    (database,) = board.cache.rglob("tasks@*.sqlite")
-    with closing(sqlite3.connect(database)) as connection, connection:
-        # The table keeps the columns `available` reads, so its query prepares, and extraction's insert fails.
-        connection.execute("CREATE TRIGGER refuse BEFORE INSERT ON tasks_v2 BEGIN SELECT RAISE(ABORT, 'no'); END")
-    board.write("tasks/b.md", task_v2("B"))
-    error = board.json("call", "tasks.available", "--repo", "/")
-    assert (error["code"], error["fields"]["code"]) == ("tasks::board::refused", "board::plugin::failed"), error
 
 
 def logged(board: Board) -> list[dict[str, Any]]:
