@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use board_model::{CapabilityName, Code, Fields, PluginName, RecordType, Refusal};
 use board_plugin::{
     CallError, DiscoveryError, Environment, Installed, Limits, Manifest, ManifestError, MetaFilter,
-    installed,
+    Origin, built_in, installed,
 };
 use board_tree::Reader;
 use serde_json::Value;
@@ -21,30 +21,18 @@ pub struct Plugins<'a> {
     pub limits: Limits,
 }
 
-impl Plugins<'_> {
-    /// Every installed plugin; none without a plugins directory.
-    pub(crate) fn installed(&self) -> Result<Vec<Installed>, CallError> {
-        match self.directory {
-            Some(directory) => {
-                installed(directory).map_err(|source| CallError::Discovery { source })
-            }
-            None => Ok(Vec::new()),
-        }
-    }
-}
-
 /// A call that failed: the plugin's or Board's refusal.
 #[derive(Debug, thiserror::Error)]
 pub enum CallFailed {
     #[error(
-        "the {plugin} plugin ships {} at {}, and the board does not hold the same schema at {}",
+        "the {plugin} plugin ships {} {}, and the board does not hold the same schema at {}",
         problem.record_type,
-        shipped.display(),
+        shipped.as_ref().map_or_else(|| "built into Board".to_owned(), |shipped| format!("at {}", shipped.display())),
         problem.path
     )]
     Schema {
         plugin: PluginName,
-        shipped: PathBuf,
+        shipped: Option<PathBuf>,
         problem: SchemaProblem,
     },
     #[error(transparent)]
@@ -76,11 +64,11 @@ impl CallFailed {
     }
 }
 
-/// Every installed plugin, and every enabled one that is not installed, in
-/// name order.
+/// Every built-in and installed plugin, and every enabled one that is
+/// neither, in name order.
 #[derive(Debug)]
 pub struct PluginListReport {
-    pub plugins: Vec<Plugin>,
+    pub plugins: Vec<PluginEntry>,
 }
 
 impl PluginListReport {
@@ -91,9 +79,11 @@ impl PluginListReport {
 }
 
 #[derive(Debug)]
-pub struct Plugin {
+pub struct PluginEntry {
     /// The plugins directory's entry, or the name the board enables.
     pub name: String,
+    /// The installed plugin that shares a built-in one's name.
+    pub shadows: Option<PathBuf>,
     /// Whether the board's configuration names it.
     pub enabled: bool,
     pub state: PluginState,
@@ -118,9 +108,10 @@ pub enum PluginState {
     NotInstalled,
 }
 
-impl Plugin {
+impl PluginEntry {
     pub fn code(&self) -> Option<Code> {
         match &self.state {
+            PluginState::Installed(_) if self.shadows.is_some() => Some(Code::PluginDuplicate),
             PluginState::Installed(_) => self.schemas.first().map(|problem| problem.code),
             PluginState::BadManifest(error) => Some(error.code()),
             PluginState::NotInstalled => Some(Code::PluginNotInstalled),
@@ -142,16 +133,37 @@ pub struct Found {
 }
 
 impl Board {
-    /// The plugins in `plugins`, a plugins directory; `None` when there is
-    /// none, as without a home directory.
-    pub fn plugin_list(&self, plugins: Option<&Path>) -> Result<PluginListReport, DiscoveryError> {
-        let enabled = &self.config().plugins;
+    /// The plugins built into Board, then those in `plugins`, a plugins
+    /// directory, in name order. An installed plugin named like a built-in
+    /// one is left out, and the built-in one records its directory.
+    pub(crate) fn offered(&self, plugins: Option<&Path>) -> Result<Vec<Installed>, DiscoveryError> {
+        let mut offered: Vec<Installed> = (self.built_in.0.iter().enumerate())
+            .map(|(index, plugin)| built_in(index, plugin.manifest(), &plugin.schemas()))
+            .collect();
         let installed = match plugins {
             Some(plugins) => installed(plugins)?,
             None => Vec::new(),
         };
+        for plugin in installed {
+            let same = offered.iter_mut().find(|same| same.name == plugin.name);
+            match (same.map(|same| &mut same.origin), &plugin.origin) {
+                (Some(Origin::BuiltIn { shadows, .. }), Origin::Directory(directory)) => {
+                    *shadows = Some(directory.clone());
+                }
+                _ => offered.push(plugin),
+            }
+        }
+        offered.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(offered)
+    }
+
+    /// The plugins built into Board and those in `plugins`, a plugins
+    /// directory; `None` when there is none, as without a home directory.
+    pub fn plugin_list(&self, plugins: Option<&Path>) -> Result<PluginListReport, DiscoveryError> {
+        let enabled = &self.config().plugins;
+        let installed = self.offered(plugins)?;
         let reader = &mut self.repository().reader();
-        let mut listed: Vec<Plugin> = installed
+        let mut listed: Vec<PluginEntry> = installed
             .into_iter()
             .map(|installed| {
                 let enabled = enabled.iter().any(|name| name.as_str() == installed.name);
@@ -166,9 +178,10 @@ impl Board {
                 } else {
                     Vec::new()
                 };
-                Plugin {
+                PluginEntry {
                     enabled,
                     name: installed.name,
+                    shadows: installed.origin.shadows().map(Path::to_path_buf),
                     state: match installed.manifest {
                         Ok(manifest) => PluginState::Installed(manifest),
                         Err(error) => PluginState::BadManifest(error),
@@ -181,8 +194,9 @@ impl Board {
             .iter()
             .filter(|name| !listed.iter().any(|plugin| plugin.name == name.as_str()))
             .collect();
-        listed.extend(missing.into_iter().map(|name| Plugin {
+        listed.extend(missing.into_iter().map(|name| PluginEntry {
             name: name.to_string(),
+            shadows: None,
             enabled: true,
             state: PluginState::NotInstalled,
             schemas: Vec::new(),

@@ -97,6 +97,7 @@ codes! {
     PluginSchemaMissing => "board::plugin::schema_missing",
     PluginSchemaDiffers => "board::plugin::schema_differs",
     PluginAmbiguous => "board::plugin::ambiguous",
+    PluginDuplicate => "board::plugin::duplicate",
     PluginBadInput => "board::plugin::bad_input",
     PluginBadOutput => "board::plugin::bad_output",
     PluginFailed => "board::plugin::failed",

@@ -13,7 +13,7 @@ use crate::check::CheckError;
 /// The most rows `query` returns, and the most entries a listing shows,
 /// unless asked otherwise (STANDARDS.md 23).
 pub const DEFAULT_LIMIT: usize = 100;
-/// The most rows `query` returns at all, and the largest `--limit`.
+/// The most rows `query` returns to a limit, and the largest `--limit`.
 pub const MAX_LIMIT: usize = 10_000;
 
 /// How many times a query runs while other processes prune under it.

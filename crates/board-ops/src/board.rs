@@ -13,6 +13,7 @@ use serde::de::IgnoredAny;
 use serde_json::Value;
 
 use crate::effects::Asker;
+use crate::host::BuiltIn;
 use crate::trace::Trace;
 
 /// `.board/board.json`, a `board/config/v1` record.
@@ -71,6 +72,7 @@ pub struct Board {
     config: Config,
     pub(crate) trace: RefCell<Trace>,
     pub(crate) asker: Asker,
+    pub(crate) built_in: BuiltIn,
 }
 
 // Board must stay `Send` so that a caller can move it to another thread, as
@@ -116,6 +118,7 @@ impl Board {
             config,
             trace: RefCell::default(),
             asker: Asker::default(),
+            built_in: BuiltIn::default(),
         })
     }
 

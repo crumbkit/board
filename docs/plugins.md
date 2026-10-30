@@ -5,7 +5,9 @@ says what comes next.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
 or a changelog. It is a separate program that Board starts, talking JSON over
-stdin and stdout. It reads the board through `board query`.
+stdin and stdout. It reads the board through `board query`. A plugin can also
+be compiled into Board; [plugins/built-in.md](plugins/built-in.md) says how
+it is called.
 
 ## Installing and enabling
 
@@ -169,7 +171,7 @@ with `board::plugin::too_deep`.
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
-`schema_missing`, `schema_differs`, `ambiguous`,
+`schema_missing`, `schema_differs`, `ambiguous`, `duplicate`,
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 

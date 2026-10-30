@@ -33,6 +33,24 @@ pub struct PluginFailure {
     pub fields: Map<String, Value>,
 }
 
+impl PluginFailure {
+    /// `plugin`'s refusal, once `code` is `<plugin>::<area>::<reason>` with
+    /// its own name.
+    pub fn parse(
+        plugin: &PluginName,
+        code: String,
+        message: String,
+        fields: Map<String, Value>,
+    ) -> Result<Self, BadOutput> {
+        Ok(Self {
+            code: PluginCode::parse(plugin, code)
+                .map_err(|PluginCodeError { code }| BadOutput::Code { code })?,
+            message,
+            fields,
+        })
+    }
+}
+
 /// One document a plugin wrote: the result asked for, or an error.
 #[derive(Debug)]
 pub(crate) enum Reply<T> {
@@ -75,12 +93,12 @@ pub(crate) fn reply<T: DeserializeOwned>(
         }
         Some(ERROR_TYPE) => {
             let raw = RawError::deserialize(value).map_err(shape)?;
-            Ok(Reply::Error(PluginFailure {
-                code: PluginCode::parse(plugin, raw.code)
-                    .map_err(|PluginCodeError { code }| BadOutput::Code { code })?,
-                message: raw.message,
-                fields: raw.fields,
-            }))
+            Ok(Reply::Error(PluginFailure::parse(
+                plugin,
+                raw.code,
+                raw.message,
+                raw.fields,
+            )?))
         }
         found => Err(BadOutput::Type {
             found: found.map(str::to_owned),

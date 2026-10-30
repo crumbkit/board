@@ -94,7 +94,6 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
         .pointer
         .as_ref()
         .filter(|pointer| !pointer.is_empty());
-    let capability = fields.capability.as_ref();
     Some(match code {
         Code::JsonMergeConflict => format!(
             "resolve the git merge conflict in the file, then run `board check {}`",
@@ -162,32 +161,41 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             ),
         },
         Code::AttachmentMissing | Code::AttachmentMismatch => reattach(path?),
-        Code::PluginNotEnabled => format!(
-            "add `{}` to `plugins` in `.board/board.json`",
-            fields.plugin.as_ref()?
-        ),
-        Code::PluginSchemaDiffers => format!(
-            "run `board plugin enable {}`, which replaces the board's copy with the schema the plugin ships",
-            fields.plugin.as_ref()?
-        ),
-        Code::PluginAmbiguous => format!(
-            "name the plugin as well, as in `board call {}.{}`; `board plugin find --capability {}` lists the plugins that offer it",
-            fields.plugin.as_ref()?,
-            capability?,
-            capability?
-        ),
-        Code::PluginBadInput => format!(
-            "give the input as the flags that `board call {}.{} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {} --json` shows the schema",
-            fields.plugin.as_ref()?,
-            capability?,
-            capability?
-        ),
+        Code::PluginNotEnabled
+        | Code::PluginSchemaDiffers
+        | Code::PluginAmbiguous
+        | Code::PluginDuplicate
+        | Code::PluginBadInput => plugin(code, fields)?,
         Code::QueryInvalid => query(fields.known.as_ref()?),
         Code::SettingsAsked | Code::SettingsRefused => {
             return effect(code, fields.effect.as_ref()?);
         }
         Code::UiSlotInvalid | Code::UiSlotMismatch => return ui(code, fields, pointer),
         _ => return at_offset(code, fields),
+    })
+}
+
+/// The hint for a `plugin` code that names the plugin.
+fn plugin(code: Code, fields: &Fields) -> Option<String> {
+    let plugin = fields.plugin.as_ref()?;
+    let capability = || fields.capability.as_ref();
+    Some(match code {
+        Code::PluginNotEnabled => format!("add `{plugin}` to `plugins` in `.board/board.json`"),
+        Code::PluginSchemaDiffers => format!(
+            "run `board plugin enable {plugin}`, which replaces the board's copy with the schema the plugin ships"
+        ),
+        Code::PluginAmbiguous => format!(
+            "name the plugin as well, as in `board call {plugin}.{0}`; `board plugin find --capability {0}` lists the plugins that offer it",
+            capability()?
+        ),
+        Code::PluginDuplicate => format!(
+            "remove the installed copy, the directory `$XDG_DATA_HOME/board/plugins/{plugin}`; this Board has the plugin built in"
+        ),
+        Code::PluginBadInput => format!(
+            "give the input as the flags that `board call {plugin}.{0} -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability {0} --json` shows the schema",
+            capability()?
+        ),
+        _ => return None,
     })
 }
 
@@ -500,6 +508,9 @@ fn generic(code: Code) -> &'static str {
         }
         Code::PluginAmbiguous => {
             "name the plugin as well, as in `board call <plugin>.<capability>`; `board plugin find --capability <name>` lists the plugins that offer it"
+        }
+        Code::PluginDuplicate => {
+            "remove the installed copy, the directory of that name in `$XDG_DATA_HOME/board/plugins/`; this Board has the plugin built in"
         }
         Code::PluginBadInput => {
             "give the input as the flags that `board call <plugin>.<capability> -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability <name> --json` shows the schema"

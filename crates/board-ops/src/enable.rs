@@ -2,10 +2,10 @@
 //! (docs/plugins.md, Installing and enabling).
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use board_model::{Code, PluginName, RecordType, Source, TYPES_DIRECTORY, canonical_json};
-use board_plugin::{DiscoveryError, ManifestError, installed};
+use board_plugin::{DiscoveryError, ManifestError};
 use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 
@@ -57,13 +57,15 @@ impl Board {
         cache: Option<&Path>,
         name: &PluginName,
     ) -> Result<EnableReport, EnableError> {
-        let found = match plugins {
-            Some(plugins) => installed(plugins)?,
-            None => Vec::new(),
+        let found = (self.offered(plugins)?.into_iter())
+            .find(|installed| installed.name == name.as_str())
+            .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
+        if let Some(directory) = found.origin.shadows() {
+            return Err(EnableError::Duplicate {
+                name: name.clone(),
+                directory: directory.to_path_buf(),
+            });
         }
-        .into_iter()
-        .find(|installed| installed.name == name.as_str())
-        .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
         if let Err(source) = found.manifest {
             return Err(EnableError::Manifest {
                 name: name.clone(),
@@ -210,6 +212,11 @@ pub enum EnableError {
     Discovery(#[from] DiscoveryError),
     #[error("no plugin named {name} is installed")]
     NotInstalled { name: PluginName },
+    #[error("plugin {name} is built into Board and also installed at {}", directory.display())]
+    Duplicate {
+        name: PluginName,
+        directory: PathBuf,
+    },
     #[error("the {name} plugin's manifest is refused: {source}")]
     Manifest {
         name: PluginName,
@@ -238,6 +245,7 @@ impl EnableError {
         match self {
             Self::Discovery(error) => error.code(),
             Self::NotInstalled { .. } => Code::PluginNotInstalled,
+            Self::Duplicate { .. } => Code::PluginDuplicate,
             Self::Manifest { source, .. } => source.code(),
             Self::Schema { .. } => Code::PluginBadManifest,
             Self::Changed { .. } => Code::PutStale,
