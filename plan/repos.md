@@ -52,7 +52,11 @@ it, and runs the call with that mount's path as its prefix. It now also maps
 a directory in a clone the board does not mount. `board-tree` reads the
 clone's `origin` remote, since only `board-tree` reads git, and
 `board-ops/src/known.rs` looks for a known board whose repo record has that
-`remote`. When one has it, Board runs as that board with `/repos/<name>` as
+`remote`. A raw origin such as `git@github.com-work:crumbkit/board.git`
+must first take the stored form, so `board-model` gains `shown_remote`, a
+port of the Python function with its GitHub forms and host aliases. Both
+read one table of origin URLs and their stored forms in their tests, so the
+two cannot disagree. When one has it, Board runs as that board with `/repos/<name>` as
 the prefix. Two known boards with a record for the same `remote` is
 `board::config::ambiguous`. When no known board has it, the clone stays
 `board::config::not_found`, as today, so a check in it still means "this
@@ -62,8 +66,8 @@ A checkout of a repository that is itself a board, such as crumbkit/board,
 runs as that repository's board, because Board finds `.board/board.json`
 before it reads the known boards. So every Board call these plans add runs
 as `board --personal …`, whatever the directory: the work commands, and the
-calls of the runs and artifacts mods for Claude Code, which today run
-`board` in the session's directory. `changes.brief`, the pull request
+calls of the runs mod for Claude Code, which today runs `board` in the
+session's directory, and of the artifacts mod built later. `changes.brief`, the pull request
 gate's refusal and the skills print commands in that form.
 `BOARD_CALLER_DIR` still names the directory Board was started in, so the
 plugin sees the caller's clone.
@@ -75,9 +79,9 @@ equals `shown_remote(caller_remote())`.
 
 ## Creating the record
 
-Nobody writes a repo record by hand. `changes.start` creates it from
-`caller_remote()` when no record has that remote (built with the work
-records step in PLAN.md), at `/repos/<name>`, where `<name>`
+Until the work records step in PLAN.md is built, a repo record is written
+with `board put`, as a mount is today. From then on `changes.start` creates
+it from `caller_remote()` when no record has that remote, at `/repos/<name>`, where `<name>`
 is the remote's last path segment. A clash with an existing record of
 another remote is `changes::repo::name_taken`, which suggests `--repo-name`.
 Evals and other records refer to the record once it exists. A mount is added
@@ -94,7 +98,11 @@ rewrite and writes nothing with `--dry-run`.
 
 ## Build
 
-One pull request in `board-model`, `board-tree` and `board-ops`. The
+One pull request in `board-model`, `board-tree`, `board-ops` and
+`board-index`. A second pointer type changes what `pointer()` and
+`Role::classify` answer, so the pull request bumps the index's
+`INDEX_VERSION`, and it updates the mount help in `board-cli` and the hint
+in `known.rs` that names `board/mount/v1`. The
 tests:
 
 - A repo record with a checkout resolves exactly as the equivalent mount, for
@@ -103,6 +111,8 @@ tests:
   children.
 - A directory in an unmounted clone runs with its repo record's prefix, and
   one with no record is `board::config::not_found`.
+- `shown_remote` gives the same stored form as the Python function for
+  every row of the shared table.
 - Each refusal has an admitted twin.
 
 Done when the owner's board has migrated and `board check` reports nothing
