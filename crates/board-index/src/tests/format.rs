@@ -65,7 +65,7 @@ fn what_the_index_stores_for_a_json_file_changes_only_with_its_format() {
     }
     assert_eq!(
         (answers.as_str(), INDEX_VERSION),
-        (STORED, 20),
+        (STORED, 21),
         "what classify or pointer() answers changed: an index of the current \
          format may hold the old answers, so bump INDEX_VERSION, then update \
          STORED and the version here"

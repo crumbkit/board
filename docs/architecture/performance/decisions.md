@@ -1,13 +1,17 @@
 # Kept decisions
 
 This file holds detail for docs/architecture.md. It says how the index keeps
-each mounted source's decision so a warm query neither walks nor decides it.
+each mounted source's decision so a warm query or check neither walks nor
+decides it.
 
 ## What is kept
 
 - `decided`: one row per entry of a mounted source, as a query's views show
   it, under the source's key. The source and `change` are not kept: a key
-  names a tree, and each run attaches the commit that reached it.
+  names a tree, and each run attaches the commit that reached it. Its
+  `detail` column holds, as JSON, what `check` reports beyond the row: a
+  degraded entry's detail and the schema it names. The `decided` view
+  leaves it out.
 - `pointers`: the mount pointers in a mounted tree, under a key of the tree
   and the build, so a run finds a source's mounts without walking it.
 
@@ -33,14 +37,17 @@ mounts are read in order.
 
 - `query`, `call` and `enable` read kept rows in place and decide only the
   sources whose key the index does not hold.
-- An unscoped `check`, and `refs`, decide every source, and keep what they
-  decided.
-- A scoped `check` and `ls` walk and decide only the sources their scope
-  reaches. A scope reaches a source when one of the source's routes lies
-  inside the scope, or the scope lies inside one of its routes. A scoped
-  run walks any other source only when the index lists no pointers
-  for it, to find its mounts. It keeps nothing for a source it decided
-  only in part.
+- `check` reads, in path order, the kept rows of each source wholly in its
+  scope. It walks and decides the other sources its scope reaches, and
+  keeps what it decided, except for a source it decided only in part. A
+  row that cannot be read fails the run with `board::index::failed`.
+- `refs` decides every source, and keeps what it decided.
+- A scoped `ls` walks and decides only the sources its scope reaches, and
+  keeps nothing for a source it decided only in part.
+- A scope reaches a source when one of the source's routes lies inside the
+  scope, or the scope lies inside one of its routes. A scoped `check` or
+  `ls` walks any other source only when the index lists no
+  pointers for it, to find its mounts.
 - On a copy of the owner's board with 24 mounts, a warm `check /controls`
   takes about 38 ms. It took 59 ms when a scoped run walked every source.
 
@@ -55,7 +62,8 @@ These sources are decided on every run:
   commit was walked in;
 - one whose resolution crossed a mount that no probe holds, such as a
   pointer in a schema file;
-- one holding a pointer whose blob cannot be read.
+- one holding a pointer whose blob cannot be read;
+- one with two names that are not UTF-8 and read as the same path.
 
 ## Order and pruning
 

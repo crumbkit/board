@@ -23,7 +23,8 @@ const BUILD: &str = "test";
 
 /// Queries `scenario` as `build` through the index in `cache` and through a
 /// cold one, requires every table and an unordered, bounded query to
-/// answer alike, and returns the warm run's work.
+/// answer alike, then requires a check to report alike through both, and
+/// returns the warm query's work.
 fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed {
     let mut board = open(scenario);
     board.built_by(build);
@@ -35,6 +36,8 @@ fn query_as(scenario: &Scenario, cache: &Path, build: &'static str) -> Refreshed
         let [warm, cold] = [&warm, &cold].map(|filled| filled.view.query(sql, 10_000, None));
         assert_eq!(warm.unwrap(), cold.unwrap(), "{sql}");
     }
+    let [warm_check, cold_check] = [Some(cache), None].map(|cache| board.check(None, cache));
+    assert_eq!(warm_check.unwrap().entries, cold_check.unwrap().entries);
     warm.report.work
 }
 
@@ -236,6 +239,28 @@ fn a_mounted_source_with_a_file_that_cannot_be_read_is_never_kept_and_its_twin_i
             expected,
             "missing: {missing}"
         );
+    }
+}
+
+#[test]
+fn a_mounted_source_whose_names_share_a_path_is_never_kept_and_its_twin_with_one_such_name_is() {
+    for (names, expected) in [
+        (&[&b"\xff.md"[..], b"\xfe.md"][..], 0),
+        (&[&b"\xff.md"[..]][..], 1),
+    ] {
+        let library = Scenario::new();
+        let items: Vec<(&[u8], Item<'_>)> =
+            names.iter().map(|name| (*name, Item::File("x"))).collect();
+        let commit = library.commit_items(&items);
+        let scenario = board();
+        scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
+        let cache = tempfile::tempdir().unwrap();
+        let board = open(&scenario);
+        board.check(None, Some(cache.path())).unwrap();
+        let warm = board.check(None, Some(cache.path())).unwrap();
+        let cold = board.check(None, None).unwrap();
+        assert_eq!(warm.entries, cold.entries, "{} names", names.len());
+        assert_eq!(warm.work.kept, expected, "{} names", names.len());
     }
 }
 
@@ -446,4 +471,96 @@ fn an_empty_build_keeps_and_stores_nothing_and_a_named_one_keeps_each_source() {
         let rows = filled(&board, index).view.query(sql, 1, None).unwrap().rows;
         assert_eq!(rows, [[stored]], "{build:?}");
     }
+}
+
+/// A board mounting, at `/lib`, a library whose entries fail in every way
+/// a check details, and at `/vendor/lib` a board holding a path too long
+/// to name there.
+fn every_detail() -> (Scenario, [Scenario; 2]) {
+    let mut segments = vec!["a".repeat(204); 19];
+    segments.push("b".repeat(195));
+    let long = format!("{}.json", segments.join("/"));
+    let (long_board, long_commit) = library(&[(&long, r#"{"$type": "lr/project/v1"}"#)]);
+    let two = task(r#", "project": "/nowhere", "see": "/gone""#);
+    let wrong = task(r#", "project": "/tasks/two""#);
+    let into = task(r#", "see": "/i/projects/p""#);
+    let gone = mount("/no/such/repository", long_commit);
+    let schemas = [
+        (".board/types/lr/task/v1.schema.json", TASK_SCHEMA),
+        (".board/types/lr/project/v1.schema.json", PROJECT_SCHEMA),
+    ];
+    let lib = Scenario::new();
+    let mut items: Vec<(&[u8], Item<'_>)> = (schemas.iter())
+        .map(|(path, text)| (path.as_bytes(), Item::File(text)))
+        .collect();
+    items.extend([
+        (
+            &b"projects/p.json"[..],
+            Item::File(r#"{"$type": "lr/project/v1"}"#),
+        ),
+        (b"tasks/two.json", Item::File(&two)),
+        (b"tasks/wrong.json", Item::File(&wrong)),
+        (b"tasks/into.json", Item::File(&into)),
+        (
+            b"things/x.json",
+            Item::File(r#"{"$type": "lr/missing/v1"}"#),
+        ),
+        (b"links/dangling.json", Item::Symlink("gone.json")),
+        (b"bad.json", Item::File("{")),
+        (b"i.json", Item::File(&gone)),
+    ]);
+    let commit = lib.commit_items(&items);
+    let scenario = board();
+    scenario
+        .write("lib.json", Item::File(&mount(&lib.path(), commit)))
+        .write(
+            "vendor/lib.json",
+            Item::File(&mount(&long_board.path(), long_commit)),
+        );
+    (scenario, [lib, long_board])
+}
+
+#[test]
+fn a_warm_check_of_kept_sources_reports_every_detail_as_a_cold_one_scoped_or_not() {
+    let (scenario, _libraries) = every_detail();
+    let cache = tempfile::tempdir().unwrap();
+    let board = open(&scenario);
+    let check = |scope: Option<&str>, cache| {
+        let scope: Option<board_model::LogicalPath> = scope.map(|scope| scope.parse().unwrap());
+        board.check(scope.as_ref(), cache).unwrap()
+    };
+    check(None, Some(cache.path()));
+    for scope in [None, Some("/lib"), Some("/lib/tasks"), Some("/vendor")] {
+        let warm = check(scope, Some(cache.path()));
+        assert_eq!(warm.entries, check(scope, None).entries, "{scope:?}");
+    }
+    let warm = check(None, Some(cache.path()));
+    assert_eq!(warm.work.kept, 2);
+    let mounted =
+        (warm.entries.iter()).filter(|entry| entry.source != board_model::Source::WorkingTree);
+    let details: Vec<_> = mounted.filter_map(|entry| entry.detail.as_ref()).collect();
+    assert!(
+        details.iter().any(|detail| detail.failures == 2),
+        "several failures"
+    );
+    assert!(
+        details
+            .iter()
+            .any(|detail| detail.at.is_some() && detail.mount.is_some()),
+        "at and mount"
+    );
+    assert!(
+        details.iter().any(|detail| detail.target.is_some()),
+        "a symlink's target"
+    );
+    assert!(
+        warm.entries.iter().any(|entry| entry.schema.is_some()),
+        "a named schema"
+    );
+    assert!(
+        warm.entries.iter().any(
+            |entry| entry.logical.is_none() && entry.source != board_model::Source::WorkingTree
+        ),
+        "a path too long to name"
+    );
 }

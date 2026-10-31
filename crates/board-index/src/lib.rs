@@ -12,6 +12,7 @@ mod server;
 mod store;
 mod timing;
 
+pub use crate::decisions::KeptRow;
 pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::{Budget, Rows};
 pub use crate::schema::INDEX_VERSION;
