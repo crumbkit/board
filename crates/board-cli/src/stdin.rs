@@ -18,9 +18,10 @@ use crate::run::{Prefix, Putting, plain, plugins, read, read_folder};
 pub(crate) enum TypeCommand {
     /// Add a type: compile the JSON Schema on stdin and write it to .board/types/.
     #[command(after_help = "\
-An equal schema already there is left as it is. A different one is refused,
-because a changed type is a new version. The write is committed unless
-.board/board.json sets `commit_on_put` to false.
+An equal schema already there is left as it is. One that differs only in
+`x-board-*` annotations, such as `x-board-folder`, replaces it. Any other
+difference is refused, because a changed type is a new version. The write is
+committed unless .board/board.json sets `commit_on_put` to false.
 
 Examples:
   board type add notes/note/v1 < note.schema.json
@@ -32,11 +33,11 @@ Examples:
     },
 }
 
-/// Where a put writes: each line of a batch, a new name in a folder, or a
-/// path.
+/// Where a put writes: each line of a batch, a new name in a folder or in
+/// the folder the record's type declares, or a path.
 enum At {
     Batch,
-    New(LogicalPath),
+    New(Option<LogicalPath>),
     Path(LogicalPath),
 }
 
@@ -53,6 +54,7 @@ pub(crate) fn put(
     let Putting {
         path,
         new,
+        var,
         expect,
         batch,
         file,
@@ -61,7 +63,8 @@ pub(crate) fn put(
     let at = match (path, new) {
         _ if batch => Ok(At::Batch),
         (Some(path), _) => read(prefix, &path, "put").map(At::Path),
-        (None, Some(folder)) => read_folder(prefix, &folder).map(At::New),
+        (None, Some(Some(folder))) => read_folder(prefix, &folder).map(|at| At::New(Some(at))),
+        (None, Some(None)) => Ok(At::New(None)),
         (None, None) => unreachable!("clap requires a path, --new or --batch"),
     };
     let at = match at {
@@ -83,7 +86,9 @@ pub(crate) fn put(
     let expect = expect.unwrap_or(Expect::Any);
     let written = match &at {
         At::Batch => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
-        At::New(folder) => board.put_new_waiting(folder, &bytes, wait),
+        At::New(folder) => {
+            board.put_new_waiting(folder.as_ref(), &var.into_iter().collect(), &bytes, wait)
+        }
         At::Path(path) if file => board.put_file_waiting(path, expect, &bytes, wait),
         At::Path(path) => board.put_waiting(path, expect, &bytes, wait),
     };

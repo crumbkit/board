@@ -103,6 +103,11 @@ const ALLOW: &[Allow] = &[
     ),
     Allow::example(
         "put",
+        &["--new", "--var", "project=board"],
+        "the name holds the put's minute and a random suffix, so no golden output can pin it",
+    ),
+    Allow::example(
+        "put",
         &["/tasks/a", "--expect", "none"],
         "the get and refs examples read /tasks/a, so the fixture board holds it",
     ),
@@ -220,8 +225,8 @@ const BUDGETS: Budgets = Budgets::new()
         ),
         Budget::new(
             "put",
-            1_350,
-            "put has four options, among them --file and --wait, and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
+            1_450,
+            "put has six options, among them --new and --var, which name a new record, and --file and --wait, and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
         ),
         Budget::new(
             "refs",

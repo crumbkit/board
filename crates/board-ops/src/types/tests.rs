@@ -91,6 +91,34 @@ fn the_same_schema_again_writes_nothing_and_a_different_one_is_refused() {
 }
 
 #[test]
+fn a_schema_that_differs_only_in_board_annotations_replaces_the_held_one_and_any_other_change_is_refused()
+ {
+    let board = board();
+    let held =
+        r#"{"type": "object", "properties": {"p": {"type": "string", "x-board-type": "lr/a/v1"}}}"#;
+    open(&board).type_add(&note(1), held.as_bytes()).unwrap();
+    let before = read(&board, AT);
+    let changed = r#"{"type": "object", "minProperties": 1, "x-board-folder": "/notes/", "properties": {"p": {"type": "string", "x-board-type": "lr/b/v1"}}}"#;
+    let refused = open(&board)
+        .type_add(&note(1), changed.as_bytes())
+        .unwrap_err();
+    assert_eq!(refused.code(), Code::SchemaDiffers);
+    assert_eq!(read(&board, AT), before, "nothing is written");
+    let annotated = changed.replace(r#""minProperties": 1, "#, "");
+    let report = open(&board)
+        .type_add(&note(1), annotated.as_bytes())
+        .unwrap();
+    assert_eq!(report.writes.len(), 1);
+    assert_eq!(
+        report.writes[0].previous,
+        Some(board.blob(std::str::from_utf8(&before).unwrap()))
+    );
+    let written: serde_json::Value = serde_json::from_slice(&read(&board, AT)).unwrap();
+    assert_eq!(written["x-board-folder"], "/notes/");
+    assert_eq!(written["properties"]["p"]["x-board-type"], "lr/b/v1");
+}
+
+#[test]
 fn a_schema_that_does_not_compile_is_refused_and_one_that_does_is_admitted() {
     let board = board();
     let refused = open(&board)

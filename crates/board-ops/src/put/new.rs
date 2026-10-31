@@ -16,18 +16,8 @@ pub(crate) const REDRAWS: usize = 3;
 pub(crate) type Draw<'a> = &'a mut dyn FnMut() -> String;
 
 impl Board {
-    /// Writes the record `bytes` at a new name under `folder`, as a put
-    /// that expects no file there.
-    pub fn put_new_waiting(
-        &self,
-        folder: &LogicalPath,
-        bytes: &[u8],
-        wait: Duration,
-    ) -> Result<PutReport, PutError> {
-        self.put_named(folder, bytes, wait, &mut drawn())
-    }
-
-    /// [`Board::put_new_waiting`] with the names `draw` gives.
+    /// Writes the record `bytes` at a new name under `folder`, one of the
+    /// names `draw` gives, as a put that expects no file there.
     pub(crate) fn put_named(
         &self,
         folder: &LogicalPath,

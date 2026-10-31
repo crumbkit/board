@@ -24,7 +24,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `query` | `invalid`: the SQL does not parse, would write, or is more than one statement |
 | `query` | `timeout`: the statement ran longer than 1 s |
 | `refs` | `target_changed`: with `--field`, a target's file changed after the check, so its values were not read |
-| `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `nul` (a file's text holds NUL), `no_identity`, `head_moved`, `failed` (the file could not be written), `not_a_folder` and `name_taken` (architecture/paths/writes.md, New names) |
+| `put` | `stale`, `locked`, `through_mount`, `symlink`, `invalid`, `not_a_file` (a `--file` path names a directory or ends `.json`), `nul` (a file's text holds NUL), `no_identity`, `head_moved`, `failed` (the file could not be written), and the `--new` codes in architecture/paths/writes.md |
 | `sync` | `no_remote`, `failed` (git refused the fetch or push), `conflict`, `edited`, `gave_up`, `timeout` (git ran past 60 s); see docs/architecture/writes.md |
 | `attachment` | `missing`: `get --fetch` found nothing at the record's location; `mismatch`: the bytes there hash to another digest |
 | `plugin` | see docs/plugins.md |
@@ -65,6 +65,7 @@ plugin's own code carries.
 | `found` | string or null | `put::stale` | the blob the path holds, or `null` for nothing |
 | `target` | string | a `symlink` code | the symlink's text, cut to 100 characters and its length when longer, with backslashes and the characters a logical path may not hold escaped |
 | `effect` | string | `settings::asked`, `settings::refused` | the pending effect's id, which `board answer` takes |
+| `var` | string | `put::folder_unfilled`, `put::var_unused` | the placeholder, or the `--var` |
 | `offset` | number | `put::nul` | the byte offset of the first NUL in the text, which the hint names |
 | `refusals` | array of objects | `put::invalid` and `put::stale` for a batch | each refused line, in order, with its `line` (from 1), `code`, `message` and, when it names any, its own `fields` |
 
@@ -73,19 +74,5 @@ the hint points at `sqlite_master`. Text output prints, after the `code:` line,
 one `line <n>: <code>: <message>` line for each of a batch's `refusals`, then
 the plugin's stderr.
 
-The check and put reports name a degraded entry's first failing pointer, why,
-and how many more (`pointer`, `reason`, `failures`). `reason` is a predicate
-about the entry, such as `holds a reference at "/project": nothing is at
-/nowhere`. When a record's schema is
-missing, cannot be read or does not compile, a check entry names that schema
-file (`schema`), as a refused put does.
-A check entry's reason for a file that does not parse is `is invalid:` and the
-parser's message. For a schema it is `is invalid:` and why the schema does not
-compile, or that it is in the `board` namespace, which is Board's own; for a
-plugin manifest it is `is invalid:` and why the manifest does not read. The
-index keeps the reason with the blob's code, so a warm check reads no file
-again. `check` gives each degraded entry a `hint`, filled in with the path
-at fault: the entry's own, the reference that dangles, the link or mount a
-pointer fails at, or the schema. When that file is in a mounted board, which
-Board cannot write, the hint says to fix it in that board's repository. Text
-prints each hint on stderr as `hint: <path>: <hint>`.
+[errors/reports.md](errors/reports.md) says what check and put report about a
+degraded entry.

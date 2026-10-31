@@ -81,7 +81,7 @@ impl Board {
             let expect = match Self::held(reader, record_type, shipped)? {
                 Held::Same(_) | Held::Linked => continue,
                 Held::Absent => Expect::Absent,
-                Held::Other | Held::Unparsed(_) => {
+                Held::Annotated | Held::Other | Held::Unparsed(_) => {
                     replaced.push(record_type.schema_path());
                     Expect::Any
                 }

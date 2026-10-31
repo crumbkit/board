@@ -6,6 +6,10 @@ the meaning of every field.
 
 ## Records
 
+Each schema declares its folder, so `board put --new --var project=<project>`
+names a new question or decision there. An answer takes its question's id,
+so it is written at its path.
+
 - `plans/question/v1` at `/projects/<project>/questions/<id>`. `<id>` is a
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
   `question`, `session` (the asking session's `local_` id), `asked` and
@@ -17,8 +21,7 @@ the meaning of every field.
   `none`; `words` holds the owner's words verbatim; `answered` is when.
   `written_by` names the plugin and hook when a mod wrote the answer, such as
   `plans/pane-answer`.
-- `plans/decision/v1`, wherever the writer keeps decisions, such as
-  `/projects/<project>/decisions/<id>`. `decision`, `why`, `session` and
+- `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`, `why`, `session` and
   `decided` are required; `alternatives`, `refs`, `urls`, `review`
   (`wanted` or `none`) and `written_by` are optional. `refs` lists board
   entries the decision concerns, such as an answer; `urls` lists web pages,

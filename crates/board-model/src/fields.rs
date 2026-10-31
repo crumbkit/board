@@ -40,6 +40,9 @@ pub struct Fields {
     pub effect: Option<String>,
     /// A byte offset into the input at fault.
     pub offset: Option<usize>,
+    /// A placeholder of a type's folder that no `--var` fills, or a
+    /// `--var` that names no placeholder.
+    pub var: Option<String>,
 }
 
 /// What a put found where it would write.
@@ -105,6 +108,7 @@ impl Fields {
             ("directory", self.directory.clone()),
             ("target", self.target.clone()),
             ("effect", self.effect.clone()),
+            ("var", self.var.clone()),
         ];
         let mut json: Map<String, Value> = strings
             .into_iter()
@@ -274,6 +278,7 @@ mod tests {
             target: Some("../x.json".to_owned()),
             effect: Some("0123456789abcdef".repeat(4)),
             offset: Some(2),
+            var: Some("project".to_owned()),
             refusals: vec![Lined::new(1, Code::PutInvalid, "no", Fields::default())],
         };
         let columns = Fields {
