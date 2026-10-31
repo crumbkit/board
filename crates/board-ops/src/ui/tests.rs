@@ -354,3 +354,18 @@ fn a_warm_check_reads_a_binding_its_view_and_its_references_and_nothing_without_
     // none holds a pointer.
     assert_eq!(warm(&scenario), 4, "one binding");
 }
+
+#[test]
+fn put_and_check_count_one_failure_for_a_binding_that_does_not_fit_its_view() {
+    let scenario = scenario();
+    let misfit = binding(json!({"data": {"text": "x"}}), task());
+    let report = open(&scenario)
+        .put(&path("/bindings/review"), Expect::Any, misfit.as_bytes())
+        .unwrap();
+    let (_, put) = report.writes[0].degraded.clone().unwrap();
+    let checked = open(&scenario).check(None, None).unwrap();
+    let entry = (checked.entries.into_iter())
+        .find(|entry| entry.path == "bindings/review.json")
+        .unwrap();
+    assert_eq!((put.failures, entry.detail.unwrap().failures), (1, 1));
+}

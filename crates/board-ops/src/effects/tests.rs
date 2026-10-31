@@ -1252,3 +1252,66 @@ fn an_owners_removal_of_the_board_config_is_refused_unless_they_sign_it_and_a_pu
     rm(&owned(&mine, &mine, Some(&keep)), "/.board/board").unwrap();
     assert!(!exists(&mine, ".board/board.json"));
 }
+
+#[test]
+fn a_record_whose_canonical_json_is_exactly_the_limit_is_admitted_and_one_byte_less_is_refused() {
+    let record = json!({"a": 1});
+    let at = canonical_json(&record).as_bytes().len();
+    let shows = |limit| super::decide::shows(Some(&Shown::Record(br#"{"a":1}"#.to_vec())), limit);
+    assert_eq!(shows(at).unwrap(), (Some(record), None));
+    assert_eq!(code(shows(at - 1)), Code::JsonTooLarge);
+}
+
+#[test]
+fn content_over_the_limit_or_not_a_record_hints_at_what_a_decide_shows_and_text_that_is_not_utf8_keeps_its_codes_hint()
+ {
+    let refused = |shown: Shown| {
+        let refusal = super::decide::shows(Some(&shown), 4).unwrap_err().refusal();
+        (refusal.code.as_str().to_owned(), refusal.hint.unwrap())
+    };
+    for shown in [text("abcde"), Shown::Record(b"[]".to_vec())] {
+        let (code, hint) = refused(shown);
+        assert!(
+            hint.starts_with("a decide shows the owner"),
+            "{code}: {hint}"
+        );
+    }
+    let (_, hint) = refused(Shown::Text(vec![0xff]));
+    assert_eq!(
+        hint,
+        Code::JsonNotUtf8.hint(&board_model::Fields::default())
+    );
+}
+
+#[test]
+fn an_owners_file_put_under_effects_shows_them_the_files_own_text_to_sign() {
+    let mine = personal();
+    let (tools, _decline, keep) = owner_signers();
+    let bytes = b"why the answers are as they are\n";
+    let signing = owned(&mine, &mine, Some(&keep));
+    (signing.put_file(&path("/effects/why.md"), Expect::Any, bytes)).unwrap();
+    let shown = std::fs::read_to_string(tools.workdir().join("shown")).unwrap();
+    let root = mine.workdir().canonicalize().unwrap();
+    assert_eq!(
+        shown,
+        format!(
+            "{WRITE_HEADER}\nop: put\npath: /effects/why.md\nboard: {}\n\
+             content: 32 bytes in 2 lines\nwhy the answers are as they are\n\n",
+            root.display()
+        )
+    );
+}
+
+#[test]
+fn deciding_through_a_link_on_a_file_that_is_not_a_record_names_the_file_and_its_twin_names_it_too()
+{
+    let (scenario, mine) = (board(), personal());
+    scenario
+        .write("l.json", Item::File(&link("/pulls")))
+        .write("pulls/a.md", Item::File("a\n"));
+    let plugin = opened(&scenario, Some("review"), Some(&mine));
+    for at in ["/l/a.md", "/pulls/a.md"] {
+        let id = asked(decide(&plugin, at));
+        assert_eq!(pending_effect(&mine, &id).path, "/pulls/a.md", "{at}");
+    }
+}
