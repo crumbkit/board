@@ -203,7 +203,8 @@ impl Board {
         drop(known);
         for mounted in &mounts.sources {
             let read_kept = need != Need::Report && mounted.kept && mounted.whole;
-            // A source not walked is kept, or out of scope.
+            // A source was not walked when its decision is kept or the scope
+            // does not reach it.
             let Some(walked) = (mounted.walked.as_ref()).filter(|_| !read_kept) else {
                 let source = Source::Commit(mounted.commit);
                 let key = mounted.key.as_ref().filter(|_| mounted.kept);

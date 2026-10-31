@@ -41,11 +41,14 @@ mounts are read in order.
   scope, decides the rest, and keeps what it decided. A row that cannot be
   read fails the run with `board::index::failed`.
 - `refs` decides every source, and keeps what it decided.
-- A scoped `check` and `ls` decide only the sources their scope reaches.
-  They walk another source only when the index lists no pointers for it,
-  to find its mounts. They keep nothing for a source they decided only in
-  part. On a copy of the owner's board with 24 mounts, a warm `check
-  /controls` takes about 38 ms instead of 59 ms because of this.
+- A scoped `check` and `ls` walk and decide only the sources their scope
+  reaches. A scope reaches a source when the scope's path is inside the
+  source, above its mount, or beneath one of the source's own mounts. A
+  scoped run walks any other source only when the index lists no pointers
+  for it, to find its mounts. It keeps nothing for a source it decided
+  only in part.
+- On a copy of the owner's board with 24 mounts, a warm `check /controls`
+  takes about 38 ms. It took 59 ms when a scoped run walked every source.
 
 ## What is never kept
 
