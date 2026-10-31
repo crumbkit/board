@@ -639,6 +639,43 @@ fn check_lists_degraded_entries_first_so_a_limit_never_hides_one() {
     assert_eq!(report["data"][0]["status"], "degraded");
 }
 
+/// A limited check prints, as text and as JSON, exactly the first entries
+/// of the whole listing, whichever side of the limit its degraded and
+/// healthy entries fall, and the same total and exit code.
+#[test]
+fn a_limited_check_prints_the_first_entries_of_the_whole_listing() {
+    let scenario = notes(3);
+    scenario
+        .write("zz/bad.json", Item::File("{"))
+        .write("notes/m.json", Item::File(r#"{"$type": "lr/note/v1"}"#));
+    let cache = tempfile::tempdir().unwrap();
+    let check = |arguments: &[&str]| {
+        let mut all = vec!["check"];
+        all.extend_from_slice(arguments);
+        board_cached(scenario.workdir(), Some(cache.path()), &all)
+    };
+    let whole = check(&["--all"]);
+    assert_eq!(whole.code, 1);
+    let lines: Vec<String> = text(&whole.stdout).lines().map(str::to_owned).collect();
+    let (summary, entries) = lines.split_first().unwrap();
+    let whole_json = json(&check(&["--all", "--json"]));
+    let data = whole_json["data"].as_array().unwrap();
+    assert_eq!(entries.len(), 9);
+    for shown in 1..=entries.len() {
+        let limit = shown.to_string();
+        let cut = check(&["--limit", &limit]);
+        assert_eq!(cut.code, 1, "--limit {limit}");
+        let mut expected = vec![summary.clone()];
+        expected.extend_from_slice(&entries[..shown]);
+        let printed: Vec<String> = text(&cut.stdout).lines().map(str::to_owned).collect();
+        assert_eq!(printed, expected, "--limit {limit}");
+        let cut_json = json(&check(&["--limit", &limit, "--json"]));
+        assert_eq!(cut_json["data"].as_array().unwrap(), &data[..shown]);
+        assert_eq!(cut_json["total"], whole_json["total"]);
+        assert_eq!(cut_json["summary"], whole_json["summary"]);
+    }
+}
+
 #[test]
 fn an_empty_listing_says_so_and_a_full_one_does_not() {
     let scenario = board();
