@@ -23,6 +23,7 @@ pub use crate::code::Code;
 pub use crate::effect::{
     APPROVAL_HEADER, Answer, EFFECT_TYPE, EFFECT_TYPES, Effect, MAX_DECIDE_BYTES, PUT_OP, RM_OP,
     SEEN_TYPE, Seen, WRITE_HEADER, effect_record, is_effect_id, shown_digest, signature_namespace,
+    utc,
 };
 pub use crate::fields::{Fields, Found, Known, Lined};
 pub use crate::frontmatter::{Feature, FrontmatterError, frontmatter};
@@ -35,8 +36,8 @@ pub use crate::path::{
     is_hidden,
 };
 pub use crate::pointer::{
-    MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, holds_no_pointer, pointer,
-    repinned,
+    MAX_RECORD_BYTES, Mount, POINTER_TYPE, Pointer, PointerError, can_hold_pointer,
+    holds_no_pointer, pointer, repinned,
 };
 pub use crate::record::{
     CONFIG_TYPE, Classified, Content, Kind, MANIFEST_TYPE, RESERVED_NAMESPACES, RecordType,

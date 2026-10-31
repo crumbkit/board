@@ -16,6 +16,8 @@ own effects.
   - It shows the plugin, op, path and board, then the content's size in
     bytes and lines and the content split at each `\n`. Hidden characters,
     `\r` among them, are escaped as `board_model::escaped` does.
+  - It leaves out the effect's `asked` time, so the same request signs the
+    same statement whenever it was asked.
 - An owner's write signs `Effect::owner_write`. It starts `board/write/v1`
   and shows the op, path and board, then the content as an approval shows
   it.

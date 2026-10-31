@@ -7,12 +7,12 @@
  * Each pending effect no seen record answers, by id, with the fields the mod
  * shows: the board, plugin, op and path.
  *
- * `board answer` keeps the pending effect and writes a `board/seen/v1` at the
- * same id under `/effects/seen/`, so an answered effect is one with a seen
- * record Board reads as an answer. The index parses each seen record as
- * Board's `Seen` and marks one that fails as degraded, so `status = 'ok'`
- * is the same check Board makes.
- * The NOT IN can go once answered effects leave `/effects/pending/`.
+ * `board answer` writes a `board/seen/v1` at the same id under
+ * `/effects/seen/` and moves the effect to `/effects/answered/`. A pending
+ * effect can still sit beside a seen record, written back outside
+ * `board answer`, and Board reads it as answered, so the NOT IN leaves it
+ * out. The index parses each seen record as Board's `Seen` and marks one
+ * that fails as degraded, so `status = 'ok'` is the same check Board makes.
  * `pendingSql(id)` in effects.ts narrows the first `LIKE` to one effect's
  * path, so that text must stay as it is.
  */

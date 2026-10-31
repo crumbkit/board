@@ -331,8 +331,8 @@ Examples:
     /// Answer a pending effect.
     #[command(after_help = "\
 `board --personal ls /effects/pending` lists the pending effects. An answer
-removes the pending effect in the commit that writes the seen record. A plugin
-may not answer.
+moves one to /effects/answered/ as it writes the seen record. A plugin may
+not answer.
 
 An approval runs ~/.local/bin/attention-sign, which signs after Touch ID,
 and checks it against ~/.config/board/allowed_signers, in the passwd home.
