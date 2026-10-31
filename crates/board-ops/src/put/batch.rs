@@ -511,14 +511,15 @@ impl Board {
 fn named(lines: &[ReadLine], draw: Draw<'_>) -> Result<Vec<ReadLine>, PutError> {
     let mut held = HashSet::new();
     let mut named = lines.to_vec();
-    for (_, line) in named.iter_mut().flatten() {
+    for (number, line) in named.iter_mut().flatten() {
         let Some(folder) = &line.new else { continue };
-        line.path = under(folder, &mut *draw)?;
+        let refused = |error| refused_lines(&[(*number, error)]);
+        line.path = under(folder, &mut *draw).map_err(refused)?;
         for _ in 0..REDRAWS {
             if held.insert(line.path.clone()) {
                 break;
             }
-            line.path = under(folder, &mut *draw)?;
+            line.path = under(folder, &mut *draw).map_err(refused)?;
         }
         line.shown = line.path.clone();
     }

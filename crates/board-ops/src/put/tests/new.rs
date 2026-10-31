@@ -254,6 +254,24 @@ fn a_name_that_takes_the_path_past_its_longest_is_refused_and_one_that_fits_is_a
     let fits = board_model::MAX_PATH_BYTES - name.len() - 1;
     let refused = under(&folder(fits + 1), &mut || name.to_owned()).unwrap_err();
     assert_eq!(refused.code(), Code::PathMalformed);
+    let hint = refused.refusal().hint.unwrap();
+    assert!(hint.contains("would be over 4096 bytes"), "{hint}");
+    assert_eq!(
+        refused.fields().directory.as_deref(),
+        Some(&folder(fits + 1).as_str()[1..])
+    );
     let admitted = under(&folder(fits), &mut || name.to_owned()).unwrap();
     assert_eq!(admitted.as_str().len(), board_model::MAX_PATH_BYTES);
+
+    let scenario = board();
+    let batch = |folder: &str| {
+        let input = new_line(&format!("{folder}/"));
+        open(&scenario).put_batch_named(&mut input.as_bytes(), LOCK_WAIT, &mut fixed(&[name]))
+    };
+    let refused = batch(folder(fits + 1).as_str()).unwrap_err();
+    assert_eq!(
+        refusals(refused),
+        (Code::PutInvalid, vec![(1, Code::PathMalformed)])
+    );
+    batch("/tasks").unwrap();
 }
