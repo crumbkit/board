@@ -172,6 +172,20 @@ fn a_segment_may_hold_a_zero_width_joiner_or_non_joiner_and_not_a_zero_width_spa
 }
 
 #[test]
+fn an_ascii_character_is_hidden_exactly_when_it_is_a_control_or_its_category_hides_it() {
+    for char in '\0'..='\u{7f}' {
+        let category = get_general_category(char);
+        let hiding = matches!(
+            category,
+            GeneralCategory::Format
+                | GeneralCategory::LineSeparator
+                | GeneralCategory::ParagraphSeparator
+        );
+        assert_eq!(is_hidden(char), char.is_control() || hiding, "{char:?}");
+    }
+}
+
+#[test]
 fn escaping_shows_each_hidden_character_and_keeps_a_joiner() {
     assert_eq!(escaped("a\u{202e}b\u{3164}c"), "a\\u{202e}b\\u{3164}c");
     assert_eq!(escaped("👨\u{200d}👩 café"), "👨\u{200d}👩 café");
