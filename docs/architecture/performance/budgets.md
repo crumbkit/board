@@ -95,6 +95,5 @@ them:
 | simple `board query`, warm | 100 ms |
 | `board call plans.open --limit 20`, warm, on the owner's board | 50 ms |
 
-`cargo xtask bench --board <path>` times these on a real board. A warm
-`board check` on the owner's board meets its 100 ms target because it reads
-the decisions the index keeps (performance/decisions.md).
+A warm `board check` reads the decisions the index keeps
+(performance/decisions.md).

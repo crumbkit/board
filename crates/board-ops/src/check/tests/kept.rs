@@ -106,36 +106,13 @@ fn a_kept_detail_that_does_not_read_fails_with_the_index_code_and_its_twin_reads
         } else {
             let error = read_back.unwrap_err();
             assert_eq!(error.code(), Code::IndexFailed, "{kept}");
-            let message = error.to_string();
-            for named in [
-                "detail",
-                "/vendor/tasks/a (tasks/a.json in its source)",
-                "schema",
-            ] {
-                assert!(message.contains(named), "{named}: {message}");
-            }
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "the index keeps detail {kept:?} for /vendor/tasks/a \
+                     (tasks/a.json in its source), which cannot be read"
+                ),
+            );
         }
-    }
-}
-
-#[test]
-fn a_long_kept_value_that_does_not_read_is_quoted_in_part_and_a_short_one_whole() {
-    let checked = Checked {
-        source: Source::Commit(ObjectId::Sha1([7; 20])),
-        path: "tasks/a.json".to_owned(),
-        logical: None,
-        kind: Kind::Record,
-        status: Status::Ok,
-        detail: None,
-        change: Change::Committed,
-        schema: None,
-    };
-    for (length, whole) in [(200, true), (201, false)] {
-        let kept = "x".repeat(length);
-        let error = from_kept(&checked.source, row(&checked, Some(kept.clone()))).unwrap_err();
-        let message = error.to_string();
-        assert_eq!(message.contains(&format!("{kept:?}")), whole, "{message}");
-        let note = format!("... ({length} characters)");
-        assert_eq!(message.contains(&note), !whole, "{message}");
     }
 }

@@ -59,6 +59,16 @@ pub(crate) enum Need {
     Check,
 }
 
+impl Need {
+    /// Whether this need reads the decisions the index keeps.
+    fn reads_kept(self) -> bool {
+        match self {
+            Self::View | Self::Check => true,
+            Self::Report => false,
+        }
+    }
+}
+
 impl Board {
     /// Decides every entry of the working tree and of each board it mounts,
     /// or only those at or beneath `scope`, after refreshing `index`. An
@@ -153,7 +163,7 @@ impl Board {
                 writer,
                 work: &mut work,
             },
-            (self.build, need != Need::Report),
+            (self.build, need.reads_kept()),
             scope,
         )?;
         drop(timed);
@@ -202,7 +212,7 @@ impl Board {
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
-            let read_kept = need != Need::Report && mounted.kept && mounted.whole;
+            let read_kept = need.reads_kept() && mounted.kept && mounted.whole;
             // A source was not walked when its decision is kept or the scope
             // does not reach it.
             let Some(walked) = (mounted.walked.as_ref()).filter(|_| !read_kept) else {

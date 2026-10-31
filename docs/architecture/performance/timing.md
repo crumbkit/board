@@ -60,10 +60,11 @@ after each commit, so board-cli recompiles after every commit.
 unread because they changed after the check (it does not name them),
 `started`, the plugin processes a call started, `repositories`, the
 repositories a snapshot opened from disk besides the board's own, `kept`,
-the mounted sources a query or check read from kept decisions without walking them
-(architecture/performance/decisions.md), `walked`, the mounted sources a
-snapshot walked from the index to find their mounts or decide them, and `pointers_read`, the files `snapshot.decide` read to learn whether they
-are pointers, once per blob in each source. It leaves out a file whose
+the mounted sources a query or check read from kept decisions without
+walking them (architecture/performance/decisions.md), `walked`, the mounted
+sources a snapshot walked from the index to find their mounts or decide
+them, and `pointers_read`, the files `snapshot.decide` read to learn whether
+they are pointers, once per blob in each source. It leaves out a file whose
 facts in the index say it is JSON that parsed and has no `$type`, or a
 valid one other than a pointer's, because such a file holds no pointer. It
 also leaves out the pointers read while walking mounts and while resolving

@@ -99,12 +99,11 @@ pub(crate) fn to_kept(checked: &Checked) -> Option<String> {
 /// The entry of `source` that a kept `row` holds.
 pub(crate) fn from_kept(source: &Source, row: KeptRow) -> Result<Checked, IndexError> {
     let kept = match &row.detail {
-        Some(text) => serde_json::from_str(text).map_err(|_| {
-            let path = match &row.logical {
-                Some(logical) => format!("{logical} ({} in its source)", row.path),
-                None => row.path.clone(),
-            };
-            IndexError::unreadable(path, "detail", text)
+        Some(text) => serde_json::from_str(text).map_err(|_| IndexError::Unreadable {
+            path: row.path.clone(),
+            logical: row.logical.clone(),
+            column: "detail",
+            value: text.clone(),
         })?,
         None => RawKept {
             detail: None,

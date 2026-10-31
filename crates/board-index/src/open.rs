@@ -8,7 +8,7 @@ use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use board_model::Code;
+use board_model::{Code, LogicalPath};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
 
@@ -334,35 +334,30 @@ pub enum IndexError {
     /// build them again.
     #[error("another process pruned the index after this run built its views")]
     Pruned,
-    /// A kept row holds a value this build cannot read. `value` is bounded
-    /// by [`IndexError::unreadable`].
-    #[error("the index keeps {column} {value} for {path}, which cannot be read")]
+    /// A kept row holds a value this build cannot read.
+    #[error(
+        "the index keeps {column} {value:?} for {}, which cannot be read",
+        named(path, logical.as_ref())
+    )]
     Unreadable {
+        /// The row's path in its source.
         path: String,
+        /// The row's logical path, when the index keeps one that reads.
+        logical: Option<LogicalPath>,
         column: &'static str,
         value: String,
     },
 }
 
-impl IndexError {
-    /// A kept row's `column` for `path` holds `value`, which cannot be read.
-    /// The message quotes at most the value's first 200 characters.
-    pub fn unreadable(path: String, column: &'static str, value: &str) -> Self {
-        const SHOWN: usize = 200;
-        let length = value.chars().count();
-        let value = if length > SHOWN {
-            let start: String = value.chars().take(SHOWN).collect();
-            format!("{start:?}... ({length} characters)")
-        } else {
-            format!("{value:?}")
-        };
-        Self::Unreadable {
-            path,
-            column,
-            value,
-        }
+/// `path` in its source, under its `logical` path when there is one.
+fn named(path: &str, logical: Option<&LogicalPath>) -> String {
+    match logical {
+        Some(logical) => format!("{logical} ({path} in its source)"),
+        None => path.to_owned(),
     }
+}
 
+impl IndexError {
     pub fn code(&self) -> Code {
         match self {
             Self::Sql { .. }

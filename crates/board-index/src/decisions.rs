@@ -185,16 +185,23 @@ impl Writer {
         rows.into_iter()
             .map(|(path, logical, kind, code, detail)| {
                 let unreadable =
-                    |column, value: &str| IndexError::unreadable(path.clone(), column, value);
+                    |logical: &Option<LogicalPath>, column, value: &str| IndexError::Unreadable {
+                        path: path.clone(),
+                        logical: logical.clone(),
+                        column,
+                        value: value.to_owned(),
+                    };
                 let logical = match logical {
-                    Some(text) => Some(text.parse().map_err(|_| unreadable("logical", &text))?),
+                    Some(text) => {
+                        Some((text.parse()).map_err(|_| unreadable(&None, "logical", &text))?)
+                    }
                     None => None,
                 };
-                let kind = Kind::parse(&kind).ok_or_else(|| unreadable("kind", &kind))?;
+                let kind = Kind::parse(&kind).ok_or_else(|| unreadable(&logical, "kind", &kind))?;
                 let code = match code {
-                    Some(text) => {
-                        Some(Code::parse(&text).ok_or_else(|| unreadable("code", &text))?)
-                    }
+                    Some(text) => Some(
+                        Code::parse(&text).ok_or_else(|| unreadable(&logical, "code", &text))?,
+                    ),
                     None => None,
                 };
                 Ok(KeptRow {

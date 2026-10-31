@@ -20,8 +20,8 @@ fn row(path: &str, code: Option<Code>) -> Resolved {
 }
 
 /// The rows kept under one key after its one row's `column` is set to
-/// `value` in the file, or the code reading them fails with.
-fn kept_with(column: &str, value: &str) -> Result<Vec<KeptRow>, Code> {
+/// `value` in the file, or the code and message reading them fails with.
+fn kept_with(column: &str, value: &str) -> Result<Vec<KeptRow>, (Code, String)> {
     let cache = tempfile::tempdir().unwrap();
     let key = board_model::Digest::of(b"key");
     let open = || Index::open(Some(cache.path()), Path::new(ROOT)).unwrap();
@@ -34,16 +34,17 @@ fn kept_with(column: &str, value: &str) -> Result<Vec<KeptRow>, Code> {
     file.execute(&sql, [value]).unwrap();
     drop(file);
     let writer = open().write().unwrap();
-    writer.decision(&key).map_err(|error| error.code())
+    (writer.decision(&key)).map_err(|error| (error.code(), error.to_string()))
 }
 
 #[test]
 fn a_kept_row_whose_logical_path_kind_or_code_cannot_be_read_fails_with_the_index_code_and_its_twin_reads()
  {
-    for (column, admitted, refused) in [
-        ("logical", "/vendor/tasks/a", "no/slash"),
-        ("kind", "record", "recorded"),
-        ("code", "board::ref::dangling", "board::ref::lost"),
+    let named = "/vendor/tasks/a (tasks/a in its source)";
+    for (column, admitted, refused, path) in [
+        ("logical", "/vendor/tasks/a", "no/slash", "tasks/a"),
+        ("kind", "record", "recorded", named),
+        ("code", "board::ref::dangling", "board::ref::lost", named),
     ] {
         let rows = kept_with(column, admitted).unwrap();
         let expected = KeptRow {
@@ -56,7 +57,10 @@ fn a_kept_row_whose_logical_path_kind_or_code_cannot_be_read_fails_with_the_inde
         assert_eq!(rows, [expected], "{column}");
         assert_eq!(
             kept_with(column, refused),
-            Err(Code::IndexFailed),
+            Err((
+                Code::IndexFailed,
+                format!("the index keeps {column} {refused:?} for {path}, which cannot be read")
+            )),
             "{column}"
         );
     }
