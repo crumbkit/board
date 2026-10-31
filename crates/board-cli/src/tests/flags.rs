@@ -415,3 +415,34 @@ fn a_target_like_word_before_call_is_not_the_target() {
     let output = call(&board, &data, &arguments, "");
     assert_eq!(json(&output)["fields"]["argument"], "--fields");
 }
+
+/// The help of `tasks.due` when its input schema is `input`.
+fn help_with(input: &Value) -> String {
+    let (board, data) = flagged();
+    let mut manifest: Value = serde_json::from_str(FLAGGED).unwrap();
+    manifest["capabilities"][0]["inputSchema"] = input.clone();
+    data.write(
+        "plugins/tasks/plugin.json",
+        Item::File(&manifest.to_string()),
+    );
+    let help = call(&board, &data, &["call", "tasks.due", "-h"], "");
+    assert_eq!(help.code, 0, "{}", text(&help.stderr));
+    text(&help.stdout)
+}
+
+#[test]
+fn help_says_stdin_is_read_only_when_the_schema_admits_properties_beyond_its_flags() {
+    let before = json!({"before": {"type": "string"}});
+    let open = help_with(&json!({"type": "object", "properties": before}));
+    assert!(
+        open.contains("Without a flag, Board reads the input as JSON on stdin"),
+        "{open}"
+    );
+    assert!(!open.contains("does not read stdin"), "{open}");
+    let closed = help_with(&json!({"type": "object", "properties": before,
+        "additionalProperties": false}));
+    assert!(
+        closed.contains("Every input property is a flag, so Board does not read stdin."),
+        "{closed}"
+    );
+}
