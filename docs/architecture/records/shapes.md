@@ -63,7 +63,7 @@ plugins are ported.
 ## Generating schemas in Rust
 
 Built-in plugins generate schemas from structs with schemars, through
-`board_plugin::shape`, except evals, which ships its record schema as a file:
+`board_plugin::shape`:
 
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
