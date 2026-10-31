@@ -22,7 +22,7 @@ pub struct Exhibit {
 /// Codes the CLI's recovery and twin checks cannot provoke through the
 /// `board` command line, why, and where each is tested instead. The checks
 /// provoke every other code, from the seed board or another small fixture.
-pub const NOT_REPRODUCED: [(Code, &str); 18] = [
+pub const NOT_REPRODUCED: [(Code, &str); 19] = [
     (
         Code::AttachmentMissing,
         "the store must lose an object between the put and the fetch; \
@@ -47,6 +47,11 @@ pub const NOT_REPRODUCED: [(Code, &str); 18] = [
         Code::PutHeadMoved,
         "HEAD must move in the middle of a put; \
          board-tree/src/tests/commits.rs moves it between staging and commit",
+    ),
+    (
+        Code::PutNameTaken,
+        "every name a put draws must be taken, and the CLI draws from the clock and a random source; \
+         board-ops/src/put/tests/new.rs draws fixed names",
     ),
     (
         Code::RefsTargetChanged,
@@ -100,7 +105,7 @@ const OPEN: &str = "ui open or the server gives it; check opens and serves nothi
 
 /// Codes `check` never gives an entry, and why. The seed board has an
 /// exhibit for every other code, so a new code needs one or a line here.
-pub const NOT_CHECKED: [(Code, &str); 63] = [
+pub const NOT_CHECKED: [(Code, &str); 65] = [
     (
         Code::AttachmentMissing,
         "only get --fetch gives it; check reads the attachment record and never the store",
@@ -164,6 +169,8 @@ pub const NOT_CHECKED: [(Code, &str); 63] = [
     (Code::PutNotAFile, PUT),
     (Code::PutNul, PUT),
     (Code::PutNoIdentity, PUT),
+    (Code::PutNotAFolder, PUT),
+    (Code::PutNameTaken, PUT),
     (
         Code::RmDirectory,
         "rm refuses a directory with it; check removes nothing",

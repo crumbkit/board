@@ -261,8 +261,11 @@ uploaded under its digest and a `board/attachment/v1` record is written in
 its place, as [architecture/attachments.md](architecture/attachments.md)
 says.
 
+`board put --new <folder>/` writes a record at a new name, as
+[architecture/paths/writes.md](architecture/paths/writes.md) says under New names.
+
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,
-record}`, `{path, expect, text}` or `{path, expect, remove}`, where `text` is written as a file, then
+record}`, `{path, expect, text}`, `{path, expect, remove}` or `{new, record}`, where `text` is written as a file, then
 takes the lock with the same wait; when no line parses, it is refused without the lock. A line
 holding both `record` and `text`, or neither and no `remove`, is `board::put::invalid`. A
 record line at a schema's path, such as `/.board/types/lr/note/v1.schema`,

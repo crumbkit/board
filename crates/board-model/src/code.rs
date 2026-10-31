@@ -80,6 +80,8 @@ codes! {
     PutNoIdentity => "board::put::no_identity",
     PutHeadMoved => "board::put::head_moved",
     PutFailed => "board::put::failed",
+    PutNotAFolder => "board::put::not_a_folder",
+    PutNameTaken => "board::put::name_taken",
     RmDirectory => "board::rm::directory",
     SyncNoRemote => "board::sync::no_remote",
     SyncFailed => "board::sync::failed",
