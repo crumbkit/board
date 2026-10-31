@@ -232,7 +232,7 @@ impl Writer {
         };
         Ok(row.and_then(|(kind, record_type, code, reason)| {
             Some(BlobFact {
-                kind: Kind::ALL.into_iter().find(|known| known.as_str() == kind)?,
+                kind: Kind::parse(&kind)?,
                 record_type: match record_type {
                     Some(text) => Some(text.parse().ok()?),
                     None => None,

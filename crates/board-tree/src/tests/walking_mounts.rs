@@ -81,7 +81,7 @@ fn walk_mounts(board: &Scenario, cache: &mut Memory, skip_kept: bool) -> Reached
     let entries = board.open().walk(&Source::WorkingTree).unwrap();
     let facts = Facts::from(["m.json".to_owned()]);
     (board.repositories())
-        .walk_mounts(&entries, &facts, cache, ("test", skip_kept))
+        .walk_mounts(&entries, &facts, cache, ("test", skip_kept), None)
         .unwrap()
 }
 

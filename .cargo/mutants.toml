@@ -1,0 +1,4 @@
+# The ASCII guard in is_hidden only saves time. Without it, ASCII falls
+# through to the full category lookup, which gives the same answer, so no
+# test can catch this mutant.
+exclude_re = ["replace match guard char\\.is_ascii\\(\\) with false in is_hidden"]

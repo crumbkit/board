@@ -102,6 +102,19 @@ fn a_reference_names_one_type_several_or_none_and_two_types_share_no_definition(
 }
 
 #[test]
+fn a_tag_or_reference_at_a_schema_root_is_titled_by_its_shape() {
+    let title = |schema: Value| schema["title"].clone();
+    let settings = SchemaSettings::draft2020_12;
+    assert_eq!(
+        (
+            title(schema_of::<Tag<Task>>(settings())),
+            title(schema_of::<Ref>(settings()))
+        ),
+        (json!("Tag"), json!("Ref"))
+    );
+}
+
+#[test]
 fn a_list_of_references_puts_the_reference_in_items() {
     let after = &sample()["properties"]["after"];
     assert_eq!(after["type"], "array");

@@ -53,6 +53,20 @@ pub(crate) enum Need {
     View,
     /// A report, references and walk of every entry, all decided now.
     Report,
+    /// A report only. A mounted source wholly in scope whose decision the
+    /// index keeps is neither walked nor decided, and its kept rows fill
+    /// the report.
+    Check,
+}
+
+impl Need {
+    /// Whether this need reads the decisions the index keeps.
+    fn reads_kept(self) -> bool {
+        match self {
+            Self::View | Self::Check => true,
+            Self::Report => false,
+        }
+    }
 }
 
 impl Board {
@@ -96,6 +110,7 @@ impl Board {
         trace.count("repositories", work.repositories);
         trace.count("pointers_read", work.pointers_read);
         trace.count("kept", work.kept);
+        trace.count("walked", work.walked);
         drop(trace);
         Ok(Snapshot {
             decided,
@@ -148,11 +163,12 @@ impl Board {
                 writer,
                 work: &mut work,
             },
-            (self.build, need == Need::View),
+            (self.build, need.reads_kept()),
+            scope,
         )?;
         drop(timed);
         let _timed = self.timed("snapshot.decide");
-        let scopes = mounts.scopes(scope);
+        let scopes = &mounts.scopes;
         let facts = mounts
             .sources
             .iter()
@@ -173,7 +189,7 @@ impl Board {
             failed: Cell::new(false),
         };
         for entry in &refresh.entries {
-            if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
+            if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
                 continue;
             }
             // A symlink is committed when its own blob is.
@@ -196,15 +212,24 @@ impl Board {
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
-            let Some(walked) =
-                (mounted.walked.as_ref()).filter(|_| !(need == Need::View && mounted.kept))
-            else {
-                work.kept += 1;
+            let read_kept = need.reads_kept() && mounted.kept && mounted.whole;
+            // A source was not walked when its decision is kept or the scope
+            // does not reach it.
+            let Some(walked) = (mounted.walked.as_ref()).filter(|_| !read_kept) else {
                 let source = Source::Commit(mounted.commit);
-                writer.reach(&source, mounted.key.as_ref(), &mounted.scan)?;
+                let key = mounted.key.as_ref().filter(|_| mounted.kept);
+                if let Some(key) = key.filter(|_| read_kept) {
+                    work.kept += 1;
+                    if need == Need::Check {
+                        for row in writer.decision(key)? {
+                            decided.checked.push(crate::check::from_kept(&source, row)?);
+                        }
+                    }
+                }
+                writer.reach(&source, key, &mounted.scan)?;
                 continue;
             };
-            let read = (writer, &plain, &scopes);
+            let read = (writer, &plain, scopes);
             work.pointers_read += self.decide_mounted(read, mounted, walked, &mut decided)?;
         }
         record(&mounts, writer, self.repository())?;
@@ -251,6 +276,7 @@ impl Board {
             failed: Cell::new(false),
         };
         let start = decided.resolved.len();
+        let checked = decided.checked.len();
         for entry in entries {
             if !in_scope(scopes, &source, entry.logical.as_ref()) {
                 continue;
@@ -268,20 +294,22 @@ impl Board {
         let probed =
             (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
-        let whole = scopes
-            .get(&source)
-            .is_some_and(|states| states.contains(&None));
+        // Names that are not UTF-8 can share a path, which the index keeps
+        // only once.
+        let mut paths = std::collections::HashSet::new();
         // A file that could not be read may be read next run.
-        let storable = whole
+        let storable = mounted.whole
             && probed
             && !failed
+            && rows.iter().all(|row| paths.insert(row.path.as_str()))
             && !rows
                 .iter()
                 .any(|row| row.code == Some(Code::RepoUnreadable));
         let kept = match &mounted.key {
             Some(_) if mounted.kept => true,
             Some(key) if storable => {
-                writer.put_decision(key, rows)?;
+                let details = decided.checked[checked..].iter().map(crate::check::to_kept);
+                writer.put_decision(key, rows.iter().zip(details))?;
                 true
             }
             _ => false,
@@ -349,6 +377,8 @@ impl Cache for Indexing<'_> {
         source: &Source,
         entries: &[Entry],
     ) -> Result<Facts, RefreshError> {
+        // Each walk asks for its facts once.
+        self.work.walked += 1;
         let kept = Kept::default();
         facts(self.writer, repository, source, entries, self.work, kept)
     }

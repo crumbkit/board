@@ -16,11 +16,13 @@ slow-timeout = { period = "60s", terminate-after = 2 }
 # walks would then wait until cargo-mutants stops the whole run, and it would
 # report the mutant as timed out. Under this profile a test still running
 # after a minute fails and the first failure stops the run, so cargo-mutants
-# reports the mutant as caught. The slowest test takes about 15 seconds on a
-# laptop. cargo-mutants runs its baseline on the mutated crates' tests only,
-# so nothing checks that every test finishes within the minute in CI. Once a
-# correct test approaches 60 seconds in CI, every mutant fails it and counts
-# as caught, which would hide missed mutants.
+# reports the mutant as caught. The slowest test is board-cli's
+# warm-versus-cold consistency property test. In a debug build it used 16 to
+# 22 seconds of CPU on a laptop over three proptest seeds, and took 40
+# seconds in CI. cargo-mutants runs its baseline on the mutated crates' tests
+# only, so nothing checks that every test finishes within the minute in CI.
+# Once a correct test approaches 60 seconds in CI, every mutant fails it and
+# counts as caught, which would hide missed mutants.
 [profile.mutants]
 fail-fast = { max-fail = 1, terminate = "immediate" }
 slow-timeout = { period = "30s", terminate-after = 2 }

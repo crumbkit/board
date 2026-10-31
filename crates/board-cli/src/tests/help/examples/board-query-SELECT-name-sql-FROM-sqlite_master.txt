@@ -11,4 +11,4 @@
 ["refs","CREATE TABLE refs (\n    record TEXT NOT NULL,\n    schema TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    pointer TEXT NOT NULL,\n    target TEXT NOT NULL,\n    accepts TEXT,\n    PRIMARY KEY (record, schema, ordinal)\n) WITHOUT ROWID"]
 ["links","CREATE TABLE links (\n    blob TEXT NOT NULL,\n    ordinal INTEGER NOT NULL,\n    destination TEXT NOT NULL,\n    PRIMARY KEY (blob, ordinal)\n) WITHOUT ROWID"]
 ["pointers","CREATE TABLE pointers (\n    scan TEXT NOT NULL,\n    path TEXT NOT NULL,\n    logical TEXT,\n    blob TEXT,\n    PRIMARY KEY (scan, path)\n) WITHOUT ROWID"]
-["decided","CREATE TABLE decided (\n    key TEXT NOT NULL,\n    path TEXT NOT NULL,\n    logical TEXT,\n    blob TEXT,\n    size INTEGER,\n    role TEXT,\n    schema TEXT,\n    kind TEXT NOT NULL,\n    code TEXT,\n    PRIMARY KEY (key, path)\n) WITHOUT ROWID"]
+["decided","CREATE TABLE decided (\n    key TEXT NOT NULL,\n    path TEXT NOT NULL,\n    logical TEXT,\n    blob TEXT,\n    size INTEGER,\n    role TEXT,\n    schema TEXT,\n    kind TEXT NOT NULL,\n    code TEXT,\n    detail TEXT,\n    PRIMARY KEY (key, path)\n) WITHOUT ROWID"]

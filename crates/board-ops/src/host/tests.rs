@@ -686,3 +686,34 @@ fn plugin_find_leaves_out_a_built_in_plugin_installed_again_and_finds_one_instal
         assert_eq!(report.plugins.len(), found, "{installed}");
     }
 }
+
+#[test]
+fn a_board_refused_error_adds_the_refusals_hint_and_leaves_out_an_empty_one() {
+    let mut refusal = Refusal::new(
+        Code::PathMalformed,
+        "the path is bad",
+        &board_model::Fields::default(),
+    );
+    refusal.hint = Some("give another path".to_owned());
+    let hinted = PluginError::board_refused("fixture", "query", &refusal);
+    refusal.hint = Some(String::new());
+    let empty = PluginError::board_refused("fixture", "query", &refusal);
+    let start = format!(
+        "`board query` refused with {}: the path is bad",
+        refusal.code.as_str()
+    );
+    assert_eq!(hinted.message, format!("{start}; give another path"));
+    assert_eq!(empty.message, start);
+}
+
+#[test]
+fn built_in_plugins_debug_as_their_names() {
+    let plugins = built(vec![
+        answering("first", BASE.reply.answer()),
+        answering("second", BASE.reply.answer()),
+    ]);
+    assert_eq!(
+        format!("{:?}", BuiltIn(plugins)),
+        r#"[PluginName("first"), PluginName("second")]"#
+    );
+}

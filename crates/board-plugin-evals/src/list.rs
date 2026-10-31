@@ -8,6 +8,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::records::{Status, Verdict};
+
 /// Every eval, by path. Each capability filters the rows in Rust:
 /// `eq_ignore_ascii_case` compares as `SQLite`'s `lower` does, and
 /// `starts_with` as `substr` and `length` do.
@@ -69,25 +71,6 @@ struct Listed {
     status: Status,
     verdict: Option<Verdict>,
     decision: Option<String>,
-}
-
-#[derive(Clone, Copy, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-#[schemars(inline)]
-enum Status {
-    Planned,
-    Running,
-    Concluded,
-    Abandoned,
-}
-
-#[derive(Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-#[schemars(inline)]
-enum Verdict {
-    Supported,
-    Refuted,
-    Inconclusive,
 }
 
 /// An eval as a mounted board's own, possibly looser, schema may admit it.

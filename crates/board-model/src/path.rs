@@ -173,6 +173,10 @@ pub fn is_hidden(char: char) -> bool {
     match char {
         '\u{200c}' | '\u{200d}' => false,
         '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}' => true,
+        // No ASCII character is a format character or a separator, so ASCII skips the
+        // lookup, which copies a 41 KB const table per call in a debug build. Optimising
+        // the Unicode crate does not help: the lookup is compiled into this crate.
+        _ if char.is_ascii() => char.is_ascii_control(),
         _ => {
             char.is_control()
                 || matches!(
