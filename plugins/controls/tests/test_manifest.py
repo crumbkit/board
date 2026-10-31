@@ -80,3 +80,12 @@ def test_call_help_prints_the_path_flag_with_its_sentence(board: Board) -> None:
     ran = board.run("call", "controls.check", "-h")
     assert ran.returncode == 0, ran.stderr
     assert f"--path <path>  {sentence}{relative}\n" in ran.stdout, ran.stdout
+
+
+def test_a_budget_measured_per_directory_is_invalid_and_one_measured_per_file_is_not(board: Board) -> None:
+    board.write("controls/file.json", control("R.", rule={"budget": "words", "max": 1, "per": "file"}))
+    board.write("controls/directory.json", control("R.", rule={"budget": "words", "max": 1, "per": "directory"}))
+    report = json.loads(board.run("--json", "check").stdout)
+    status = {entry["logical"]: entry for entry in report["data"]}
+    assert status["/controls/file"]["status"] == "ok"
+    assert status["/controls/directory"]["code"] == "board::record::invalid"
