@@ -12,6 +12,8 @@ use crate::check::Tally;
 use crate::tests::{PROJECT_SCHEMA, TASK_SCHEMA, board, open, stand_in, task};
 use crate::{CheckReport, Checked, Detail, Refreshed};
 
+mod kept;
+
 fn changes(scenario: &Scenario) -> Vec<(String, Change)> {
     open(scenario)
         .check(None, None)

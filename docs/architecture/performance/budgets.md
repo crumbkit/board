@@ -86,11 +86,14 @@ slower or new fails where base passed. A missing base fails with
 `xtask::bench::no_against`, and `--runs` without `--against` with
 `xtask::bench::runs_without_against`.
 
-Targets are the speed an agent loop or a web view needs. None is met or
-enforced yet:
+Targets are the speed an agent loop or a web view needs. Nothing enforces
+them:
 
 | Operation | Target |
 | --- | --- |
 | `board check`, warm, nothing changed | 100 ms |
 | simple `board query`, warm | 100 ms |
 | `board call plans.open --limit 20`, warm, on the owner's board | 50 ms |
+
+A warm `board check` reads the decisions the index keeps
+(performance/decisions.md).

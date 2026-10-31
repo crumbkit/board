@@ -80,6 +80,8 @@ pub struct Mounted<F> {
     pub crossings: HashSet<Crossing>,
     /// Whether the cache holds its decision under `key`.
     pub kept: bool,
+    /// Whether the scope holds all of it on some route.
+    pub whole: bool,
     /// Its entries and the cache's facts about them, or `None` when it was
     /// not walked (see `walk_mounts`); discovery may walk a source the
     /// scope does not reach.
@@ -144,9 +146,10 @@ impl Repositories {
     /// then walked from it. A repository that several pointers name is
     /// opened once. A source whose pointers `cache` lists is walked only
     /// when `scope` reaches it. When `skip_kept` is true, such a source is
-    /// also not walked when its decision is kept. `build` names the code
-    /// that decides, for the keys. With an empty `build`, nothing is read
-    /// from or stored in the cache's pointer lists or kept decisions.
+    /// also not walked when its decision is kept and `scope` holds all of
+    /// it. `build` names the code that decides, for the keys. With an empty
+    /// `build`, nothing is read from or stored in the cache's pointer lists
+    /// or kept decisions.
     pub fn walk_mounts<C: Cache>(
         &self,
         entries: &[Entry],
@@ -218,6 +221,7 @@ impl Repositories {
                 scan,
                 crossings: HashSet::new(),
                 kept: false,
+                whole: false,
                 walked,
             });
         }
@@ -227,8 +231,11 @@ impl Repositories {
         reached.scopes = reached.scopes(scope);
         for mounted in &mut reached.sources {
             mounted.kept = mounted.key.as_ref().is_some_and(|key| cache.kept(key));
-            let wanted = reached.scopes.contains_key(&Source::Commit(mounted.commit));
-            if mounted.walked.is_none() && wanted && !(skip_kept && mounted.kept) {
+            let states = reached.scopes.get(&Source::Commit(mounted.commit));
+            mounted.whole = states.is_some_and(|states| states.contains(&None));
+            let wanted = states.is_some();
+            let skip = skip_kept && mounted.kept && mounted.whole;
+            if mounted.walked.is_none() && wanted && !skip {
                 let walked = walk(&mounted.repository, mounted.commit, mounted.root, cache)?;
                 mounted.walked = Some(walked);
             }

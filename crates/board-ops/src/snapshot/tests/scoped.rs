@@ -64,16 +64,22 @@ fn scope(path: &str) -> Option<LogicalPath> {
     (path != "/").then(|| path.parse().unwrap())
 }
 
-/// The entries a check scoped to `path` reports, and the names of the
-/// mounted sources it walked, sorted, through the index in `cache` or a cold
-/// one.
-fn checked(
+/// The entries a check scoped to `path` reports, through the index in
+/// `cache` or a cold one.
+fn checked(scenario: &Scenario, path: &str, cache: Option<&Path>) -> Vec<Checked> {
+    let report = open(scenario).check(scope(path).as_ref(), cache).unwrap();
+    report.entries
+}
+
+/// The names of the mounted sources, sorted, that `ls` of `path` walked
+/// through the index in `cache`. It decides every source its scope reaches.
+fn ls_walked(
     (scenario, libraries): (&Scenario, &[Library]),
     path: &str,
-    cache: Option<&Path>,
-) -> (Vec<Checked>, Vec<&'static str>) {
+    cache: &Path,
+) -> Vec<&'static str> {
     let board = open(scenario);
-    let index = board.index(cache).unwrap();
+    let index = board.index(Some(cache)).unwrap();
     let snapshot = board.snapshot(index, scope(path).as_ref(), Need::Report);
     let snapshot = snapshot.unwrap();
     let mut walked: Vec<&str> = (snapshot.walked.iter())
@@ -85,7 +91,7 @@ fn checked(
         .collect();
     walked.sort_unstable();
     assert_eq!(snapshot.report.work.walked, walked.len(), "{path}");
-    (snapshot.report.entries, walked)
+    walked
 }
 
 /// What `ls` of `path` lists, without the work it did or where its index
@@ -115,11 +121,11 @@ const SCOPES: [(&str, &[&str]); 6] = [
 ];
 
 #[test]
-fn a_warm_scoped_check_walks_only_the_mounts_its_scope_reaches_and_its_wider_twin_walks_each() {
+fn a_warm_scoped_ls_walks_only_the_mounts_its_scope_reaches_and_its_wider_twin_walks_each() {
     let (scenario, libraries) = mounting();
     let board = (&scenario, libraries.as_slice());
     let cache = tempfile::tempdir().unwrap();
-    let walked = |path| checked(board, path, Some(cache.path())).1;
+    let walked = |path| ls_walked(board, path, cache.path());
     let every = ["a", "b", "inner"];
     assert_eq!(walked("/"), every, "cold: every source is walked");
     for (path, reached) in SCOPES {
@@ -134,15 +140,55 @@ fn a_warm_scoped_check_walks_only_the_mounts_its_scope_reaches_and_its_wider_twi
     );
 }
 
+/// The mounted sources a check of `path` through the index in `cache` read
+/// from kept rows, walked, and the blobs it parsed.
+fn check_work(scenario: &Scenario, path: &str, cache: &Path) -> (usize, usize, usize) {
+    let work = open(scenario)
+        .check(scope(path).as_ref(), Some(cache))
+        .unwrap()
+        .work;
+    (work.kept, work.walked, work.parsed)
+}
+
+#[test]
+fn a_warm_check_reads_each_kept_source_and_after_one_moves_walks_only_that_one() {
+    let (scenario, [_a, (_, b, _), _inner]) = mounting();
+    let cache = tempfile::tempdir().unwrap();
+    let work = |path| check_work(&scenario, path, cache.path());
+    assert_eq!(work("/").0, 0, "cold");
+    assert_eq!(work("/"), (3, 0, 0));
+    let moved = b.commit(&[("notes.md", "moved")]);
+    let pointer = mount(&b.path(), moved);
+    scenario
+        .write("repos/b.json", Item::File(&pointer))
+        .write("z/b.json", Item::File(&pointer));
+    let (kept, walked, _) = work("/");
+    assert_eq!(
+        (kept, walked),
+        (2, 1),
+        "a and the board it mounts are still kept"
+    );
+    assert_eq!(work("/"), (3, 0, 0));
+}
+
+#[test]
+fn a_warm_check_of_a_mount_reads_its_kept_rows_and_one_of_a_directory_inside_it_walks_it() {
+    let (scenario, _libraries) = mounting();
+    let cache = tempfile::tempdir().unwrap();
+    let work = |path| check_work(&scenario, path, cache.path());
+    work("/");
+    assert_eq!(work("/repos/a"), (2, 0, 0));
+    assert_eq!(work("/repos/a/tasks"), (0, 1, 0));
+}
+
 #[test]
 fn a_warm_scoped_check_and_ls_answer_as_cold_ones() {
-    let (scenario, libraries) = mounting();
-    let board = (&scenario, libraries.as_slice());
+    let (scenario, _libraries) = mounting();
     let cache = tempfile::tempdir().unwrap();
-    checked(board, "/", Some(cache.path()));
+    checked(&scenario, "/", Some(cache.path()));
     for (path, _) in SCOPES {
-        let warm = checked(board, path, Some(cache.path())).0;
-        let cold = checked(board, path, None).0;
+        let warm = checked(&scenario, path, Some(cache.path()));
+        let cold = checked(&scenario, path, None);
         assert!(!cold.is_empty(), "{path}");
         assert_eq!(warm, cold, "check {path}");
         if path == "/tasks" {
@@ -157,8 +203,8 @@ fn a_warm_scoped_check_and_ls_answer_as_cold_ones() {
 
 #[test]
 fn a_scope_at_the_second_route_to_a_commit_reports_its_entries_under_the_first() {
-    let (scenario, libraries) = mounting();
-    let (entries, _) = checked((&scenario, &libraries), "/repos/b", None);
+    let (scenario, _libraries) = mounting();
+    let entries = checked(&scenario, "/repos/b", None);
     let logical: Vec<String> = entries
         .iter()
         .filter(|entry| entry.source != Source::WorkingTree)
@@ -175,13 +221,14 @@ fn a_scope_at_the_second_route_to_a_commit_reports_its_entries_under_the_first()
 fn an_unscoped_check_after_cold_and_warm_scoped_ones_answers_as_a_cold_one() {
     let (scenario, libraries) = mounting();
     let board = (&scenario, libraries.as_slice());
-    let cold = checked(board, "/", None).0;
+    let cold = checked(&scenario, "/", None);
     for (path, reached) in SCOPES {
         let cache = tempfile::tempdir().unwrap();
-        checked(board, path, Some(cache.path()));
-        let (_, walked) = checked(board, path, Some(cache.path()));
+        checked(&scenario, path, Some(cache.path()));
+        checked(&scenario, path, Some(cache.path()));
+        let walked = ls_walked(board, path, cache.path());
         assert_eq!(walked, reached, "{path}");
-        let warm = checked(board, "/", Some(cache.path())).0;
+        let warm = checked(&scenario, "/", Some(cache.path()));
         assert_eq!(warm, cold, "after {path}");
     }
 }

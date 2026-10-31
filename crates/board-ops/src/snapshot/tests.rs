@@ -210,14 +210,19 @@ fn prune(index: Index) -> usize {
 }
 
 /// Decides `scenario` through an index `warm` opens and through a cold one,
-/// first for views, as a query does, then for a report, as a check does,
-/// and requires them to agree: the same entries, the same references, views
-/// that show those entries, and every table alike. Returns what the warm
-/// index reported.
+/// first for views, as a query does, then for a report alone, as a check
+/// does, then for a report and references, as refs does, and requires them to agree: the
+/// same entries in the same order, with their detail, the same references,
+/// views that show those entries, and every table alike. Returns what the
+/// warm index reported for refs.
 fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, TestCaseError> {
     let board = open(scenario);
     let cold = || Index::open(None, board.repository().path()).unwrap();
     let (warm_view, cold_view) = (filled(&board, warm()), filled(&board, cold()));
+    let checked = [warm(), cold()].map(|index| {
+        let snapshot = board.snapshot(index, None, Need::Check).unwrap();
+        snapshot.report.entries
+    });
     let [warm, cold] = [warm(), cold()].map(|index| {
         let snapshot = board.snapshot(index, None, Need::Report).unwrap();
         (snapshot.report, snapshot.references)
@@ -227,6 +232,9 @@ fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, 
     }
     prop_assert_eq!(&warm.0.entries, &cold.0.entries);
     prop_assert_eq!(&warm.1, &cold.1);
+    for checked in &checked {
+        prop_assert_eq!(checked, &cold.0.entries);
+    }
     let (warm_view, cold_view) = (warm_view.view, cold_view.view);
     let warm = warm.0;
     for sql in EVERY_TABLE {
@@ -240,19 +248,33 @@ fn agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<CheckReport, 
     Ok(warm)
 }
 
-/// Checks only the mounted library's tasks of `scenario` through `warm` and
-/// through a cold index, and requires them to agree, failing or not.
-fn scoped_agrees(scenario: &Scenario, warm: Index) -> Result<(), TestCaseError> {
+/// Checks the mounted library, and only its tasks, of `scenario` through
+/// `warm` and through a cold index, for a report and for a report alone,
+/// and requires them to agree, failing or not.
+fn scoped_agrees(scenario: &Scenario, warm: &dyn Fn() -> Index) -> Result<(), TestCaseError> {
     let board = open(scenario);
-    let cold = Index::open(None, board.repository().path()).unwrap();
-    let scope = "/vendor/tasks".parse().unwrap();
-    let [warm, cold] = [warm, cold].map(|index| {
-        let snapshot = board.snapshot(index, Some(&scope), Need::Report);
-        snapshot.map(|snapshot| (snapshot.report.entries, snapshot.references))
-    });
     let code = |error: crate::CheckError| error.code();
-    prop_assert_eq!(warm.map_err(code), cold.map_err(code));
+    for scope in ["/vendor", "/vendor/tasks"] {
+        let scope = scope.parse().unwrap();
+        let [reported, cold] = [warm(), cold_index(&board)].map(|index| {
+            let snapshot = board.snapshot(index, Some(&scope), Need::Report);
+            snapshot.map(|snapshot| (snapshot.report.entries, snapshot.references))
+        });
+        let cold = cold.map_err(code);
+        prop_assert_eq!(reported.map_err(code), cold.clone());
+        for index in [warm(), cold_index(&board)] {
+            let snapshot = board.snapshot(index, Some(&scope), Need::Check);
+            let entries = snapshot.map(|snapshot| snapshot.report.entries);
+            let expected = cold.clone().map(|(entries, _)| entries);
+            prop_assert_eq!(entries.map_err(code), expected);
+        }
+    }
     Ok(())
+}
+
+/// A cold index for `board`.
+fn cold_index(board: &crate::Board) -> Index {
+    Index::open(None, board.repository().path()).unwrap()
 }
 
 /// Decides the board `before` describes warm, changes it to `after`, and
@@ -273,7 +295,7 @@ fn warm_decides_as_cold(
     agrees(generated.scenario(), &warm)?;
     let again = agrees(generated.scenario(), &warm)?;
     prop_assert_eq!(again.work, decided_only(again.work), "nothing changed");
-    scoped_agrees(generated.scenario(), warm())?;
+    scoped_agrees(generated.scenario(), &warm)?;
 
     prune(warm());
     generated.write(before);
