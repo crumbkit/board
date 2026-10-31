@@ -54,7 +54,8 @@ which brings review accounting into scope.
 
 Each of these waits until a real need has its own plan: effects beyond the
 first slice in plan/board-ui.md; triggers and scheduling;
-pinned or relative references; remote mounts (a mount names a local clone);
+pinned or relative references (a review's `subject` pins only its own
+field); remote mounts (a mount names a local clone);
 any query language beyond SQL; daemons and watchers other than `board serve`;
 sync beyond git; Windows CI (the code
 stays portable); and the old Board's ControlTree groups, assessments,

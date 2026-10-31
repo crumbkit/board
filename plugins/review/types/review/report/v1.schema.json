@@ -60,10 +60,45 @@
       ],
       "title": "Finding",
       "type": "object"
+    },
+    "Subject": {
+      "additionalProperties": false,
+      "description": "A record under review, pinned by its blob, so a review names exactly which version it read.",
+      "properties": {
+        "blob": {
+          "pattern": "^[0-9a-f]{40,64}$",
+          "title": "Blob",
+          "type": "string"
+        },
+        "record": {
+          "format": "board-ref",
+          "title": "Record",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record",
+        "blob"
+      ],
+      "title": "Subject",
+      "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`review/report/v1`, at /reviews/<id>/report: what one review of a range found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. `brief` is absent for\na review a person wrote. `by` names the models the agent reported, else the\nprogram the agent command starts, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
+  "description": "`review/report/v1`, at /reviews/<id>/report: what one review of a range or a record found.\n\n`range` holds the full commit ids reviewed, and `patch_ids` the\n`git patch-id --verbatim` of each commit in it that has a diff, oldest first,\nso the review still covers the commits after a rebase. A review of a record\nholds its `subject` instead, and covers no commit. `brief` is absent for\na review a person wrote. `by` names the models the agent reported, else the\nprogram the agent command starts, or the person. `source` is a URL, such as\na GitHub review. `follows` is the previous report.",
+  "oneOf": [
+    {
+      "required": [
+        "range",
+        "patch_ids"
+      ]
+    },
+    {
+      "required": [
+        "subject"
+      ]
+    }
+  ],
   "properties": {
     "$type": {
       "const": "review/report/v1",
@@ -115,6 +150,9 @@
       "title": "Source",
       "type": "string"
     },
+    "subject": {
+      "$ref": "#/$defs/Subject"
+    },
     "verdict": {
       "enum": [
         "approve",
@@ -127,8 +165,6 @@
   },
   "required": [
     "$type",
-    "range",
-    "patch_ids",
     "findings",
     "verdict",
     "by"

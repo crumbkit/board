@@ -1,6 +1,42 @@
 {
+  "$defs": {
+    "Subject": {
+      "additionalProperties": false,
+      "description": "A record under review, pinned by its blob, so a review names exactly which version it read.",
+      "properties": {
+        "blob": {
+          "pattern": "^[0-9a-f]{40,64}$",
+          "title": "Blob",
+          "type": "string"
+        },
+        "record": {
+          "format": "board-ref",
+          "title": "Record",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record",
+        "blob"
+      ],
+      "title": "Subject",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
-  "description": "`review/brief/v1`, at /reviews/<id>/brief: what a change's author asks a review to look at.\n\n`range` is the commits under review as `base..head`, both full commit ids.\n`focus` says what matters and what to check first, `questions` what the\nauthor wants answered, and `follows` the report this brief continues from.",
+  "description": "`review/brief/v1`, at /reviews/<id>/brief: what a change's author asks a review to look at.\n\n`range` is the commits under review as `base..head`, both full commit ids,\nand `subject` the record under review at its blob; a brief has one of them.\n`focus` says what matters and what to check first, `questions` what the\nauthor wants answered, and `follows` the report this brief continues from.",
+  "oneOf": [
+    {
+      "required": [
+        "range"
+      ]
+    },
+    {
+      "required": [
+        "subject"
+      ]
+    }
+  ],
   "properties": {
     "$type": {
       "const": "review/brief/v1",
@@ -29,11 +65,13 @@
       "pattern": "^[0-9a-f]{40,64}\\.\\.[0-9a-f]{40,64}$",
       "title": "Range",
       "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/Subject"
     }
   },
   "required": [
     "$type",
-    "range",
     "focus"
   ],
   "title": "BriefRecord",

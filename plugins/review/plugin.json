@@ -3,7 +3,7 @@
   "capabilities": [
     {
       "_meta": {},
-      "description": "Review the range a brief names with the agent the BOARD_REVIEW_AGENT variable names, and write the report beside the brief.",
+      "description": "Review the range or pinned record a brief names with the agent the BOARD_REVIEW_AGENT variable names, and write the report beside the brief.",
       "env": [
         "BOARD_REVIEW_AGENT",
         "ANTHROPIC_API_KEY",
@@ -11,7 +11,7 @@
       ],
       "inputSchema": {
         "additionalProperties": false,
-        "description": "Review the range a brief names with the agent BOARD_REVIEW_AGENT names.",
+        "description": "Review the range or record a brief names with the agent BOARD_REVIEW_AGENT names.",
         "properties": {
           "brief": {
             "description": "The brief to run, by its logical path, such as /reviews/fix-sync/brief.",
@@ -29,8 +29,32 @@
       },
       "name": "run",
       "outputSchema": {
+        "$defs": {
+          "Subject": {
+            "additionalProperties": false,
+            "description": "A record under review, pinned by its blob, so a review names exactly which version it read.",
+            "properties": {
+              "blob": {
+                "pattern": "^[0-9a-f]{40,64}$",
+                "title": "Blob",
+                "type": "string"
+              },
+              "record": {
+                "format": "board-ref",
+                "title": "Record",
+                "type": "string"
+              }
+            },
+            "required": [
+              "record",
+              "blob"
+            ],
+            "title": "Subject",
+            "type": "object"
+          }
+        },
         "additionalProperties": false,
-        "description": "The report written, the commits covered, the verdict and how many findings.",
+        "description": "The report written, the commits or record it covers, the verdict and how many findings.",
         "properties": {
           "findings": {
             "title": "Findings",
@@ -44,6 +68,9 @@
             "title": "Report",
             "type": "string"
           },
+          "subject": {
+            "$ref": "#/$defs/Subject"
+          },
           "verdict": {
             "enum": [
               "approve",
@@ -56,7 +83,6 @@
         },
         "required": [
           "report",
-          "range",
           "verdict",
           "findings"
         ],
@@ -191,7 +217,7 @@
       }
     }
   ],
-  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment; `board call review.covered --base <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in the plugin's directory says more.",
+  "description": "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range or pinned record with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment; `board call review.covered --base <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in the plugin's directory says more.",
   "metadata": {
     "area": "review"
   },

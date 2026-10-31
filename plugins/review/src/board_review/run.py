@@ -1,4 +1,4 @@
-"""`run`: review the range a brief names with the agent BOARD_REVIEW_AGENT names, and record the report."""
+"""`run`: review the range or record a brief names with the agent BOARD_REVIEW_AGENT names, and record the report."""
 
 import contextlib
 import json
@@ -23,6 +23,7 @@ from board_review.shapes import (
     Finding,
     ReportRecord,
     RunOutput,
+    Subject,
 )
 
 # Codes that depend on the tree rather than the record. A record holding one is still one to read.
@@ -36,22 +37,23 @@ DRAIN = 5
 # The signals that stop the plugin, and with it the agent: Board's SIGTERM, Ctrl-C and a closed terminal.
 STOPPING = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
-INSTRUCTIONS = """You review a change to a git repository. You have not seen it before.
-Read the brief, then the diff. You have no tools and no copy of the repository, so the diff is all you have.
+INSTRUCTIONS = """You review {what}. You have not seen it before.
+Read the brief, then the {shown}. You have no tools and no copy of the repository, so the {shown} is all you have.
 
 Answer with your review, and end your answer with one JSON object and nothing after it:
 {"verdict": "approve" | "changes" | "comment",
  "findings": [{"severity": "high" | "medium" | "low", "file": "<path>", "line": <number>, "text": "<what is wrong>"}]}
-Leave out "file" and "line" for a finding about the whole change. Use "changes" when any finding must be fixed.
+Leave out "file" and "line" for a finding about the whole {shown}. Use "changes" when any finding must be fixed.
 """
 
 
 def run(request: CallRequest) -> RunOutput:
-    """Review the brief's range with the agent BOARD_REVIEW_AGENT names, then write the report beside the brief.
+    """Review the brief's range or subject with the agent BOARD_REVIEW_AGENT names, then write the report beside it.
 
     The brief comes only from the board's own tree, and the agent only from
     the user's environment, since a board's tree may come from a pull request.
-    The range's base is replaced by the merge base of the base and the head.
+    A range's base is replaced by the merge base of the base and the head. A
+    subject is read through Board, and must still be at its pinned blob.
     The report is written at /reviews/<id>/report, beside the brief at
     /reviews/<id>/brief, and a review that has one is refused.
     """
@@ -67,16 +69,24 @@ def run(request: CallRequest) -> RunOutput:
             {"report": report_path},
         )
     command = _command()
-    repository = Repository(request.board.root)
-    base_name, _, head_name = brief["range"].partition("..")
-    head = repository.commit(head_name)
-    # A base that moved on after the branch point would show its own commits as reverted.
-    base = repository.merge_base(repository.commit(base_name), head)
-    commits = repository.commits(base, head)
-    ids = repository.patch_ids(commits)
-    prompt = _prompt(path, brief, base, head, repository.diff(base, head))
+    subject = brief.get("subject")
+    covered: tuple[str, list[str]] | None = None
+    if subject is not None:
+        prompt = _prompt(path, brief, "a record in a board", "record", _record(board, subject))
+    else:
+        repository = Repository(request.board.root)
+        # The schema gives a brief without a subject a range.
+        base_name, _, head_name = brief.get("range", "").partition("..")
+        head = repository.commit(head_name)
+        # A base that moved on after the branch point would show its own commits as reverted.
+        base = repository.merge_base(repository.commit(base_name), head)
+        commits = repository.commits(base, head)
+        ids = repository.patch_ids(commits)
+        shown = f"Range: {base}..{head}\n\n## Diff\n\n{repository.diff(base, head)}"
+        prompt = _prompt(path, brief, "a change to a git repository", "diff", shown)
+        covered = (f"{base}..{head}", [ids[commit] for commit in commits if commit in ids])
     clock = time.monotonic()
-    # An empty directory, so the agent finds no project settings or MCP servers beside the untrusted diff.
+    # An empty directory, so the agent finds no project settings or MCP servers beside the untrusted input.
     with tempfile.TemporaryDirectory(prefix="board-review-") as empty:
         stdout = _agent(command, prompt, empty, AGENT_TIMEOUT)
     answer, tokens, models = _envelope(stdout)
@@ -87,18 +97,58 @@ def run(request: CallRequest) -> RunOutput:
     report: ReportRecord = {
         "$type": "review/report/v1",
         "brief": path,
-        "range": f"{base}..{head}",
-        "patch_ids": [ids[commit] for commit in commits if commit in ids],
         "findings": findings,
         "verdict": verdict,
         "by": ", ".join(models) or Path(command[0]).name,
         "cost": cost,
     }
+    output: RunOutput = {"report": report_path, "verdict": verdict, "findings": len(findings)}
+    if subject is not None:
+        report["subject"] = output["subject"] = subject
+    if covered is not None:
+        report["range"], report["patch_ids"] = covered
+        output["range"] = covered[0]
     if "follows" in brief:
         report["follows"] = brief["follows"]
     line = {"path": report_path, "expect": "none", "record": report}
     board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
-    return {"report": report_path, "range": report["range"], "verdict": verdict, "findings": len(findings)}
+    return output
+
+
+def _record(board: Board, subject: Subject) -> str:
+    """The prompt's part for the subject: its path, blob, the references it makes and its bytes.
+
+    Else `review::subject::not_found`, or `review::subject::moved` when the record is no longer at its pinned blob.
+    """
+    record = subject["record"]
+    [answer] = board.refs([record])
+    rows = []
+    if answer is not None:
+        location = answer["location"]
+        where = f"source = {literal(str(location['source']))} AND path = {literal(str(location['path']))}"
+        rows = board.rows(f"SELECT blob FROM entries WHERE {where}")  # noqa: S608 - literals quoted
+    if answer is None or not rows or rows[0][0] is None:
+        raise PluginError(
+            "review::subject::not_found",
+            f"no file is at the subject {record}; `board ls` shows what is there, so fix the brief's subject",
+            {"record": record},
+        )
+    current = str(rows[0][0])
+    if current != subject["blob"]:
+        raise PluginError(
+            "review::subject::moved",
+            f"the subject {record} is at blob {current}, not the {subject['blob']} the brief pins; write a new brief"
+            f" that pins {current} if that version is the one to review",
+            {"record": record, "pinned": subject["blob"], "current": current},
+        )
+    [read] = board.get([record])
+    if isinstance(read, PluginError):
+        raise read
+    references = "".join(f"- {ref['pointer']}: {ref['target']}\n" for ref in answer["from"])
+    return (
+        f"Record: {record} at {current}\n\nReferences it makes:\n{references or '- none\n'}"
+        f"\n## Record\n\n{read.decode(errors='replace')}"
+    )
 
 
 def _command() -> list[str]:
@@ -147,13 +197,14 @@ def read_record(board: Board, path: str, record_type: str, area: str) -> tuple[d
     return cast("dict[str, Any]", json.loads(rows[0][0])), str(rows[0][1])
 
 
-def _prompt(path: str, brief: BriefRecord, base: str, head: str, diff: str) -> str:
+def _prompt(path: str, brief: BriefRecord, what: str, shown: str, body: str) -> str:
+    """The agent's prompt: the instructions for reviewing `what` from its `shown`, the brief, then `body`."""
     questions = "".join(f"- {question}\n" for question in brief.get("questions", []))
     return (
-        INSTRUCTIONS
-        + f"\n## Brief {path}\n\nRange: {base}..{head}\n\nFocus: {brief['focus']}\n"
+        INSTRUCTIONS.replace("{what}", what).replace("{shown}", shown)
+        + f"\n## Brief {path}\n\nFocus: {brief['focus']}\n"
         + (f"\nQuestions:\n{questions}" if questions else "")
-        + f"\n## Diff\n\n{diff}"
+        + f"\n{body}"
     )
 
 
