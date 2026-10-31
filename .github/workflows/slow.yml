@@ -144,8 +144,10 @@ jobs:
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           version: "0.13.0"
-      - run: bin/lint
-      - run: bin/test
+      # The ui part runs in a Docker container, and macOS runners have no
+      # Docker, so this job skips it. ci.yml runs it on Linux.
+      - run: bin/lint rust && bin/lint python
+      - run: bin/test rust && bin/test doc && bin/test python
 
   # Fuzzing is randomised, so it runs every night, even on an unchanged main.
   fuzz:
