@@ -57,7 +57,7 @@
       "type": "string"
     },
     "subjects": {
-      "description": "The names of what is tested, such as `crumbkit` or `clap`, without\nversions. Name a repository by its mount, in `mounts`.",
+      "description": "The names of what is tested, such as `crumbkit` or `clap`, without\nversions, which go in a run's `versions`. Name a repository by its\nmount, in `mounts`.",
       "items": {
         "type": "string"
       },

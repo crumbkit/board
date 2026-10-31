@@ -20,7 +20,8 @@ pub struct EvalRecord {
     /// The question the eval answers.
     pub question: String,
     /// The names of what is tested, such as `crumbkit` or `clap`, without
-    /// versions. Name a repository by its mount, in `mounts`.
+    /// versions, which go in a run's `versions`. Name a repository by its
+    /// mount, in `mounts`.
     #[schemars(length(min = 1))]
     pub subjects: Vec<String>,
     /// Where the eval stands.
@@ -64,6 +65,7 @@ impl Record for Run {
     const TYPE: &'static str = "runs/run/v1";
 }
 
+/// Where an eval stands.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[schemars(inline)]
@@ -74,6 +76,7 @@ pub enum Status {
     Abandoned,
 }
 
+/// What a concluded eval's runs show.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 #[schemars(inline)]

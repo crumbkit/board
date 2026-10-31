@@ -119,7 +119,9 @@ tests something. Link the directory into the agent's skills to install it:
 
 The plugin is the crate `crates/board-plugin-evals`. It generates the
 manifest's input and output schemas from Rust structs with schemars, and
-ships the eval schema as the file in its `types/` directory.
+generates the eval schema from `EvalRecord` in `src/records.rs`. Its `types/`
+directory holds that schema as a committed golden, which a test compares with
+what the struct generates.
 
 This directory keeps `SKILL.md` and a uv project that only tests the plugin
 through the real binary. The gates, which CI runs: `uv run ruff format --check .`,
