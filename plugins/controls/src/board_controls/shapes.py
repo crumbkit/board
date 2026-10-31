@@ -30,13 +30,16 @@ BoardRef = Annotated[str, Extra(format="board-ref")]
 
 
 class Budget(TypedDict):
-    """A limit on the words or bytes of every file the control applies to, summed.
+    """A limit on the words or bytes of the files the control applies to.
 
-    Words are separated by any whitespace.
+    With `per` `total`, the default, the files' usage is summed; with `file`,
+    each file on its own must be within `max`. Words are separated by any
+    whitespace.
     """
 
     budget: Literal["words", "bytes"]
     max: Annotated[int, Extra(minimum=0)]
+    per: NotRequired[Annotated[Literal["total", "file"], Extra(default="total")]]
 
 
 ControlRecord = TypedDict(
@@ -105,8 +108,19 @@ class CheckInput(TypedDict):
     ]
 
 
+class FileUsed(TypedDict):
+    """What one file uses of a per-file budget."""
+
+    file: str
+    used: int
+
+
 class Checked(TypedDict):
-    """A budget control and what all its files use."""
+    """A budget control and what its files use: all of them summed, or its largest file when `per` is `file`.
+
+    Only a per-file control carries `per`, `largest`, the file it measured
+    as `used` (null when it has none), and `over`, every file over `max`.
+    """
 
     control: str
     requirement: str
@@ -114,6 +128,9 @@ class Checked(TypedDict):
     max: int
     used: int
     files: list[str]
+    per: NotRequired[Literal["file"]]
+    largest: NotRequired[str | None]
+    over: NotRequired[list[FileUsed]]
 
 
 class Stated(TypedDict):

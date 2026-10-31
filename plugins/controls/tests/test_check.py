@@ -45,6 +45,7 @@ def test_check_measures_each_budget_control_over_its_files(board: Board) -> None
 
 
 WORDS = 3
+BOTH = 5
 
 
 def over(board: Board, max_words: int) -> dict[str, Any]:
@@ -420,3 +421,78 @@ def test_a_stated_control_counts_a_file_it_reaches_by_reference_and_pattern_once
     assert counted() == [(["docs/*"], 1)]
     board.write("docs/b.md", "eight")
     assert counted() == [(["docs/*"], 2)]
+
+
+def per(board: Board, mode: str | None, max_words: int) -> dict[str, Any]:
+    """`check` on a three-word and a two-word file, `BOTH` words in all, under a control of `max_words` `per` `mode`."""
+    board.write("docs/a.md", "one two three")
+    board.write("docs/b.md", "four five")
+    rule: dict[str, Any] = {"budget": "words", "max": max_words}
+    if mode is not None:
+        rule["per"] = mode
+    board.write("controls/docs.json", control("Small.", paths=["docs/*.md"], rule=rule))
+    return board.call("check", {})
+
+
+def test_a_per_file_control_passes_when_each_file_is_within_it_and_a_total_one_sums_the_same_files(
+    board: Board,
+) -> None:
+    admitted = per(board, "file", WORDS)
+    assert admitted["data"]["output"]["measured"] == [
+        {
+            "control": "/controls/docs",
+            "requirement": "Small.",
+            "budget": "words",
+            "max": WORDS,
+            "used": WORDS,
+            "files": ["/docs/a.md", "/docs/b.md"],
+            "per": "file",
+            "largest": "/docs/a.md",
+            "over": [],
+        }
+    ], admitted
+    summed = per(board, "total", BOTH)
+    assert summed["data"]["output"]["measured"][0]["used"] == BOTH, summed
+    assert summed["data"]["output"]["measured"][0]["files"] == ["/docs/a.md", "/docs/b.md"]
+    assert per(board, "total", WORDS)["code"] == "controls::budget::exceeded"
+
+
+def test_a_per_file_control_fails_naming_each_file_over_it_and_passes_once_that_file_is_within_it(
+    board: Board,
+) -> None:
+    refused = per(board, "file", 2)
+    assert refused["code"] == "controls::budget::exceeded", refused
+    assert "/controls/docs (each file at most 2 words: /docs/a.md has 3)" in refused["message"]
+    [failing] = refused["fields"]["controls"]
+    assert (failing["used"], failing["largest"]) == (WORDS, "/docs/a.md")
+    assert failing["over"] == [{"file": "/docs/a.md", "used": WORDS}]
+    board.write("docs/a.md", "one two")
+    assert board.call("check", {})["data"]["output"]["measured"][0]["over"] == []
+
+
+def test_a_per_file_control_names_the_first_of_equal_files_as_largest_and_lists_every_file_over_it(
+    board: Board,
+) -> None:
+    per(board, "file", 2)
+    board.write("docs/b.md", "four five six")
+    refused = board.call("check", {})
+    assert refused["code"] == "controls::budget::exceeded", refused
+    assert "/controls/docs (each file at most 2 words: /docs/a.md has 3, /docs/b.md has 3)" in refused["message"]
+    [failing] = refused["fields"]["controls"]
+    assert (failing["used"], failing["largest"]) == (WORDS, "/docs/a.md")
+    assert failing["over"] == [{"file": "/docs/a.md", "used": WORDS}, {"file": "/docs/b.md", "used": WORDS}]
+
+
+def test_a_control_naming_per_total_measures_exactly_as_one_naming_no_per(board: Board) -> None:
+    named = per(board, "total", BOTH)
+    unnamed = per(board, None, BOTH)
+    assert named["data"]["output"] == unnamed["data"]["output"], (named, unnamed)
+    assert set(unnamed["data"]["output"]["measured"][0]) == {"control", "requirement", "budget", "max", "used", "files"}
+
+
+def test_a_per_file_control_with_no_files_measures_nothing_as_its_largest(board: Board) -> None:
+    board.write(
+        "controls/docs.json", control("Small.", paths=["docs/*.md"], rule={"budget": "words", "max": 1, "per": "file"})
+    )
+    [measured] = board.call("check", {})["data"]["output"]["measured"]
+    assert (measured["used"], measured["largest"], measured["over"]) == (0, None, [])

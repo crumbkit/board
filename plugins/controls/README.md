@@ -33,8 +33,11 @@ files it governs.
   `controls::file::unreadable`; in a mounted board it matches nothing, and
   that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
-  With a budget, it limits the sum of the `words` (separated by any
-  whitespace) or `bytes` of every file the control applies to.
+  With a budget, it limits the `words` (separated by any whitespace) or
+  `bytes` of the files the control applies to. Its optional `per` says how:
+  `total`, the default, limits the sum over every file, and `file` limits
+  each file on its own, such as
+  `{"budget": "words", "max": 500, "per": "file"}` on `changes/*/plan.md`.
 
 The plugin ships the record's schema. `board plugin enable controls` writes it
 to `.board/types/controls/control/v1.schema.json`.
@@ -58,12 +61,17 @@ to `.board/types/controls/control/v1.schema.json`.
   `controls::board::refused`. Under `/` it lists every control, so one whose
   pattern matches nothing shows with `files: []` if measured and `files: 0` if
   stated; under another path, only those reaching a file there. `measured`
-  holds the budget controls, with usage and `files`: every file the budget
-  counts, inside the path or not. `stated` holds the rest, with their `paths`
-  patterns and `files`, the number of their files under the path, so the
-  output stays short; `board get <control>` shows its `applies_to` and
-  `paths`. A stated control never fails the call. It fails, exiting 1, with
-  `controls::budget::exceeded` when a measured control is over budget;
+  holds the budget controls, with `used`, `max` and `files`: every file the
+  budget counts, inside the path or not. A `total` control's `used` is the
+  sum over its files. A `file` control also carries `per: "file"`,
+  `largest`, the file with the most usage (`null` when it has no files),
+  `used`, that file's usage, and `over`, each file over `max` with its
+  usage, so the error names the files to shorten. `stated` holds the rest,
+  with their `paths` patterns and `files`, the number of their files under
+  the path, so the output stays short; `board get <control>` shows its
+  `applies_to` and `paths`. A stated control never fails the call. It
+  fails, exiting 1, with `controls::budget::exceeded` when a measured
+  control is over budget;
   `controls::control::degraded` when Board marks any control degraded, under
   any path; and `controls::file::unreadable` when a measured control reaches
   something that is not a readable file, such as a directory. Each error names
