@@ -20,8 +20,11 @@ the session's directory.
   the reference to that record.
 
 The mod already pairs SubagentStart with SubagentStop by agent id. The
-build confirms which id the Agent tool call shares with them; if none does,
-the mod pairs the call with the next SubagentStart in the same session.
+build confirms which id the Agent tool call shares with them. If none does,
+the mod pairs a SubagentStart with an Agent call only when exactly one call
+in the session is still unpaired. When one message starts several agents,
+it pairs none of them: their runs are recorded as today, without `agent`,
+and the mod injects no brief.
 Tasks from TaskCreated are recorded as today, with no agent record.
 
 An agent record that no run names is running. After a usage stop it is
@@ -35,14 +38,22 @@ that line is missing and the parent session holds exactly one change, the
 mod uses that change. Otherwise `works_on` is left out, and the agent is
 listed as unattached.
 
-When `works_on` is set, the mod adds the output of `changes.brief` for that
-change to the subagent's context, so an agent starts with the plan, the
-summaries of what the plan uses and the command that checks the controls.
+When `works_on` is set and the pairing is certain, the mod adds the output
+of `changes.brief` for that change to the subagent's context, so an agent
+starts with the plan, the summaries of what the plan uses and the command
+that checks the controls. The changes skill also tells every subagent whose
+prompt ends with a `Board:` line to run `changes.brief` for it first when
+no brief is in its context, so an agent whose start could not be paired
+still gets one.
 
 ## The pull request gate
 
-The mod refuses `gh pr create` when no open change names the current
-repository and branch. A repository with no repo record has no change, so
+The mod refuses `gh pr create` when no open change names the repository
+and branch the command targets. It takes them from the command's `-R` and
+`--head` when given, and otherwise from its directory: the session's
+directory, or the one a leading `cd <dir> &&` names. When it cannot tell,
+for example after another `cd`, it refuses and says to run `gh pr create`
+with `-R` and `--head`. A repository with no repo record has no change, so
 it is refused too; the refusal says to run `board --personal call
 changes.start`, which creates both. The gate has no exemptions, as the owner asked. It reads local
 records only and makes no network call.

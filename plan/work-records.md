@@ -42,8 +42,8 @@ after the suite runs. `done_by` is one of five kinds, each with one rule:
 | `landed` | `/changes/<name>/landed` exists. |
 
 A new check names a new head, so the review step is not done again until a
-review covers it. A commit pushed with no new run leaves the steps marked
-done until the next run. An answer with any other choice leaves the change
+review covers it. A commit pushed with no new run leaves the steps done
+until the next run. An answer with any other choice leaves the change
 at approve, and the agent writes a new plan and asks again, or drops
 the change.
 
@@ -80,8 +80,8 @@ All live under `/changes/<name>/`, except the change itself at
 
 A review brief stays at `/reviews/<id>/brief`, where `review.run` takes it,
 and gains `for` (the change), `step` and `repo`. With `repo`, `review.run`
-reads the range in the caller's clone, after checking that its
-`caller_remote()` is that repo record's `remote`; it reads the board's own
+reads the range in the caller's clone, after checking that
+`shown_remote(caller_remote())` is that repo record's `remote`; it reads the board's own
 repository as today when `repo` is absent.
 
 A question that blocks a change names it in `for`, which plan/decisions.md
@@ -89,8 +89,8 @@ adds; the question's stored `status`, including `withdrawn`, is unchanged.
 
 `start` sets `route` from CODEOWNERS and `suite` from the contributing docs
 when the repository has a checkout, as today. Without one it sets route
-`unread` and takes the suite from `--suite`; with neither it refuses with
-`changes::suite::unknown`.
+`unread`. `--suite` overrides the docs. When neither names a suite, it
+refuses with `changes::suite::unknown`.
 
 ## What is derived
 
