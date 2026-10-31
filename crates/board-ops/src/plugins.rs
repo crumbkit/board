@@ -217,7 +217,7 @@ impl Board {
         let code = match Self::held(reader, record_type, shipped) {
             Ok(Held::Same(_) | Held::Linked) => return None,
             Ok(Held::Absent) => Code::PluginSchemaMissing,
-            Ok(Held::Other | Held::Unparsed(_)) => Code::PluginSchemaDiffers,
+            Ok(Held::Annotated | Held::Other | Held::Unparsed(_)) => Code::PluginSchemaDiffers,
             Err(error) => error.code(),
         };
         Some(SchemaProblem {

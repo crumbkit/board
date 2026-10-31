@@ -31,7 +31,7 @@ use crate::render::{self, GUIDE, Printer};
 use crate::report::Output;
 use crate::stdin::{TypeCommand, call, put};
 use crate::timing::Ran;
-use crate::values::{duration, expect, pointer, removal};
+use crate::values::{duration, expect, pointer, removal, var};
 
 const ROOT_EXAMPLES: &str = "\
 Start here:
@@ -111,12 +111,18 @@ pub(crate) struct Putting {
     /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
     #[arg(required_unless_present_any = ["batch", "new"])]
     pub(crate) path: Option<Given>,
-    /// Write at a new name in this folder, which ends in /
+    /// Write at a new name in the folder PATH names, which ends in /, or in the type's folder
     ///
     /// The name is the put's UTC minute and four random hex digits, such as
     /// 20261030T1405Z-c2e1. The put never overwrites a file, and its report names the path.
-    #[arg(long, value_name = "FOLDER", conflicts_with_all = ["path", "expect", "batch", "file"])]
-    pub(crate) new: Option<Given>,
+    /// With no PATH, the record's schema names the folder in `x-board-folder`.
+    #[arg(long, conflicts_with_all = ["expect", "batch", "file"])]
+    pub(crate) new: bool,
+    /// Fill {name} in the type's folder; repeatable.
+    ///
+    /// The value fills one path segment, so it holds no /. A later --var of the same name wins.
+    #[arg(long, value_name = "NAME=VALUE", requires = "new", conflicts_with_all = ["path", "batch"], value_parser = var)]
+    pub(crate) var: Vec<(String, String)>,
     /// The blob the file must hold, or `none` for a new file.
     #[arg(long, value_parser = expect)]
     pub(crate) expect: Option<Expect>,
@@ -214,6 +220,7 @@ Examples:
   board put /tasks/a < task.json
   board put /tasks/a --expect none < task.json
   board put --new /tasks/ < task.json
+  board put --new --var project=board < question.json
   board get /tasks/a | board put /tasks/b
   board put /notes/plan.md --file < plan.md
   board put --batch < writes.jsonl")]

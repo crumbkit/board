@@ -37,6 +37,11 @@ needs to know.
     tool co-writes.
 11. Every property has a `description`. No property has a `title`.
 12. No `$schema` key. Draft 2020-12, committed in canonical form.
+13. A type whose records live in one folder may say so at the schema's top
+    level in `x-board-folder`, a logical path that ends in `/` and may hold
+    `{name}` placeholders, such as `/projects/{project}/questions/`.
+    `board put --new` with no folder writes there
+    (architecture/paths/writes.md). It changes no record's validity.
 
 `xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11 and 12 on every committed
 record schema. It lists the schemas that break a rule today, until their
@@ -60,6 +65,15 @@ plugins are ported.
 - A capability input marks a path with `format: board-path`, not
   `board-ref`, so `board call` reads it relative to the prefix.
 
+## Changing a folder
+
+`board type add` replaces a held schema that differs only in its top-level
+`x-board-folder`, since the folder changes no record's validity. Any other
+difference, including an `x-board-type`, is `board::schema::differs`, since
+a changed type is a new version. A schema held through a symlink is not
+replaced; the put is refused with `board::put::symlink`. `board plugin
+enable` replaces a plugin's changed schema either way.
+
 ## Generating schemas in Rust
 
 Built-in plugins generate schemas from structs with schemars, through
@@ -70,5 +84,7 @@ Built-in plugins generate schemas from structs with schemars, through
   out. Both are always inlined.
 - `schema_of` removes null from every optional field and drops an integer's
   `format`.
+- `#[schemars(extend("x-board-folder" = "..."))]` on a record struct
+  declares its folder.
 - The committed schema files are goldens. A test fails when the generated
   schema differs by a byte; `SNAPSHOTS=overwrite` rewrites them.

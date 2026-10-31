@@ -1,7 +1,7 @@
 # Reports and failures
 
 This file holds detail for docs/architecture/errors.md: the shape of a report,
-of an error, and of its recovery.
+of an error, of its recovery, and what a report says about a degraded entry.
 
 `--json` prints a command's report in crumbkit's envelope: `schema`
 `board/<command>-report/v2`, the report as `data`, and `failures`, one failure
@@ -36,3 +36,22 @@ whose `fields` hold `left_out` (each path not answered), `left_out_from` and
 repeats the run's own words, such as `board -C sub get <PATH>... --json`: run
 it with every path in `left_out`. Text prints that command with the paths
 filled in, on stderr.
+
+## Degraded entries
+
+The check and put reports name a degraded entry's first failing pointer, why,
+and how many more (`pointer`, `reason`, `failures`). `reason` is a predicate
+about the entry, such as `holds a reference at "/project": nothing is at
+/nowhere`. When a record's schema is
+missing, cannot be read or does not compile, a check entry names that schema
+file (`schema`), as a refused put does.
+A check entry's reason for a file that does not parse is `is invalid:` and the
+parser's message. For a schema it is `is invalid:` and why the schema does not
+compile, or that it is in the `board` namespace, which is Board's own; for a
+plugin manifest it is `is invalid:` and why the manifest does not read. The
+index keeps the reason with the blob's code, so a warm check reads no file
+again. `check` gives each degraded entry a `hint`, filled in with the path
+at fault: the entry's own, the reference that dangles, the link or mount a
+pointer fails at, or the schema. When that file is in a mounted board, which
+Board cannot write, the hint says to fix it in that board's repository. Text
+prints each hint on stderr as `hint: <path>: <hint>`.

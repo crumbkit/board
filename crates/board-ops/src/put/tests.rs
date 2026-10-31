@@ -16,6 +16,7 @@ use crate::tests::{MANIFEST, open, task};
 
 mod batch;
 mod file;
+mod folder;
 mod new;
 mod parity;
 mod removing;

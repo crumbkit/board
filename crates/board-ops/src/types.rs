@@ -18,8 +18,10 @@ impl Board {
     /// Compiles `bytes` as the schema of `record_type`, then writes it to
     /// `.board/types/` as one put that `commit_on_put` commits. An equal
     /// schema already there is left as it is, and committed if it was not,
-    /// unless a symlink holds it; a different one is refused, since a
-    /// changed type is a new version.
+    /// unless a symlink holds it. One that differs only in its top-level
+    /// `x-board-folder` replaces it, since the folder changes no record's
+    /// validity; any other difference is refused, since a changed type is a
+    /// new version.
     pub fn type_add(&self, record_type: &RecordType, bytes: &[u8]) -> Result<PutReport, TypeError> {
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -45,7 +47,8 @@ impl Board {
     /// written again as the board holds it, in its own layout, which commits
     /// it if HEAD lacks it and is otherwise no write. An equal schema held
     /// through a symlink is not written, since no put writes over a
-    /// symlink. A different schema is refused.
+    /// symlink. A schema that differs only in its `x-board-folder` replaces
+    /// the board's; any other is refused.
     pub(crate) fn prepare_type(
         lock: &Lock,
         (view, reader): (&mut Resolver<'_, '_>, &mut Reader<'_>),
@@ -81,6 +84,7 @@ impl Board {
             Held::Absent => (Expect::Absent, None),
             Held::Same(bytes) => (Expect::Any, Some(bytes)),
             Held::Linked => return Ok((None, compiled)),
+            Held::Annotated => (Expect::Any, None),
             Held::Other => return Err(TypeError::Differs { record_type }),
             Held::Unparsed(source) => {
                 return Err(TypeError::Held {
@@ -106,6 +110,7 @@ impl Board {
             Working::Read(contents) => match parse_json(&contents.bytes) {
                 Ok(held) if held == *schema && linked => Held::Linked,
                 Ok(held) if held == *schema => Held::Same(contents.bytes),
+                Ok(held) if unfoldered(&held) == unfoldered(schema) => Held::Annotated,
                 Ok(_) => Held::Other,
                 Err(error) => Held::Unparsed(error),
             },
@@ -141,13 +146,24 @@ pub(crate) fn schema_at(record_type: &RecordType) -> Result<LogicalPath, PathErr
     LogicalPath::of_physical(&record_type.schema_path())
 }
 
+/// `schema` without its top-level `x-board-folder`.
+fn unfoldered(schema: &Value) -> Value {
+    let mut schema = schema.clone();
+    if let Some(object) = schema.as_object_mut() {
+        object.remove("x-board-folder");
+    }
+    schema
+}
+
 /// How the board holds a type's schema: not at all, as an equal schema
-/// with the file's bytes, as an equal schema through a symlink, as another
-/// one, or as a file that is not JSON.
+/// with the file's bytes, as an equal schema through a symlink, as one that
+/// differs only in its top-level `x-board-folder`, as another one, or as a
+/// file that is not JSON.
 pub(crate) enum Held {
     Absent,
     Same(Vec<u8>),
     Linked,
+    Annotated,
     Other,
     Unparsed(JsonError),
 }

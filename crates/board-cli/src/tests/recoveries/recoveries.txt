@@ -621,6 +621,14 @@ board type add board/note/v1
   fails with board::schema::invalid
   hint
 
+board put --new
+  fails with board::put::folder_unfilled
+  hint
+
+board put --new --var project=board --var=team=a
+  fails with board::put::var_unused
+  hint
+
 board get /mount/commit/x
   fails with board::mount::commit_missing
   run board mount update /mount/commit
@@ -651,6 +659,11 @@ board rm /projects
 board put --new /projects
   fails with board::put::not_a_folder
   run board put --new /projects/
+    exits 0
+
+board put --new
+  fails with board::put::no_folder
+  run board put --new /tasks/
     exits 0
 
 board check

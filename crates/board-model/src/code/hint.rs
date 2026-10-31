@@ -136,6 +136,11 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "run the put again, which draws new names; `board ls {}` lists the names taken",
             path?
         ),
+        Code::PutFolderUnfilled => format!("add `--var {}=<value>`", fields.var.as_ref()?),
+        Code::PutVarUnused => format!(
+            "drop `--var {}`; the message names the folder's placeholders",
+            fields.var.as_ref()?
+        ),
         Code::RefMalformed => format!(
             "change the reference at `{}` to a logical path that starts with `/`, such as `/projects/p`",
             pointer?
@@ -475,6 +480,11 @@ fn generic(code: Code) -> &'static str {
             "give --new a folder that ends in `/`, such as /projects/board/questions/"
         }
         Code::PutNameTaken => "run the put again, which draws new names",
+        Code::PutNoFolder => "name a folder that ends in `/`, such as `board put --new /tasks/`",
+        Code::PutFolderUnfilled => {
+            "add a `--var <name>=<value>` for each placeholder the message names"
+        }
+        Code::PutVarUnused => "drop each `--var` that names no placeholder of the folder",
         Code::PutFailed => {
             "check that the working tree is writable and the disk has space; the message says whether the commit was made"
         }
