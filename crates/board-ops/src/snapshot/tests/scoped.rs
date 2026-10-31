@@ -86,11 +86,20 @@ const SCOPES: [&str; 6] = [
     "/repos/b",
 ];
 
+/// The work `ls` of `path` did through the index in `cache`, which decides
+/// every source its scope reaches: the mounted sources it walked.
+fn ls_walked(scenario: &Scenario, path: &str, cache: &Path) -> usize {
+    let report = open(scenario)
+        .ls(&path.parse().unwrap(), Some(cache))
+        .unwrap();
+    report.work.walked
+}
+
 #[test]
-fn a_warm_scoped_check_walks_only_the_mounts_its_scope_reaches_and_its_wider_twin_walks_each() {
+fn a_warm_scoped_ls_walks_only_the_mounts_its_scope_reaches_and_its_wider_twin_walks_each() {
     let (scenario, _libraries) = mounting();
     let cache = tempfile::tempdir().unwrap();
-    let walked = |path| checked(&scenario, path, Some(cache.path())).1;
+    let walked = |path| ls_walked(&scenario, path, cache.path());
     assert_eq!(
         walked("/"),
         3,
@@ -102,6 +111,47 @@ fn a_warm_scoped_check_walks_only_the_mounts_its_scope_reaches_and_its_wider_twi
     assert_eq!(walked("/repos/a"), 2, "a and the board it mounts");
     assert_eq!(walked("/repos/b"), 1);
     assert_eq!(walked("/repos"), 3);
+}
+
+/// The mounted sources a check of `path` through the index in `cache` read
+/// from kept rows, walked, and the blobs it parsed.
+fn check_work(scenario: &Scenario, path: &str, cache: &Path) -> (usize, usize, usize) {
+    let work = open(scenario)
+        .check(scope(path).as_ref(), Some(cache))
+        .unwrap()
+        .work;
+    (work.kept, work.walked, work.parsed)
+}
+
+#[test]
+fn a_warm_check_reads_each_kept_source_and_after_one_moves_walks_only_that_one() {
+    let (scenario, [_a, b, _inner]) = mounting();
+    let cache = tempfile::tempdir().unwrap();
+    let work = |path| check_work(&scenario, path, cache.path());
+    assert_eq!(work("/").0, 0, "cold");
+    assert_eq!(work("/"), (3, 0, 0));
+    let moved = b.commit(&[("notes.md", "moved")]);
+    let pointer = mount(&b.path(), moved);
+    scenario
+        .write("repos/b.json", Item::File(&pointer))
+        .write("z/b.json", Item::File(&pointer));
+    let (kept, walked, _) = work("/");
+    assert_eq!(
+        (kept, walked),
+        (2, 1),
+        "a and the board it mounts are still kept"
+    );
+    assert_eq!(work("/"), (3, 0, 0));
+}
+
+#[test]
+fn a_warm_check_of_a_mount_reads_its_kept_rows_and_one_of_a_directory_inside_it_walks_it() {
+    let (scenario, _libraries) = mounting();
+    let cache = tempfile::tempdir().unwrap();
+    let work = |path| check_work(&scenario, path, cache.path());
+    work("/");
+    assert_eq!(work("/repos/a"), (2, 0, 0));
+    assert_eq!(work("/repos/a/tasks"), (0, 1, 0));
 }
 
 #[test]

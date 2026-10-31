@@ -1,13 +1,17 @@
 # Kept decisions
 
 This file holds detail for docs/architecture.md. It says how the index keeps
-each mounted source's decision so a warm query neither walks nor decides it.
+each mounted source's decision so a warm query or check neither walks nor
+decides it.
 
 ## What is kept
 
 - `decided`: one row per entry of a mounted source, as a query's views show
   it, under the source's key. The source and `change` are not kept: a key
-  names a tree, and each run attaches the commit that reached it.
+  names a tree, and each run attaches the commit that reached it. Its
+  `detail` column holds, as JSON, what `check` reports beyond the row: a
+  degraded entry's detail and the schema it names. The `decided` view
+  leaves it out.
 - `pointers`: the mount pointers in a mounted tree, under a key of the tree
   and the build, so a run finds a source's mounts without walking it.
 
@@ -33,7 +37,10 @@ mounts are read in order.
 
 - `query`, `call` and `enable` read kept rows in place and decide only the
   sources whose key the index does not hold.
-- `check`, `refs` and `ls` decide every source, and keep what they decided.
+- `check` reads, in path order, the kept rows of each source wholly in its
+  scope, and decides the rest. A row that cannot be read fails the run
+  with `board::index::failed`.
+- `refs` and `ls` decide every source, and keep what they decided.
 - A scoped run decides only the sources its scope reaches. It walks
   another source only when the index lists no pointers for it, to find its
   mounts. It keeps nothing for a source it decided only in part.

@@ -22,6 +22,7 @@ fn a_source_holding_a_pointer_that_could_not_be_read_has_no_key_and_its_twin_has
             scan: Digest::of(b""),
             crossings: HashSet::new(),
             kept: false,
+            whole: true,
             walked: None,
         };
         let reached = Reached {

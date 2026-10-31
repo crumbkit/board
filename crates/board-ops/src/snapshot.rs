@@ -53,6 +53,10 @@ pub(crate) enum Need {
     View,
     /// A report, references and walk of every entry, all decided now.
     Report,
+    /// A report only. A mounted source wholly in scope whose decision the
+    /// index keeps is neither walked nor decided, and its kept rows fill
+    /// the report.
+    Check,
 }
 
 impl Board {
@@ -149,7 +153,7 @@ impl Board {
                 writer,
                 work: &mut work,
             },
-            (self.build, need == Need::View),
+            (self.build, need != Need::Report),
             scope,
         )?;
         drop(timed);
@@ -198,12 +202,19 @@ impl Board {
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
-            let read_kept = need == Need::View && mounted.kept;
+            let read_kept = need != Need::Report && mounted.kept && mounted.whole;
             // A source not walked is kept, or out of scope.
             let Some(walked) = (mounted.walked.as_ref()).filter(|_| !read_kept) else {
-                work.kept += usize::from(read_kept);
                 let source = Source::Commit(mounted.commit);
                 let key = mounted.key.as_ref().filter(|_| mounted.kept);
+                if let Some(key) = key.filter(|_| read_kept) {
+                    work.kept += 1;
+                    if need == Need::Check {
+                        for row in writer.decision(key)? {
+                            decided.checked.push(crate::check::from_kept(&source, row)?);
+                        }
+                    }
+                }
                 writer.reach(&source, key, &mounted.scan)?;
                 continue;
             };
@@ -254,6 +265,7 @@ impl Board {
             failed: Cell::new(false),
         };
         let start = decided.resolved.len();
+        let checked = decided.checked.len();
         for entry in entries {
             if !in_scope(scopes, &source, entry.logical.as_ref()) {
                 continue;
@@ -271,11 +283,8 @@ impl Board {
         let probed =
             (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
-        let whole = scopes
-            .get(&source)
-            .is_some_and(|states| states.contains(&None));
         // A file that could not be read may be read next run.
-        let storable = whole
+        let storable = mounted.whole
             && probed
             && !failed
             && !rows
@@ -284,7 +293,8 @@ impl Board {
         let kept = match &mounted.key {
             Some(_) if mounted.kept => true,
             Some(key) if storable => {
-                writer.put_decision(key, rows)?;
+                let details = decided.checked[checked..].iter().map(crate::check::to_kept);
+                writer.put_decision(key, rows.iter().zip(details))?;
                 true
             }
             _ => false,

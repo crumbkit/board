@@ -11,6 +11,7 @@ use crate::store::{MountRow, SourceRow};
 
 mod cache;
 mod format;
+mod kept;
 mod prune;
 mod worktree;
 

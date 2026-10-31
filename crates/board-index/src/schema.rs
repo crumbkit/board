@@ -3,12 +3,13 @@
 
 /// The index format, which names the index file. `open.rs` and
 /// docs/architecture/index.md say what a new format does to older files.
-pub const INDEX_VERSION: u32 = 20;
+pub const INDEX_VERSION: u32 = 21;
 
 /// Every table, created in an empty database. Object ids are lowercase hex
 /// and codes are their spelling, so a reader needs no Board types. A
 /// record's references are numbered in the order the schema finds them, and
-/// a Markdown file's links in document order.
+/// a Markdown file's links in document order. A kept decision's `detail`
+/// is what check reports beyond the row, as JSON, or null.
 pub(crate) const TABLES: &str = "
 CREATE TABLE state (
     key TEXT PRIMARY KEY,
@@ -104,6 +105,7 @@ CREATE TABLE decided (
     schema TEXT,
     kind TEXT NOT NULL,
     code TEXT,
+    detail TEXT,
     PRIMARY KEY (key, path)
 ) WITHOUT ROWID;
 ";
@@ -195,7 +197,8 @@ FROM temp.reached AS r CROSS JOIN main.decided AS d ON d.key = r.key
 UNION ALL
 SELECT * FROM temp.fresh;
 CREATE TEMP VIEW IF NOT EXISTS decided AS
-SELECT * FROM main.decided WHERE key IN (SELECT key FROM temp.reached);
+SELECT key, path, logical, blob, size, role, schema, kind, code
+FROM main.decided WHERE key IN (SELECT key FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS pointers AS
 SELECT * FROM main.pointers WHERE scan IN (SELECT scan FROM temp.reached);
 CREATE TEMP VIEW IF NOT EXISTS entries AS

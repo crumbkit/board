@@ -60,7 +60,7 @@ after each commit, so board-cli recompiles after every commit.
 unread because they changed after the check (it does not name them),
 `started`, the plugin processes a call started, `repositories`, the
 repositories a snapshot opened from disk besides the board's own, `kept`,
-the mounted sources a query read from kept decisions without walking them
+the mounted sources a query or check read from kept decisions without walking them
 (architecture/performance/decisions.md), `walked`, the mounted sources a
 snapshot walked from the index to find their mounts or decide them, and `pointers_read`, the files `snapshot.decide` read to learn whether they
 are pointers, once per blob in each source. It leaves out a file whose

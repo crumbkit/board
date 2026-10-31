@@ -5,9 +5,10 @@
 
 use std::path::Path;
 
-use board_index::{Fallback, IndexError};
+use board_index::{Fallback, IndexError, KeptRow};
 use board_model::{Change, Code, Fields, Kind, Location, LogicalPath, RecordType, Refusal, Source};
 use board_tree::{ResolveError, Status};
+use serde::{Deserialize, Serialize};
 
 use crate::board::Board;
 use crate::index::{RefreshError, Refreshed};
@@ -72,6 +73,78 @@ pub struct Detail {
     pub mount: Option<LogicalPath>,
     /// The text of a symlink that leads to no file, or the path a misfit binding names.
     pub target: Option<String>,
+}
+
+/// What the index keeps of a checked entry beyond its row.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawKept {
+    detail: Option<RawDetail>,
+    schema: Option<String>,
+}
+
+/// A [`Detail`] as the index keeps it.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDetail {
+    pointer: Option<String>,
+    reason: String,
+    failures: u64,
+    at: Option<LogicalPath>,
+    mount: Option<LogicalPath>,
+    target: Option<String>,
+}
+
+/// The detail and named schema of `checked` as the index keeps them, or
+/// `None` when it has neither.
+pub(crate) fn to_kept(checked: &Checked) -> Option<String> {
+    if checked.detail.is_none() && checked.schema.is_none() {
+        return None;
+    }
+    let detail = checked.detail.clone().map(|detail| RawDetail {
+        pointer: detail.pointer,
+        reason: detail.reason,
+        failures: detail.failures,
+        at: detail.at,
+        mount: detail.mount,
+        target: detail.target,
+    });
+    let schema = checked.schema.clone();
+    let kept = serde_json::to_string(&RawKept { detail, schema });
+    Some(kept.expect("strings, paths and an integer always serialize"))
+}
+
+/// The entry of `source` that a kept `row` holds.
+pub(crate) fn from_kept(source: &Source, row: KeptRow) -> Result<Checked, IndexError> {
+    let kept = match &row.detail {
+        Some(text) => serde_json::from_str(text).map_err(|_| IndexError::Unreadable {
+            path: row.path.clone(),
+            column: "detail",
+            value: text.clone(),
+        })?,
+        None => RawKept {
+            detail: None,
+            schema: None,
+        },
+    };
+    let detail = kept.detail.map(|detail| Detail {
+        pointer: detail.pointer,
+        reason: detail.reason,
+        failures: detail.failures,
+        at: detail.at,
+        mount: detail.mount,
+        target: detail.target,
+    });
+    Ok(Checked {
+        source: source.clone(),
+        path: row.path,
+        logical: row.logical,
+        kind: row.kind,
+        status: row.code.map_or(Status::Ok, Status::Degraded),
+        detail,
+        change: Change::Committed,
+        schema: kept.schema,
+    })
 }
 
 /// An entry's code, with its detail when Board knows one.
@@ -166,7 +239,7 @@ impl Board {
         cache: Option<&Path>,
     ) -> Result<CheckReport, CheckError> {
         let index = self.index(cache)?;
-        Ok(self.snapshot(index, scope, Need::Report)?.report)
+        Ok(self.snapshot(index, scope, Need::Check)?.report)
     }
 }
 

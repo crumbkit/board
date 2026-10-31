@@ -334,14 +334,23 @@ pub enum IndexError {
     /// build them again.
     #[error("another process pruned the index after this run built its views")]
     Pruned,
+    /// A kept row holds a value this build cannot read.
+    #[error("the index keeps {column} {value:?} for {path}, which cannot be read")]
+    Unreadable {
+        path: String,
+        column: &'static str,
+        value: String,
+    },
 }
 
 impl IndexError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Sql { .. } | Self::Busy { .. } | Self::Foreign | Self::Pruned => {
-                Code::IndexFailed
-            }
+            Self::Sql { .. }
+            | Self::Busy { .. }
+            | Self::Foreign
+            | Self::Pruned
+            | Self::Unreadable { .. } => Code::IndexFailed,
             Self::Query { .. } => Code::QueryInvalid,
             Self::Timeout => Code::QueryTimeout,
             Self::TooBig => Code::OutputOverBudget,
