@@ -9,8 +9,10 @@ from board_review.shapes import (
     AGENT_VARIABLE,
     BRIEF_TYPE,
     POST_TIMEOUT,
+    REPORT_TARGET,
     REPORT_TYPE,
     RUN_TIMEOUT,
+    TARGET,
     BriefRecord,
     CoveredInput,
     CoveredOutput,
@@ -47,12 +49,11 @@ def manifest() -> dict[str, JsonValue]:
         "version": "0.2.0",
         "description": (
             "Review briefs, the reports a clean-context agent or a person writes for them, and whether a commit is"
-            " covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range"
-            " with the agent BOARD_REVIEW_AGENT names and records the report; `board call review.post --report"
-            " /reviews/<id>/report --pr <url>` comments it on a pull request once the owner approves the comment;"
-            " `board call review.covered --base"
-            " <commit> --head <commit>` checks that committed reports cover a pull request's commits. README.md in"
-            " the plugin's directory says more."
+            " covered by reports. `board call review.run --brief /reviews/<id>/brief` reviews the brief's range or"
+            " pinned record with the agent BOARD_REVIEW_AGENT names and records the report; `board call"
+            " review.post --report /reviews/<id>/report --pr <url>` comments it on a pull request once the owner"
+            " approves the comment; `board call review.covered --base <commit> --head <commit>` checks that"
+            " committed reports cover a pull request's commits. README.md in the plugin's directory says more."
         ),
         "run": [".venv/bin/python", "-m", "board_review"],
         "metadata": {"area": "review"},
@@ -61,11 +62,11 @@ def manifest() -> dict[str, JsonValue]:
             {
                 "name": "run",
                 "description": (
-                    "Review the range a brief names with the agent the BOARD_REVIEW_AGENT variable names, and"
-                    " write the report beside the brief."
+                    "Review the range or pinned record a brief names with the agent the BOARD_REVIEW_AGENT variable"
+                    " names, and write the report beside the brief."
                 ),
                 "inputSchema": _schema(RunInput),
-                "outputSchema": _schema(RunOutput),
+                "outputSchema": _schema(RunOutput) | TARGET,
                 "_meta": {},
                 "timeout": RUN_TIMEOUT,
                 "env": list[JsonValue](RUN_ENV),
@@ -103,8 +104,8 @@ def manifest() -> dict[str, JsonValue]:
 def schemas() -> dict[str, dict[str, JsonValue]]:
     """The schema of each type the plugin ships, by its path in the plugin's directory."""
     return {
-        f"types/{BRIEF_TYPE}.schema.json": _schema(BriefRecord),
-        f"types/{REPORT_TYPE}.schema.json": _schema(ReportRecord),
+        f"types/{BRIEF_TYPE}.schema.json": _schema(BriefRecord) | TARGET,
+        f"types/{REPORT_TYPE}.schema.json": _schema(ReportRecord) | REPORT_TARGET,
     }
 
 

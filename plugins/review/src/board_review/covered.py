@@ -1,17 +1,25 @@
 """`covered`: whether reports in the board's own tree cover every commit a pull request adds, by range or patch id."""
 
 import json
-from typing import cast
+from typing import TypedDict, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_review.git import Repository
 from board_review.run import TREE_CODES
-from board_review.shapes import REPORT_TYPE, CoveredOutput, ReportRecord
+from board_review.shapes import REPORT_TYPE, CoveredOutput, Verdict
 
 # How many uncovered commits a refusal names.
 SHOWN = 20
+
+
+class _RangeReport(TypedDict):
+    """What `covered` reads of a report of a range, which the schema gives patch ids."""
+
+    verdict: Verdict
+    range: str
+    patch_ids: list[str]
 
 
 def covered(request: CallRequest) -> CoveredOutput:
@@ -73,16 +81,18 @@ def covered(request: CallRequest) -> CoveredOutput:
     )
 
 
-def _reports(board: Board, repository: Repository) -> list[tuple[str, ReportRecord]]:
-    """Every readable report in the board's own tree that HEAD holds as it is on disk, by logical path."""
+def _reports(board: Board, repository: Repository) -> list[tuple[str, _RangeReport]]:
+    """Every readable report of a range in the board's own tree that HEAD holds as it is on disk, by logical path.
+
+    A report of a subject reviews a record, not commits, so it is left out.
+    """
     codes = ", ".join(literal(code) for code in TREE_CODES)
     rows = board.rows(
         "SELECT logical, path, blob, body FROM records WHERE source = 'worktree'"  # noqa: S608 - literals quoted
         f" AND type = {literal(REPORT_TYPE)} AND (status = 'ok' OR code IN ({codes})) ORDER BY logical"
     )
     committed = repository.committed()
-    return [
-        (str(logical), cast("ReportRecord", json.loads(body)))
-        for logical, path, blob, body in rows
-        if committed.get(str(path)) == blob
+    reports = [
+        (str(logical), json.loads(body)) for logical, path, blob, body in rows if committed.get(str(path)) == blob
     ]
+    return [(logical, cast("_RangeReport", report)) for logical, report in reports if "range" in report]

@@ -8,6 +8,8 @@ the only module that imports pydantic (STANDARDS.md P3).
 from collections.abc import Callable
 from typing import Annotated, Literal, NotRequired, TypedDict
 
+from board_plugin.protocol import JsonValue
+
 BRIEF_TYPE = "review/brief/v1"
 REPORT_TYPE = "review/report/v1"
 
@@ -43,12 +45,30 @@ def _ref(record_type: str) -> object:
 # A range of full commit ids, so a record names exactly which commits it means and cannot pass git an option.
 Commits = Annotated[str, Extra(pattern=r"^[0-9a-f]{40,64}\.\.[0-9a-f]{40,64}$")]
 PatchId = Annotated[str, Extra(pattern="^[0-9a-f]{40,64}$")]
+Blob = Annotated[str, Extra(pattern="^[0-9a-f]{40,64}$")]
+
+
+class Subject(TypedDict):
+    """A record under review, pinned by its blob, so a review names exactly which version it read."""
+
+    record: Annotated[str, Extra(format="board-ref")]
+    blob: Blob
+
+
+# A brief, and a run's output, name a range of commits or a subject, never both.
+TARGET: dict[str, JsonValue] = {"oneOf": [{"required": ["range"]}, {"required": ["subject"]}]}
+# A report covers a range with its patch ids, or a subject, never both.
+REPORT_TARGET: dict[str, JsonValue] = {
+    **TARGET,
+    "dependentRequired": {"range": ["patch_ids"], "patch_ids": ["range"]},
+}
 
 BriefRecord = TypedDict(
     "BriefRecord",
     {
         "$type": Literal["review/brief/v1"],
-        "range": Commits,
+        "range": NotRequired[Commits],
+        "subject": NotRequired[Subject],
         "focus": Annotated[str, Extra(minLength=1)],
         "questions": NotRequired[list[str]],
         "follows": NotRequired[Annotated[str, _ref(REPORT_TYPE)]],
@@ -56,7 +76,8 @@ BriefRecord = TypedDict(
 )
 BriefRecord.__doc__ = """`review/brief/v1`, at /reviews/<id>/brief: what a change's author asks a review to look at.
 
-`range` is the commits under review as `base..head`, both full commit ids.
+`range` is the commits under review as `base..head`, both full commit ids,
+and `subject` the record under review at its blob; a brief has one of them.
 `focus` says what matters and what to check first, `questions` what the
 author wants answered, and `follows` the report this brief continues from."""
 
@@ -83,8 +104,9 @@ ReportRecord = TypedDict(
     {
         "$type": Literal["review/report/v1"],
         "brief": NotRequired[Annotated[str, _ref(BRIEF_TYPE)]],
-        "range": Commits,
-        "patch_ids": list[PatchId],
+        "range": NotRequired[Commits],
+        "patch_ids": NotRequired[list[PatchId]],
+        "subject": NotRequired[Subject],
         "findings": list[Finding],
         "verdict": Verdict,
         "by": Annotated[str, Extra(minLength=1)],
@@ -93,18 +115,19 @@ ReportRecord = TypedDict(
         "follows": NotRequired[Annotated[str, _ref(REPORT_TYPE)]],
     },
 )
-ReportRecord.__doc__ = """`review/report/v1`, at /reviews/<id>/report: what one review of a range found.
+ReportRecord.__doc__ = """`review/report/v1`, at /reviews/<id>/report: what one review of a range or a record found.
 
 `range` holds the full commit ids reviewed, and `patch_ids` the
 `git patch-id --verbatim` of each commit in it that has a diff, oldest first,
-so the review still covers the commits after a rebase. `brief` is absent for
+so the review still covers the commits after a rebase. A review of a record
+holds its `subject` instead, and covers no commit. `brief` is absent for
 a review a person wrote. `by` names the models the agent reported, else the
 program the agent command starts, or the person. `source` is a URL, such as
 a GitHub review. `follows` is the previous report."""
 
 
 class RunInput(TypedDict):
-    """Review the range a brief names with the agent BOARD_REVIEW_AGENT names."""
+    """Review the range or record a brief names with the agent BOARD_REVIEW_AGENT names."""
 
     brief: Annotated[
         str,
@@ -117,10 +140,11 @@ class RunInput(TypedDict):
 
 
 class RunOutput(TypedDict):
-    """The report written, the commits covered, the verdict and how many findings."""
+    """The report written, the commits or record it covers, the verdict and how many findings."""
 
     report: str
-    range: str
+    range: NotRequired[str]
+    subject: NotRequired[Subject]
     verdict: Verdict
     findings: int
 

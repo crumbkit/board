@@ -92,3 +92,14 @@ repositories join as it proves itself.
    no MCP servers, and whose JSON gives the token counts; the implementer
    checks those flags against `claude --help`. A verdict is no stronger
    than the agent's resistance to text in the diff.
+10. **A review of a record.** A brief may name a `subject` in place of a
+    `range`: a board ref and the blob it was at, so a plan can be reviewed
+    with the same two record types as code. The schema allows either `range`
+    or `subject`, never both, and a report holds either `range` and
+    `patch_ids` or `subject`. `review.run` reads the record through Board,
+    refuses with `review::subject::moved` when its blob is no longer the
+    pinned one, and gives the agent the record's bytes and references in
+    place of a diff. Those bytes reach the agent's model provider, as a diff
+    does. A subject report covers no commit. The blob is a field only the
+    review plugin reads, so it is not the pinned references PLAN.md leaves
+    out of scope.
