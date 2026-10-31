@@ -1,5 +1,5 @@
-//! The plugins built into the binary, run in-process: plans and requests, beside
-//! installed plugins.
+//! The plugins built into the binary, run in-process: plans, requests and
+//! evals, beside installed plugins.
 
 use super::plugins::{TASKS, installed};
 use super::*;
@@ -232,4 +232,62 @@ fn call_requests_thread_answers_from_a_warm_index_as_from_a_cold_one_after_a_new
     assert_eq!(warm["versions"][1]["id"], json!(second));
     assert_eq!(warm["replies"][0]["text"], "Shorter.");
     assert_eq!(warm, answer(None));
+}
+
+/// An eval about gix in `status`, as its schema admits it.
+fn eval(status: &str) -> String {
+    let eval = json!({
+        "$type": "evals/eval/v1",
+        "question": "Is gix faster?",
+        "subjects": ["gix"],
+        "status": status,
+    });
+    eval.to_string()
+}
+
+/// A board that enables evals, holding a planned eval at `/evals/a`.
+fn evals() -> Scenario {
+    let board = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    let (output, _) = built_in(board.workdir(), None, &["plugin", "enable", "evals"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    board.write("evals/a.json", Item::File(&eval("planned")));
+    board
+}
+
+#[test]
+fn call_evals_about_and_open_answer_from_a_warm_index_as_from_a_cold_one_after_evals_change() {
+    let board = evals();
+    let cache = tempfile::tempdir().unwrap();
+    let answer = |cache: Option<&Path>, arguments: &[&str]| {
+        let (output, ran) = cached(board.workdir(), None, cache, arguments);
+        assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        assert_eq!(ran.trace.work.get("started"), Some(&0));
+        json(&output)["data"]["output"].clone()
+    };
+    let calls: [&[&str]; 2] = [
+        &["--json", "call", "evals.about", "--subject", "GIX"],
+        &["--json", "call", "evals.open"],
+    ];
+    let before = calls.map(|arguments| answer(Some(cache.path()), arguments));
+    board
+        .write("evals/a.json", Item::File(&eval("abandoned")))
+        .write("evals/b.json", Item::File(&eval("running")));
+    for (arguments, before) in calls.iter().zip(before) {
+        let warm = answer(Some(cache.path()), arguments);
+        assert_ne!(warm, before, "the change is seen");
+        assert_eq!(warm, answer(None, arguments));
+    }
+}
+
+#[test]
+fn call_evals_about_help_lists_its_input_as_flags() {
+    let board = evals();
+    let (output, _) = built_in(board.workdir(), None, &["call", "evals.about", "-h"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let help = text(&output.stdout);
+    for flag in ["--limit", "--mount", "--subject", "whatever their status"] {
+        assert!(help.contains(flag), "{flag}: {help}");
+    }
 }

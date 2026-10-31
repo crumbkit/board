@@ -6,7 +6,7 @@ mod thread;
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
-use board_plugin_plans::shape::{Record, schema_of};
+use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
