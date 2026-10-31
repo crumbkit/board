@@ -57,7 +57,7 @@ plan arrives in its own pull request. Build them in this order.
 
 1. [Repos](plan/repos.md).
 
-2. Decisions.
+2. [Decisions](plan/decisions.md).
 
 3. Artifacts, independent of decisions.
 
