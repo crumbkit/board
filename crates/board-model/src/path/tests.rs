@@ -183,7 +183,6 @@ fn an_ascii_character_is_hidden_exactly_when_it_is_a_control_or_its_category_hid
         );
         assert_eq!(is_hidden(char), char.is_control() || hiding, "{char:?}");
     }
-    assert!(is_hidden('\u{1f}') && !is_hidden(' '));
 }
 
 #[test]

@@ -11,8 +11,7 @@ programs. DOCS.md is the map; PLAN.md says what is being built now.
 Run `bin/lint` and `bin/test` before every push. With no argument they also
 run the ui part, which needs Docker. CI runs the same scripts on
 Linux, split across parallel jobs. A slow lane runs them on macOS weekly and
-before each release, without the ui part, which needs Docker and which CI
-runs on Linux. The slow lane also runs fuzzing, timing and mutants nightly.
+before each release, without the ui part, which CI runs on Linux. The slow lane also runs fuzzing, timing and mutants nightly.
 STANDARDS.md lists what they enforce and the rules they cannot.
 
 ## Rules tooling cannot enforce
