@@ -111,17 +111,13 @@ pub(crate) struct Putting {
     /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
     #[arg(required_unless_present_any = ["batch", "new"])]
     pub(crate) path: Option<Given>,
-    /// Write at a new name in this folder, which ends in /, or in the type's folder
+    /// Write at a new name in the folder PATH names, which ends in /, or in the type's folder
     ///
     /// The name is the put's UTC minute and four random hex digits, such as
     /// 20261030T1405Z-c2e1. The put never overwrites a file, and its report names the path.
-    /// With no FOLDER, the record's schema names one in `x-board-folder`.
-    #[arg(long, value_name = "FOLDER", conflicts_with_all = ["path", "expect", "batch", "file"])]
-    #[expect(
-        clippy::option_option,
-        reason = "clap reads a flag whose value may be left out as Option<Option<_>>"
-    )]
-    pub(crate) new: Option<Option<Given>>,
+    /// With no PATH, the record's schema names the folder in `x-board-folder`.
+    #[arg(long, conflicts_with_all = ["expect", "batch", "file"])]
+    pub(crate) new: bool,
     /// Fill {name} in the type's folder; repeatable.
     ///
     /// The value fills one path segment, so it holds no /. A later --var of the same name wins.

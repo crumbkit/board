@@ -226,7 +226,7 @@ const BUDGETS: Budgets = Budgets::new()
         Budget::new(
             "put",
             1_450,
-            "put has six options, among them --new and --var, which name a new record, and --file and --wait, and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
+            "put has six options of its own (--new, --var, --expect, --batch, --file and --wait), and a reader needs to know on one page that with a store --file may write an attachment record in place of the bytes.",
         ),
         Budget::new(
             "refs",

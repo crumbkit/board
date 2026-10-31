@@ -8,7 +8,8 @@ the meaning of every field.
 
 Each schema declares its folder, so `board put --new --var project=<project>`
 names a new question or decision there. An answer takes its question's id,
-so it is written at its path.
+so it is written at its path. Its schema declares its folder too, so
+`put --new` can write an answer that has no question id.
 
 - `plans/question/v1` at `/projects/<project>/questions/<id>`. `<id>` is a
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.

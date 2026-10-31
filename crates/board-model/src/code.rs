@@ -267,6 +267,18 @@ mod tests {
     }
 
     #[test]
+    fn an_unfilled_folder_hint_names_the_placeholder_it_lacks_and_no_other() {
+        let fields = Fields {
+            var: Some("suite".to_owned()),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Code::PutFolderUnfilled.hint(&fields),
+            "add `--var suite=<value>`"
+        );
+    }
+
+    #[test]
     fn a_hint_for_a_file_in_a_mounted_board_sends_the_fix_to_that_boards_repository() {
         let mount: LogicalPath = "/vendor".parse().unwrap();
         let fields = Fields {

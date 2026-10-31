@@ -136,10 +136,7 @@ fn filled(code: Code, fields: &Fields) -> Option<String> {
             "run the put again, which draws new names; `board ls {}` lists the names taken",
             path?
         ),
-        Code::PutFolderUnfilled => format!(
-            "add `--var {}=<value>`, such as `--var project=board`",
-            fields.var.as_ref()?
-        ),
+        Code::PutFolderUnfilled => format!("add `--var {}=<value>`", fields.var.as_ref()?),
         Code::PutVarUnused => format!(
             "drop `--var {}`; the message names the folder's placeholders",
             fields.var.as_ref()?

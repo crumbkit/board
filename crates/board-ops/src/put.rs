@@ -376,17 +376,7 @@ impl Board {
         schemas: &mut Schemas<'b>,
         bytes: &[u8],
     ) -> Result<Admitted, Refused> {
-        if bytes.iter().all(u8::is_ascii_whitespace) {
-            return Err(Refused::Empty);
-        }
-        let value = parse_json(bytes)?;
-        let Some(object) = value.as_object() else {
-            return Err(Refused::NotAnObject);
-        };
-        if !object.contains_key("$type") {
-            return Err(Refused::NoType);
-        }
-        Ok(self.admit(schemas, Role::Json.classify(Some(bytes)))?)
+        Ok(self.admit(schemas, checked(bytes)?)?)
     }
 
     /// Judges `classified` as a record, against the schema of its type that
@@ -712,6 +702,22 @@ impl PutError {
             _ => Refusal::new(self.code(), self, &self.fields()),
         }
     }
+}
+
+/// `bytes` classified as a record, once they are one JSON object with a
+/// `$type`; any other input is `put::invalid`.
+pub(crate) fn checked(bytes: &[u8]) -> Result<Classified, Refused> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Err(Refused::Empty);
+    }
+    let value = parse_json(bytes)?;
+    let Some(object) = value.as_object() else {
+        return Err(Refused::NotAnObject);
+    };
+    if !object.contains_key("$type") {
+        return Err(Refused::NoType);
+    }
+    Ok(Role::Json.classify(Some(bytes)))
 }
 
 /// What a refused record is, after "the record" or its path.

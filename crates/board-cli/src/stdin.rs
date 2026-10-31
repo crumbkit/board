@@ -37,7 +37,8 @@ Examples:
 /// the folder the record's type declares, or a path.
 enum At {
     Batch,
-    New(Option<LogicalPath>),
+    New(LogicalPath),
+    Declared,
     Path(LogicalPath),
 }
 
@@ -62,10 +63,10 @@ pub(crate) fn put(
     } = putting;
     let at = match (path, new) {
         _ if batch => Ok(At::Batch),
-        (Some(path), _) => read(prefix, &path, "put").map(At::Path),
-        (None, Some(Some(folder))) => read_folder(prefix, &folder).map(|at| At::New(Some(at))),
-        (None, Some(None)) => Ok(At::New(None)),
-        (None, None) => unreachable!("clap requires a path, --new or --batch"),
+        (Some(folder), true) => read_folder(prefix, &folder).map(At::New),
+        (Some(path), false) => read(prefix, &path, "put").map(At::Path),
+        (None, true) => Ok(At::Declared),
+        (None, false) => unreachable!("clap requires a path, --new or --batch"),
     };
     let at = match at {
         Ok(at) => at,
@@ -77,7 +78,7 @@ pub(crate) fn put(
             let mut bytes = Vec::new();
             stdin.read_to_end(&mut bytes).map(|_| bytes)
         }
-        At::Path(_) | At::New(_) => bounded(stdin),
+        At::Path(_) | At::New(_) | At::Declared => bounded(stdin),
     };
     let bytes = match read.map_err(|error| unreadable(Code::RepoUnreadable, &error)) {
         Ok(bytes) => bytes,
@@ -86,9 +87,8 @@ pub(crate) fn put(
     let expect = expect.unwrap_or(Expect::Any);
     let written = match &at {
         At::Batch => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
-        At::New(folder) => {
-            board.put_new_waiting(folder.as_ref(), &var.into_iter().collect(), &bytes, wait)
-        }
+        At::New(folder) => board.put_new_waiting(folder, &bytes, wait),
+        At::Declared => board.put_declared_waiting(&var.into_iter().collect(), &bytes, wait),
         At::Path(path) if file => board.put_file_waiting(path, expect, &bytes, wait),
         At::Path(path) => board.put_waiting(path, expect, &bytes, wait),
     };

@@ -1,69 +1,59 @@
-//! The folder a `--new` put writes in: the one it names, or the one its
-//! record's type declares in its schema's `x-board-folder`, with each
-//! `{name}` filled from `--var` (docs/architecture/paths/writes.md).
+//! The folder a `--new` put with no folder writes in: the one its record's
+//! type declares in its schema's `x-board-folder`, with each `{name}`
+//! filled from `--var` (docs/architecture/paths/writes.md).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use board_model::{LogicalPath, RecordType};
-use serde_json::Value;
+use board_model::{Content, LogicalPath, POINTER_TYPE, RecordType};
 
 use super::new::{drawn, folder_text};
-use super::{PutError, PutReport, Refused, Schemas};
+use super::{PutError, PutReport, Schemas, checked};
 use crate::board::Board;
 
 /// The value each `--var` gives a placeholder, by its name.
 pub type Vars = BTreeMap<String, String>;
 
 impl Board {
-    /// Writes the record `bytes` at a new name under `folder`, or with no
-    /// folder, under the one its type declares with `vars` filled in.
-    pub fn put_new_waiting(
+    /// Writes the record `bytes` at a new name under the folder its type
+    /// declares, with `vars` filled in.
+    pub fn put_declared_waiting(
         &self,
-        folder: Option<&LogicalPath>,
         vars: &Vars,
         bytes: &[u8],
         wait: Duration,
     ) -> Result<PutReport, PutError> {
-        let folder = self.folder(folder, vars, bytes)?;
+        let folder = self.declared_folder(vars, bytes)?;
         self.put_named(&folder, bytes, wait, &mut drawn())
     }
 
-    /// `folder`, which takes no `vars`, or the folder the type of the
-    /// record `bytes` declares, filled from `vars`.
-    pub(crate) fn folder(
+    /// The folder the type of the record `bytes` declares, filled from
+    /// `vars`.
+    pub(crate) fn declared_folder(
         &self,
-        folder: Option<&LogicalPath>,
         vars: &Vars,
         bytes: &[u8],
     ) -> Result<LogicalPath, PutError> {
-        if let Some(folder) = folder {
-            return match vars.keys().next() {
-                Some(var) => Err(unused(var, &format!("{}/", folder.as_str()))),
-                None => Ok(folder.clone()),
-            };
-        }
         let (record_type, declared) = self.declared(bytes)?;
         let text = filled(&record_type, &declared, vars)?;
-        let folder: LogicalPath = folder_text(&text).parse()?;
-        if text.ends_with('/') {
-            Ok(folder)
-        } else {
-            Err(PutError::NotAFolder { folder })
-        }
+        Ok(folder_text(&text).parse()?)
     }
 
     /// The type of the record `bytes` and the folder its schema declares.
     /// The record is checked first, so one that no put admits keeps its code.
+    /// Known cost: the put that follows checks the record and compiles its
+    /// schema again under its lock, because each name it draws takes the lock
+    /// afresh.
     fn declared(&self, bytes: &[u8]) -> Result<(RecordType, String), PutError> {
+        let unplaced = |refused| PutError::Unplaced { refused };
+        let classified = checked(bytes).map_err(unplaced)?;
+        let record_type = match &classified.content {
+            Content::Record { record_type, .. } => record_type.clone(),
+            // `admit` refuses every other content but a mount record.
+            _ => (POINTER_TYPE.parse()).expect("POINTER_TYPE is a record type; a test parses it"),
+        };
         let mut schemas = Schemas::default();
-        let admitted = (self.check_record(&mut schemas, bytes))
-            .map_err(|refused| PutError::Unplaced { refused })?;
-        let record_type: RecordType = (admitted.value.get("$type").and_then(Value::as_str))
-            .and_then(|text| text.parse().ok())
-            .ok_or(PutError::Unplaced {
-                refused: Refused::NoType,
-            })?;
+        (self.admit(&mut schemas, classified)).map_err(|fault| unplaced(fault.into()))?;
         let declared = (schemas.held.get(&record_type))
             .and_then(|schema| schema.as_ref().ok())
             .and_then(|schema| schema.document().get("x-board-folder")?.as_str());
@@ -97,15 +87,10 @@ pub(crate) fn filled(
     }
     text.push_str(rest);
     match vars.keys().find(|var| !used.contains(var.as_str())) {
-        Some(var) => Err(unused(var, declared)),
+        Some(var) => Err(PutError::VarUnused {
+            var: var.clone(),
+            folder: declared.to_owned(),
+        }),
         None => Ok(text),
-    }
-}
-
-/// The refusal of `--var var`, which names no placeholder of `folder`.
-fn unused(var: &str, folder: &str) -> PutError {
-    PutError::VarUnused {
-        var: var.to_owned(),
-        folder: folder.to_owned(),
     }
 }

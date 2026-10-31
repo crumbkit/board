@@ -35,7 +35,8 @@ in one minute; it is not meant to resist guessing.
 The folder must end in `/`, so a mistyped full path is refused with
 `board::put::not_a_folder` instead of becoming a folder. A folder relative to
 the current directory works as other paths do, so `--new ./` names a record
-here. `--new` takes no path, `--expect`, `--batch` or `--file`.
+here. With `--new` the path is the folder, and `--new` takes no `--expect`,
+`--batch` or `--file`.
 
 `board put --new` with no folder writes in the folder the record's type
 declares in its schema's `x-board-folder` (architecture/records/shapes.md).
@@ -44,8 +45,8 @@ segment, so `board put --new --var project=board` writes a
 `plans/question/v1` under `/projects/board/questions/`. A later `--var` of
 the same name wins. The put is refused with `board::put::no_folder` when the
 type declares no folder, `board::put::folder_unfilled` when no `--var` fills a
-placeholder, and `board::put::var_unused` when a `--var` names no placeholder,
-or a folder is given. The folder is read from this board's schema, and a
+placeholder, and `board::put::var_unused` when a `--var` names no placeholder.
+A `--var` given with a folder exits 2 with `board::cli::usage`. The folder is read from this board's schema, and a
 record that no put admits keeps its own code. The plans types and
 `runs/run/v1` declare their folders.
 

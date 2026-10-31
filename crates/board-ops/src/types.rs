@@ -109,7 +109,7 @@ impl Board {
             Working::Read(contents) => match parse_json(&contents.bytes) {
                 Ok(held) if held == *schema && linked => Held::Linked,
                 Ok(held) if held == *schema => Held::Same(contents.bytes),
-                Ok(held) if !linked && unannotated(&held) == unannotated(schema) => Held::Annotated,
+                Ok(held) if unannotated(&held) == unannotated(schema) => Held::Annotated,
                 Ok(_) => Held::Other,
                 Err(error) => Held::Unparsed(error),
             },

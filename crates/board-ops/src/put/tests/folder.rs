@@ -34,8 +34,7 @@ fn vars(pairs: &[(&str, &str)]) -> Vars {
 fn a_put_with_no_folder_writes_in_the_folder_its_type_declares_with_each_var_filled_in() {
     let scenario = questions("/projects/{project}/questions/");
     let report = open(&scenario)
-        .put_new_waiting(
-            None,
+        .put_declared_waiting(
             &vars(&[("project", "board")]),
             QUESTION.as_bytes(),
             LOCK_WAIT,
@@ -62,7 +61,7 @@ fn an_unfilled_placeholder_is_refused_naming_it_and_its_twin_with_the_var_is_adm
     let scenario = questions("/projects/{project}/questions/");
     let board = open(&scenario);
     let refused = board
-        .folder(None, &vars(&[]), QUESTION.as_bytes())
+        .declared_folder(&vars(&[]), QUESTION.as_bytes())
         .unwrap_err();
     assert_eq!(refused.code(), Code::PutFolderUnfilled);
     assert_eq!(
@@ -72,7 +71,7 @@ fn an_unfilled_placeholder_is_refused_naming_it_and_its_twin_with_the_var_is_adm
     let fields = refused.fields();
     assert_eq!(fields.var.as_deref(), Some("project"));
     assert_eq!(fields.record_type, Some("lr/question/v1".parse().unwrap()));
-    let admitted = board.folder(None, &vars(&[("project", "board")]), QUESTION.as_bytes());
+    let admitted = board.declared_folder(&vars(&[("project", "board")]), QUESTION.as_bytes());
     assert_eq!(admitted.unwrap(), path("/projects/board/questions"));
 }
 
@@ -81,7 +80,9 @@ fn a_var_that_names_no_placeholder_is_refused_and_its_twin_without_it_is_admitte
     let scenario = questions("/projects/{project}/questions/");
     let board = open(&scenario);
     let extra = vars(&[("project", "board"), ("team", "a")]);
-    let refused = board.folder(None, &extra, QUESTION.as_bytes()).unwrap_err();
+    let refused = board
+        .declared_folder(&extra, QUESTION.as_bytes())
+        .unwrap_err();
     assert_eq!(refused.code(), Code::PutVarUnused);
     assert_eq!(
         refused.to_string(),
@@ -89,21 +90,14 @@ fn a_var_that_names_no_placeholder_is_refused_and_its_twin_without_it_is_admitte
     );
     assert_eq!(refused.fields().var.as_deref(), Some("team"));
     let only = vars(&[("project", "board")]);
-    assert!(board.folder(None, &only, QUESTION.as_bytes()).is_ok());
-    let named = path("/projects");
-    let refused = (board.folder(Some(&named), &only, QUESTION.as_bytes())).unwrap_err();
-    assert_eq!(refused.code(), Code::PutVarUnused);
-    assert_eq!(
-        (board.folder(Some(&named), &vars(&[]), QUESTION.as_bytes())).unwrap(),
-        named
-    );
+    assert!(board.declared_folder(&only, QUESTION.as_bytes()).is_ok());
 }
 
 #[test]
 fn a_type_that_declares_no_folder_is_refused_naming_it_and_a_type_that_does_is_admitted() {
     let scenario = questions("/questions/");
     let board = open(&scenario);
-    let refused = (board.folder(None, &vars(&[]), task("").as_bytes())).unwrap_err();
+    let refused = (board.declared_folder(&vars(&[]), task("").as_bytes())).unwrap_err();
     assert_eq!(refused.code(), Code::PutNoFolder);
     assert_eq!(
         refused.to_string(),
@@ -113,7 +107,14 @@ fn a_type_that_declares_no_folder_is_refused_naming_it_and_a_type_that_does_is_a
         refused.fields().record_type,
         Some("lr/task/v1".parse().unwrap())
     );
-    let admitted = board.folder(None, &vars(&[]), QUESTION.as_bytes());
+    let mount = r#"{"$type": "board/mount/v1", "path": "/projects/p"}"#;
+    let refused = (board.declared_folder(&vars(&[]), mount.as_bytes())).unwrap_err();
+    assert_eq!(refused.code(), Code::PutNoFolder);
+    assert_eq!(
+        refused.fields().record_type,
+        Some("board/mount/v1".parse().unwrap())
+    );
+    let admitted = board.declared_folder(&vars(&[]), QUESTION.as_bytes());
     assert_eq!(admitted.unwrap(), path("/questions"));
 }
 
@@ -121,25 +122,25 @@ fn a_type_that_declares_no_folder_is_refused_naming_it_and_a_type_that_does_is_a
 fn a_record_refused_before_its_folder_is_found_keeps_its_code_and_a_valid_twin_is_admitted() {
     let scenario = questions("/questions/");
     let board = open(&scenario);
-    let refused = (board.folder(None, &vars(&[]), b"{}")).unwrap_err();
+    let refused = (board.declared_folder(&vars(&[]), b"{}")).unwrap_err();
     assert_eq!(refused.code(), Code::PutInvalid);
     assert_eq!(
         refused.to_string(),
         "the record is refused: it has no $type"
     );
-    assert!(board.folder(None, &vars(&[]), QUESTION.as_bytes()).is_ok());
+    assert!(
+        board
+            .declared_folder(&vars(&[]), QUESTION.as_bytes())
+            .is_ok()
+    );
 }
 
 #[test]
-fn a_filled_folder_that_is_not_a_logical_path_or_a_folder_is_refused_and_a_well_formed_one_is_admitted()
- {
+fn a_filled_folder_that_is_not_a_logical_path_is_refused_and_a_well_formed_one_is_admitted() {
     let scenario = questions("/projects/{project}/");
     let board = open(&scenario);
-    let dots = (board.folder(None, &vars(&[("project", "..")]), QUESTION.as_bytes())).unwrap_err();
+    let dots =
+        (board.declared_folder(&vars(&[("project", "..")]), QUESTION.as_bytes())).unwrap_err();
     assert_eq!(dots.code(), Code::PathMalformed);
-    assert!((board.folder(None, &vars(&[("project", "p")]), QUESTION.as_bytes())).is_ok());
-    let file = questions("/projects/{project}");
-    let refused =
-        (open(&file).folder(None, &vars(&[("project", "p")]), QUESTION.as_bytes())).unwrap_err();
-    assert_eq!(refused.code(), Code::PutNotAFolder);
+    assert!((board.declared_folder(&vars(&[("project", "p")]), QUESTION.as_bytes())).is_ok());
 }

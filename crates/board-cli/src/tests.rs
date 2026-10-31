@@ -1381,7 +1381,7 @@ fn put_new_refuses_a_folder_without_its_slash_naming_the_fix_and_its_twin_is_adm
 }
 
 #[test]
-fn put_new_takes_no_path_expect_batch_or_file() {
+fn put_new_takes_one_folder_and_no_expect_batch_or_file() {
     let scenario = board();
     scenario.write(
         ".board/board.json",
@@ -1456,7 +1456,7 @@ fn put_new_refuses_an_unfilled_placeholder_naming_the_var_and_its_twin_is_admitt
     assert_eq!(
         text(&refused.stderr),
         "error: lr/question/v1 files records under /projects/{project}/questions/, and no --var gives {project}\n\
-         \x20 help:  add `--var project=<value>`, such as `--var project=board`\n\
+         \x20 help:  add `--var project=<value>`\n\
          \x20 code:  board::put::folder_unfilled\n"
     );
     let document = json(&board_with(
@@ -1521,10 +1521,11 @@ fn put_new_refuses_a_var_that_names_no_placeholder_and_its_twin_without_it_is_ad
 }
 
 #[test]
-fn var_needs_new_and_a_value_without_a_slash() {
+fn var_needs_new_with_no_folder_and_a_value_without_a_slash() {
     let scenario = questions();
     for arguments in [
         &["put", "/projects/a", "--var", "project=board"][..],
+        &["put", "--new", "/projects/", "--var", "project=board"],
         &["put", "--new", "--var", "project=a/b"],
         &["put", "--new", "--var", "project"],
     ] {
