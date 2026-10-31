@@ -174,7 +174,10 @@ pub fn is_hidden(char: char) -> bool {
         '\u{200c}' | '\u{200d}' => false,
         '\u{115f}' | '\u{1160}' | '\u{3164}' | '\u{ffa0}' => true,
         // No ASCII character is a format character or a separator, so ASCII,
-        // which most paths are, skips the slower category lookup.
+        // which most paths are, skips the category lookup. In a debug build
+        // that lookup copies a 41 KB table on every call. Optimising the
+        // Unicode crate does not help, because the lookup is compiled into
+        // this crate.
         _ if char.is_ascii() => char.is_ascii_control(),
         _ => {
             char.is_control()
