@@ -44,9 +44,9 @@ mounts are read in order.
 - `refs` decides every source, and keeps what it decided.
 - A scoped `ls` walks and decides only the sources its scope reaches, and
   keeps nothing for a source it decided only in part.
-- A scope reaches a source when the scope's path is inside the source,
-  above its mount, or beneath one of the source's own mounts. A scoped
-  `check` or `ls` walks any other source only when the index lists no
+- A scope reaches a source when one of the source's routes lies inside the
+  scope, or the scope lies inside one of its routes. A scoped `check` or
+  `ls` walks any other source only when the index lists no
   pointers for it, to find its mounts.
 - On a copy of the owner's board with 24 mounts, a warm `check /controls`
   takes about 38 ms. It took 59 ms when a scoped run walked every source.

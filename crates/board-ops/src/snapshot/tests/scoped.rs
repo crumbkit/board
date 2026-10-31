@@ -108,9 +108,9 @@ fn listed(scenario: &Scenario, path: &str, cache: Option<&Path>) -> LsReport {
 /// Every scope the tests try, and the mounted sources it reaches: a
 /// working-tree directory, a mount, a directory inside a mount, a directory
 /// that holds mounts, a mount two levels deep, and the second route to a
-/// commit mounted twice. The scope `/repos/a/i/projects` reaches `a`
-/// because its route crosses `a`'s mount at `/i`: a directory `i/` in `a`
-/// would sit in scope, shadowed by that mount.
+/// commit mounted twice. A scope reaches every source on its route, so
+/// `/repos/a/i/projects` reaches `a`, although `a` has no entry in scope
+/// there.
 const SCOPES: [(&str, &[&str]); 6] = [
     ("/tasks", &[]),
     ("/repos/a", &["a", "inner"]),
