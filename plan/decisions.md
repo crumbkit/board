@@ -92,11 +92,18 @@ A migration script rewrites every
 becomes `basis`; `written_by` is dropped, since only stubs set it; the other
 fields copy. A stub whose `why` is empty is rewritten with a `why` that
 says it was written when the pull request in its `urls` was opened and that
-no reason was recorded, and it gets an open question so the owner sees it. `review` is dropped. The decisions whose `review` is `wanted`
-and that no later decision names in `refs` get one open question, whose
-`for` lists them, so they still wait on the owner. The same script rewrites each eval:
-it drops `status`, sets `abandoned` from an `abandoned` status, and renames
-`decision` and `mounts`. It writes nothing with `--dry-run`.
+no reason was recorded. `review` is dropped. Every decision whose `review`
+is `wanted`, and every stub, waits on the owner through an open question.
+A later decision that names it in `refs` does not change that, as the
+review rule above says. The script writes one question per project, at
+`/projects/<project>/questions/<id>`, whose `for` lists that project's
+waiting decisions. It takes `--session`, the session of the agent that runs
+it, for the questions' required `session`.
+
+The same script rewrites each eval: it drops `status`, sets `abandoned`
+from an `abandoned` status, and renames `decision` and `mounts`. It prints
+each eval whose derived state differs from its stored `status`, such as a
+`planned` eval that has runs. It writes nothing with `--dry-run`.
 
 The runs mod keeps writing its `plans/decision/v1` stub on each
 `gh pr create` until the pull request that writes `opened` records, in the
@@ -118,9 +125,11 @@ migration script and the readers that move to the new type. The tests:
   nothing, and a reference of the wrong type in `supersedes`.
 - A control with `basis` is admitted, and `board check` reports one whose
   `basis` reaches nothing.
-- The plans hook lists a stub of either type.
-- The migration round-trips the owner's records with no loss, checked by
-  `board check` on a copy of the board.
+- The plans hook lists a `plans/decision/v1` stub written after the
+  migration.
+- The migration keeps every field of the owner's records except those this
+  section drops or renames, checked by `board check` on a copy of the
+  board, and it prints each eval whose derived state changes.
 
 Done when the owner's board has migrated and `decisions.open` lists the
 decisions that still wait on the owner.
