@@ -4,8 +4,9 @@ mod asked;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
+use board_plugin::shape::{TREE_CODES, whole};
 use schemars::JsonSchema;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use self::asked::{Instant, instant};
@@ -15,10 +16,6 @@ use crate::records::Choice;
 /// compares as `substr` and `length` would in `SQLite`.
 pub(crate) const QUESTIONS: &str = "SELECT logical, code, body FROM records \
      WHERE type = 'plans/question/v1' AND json_extract(body, '$.status') = 'open'";
-
-/// Codes that depend on the tree rather than the record. A question
-/// holding one is still a question to read.
-const TREE_CODES: [&str; 2] = ["board::ref::dangling", "board::ref::wrong_type"];
 
 /// The open questions under `path`, oldest first.
 #[derive(Deserialize, JsonSchema)]
@@ -42,15 +39,6 @@ impl Default for Input {
             limit: 100,
         }
     }
-}
-
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "the input schema admits only whole numbers from 1 to 10,000"
-)]
-fn whole<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
-    f64::deserialize(deserializer).map(|number| number as u16)
 }
 
 /// Open questions, oldest first.
@@ -97,14 +85,7 @@ struct Stored {
 }
 
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path, limit } = Input::deserialize(input).map_err(|error| PluginError {
-        code: "plans::call::bad_input".to_owned(),
-        message: format!(
-            "open's input {input} passed its schema but does not read: {error}; \
-             the input struct and its schema disagree, so report this to Board's developers"
-        ),
-        fields: Map::new(),
-    })?;
+    let Input { path, limit } = PluginError::read_input("plans", "open", input)?;
     let prefix = format!("{}/", path.trim_end_matches('/'));
     let limit = usize::from(limit);
     let report = (host.query(QUESTIONS, Limit::ALL))

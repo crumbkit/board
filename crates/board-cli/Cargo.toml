@@ -10,7 +10,8 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["plans", "requests"]
+default = ["evals", "plans", "requests"]
+evals = ["board-plugins/evals"]
 plans = ["board-plugins/plans"]
 requests = ["board-plugins/requests"]
 

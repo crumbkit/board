@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::shape::{Record, Ref, Tag};
+use board_plugin::shape::{Record, Ref, Tag};
 
 /// `plans/question/v1`: a question an agent session needs the owner to answer.
 ///

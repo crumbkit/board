@@ -1,6 +1,7 @@
 //! Record and reference shapes for schemars
 //! (docs/architecture/records/shapes.md): a record's `$type`, a typed
-//! reference, and the settings every schema the plugin ships is made with.
+//! reference, and the settings every schema a built-in plugin ships is made
+//! with; and what its readers share.
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -8,7 +9,22 @@ use std::marker::PhantomData;
 use schemars::generate::SchemaSettings;
 use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
+
+/// Codes that depend on the tree rather than the record. A record holding
+/// one is still a record to read.
+pub const TREE_CODES: [&str; 2] = ["board::ref::dangling", "board::ref::wrong_type"];
+
+/// Reads a JSON number, such as `5` or `5.0`, as a `u16`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "each input schema that uses it admits only whole numbers from 1 to 10,000"
+)]
+pub fn whole<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u16, D::Error> {
+    f64::deserialize(deserializer).map(|number| number as u16)
+}
 
 /// A record type, named by its `$type`.
 pub trait Record {

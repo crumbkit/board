@@ -9,7 +9,6 @@ publish.workspace = true
 board-model.workspace = true
 board-ops.workspace = true
 board-plugin.workspace = true
-board-plugin-plans.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

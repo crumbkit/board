@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 board-model.workspace = true
 board-validate.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 strsim.workspace = true

@@ -1,10 +1,12 @@
-//! Plugins: manifests, discovery and child processes (docs/plugins.md).
+//! Plugins: manifests, discovery, child processes and the schema shapes
+//! built-in plugins generate (docs/plugins.md).
 
 mod call;
 mod installed;
 mod manifest;
 mod process;
 mod protocol;
+pub mod shape;
 mod sign;
 
 pub use crate::call::{

@@ -2,16 +2,15 @@
 
 mod open;
 pub mod records;
-pub mod shape;
 
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
+use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
 use crate::records::{AnswerRecord, DecisionRecord, QuestionRecord};
-use crate::shape::{Record, schema_of};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Plans;

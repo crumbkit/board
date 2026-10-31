@@ -1,4 +1,4 @@
-"""Fixture boards that run the real `board` binary with this plugin installed and enabled."""
+"""Fixture boards that run the real `board` binary, which has this plugin built in, with runs installed."""
 
 import json
 import os
@@ -12,7 +12,9 @@ import pytest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
-SCHEMAS = PLUGIN / "types" / "evals"
+# The schema the plugin ships, kept in its crate.
+TYPES = REPOSITORY / "crates" / "board-plugin-evals" / "types"
+SCHEMAS = TYPES / "evals"
 # The runs plugin, whose suites and runs an eval refers to.
 RUNS = REPOSITORY / "plugins" / "runs"
 EVAL_TYPE = "evals/eval/v1"
@@ -36,7 +38,7 @@ def flags(given: dict[str, Any]) -> list[str]:
 
 @dataclass(frozen=True)
 class Board:
-    """A git repository holding a board, with this plugin installed for it alone."""
+    """A git repository holding a board, with the runs plugin installed for it alone."""
 
     root: Path
     data: Path
@@ -90,14 +92,13 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with evals and runs installed and enabled through `board plugin enable`."""
+    """A board that does not commit, with runs installed and both plugins enabled through `board plugin enable`."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
-    (plugins / "evals").symlink_to(PLUGIN)
     (plugins / "runs").symlink_to(RUNS)
     for name in ("evals", "runs"):
         enabled = fixture.run("plugin", "enable", name)
@@ -138,9 +139,9 @@ def run(suite_path: str) -> str:
 def repository(parent: Path, name: str, records: dict[str, str]) -> tuple[Path, str]:
     """A board in a git repository that enables evals and runs, holding `records` by path, and its one commit."""
     root = parent / name
-    for plugin in (PLUGIN, RUNS):
-        for schema in (plugin / "types").rglob("*.schema.json"):
-            target = root / ".board" / "types" / schema.relative_to(plugin / "types")
+    for types in (TYPES, RUNS / "types"):
+        for schema in types.rglob("*.schema.json"):
+            target = root / ".board" / "types" / schema.relative_to(types)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(schema.read_text())
     config = {"$type": "board/config/v1", "plugins": ["evals", "runs"]}

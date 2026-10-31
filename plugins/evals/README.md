@@ -1,8 +1,8 @@
 # evals
 
-A Board plugin for recording tests of libraries, tools, models and agents. An
-eval states a question, the suites that test it and the runs its verdict
-rests on. It is stored in a board, so an agent can ask what has already been
+A plugin built into Board for recording tests of libraries, tools, models
+and agents. An eval states a question, the suites that test it and the runs
+its verdict rests on. It is stored in a board, so an agent can ask what has already been
 tested before it tests again. `SKILL.md` says which board an eval belongs in.
 
 The suites and runs are the `runs` plugin's records, so a board that holds
@@ -65,14 +65,14 @@ neither lists it.
 Both take an optional `limit`, 1 to 100 (default 100), and return
 `{"evals": [...], "total": n, "truncated": bool}`. Each eval is its `path`,
 `question`, `subjects`, `status`, `verdict` and `decision`, ordered by path.
-Board checks the limit before the plugin runs. Case folding is SQLite's
-`lower`, which folds ASCII letters only.
+Board checks the limit before the plugin runs. Case folding covers ASCII
+letters only, as SQLite's `lower` does.
 
-Each capability makes one `board query` over the `records` view, using
-`json_each` and `json_extract` on the record body. It lists an eval whose only fault is a
-dangling or wrong-typed reference, and leaves out one that Board marks
-degraded for any other reason. It also leaves out an eval that a board's own
-looser schema admits but the plugin's model refuses.
+Each capability reads every eval with one query over the `records` view and
+filters them in Rust. It lists an eval whose only fault is a dangling or
+wrong-typed reference, and leaves out one that Board marks degraded for any
+other reason. It also leaves out an eval that a board's own looser schema
+admits but the plugin cannot read.
 
 ## Across repositories
 
@@ -89,19 +89,23 @@ repository's board sets `commit_on_put`, the mount's `follow` is a local
 branch, and the repository's HEAD is on that branch and descends from the pin.
 The put commits in the repository and moves the pin.
 
-## Installing
+## Enabling
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/evals"
+Board has the plugin built in, so nothing is installed. Install the `runs`
+plugin first, as its README says, then:
+
     board plugin enable runs
     board plugin enable evals
 
-`board plugin enable evals` writes the eval schema to `.board/types/evals/`
-and names the plugin in `.board/board.json`. Install the `runs` plugin the
-same way first.
+An older install at `${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/evals`
+makes `call` and `plugin enable` fail with `board::plugin::duplicate`.
+Remove it; it is usually a symlink to a checkout, so remove the link, not the
+checkout.
 
-The plugin's types stay at v1 and change in place while it has one user. After
-an update that changes a schema, Board refuses `board call evals.*` with
+`board plugin enable evals` writes the eval schema to `.board/types/evals/`
+and names the plugin in `.board/board.json`. The type stays at v1 and changes
+in place while the plugin has one user. After an update that changes the
+schema, Board refuses `board call evals.*` with
 `board::plugin::schema_differs` until the board holds the new schema. Run
 `board plugin enable evals` again: it replaces the board's copy with the
 plugin's, and `board check` lists the records the new schema refuses.
@@ -113,10 +117,12 @@ tests something. Link the directory into the agent's skills to install it:
 
 ## Developing
 
-The plugin talks to Board through the shared library in `python/board-plugin/`.
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the shipped schemas are
-generated from the pydantic models in `src/board_evals/models.py` by
-`board_evals.manifest`, and a test checks that the committed files match.
+The plugin is the crate `crates/board-plugin-evals`. It generates the
+manifest's input and output schemas from Rust structs with schemars, and
+ships the eval schema as the file in its `types/` directory.
+
+This directory keeps `SKILL.md` and a uv project that only tests the plugin
+through the real binary. The gates, which CI runs: `uv run ruff format --check .`,
+`uv run ruff check .`, `uv run pyright` and `uv run pytest`. The tests drive
+`$BOARD_BIN`, by default the workspace's `target/debug/board`, so build it
+first with `cargo build -p board-cli`.
