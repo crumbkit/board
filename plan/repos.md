@@ -54,7 +54,16 @@ clone's `origin` remote and, when a known board's repo record has that
 boards with a record for the same `remote` is `board::config::ambiguous`.
 When no known board has it, Board runs as the `personal` board that
 `config.json` names, with no prefix. With no `personal` board, the clone
-stays `board::config::not_found`, as today.
+stays `board::config::not_found`, as today. This mapping and its fallback
+live in `board-ops/src/known.rs`, beside today's.
+
+A checkout of a repository that is itself a board, such as crumbkit/board,
+runs as that repository's board, because Board finds `.board/board.json`
+before it reads the known boards. Every work command this plan adds is
+therefore run as `board --personal call …`, and `changes.brief`, the pull
+request gate's refusal and the changes skill print it in that form.
+`BOARD_CALLER_DIR` still names the directory Board was started in, so the
+plugin sees the caller's clone.
 
 A plugin learns the caller's repository as the tasks and notes plugins do
 today: `board_plugin.repos.caller_remote()` reads the origin of
@@ -64,7 +73,8 @@ matches.
 ## Creating the record
 
 Nobody writes a repo record by hand. `changes.start` creates it from
-`caller_remote()` when no record has that remote, at `/repos/<name>`, where `<name>`
+`caller_remote()` when no record has that remote (built with
+plan/work-records.md), at `/repos/<name>`, where `<name>`
 is the remote's last path segment. A clash with an existing record of
 another remote is `changes::repo::name_taken`, which suggests `--repo-name`.
 Evals and other records refer to the record once it exists. A mount is added
@@ -81,8 +91,8 @@ rewrite and writes nothing with `--dry-run`.
 
 ## Build
 
-One pull request in `board-model` and `board-tree`, with `changes.start`'s
-use of it. The tests:
+One pull request in `board-model`, `board-tree` and `board-ops`. The
+tests:
 
 - A repo record with a checkout resolves exactly as the equivalent mount, for
   every case in the existing mount tests.
@@ -90,8 +100,6 @@ use of it. The tests:
   children.
 - A directory in an unmounted clone runs with its repo record's prefix, and
   one with no record runs as the personal board.
-- `changes.start` in an unmounted clone creates the record once, and a second
-  start reuses it.
 - Each refusal has an admitted twin.
 
 Done when the owner's board has migrated and `board check` reports nothing

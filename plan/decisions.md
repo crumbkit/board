@@ -85,8 +85,9 @@ eval. `evals.about --repo` replaces `--mount`.
 A one-off script, run once and not kept, rewrites every
 `plans/decision/v1` as `decisions/decision/v1` at the same path. `refs`
 becomes `basis`; `written_by` is dropped, since only stubs set it; the other
-fields copy. A stub whose `why` is empty is listed for the owner and not
-rewritten. `review` is dropped. The decisions whose `review` is `wanted`
+fields copy. A stub whose `why` is empty is rewritten with a `why` that
+says it was written when the pull request in its `urls` was opened and that
+no reason was recorded, and it gets an open question so the owner sees it. `review` is dropped. The decisions whose `review` is `wanted`
 and that no later decision names in `refs` get one open question, whose
 `for` lists them, so they still wait on the owner. The same script rewrites each eval:
 it drops `status`, sets `abandoned` from an `abandoned` status, and renames
