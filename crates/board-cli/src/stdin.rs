@@ -19,9 +19,9 @@ pub(crate) enum TypeCommand {
     /// Add a type: compile the JSON Schema on stdin and write it to .board/types/.
     #[command(after_help = "\
 An equal schema already there is left as it is. One that differs only in
-`x-board-*` annotations, such as `x-board-folder`, replaces it. Any other
-difference is refused, because a changed type is a new version. The write is
-committed unless .board/board.json sets `commit_on_put` to false.
+its top-level `x-board-folder` replaces it. Any other difference is refused,
+because a changed type is a new version. The write is committed unless
+.board/board.json sets `commit_on_put` to false.
 
 Examples:
   board type add notes/note/v1 < note.schema.json

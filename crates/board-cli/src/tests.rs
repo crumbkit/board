@@ -1538,6 +1538,10 @@ fn var_needs_new_with_no_folder_and_a_value_without_a_slash() {
         ));
         assert_eq!(document["code"], "board::cli::usage", "{arguments:?}");
     }
+    let alone = &["put", "--var", "project=board", "--json"];
+    let document = json(&board_with(scenario.workdir(), None, alone, QUESTION));
+    let message = document["message"].as_str().unwrap();
+    assert!(message.contains("--new"), "{message}");
     let admitted = board_with(
         scenario.workdir(),
         None,

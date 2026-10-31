@@ -65,12 +65,14 @@ plugins are ported.
 - A capability input marks a path with `format: board-path`, not
   `board-ref`, so `board call` reads it relative to the prefix.
 
-## Changing annotations
+## Changing a folder
 
-`board type add` replaces a held schema that differs only in `x-board-*`
-keys, at any depth, such as a new `x-board-folder` or `x-board-type`. Any
-other difference is `board::schema::differs`, since a changed type is a new
-version. `board plugin enable` replaces a plugin's changed schema either way.
+`board type add` replaces a held schema that differs only in its top-level
+`x-board-folder`, since the folder changes no record's validity. Any other
+difference, including an `x-board-type`, is `board::schema::differs`, since
+a changed type is a new version. A schema held through a symlink is not
+replaced; the put is refused with `board::put::symlink`. `board plugin
+enable` replaces a plugin's changed schema either way.
 
 ## Generating schemas in Rust
 

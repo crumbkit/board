@@ -22,9 +22,9 @@ so it is written at its path. Its schema declares its folder too, so
   `none`; `words` holds the owner's words verbatim; `answered` is when.
   `written_by` names the plugin and hook when a mod wrote the answer, such as
   `plans/pane-answer`.
-- `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`, `why`, `session` and
-  `decided` are required; `alternatives`, `refs`, `urls`, `review`
-  (`wanted` or `none`) and `written_by` are optional. `refs` lists board
+- `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`,
+  `why`, `session` and `decided` are required; `alternatives`, `refs`,
+  `urls`, `review` (`wanted` or `none`) and `written_by` are optional. `refs` lists board
   entries the decision concerns, such as an answer; `urls` lists web pages,
   such as a pull request.
 

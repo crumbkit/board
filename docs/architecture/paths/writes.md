@@ -46,7 +46,8 @@ segment, so `board put --new --var project=board` writes a
 the same name wins. The put is refused with `board::put::no_folder` when the
 type declares no folder, `board::put::folder_unfilled` when no `--var` fills a
 placeholder, and `board::put::var_unused` when a `--var` names no placeholder.
-A `--var` given with a folder exits 2 with `board::cli::usage`. The folder is read from this board's schema, and a
+A `--var` given with a folder, or without `--new`, exits 2 with
+`board::cli::usage`. The folder is read from this board's schema, and a
 record that no put admits keeps its own code. The plans types and
 `runs/run/v1` declare their folders.
 

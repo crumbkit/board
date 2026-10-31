@@ -121,7 +121,7 @@ pub(crate) struct Putting {
     /// Fill {name} in the type's folder; repeatable.
     ///
     /// The value fills one path segment, so it holds no /. A later --var of the same name wins.
-    #[arg(long, value_name = "NAME=VALUE", conflicts_with_all = ["path", "batch"], value_parser = var)]
+    #[arg(long, value_name = "NAME=VALUE", requires = "new", conflicts_with_all = ["path", "batch"], value_parser = var)]
     pub(crate) var: Vec<(String, String)>,
     /// The blob the file must hold, or `none` for a new file.
     #[arg(long, value_parser = expect)]
