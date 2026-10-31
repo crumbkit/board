@@ -114,8 +114,9 @@ impl Board {
             .repositories()
             .repository(&location.board)
             .map_err(|source| ReadError::Git { source })?;
-        // The check walked every source; a source it did not reach is walked
-        // only in the listed directory, or a listed file's own directory.
+        // The check walked every source its scope reaches; a source it did
+        // not walk is walked only in the listed directory, or a listed
+        // file's own directory.
         let walked = snapshot
             .walked
             .iter()

@@ -34,7 +34,9 @@ mounts are read in order.
 - `query`, `call` and `enable` read kept rows in place and decide only the
   sources whose key the index does not hold.
 - `check`, `refs` and `ls` decide every source, and keep what they decided.
-- A scoped run keeps nothing for a source it decided only in part.
+- A scoped run decides only the sources its scope reaches. It walks
+  another source only when the index lists no pointers for it, to find its
+  mounts. It keeps nothing for a source it decided only in part.
 
 ## What is never kept
 
