@@ -42,7 +42,10 @@ the control is written, and agents follow the requirement. Changing the rule
 means a new decision that supersedes the old one, and a new control citing
 it in place of the old control. Until the old control is deleted,
 `controls.check` marks it `basis_superseded`, so a control that outlives its
-decision is reported.
+decision is reported. Decisions live in the personal board, and an absolute
+reference inside a mounted board means that board's own path. So only a
+personal-board control can name a personal-board decision in `basis`, and
+a repository's own control names records in its own board.
 
 Existing controls stay valid. Without `repos`, `paths` match from the
 board's root, as today.
@@ -80,22 +83,49 @@ Without `files`, `board --personal call controls.check --path /repos/<name>` lis
 every control on the repository, which is what an agent needs when it
 starts.
 
+## Checking from a checkout
+
+An agent in a checkout does not know its repository's path in the board.
+So `controls.check` with neither `--path` nor `files.path` checks the
+caller's repository: it finds the repo record whose `remote` equals
+`shown_remote(caller_remote())` of `BOARD_CALLER_DIR` (plan/repos.md) and
+checks `/repos/<name>`. With no such record it says so and checks nothing.
+The command from any checkout is therefore:
+
+    board --personal call controls.check
+
+This works in a checkout that is itself a board, where
+`board call controls.check --path .` would read only that board's own
+controls. The controls mod and the controls skill switch to this command.
+The owner's signed controls order names the old command, which keeps its
+meaning for repositories that are not boards; the owner re-signs the order
+with the new command once this is built.
+
 ## Output
 
 Each control in `stated` and `measured` gains `board`, `adds_step`,
-`basis` and, when it applies, `basis_superseded`. Budget controls keep their measurement. The output stays bounded by
-default and says what it left out.
+`basis` and, when it applies, `basis_superseded`. Budget controls keep their measurement.
+
+Today `check` returns every applying control with no limit, and adding a
+repository's own controls makes the list longer. So `check` gains
+`--limit`, with the default and maximum of the other listings, and each of
+`stated` and `measured` reports its `total` and whether it was cut short.
 
 ## Build
 
-One pull request in `board-tree` and the controls plugin. The tests:
+One pull request in the controls plugin, its mod and its skill. The index
+already holds a mounted board's records, so no crate changes. The tests:
 
 - A control with `repos` matches a file in each listed repository and not
   the same path in another.
 - `files` matches an unmounted repository's files.
+- With no path, a check from a clone checks its repo record's path, and
+  one from a clone with no record checks nothing and says so.
+- `--limit` cuts each list and reports its total.
 - The repository's own controls appear beside the personal board's, each
   with its board, and `own_controls` is `not_read` for a repo record without
   a checkout, with a twin that has one.
 
-Done when `board --personal call controls.check --path /repos/board` lists both the personal board's controls on it and the repository's own
+Done when `board --personal call controls.check`, run in a crumbkit/board
+checkout, lists both the personal board's controls on it and the repository's own
 controls.
