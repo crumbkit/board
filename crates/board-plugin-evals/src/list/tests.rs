@@ -383,22 +383,42 @@ fn text() -> impl Strategy<Value = String> {
         .prop_map(|chars| chars.into_iter().collect())
 }
 
+thread_local! {
+    /// An empty board, whose query runs SQL in Board's bundled SQLite.
+    static EMPTY: (Scenario, Board) = {
+        let scenario = Scenario::new();
+        scenario.write(".board/board.json", Item::File(r#"{"$type": "board/config/v1"}"#));
+        let board = Board::open(scenario.workdir(), None).unwrap();
+        (scenario, board)
+    };
+}
+
+/// `text` as an SQL string literal.
+fn literal(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "''"))
+}
+
+/// Whether Board's `SQLite` finds the comparison `sql` true.
+fn sqlite_says(sql: &str) -> bool {
+    EMPTY.with(|(_, board)| {
+        let report = board
+            .query(&format!("SELECT {sql}"), 1, None, None)
+            .unwrap();
+        report.rows[0][0] == json!(1)
+    })
+}
+
 proptest! {
     #[test]
     fn ascii_case_folding_equals_sqlite_lower(a in text(), b in text()) {
-        let sqlite = rusqlite::Connection::open_in_memory().unwrap();
-        let equal: bool = sqlite
-            .query_row("SELECT lower(?1) = lower(?2)", [&a, &b], |row| row.get(0))
-            .unwrap();
+        let equal = sqlite_says(&format!("lower({}) = lower({})", literal(&a), literal(&b)));
         prop_assert_eq!(a.eq_ignore_ascii_case(&b), equal);
     }
 
     #[test]
     fn starts_with_equals_sqlite_substr_and_length(a in text(), b in text()) {
-        let sqlite = rusqlite::Connection::open_in_memory().unwrap();
-        let equal: bool = sqlite
-            .query_row("SELECT substr(?1, 1, length(?2)) = ?2", [&a, &b], |row| row.get(0))
-            .unwrap();
+        let (a_sql, b_sql) = (literal(&a), literal(&b));
+        let equal = sqlite_says(&format!("substr({a_sql}, 1, length({b_sql})) = {b_sql}"));
         prop_assert_eq!(a.starts_with(&b), equal);
     }
 }

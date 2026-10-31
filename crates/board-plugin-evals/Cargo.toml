@@ -17,7 +17,6 @@ serde_json.workspace = true
 board-scenario.workspace = true
 board-validate.workspace = true
 proptest.workspace = true
-rusqlite.workspace = true
 
 [lints]
 workspace = true

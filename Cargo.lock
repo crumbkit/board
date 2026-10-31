@@ -203,7 +203,6 @@ dependencies = [
  "board-scenario",
  "board-validate",
  "proptest",
- "rusqlite",
  "schemars",
  "serde",
  "serde_json",
