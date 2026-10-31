@@ -46,7 +46,9 @@ def comment(path: str, pr: str, report: ReportRecord) -> str:
     """
     subject = report.get("subject")
     reviewed = (
-        f"Record `{subject['record']}` at `{subject['blob']}`." if subject else f"Commits `{report.get('range')}`."
+        f"Record `{subject['record']}` at `{subject['blob']}`."
+        if subject
+        else f"Commits `{cast('dict[str, str]', report)['range']}`."
     )
     lines = [f"**Review: {report['verdict']}** by {report['by']}", "", reviewed, ""]
     for finding in report["findings"]:

@@ -8,7 +8,7 @@ from board_plugin.protocol import CallRequest, PluginError
 
 from board_review.git import Repository
 from board_review.run import TREE_CODES
-from board_review.shapes import REPORT_TYPE, CoveredOutput, ReportRecord, Verdict
+from board_review.shapes import REPORT_TYPE, CoveredOutput, Verdict
 
 # How many uncovered commits a refusal names.
 SHOWN = 20
@@ -93,8 +93,6 @@ def _reports(board: Board, repository: Repository) -> list[tuple[str, _RangeRepo
     )
     committed = repository.committed()
     reports = [
-        (str(logical), cast("ReportRecord", json.loads(body)))
-        for logical, path, blob, body in rows
-        if committed.get(str(path)) == blob
+        (str(logical), json.loads(body)) for logical, path, blob, body in rows if committed.get(str(path)) == blob
     ]
     return [(logical, cast("_RangeReport", report)) for logical, report in reports if "range" in report]

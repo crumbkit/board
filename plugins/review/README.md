@@ -117,10 +117,9 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   the pull request its `source` names.
 - Builds the comment from the report: the verdict, `by`, the range or the
   subject's record and blob, each finding with its severity, file and line,
-  and the report it follows. A
-  footer names the report and the pull request. Every `@` is followed by a
-  zero-width joiner, so text an agent wrote from an untrusted diff mentions
-  no one.
+  and the report it follows. A footer names the report and the pull request.
+  Every `@` is followed by a zero-width joiner, so text an agent wrote from an
+  untrusted diff mentions no one.
 - Asks the owner with `board decide --op review.post --path <report> --text -`,
   showing the whole comment. Until the owner approves, it fails with
   `review::board::refused` carrying Board's `board::settings::asked` or

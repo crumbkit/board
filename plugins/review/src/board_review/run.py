@@ -77,7 +77,7 @@ def run(request: CallRequest) -> RunOutput:
     else:
         repository = Repository(request.board.root)
         # The schema gives a brief without a subject a range.
-        base_name, _, head_name = brief.get("range", "").partition("..")
+        base_name, _, head_name = cast("dict[str, str]", brief)["range"].partition("..")
         head = repository.commit(head_name)
         # A base that moved on after the branch point would show its own commits as reverted.
         base = repository.merge_base(repository.commit(base_name), head)
@@ -133,9 +133,8 @@ def _record(board: Board, subject: Subject) -> str:
     [read] = board.get([record])
     if isinstance(read, PluginError):
         raise read
-    # A 64-digit pin is a blob of a SHA-256 repository.
-    algorithm = "sha256" if len(subject["blob"]) == 64 else "sha1"  # noqa: PLR2004 - SHA-256's hex length
-    current = hashlib.new(algorithm, b"blob %d\0%b" % (len(read), read)).hexdigest()
+    # SHA-256 repositories are unsupported: Board's gix is built with only its sha1 feature and cannot open one.
+    current = hashlib.sha1(b"blob %d\0%b" % (len(read), read), usedforsecurity=False).hexdigest()
     if current != subject["blob"]:
         raise PluginError(
             "review::subject::moved",
