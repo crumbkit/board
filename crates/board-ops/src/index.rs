@@ -48,6 +48,9 @@ pub struct Refreshed {
     /// Mounted sources whose rows a snapshot read from the index's kept
     /// decisions, without walking or deciding them.
     pub kept: usize,
+    /// Mounted sources a snapshot walked from the index, to find their
+    /// mounts or to decide them.
+    pub walked: usize,
 }
 
 /// What this refresh learnt from the blobs it read in full, so it need not

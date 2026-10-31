@@ -43,6 +43,7 @@ fn filled(board: &crate::Board, index: Index) -> Filled {
 mod cache;
 mod decisions;
 mod mounts;
+mod scoped;
 
 /// How many validations and how many blob facts deciding `scenario`
 /// through the index in `cache` looks up.
@@ -295,11 +296,13 @@ fn warm_decides_as_cold(
 }
 
 /// The counts of `work` that every snapshot does again, because whether a
-/// pointer resolves depends on the whole tree; nothing else.
+/// pointer resolves depends on the whole tree and a check walks each source
+/// it decides from the index; nothing else.
 fn decided_only(work: Refreshed) -> Refreshed {
     Refreshed {
         pointers_read: work.pointers_read,
         repositories: work.repositories,
+        walked: work.walked,
         ..Refreshed::default()
     }
 }
