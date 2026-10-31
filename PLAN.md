@@ -29,9 +29,8 @@ The index keeps each mounted source's decision
 owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
 about 47 ms, down from 96 ms, which meets the 50 ms target.
 
-Two smaller items each get their own pull request. A scoped check walks
-every mount; fixing that needs a design. Compiling manifest schemas once
-per run saves `call` 3 to 4 ms.
+Compiling manifest schemas once per run would save `call` 3 to 4 ms, in
+its own pull request.
 
 ## Then: runs
 

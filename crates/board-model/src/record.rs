@@ -194,6 +194,11 @@ impl Kind {
             Self::File => "file",
         }
     }
+
+    /// The kind spelled `text`.
+    pub fn parse(text: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+    }
 }
 
 /// How an entry's path says to read its bytes. A path that is neither

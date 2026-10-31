@@ -8,7 +8,7 @@ use std::os::unix::ffi::OsStrExt as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use board_model::Code;
+use board_model::{Code, LogicalPath};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use sha2::{Digest, Sha256};
 
@@ -334,14 +334,37 @@ pub enum IndexError {
     /// build them again.
     #[error("another process pruned the index after this run built its views")]
     Pruned,
+    /// A kept row holds a value this build cannot read.
+    #[error(
+        "the index keeps {column} {value:?} for {}, which cannot be read",
+        named(path, logical.as_ref())
+    )]
+    Unreadable {
+        /// The row's path in its source.
+        path: String,
+        /// The row's logical path, when the index keeps one that reads.
+        logical: Option<LogicalPath>,
+        column: &'static str,
+        value: String,
+    },
+}
+
+/// `path` in its source, under its `logical` path when there is one.
+fn named(path: &str, logical: Option<&LogicalPath>) -> String {
+    match logical {
+        Some(logical) => format!("{logical} ({path} in its source)"),
+        None => path.to_owned(),
+    }
 }
 
 impl IndexError {
     pub fn code(&self) -> Code {
         match self {
-            Self::Sql { .. } | Self::Busy { .. } | Self::Foreign | Self::Pruned => {
-                Code::IndexFailed
-            }
+            Self::Sql { .. }
+            | Self::Busy { .. }
+            | Self::Foreign
+            | Self::Pruned
+            | Self::Unreadable { .. } => Code::IndexFailed,
             Self::Query { .. } => Code::QueryInvalid,
             Self::Timeout => Code::QueryTimeout,
             Self::TooBig => Code::OutputOverBudget,
