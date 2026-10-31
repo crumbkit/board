@@ -111,7 +111,7 @@ pub(crate) struct Putting {
     /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
     #[arg(required_unless_present_any = ["batch", "new"])]
     pub(crate) path: Option<Given>,
-    /// Write at a new name in this folder/
+    /// Write at a new name in this folder, which ends in /
     ///
     /// The name is the put's UTC minute and four random hex digits, such as
     /// 20261030T1405Z-c2e1. The put never overwrites a file, and its report names the path.
@@ -129,6 +129,9 @@ pub(crate) struct Putting {
     #[arg(long, conflicts_with_all = ["path", "expect"])]
     pub(crate) batch: bool,
     /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
+    ///
+    /// With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and
+    /// writes a board/attachment/v1 record.
     #[arg(long, conflicts_with = "batch")]
     pub(crate) file: bool,
     /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
@@ -201,7 +204,7 @@ Examples:
     /// List the references each entry makes and the entries that reach it.
     #[command(after_help = render::REFS_HELP)]
     Refs(Refs),
-    /// Check and write the record on stdin at a path, or a file with --file.
+    /// Write the record on stdin at a path or --new name, or a file with --file.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
 schema its `$type` names. Each put is committed unless .board/board.json sets
@@ -210,12 +213,10 @@ schema its `$type` names. Each put is committed unless .board/board.json sets
 Examples:
   board put /tasks/a < task.json
   board put /tasks/a --expect none < task.json
+  board put --new /tasks/ < task.json
   board get /tasks/a | board put /tasks/b
   board put /notes/plan.md --file < plan.md
-  board put --batch < writes.jsonl
-
-With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under
-their digest and writes a board/attachment/v1 record.")]
+  board put --batch < writes.jsonl")]
     Put(Putting),
     /// Remove the file at a path.
     #[command(after_help = "\

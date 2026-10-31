@@ -6,7 +6,7 @@ use board_tree::LOCK_WAIT;
 
 use super::{board, file, path};
 use crate::put::PutError;
-use crate::put::new::{REDRAWS, drawn, folder_text, name};
+use crate::put::new::{REDRAWS, drawn, folder_text, name, under};
 use crate::tests::{open, task};
 
 /// Draws each of `names` in turn, then the last one again.
@@ -209,4 +209,51 @@ fn a_new_line_with_a_path_an_expect_or_no_record_is_refused_and_its_twin_is_admi
     board
         .put_batch_named(&mut admitted.as_bytes(), LOCK_WAIT, &mut fixed(&["a"]))
         .unwrap();
+}
+
+#[test]
+fn a_new_line_whose_name_is_taken_beside_another_stale_line_is_refused_as_taken_and_its_twin_is_admitted()
+ {
+    let scenario = board();
+    let board = open(&scenario);
+    let batch = |input: &str, names: &[&str]| {
+        board.put_batch_named(&mut input.as_bytes(), LOCK_WAIT, &mut fixed(names))
+    };
+    batch(&(new_line("/tasks/")), &["a"]).unwrap();
+    batch(&(new_line("/tasks/")), &["x"]).unwrap();
+    let explicit =
+        |expect: &str| format!(r#"{{"path": "/tasks/x", {expect}"record": {}}}"#, task("")) + "\n";
+    let refused = batch(
+        &(explicit(r#""expect": "none", "#) + &new_line("/tasks/")),
+        &["a"],
+    );
+    assert_eq!(
+        refusals(refused.unwrap_err()),
+        (
+            Code::PutInvalid,
+            vec![(1, Code::PutStale), (2, Code::PutNameTaken)]
+        )
+    );
+    let admitted = batch(&(explicit("") + &new_line("/tasks/")), &["a", "b"]).unwrap();
+    assert_eq!(admitted.writes[1].display.to_string(), "/tasks/b");
+}
+
+#[test]
+fn a_name_that_takes_the_path_past_its_longest_is_refused_and_one_that_fits_is_admitted() {
+    let name = "20261030T1405Z-c2e1";
+    // A folder of `bytes` bytes, in segments of at most 200.
+    let folder = |bytes: usize| {
+        let mut text = String::new();
+        while text.len() < bytes {
+            let segment = (bytes - text.len() - 1).min(199);
+            text.push('/');
+            text.push_str(&"a".repeat(segment));
+        }
+        path(&text)
+    };
+    let fits = board_model::MAX_PATH_BYTES - name.len() - 1;
+    let refused = under(&folder(fits + 1), &mut || name.to_owned()).unwrap_err();
+    assert_eq!(refused.code(), Code::PathMalformed);
+    let admitted = under(&folder(fits), &mut || name.to_owned()).unwrap();
+    assert_eq!(admitted.as_str().len(), board_model::MAX_PATH_BYTES);
 }

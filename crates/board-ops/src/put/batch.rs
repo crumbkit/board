@@ -14,7 +14,7 @@ use board_model::{
 use board_tree::{LOCK_WAIT, Lock, Resolver, WriteError};
 use serde_json::Value;
 
-use super::new::{Draw, REDRAWS, drawn, folder_text, redrawing, taken};
+use super::new::{Draw, REDRAWS, drawn, folder_text, redrawing, taken, under};
 use super::through::{Crossing, Sent};
 use super::{Expect, Failure, Prepared, PutError, PutReport, Removal, Schemas, Unmatched};
 use crate::board::Board;
@@ -158,13 +158,25 @@ impl Board {
             _ => false,
         };
         let put = || self.write_lines(named(&lines, &mut *draw)?, wait);
+        // A new line found stale after the redraws is a taken name,
+        // whatever the other lines did.
         match redrawing(put, taken_only) {
-            Err(error) if taken_only(&error) => {
-                let refusals = error.fields().refusals;
-                let lines = refusals
+            Err(PutError::Batch { mut refusals, .. }) => {
+                for refused in &mut refusals {
+                    if let (Code::PutStale, Some(folder)) = (refused.code, new.get(&refused.line)) {
+                        let error = taken(folder);
+                        *refused = Lined::new(refused.line, error.code(), &error, error.fields());
+                    }
+                }
+                let stale = refusals
                     .iter()
-                    .map(|line| (line.line, taken(&new[&line.line])));
-                Err(refused_lines(&lines.collect::<Vec<_>>()))
+                    .all(|refused| refused.code == Code::PutStale);
+                let code = if stale {
+                    Code::PutStale
+                } else {
+                    Code::PutInvalid
+                };
+                Err(PutError::Batch { code, refusals })
             }
             put => put,
         }
@@ -501,12 +513,12 @@ fn named(lines: &[ReadLine], draw: Draw<'_>) -> Result<Vec<ReadLine>, PutError> 
     let mut named = lines.to_vec();
     for (_, line) in named.iter_mut().flatten() {
         let Some(folder) = &line.new else { continue };
-        line.path = folder.join(&draw())?;
+        line.path = under(folder, &mut *draw)?;
         for _ in 0..REDRAWS {
             if held.insert(line.path.clone()) {
                 break;
             }
-            line.path = folder.join(&draw())?;
+            line.path = under(folder, &mut *draw)?;
         }
         line.shown = line.path.clone();
     }

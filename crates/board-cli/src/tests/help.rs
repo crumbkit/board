@@ -98,6 +98,11 @@ const ALLOW: &[Allow] = &[
     Allow::example("call", &["--capability", "available"], NO_CALL),
     Allow::example(
         "put",
+        &["--new", "/tasks/"],
+        "the name holds the put's minute and a random suffix, so no golden output can pin it",
+    ),
+    Allow::example(
+        "put",
         &["/tasks/a", "--expect", "none"],
         "the get and refs examples read /tasks/a, so the fixture board holds it",
     ),

@@ -1396,6 +1396,14 @@ fn put_new_takes_no_path_expect_batch_or_file() {
     ] {
         let output = board_with(scenario.workdir(), None, arguments, record);
         assert_eq!(output.code, 2, "{arguments:?}");
+        let json_arguments = [arguments, &["--json"]].concat();
+        let document = json(&board_with(
+            scenario.workdir(),
+            None,
+            &json_arguments,
+            record,
+        ));
+        assert_eq!(document["code"], "board::cli::usage", "{arguments:?}");
     }
     let admitted = board_with(
         scenario.workdir(),

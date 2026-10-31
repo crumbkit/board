@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io::Read;
 
-use board_model::{Code, MAX_RECORD_BYTES, RecordType, Refusal};
+use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal};
 use board_ops::{Board, Expect};
 use board_plugin::Target;
 use clap::Subcommand;
@@ -32,6 +32,14 @@ Examples:
     },
 }
 
+/// Where a put writes: each line of a batch, a new name in a folder, or a
+/// path.
+enum At {
+    Batch,
+    New(LogicalPath),
+    Path(LogicalPath),
+}
+
 /// `put`: a batch on stdin, or the record on stdin at a path or a new name
 /// in a folder, or with `file`, stdin as a file, read whole, since a file
 /// past the record bound may go to the store.
@@ -51,22 +59,22 @@ pub(crate) fn put(
         wait,
     } = putting;
     let at = match (path, new) {
-        _ if batch => Ok(None),
-        (Some(path), _) => read(prefix, &path, "put").map(|path| Some((path, false))),
-        (None, Some(folder)) => read_folder(prefix, &folder).map(|folder| Some((folder, true))),
+        _ if batch => Ok(At::Batch),
+        (Some(path), _) => read(prefix, &path, "put").map(At::Path),
+        (None, Some(folder)) => read_folder(prefix, &folder).map(At::New),
         (None, None) => unreachable!("clap requires a path, --new or --batch"),
     };
     let at = match at {
         Ok(at) => at,
         Err(refusal) => return render::refused(printer, *refusal),
     };
-    let read = if file {
-        let mut bytes = Vec::new();
-        stdin.read_to_end(&mut bytes).map(|_| bytes)
-    } else if at.is_some() {
-        bounded(stdin)
-    } else {
-        Ok(Vec::new())
+    let read = match at {
+        At::Batch => Ok(Vec::new()),
+        At::Path(_) if file => {
+            let mut bytes = Vec::new();
+            stdin.read_to_end(&mut bytes).map(|_| bytes)
+        }
+        At::Path(_) | At::New(_) => bounded(stdin),
     };
     let bytes = match read.map_err(|error| unreadable(Code::RepoUnreadable, &error)) {
         Ok(bytes) => bytes,
@@ -74,10 +82,10 @@ pub(crate) fn put(
     };
     let expect = expect.unwrap_or(Expect::Any);
     let written = match &at {
-        None => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
-        Some((folder, true)) => board.put_new_waiting(folder, &bytes, wait),
-        Some((path, false)) if file => board.put_file_waiting(path, expect, &bytes, wait),
-        Some((path, false)) => board.put_waiting(path, expect, &bytes, wait),
+        At::Batch => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
+        At::New(folder) => board.put_new_waiting(folder, &bytes, wait),
+        At::Path(path) if file => board.put_file_waiting(path, expect, &bytes, wait),
+        At::Path(path) => board.put_waiting(path, expect, &bytes, wait),
     };
     match written {
         Ok(report) => render::put(printer, &report, None),

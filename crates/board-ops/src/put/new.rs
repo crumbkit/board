@@ -36,12 +36,21 @@ impl Board {
         draw: Draw<'_>,
     ) -> Result<PutReport, PutError> {
         let stale = |error: &PutError| matches!(error, PutError::Stale { .. });
-        let put = || self.put_waiting(&folder.join(&draw())?, Expect::Absent, bytes, wait);
+        let put = || self.put_waiting(&under(folder, draw)?, Expect::Absent, bytes, wait);
         match redrawing(put, stale) {
             Err(error) if stale(&error) => Err(taken(folder)),
             put => put,
         }
     }
+}
+
+/// A name `draw` gives, under `folder`. Only a folder within a name's
+/// length of the longest path is refused, with its code.
+pub(crate) fn under(folder: &LogicalPath, draw: Draw<'_>) -> Result<LogicalPath, PutError> {
+    folder.join(&draw()).map_err(|error| PutError::Line {
+        code: error.code(),
+        reason: error.to_string(),
+    })
 }
 
 /// `put`'s result, tried up to [`REDRAWS`] more times while `taken` finds
