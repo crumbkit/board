@@ -1,7 +1,7 @@
 //! The board's repository and every repository its mounts name, each opened
 //! once however many pointers and Locations name it.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -123,11 +123,50 @@ impl Repositories {
     /// its `repo` read against `from`, or against the home directory for
     /// `~/`. `None` when it cannot be opened.
     pub(crate) fn mounted(&self, from: &Path, mount: &Mount) -> Option<Repository> {
-        let path = match mount.repo.strip_prefix("~/") {
+        self.lend(&self.named(from, mount)?).ok()
+    }
+
+    /// The path of the repository `mount`, a pointer in the repository at
+    /// `from`, names, or `None` for a `~/` path without a home.
+    pub(crate) fn named(&self, from: &Path, mount: &Mount) -> Option<PathBuf> {
+        Some(match mount.repo.strip_prefix("~/") {
             Some(rest) => self.home.as_deref()?.join(rest),
             None => from.join(&mount.repo),
-        };
-        self.lend(&path).ok()
+        })
+    }
+
+    /// Opens each canonical path among `wanted` that is not yet open, in path
+    /// order, one thread each, and looks up its commits there, so that
+    /// [`Repositories::lend`] finds the repository open and its object
+    /// database warm. Two paths that differ once canonicalised but open one
+    /// repository, such as a working tree and its git directory, may both
+    /// open it; the first to finish is kept and counted, and the other
+    /// dropped. A path that cannot be opened is left for `lend` to refuse.
+    pub(crate) fn open_all(&self, wanted: &[(PathBuf, ObjectId)]) {
+        let mut closed: BTreeMap<PathBuf, Vec<ObjectId>> = BTreeMap::new();
+        for (path, commit) in wanted {
+            let path = path.canonicalize().unwrap_or_else(|_| path.clone());
+            closed.entry(path).or_default().push(*commit);
+        }
+        closed.retain(|path, _| !self.lock().contains_key(path));
+        let (open, opened) = (&self.open, &self.opened);
+        std::thread::scope(|scope| {
+            for (path, commits) in closed {
+                scope.spawn(move || {
+                    let Ok(repository) = Repository::open(&path) else {
+                        return;
+                    };
+                    for commit in commits {
+                        let _ = repository.commit_tree(commit);
+                    }
+                    let mut open = open.lock().unwrap_or_else(PoisonError::into_inner);
+                    if !open.contains_key(repository.path()) {
+                        opened.fetch_add(1, Ordering::Relaxed);
+                        Opened::of(&repository).insert(&mut open);
+                    }
+                });
+            }
+        });
     }
 
     /// The repository at `path`, opened from disk the first time any path

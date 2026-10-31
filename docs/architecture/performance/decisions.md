@@ -25,7 +25,9 @@ A source's key hashes:
 - for each mount it reaches, the same of that source, without its route.
 
 Every run opens each mounted repository and looks up each pinned commit, so
-a deleted repository or a lost commit changes the key.
+a deleted repository or a lost commit changes the key. The repositories one
+source's mounts name are opened in parallel, one thread each, before its
+mounts are read in order.
 
 ## Who reads and who fills
 
