@@ -24,9 +24,10 @@ mounts already sit, so existing references keep working.
 }
 ```
 
-- `remote` is required. It is the origin as `board_plugin.repos.shown_remote`
-  already stores it: `owner/name` for GitHub, and otherwise the URL without
-  its user and password. Two clones of one repository give the same value.
+- `remote` is required. It is the origin URL in the form
+  `board_plugin.repos.shown_remote` formats it: `owner/name` for GitHub, and
+  otherwise the URL without its user and password. Two clones of one
+  repository give the same value.
 - `remote` is unique: `board check` reports a second record with the same
   `remote` as `board::repo::duplicate_remote`.
 - `checkout` is optional. With it, the record is a mount: `repo`, `follow`
@@ -47,34 +48,36 @@ no checkout gets its own type.
 ## Finding the record from a directory
 
 Board already maps the caller's directory to the mount whose `repo` holds
-it, and runs the call with that mount's path as its prefix. `board-tree` now
-also maps a directory in a clone the board does not mount: it reads the
-clone's `origin` remote and, when a known board's repo record has that
-`remote`, runs as that board with `/repos/<name>` as the prefix. Two known
-boards with a record for the same `remote` is `board::config::ambiguous`.
-When no known board has it, Board runs as the `personal` board that
-`config.json` names, with no prefix. With no `personal` board, the clone
-stays `board::config::not_found`, as today. This mapping and its fallback
-live in `board-ops/src/known.rs`, beside today's.
+it, and runs the call with that mount's path as its prefix. It now also maps
+a directory in a clone the board does not mount. `board-tree` reads the
+clone's `origin` remote, since only `board-tree` reads git, and
+`board-ops/src/known.rs` looks for a known board whose repo record has that
+`remote`. When one has it, Board runs as that board with `/repos/<name>` as
+the prefix. Two known boards with a record for the same `remote` is
+`board::config::ambiguous`. When no known board has it, the clone stays
+`board::config::not_found`, as today, so a check in it still means "this
+repository has no controls".
 
 A checkout of a repository that is itself a board, such as crumbkit/board,
 runs as that repository's board, because Board finds `.board/board.json`
-before it reads the known boards. Every work command this plan adds is
-therefore run as `board --personal call …`, and `changes.brief`, the pull
-request gate's refusal and the changes skill print it in that form.
+before it reads the known boards. So every Board call these plans add runs
+as `board --personal …`, whatever the directory: the work commands, and the
+calls of the runs and artifacts mods for Claude Code, which today run
+`board` in the session's directory. `changes.brief`, the pull request
+gate's refusal and the skills print commands in that form.
 `BOARD_CALLER_DIR` still names the directory Board was started in, so the
 plugin sees the caller's clone.
 
 A plugin learns the caller's repository as the tasks and notes plugins do
-today: `board_plugin.repos.caller_remote()` reads the origin of
+today: `board_plugin.repos.caller_remote()` returns the raw origin URL of
 `BOARD_CALLER_DIR`, and the plugin looks up the repo record whose `remote`
-matches.
+equals `shown_remote(caller_remote())`.
 
 ## Creating the record
 
 Nobody writes a repo record by hand. `changes.start` creates it from
-`caller_remote()` when no record has that remote (built with
-plan/work-records.md), at `/repos/<name>`, where `<name>`
+`caller_remote()` when no record has that remote (built with the work
+records step in PLAN.md), at `/repos/<name>`, where `<name>`
 is the remote's last path segment. A clash with an existing record of
 another remote is `changes::repo::name_taken`, which suggests `--repo-name`.
 Evals and other records refer to the record once it exists. A mount is added
@@ -99,7 +102,7 @@ tests:
 - A repo record without a checkout is a valid reference target and has no
   children.
 - A directory in an unmounted clone runs with its repo record's prefix, and
-  one with no record runs as the personal board.
+  one with no record is `board::config::not_found`.
 - Each refusal has an admitted twin.
 
 Done when the owner's board has migrated and `board check` reports nothing
