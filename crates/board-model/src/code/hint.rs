@@ -549,7 +549,7 @@ fn generic(code: Code) -> &'static str {
             "only the owner, outside a plugin, writes `effects/` and `.board/` in any board, apart from a new schema in a `put --batch` line, links, mounts and effect and seen records in any board, runs init, type add and plugin enable, and answers pending effects; ask the owner"
         }
         Code::SettingsNotFound => {
-            "no pending effect with that id reads as the effect its id names: the owner already answered it, and `/effects/seen/<id>` holds the answer, or it was never asked; `board --personal ls /effects/pending` lists the pending effects"
+            "no pending effect with that id reads as the effect its id names: the owner already answered it, `/effects/seen/<id>` holds the answer and `/effects/answered/<id>` the effect, or it was never asked; `board --personal ls /effects/pending` lists the pending effects"
         }
         Code::SettingsNoPersonal => {
             "name the personal board in the known boards file, `~/.config/board/config.json`, as {\"personal\": \"<board directory>\"}; it holds the owner's pending effects and answers"

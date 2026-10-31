@@ -49,6 +49,9 @@ constant_time_eq = "0.6.1"
 # board serve's per-launch token. gix already brings this version in.
 getrandom = "0.3.4"
 gix = { version = "0.88.0", default-features = false, features = ["excludes", "parallel", "sha1"] }
+# The UTC time a pending effect records as `asked`. clap already brings this
+# crate in.
+humantime = "2.4.0"
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
 # The owner's home from the passwd entry, which no variable a caller sets can

@@ -2,16 +2,18 @@
 
 use board_model::{
     Answer, BINARY_NAME, Code, Effect, LogicalPath, MAX_DECIDE_BYTES, PathError, Seen,
-    canonical_json, is_effect_id, parse_json, shown_digest,
+    canonical_json, is_effect_id, parse_json, shown_digest, utc,
 };
 use serde_json::{Value, json};
 
 use board_tree::{LOCK_WAIT, WriteError};
 
 use std::path::Path;
+use std::time::SystemTime;
 
 use super::{
-    Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen, verified,
+    ANSWERED, Asker, EFFECT_TYPE, EffectError, PENDING, SEEN, Signing, hold, read_held, root, seen,
+    verified,
 };
 use crate::board::Board;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
@@ -106,8 +108,9 @@ impl Board {
         let personal = self
             .asker
             .personal(|| format!("{op} {path} needs a pending effect in the personal board"))?;
-        let effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into())
+        let mut effect = Effect::new(root(self), plugin.clone(), op.to_owned(), landed.into())
             .showing(record, text);
+        effect.asked = Some(utc(SystemTime::now()));
         let id = effect.id();
         let (plugin, op, path) = (plugin.clone(), op.to_owned(), path.clone());
         match seen(&personal, &effect, self.asker.signing.allowed.as_deref())? {
@@ -191,7 +194,8 @@ pub(super) fn landed(
 }
 
 /// Writes the owner's `answer` to the pending effect `id` in the personal
-/// board and removes the pending effect, in one commit. An approval holds
+/// board and moves the effect from `effects/pending/` to
+/// `effects/answered/`, in one commit. An approval holds
 /// `signature`, made elsewhere, or else one the signer makes now; either is
 /// checked before it is written. A plugin may not answer.
 pub fn answer(
@@ -211,7 +215,7 @@ pub fn answer(
     let personal = asker.personal(|| "an answer is written in the personal board".to_owned())?;
     let (effect, blob) = read_pending(&personal, id)?;
     let not_found = || EffectError::NotFound { id: id.to_owned() };
-    let mut seen = Seen::new(format!("/{PENDING}/{id}"), answer, reason);
+    let mut seen = Seen::new(format!("/{ANSWERED}/{id}"), answer, reason);
     if answer == Answer::Approve {
         seen.signature = Some(match signature {
             Some(signature) => {
@@ -222,7 +226,15 @@ pub fn answer(
         });
     }
     let at = format!("/{SEEN}/{id}").parse().map_err(|_| not_found())?;
-    let records = [(at, json!(seen), Expect::Absent)];
+    let kept = format!("/{ANSWERED}/{id}")
+        .parse()
+        .map_err(|_| not_found())?;
+    // An effect asked again after the owner removed its answer replaces the
+    // copy kept from the first answer.
+    let records = [
+        (at, json!(seen), Expect::Absent),
+        (kept, json!(effect), Expect::Any),
+    ];
     let pending = Removal {
         path: format!("/{PENDING}/{id}")
             .parse()

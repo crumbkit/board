@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+humantime.workspace = true
 percent-encoding.workspace = true
 pulldown-cmark.workspace = true
 saphyr-parser.workspace = true

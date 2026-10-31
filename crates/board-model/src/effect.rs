@@ -3,6 +3,7 @@
 
 use std::fmt::Write as _;
 use std::str::FromStr;
+use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -88,6 +89,11 @@ pub struct Effect {
     pub record: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// When Board first asked, as [`utc`] writes it; none in an effect
+    /// written before Board recorded it. Neither the id nor the approval
+    /// covers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked: Option<String>,
 }
 
 impl Effect {
@@ -103,6 +109,7 @@ impl Effect {
             prior: None,
             record: None,
             text: None,
+            asked: None,
         }
     }
 
@@ -220,8 +227,15 @@ fn show_content(statement: &mut String, record: Option<&Value>, text: Option<&st
     }
 }
 
-/// A `board/seen/v1` record: the owner's answer to the pending effect at
-/// `effect`. An approval carries `signature`, the owner's SSH signature
+/// `time` as RFC 3339 in UTC to the microsecond, such as
+/// `2026-10-30T22:44:54.102864Z`. Every time from 1970 to 9999 has the same
+/// width, so text order is time order.
+pub fn utc(time: SystemTime) -> String {
+    humantime::format_rfc3339_micros(time).to_string()
+}
+
+/// A `board/seen/v1` record: the owner's answer to the effect at `effect`,
+/// under `/effects/answered/`. An approval carries `signature`, the owner's SSH signature
 /// over [`Effect::approval`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
