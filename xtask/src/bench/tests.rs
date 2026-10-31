@@ -333,3 +333,38 @@ fn the_mounted_query_row_is_timed_on_the_generated_mounted_board_and_skipped_on_
     let timed = run(&mounted, &budgets, &host, Some(&mounted)).unwrap();
     assert!(matches!(timed[0].took, Took::Median(_)), "{timed:?}");
 }
+
+#[test]
+fn the_sample_is_the_first_valid_record_and_its_directory_skipping_files_and_invalid_records() {
+    let root = tempfile::tempdir().unwrap();
+    // `.a/` sorts before every generated entry, the first of which is the
+    // board's config record.
+    let extra = [
+        (".a/invalid.json", r#"{"$type": "bench/task/v1"}"#),
+        (".a/notes.txt", "notes"),
+    ]
+    .map(|(path, text)| (path.to_owned(), text.to_owned()));
+    generate(root.path(), 0, &extra, 0).unwrap();
+    let (sample, directory) = sample(&warmed(root.path()).unwrap().2).unwrap();
+    assert_eq!(
+        (sample.as_str(), directory.as_str()),
+        ("/.board/board", "/.board")
+    );
+}
+
+#[test]
+fn the_query_row_indexes_the_board_into_the_cache_it_is_given() {
+    let root = tempfile::tempdir().unwrap();
+    generate(root.path(), 0, &[], 0).unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    count(&Board::open(root.path(), None).unwrap(), cache.path()).unwrap();
+    let written = std::fs::read_dir(cache.path()).unwrap().count();
+    assert_ne!(written, 0);
+}
+
+#[test]
+fn settling_waits_over_a_second() {
+    let started = Instant::now();
+    settle();
+    assert!(started.elapsed() > Duration::from_secs(1));
+}
