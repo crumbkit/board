@@ -96,6 +96,7 @@ impl Board {
         trace.count("repositories", work.repositories);
         trace.count("pointers_read", work.pointers_read);
         trace.count("kept", work.kept);
+        trace.count("walked", work.walked);
         drop(trace);
         Ok(Snapshot {
             decided,
@@ -149,10 +150,11 @@ impl Board {
                 work: &mut work,
             },
             (self.build, need == Need::View),
+            scope,
         )?;
         drop(timed);
         let _timed = self.timed("snapshot.decide");
-        let scopes = mounts.scopes(scope);
+        let scopes = &mounts.scopes;
         let facts = mounts
             .sources
             .iter()
@@ -173,7 +175,7 @@ impl Board {
             failed: Cell::new(false),
         };
         for entry in &refresh.entries {
-            if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
+            if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
                 continue;
             }
             // A symlink is committed when its own blob is.
@@ -196,15 +198,17 @@ impl Board {
         drop(resolver);
         drop(known);
         for mounted in &mounts.sources {
-            let Some(walked) =
-                (mounted.walked.as_ref()).filter(|_| !(need == Need::View && mounted.kept))
-            else {
-                work.kept += 1;
+            let read_kept = need == Need::View && mounted.kept;
+            // A source was not walked when its decision is kept or the scope
+            // does not reach it.
+            let Some(walked) = (mounted.walked.as_ref()).filter(|_| !read_kept) else {
+                work.kept += usize::from(read_kept);
                 let source = Source::Commit(mounted.commit);
-                writer.reach(&source, mounted.key.as_ref(), &mounted.scan)?;
+                let key = mounted.key.as_ref().filter(|_| mounted.kept);
+                writer.reach(&source, key, &mounted.scan)?;
                 continue;
             };
-            let read = (writer, &plain, &scopes);
+            let read = (writer, &plain, scopes);
             work.pointers_read += self.decide_mounted(read, mounted, walked, &mut decided)?;
         }
         record(&mounts, writer, self.repository())?;
@@ -349,6 +353,8 @@ impl Cache for Indexing<'_> {
         source: &Source,
         entries: &[Entry],
     ) -> Result<Facts, RefreshError> {
+        // Each walk asks for its facts once.
+        self.work.walked += 1;
         let kept = Kept::default();
         facts(self.writer, repository, source, entries, self.work, kept)
     }
