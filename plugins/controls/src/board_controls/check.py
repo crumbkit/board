@@ -6,7 +6,7 @@ from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_controls import board
-from board_controls.shapes import Checked, CheckOutput, ControlRecord, Stated
+from board_controls.shapes import Checked, CheckOutput, ControlRecord, FileUsed, Stated
 
 type Usage = dict[Literal["words", "bytes"], int]
 
@@ -68,7 +68,7 @@ def check(request: CallRequest) -> CheckOutput:
     measured = [_checked(logical, controls[logical], sorted(files[logical]), reads) for logical in budgets]
     failing = [item for item in measured if item["used"] > item["max"]]
     if failing:
-        names = ", ".join(f"{item['control']} ({item['used']} of {item['max']} {item['budget']})" for item in failing)
+        names = ", ".join(_over(item) for item in failing)
         raise PluginError(
             "controls::budget::exceeded",
             f"over budget: {names}; shorten the files, or raise the control's max in a change that says why",
@@ -110,20 +110,36 @@ def _under(path: str, scope: str) -> bool:
 def _checked(logical: str, record: ControlRecord, files: list[str], reads: dict[str, bytes | PluginError]) -> Checked:
     rule = record.get("rule")
     assert rule is not None  # noqa: S101 - check measures only budget controls
-    used = 0
+    usage: dict[str, int] = {}
     for path in files:
         read = reads[path]
         if isinstance(read, PluginError):
             raise _unreadable(logical, path, read.fields.get("code"))
-        used += measure(read)[rule["budget"]]
-    return Checked(
+        usage[path] = measure(read)[rule["budget"]]
+    checked = Checked(
         control=logical,
         requirement=record["requirement"],
         budget=rule["budget"],
         max=rule["max"],
-        used=used,
+        used=sum(usage.values()),
         files=files,
     )
+    if rule.get("per", "total") == "total":
+        return checked
+    # The first of the sorted files with the most usage, so ties name the same file every run.
+    largest = max(files, key=usage.__getitem__, default=None)
+    over = [FileUsed(file=path, used=usage[path]) for path in files if usage[path] > rule["max"]]
+    checked["used"] = usage[largest] if largest else 0
+    checked["per"], checked["largest"], checked["over"] = "file", largest, over
+    return checked
+
+
+def _over(item: Checked) -> str:
+    """How a failing control is over its budget, naming each file when it limits files one by one."""
+    if "over" not in item:
+        return f"{item['control']} ({item['used']} of {item['max']} {item['budget']})"
+    files = ", ".join(f"{over['file']} has {over['used']}" for over in item["over"])
+    return f"{item['control']} (each file at most {item['max']} {item['budget']}: {files})"
 
 
 def _unreadable(control: str, path: str, code: object) -> PluginError:

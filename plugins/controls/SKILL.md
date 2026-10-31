@@ -23,7 +23,9 @@ To run a command in a board other than the one you are in, add `-C <path>`.
        board -C <board> call controls.check --path /<directory>
 
    `measured` lists the controls with a budget, with `used`, `max` and every
-   file the budget counts. `stated` lists the written requirements, with
+   file the budget counts. A budget with `per: "file"` limits each file on
+   its own: `used` is its `largest` file's, and `over` lists each file over
+   `max`. `stated` lists the written requirements, with
    their `paths` patterns and how many of their files are under the path;
    `board get <control>` shows which files a control names. The call exits
    1 when a budget is exceeded or a control is degraded, and the error names
