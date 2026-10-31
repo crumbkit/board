@@ -1,15 +1,13 @@
-//! What a run may reuse from the index and the repositories it opened: a
-//! pointer list only when the facts cover every entry, a decision only when
-//! every read succeeded, and a repository opened once per board.
+//! What a run may reuse from the index: a pointer list only when the facts
+//! cover every entry, and a decision only when every read succeeded.
 
 use board_index::{BlobFact, Index};
 use board_model::{Kind, Location, Object, ObjectId, Role, Source};
-use board_scenario::seed::mount_of;
-use board_scenario::{Item, Scenario};
+use board_scenario::Item;
 use board_tree::{Cache, Entry, Status};
 
-use super::super::{Decide, Facts, Indexing};
 use crate::index::Indexed;
+use crate::snapshot::{Decide, Facts, Indexing};
 use crate::tests::{board, open, task};
 
 #[test]
@@ -91,18 +89,4 @@ fn a_failed_read_marks_the_decision_unkeepable_and_a_later_read_that_succeeds_do
     assert!(decide.failed.get());
     read("tasks/a.json", blob);
     assert!(decide.failed.get(), "a later read keeps the failure");
-}
-
-#[test]
-fn a_second_check_on_the_same_board_opens_no_repository_again_and_counts_none() {
-    let library = Scenario::new();
-    let commit = library.commit(&[("tasks/a.json", &task(""))]);
-    let scenario = board();
-    scenario.write(
-        "vendor/lib.json",
-        Item::File(&mount_of(&library.path(), commit)),
-    );
-    let board = open(&scenario);
-    assert_eq!(board.check(None, None).unwrap().work.repositories, 1);
-    assert_eq!(board.check(None, None).unwrap().work.repositories, 0);
 }

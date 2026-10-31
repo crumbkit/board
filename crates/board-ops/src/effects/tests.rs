@@ -385,15 +385,15 @@ fn content_over_the_limit_is_refused_as_too_large_and_content_at_it_is_admitted(
 #[test]
 fn a_record_whose_canonical_json_is_over_the_limit_is_refused_though_its_input_is_under_it_and_a_smaller_one_is_admitted()
  {
-    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 20);
+    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 13);
     // 11 bytes in, 37 bytes pretty-printed.
     let nested = shows(r#"{"a":[[1]]}"#).unwrap_err();
     assert_eq!(nested.code(), Code::JsonTooLarge);
     assert_eq!(
         nested.to_string(),
-        "the record to decide on is over the limit of 20 bytes"
+        "the record to decide on is over the limit of 13 bytes"
     );
-    // 7 bytes in, 13 bytes pretty-printed.
+    // 7 bytes in, 13 bytes pretty-printed: exactly the limit.
     assert_eq!(shows(r#"{"a":1}"#).unwrap(), (Some(json!({"a": 1})), None));
 }
 
@@ -1251,15 +1251,6 @@ fn an_owners_removal_of_the_board_config_is_refused_unless_they_sign_it_and_a_pu
     put(&declining, "/.board/board", &config).unwrap();
     rm(&owned(&mine, &mine, Some(&keep)), "/.board/board").unwrap();
     assert!(!exists(&mine, ".board/board.json"));
-}
-
-#[test]
-fn a_record_whose_canonical_json_is_exactly_the_limit_is_admitted_and_one_byte_less_is_refused() {
-    let record = json!({"a": 1});
-    let at = canonical_json(&record).as_bytes().len();
-    let shows = |limit| super::decide::shows(Some(&Shown::Record(br#"{"a":1}"#.to_vec())), limit);
-    assert_eq!(shows(at).unwrap(), (Some(record), None));
-    assert_eq!(code(shows(at - 1)), Code::JsonTooLarge);
 }
 
 #[test]
