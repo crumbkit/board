@@ -25,9 +25,8 @@ steps left are the owner's:
 M7 is done when the owner says so.
 
 The index keeps each mounted source's decision
-([docs](docs/architecture/performance/decisions.md)). On a copy of the
-owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
-about 47 ms, down from 96 ms, which meets the 50 ms target.
+([docs](docs/architecture/performance/decisions.md)), which brought a warm
+`call plans.open` on the owner's board to 47 ms, under the 50 ms target.
 
 Two smaller items each get their own pull request. A scoped check walks
 every mount; fixing that needs a design. Compiling manifest schemas once
@@ -50,6 +49,15 @@ command line or a gate window. No answer depends on `board serve`.
 The `review` plugin follows, designed in [plan/review.md](plan/review.md),
 which brings review accounting into scope.
 
+## Then: work records
+
+Every change, decision and artifact is recorded as small records written
+once, and each one's state is derived from which records exist. Build
+[repos](plan/repos.md) first; then [decisions](plan/decisions.md),
+[control scope](plan/control-scope.md) and [artifacts](plan/artifacts.md),
+which are independent; then [work records](plan/work-records.md); then
+[inflight](plan/inflight.md).
+
 ## Out of scope
 
 Each of these waits until a real need has its own plan: effects beyond the
@@ -71,9 +79,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   that Board fetches only remotes the root board names, and that Board detects
   a colocated jj repository automatically with no setting. After M7, turn the
   sketch into a list of design gaps for a builder.
-- **Repositories across boards.** A board declares each repository once in
-  `/.board/repos/<name>.json` with an optional `track`, references into
-  another repository read `name:/path`. The owner agreed it on 2026-10-05; it
+- **Repositories across boards.** References into another board's repository read
+  `name:/path`; plan/repos.md builds the declaration this sketch named. The owner agreed it on 2026-10-05; it
   refines M8, and #55's content-addressed records are dropped. The `share`
   plugin, built in place of the `board copy` and `board share` it named, copies
   a record and what it needs into a mounted board (docs/plugins/share.md).
