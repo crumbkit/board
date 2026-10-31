@@ -72,6 +72,14 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
     pointer_from_value(&value).map(Some)
 }
 
+/// Whether the file at the `/`-separated physical `path` can hold a
+/// pointer: only a plain `.json` record file, [`Role::Json`], can. Only that
+/// role classifies a file as [`Kind::Pointer`], and resolution follows a
+/// pointer only from a file this admits.
+pub fn can_hold_pointer(path: &str) -> bool {
+    Role::of(path) == Some(Role::Json)
+}
+
 /// Whether a file of `role` that [`Role::classify`] gave `kind` and `code`
 /// holds no pointer: it is JSON that parsed strictly, and has no `$type` or
 /// one that is valid and not [`POINTER_TYPE`]. Resolution trusts this in

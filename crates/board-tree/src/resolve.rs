@@ -201,7 +201,8 @@ impl Repositories {
                     if remaining.is_empty() && !trail.follow_last {
                         continue;
                     }
-                    let Some(next) = pointer(tree, (chains, *at), entry, path, pointers)? else {
+                    let held = (entry, physical.join("/"));
+                    let Some(next) = pointer(tree, (chains, *at), held, path, pointers)? else {
                         continue;
                     };
                     trail.pointers.push(Location {
@@ -237,12 +238,8 @@ impl Repositories {
                     }
                 }
                 Kind::Symlink(id) => object = Object::Blob(*id),
-                Kind::Submodule => {
-                    return Err(ResolveError::Submodule { path: path.clone() });
-                }
-                Kind::Unreadable => {
-                    return Err(ResolveError::Unreadable { path: path.clone() });
-                }
+                Kind::Submodule => return Err(ResolveError::Submodule { path: path.clone() }),
+                Kind::Unreadable => return Err(ResolveError::Unreadable { path: path.clone() }),
                 Kind::Unhashed(_) => unreachable!("resolution settles each entry it picks"),
             }
         }
@@ -583,16 +580,18 @@ fn through<T: Tree>(
     Ok((entry, at))
 }
 
-/// The pointer `entry` holds, if it is a `.json` file whose record is one.
-/// Its bytes are the file's at `at`: its own, or a symlink's target's.
+/// The pointer `entry`, at the physical path `physical`, holds, if it is a
+/// file that can hold one ([`board_model::can_hold_pointer`]) whose record
+/// is one. Its bytes are the file's at `at`: its own, or a symlink's
+/// target's.
 fn pointer<T: Tree>(
     tree: &mut T,
     (chains, at): (&Chains<T::Directory>, Node),
-    entry: &RawEntry<T::Directory>,
+    (entry, physical): (&RawEntry<T::Directory>, String),
     path: &LogicalPath,
     pointers: &mut Pointers,
 ) -> Result<Option<Pointer>, ResolveError> {
-    if !matches!(entry.kind, Kind::File(_)) || !entry.name.ends_with(b".json") {
+    if !matches!(entry.kind, Kind::File(_)) || !board_model::can_hold_pointer(&physical) {
         return Ok(None);
     }
     let parsed = pointers.parse(entry, || chains.read(tree, at))?;
