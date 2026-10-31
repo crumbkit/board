@@ -91,16 +91,51 @@ fn a_kept_detail_that_does_not_read_fails_with_the_index_code_and_its_twin_reads
         change: Change::Committed,
         schema: Some(".board/types/lr/gone/v1.schema.json".to_owned()),
     };
-    let admitted = r#"{"detail": null, "schema": ".board/types/lr/gone/v1.schema.json"}"#;
-    for (detail, read) in [
-        (admitted, true),
-        (r#"{"detail": null, "schema": 7}"#, false),
+    let schema = r#""schema": ".board/types/lr/gone/v1.schema.json""#;
+    let detail = r#""reason": "is gone", "failures": 1"#;
+    let unknown = format!(r#"{{"detail": {{{detail}, "since": 2}}, {schema}}}"#);
+    for (kept, read) in [
+        (format!(r#"{{"detail": null, {schema}}}"#), true),
+        (r#"{"detail": null, "schema": 7}"#.to_owned(), false),
+        (format!(r#"{{"detail": {{{detail}}}, {schema}}}"#), true),
+        (unknown, false),
     ] {
-        let read_back = from_kept(&checked.source, row(&checked, Some(detail.to_owned())));
+        let read_back = from_kept(&checked.source, row(&checked, Some(kept.clone())));
         if read {
-            assert_eq!(read_back.unwrap(), checked);
+            assert!(read_back.is_ok(), "{kept}");
         } else {
-            assert_eq!(read_back.unwrap_err().code(), Code::IndexFailed);
+            let error = read_back.unwrap_err();
+            assert_eq!(error.code(), Code::IndexFailed, "{kept}");
+            let message = error.to_string();
+            for named in [
+                "detail",
+                "/vendor/tasks/a (tasks/a.json in its source)",
+                "schema",
+            ] {
+                assert!(message.contains(named), "{named}: {message}");
+            }
         }
+    }
+}
+
+#[test]
+fn a_long_kept_value_that_does_not_read_is_quoted_in_part_and_a_short_one_whole() {
+    let checked = Checked {
+        source: Source::Commit(ObjectId::Sha1([7; 20])),
+        path: "tasks/a.json".to_owned(),
+        logical: None,
+        kind: Kind::Record,
+        status: Status::Ok,
+        detail: None,
+        change: Change::Committed,
+        schema: None,
+    };
+    for (length, whole) in [(200, true), (201, false)] {
+        let kept = "x".repeat(length);
+        let error = from_kept(&checked.source, row(&checked, Some(kept.clone()))).unwrap_err();
+        let message = error.to_string();
+        assert_eq!(message.contains(&format!("{kept:?}")), whole, "{message}");
+        let note = format!("... ({length} characters)");
+        assert_eq!(message.contains(&note), !whole, "{message}");
     }
 }

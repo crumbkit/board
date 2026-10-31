@@ -60,7 +60,8 @@ impl Checked {
 /// Where an entry fails, as a JSON pointer when it is a field, why, as a
 /// predicate about the entry, and how many failures of that kind the entry
 /// has, of which this is the first.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Detail {
     pub pointer: Option<String>,
     pub reason: String,
@@ -79,20 +80,8 @@ pub struct Detail {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawKept {
-    detail: Option<RawDetail>,
+    detail: Option<Detail>,
     schema: Option<String>,
-}
-
-/// A [`Detail`] as the index keeps it.
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawDetail {
-    pointer: Option<String>,
-    reason: String,
-    failures: u64,
-    at: Option<LogicalPath>,
-    mount: Option<LogicalPath>,
-    target: Option<String>,
 }
 
 /// The detail and named schema of `checked` as the index keeps them, or
@@ -101,14 +90,7 @@ pub(crate) fn to_kept(checked: &Checked) -> Option<String> {
     if checked.detail.is_none() && checked.schema.is_none() {
         return None;
     }
-    let detail = checked.detail.clone().map(|detail| RawDetail {
-        pointer: detail.pointer,
-        reason: detail.reason,
-        failures: detail.failures,
-        at: detail.at,
-        mount: detail.mount,
-        target: detail.target,
-    });
+    let detail = checked.detail.clone();
     let schema = checked.schema.clone();
     let kept = serde_json::to_string(&RawKept { detail, schema });
     Some(kept.expect("strings, paths and an integer always serialize"))
@@ -117,31 +99,25 @@ pub(crate) fn to_kept(checked: &Checked) -> Option<String> {
 /// The entry of `source` that a kept `row` holds.
 pub(crate) fn from_kept(source: &Source, row: KeptRow) -> Result<Checked, IndexError> {
     let kept = match &row.detail {
-        Some(text) => serde_json::from_str(text).map_err(|_| IndexError::Unreadable {
-            path: row.path.clone(),
-            column: "detail",
-            value: text.clone(),
+        Some(text) => serde_json::from_str(text).map_err(|_| {
+            let path = match &row.logical {
+                Some(logical) => format!("{logical} ({} in its source)", row.path),
+                None => row.path.clone(),
+            };
+            IndexError::unreadable(path, "detail", text)
         })?,
         None => RawKept {
             detail: None,
             schema: None,
         },
     };
-    let detail = kept.detail.map(|detail| Detail {
-        pointer: detail.pointer,
-        reason: detail.reason,
-        failures: detail.failures,
-        at: detail.at,
-        mount: detail.mount,
-        target: detail.target,
-    });
     Ok(Checked {
         source: source.clone(),
         path: row.path,
         logical: row.logical,
         kind: row.kind,
         status: row.code.map_or(Status::Ok, Status::Degraded),
-        detail,
+        detail: kept.detail,
         change: Change::Committed,
         schema: kept.schema,
     })

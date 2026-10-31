@@ -149,9 +149,8 @@ impl Repositories {
     /// opened once. A source whose pointers `cache` lists is walked only
     /// when `scope` reaches it, and, when `skip_kept`, its decision is not
     /// kept or `scope` holds only part of it. `build` names the code that
-    /// decides, for the
-    /// keys; with an empty `build` nothing is read from or stored in the
-    /// cache's pointer lists or kept decisions.
+    /// decides, for the keys; with an empty `build` nothing is read from or
+    /// stored in the cache's pointer lists or kept decisions.
     pub fn walk_mounts<C: Cache>(
         &self,
         entries: &[Entry],

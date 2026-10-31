@@ -184,11 +184,8 @@ impl Writer {
             .collect::<Result<Vec<Row>, _>>()?;
         rows.into_iter()
             .map(|(path, logical, kind, code, detail)| {
-                let unreadable = |column, value: &str| IndexError::Unreadable {
-                    path: path.clone(),
-                    column,
-                    value: value.to_owned(),
-                };
+                let unreadable =
+                    |column, value: &str| IndexError::unreadable(path.clone(), column, value);
                 let logical = match logical {
                     Some(text) => Some(text.parse().map_err(|_| unreadable("logical", &text))?),
                     None => None,

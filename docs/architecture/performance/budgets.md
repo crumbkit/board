@@ -95,6 +95,6 @@ them:
 | simple `board query`, warm | 100 ms |
 | `board call plans.open --limit 20`, warm, on the owner's board | 50 ms |
 
-On a copy of the owner's board with 24 mounts and 14,666 entries, a warm
-`board check` takes about 53 ms, because it reads the decisions the index
-keeps (performance/decisions.md).
+`cargo xtask bench --board <path>` times these on a real board. A warm
+`board check` on the owner's board meets its 100 ms target because it reads
+the decisions the index keeps (performance/decisions.md).

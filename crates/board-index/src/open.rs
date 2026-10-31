@@ -334,8 +334,9 @@ pub enum IndexError {
     /// build them again.
     #[error("another process pruned the index after this run built its views")]
     Pruned,
-    /// A kept row holds a value this build cannot read.
-    #[error("the index keeps {column} {value:?} for {path}, which cannot be read")]
+    /// A kept row holds a value this build cannot read. `value` is bounded
+    /// by [`IndexError::unreadable`].
+    #[error("the index keeps {column} {value} for {path}, which cannot be read")]
     Unreadable {
         path: String,
         column: &'static str,
@@ -344,6 +345,24 @@ pub enum IndexError {
 }
 
 impl IndexError {
+    /// A kept row's `column` for `path` holds `value`, which cannot be read.
+    /// The message quotes at most the value's first 200 characters.
+    pub fn unreadable(path: String, column: &'static str, value: &str) -> Self {
+        const SHOWN: usize = 200;
+        let length = value.chars().count();
+        let value = if length > SHOWN {
+            let start: String = value.chars().take(SHOWN).collect();
+            format!("{start:?}... ({length} characters)")
+        } else {
+            format!("{value:?}")
+        };
+        Self::Unreadable {
+            path,
+            column,
+            value,
+        }
+    }
+
     pub fn code(&self) -> Code {
         match self {
             Self::Sql { .. }
