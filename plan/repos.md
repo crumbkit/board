@@ -16,7 +16,6 @@ mounts already sit, so existing references keep working.
 {
   "$type": "board/repo/v1",
   "remote": "github.com/crumbkit/board",
-  "workflow": "/workflows/personal",
   "checkout": {
     "repo": "~/src/board",
     "follow": "origin/main",
@@ -28,9 +27,8 @@ mounts already sit, so existing references keep working.
 - `remote` is required. It is the host and path of the repository's
   canonical remote, with no scheme, user or `.git` suffix, so two clones of
   one repository give the same value.
-- `workflow` is optional. It refers to a `/workflows/<name>` record
-  (plan/work-records.md). A repository without one uses the board's default
-  workflow.
+- `checkout` is optional, and `remote` is unique: `board check` reports a
+  second record with the same `remote` as `board::repo::duplicate_remote`.
 - `checkout` is optional. With it, the record is a mount: `repo`, `follow`
   and `commit` mean exactly what they mean in `board/mount/v1` today, and the
   repository's tree appears beneath `/repos/<name>/`. Without it, the record
@@ -42,22 +40,25 @@ not repositories of work, such as a shared team board. Only `board-tree`
 reads either type as a pointer, as today.
 
 Extending `board/mount/v1` with `remote` and an optional `repo` would avoid
-a second pointer type. It is not chosen because a mount without a target is
-a pointer to nothing, which `board check` rightly reports as dangling, and
-because `workflow` describes the repository, not the pointer.
+a second pointer type. A mount without a target, though, is a pointer to
+nothing, which `board check` rightly reports as dangling. So an identity with
+no checkout gets its own type.
 
 ## Finding the record from a directory
 
-Board already maps the current directory to the mount whose `repo` holds it.
-`board-tree` now also maps a directory in a clone the board does not mount:
-it reads the clone's `origin` remote and resolves the repo record with that
-`remote`. A plugin gets the result as a resolved Location, as it gets a
-mount today, and never reads git for it.
+Board already maps the caller's directory to the mount whose `repo` holds
+it, and runs the call with that mount's path as its prefix. `board-tree` now
+also maps a directory in a clone the board does not mount: it reads the
+clone's `origin` remote and, when a repo record has that `remote`, runs with
+`/repos/<name>` as the prefix. When no record has it, Board runs with no
+prefix and passes the normalised remote to the plugin as
+`BOARD_CALLER_REMOTE`, beside `BOARD_CALLER_DIR`. No plugin reads git for
+this.
 
 ## Creating the record
 
-Nobody writes a repo record by hand. `changes.start` creates it when the
-current directory's repository has none, at `/repos/<name>`, where `<name>`
+Nobody writes a repo record by hand. `changes.start` creates it from
+`BOARD_CALLER_REMOTE` when the caller's repository has none, at `/repos/<name>`, where `<name>`
 is the remote's last path segment. A clash with an existing record of
 another remote is `changes::repo::name_taken`, which suggests `--repo-name`.
 Evals and other records refer to the record once it exists. A mount is added
@@ -81,7 +82,8 @@ use of it. The tests:
   every case in the existing mount tests.
 - A repo record without a checkout is a valid reference target and has no
   children.
-- A directory in an unmounted clone resolves to its repo record.
+- A directory in an unmounted clone runs with its repo record's prefix, and
+  one with no record passes `BOARD_CALLER_REMOTE`.
 - `changes.start` in an unmounted clone creates the record once, and a second
   start reuses it.
 - Each refusal has an admitted twin.

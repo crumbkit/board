@@ -16,6 +16,11 @@ The runs mod writes two records per subagent, each once:
 - At SubagentStop, the `runs/run/v1` it writes today, which gains `agent`,
   the reference to that record.
 
+The mod already pairs SubagentStart with SubagentStop by agent id. The
+build confirms which id the Agent tool call shares with them; if none does,
+the mod pairs the call with the next SubagentStart in the same session.
+Tasks from TaskCreated are recorded as today, with no agent record.
+
 An agent record that no run names is running. After a usage stop it is
 stalled: nothing will ever write its run. Lead sessions are not recorded
 this way, because a session that a usage stop ends gets no stop hook. A
@@ -32,10 +37,11 @@ summaries of what the plan uses and the command that checks the controls.
 
 ## The pull request gate
 
-The mod refuses `gh pr create` in a repository that has a repo record when
-no open change names that repository and the current branch. The refusal
-says to run `changes.start`. A repository without a repo record is not
-gated. The gate reads local records only and makes no network call.
+The mod refuses `gh pr create` when no open change names the current
+repository and branch. A repository with no repo record has no change, so
+it is refused too; the refusal says to run `changes.start`, which creates
+both. The gate has no exemptions, as the owner asked. It reads local
+records only and makes no network call.
 
 This is the mod's first hook that blocks what it watches. Until now every
 hook only recorded, and its header comment says so; this pull request
@@ -47,9 +53,10 @@ with its URL, and stops writing the decision stub it writes today
 
 ## The query
 
-A new `inflight` plugin with one capability. It is a plugin of its own
-because it reads the records of five plugins, and none of those should
-depend on the others.
+A new `inflight` plugin with one capability. It reads the records of the
+changes, runs, plans, evals and artifacts plugins and writes nothing.
+Putting it in `changes` would make that plugin read evals and artifacts,
+which a change does not need.
 
     board call inflight.now [--holder <session>] [--stopped-at <time>] [--limit <n>]
 
@@ -61,8 +68,8 @@ It returns, each part bounded and saying what it left out:
 - **Agents** that are running, or stalled when `--stopped-at` is given and
   they started before that time, grouped under their change. Unattached
   agents come last.
-- **Questions** waiting on the owner, from `plans.open`.
-- **Decisions** awaiting review, from `decisions.open`.
+- **Questions** waiting on the owner, from `plans.open`. A decision awaiting
+  review appears here once, through its question.
 - **Evals** planned or running, from `evals.open`.
 
 `--holder` keeps only the changes that session holds and their agents. The

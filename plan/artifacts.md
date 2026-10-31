@@ -16,23 +16,24 @@ An `artifacts` plugin owns two types, each written once.
   "$type": "artifacts/artifact/v1",
   "url": "https://claude.ai/artifact/AbCdEf0123456789xyzQ",
   "account": "owner@example.com",
-  "for": "/changes/board-work-records",
   "published": "2026-10-31T18:20:00Z"
 }
 ```
 
 - `url`, `account` and `published` are required. `<id>` is the
   last segment of the URL.
-- `for` is optional: a reference to the change, eval or project the
-  artifact belongs to.
 
 `artifacts/version/v1` at `/artifacts/<id>/versions/<version>.json`, with
 the page beside it as `<version>.html` or `<version>.md`:
 
 - `version` is the version id the Artifact tool returns, such as
   `1793473476-1c42`.
-- `title` and `summary` are the artifact's title and description at that
-  version, since a republish can change them.
+- `title` and `description` are the artifact's title and description at
+  that version, since a republish can change them.
+- `for` is an optional list of references to the changes, evals or projects
+  the version belongs to. The mod sets it from the publishing session's
+  `Board:` line or its held change. The artifact belongs to every `for` of
+  its versions, so an artifact can gain one with a later version.
 - `sha256` is the page's hash, `source` the local file published, and
   `session` and `at` say who published it and when.
 - A document written through a docs connector has no local page, so its
@@ -58,11 +59,11 @@ Claude Code reach the board through the agent. The plugin's skill has an
 `artifacts sync` step: the agent runs the Artifact `list` action and passes
 the listing to:
 
-    board call artifacts.import --account <email> --file <listing.json>
+    jq -c '{account: "<email>", artifacts: .}' listing.json | board call artifacts.import
 
 `artifacts.import` writes an artifact record for each URL the board does not
-have, without a version. The step then reads each new artifact and lets the
-mod record its version. The same step backfills an old account: the owner
+have, without a version and without `for`. The step then reads each new
+artifact and lets the mod record its version. The same step backfills an old account: the owner
 signs in to it, and the agent runs the step once.
 
 ## Capabilities

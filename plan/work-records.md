@@ -10,9 +10,9 @@ changes in place, as its README allows while the plugin has one user.
 
 ## Workflows
 
-A workflow is a record at `/workflows/<name>` listing its steps in order.
-Each step has a name, an actor (`agent`, `reviewer` or `owner`) and the kind
-of record that completes it.
+A workflow is a `changes/workflow/v1` record at `/workflows/<name>` listing
+its steps in order. Each step has a name, an actor (`agent`, `reviewer` or
+`owner`) and the kind of record that completes it.
 
 ```json
 {
@@ -27,29 +27,35 @@ of record that completes it.
 }
 ```
 
-A change's head is the commit named by its newest record that names one: a
-check run or a review brief. `done_by` is one of five kinds, each with one
-rule:
+A change's head is the commit that its newest check run or review brief
+names, newest by the run's `started` or the brief's stamp. A run names it in
+`versions` under the repo record's name; a brief names it as the end of its
+`range`. `done_by` is one of five kinds, each with one rule:
 
 | Kind | The step is done when |
 | --- | --- |
 | `plan` | a plan exists and every reference in its `uses` resolves. |
-| `answer` | an answer exists to a question whose `for` names the change. |
+| `answer` | an answer whose `choice` is `approve` exists to a question whose `for` names the change. |
 | `check` | a full, clean run of the change's `suite` whose `for` names the change has the head in `versions`. |
 | `review` | an approving report with no high finding answers a brief whose `step` is this step's name and whose `range` ends at the head. |
 | `landed` | `/changes/<name>/landed` exists. |
 
-A new commit names a new head, so the build and review steps are not done
-again until a run and a review cover it.
+A new run or brief names a new head, so the build and review steps are not
+done again until a run and a review cover it. A commit pushed with no new
+record leaves them marked done; the `pr` body names the head it was
+drafted from, so a reader can compare it with the pull request. An answer
+with any other choice leaves the change at approve, and the agent either
+writes a new plan and asks again, or drops the change.
 
-Board ships two workflows. `/workflows/personal` is plan, build, review and
-land. `/workflows/work` adds approve after plan. `/workflows/default` is a
-link (`board/mount/v1` with `path`) to one of them. A repo record's
-`workflow` overrides the default (plan/repos.md).
+`board call changes.seed` writes `/workflows/personal` (plan, build, review,
+land), `/workflows/work` (approve added after plan) and `/workflows/default`,
+a link (`board/mount/v1` with `path`) to the personal one, when they are
+missing. A repository gets another default from a link at
+`/workflows/repos/<name>`.
 
 A step that a control adds (plan/control-scope.md), such as
 `security-review`, comes after the last step whose actor is `reviewer` and
-uses the `review` kind. A change whose route is `ask-first` or `unknown`
+uses the `review` kind. A change whose route is `ask-first` or `unread`
 gains the `approve` step if its workflow lacks one.
 
 ## Records of a change
@@ -59,7 +65,7 @@ All live under `/changes/<name>/`, except the change itself at
 
 | Record | Holds |
 | --- | --- |
-| change | `title`, `repo` (a repo record), `branch`, `workflow` and `suite` resolved at start, `route` |
+| change | `title`, `repo` (a repo record), `branch`, `issue`, and the `workflow`, `suite` and `route` resolved at start |
 | `plans/<stamp>` + `.md` | `uses`: references to standards nodes, controls, decisions, evals and other changes. The `.md` holds at most 3,000 words. The newest plan is the current one. |
 | `claims/<stamp>` | `session`. The newest claim's session is the holder. |
 | `reviews/<id>/brief`, `report` | as the review plugin has them; the brief gains `step` |
@@ -67,18 +73,18 @@ All live under `/changes/<name>/`, except the change itself at
 | `landed` | the merge commit |
 | `dropped` | why the change stopped |
 
-Three existing records gain `for`, a list of references to what they belong
+Two existing records gain `for`, a list of references to what they belong
 to, so each stays where its own plugin keeps it:
 
-- A question that blocks a change, or asks for a decision's review. Its
-  `status` is derived as well: it is answered once an answer names it. The
-  stored `status` stays valid on old records and is ignored.
+- A question that blocks a change or asks for a decision's review. `for`
+  holds references, and the existing `blocks` stays as prose. The question's
+  stored `status`, including `withdrawn`, is unchanged.
 - A check run, a `runs/run/v1` in its suite's `runs/`, where `runs.latest`
   reads it.
-- An artifact (plan/artifacts.md).
 
-`start` sets `route` from CODEOWNERS when the repository has a checkout.
-Without one it cannot read CODEOWNERS and sets `unknown`.
+`start` sets `route` from CODEOWNERS when the repository has a checkout, as
+today. Without one it cannot read CODEOWNERS and sets `unread`, which is
+distinct from `unowned`, where CODEOWNERS names nobody.
 
 ## What is derived
 
@@ -88,34 +94,38 @@ Without one it cannot read CODEOWNERS and sets `unknown`.
 - **Holder**: the session in the newest claim.
 - **Done**: `landed` or `dropped` exists.
 
-Files touched decide which controls add steps. The caller passes them, as
-it does to `controls.check`, so `changes.next` and `changes.brief` take
-`--files -`. Without it they list the steps every control on the repository
-could add, marked `if touched`.
+Files touched decide which controls add steps. The caller passes them as
+`files`, as it does to `controls.check`, so `changes.next` and
+`changes.brief` read JSON on stdin when given files. Without them they list
+the steps every control on the repository could add, marked `if touched`.
 
 ## Capabilities
 
-- `start --title '<title>' [--name <n>] [--repo-name <r>]` creates the repo
-  record if needed, then the change and a claim, for the repository of the
-  current directory. It resolves the workflow, suite and route.
-- `plan --change <c> --file <plan.md> --uses <ref>…` writes a plan. It
-  refuses a reference that reaches nothing (`changes::ref::dangling`) and a
-  file over 3,000 words (`changes::plan::too_long`).
-- `claim --change <c>` writes a claim for the calling session.
-- `next --change <c> [--files -]`: read-only. Steps, each done or not with
-  the record that did it, the next step and its actor.
-- `brief --change <c> [--files -]`: read-only. What an agent needs to start:
-  the plan's path, one line per record in `uses` (a control's `summary`, a
-  decision's text, an eval's question and verdict, a document's first
-  heading), the next step, and the exact `controls.check` command for the
-  change's repository. It holds at most 600 words and says what it left out.
-- `landed --change <c> --commit <sha>` and `drop --change <c> --why '<text>'`
-  end the change.
-- `open [--limit <n>]`: read-only. Changes without `landed` or `dropped`.
-- `pr` still drafts the pull request body.
+Each takes the change as `--path /changes/<name>`, as today.
 
-`attach` and `advance` go. A record under the change needs no attaching, and
-there is no phase to advance.
+- `start --title '<title>' [--name <n>] [--handle @<you>] [--issue <url>] [--workflow <w>] [--repo-name <r>]`
+  creates the repo record if needed, then the change and a claim, for the
+  caller's repository.
+- `plan` writes a plan from `{path, file, uses}` on stdin, since `uses` is
+  an array. It refuses a reference that reaches nothing
+  (`changes::ref::dangling`) and a file over 3,000 words
+  (`changes::plan::too_long`).
+- `claim` writes a claim for the calling session.
+- `next`: read-only. Steps, each done or not with the record that did it,
+  the next step and its actor.
+- `brief`: read-only. What an agent needs to start: the plan's path, one
+  line per record in `uses` (a control's `summary`, a decision's text, an
+  eval's question and verdict, a document's first heading), the next step,
+  and the exact `controls.check` command for the change's repository. It
+  holds at most 600 words and says what it left out.
+- `landed --commit <sha>` and `drop --why '<text>'` end the change.
+- `open [--limit <n>]`: read-only. Changes without `landed` or `dropped`.
+- `pr` still drafts the pull request body, with its `Closes` line.
+
+`attach` and `advance` go: a record under the change needs no attaching, and
+there is no phase to advance. The build gate on attached `tasks/task/v2`
+records goes too. Tasks stay in the tasks plugin, and the check run is the
+build step's evidence.
 
 ## Agents and the change
 
@@ -132,7 +142,7 @@ One pull request in the changes, plans, review and runs plugins. The tests:
 
 - Each kind's rule, with a twin record set that does not satisfy it.
 - A new head undoes the build and review steps.
-- A control's added step appears only when `--files` includes a match.
+- A control's added step appears only when `files` includes a match.
 - The holder from two claims is the newer one's session.
 - `brief` stays within 600 words with 100 `uses` and says what it left out.
 
