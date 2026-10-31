@@ -323,6 +323,23 @@ fn a_reference_under_a_keyword_board_never_searches_is_refused_and_its_searched_
 }
 
 #[test]
+fn a_keyword_holding_the_wrong_shape_is_refused_by_the_compile_and_never_searched_for_references() {
+    let reference = json!({"type": "string", "format": "board-ref"});
+    for (keyword, misshapen, shaped) in [
+        ("anyOf", reference.clone(), json!([{"type": "string"}])),
+        ("not", json!([reference]), json!({"type": "string"})),
+    ] {
+        let refused = Schema::compile(json!({"properties": {"r": {keyword: misshapen}}}));
+        let refused = refused.unwrap_err();
+        assert!(
+            matches!(refused, SchemaError::Compile { .. }),
+            "{keyword}: {refused}"
+        );
+        Schema::compile(json!({"properties": {"r": {keyword: shaped}}})).unwrap();
+    }
+}
+
+#[test]
 fn a_reference_reached_through_a_ref_under_any_of_is_refused_and_the_bare_ref_admitted() {
     let defs = json!({"S": {"properties": {"r": {"type": "string", "format": "board-ref"}}}});
     let nullable = json!({

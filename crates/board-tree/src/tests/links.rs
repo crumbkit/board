@@ -361,6 +361,20 @@ fn resolving_from_every_link_of_a_chain_parses_each_pointer_once() {
 }
 
 #[test]
+fn an_in_commit_resolver_counts_each_file_it_reads_for_a_pointer_once_across_its_resolutions() {
+    let scenario = Scenario::new();
+    let commit = chain(&scenario, 5);
+    let repositories = scenario.repositories();
+    let mut in_commit = repositories.in_commit(repositories.root(), commit).unwrap();
+    assert_eq!(in_commit.pointers_read(), 0);
+    in_commit.resolve(&path("/l0")).unwrap();
+    // Each of the five pointers and the record at the end.
+    assert_eq!(in_commit.pointers_read(), 6);
+    in_commit.resolve(&path("/l2")).unwrap();
+    assert_eq!(in_commit.pointers_read(), 6);
+}
+
+#[test]
 fn many_references_to_one_record_read_it_once_in_one_run() {
     let scenario = Scenario::new();
     let commit = scenario.commit(&[("projects/hub.json", r#"{"$type": "lr/project/v1"}"#)]);
