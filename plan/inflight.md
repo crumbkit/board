@@ -3,26 +3,28 @@
 One read-only query answers "what is open or running right now?", and
 rescuing work after a session stops means running it and reading what it
 prints. The records it reads come from the work records
-(plan/work-records.md) and from the `runs` mod, which records each agent
+(plan/work-records.md) and from the `runs` mod, which records each subagent
 when it starts as well as when it stops.
 
-## Recording agents
+## Recording subagents
 
-The runs mod writes two records per agent, each once:
+The runs mod writes two records per subagent, each once:
 
-- At start, a `runs/agent/v1` at `/agents/<id>.json`, with `kind` (`session`
-  or `subagent`), `session`, `parent`, `cwd`, `started` and `works_on`, and
-  the prompt as `/agents/<id>.md`.
-- At stop, the `runs/run/v1` it writes today, which gains `agent`, the
-  reference to that record.
+- When the Agent tool call that starts it runs, a `runs/agent/v1` at
+  `/agents/<id>.json`, with `session`, `cwd`, `started` and `works_on`, and
+  the prompt from that tool call as `/agents/<id>.md`.
+- At SubagentStop, the `runs/run/v1` it writes today, which gains `agent`,
+  the reference to that record.
 
 An agent record that no run names is running. After a usage stop it is
-stalled: nothing will ever write its run.
+stalled: nothing will ever write its run. Lead sessions are not recorded
+this way, because a session that a usage stop ends gets no stop hook. A
+change's claims say which session held it.
 
 `works_on` comes from the prompt's last line, `Board: /changes/<name>`. When
-that line is missing and the parent session holds exactly one claim, the mod
-uses that change. Otherwise `works_on` is left out, and the agent is listed
-as unattached.
+that line is missing and the parent session holds exactly one change, the
+mod uses that change. Otherwise `works_on` is left out, and the agent is
+listed as unattached.
 
 When `works_on` is set, the mod adds the output of `changes.brief` for that
 change to the subagent's context, so an agent starts with the plan, the
@@ -30,36 +32,43 @@ summaries of what the plan uses and the command that checks the controls.
 
 ## The pull request gate
 
-The mod refuses `gh pr create` when no open change names the current
-repository and branch. The refusal says to run `changes.start`. It reads
-local records only and makes no network call. After a pull request is
-created, the mod writes the change's `opened` record with its URL. It no
-longer writes a decision stub (plan/decisions.md).
+The mod refuses `gh pr create` in a repository that has a repo record when
+no open change names that repository and the current branch. The refusal
+says to run `changes.start`. A repository without a repo record is not
+gated. The gate reads local records only and makes no network call.
+
+This is the mod's first hook that blocks what it watches. Until now every
+hook only recorded, and its header comment says so; this pull request
+changes that comment and gives the reason.
+
+After a pull request is created, the mod writes the change's `opened` record
+with its URL, and stops writing the decision stub it writes today
+(plan/decisions.md).
 
 ## The query
 
-A new `inflight` plugin with one capability:
+A new `inflight` plugin with one capability. It is a plugin of its own
+because it reads the records of five plugins, and none of those should
+depend on the others.
 
-    board call inflight.now [--owner <session>] [--stopped-at <time>] [--limit <n>]
+    board call inflight.now [--holder <session>] [--stopped-at <time>] [--limit <n>]
 
 It returns, each part bounded and saying what it left out:
 
 - **Changes** that have no `landed` or `dropped` record. Each shows its
-  repository, owner, next step and actor, the agents working on it, and its
-  pull request URL when one is open.
+  repository, holder, next step and actor, its subagents, its pull request
+  URL when one is open, and the artifacts whose `for` names it.
 - **Agents** that are running, or stalled when `--stopped-at` is given and
   they started before that time, grouped under their change. Unattached
   agents come last.
 - **Questions** waiting on the owner, from `plans.open`.
 - **Decisions** awaiting review, from `decisions.open`.
 - **Evals** planned or running, from `evals.open`.
-- **Artifacts** with a version in the last seven days (plan/artifacts.md).
 
-`--owner` keeps only the changes that session owns and their agents.
-`--json` prints all of it as one document. The query makes no network call,
-so it cannot say that a pull request merged. A change with an `opened` and
-no `landed` record shows the command that checks it,
-`gh pr view <url> --json state`.
+`--holder` keeps only the changes that session holds and their agents. The
+query makes no network call, so it cannot say that a pull request merged. A
+change with an `opened` and no `landed` record shows the command that
+checks it, `gh pr view <url> --json state`.
 
 ## Rescue
 
@@ -77,12 +86,12 @@ session reads nothing outside the board to learn what was in flight.
 Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
-   request gate and the `opened` record. Its tests cover each hook with a
-   twin that is refused or left out.
+   request gate, the `opened` record and the end of the decision stub. Its
+   tests cover each hook with a twin that is refused or left out.
 2. The `inflight` plugin. Its fixture is a board holding four changes
-   stopped at different steps, with running agents, a waiting question and
-   an open pull request. The test asserts that `inflight.now --stopped-at`
-   lists each one with the right next step and actor.
+   stopped at different steps, with running subagents, a waiting question
+   and an open pull request. The test asserts that `inflight.now
+   --stopped-at` lists each one with the right next step and actor.
 
 Done when the owner, after a usage stop, rescues the work in flight with
 this query and nothing else.

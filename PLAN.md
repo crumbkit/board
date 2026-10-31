@@ -25,8 +25,9 @@ steps left are the owner's:
 M7 is done when the owner says so.
 
 The index keeps each mounted source's decision
-([docs](docs/architecture/performance/decisions.md)), which brought a warm
-`call plans.open` on the owner's board to 47 ms, under the 50 ms target.
+([docs](docs/architecture/performance/decisions.md)). On a copy of the
+owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
+about 47 ms, down from 96 ms, which meets the 50 ms target.
 
 Two smaller items each get their own pull request. A scoped check walks
 every mount; fixing that needs a design. Compiling manifest schemas once
@@ -79,11 +80,12 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   that Board fetches only remotes the root board names, and that Board detects
   a colocated jj repository automatically with no setting. After M7, turn the
   sketch into a list of design gaps for a builder.
-- **Repositories across boards.** References into another board's repository read
-  `name:/path`; plan/repos.md builds the declaration this sketch named. The owner agreed it on 2026-10-05; it
-  refines M8, and #55's content-addressed records are dropped. The `share`
-  plugin, built in place of the `board copy` and `board share` it named, copies
-  a record and what it needs into a mounted board (docs/plugins/share.md).
+- **Repositories across boards.** References into another board's
+  repository read `name:/path`; plan/repos.md builds the declaration. The
+  owner agreed it on 2026-10-05; it refines M8, and #55's content-addressed
+  records are dropped. The `share` plugin, built in place of the `board copy`
+  and `board share` it named, copies a record and what it needs into a
+  mounted board (docs/plugins/share.md).
 - **M9 SHA-256 repositories.** Board reads and writes repositories in git's
   SHA-256 object format. Its standing rule is settled decision 5 below.
 - **Views from schemas.** Every record type gets a view and a form derived

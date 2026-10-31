@@ -1,9 +1,10 @@
 # Decisions
 
 A decision records a choice and why it was made, once. A new `decisions`
-plugin owns the record, because a choice is not specific to plans: the owner
-decides about evals, reviews, standards and repositories too. Board's core
-types stay protocol types.
+plugin owns the record. The owner chose a plugin of its own on 2026-10-31,
+because the owner decides about evals, reviews, standards and repositories,
+not only about plans. Board's built-in types describe how a board is stored
+and read, so a workflow record such as a decision belongs in a plugin.
 
 A decision does not say what it binds. When a decision governs future work,
 the agent that records it also writes a control whose `basis` names the
@@ -39,14 +40,18 @@ request", needs no control.
   including one into a repository such as `/repos/board/docs/x.md`, so
   `board check` reports one that reaches nothing.
 - `urls` lists web pages, which nothing can check.
-- `supersedes` lists the decisions this one replaces.
+- `supersedes` lists the decisions this one replaces. Only a decision
+  supersedes a decision.
 - `review` is `wanted` or `none`. It records the request only.
 
 Nothing on the record changes after it is written. Its state is derived:
 
-- **Reviewed** once a later decision lists it in `basis`. An owner's
-  acceptance of several decisions is one decision whose `basis` names them.
-- **Superseded** once a later decision or control lists it in `supersedes`.
+- **Reviewed** once the owner has answered a question whose `for` names the
+  decision (plan/work-records.md). An agent's later decision that builds on
+  it does not count. To ask for a review, the agent writes that question; to
+  review several decisions at once, it writes one question whose `for` lists
+  them.
+- **Superseded** once a later decision lists it in `supersedes`.
 - **Awaiting review** when `review` is `wanted` and it is neither.
 
 ## Capabilities
@@ -59,9 +64,10 @@ Nothing on the record changes after it is written. Its state is derived:
 
 ## Evals
 
-The eval record stops storing what can be derived. `status` and `decision`
-go, and `abandoned` (a reason) comes in. `mounts` becomes `repos`, holding
-repo record references (plan/repos.md).
+The eval record stops storing what can be derived. `status` goes, and
+`abandoned` (a reason) comes in. `decision` is renamed `informs`, since it
+holds the question the eval informs, written before any decision exists.
+`mounts` becomes `repos`, holding repo record references (plan/repos.md).
 
 - **Planned**: no `runs`.
 - **Running**: `runs` and no `verdict`.
@@ -75,16 +81,18 @@ eval. `evals.about --repo` replaces `--mount`.
 ## Migration
 
 A one-off script, run once and not kept, rewrites every
-`plans/decision/v1` as `decisions/decision/v1` at the same path: `refs`
-becomes `basis`, and the other fields copy. A stub whose `why` is empty is
-listed for the owner and not rewritten. The same script rewrites each eval:
-it drops `status` and `decision`, sets `abandoned` from an `abandoned`
-status, and renames `mounts`. It writes nothing with `--dry-run`.
+`plans/decision/v1` as `decisions/decision/v1` at the same path. `refs`
+becomes `basis`; `written_by` is dropped, since only stubs set it; the other
+fields copy. A stub whose `why` is empty is listed for the owner and not
+rewritten. A decision whose `review` is `wanted` and that a later decision
+names as accepted, such as an acceptance listing it in `refs`, gets an
+answered question so it stays reviewed. The same script rewrites each eval:
+it drops `status`, sets `abandoned` from an `abandoned` status, and renames
+`decision` and `mounts`. It writes nothing with `--dry-run`.
 
-The `runs` mod stops writing a decision stub when a pull request is opened.
-The work records record the pull request instead (plan/work-records.md).
-The `changes` gate that looked for a `plans/decision/v1` reads the new type.
-`plans/decision/v1` is then removed from the plans plugin.
+The plans hook and the `changes` plan gate read the new type. The runs mod
+keeps writing its stub until plan/inflight.md replaces it.
+`plans/decision/v1` is removed from the plans plugin after that.
 
 ## Build
 

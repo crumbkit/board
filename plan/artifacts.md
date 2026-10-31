@@ -15,15 +15,13 @@ An `artifacts` plugin owns two types, each written once.
 {
   "$type": "artifacts/artifact/v1",
   "url": "https://claude.ai/artifact/AbCdEf0123456789xyzQ",
-  "title": "Work records plan",
-  "summary": "One plan for work, decision, control and artifact records.",
   "account": "owner@example.com",
   "for": "/changes/board-work-records",
   "published": "2026-10-31T18:20:00Z"
 }
 ```
 
-- `url`, `title`, `account` and `published` are required. `<id>` is the
+- `url`, `account` and `published` are required. `<id>` is the
   last segment of the URL.
 - `for` is optional: a reference to the change, eval or project the
   artifact belongs to.
@@ -33,6 +31,8 @@ the page beside it as `<version>.html` or `<version>.md`:
 
 - `version` is the version id the Artifact tool returns, such as
   `1793473476-1c42`.
+- `title` and `summary` are the artifact's title and description at that
+  version, since a republish can change them.
 - `sha256` is the page's hash, `source` the local file published, and
   `session` and `at` say who published it and when.
 - A document written through a docs connector has no local page, so its
@@ -68,12 +68,11 @@ signs in to it, and the agent runs the step once.
 ## Capabilities
 
 - `artifacts.list [--account <a>] [--for <ref>] [--limit <n>]`: read-only.
-  Artifacts with their newest version, newest first.
+  Artifacts with their newest version and its title, newest first.
 - `artifacts.import`, as above. It refuses a listing that is not the
   Artifact tool's shape, with a twin that is admitted.
 
-`inflight.now` lists the artifacts with a version in the last seven days
-(plan/inflight.md).
+`inflight.now` lists each open change's artifacts (plan/inflight.md).
 
 ## Build
 
