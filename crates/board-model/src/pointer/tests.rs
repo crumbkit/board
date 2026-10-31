@@ -95,6 +95,11 @@ fn a_pointer_in_a_schema_or_markdown_file_is_no_pointer_and_its_twin_in_a_record
         assert_eq!(can_hold_pointer(path), holds, "{path}");
         assert_eq!(kind == Kind::Pointer, holds, "{path}");
     }
+    let frontmatter = b"---\n$type: board/mount/v1\npath: /x\n---\n";
+    let kind = crate::classify("notes/n.md", Some(frontmatter))
+        .content
+        .kind();
+    assert_eq!(kind, Kind::Record);
 }
 
 fn link(path: &str) -> Pointer {

@@ -241,6 +241,9 @@ impl Repositories {
         let Object::Blob(resolved) = target.location.object else {
             return Err(not_a_mount());
         };
+        if !board_model::can_hold_pointer(&target.path) {
+            return Err(not_a_mount());
+        }
         let root = self.root();
         let Contents { blob, bytes } =
             latest((root.reader()).read(&Source::WorkingTree, &target.path, resolved))

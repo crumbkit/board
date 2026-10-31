@@ -397,6 +397,41 @@ fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_and_its_twin_i
 }
 
 #[test]
+fn a_source_crossing_a_mount_its_walk_does_not_list_is_never_kept_and_dangles_warm_as_cold_and_its_listed_twin_is_kept()
+ {
+    // `M.json` beside `m.json` degrades both with a case collision, so the
+    // walk lists no pointer at `m.json`, though resolution follows it.
+    for (colliding, expected) in [(true, 0), (false, 2)] {
+        let (target, t) = library(&[]);
+        let to_target = mount(&target.path(), t);
+        let mut files = vec![
+            ("m.json", to_target.as_str()),
+            ("notes/n.md", "[p](/m/projects/p)"),
+        ];
+        if colliding {
+            files.push(("M.json", "{}"));
+        }
+        let (library, l) = library(&files);
+        let scenario = board();
+        scenario.write("l.json", Item::File(&mount(&library.path(), l)));
+        let cache = tempfile::tempdir().unwrap();
+        kept(&scenario, cache.path());
+        assert_eq!(kept(&scenario, cache.path()), expected, "{colliding}");
+        assert_eq!(
+            note_code(&scenario, cache.path()),
+            [[serde_json::Value::Null]]
+        );
+        target.write(".git", Item::Deleted);
+        let dangling = serde_json::json!("board::ref::dangling");
+        assert_eq!(
+            note_code(&scenario, cache.path()),
+            [[dangling]],
+            "{colliding}"
+        );
+    }
+}
+
+#[test]
 fn an_empty_build_keeps_and_stores_nothing_and_a_named_one_keeps_each_source() {
     for (build, expected, stored) in [("", 0, 0), (BUILD, 1, 1)] {
         let scenario = board();

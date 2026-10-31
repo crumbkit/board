@@ -535,6 +535,33 @@ fn a_link_through_a_mount_in_a_schema_file_dangles_and_through_one_in_a_record_f
         let commit = outer.commit(&[(pointer, &to_inner), ("l.json", &to_x)]);
         let reached = resolve(&outer, commit, "/l").map(|location| location.board.source);
         assert_eq!(reached, expected, "{pointer}");
+        outer
+            .write(pointer, Item::File(&to_inner))
+            .write("l.json", Item::File(&to_x));
+        let reached = resolve(&outer, WorkingTree, "/l").map(|location| location.board.source);
+        assert_eq!(reached, expected, "working tree {pointer}");
+    }
+}
+
+#[test]
+fn pinning_a_mount_in_a_schema_file_is_refused_and_the_same_bytes_in_a_record_file_are_admitted() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    for (pointer, admitted) in [
+        (".board/types/acme/thing/v1.schema.json", false),
+        ("m.json", true),
+    ] {
+        let outer = Scenario::new();
+        outer.write(pointer, Item::File(&mount(&inner.path(), pinned)));
+        let at = path(&format!("/{}", pointer.strip_suffix(".json").unwrap()));
+        let pinning = outer.repositories().pin(&at);
+        if admitted {
+            assert_eq!(pinning.unwrap().new, pinned);
+        } else {
+            let error = pinning.unwrap_err();
+            assert_eq!(error.code(), Code::MountInvalid);
+            assert_eq!(error.fields(), board_model::Fields::at(&at));
+        }
     }
 }
 

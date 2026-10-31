@@ -43,11 +43,11 @@ address. A record `x.json` and a directory `x/` may sit side by side, so a
 record can have children: `/x` names the record, `/x/y` continues into the
 directory, and `ls /x` lists the directory. Any other match of one segment to
 more than one entry, including a readable record of pointer type beside a
-directory whether or not it is a valid pointer, degrades each with
-`board::path::shadowed`, and resolution refuses with the same code. Two names in
-one directory that differ only by ASCII case are degraded with
-`board::path::case_collision`, because a macOS working tree cannot hold both;
-resolution still matches names exactly. A name that is not a valid segment is
+directory whether or not it is a valid pointer, or a schema file that holds
+one, degrades each with `board::path::shadowed`, and resolution refuses with
+the same code. Two names in one directory that differ only by ASCII case are
+degraded with `board::path::case_collision`, because a macOS working tree
+cannot hold both; resolution still matches names exactly. A name that is not a valid segment is
 `board::path::malformed` and cannot be reached; so is a mount nested past the
 path limit, which is not walked. A path that names nothing,
 including one that continues through a file, is `board::path::not_found`. A
