@@ -283,10 +283,14 @@ impl Board {
         let probed =
             (in_commit.crossed().iter()).all(|crossed| mounted.crossings.contains(crossed));
         let rows = &decided.resolved[start..];
+        // Names that are not UTF-8 can share a path, which the index keeps
+        // only once.
+        let mut paths = std::collections::HashSet::new();
         // A file that could not be read may be read next run.
         let storable = mounted.whole
             && probed
             && !failed
+            && rows.iter().all(|row| paths.insert(row.path.as_str()))
             && !rows
                 .iter()
                 .any(|row| row.code == Some(Code::RepoUnreadable));

@@ -58,7 +58,8 @@ These sources are decided on every run:
   commit was walked in;
 - one whose resolution crossed a mount that no probe holds, such as a
   pointer in a schema file;
-- one holding a pointer whose blob cannot be read.
+- one holding a pointer whose blob cannot be read;
+- one with two names that are not UTF-8 and read as the same path.
 
 ## Order and pruning
 

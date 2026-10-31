@@ -243,6 +243,28 @@ fn a_mounted_source_with_a_file_that_cannot_be_read_is_never_kept_and_its_twin_i
 }
 
 #[test]
+fn a_mounted_source_whose_names_share_a_path_is_never_kept_and_its_twin_with_one_such_name_is() {
+    for (names, expected) in [
+        (&[&b"\xff.md"[..], b"\xfe.md"][..], 0),
+        (&[&b"\xff.md"[..]][..], 1),
+    ] {
+        let library = Scenario::new();
+        let items: Vec<(&[u8], Item<'_>)> =
+            names.iter().map(|name| (*name, Item::File("x"))).collect();
+        let commit = library.commit_items(&items);
+        let scenario = board();
+        scenario.write("vendor.json", Item::File(&mount(&library.path(), commit)));
+        let cache = tempfile::tempdir().unwrap();
+        let board = open(&scenario);
+        board.check(None, Some(cache.path())).unwrap();
+        let warm = board.check(None, Some(cache.path())).unwrap();
+        let cold = board.check(None, None).unwrap();
+        assert_eq!(warm.entries, cold.entries, "{} names", names.len());
+        assert_eq!(warm.work.kept, expected, "{} names", names.len());
+    }
+}
+
+#[test]
 fn a_source_whose_reference_reaches_a_blob_that_cannot_be_read_is_never_kept_and_its_twin_is() {
     for (missing, expected) in [(true, 0), (false, 2)] {
         let inner = Scenario::new();
