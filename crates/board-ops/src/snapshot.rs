@@ -199,7 +199,8 @@ impl Board {
         drop(known);
         for mounted in &mounts.sources {
             let read_kept = need == Need::View && mounted.kept;
-            // A source not walked is kept, or out of scope.
+            // A source was not walked when its decision is kept or the scope
+            // does not reach it.
             let Some(walked) = (mounted.walked.as_ref()).filter(|_| !read_kept) else {
                 work.kept += usize::from(read_kept);
                 let source = Source::Commit(mounted.commit);

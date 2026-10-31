@@ -81,9 +81,11 @@ pub struct Mounted<F> {
     /// Whether the cache holds its decision under `key`.
     pub kept: bool,
     /// Its entries and the cache's facts about them, or `None` when it was
-    /// not walked: the scope does not reach it, or it is kept and the walk
-    /// was asked to skip what is kept. A source that discovery walked to
-    /// find its mounts holds them even when the scope does not reach it.
+    /// not walked. A source is not walked when the scope does not reach it,
+    /// or when its decision is kept and the walk was asked to skip kept
+    /// sources. Discovery walks a source whose pointers the cache does not
+    /// list, to find its mounts, so such a source has `Some` here even when
+    /// the scope does not reach it.
     pub walked: Option<(Vec<Entry>, F)>,
 }
 
@@ -144,10 +146,10 @@ impl Repositories {
     /// mounted commit's trees that `cache` does not hold are stored in it,
     /// then walked from it. A repository that several pointers name is
     /// opened once. A source whose pointers `cache` lists is walked only
-    /// when `scope` reaches it, and, when `skip_kept`, its decision is not
-    /// kept. `build` names the code that decides, for the
-    /// keys; with an empty `build` nothing is read from or stored in the
-    /// cache's pointer lists or kept decisions.
+    /// when `scope` reaches it. When `skip_kept` is true, such a source is
+    /// also not walked when its decision is kept. `build` names the code
+    /// that decides, for the keys. With an empty `build`, nothing is read
+    /// from or stored in the cache's pointer lists or kept decisions.
     pub fn walk_mounts<C: Cache>(
         &self,
         entries: &[Entry],
