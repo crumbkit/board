@@ -85,14 +85,7 @@ struct Stored {
 }
 
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { path, limit } = Input::deserialize(input).map_err(|error| PluginError {
-        code: "plans::call::bad_input".to_owned(),
-        message: format!(
-            "open's input {input} passed its schema but does not read: {error}; \
-             the input struct and its schema disagree, so report this to Board's developers"
-        ),
-        fields: Map::new(),
-    })?;
+    let Input { path, limit } = PluginError::read_input("plans", "open", input)?;
     let prefix = format!("{}/", path.trim_end_matches('/'));
     let limit = usize::from(limit);
     let report = (host.query(QUESTIONS, Limit::ALL))

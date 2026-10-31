@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use board_model::{CapabilityName, RecordType, Refusal};
 use board_plugin::Manifest;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::Board;
@@ -85,6 +86,24 @@ impl PluginError {
             ),
             fields,
         }
+    }
+
+    /// Reads `input`, which passed `capability`'s input schema, as `T`, or
+    /// refuses with `<plugin>::call::bad_input`, since then `T` and the
+    /// schema disagree.
+    pub fn read_input<T: DeserializeOwned>(
+        plugin: &str,
+        capability: &str,
+        input: &Value,
+    ) -> Result<T, Self> {
+        T::deserialize(input).map_err(|error| Self {
+            code: format!("{plugin}::call::bad_input"),
+            message: format!(
+                "{capability}'s input {input} passed its schema but does not read: {error}; \
+                 the input struct and its schema disagree, so report this to Board's developers"
+            ),
+            fields: Map::new(),
+        })
     }
 }
 

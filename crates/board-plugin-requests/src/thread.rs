@@ -83,14 +83,7 @@ struct Reply {
 }
 
 pub(crate) fn thread(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let Input { effect: id } = Input::deserialize(input).map_err(|error| PluginError {
-        code: "requests::call::bad_input".to_owned(),
-        message: format!(
-            "thread's input {input} passed its schema but does not read: {error}; \
-             the input struct and its schema disagree, so report this to Board's developers"
-        ),
-        fields: Map::new(),
-    })?;
+    let Input { effect: id } = PluginError::read_input("requests", "thread", input)?;
     if !is_effect_id(&id) {
         return Err(not_found(&id, "is not 64 lowercase hex digits"));
     }

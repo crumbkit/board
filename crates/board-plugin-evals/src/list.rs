@@ -5,9 +5,8 @@ use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};
 use board_plugin::shape::{TREE_CODES, whole};
 use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 /// Every eval, by path. Each capability filters the rows in Rust:
 /// `eq_ignore_ascii_case` compares as `SQLite`'s `lower` does, and
@@ -116,7 +115,7 @@ pub(crate) fn about(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         subject,
         mount,
         limit,
-    } = read("about", input)?;
+    } = PluginError::read_input("evals", "about", input)?;
     match (mount, subject) {
         (Some(mount), _) => {
             let below = format!("{mount}/");
@@ -135,20 +134,9 @@ pub(crate) fn about(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 }
 
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
-    let OpenInput { limit } = read("open", input)?;
+    let OpenInput { limit } = PluginError::read_input("evals", "open", input)?;
     listed(host, limit, |_, eval| {
         matches!(eval.status, Status::Planned | Status::Running)
-    })
-}
-
-fn read<T: DeserializeOwned>(capability: &str, input: &Value) -> Result<T, PluginError> {
-    T::deserialize(input).map_err(|error| PluginError {
-        code: "evals::call::bad_input".to_owned(),
-        message: format!(
-            "{capability}'s input {input} passed its schema but does not read: {error}; \
-             the input struct and its schema disagree, so report this to Board's developers"
-        ),
-        fields: Map::new(),
     })
 }
 
@@ -168,7 +156,10 @@ fn listed(
             continue;
         };
         let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
-        let Some(eval) = tree.then(|| readable(body)).flatten() else {
+        if !tree {
+            continue;
+        }
+        let Some(eval) = readable(body) else {
             continue;
         };
         if keep(path, &eval) {
