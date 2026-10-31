@@ -236,6 +236,25 @@ fn a_pending_effect_beside_an_answered_copy_of_the_same_id_is_one_pending_versio
     );
 }
 
+#[test]
+fn a_pending_effect_the_owner_has_answered_no_longer_waits_and_is_not_latest() {
+    let scenario = personal();
+    let id = held(&scenario, "pending", &effect("/x", "one\n", None));
+    let seen = Seen::new(format!("/effects/pending/{id}"), Answer::Approve, None);
+    let seen = serde_json::to_string(&seen).unwrap();
+    scenario.write(&format!("effects/seen/{id}.json"), Item::File(&seen));
+    let output = thread(&scenario, &id).unwrap();
+    let version = &output["versions"][0];
+    assert_eq!(
+        (
+            &version["pending"],
+            &version["latest"],
+            &version["answer"]["answer"]
+        ),
+        (&json!(false), &json!(false), &json!("approve"))
+    );
+}
+
 /// A reply counts only under `/requests/replies/<its effect>/`: one placed
 /// elsewhere in the board, or in another effect's directory, joins no
 /// thread, and its twin in its own directory does.
