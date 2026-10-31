@@ -33,8 +33,13 @@ mounts are read in order.
 
 - `query`, `call` and `enable` read kept rows in place and decide only the
   sources whose key the index does not hold.
-- `check`, `refs` and `ls` decide every source, and keep what they decided.
-- A scoped run keeps nothing for a source it decided only in part.
+- An unscoped `check`, and `refs`, decide every source, and keep what they
+  decided.
+- A scoped `check` and `ls` decide only the sources their scope reaches.
+  They walk another source only when the index lists no pointers for it,
+  to find its mounts. They keep nothing for a source they decided only in
+  part. On a copy of the owner's board with 24 mounts, a warm `check
+  /controls` takes about 38 ms instead of 59 ms because of this.
 
 ## What is never kept
 
