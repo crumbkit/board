@@ -97,5 +97,6 @@
     "status"
   ],
   "title": "QuestionRecord",
-  "type": "object"
+  "type": "object",
+  "x-board-folder": "/projects/{project}/questions/"
 }

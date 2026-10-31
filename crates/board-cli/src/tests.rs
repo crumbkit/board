@@ -1381,7 +1381,7 @@ fn put_new_refuses_a_folder_without_its_slash_naming_the_fix_and_its_twin_is_adm
 }
 
 #[test]
-fn put_new_takes_no_path_expect_batch_or_file() {
+fn put_new_takes_one_folder_and_no_expect_batch_or_file() {
     let scenario = board();
     scenario.write(
         ".board/board.json",
@@ -1410,6 +1410,143 @@ fn put_new_takes_no_path_expect_batch_or_file() {
         None,
         &["put", "--new", "/projects/"],
         record,
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+/// A board whose `lr/question/v1` declares the folder `put --new` writes in.
+fn questions() -> Scenario {
+    let scenario = board();
+    scenario
+        .write(
+            ".board/board.json",
+            Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+        )
+        .write(
+            ".board/types/lr/question/v1.schema.json",
+            Item::File(r#"{"type": "object", "x-board-folder": "/projects/{project}/questions/"}"#),
+        );
+    scenario
+}
+
+const QUESTION: &[u8] = br#"{"$type": "lr/question/v1"}"#;
+
+#[test]
+fn put_new_with_no_folder_writes_in_the_folder_the_type_declares_filled_from_var() {
+    let scenario = questions();
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "--var", "project=board"],
+        QUESTION,
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    let printed = text(&wrote.stdout);
+    assert!(
+        printed.starts_with("wrote /projects/board/questions/2"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn put_new_refuses_an_unfilled_placeholder_naming_the_var_and_its_twin_is_admitted() {
+    let scenario = questions();
+    let refused = board_with(scenario.workdir(), None, &["put", "--new"], QUESTION);
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: lr/question/v1 files records under /projects/{project}/questions/, and no --var gives {project}\n\
+         \x20 help:  add `--var project=<value>`\n\
+         \x20 code:  board::put::folder_unfilled\n"
+    );
+    let document = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "--json"],
+        QUESTION,
+    ));
+    assert_eq!(document["fields"]["var"], "project");
+    assert_eq!(document["fields"]["type"], "lr/question/v1");
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "--var", "project=board"],
+        QUESTION,
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn put_new_refuses_a_type_that_declares_no_folder_and_its_twin_naming_one_is_admitted() {
+    let scenario = questions();
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let refused = board_with(scenario.workdir(), None, &["put", "--new"], record);
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: lr/project/v1 declares no folder, so `put --new` needs one\n\
+         \x20 help:  name a folder that ends in `/`, such as `board put --new /tasks/`\n\
+         \x20 code:  board::put::no_folder\n"
+    );
+    let document = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "--json"],
+        record,
+    ));
+    assert_eq!(document["fields"]["type"], "lr/project/v1");
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "/projects/"],
+        record,
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn put_new_refuses_a_var_that_names_no_placeholder_and_its_twin_without_it_is_admitted() {
+    let scenario = questions();
+    let arguments = ["put", "--new", "--var", "project=board", "--var", "team=a"];
+    let refused = board_with(scenario.workdir(), None, &arguments, QUESTION);
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: --var team names no placeholder of the folder /projects/{project}/questions/\n\
+         \x20 help:  drop `--var team`; the message names the folder's placeholders\n\
+         \x20 code:  board::put::var_unused\n"
+    );
+    let admitted = board_with(scenario.workdir(), None, &arguments[..4], QUESTION);
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn var_needs_new_with_no_folder_and_a_value_without_a_slash() {
+    let scenario = questions();
+    for arguments in [
+        &["put", "/projects/a", "--var", "project=board"][..],
+        &["put", "--new", "/projects/", "--var", "project=board"],
+        &["put", "--new", "--var", "project=a/b"],
+        &["put", "--new", "--var", "project"],
+    ] {
+        let json_arguments = [arguments, &["--json"]].concat();
+        let document = json(&board_with(
+            scenario.workdir(),
+            None,
+            &json_arguments,
+            QUESTION,
+        ));
+        assert_eq!(document["code"], "board::cli::usage", "{arguments:?}");
+    }
+    let alone = &["put", "--var", "project=board", "--json"];
+    let document = json(&board_with(scenario.workdir(), None, alone, QUESTION));
+    let message = document["message"].as_str().unwrap();
+    assert!(message.contains("--new"), "{message}");
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "--var", "project=a"],
+        QUESTION,
     );
     assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
 }

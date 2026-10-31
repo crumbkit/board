@@ -335,6 +335,10 @@ fn refusals(starts: &mut Starts, fixture: &RuntimePlace) {
     }
 }
 
+/// A type that declares the folder `put --new` writes in with no folder.
+const QUESTION_SCHEMA: &str =
+    r#"{"type": "object", "x-board-folder": "/projects/{project}/questions/"}"#;
+
 /// Errors whose hints lead to a command that changes the seed, and twins
 /// whose admitted lines change it, each on a seed of its own.
 fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
@@ -344,15 +348,31 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     starts.untwinned(&untyped, Code::PutInvalid, "put /projects/p", PUT_INVALID);
     let nul = fixture.clone().stdin("a\0b");
     starts.untwinned(&nul, Code::PutNul, "put /notes/n.md --file", PUT_NUL);
+    let questions = {
+        let board = starts.seed_board();
+        board.write(
+            ".board/types/lr/question/v1.schema.json",
+            Item::File(QUESTION_SCHEMA),
+        );
+        starts.keep(board).stdin(r#"{"$type": "lr/question/v1"}"#)
+    };
+    let unused = "put --new --var project=board --var=team=a";
+    starts.add(&questions, Code::PutFolderUnfilled, "put --new");
+    starts.add(&questions, Code::PutVarUnused, unused);
+    let filled = "put --new --var project=board";
+    starts.pair(&questions, Code::PutVarUnused, unused, filled);
+    let unfilled = "put --new --var team=board";
+    starts.pair(&questions, Code::PutFolderUnfilled, unfilled, filled);
     if !starts.twins {
         // Following these hints runs `mount update` or a put that succeeds.
-        let writing: [(Code, &str); 6] = [
+        let writing: [(Code, &str); 7] = [
             (Code::MountCommitMissing, "get /mount/commit/x"),
             (Code::PutThroughMount, "put /mount/m/new"),
             (Code::PutStale, "put /projects/p --expect none"),
             (Code::PutStale, &format!("put /projects/q {unknown}")),
             (Code::RmDirectory, "rm /projects"),
             (Code::PutNotAFolder, "put --new /projects"),
+            (Code::PutNoFolder, "put --new"),
         ];
         for (code, line) in writing {
             let own = starts.seed().stdin(project);
@@ -362,8 +382,9 @@ fn writing(starts: &mut Starts, fixture: &RuntimePlace) {
     }
     // The admitted lines write, so these twins have a board of their own.
     let own = starts.seed().stdin(project);
-    let pairs: [(Code, &str, &str); 8] = [
+    let pairs: [(Code, &str, &str); 9] = [
         (Code::PathMalformed, "put /.git/x", "put /projects/x"),
+        (Code::PutNoFolder, "put --new", "put --new /projects/"),
         (
             Code::PutNotAFolder,
             "put --new /projects",

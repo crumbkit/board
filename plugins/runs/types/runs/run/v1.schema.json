@@ -221,5 +221,6 @@
     "results"
   ],
   "title": "RunRecord",
-  "type": "object"
+  "type": "object",
+  "x-board-folder": "/suites/{suite}/runs/"
 }

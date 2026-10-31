@@ -55,6 +55,8 @@ WrittenBy = Annotated[
 # What a case or a run measures: a number, a label or a flag.
 MeasureValue = int | float | str | bool
 
+# Where `board put --new --var suite=<name>` files a run.
+RUN_FOLDER: JsonDict = {"x-board-folder": "/suites/{suite}/runs/"}
 # A suite lists its cases inline or in a file, not both. pydantic cannot emit this itself.
 NOT_BOTH_CASES: JsonDict = {"not": {"required": ["cases", "cases_file"]}}
 # A result has an outcome, measures, or both, and a case that did not pass has a note.
@@ -186,7 +188,7 @@ class RunRecord(Record):
     `written_by` names the plugin and hook that wrote a run without an agent.
     """
 
-    model_config = ConfigDict(json_schema_extra=shipped())
+    model_config = ConfigDict(json_schema_extra=shipped(RUN_FOLDER))
 
     tag: Literal["runs/run/v1"] = Field(alias="$type")
     suite: SuiteRef

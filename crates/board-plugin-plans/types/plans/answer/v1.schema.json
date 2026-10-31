@@ -76,5 +76,6 @@
     "answered"
   ],
   "title": "AnswerRecord",
-  "type": "object"
+  "type": "object",
+  "x-board-folder": "/projects/{project}/answers/"
 }

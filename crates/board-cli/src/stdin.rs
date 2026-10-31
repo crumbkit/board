@@ -18,7 +18,8 @@ use crate::run::{Prefix, Putting, plain, plugins, read, read_folder};
 pub(crate) enum TypeCommand {
     /// Add a type: compile the JSON Schema on stdin and write it to .board/types/.
     #[command(after_help = "\
-An equal schema already there is left as it is. A different one is refused,
+An equal schema already there is left as it is. One that differs only in
+its top-level `x-board-folder` replaces it. Any other difference is refused,
 because a changed type is a new version. The write is committed unless
 .board/board.json sets `commit_on_put` to false.
 
@@ -32,11 +33,12 @@ Examples:
     },
 }
 
-/// Where a put writes: each line of a batch, a new name in a folder, or a
-/// path.
+/// Where a put writes: each line of a batch, a new name in a folder or in
+/// the folder the record's type declares, or a path.
 enum At {
     Batch,
     New(LogicalPath),
+    Declared,
     Path(LogicalPath),
 }
 
@@ -53,6 +55,7 @@ pub(crate) fn put(
     let Putting {
         path,
         new,
+        var,
         expect,
         batch,
         file,
@@ -60,9 +63,10 @@ pub(crate) fn put(
     } = putting;
     let at = match (path, new) {
         _ if batch => Ok(At::Batch),
-        (Some(path), _) => read(prefix, &path, "put").map(At::Path),
-        (None, Some(folder)) => read_folder(prefix, &folder).map(At::New),
-        (None, None) => unreachable!("clap requires a path, --new or --batch"),
+        (Some(folder), true) => read_folder(prefix, &folder).map(At::New),
+        (Some(path), false) => read(prefix, &path, "put").map(At::Path),
+        (None, true) => Ok(At::Declared),
+        (None, false) => unreachable!("clap requires a path, --new or --batch"),
     };
     let at = match at {
         Ok(at) => at,
@@ -74,7 +78,7 @@ pub(crate) fn put(
             let mut bytes = Vec::new();
             stdin.read_to_end(&mut bytes).map(|_| bytes)
         }
-        At::Path(_) | At::New(_) => bounded(stdin),
+        At::Path(_) | At::New(_) | At::Declared => bounded(stdin),
     };
     let bytes = match read.map_err(|error| unreadable(Code::RepoUnreadable, &error)) {
         Ok(bytes) => bytes,
@@ -84,6 +88,7 @@ pub(crate) fn put(
     let written = match &at {
         At::Batch => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
         At::New(folder) => board.put_new_waiting(folder, &bytes, wait),
+        At::Declared => board.put_declared_waiting(&var.into_iter().collect(), &bytes, wait),
         At::Path(path) if file => board.put_file_waiting(path, expect, &bytes, wait),
         At::Path(path) => board.put_waiting(path, expect, &bytes, wait),
     };

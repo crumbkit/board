@@ -33,7 +33,9 @@ sit in `/suites/<name>/runs/`.
 ## The run record
 
 A run is a file `/suites/<name>/runs/<id>.json`. The id is a sortable UTC
-timestamp and a short random suffix, such as `20261018T101500Z-a3f9`.
+timestamp and a short random suffix, such as `20261018T101500Z-a3f9`. The
+schema declares that folder, so `board put --new --var suite=<name> < run.json`
+names a new run there.
 
 ```json
 {

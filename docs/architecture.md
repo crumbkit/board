@@ -261,7 +261,8 @@ uploaded under its digest and a `board/attachment/v1` record is written in
 its place, as [architecture/attachments.md](architecture/attachments.md)
 says.
 
-`board put --new <folder>/` writes a record at a new name, as
+`board put --new <folder>/` writes a record at a new name, in its type's
+folder when no folder is given, as
 [architecture/paths/writes.md](architecture/paths/writes.md) says under New names.
 
 `board put --batch` reads at most 10,000 JSON Lines of `{path, expect,

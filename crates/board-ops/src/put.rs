@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use board_model::{
     BINARY_NAME, Classified, Code, Fields, Found, FrontmatterError, JsonError, Lined, Location,
-    LogicalPath, MAX_PATH_BYTES, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Refusal, Role,
-    canonical_json, classify, parse_json,
+    LogicalPath, MAX_PATH_BYTES, MAX_RECORD_BYTES, Object, ObjectId, PathError, RecordType,
+    Refusal, Role, canonical_json, classify, parse_json,
 };
 use board_tree::{
     Directory, GitError, LOCK_WAIT, Lock, PinError, Reader, ResolveError, Resolver, Working,
@@ -376,17 +376,7 @@ impl Board {
         schemas: &mut Schemas<'b>,
         bytes: &[u8],
     ) -> Result<Admitted, Refused> {
-        if bytes.iter().all(u8::is_ascii_whitespace) {
-            return Err(Refused::Empty);
-        }
-        let value = parse_json(bytes)?;
-        let Some(object) = value.as_object() else {
-            return Err(Refused::NotAnObject);
-        };
-        if !object.contains_key("$type") {
-            return Err(Refused::NoType);
-        }
-        Ok(self.admit(schemas, Role::Json.classify(Some(bytes)))?)
+        Ok(self.admit(schemas, checked(bytes)?)?)
     }
 
     /// Judges `classified` as a record, against the schema of its type that
@@ -557,12 +547,11 @@ impl Failure {
 /// A put that wrote nothing, or for `head_moved`, wrote but did not commit.
 #[derive(Debug, thiserror::Error)]
 pub enum PutError {
-    #[error("the record for {path} {}", match refused {
-        Refused::Fault(Fault::Code(_)) => "is refused".to_owned(),
-        Refused::Fault(Fault::Record(error)) => error.to_string(),
-        _ => format!("is refused: {refused}"),
-    })]
+    #[error("the record for {path} {}", said(refused))]
     Record { path: LogicalPath, refused: Refused },
+    /// A record refused before `put --new` found its folder.
+    #[error("the record {}", said(refused))]
+    Unplaced { refused: Refused },
     #[error("{path} is not what --expect says: it holds {}", found.map_or_else(|| "nothing".to_owned(), |blob| blob.to_string()))]
     Stale {
         path: LogicalPath,
@@ -597,6 +586,18 @@ pub enum PutError {
     TooDeep { folder: LogicalPath },
     #[error("every name drawn under {folder} is taken, after {tries} tries")]
     NameTaken { folder: LogicalPath, tries: usize },
+    #[error("{record_type} declares no folder, so `put --new` needs one")]
+    NoFolder { record_type: RecordType },
+    #[error("{record_type} files records under {folder}, and no --var gives {{{var}}}")]
+    FolderUnfilled {
+        record_type: RecordType,
+        folder: String,
+        var: String,
+    },
+    #[error("--var {var} names no placeholder of the folder {folder}")]
+    VarUnused { var: String, folder: String },
+    #[error(transparent)]
+    Path(#[from] PathError),
     #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
@@ -619,7 +620,7 @@ impl PutError {
         match self {
             Self::Stale { .. } => Code::PutStale,
             Self::HeadMoved { .. } => Code::PutHeadMoved,
-            Self::Record { refused, .. } => refused.code(),
+            Self::Record { refused, .. } | Self::Unplaced { refused } => refused.code(),
             Self::Batch { code, .. } | Self::Line { code, .. } => *code,
             Self::TooManyLines => Code::PutInvalid,
             Self::TooLarge { .. } => Code::JsonTooLarge,
@@ -629,6 +630,10 @@ impl PutError {
             Self::NotAFolder { .. } => Code::PutNotAFolder,
             Self::NameTaken { .. } => Code::PutNameTaken,
             Self::TooDeep { .. } => Code::PathMalformed,
+            Self::NoFolder { .. } => Code::PutNoFolder,
+            Self::FolderUnfilled { .. } => Code::PutFolderUnfilled,
+            Self::VarUnused { .. } => Code::PutVarUnused,
+            Self::Path(error) => error.code(),
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
             Self::Type(error) => error.code(),
@@ -643,6 +648,22 @@ impl PutError {
             Self::Record { path, refused } => Fields {
                 path: Some(path.clone()),
                 ..refused.fields()
+            },
+            Self::Unplaced { refused } => refused.fields(),
+            Self::NoFolder { record_type } => Fields {
+                record_type: Some(record_type.clone()),
+                ..Fields::default()
+            },
+            Self::FolderUnfilled {
+                record_type, var, ..
+            } => Fields {
+                record_type: Some(record_type.clone()),
+                var: Some(var.clone()),
+                ..Fields::default()
+            },
+            Self::VarUnused { var, .. } => Fields {
+                var: Some(var.clone()),
+                ..Fields::default()
             },
             Self::Stale { path, found } => Fields {
                 blob: *found,
@@ -670,6 +691,7 @@ impl PutError {
             Self::HeadMoved { .. }
             | Self::Line { .. }
             | Self::TooManyLines
+            | Self::Path(_)
             | Self::Input { .. } => Fields::default(),
         }
     }
@@ -682,14 +704,41 @@ impl PutError {
     }
 }
 
+/// `bytes` classified as a record, once they are one JSON object with a
+/// `$type`; any other input is `put::invalid`.
+pub(crate) fn checked(bytes: &[u8]) -> Result<Classified, Refused> {
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Err(Refused::Empty);
+    }
+    let value = parse_json(bytes)?;
+    let Some(object) = value.as_object() else {
+        return Err(Refused::NotAnObject);
+    };
+    if !object.contains_key("$type") {
+        return Err(Refused::NoType);
+    }
+    Ok(Role::Json.classify(Some(bytes)))
+}
+
+/// What a refused record is, after "the record" or its path.
+fn said(refused: &Refused) -> String {
+    match refused {
+        Refused::Fault(Fault::Code(_)) => "is refused".to_owned(),
+        Refused::Fault(Fault::Record(error)) => error.to_string(),
+        _ => format!("is refused: {refused}"),
+    }
+}
+
 mod batch;
 mod file;
+mod folder;
 mod new;
 mod remove;
 mod through;
 
 pub use batch::MAX_BATCH_LINES;
 pub(crate) use batch::{Checked, ReadLine};
+pub use folder::Vars;
 pub use new::folder_text;
 pub use remove::{Removing, Unmatched};
 use through::{Crossing, Sent};

@@ -82,6 +82,9 @@ codes! {
     PutFailed => "board::put::failed",
     PutNotAFolder => "board::put::not_a_folder",
     PutNameTaken => "board::put::name_taken",
+    PutNoFolder => "board::put::no_folder",
+    PutFolderUnfilled => "board::put::folder_unfilled",
+    PutVarUnused => "board::put::var_unused",
     RmDirectory => "board::rm::directory",
     SyncNoRemote => "board::sync::no_remote",
     SyncFailed => "board::sync::failed",
@@ -260,6 +263,18 @@ mod tests {
         assert_eq!(
             Code::RecordInvalid.hint(&fields),
             "change the value at `/due` so the record satisfies its schema in `.board/types/`"
+        );
+    }
+
+    #[test]
+    fn an_unfilled_folder_hint_names_the_placeholder_it_lacks_and_no_other() {
+        let fields = Fields {
+            var: Some("suite".to_owned()),
+            ..Fields::default()
+        };
+        assert_eq!(
+            Code::PutFolderUnfilled.hint(&fields),
+            "add `--var suite=<value>`"
         );
     }
 

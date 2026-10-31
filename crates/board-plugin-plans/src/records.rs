@@ -15,6 +15,7 @@ use board_plugin::shape::{Record, Ref, Tag};
 /// value in a question.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("x-board-folder" = "/projects/{project}/questions/"))]
 pub struct QuestionRecord {
     /// The record's type.
     #[serde(rename = "$type")]
@@ -84,6 +85,7 @@ pub struct Choice {
 /// a question has one answer. Never put a secret value in an answer.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(extend("x-board-folder" = "/projects/{project}/answers/"))]
 pub struct AnswerRecord {
     /// The record's type.
     #[serde(rename = "$type")]
@@ -136,6 +138,7 @@ pub struct Evidence {
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(extend(
+    "x-board-folder" = "/projects/{project}/decisions/",
     "if" = {"not": {"required": ["written_by"]}},
     "then" = {"properties": {"why": {"minLength": 1}}},
 ))]

@@ -34,6 +34,18 @@ pub(crate) fn expect(text: &str) -> Result<Expect, String> {
         .ok_or_else(|| "must be `none` or a blob id in lowercase hex".to_owned())
 }
 
+/// A `--var <name>=<value>`, whose value fills one segment of a folder.
+pub(crate) fn var(text: &str) -> Result<(String, String), String> {
+    match text.split_once('=') {
+        Some((name, value)) if !name.is_empty() && !value.contains('/') => {
+            Ok((name.to_owned(), value.to_owned()))
+        }
+        _ => Err(
+            "must be `<name>=<value>`, such as project=board, with no / in the value".to_owned(),
+        ),
+    }
+}
+
 /// A plugin's own op, `<plugin>.<capability>`, each part a name.
 pub(crate) fn op(text: &str) -> Result<String, String> {
     matches!(text.parse(), Ok(Target::Named { .. }))

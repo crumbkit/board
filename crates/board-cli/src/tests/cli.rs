@@ -219,6 +219,7 @@ fn every_command_a_hint_names_parses() {
         target: Some("../x.json".to_owned()),
         effect: Some("0123456789abcdef".to_owned()),
         offset: Some(2),
+        var: Some("project".to_owned()),
         refusals: Vec::new(),
     };
     let no_blob = Fields {
