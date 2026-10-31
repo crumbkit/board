@@ -51,7 +51,9 @@ crumbkit/board does. Today the plugin reads controls only from the board's
 own working tree, never from a mounted board. That rule changes for the
 repository a check names: `controls.check --path /repos/<name>` also reads
 the controls in that repository's own board, through the mount at its pinned
-commit, with `board query` and `board get` as for any other record. It reads
+commit, with `board query` and `board get` as for any other record. Their
+`paths` are anchored at that repository's root, so they match beneath
+`/repos/<name>/`, as patterns in a mounted board match today. It reads
 controls as data and runs nothing from the repository. The answer depends
 only on the pinned commit, so it is the same from a cold rebuild.
 

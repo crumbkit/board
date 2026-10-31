@@ -59,8 +59,9 @@ An `artifacts` mod for Claude Code writes the records:
 
 A plugin cannot call the Artifact tool, so artifacts published outside
 Claude Code reach the board through the agent. The plugin's skill has an
-`artifacts sync` step: the agent runs the Artifact `list` action and passes
-the listing to:
+`artifacts sync` step: the agent runs the Artifact `list` action, writes its
+rows as a JSON array of `{url, title, updated}` objects in `listing.json`,
+and passes it to:
 
     jq -c '{account: "<email>", artifacts: .}' listing.json | board call artifacts.import
 

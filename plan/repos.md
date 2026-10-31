@@ -15,7 +15,7 @@ mounts already sit, so existing references keep working.
 ```json
 {
   "$type": "board/repo/v1",
-  "remote": "github.com/crumbkit/board",
+  "remote": "crumbkit/board",
   "checkout": {
     "repo": "~/src/board",
     "follow": "origin/main",
@@ -24,9 +24,9 @@ mounts already sit, so existing references keep working.
 }
 ```
 
-- `remote` is required. It is the host and path of the repository's
-  canonical remote, with no scheme, user or `.git` suffix, so two clones of
-  one repository give the same value.
+- `remote` is required. It is the origin as `board_plugin.repos.shown_remote`
+  already stores it: `owner/name` for GitHub, and otherwise the URL without
+  its user and password. Two clones of one repository give the same value.
 - `remote` is unique: `board check` reports a second record with the same
   `remote` as `board::repo::duplicate_remote`.
 - `checkout` is optional. With it, the record is a mount: `repo`, `follow`
@@ -53,15 +53,18 @@ clone's `origin` remote and, when a known board's repo record has that
 `remote`, runs as that board with `/repos/<name>` as the prefix. Two known
 boards with a record for the same `remote` is `board::config::ambiguous`.
 When no known board has it, Board runs as the `personal` board that
-`config.json` names, with no prefix, and passes the normalised remote to the
-plugin as `BOARD_CALLER_REMOTE`, beside `BOARD_CALLER_DIR`. With no
-`personal` board, the clone stays `board::config::not_found`, as today. No
-plugin reads git for this.
+`config.json` names, with no prefix. With no `personal` board, the clone
+stays `board::config::not_found`, as today.
+
+A plugin learns the caller's repository as the tasks and notes plugins do
+today: `board_plugin.repos.caller_remote()` reads the origin of
+`BOARD_CALLER_DIR`, and the plugin looks up the repo record whose `remote`
+matches.
 
 ## Creating the record
 
 Nobody writes a repo record by hand. `changes.start` creates it from
-`BOARD_CALLER_REMOTE` when the caller's repository has none, at `/repos/<name>`, where `<name>`
+`caller_remote()` when no record has that remote, at `/repos/<name>`, where `<name>`
 is the remote's last path segment. A clash with an existing record of
 another remote is `changes::repo::name_taken`, which suggests `--repo-name`.
 Evals and other records refer to the record once it exists. A mount is added
@@ -86,7 +89,7 @@ use of it. The tests:
 - A repo record without a checkout is a valid reference target and has no
   children.
 - A directory in an unmounted clone runs with its repo record's prefix, and
-  one with no record passes `BOARD_CALLER_REMOTE`.
+  one with no record runs as the personal board.
 - `changes.start` in an unmounted clone creates the record once, and a second
   start reuses it.
 - Each refusal has an admitted twin.

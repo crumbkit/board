@@ -44,8 +44,8 @@ both. The gate has no exemptions, as the owner asked. It reads local
 records only and makes no network call.
 
 This is the mod's first hook that blocks what it watches. Until now every
-hook only recorded, and its header comment says so; this pull request
-changes that comment and gives the reason.
+hook only recorded, and its header comment says so; the runs mod pull
+request changes that comment and gives the reason.
 
 After a pull request is created, the mod writes the change's `opened` record
 with its URL, and stops writing the decision stub it writes today

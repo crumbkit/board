@@ -54,10 +54,10 @@ which brings review accounting into scope.
 
 Every change, decision and artifact is recorded as small records written
 once, and each one's state is derived from which records exist. Build
-[repos](plan/repos.md) first; then [decisions](plan/decisions.md),
-[control scope](plan/control-scope.md) and [artifacts](plan/artifacts.md),
-which are independent; then [work records](plan/work-records.md); then
-[inflight](plan/inflight.md).
+[repos](plan/repos.md), then [decisions](plan/decisions.md) and
+[artifacts](plan/artifacts.md), which are independent; then
+[control scope](plan/control-scope.md); then
+[work records](plan/work-records.md); then [inflight](plan/inflight.md).
 
 ## Out of scope
 

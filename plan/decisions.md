@@ -47,7 +47,7 @@ request", needs no control.
 Nothing on the record changes after it is written. Its state is derived:
 
 - **Awaiting review** while a question whose `for` names the decision is
-  open. This pull request adds `for` to `plans/question/v1`: a list of
+  open. The decisions pull request adds `for` to `plans/question/v1`: a list of
   references to what the question belongs to, beside the prose `blocks`. To ask for a review, the agent writes
   that question; one question whose `for` lists several decisions reviews
   them together.
