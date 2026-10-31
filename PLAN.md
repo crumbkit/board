@@ -59,7 +59,7 @@ plan arrives in its own pull request. Build them in this order.
 
 2. Decisions.
 
-3. Artifacts, independent of decisions.
+3. [Artifacts](plan/artifacts.md), independent of decisions.
 
 4. Control scope.
 
