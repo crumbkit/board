@@ -6,9 +6,8 @@ built in.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
   of `board-plugins` that board-cli enables by default. It generates its
-  capability schemas from Rust structs with schemars
-  (docs/architecture/records/shapes.md). plans and requests generate their
-  record schemas too; evals ships its record schema as a file.
+  capability and record schemas from Rust structs with schemars
+  (docs/architecture/records/shapes.md).
 
 ## The traits
 

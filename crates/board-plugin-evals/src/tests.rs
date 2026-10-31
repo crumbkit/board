@@ -1,8 +1,10 @@
-//! The manifest parses as Board reads it, the shipped schema admits and
-//! refuses what the Python plugin's did, and a capability the plugin does
-//! not offer is refused.
+//! The manifest parses as Board reads it, the committed schema is what the
+//! record struct generates and admits and refuses what the Python plugin's
+//! did, and a capability the plugin does not offer is refused.
 
-use board_model::Code;
+use std::path::Path;
+
+use board_model::{Code, canonical_json};
 use board_ops::{Limit, QueryError, QueryReport, Settings};
 use serde_json::json;
 
@@ -55,7 +57,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     );
     assert!(manifest.run.is_empty());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
-    assert_eq!(types, [EVAL_TYPE]);
+    assert_eq!(types, [EvalRecord::TYPE]);
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
@@ -142,12 +144,38 @@ fn concluded() -> Value {
     })
 }
 
+/// The committed schema file holds, byte for byte, the canonical JSON of the
+/// schema its struct generates. `SNAPSHOTS=overwrite` rewrites the file.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the schema files are goldens, selected and written as crumbkit-test's are"
+)]
+#[test]
+fn the_committed_eval_schema_is_what_its_struct_generates() {
+    let [(record_type, schema)] = &Evals.schemas()[..] else {
+        panic!("one schema")
+    };
+    let file = (Path::new(env!("CARGO_MANIFEST_DIR")).join("types"))
+        .join(format!("{}.schema.json", record_type.as_str()));
+    let generated = canonical_json(schema);
+    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+        std::fs::write(&file, generated.as_bytes()).unwrap();
+    }
+    let committed = std::fs::read(&file).unwrap();
+    assert!(
+        committed == generated.as_bytes(),
+        "{} differs from what its struct generates; run this test with SNAPSHOTS=overwrite:\n{}",
+        file.display(),
+        String::from_utf8_lossy(generated.as_bytes())
+    );
+}
+
 #[test]
 fn the_shipped_schema_finds_each_reference_with_its_type() {
     let [(name, schema)] = &Evals.schemas()[..] else {
         panic!("one schema")
     };
-    assert_eq!(name.as_str(), EVAL_TYPE);
+    assert_eq!(name.as_str(), EvalRecord::TYPE);
     let schema = board_validate::Schema::compile(schema.clone()).unwrap();
     let record = concluded();
     schema.validate(&record).unwrap();
