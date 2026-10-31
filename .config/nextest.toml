@@ -35,6 +35,7 @@ filter = '''
 (package(board-cli) & test(=tests::type_add_reads_a_schema_of_the_record_limit_and_refuses_one_byte_more))
 | (package(board-index) & (test(=tests::a_query_that_runs_too_long_is_stopped_and_a_bounded_one_finishes) | test(=tests::an_index_another_process_holds_past_the_wait_is_replaced_by_one_in_memory)))
 | ((package(board-model) | package(board-plugin-plans)) & test(/::bolero_/))
+| (package(board-model) & test(=pointer::tests::a_record_at_the_size_limit_is_read_as_a_pointer_and_one_byte_over_it_never_is))
 | (package(board-ops) & (
     test(=call::tests::a_plugin_past_its_time_limit_is_stopped_with_the_grandchild_it_started)
   | test(=call::tests::a_plugin_that_traps_sigterm_has_the_grace_period_to_finish_and_one_that_ignores_it_is_killed)

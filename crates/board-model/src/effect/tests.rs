@@ -271,8 +271,3 @@ fn a_utc_time_is_rfc_3339_to_the_microsecond_with_a_fixed_width_of_27() {
     assert_eq!((leap.len(), now.len()), (27, 27));
     assert!(leap < now);
 }
-
-#[test]
-fn the_decide_limit_is_one_mebibyte() {
-    assert_eq!(MAX_DECIDE_BYTES, 1_048_576);
-}

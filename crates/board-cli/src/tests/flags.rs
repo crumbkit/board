@@ -431,8 +431,7 @@ fn help_with(input: &Value) -> String {
 }
 
 #[test]
-fn help_says_stdin_is_read_when_every_property_is_a_flag_but_the_schema_admits_others_and_not_when_it_admits_none()
- {
+fn help_says_stdin_is_read_only_when_the_schema_admits_properties_beyond_its_flags() {
     let before = json!({"before": {"type": "string"}});
     let open = help_with(&json!({"type": "object", "properties": before}));
     assert!(
