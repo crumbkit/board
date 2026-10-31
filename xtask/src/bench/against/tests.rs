@@ -113,3 +113,63 @@ fn each_row_prints_its_verdict_medians_and_rounds_and_a_failure_names_its_arm() 
          skip    base failed (exit 1)  `board check`, warm, nothing changed\n"
     );
 }
+
+#[test]
+fn a_round_that_takes_the_same_time_counts_as_neither_slower_nor_faster() {
+    let base = millis(&[100; 15]);
+    // 11 rounds moved one way, 1 the same and 3 the other way.
+    let moved = |by: u64, back: u64| {
+        let mut new = vec![by; 11];
+        new.push(100);
+        new.extend([back; 3]);
+        judge("x", &base, &millis(&new))
+    };
+    let slower = moved(110, 90);
+    assert_eq!((slower.verdict, slower.slower), (Verdict::Same, 11));
+    assert_eq!(moved(90, 110).verdict, Verdict::Same);
+}
+
+#[test]
+fn a_median_round_exactly_5_percent_slower_or_faster_is_the_same() {
+    // 21 s over 20 s is 1/20, which rounds to the same f64 as 0.05.
+    let judged = |new| judge("x", &[Duration::from_secs(20); 15], &[new; 15]).verdict;
+    assert_eq!(judged(Duration::from_secs(21)), Verdict::Same);
+    assert_eq!(judged(Duration::from_secs(19)), Verdict::Same);
+    assert_eq!(judged(Duration::from_millis(21_001)), Verdict::Slower);
+    assert_eq!(judged(Duration::from_millis(18_999)), Verdict::Faster);
+}
+
+#[test]
+fn every_round_faster_by_less_than_5_percent_is_the_same() {
+    let judged = judge("x", &millis(&[100; 15]), &millis(&[99; 15]));
+    assert_eq!(judged.verdict, Verdict::Same);
+}
+
+/// The base and new arms: `sh` running the row's script, and `true`.
+const SH_AND_TRUE: [&str; 2] = ["/bin/sh", "/usr/bin/true"];
+
+fn host() -> Host {
+    Host {
+        path: "/usr/bin:/bin".into(),
+        home: None,
+        board: PathBuf::new(),
+        data: PathBuf::new(),
+    }
+}
+
+#[test]
+fn a_row_whose_base_command_exits_non_zero_is_failed_with_its_arm_and_code() {
+    let binaries = SH_AND_TRUE.map(PathBuf::from);
+    let rows: Vec<Row> = vec![("x", vec!["-c".into(), "exit 3".into()], false)];
+    let compared = compare(&binaries, &rows, 1, &host()).unwrap();
+    assert_eq!(compared[0].verdict, Verdict::Failed(Arm::Base, 3));
+}
+
+#[test]
+fn a_command_killed_by_a_signal_exits_with_minus_one() {
+    let empty = tempfile::tempdir().unwrap();
+    let arguments = ["-c".into(), "kill -9 $$".into()];
+    let directories = [empty.path(), empty.path()];
+    let (_, exit) = time(Path::new("/bin/sh"), &arguments, directories, &host()).unwrap();
+    assert_eq!(exit, -1);
+}
