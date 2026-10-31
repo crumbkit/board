@@ -66,11 +66,12 @@ to `.board/types/controls/control/v1.schema.json`.
   sum over its files. A `file` control also carries `per: "file"`,
   `largest`, the file with the most usage (`null` when it has no files),
   `used`, that file's usage, and `over`, each file over `max` with its
-  usage, so the error names the files to shorten. `stated` holds the rest, with their `paths`
-  patterns and `files`, the number of their files under the path, so the
-  output stays short; `board get <control>` shows its `applies_to` and
-  `paths`. A stated control never fails the call. It fails, exiting 1, with
-  `controls::budget::exceeded` when a measured control is over budget;
+  usage, so the error names the files to shorten. `stated` holds the rest,
+  with their `paths` patterns and `files`, the number of their files under
+  the path, so the output stays short; `board get <control>` shows its
+  `applies_to` and `paths`. A stated control never fails the call. It
+  fails, exiting 1, with `controls::budget::exceeded` when a measured
+  control is over budget;
   `controls::control::degraded` when Board marks any control degraded, under
   any path; and `controls::file::unreadable` when a measured control reaches
   something that is not a readable file, such as a directory. Each error names

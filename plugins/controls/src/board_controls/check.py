@@ -129,8 +129,10 @@ def _checked(logical: str, record: ControlRecord, files: list[str], reads: dict[
     # The first of the sorted files with the most usage, so ties name the same file every run.
     largest = max(files, key=usage.__getitem__, default=None)
     over = [FileUsed(file=path, used=usage[path]) for path in files if usage[path] > rule["max"]]
-    checked["used"] = usage[largest] if largest else 0
-    checked["per"], checked["largest"], checked["over"] = "file", largest, over
+    checked["used"] = max(usage.values(), default=0)
+    checked["per"] = "file"
+    checked["largest"] = largest
+    checked["over"] = over
     return checked
 
 

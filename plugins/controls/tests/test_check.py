@@ -45,6 +45,7 @@ def test_check_measures_each_budget_control_over_its_files(board: Board) -> None
 
 
 WORDS = 3
+BOTH = 5
 
 
 def over(board: Board, max_words: int) -> dict[str, Any]:
@@ -422,9 +423,6 @@ def test_a_stated_control_counts_a_file_it_reaches_by_reference_and_pattern_once
     assert counted() == [(["docs/*"], 2)]
 
 
-BOTH = 5
-
-
 def per(board: Board, mode: str | None, max_words: int) -> dict[str, Any]:
     """`check` on a three-word and a two-word file, `BOTH` words in all, under a control of `max_words` `per` `mode`."""
     board.write("docs/a.md", "one two three")
@@ -470,6 +468,19 @@ def test_a_per_file_control_fails_naming_each_file_over_it_and_passes_once_that_
     assert failing["over"] == [{"file": "/docs/a.md", "used": WORDS}]
     board.write("docs/a.md", "one two")
     assert board.call("check", {})["data"]["output"]["measured"][0]["over"] == []
+
+
+def test_a_per_file_control_names_the_first_of_equal_files_as_largest_and_lists_every_file_over_it(
+    board: Board,
+) -> None:
+    per(board, "file", 2)
+    board.write("docs/b.md", "four five six")
+    refused = board.call("check", {})
+    assert refused["code"] == "controls::budget::exceeded", refused
+    assert "/controls/docs (each file at most 2 words: /docs/a.md has 3, /docs/b.md has 3)" in refused["message"]
+    [failing] = refused["fields"]["controls"]
+    assert (failing["used"], failing["largest"]) == (WORDS, "/docs/a.md")
+    assert failing["over"] == [{"file": "/docs/a.md", "used": WORDS}, {"file": "/docs/b.md", "used": WORDS}]
 
 
 def test_a_control_naming_per_total_measures_exactly_as_one_naming_no_per(board: Board) -> None:
