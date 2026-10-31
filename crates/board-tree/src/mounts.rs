@@ -81,11 +81,8 @@ pub struct Mounted<F> {
     /// Whether the cache holds its decision under `key`.
     pub kept: bool,
     /// Its entries and the cache's facts about them, or `None` when it was
-    /// not walked. A source is not walked when the scope does not reach it,
-    /// or when its decision is kept and the walk was asked to skip kept
-    /// sources. Discovery walks a source whose pointers the cache does not
-    /// list, to find its mounts, so such a source has `Some` here even when
-    /// the scope does not reach it.
+    /// not walked (see `walk_mounts`); discovery may walk a source the
+    /// scope does not reach.
     pub walked: Option<(Vec<Entry>, F)>,
 }
 
