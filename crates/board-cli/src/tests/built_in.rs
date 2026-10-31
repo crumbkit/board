@@ -1,4 +1,4 @@
-//! The plugins built into the binary, run in-process: plans, beside
+//! The plugins built into the binary, run in-process: plans and requests, beside
 //! installed plugins.
 
 use super::plugins::{TASKS, installed};
@@ -186,4 +186,50 @@ fn call_plans_open_help_lists_its_input_as_flags() {
     ] {
         assert!(help.contains(flag), "{flag}: {help}");
     }
+}
+
+/// A board that enables requests, holding a pending effect at `/x` asked at
+/// `asked`, showing `text`; returns its id.
+fn request(board: &Scenario, text: &str, asked: &str) -> String {
+    let mut effect = board_model::Effect::new(
+        "/b".to_owned(),
+        "review".parse().unwrap(),
+        "review.comment".to_owned(),
+        "/x".to_owned(),
+    )
+    .showing(None, Some(text.to_owned()));
+    effect.asked = Some(asked.to_owned());
+    let id = effect.id();
+    let effect = serde_json::to_string(&effect).unwrap();
+    board.write(&format!("effects/pending/{id}.json"), Item::File(&effect));
+    id
+}
+
+#[test]
+fn call_requests_thread_answers_from_a_warm_index_as_from_a_cold_one_after_a_new_version_and_reply()
+{
+    let board = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    let (output, _) = built_in(board.workdir(), None, &["plugin", "enable", "requests"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let first = request(&board, "one\n", "2026-10-30T09:00:00.000000Z");
+    let cache = tempfile::tempdir().unwrap();
+    let answer = |cache: Option<&Path>| {
+        let arguments = ["--json", "call", "requests.thread", "--effect", &first];
+        let (output, ran) = cached(board.workdir(), None, cache, &arguments);
+        assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        assert_eq!(ran.trace.work.get("started"), Some(&0));
+        json(&output)["data"]["output"].clone()
+    };
+    let before = answer(Some(cache.path()));
+    let second = request(&board, "two\n", "2026-10-30T10:00:00.000000Z");
+    let reply = json!({"$type": "requests/reply/v1", "effect": first, "text": "Shorter."});
+    let path = format!("requests/replies/{first}/20261030T093000Z.json");
+    board.write(&path, Item::File(&reply.to_string()));
+    let warm = answer(Some(cache.path()));
+    assert_ne!(warm, before, "the change is seen");
+    assert_eq!(warm["versions"][1]["id"], json!(second));
+    assert_eq!(warm["replies"][0]["text"], "Shorter.");
+    assert_eq!(warm, answer(None));
 }

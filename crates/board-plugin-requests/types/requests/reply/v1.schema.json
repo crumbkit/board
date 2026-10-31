@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "description": "`requests/reply/v1`: the owner's reply to a pending effect. It approves\nnothing.\n\nIt lives at `/requests/replies/<effect id>/<time>` in the personal board,\nwhere `<time>` is a sortable UTC time such as `20261030T224454Z`, so the\nfile name orders the replies.",
+  "properties": {
+    "$type": {
+      "const": "requests/reply/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "effect": {
+      "description": "The id of the effect the reply answers: 64 lowercase hex digits.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "text": {
+      "description": "What the owner says.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "effect",
+    "text"
+  ],
+  "title": "ReplyRecord",
+  "type": "object"
+}

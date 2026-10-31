@@ -7,4 +7,6 @@ use board_ops::BuiltIn;
 pub const BUILT_IN: BuiltIn = BuiltIn(&[
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
+    #[cfg(feature = "requests")]
+    &board_plugin_requests::Requests,
 ]);
