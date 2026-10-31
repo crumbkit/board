@@ -47,11 +47,13 @@ request", needs no control.
 Nothing on the record changes after it is written. Its state is derived:
 
 - **Awaiting review** while a question whose `for` names the decision is
-  unanswered (plan/work-records.md). To ask for a review, the agent writes
+  open. This pull request adds `for` to `plans/question/v1`: a list of
+  references to what the question belongs to, beside the prose `blocks`. To ask for a review, the agent writes
   that question; one question whose `for` lists several decisions reviews
   them together.
 - **Reviewed** once that question is answered. An agent's later decision
-  that builds on it does not count.
+  that builds on it does not count. A withdrawn question leaves the decision
+  unreviewed until a new question for it is answered.
 - **Superseded** once a later decision lists it in `supersedes`.
 
 ## Capabilities
@@ -91,11 +93,10 @@ it drops `status`, sets `abandoned` from an `abandoned` status, and renames
 `decision` and `mounts`. It writes nothing with `--dry-run`.
 
 The plans hook and the `changes` plan gate read the new type. The runs mod
-stops writing its decision stub in this pull request, so no record of the
-old type is written after the migration, and `plans/decision/v1` is removed
-from the plans plugin. Pull requests opened before plan/inflight.md lands
-are not recorded; the owner's board holds no changes yet, so nothing is
-lost.
+keeps writing its `plans/decision/v1` stub on each `gh pr create` until the
+pull request that writes `opened` records (plan/inflight.md). That pull
+request ends the stub, runs the migration script again for the stubs
+written in between, and removes `plans/decision/v1` from the plans plugin.
 
 ## Build
 

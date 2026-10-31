@@ -16,11 +16,12 @@ An `artifacts` plugin owns two types, each written once.
   "$type": "artifacts/artifact/v1",
   "url": "https://claude.ai/artifact/AbCdEf0123456789xyzQ",
   "account": "owner@example.com",
-  "published": "2026-10-31T18:20:00Z"
+  "first_seen": "2026-10-31T18:20:00Z"
 }
 ```
 
-- `url`, `account` and `published` are required. `<id>` is the
+- `url`, `account` and `first_seen` are required. `first_seen` is the
+  first publish the mod saw, or the listing's update time for an import. `<id>` is the
   last segment of the URL.
 
 `artifacts/version/v1` at `/artifacts/<id>/versions/<version>.json`, with
@@ -33,7 +34,9 @@ the page beside it as `<version>.html` or `<version>.md`:
 - `for` is an optional list of references to the changes, evals or projects
   the version belongs to. The mod sets it from the publishing session's
   `Board:` line or its held change. The artifact belongs to every `for` of
-  its versions, so an artifact can gain one with a later version.
+  its versions, so an artifact can gain one with a later version. The first
+  artifacts build leaves `for` out, since claims and agent records come
+  later; the runs mod pull request adds it (plan/inflight.md).
 - `sha256` is the page's hash, `source` the local file published, and
   `session` and `at` say who published it and when.
 - A document written through a docs connector has no local page, so its

@@ -27,8 +27,8 @@ mounts already sit, so existing references keep working.
 - `remote` is required. It is the host and path of the repository's
   canonical remote, with no scheme, user or `.git` suffix, so two clones of
   one repository give the same value.
-- `checkout` is optional, and `remote` is unique: `board check` reports a
-  second record with the same `remote` as `board::repo::duplicate_remote`.
+- `remote` is unique: `board check` reports a second record with the same
+  `remote` as `board::repo::duplicate_remote`.
 - `checkout` is optional. With it, the record is a mount: `repo`, `follow`
   and `commit` mean exactly what they mean in `board/mount/v1` today, and the
   repository's tree appears beneath `/repos/<name>/`. Without it, the record
@@ -49,11 +49,14 @@ no checkout gets its own type.
 Board already maps the caller's directory to the mount whose `repo` holds
 it, and runs the call with that mount's path as its prefix. `board-tree` now
 also maps a directory in a clone the board does not mount: it reads the
-clone's `origin` remote and, when a repo record has that `remote`, runs with
-`/repos/<name>` as the prefix. When no record has it, Board runs with no
-prefix and passes the normalised remote to the plugin as
-`BOARD_CALLER_REMOTE`, beside `BOARD_CALLER_DIR`. No plugin reads git for
-this.
+clone's `origin` remote and, when a known board's repo record has that
+`remote`, runs as that board with `/repos/<name>` as the prefix. Two known
+boards with a record for the same `remote` is `board::config::ambiguous`.
+When no known board has it, Board runs as the `personal` board that
+`config.json` names, with no prefix, and passes the normalised remote to the
+plugin as `BOARD_CALLER_REMOTE`, beside `BOARD_CALLER_DIR`. With no
+`personal` board, the clone stays `board::config::not_found`, as today. No
+plugin reads git for this.
 
 ## Creating the record
 

@@ -62,7 +62,9 @@ which a change does not need.
 
 It returns, each part bounded and saying what it left out:
 
-- **Changes** that have no `landed` or `dropped` record. Each shows its
+- **Changes** from `changes.open`, each with its step derivation from
+  `changes.next` through `board call`, so the rules live in one plugin. Each
+  shows its
   repository, holder, next step and actor, its subagents, its pull request
   URL when one is open, and the artifacts whose `for` names it.
 - **Agents** that are running, or stalled when `--stopped-at` is given and
@@ -93,7 +95,9 @@ session reads nothing outside the board to learn what was in flight.
 Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
-   request gate, the `opened` record and the end of the decision stub. Its
+   request gate, the `opened` record, the end of the decision stub with the
+   second migration run (plan/decisions.md), and the artifacts mod's `for`
+   (plan/artifacts.md). Its
    tests cover each hook with a twin that is refused or left out.
 2. The `inflight` plugin. Its fixture is a board holding four changes
    stopped at different steps, with running subagents, a waiting question

@@ -28,7 +28,8 @@ its steps in order. Each step has a name, an actor (`agent`, `reviewer` or
 ```
 
 A change's head is the commit that its newest check run or review brief
-names, newest by the run's `started` or the brief's stamp. A run names it in
+names, newest by the run's `started` or the stamp that is the brief's
+`<id>`. A run names it in
 `versions` under the repo record's name; a brief names it as the end of its
 `range`. `done_by` is one of five kinds, each with one rule:
 
@@ -48,10 +49,13 @@ with any other choice leaves the change at approve, and the agent either
 writes a new plan and asks again, or drops the change.
 
 `board call changes.seed` writes `/workflows/personal` (plan, build, review,
-land), `/workflows/work` (approve added after plan) and `/workflows/default`,
-a link (`board/mount/v1` with `path`) to the personal one, when they are
-missing. A repository gets another default from a link at
-`/workflows/repos/<name>`.
+land) and `/workflows/work` (approve added after plan) when they are
+missing. `start` picks a change's workflow from a link (`board/mount/v1`
+with `path`): `/workflows/repos/<name>` for one repository, else
+`/workflows/owners/<owner>` for the remote's owner, such as its GitHub
+organisation. With neither link, `start` refuses with
+`changes::workflow::unchosen`, naming both paths, so a work repository never
+falls into the personal workflow by default. `--workflow` overrides both.
 
 A step that a control adds (plan/control-scope.md), such as
 `security-review`, comes after the last step whose actor is `reviewer` and
@@ -68,19 +72,16 @@ All live under `/changes/<name>/`, except the change itself at
 | change | `title`, `repo` (a repo record), `branch`, `issue`, and the `workflow`, `suite` and `route` resolved at start |
 | `plans/<stamp>` + `.md` | `uses`: references to standards nodes, controls, decisions, evals and other changes. The `.md` holds at most 3,000 words. The newest plan is the current one. |
 | `claims/<stamp>` | `session`. The newest claim's session is the holder. |
+| `files/<head>` | `files`: the repository-relative paths the branch touches at that head |
 | `reviews/<id>/brief`, `report` | as the review plugin has them; the brief gains `step` |
 | `opened` | the pull request URL |
 | `landed` | the merge commit |
 | `dropped` | why the change stopped |
 
-Two existing records gain `for`, a list of references to what they belong
-to, so each stays where its own plugin keeps it:
-
-- A question that blocks a change or asks for a decision's review. `for`
-  holds references, and the existing `blocks` stays as prose. The question's
-  stored `status`, including `withdrawn`, is unchanged.
-- A check run, a `runs/run/v1` in its suite's `runs/`, where `runs.latest`
-  reads it.
+A question that blocks a change names it in `for`, which plan/decisions.md
+adds; the question's stored `status`, including `withdrawn`, is unchanged.
+A check run gains `for` too, and stays a `runs/run/v1` in its suite's
+`runs/`, where `runs.latest` reads it.
 
 `start` sets `route` from CODEOWNERS when the repository has a checkout, as
 today. Without one it cannot read CODEOWNERS and sets `unread`, which is
@@ -94,23 +95,27 @@ distinct from `unowned`, where CODEOWNERS names nobody.
 - **Holder**: the session in the newest claim.
 - **Done**: `landed` or `dropped` exists.
 
-Files touched decide which controls add steps. The caller passes them as
-`files`, as it does to `controls.check`, so `changes.next` and
-`changes.brief` read JSON on stdin when given files. Without them they list
-the steps every control on the repository could add, marked `if touched`.
+Files touched decide which controls add steps. The agent records them once
+per head with `changes.files`, from the same `git diff --name-only` it
+passes to `controls.check`, so every reader, `inflight.now` included,
+derives the same steps. Until a files record exists at the head, the steps
+every control on the repository could add are listed, marked `if touched`.
 
 ## Capabilities
 
-Each takes the change as `--path /changes/<name>`, as today.
+Each takes the change as `--path /changes/<name>`, as today. A plugin's
+environment holds no session id and plugins read no git, so the caller
+passes `--session` and `--branch`, as the tasks plugin takes `owner`.
 
-- `start --title '<title>' [--name <n>] [--handle @<you>] [--issue <url>] [--workflow <w>] [--repo-name <r>]`
+- `start --title '<title>' --session <s> --branch <b> [--name <n>] [--handle @<you>] [--issue <url>] [--workflow <w>] [--repo-name <r>]`
   creates the repo record if needed, then the change and a claim, for the
   caller's repository.
 - `plan` writes a plan from `{path, file, uses}` on stdin, since `uses` is
   an array. It refuses a reference that reaches nothing
   (`changes::ref::dangling`) and a file over 3,000 words
   (`changes::plan::too_long`).
-- `claim` writes a claim for the calling session.
+- `claim --session <s>` writes a claim.
+- `files` writes the files record from `{path, head, files}` on stdin.
 - `next`: read-only. Steps, each done or not with the record that did it,
   the next step and its actor.
 - `brief`: read-only. What an agent needs to start: the plan's path, one
@@ -142,7 +147,8 @@ One pull request in the changes, plans, review and runs plugins. The tests:
 
 - Each kind's rule, with a twin record set that does not satisfy it.
 - A new head undoes the build and review steps.
-- A control's added step appears only when `files` includes a match.
+- A control's added step appears only when the files record at the head
+  includes a match.
 - The holder from two claims is the newer one's session.
 - `brief` stays within 600 words with 100 `uses` and says what it left out.
 

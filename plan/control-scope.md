@@ -30,14 +30,16 @@ personal board and from the repository's own board.
   repository the board does not mount still matches, through files the
   caller names (below).
 - `adds_step` names a workflow step (plan/work-records.md). A change gains
-  the step when any file it touches matches the control.
+  the step when a file in its files record matches the control.
 - `basis` lists the decisions and other records the control rests on.
 
 A control ends when it is deleted, and git history keeps it. A control whose
-`basis` names a decision states that decision's rule as its `requirement`,
-the text agents follow. Both records are written once, so the two cannot
-drift apart. Changing the rule means a new decision that supersedes the old
-one, and a new control citing it in place of the old control.
+`basis` names a decision copies that decision's rule into `requirement` when
+the control is written, and agents follow the requirement. Changing the rule
+means a new decision that supersedes the old one, and a new control citing
+it in place of the old control. Until the old control is deleted,
+`controls.check` marks it `basis_superseded`, so a control that outlives its
+decision is reported.
 
 Existing controls stay valid. Without `repos`, `paths` match from the
 board's root, as today.
@@ -61,8 +63,8 @@ together. Each entry names its `board`.
 
 ## Files the caller names
 
-The index holds a repository's mounted commit, not the files a branch
-changes, and an unmounted repository has no files in the board at all. So
+The index holds a repository's mounted commit. It does not hold the files a
+branch changes, and an unmounted repository has no files in the board. So
 the caller passes the branch's files as `files`, an array of
 repository-relative paths. An array is not a flag, so the input goes on
 stdin as JSON:
@@ -75,8 +77,8 @@ starts.
 
 ## Output
 
-Each control in `stated` and `measured` gains `board`, `adds_step` and
-`basis`. Budget controls keep their measurement. The output stays bounded by
+Each control in `stated` and `measured` gains `board`, `adds_step`,
+`basis` and, when it applies, `basis_superseded`. Budget controls keep their measurement. The output stays bounded by
 default and says what it left out.
 
 ## Build
