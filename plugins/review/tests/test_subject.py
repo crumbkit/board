@@ -62,12 +62,16 @@ def test_a_report_holds_a_range_with_patch_ids_or_a_subject_and_no_mix_of_them(r
     report(repo, "subject", subject=subject)
     report(repo, "both", range=COMMITS, patch_ids=[], subject=subject)
     report(repo, "range-alone", range=COMMITS)
+    report(repo, "range-subject", range=COMMITS, subject=subject)
+    report(repo, "ids-subject", patch_ids=[], subject=subject)
     report(repo, "neither")
     assert checked(repo) == {
         "/reviews/range/report": None,
         "/reviews/subject/report": None,
         "/reviews/both/report": INVALID,
         "/reviews/range-alone/report": INVALID,
+        "/reviews/range-subject/report": INVALID,
+        "/reviews/ids-subject/report": INVALID,
         "/reviews/neither/report": INVALID,
     }
 

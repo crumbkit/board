@@ -3,10 +3,10 @@
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
 change, and records what it found as a report. A brief can instead name a
-record pinned by its blob, such as a plan, and the agent reviews that record. `review.post` comments a report
-on a pull request once the owner approves the comment. `review.covered` checks that a
-committed report covers a pull request's commits, so CI can require a review
-of each pull request.
+record pinned by its blob, such as a plan, and the agent reviews that record.
+`review.post` comments a report on a pull request once the owner approves the
+comment. `review.covered` checks that a committed report covers a pull
+request's commits, so CI can require a review of each pull request.
 
 ## Records
 
@@ -63,9 +63,9 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 - The agent's prompt goes to its model provider. That includes the diff, and
   for a subject brief the whole record. A brief can name any file in the
   board, so keep secrets out of board files.
-- The diff, the record and the brief are untrusted, so run the agent with no tools, MCP
-  servers or project settings. In the example, `--tools ""` loads no built-in
-  tools, `--strict-mcp-config` loads no MCP servers, and
+- The diff, the record and the brief are untrusted, so run the agent with no
+  tools, MCP servers or project settings. In the example, `--tools ""` loads
+  no built-in tools, `--strict-mcp-config` loads no MCP servers, and
   `--setting-sources user` skips the project's settings. A verdict is no
   stronger than the agent's resistance to text in the diff.
 - The answer must end with a JSON object holding `verdict` and `findings`.
@@ -89,7 +89,7 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   subject the record's bytes and the references it makes. It has 30
   minutes, and sees `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` when Board
   has them.
-- Tells the agent that it has no tools, so the diff is all it has.
+- Tells the agent that it has no tools, so the diff or record is all it has.
 - Stops the agent, with every process it started, when it exits, after 29
   minutes with `review::agent::timeout`, or when the plugin gets SIGTERM,
   SIGINT or SIGHUP. After a timeout it reads the agent's output for at most

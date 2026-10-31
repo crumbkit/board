@@ -7,12 +7,12 @@ from pydantic_core import core_schema
 
 from board_review.shapes import (
     AGENT_VARIABLE,
-    BRIEF_TARGET,
     BRIEF_TYPE,
     POST_TIMEOUT,
     REPORT_TARGET,
     REPORT_TYPE,
     RUN_TIMEOUT,
+    TARGET,
     BriefRecord,
     CoveredInput,
     CoveredOutput,
@@ -66,7 +66,7 @@ def manifest() -> dict[str, JsonValue]:
                     " names, and write the report beside the brief."
                 ),
                 "inputSchema": _schema(RunInput),
-                "outputSchema": _schema(RunOutput),
+                "outputSchema": _schema(RunOutput) | TARGET,
                 "_meta": {},
                 "timeout": RUN_TIMEOUT,
                 "env": list[JsonValue](RUN_ENV),
@@ -104,7 +104,7 @@ def manifest() -> dict[str, JsonValue]:
 def schemas() -> dict[str, dict[str, JsonValue]]:
     """The schema of each type the plugin ships, by its path in the plugin's directory."""
     return {
-        f"types/{BRIEF_TYPE}.schema.json": _schema(BriefRecord) | BRIEF_TARGET,
+        f"types/{BRIEF_TYPE}.schema.json": _schema(BriefRecord) | TARGET,
         f"types/{REPORT_TYPE}.schema.json": _schema(ReportRecord) | REPORT_TARGET,
     }
 

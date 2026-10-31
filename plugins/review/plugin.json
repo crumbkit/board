@@ -55,6 +55,18 @@
         },
         "additionalProperties": false,
         "description": "The report written, the commits or record it covers, the verdict and how many findings.",
+        "oneOf": [
+          {
+            "required": [
+              "range"
+            ]
+          },
+          {
+            "required": [
+              "subject"
+            ]
+          }
+        ],
         "properties": {
           "findings": {
             "title": "Findings",

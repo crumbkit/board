@@ -1,6 +1,7 @@
 """`run`: review the range or record a brief names with the agent BOARD_REVIEW_AGENT names, and record the report."""
 
 import contextlib
+import hashlib
 import json
 import os
 import signal
@@ -119,21 +120,22 @@ def _record(board: Board, subject: Subject) -> str:
     """The prompt's part for the subject: its path, blob, the references it makes and its bytes.
 
     Else `review::subject::not_found`, or `review::subject::moved` when the record is no longer at its pinned blob.
+    The bytes are read once and hashed as git hashes a blob, so the agent reads exactly the pinned version.
     """
     record = subject["record"]
     [answer] = board.refs([record])
-    rows = []
-    if answer is not None:
-        location = answer["location"]
-        where = f"source = {literal(str(location['source']))} AND path = {literal(str(location['path']))}"
-        rows = board.rows(f"SELECT blob FROM entries WHERE {where}")  # noqa: S608 - literals quoted
-    if answer is None or not rows or rows[0][0] is None:
+    if answer is None:
         raise PluginError(
             "review::subject::not_found",
             f"no file is at the subject {record}; `board ls` shows what is there, so fix the brief's subject",
             {"record": record},
         )
-    current = str(rows[0][0])
+    [read] = board.get([record])
+    if isinstance(read, PluginError):
+        raise read
+    # A 64-digit pin is a blob of a SHA-256 repository.
+    algorithm = "sha256" if len(subject["blob"]) == 64 else "sha1"  # noqa: PLR2004 - SHA-256's hex length
+    current = hashlib.new(algorithm, b"blob %d\0%b" % (len(read), read)).hexdigest()
     if current != subject["blob"]:
         raise PluginError(
             "review::subject::moved",
@@ -141,9 +143,6 @@ def _record(board: Board, subject: Subject) -> str:
             f" that pins {current} if that version is the one to review",
             {"record": record, "pinned": subject["blob"], "current": current},
         )
-    [read] = board.get([record])
-    if isinstance(read, PluginError):
-        raise read
     references = "".join(f"- {ref['pointer']}: {ref['target']}\n" for ref in answer["from"])
     return (
         f"Record: {record} at {current}\n\nReferences it makes:\n{references or '- none\n'}"

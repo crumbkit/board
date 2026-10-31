@@ -55,10 +55,13 @@ class Subject(TypedDict):
     blob: Blob
 
 
-# A brief reviews a range of commits or a subject, never both.
-BRIEF_TARGET: dict[str, JsonValue] = {"oneOf": [{"required": ["range"]}, {"required": ["subject"]}]}
+# A brief, and a run's output, name a range of commits or a subject, never both.
+TARGET: dict[str, JsonValue] = {"oneOf": [{"required": ["range"]}, {"required": ["subject"]}]}
 # A report covers a range with its patch ids, or a subject, never both.
-REPORT_TARGET: dict[str, JsonValue] = {"oneOf": [{"required": ["range", "patch_ids"]}, {"required": ["subject"]}]}
+REPORT_TARGET: dict[str, JsonValue] = {
+    **TARGET,
+    "dependentRequired": {"range": ["patch_ids"], "patch_ids": ["range"]},
+}
 
 BriefRecord = TypedDict(
     "BriefRecord",
