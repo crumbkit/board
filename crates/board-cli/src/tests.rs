@@ -1589,6 +1589,7 @@ mod built_in;
 mod cli;
 mod complete;
 mod consistency;
+mod decide;
 mod directory;
 mod effects_mod;
 mod flags;

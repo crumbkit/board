@@ -14,6 +14,7 @@ mod scoped;
 mod symlinks;
 mod syncing;
 mod trees;
+mod walking_mounts;
 mod working_tree;
 
 use std::collections::HashSet;

@@ -159,17 +159,15 @@ fn the_record_limit_is_sixteen_mebibytes() {
 }
 
 #[test]
-fn a_record_over_the_size_limit_is_never_read_as_a_pointer() {
-    let small = format!(
-        r#"{{"$type": "board/mount/v1", "path": "/x"}}{}"#,
-        " ".repeat(64)
-    );
-    assert!(pointer(small.as_bytes()).unwrap().is_some());
-    let large = format!(
-        r#"{{"$type": "board/mount/v1", "path": "/x"}}{}"#,
-        " ".repeat(MAX_RECORD_BYTES)
-    );
-    assert_eq!(pointer(large.as_bytes()).unwrap(), None);
+fn a_record_at_the_size_limit_is_read_as_a_pointer_and_one_byte_over_it_never_is() {
+    let sized = |bytes: usize| {
+        let pointer = r#"{"$type": "board/mount/v1", "path": "/x"}"#;
+        format!("{pointer}{}", " ".repeat(bytes - pointer.len()))
+    };
+    let at = sized(MAX_RECORD_BYTES);
+    assert_eq!(pointer(at.as_bytes()).unwrap(), Some(link("/x")));
+    let over = sized(MAX_RECORD_BYTES + 1);
+    assert_eq!(pointer(over.as_bytes()).unwrap(), None);
 }
 
 fn mount(repo: &str) -> String {
