@@ -39,12 +39,18 @@ def post(request: CallRequest) -> PostOutput:
 
 
 def comment(path: str, pr: str, report: ReportRecord) -> str:
-    """The comment for `report`: verdict, author, range, findings and the report it follows, then its target.
+    """The comment for `report`: verdict, author, range or subject, findings and the report it follows, then its target.
 
     An agent wrote the report from an untrusted diff, so every @ is followed by
     a zero-width joiner and mentions no one.
     """
-    lines = [f"**Review: {report['verdict']}** by {report['by']}", "", f"Commits `{report['range']}`.", ""]
+    subject = report.get("subject")
+    reviewed = (
+        f"Record `{subject['record']}` at `{subject['blob']}`."
+        if subject
+        else f"Commits `{cast('dict[str, str]', report)['range']}`."
+    )
+    lines = [f"**Review: {report['verdict']}** by {report['by']}", "", reviewed, ""]
     for finding in report["findings"]:
         where = finding.get("file", "") + (f":{finding['line']}" if "line" in finding else "")
         lines.append(f"- **{finding['severity']}** " + (_code(where) + " " if where else "") + finding["text"])

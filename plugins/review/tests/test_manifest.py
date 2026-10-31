@@ -79,3 +79,10 @@ def test_post_reads_only_ghs_credentials_and_has_a_minute() -> None:
     [post] = [capability for capability in capabilities if capability["name"] == "post"]
     assert post["env"] == ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]
     assert post["timeout"] == 60  # noqa: PLR2004 - the manifest's figure
+
+
+def test_a_runs_output_names_a_range_or_a_subject_as_a_brief_does() -> None:
+    capabilities = cast("list[dict[str, Any]]", manifest()["capabilities"])
+    [run] = [capability for capability in capabilities if capability["name"] == "run"]
+    brief = schemas()["types/review/brief/v1.schema.json"]
+    assert run["outputSchema"]["oneOf"] == brief["oneOf"] == [{"required": ["range"]}, {"required": ["subject"]}]

@@ -2,10 +2,11 @@
 
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
-change, and records what it found as a report. `review.post` comments a report
-on a pull request once the owner approves the comment. `review.covered` checks that a
-committed report covers a pull request's commits, so CI can require a review
-of each pull request.
+change, and records what it found as a report. A brief can instead name a
+record pinned by its blob, such as a plan, and the agent reviews that record.
+`review.post` comments a report on a pull request once the owner approves the
+comment. `review.covered` checks that a committed report covers a pull
+request's commits, so CI can require a review of each pull request.
 
 ## Records
 
@@ -14,11 +15,15 @@ of each pull request.
 - `range`: the commits under review as `base..head`, both full commit ids.
   Nothing else is allowed, so a range cannot pass git an option, and every git
   call also puts `--end-of-options` before revisions.
+- `subject`: the record under review, as `{"record": <board ref>, "blob":
+  <its blob id>}` and no other field. A brief has either `range` or
+  `subject`, never both.
 - `focus`: what matters and what to check first.
 - `questions` (optional): what the author wants answered.
 - `follows` (optional): the report this brief continues from.
 
-`review/report/v1`, one review of a range, at `/reviews/<id>/report`:
+`review/report/v1`, one review of a range or a subject, at
+`/reviews/<id>/report`. It has either `range` and `patch_ids`, or `subject`:
 
 - `range`: the full commit ids reviewed, `base..head`.
 - `patch_ids`: the patch id of each commit in the range that has one, oldest
@@ -31,6 +36,8 @@ of each pull request.
   - A merge or an empty commit has no patch id.
   - For a binary file git hashes the full blob ids, so two binary changes to
     one path get different ids.
+- `subject`: the record reviewed and the blob the review read, copied from
+  the brief.
 - `findings`: each has `severity` (`high`, `medium` or `low`) and `text`, and
   `file` and `line` when it is about one place.
 - `verdict`: `approve`, `changes` or `comment`.
@@ -53,9 +60,12 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   tree, and it must not choose what runs on the reviewer's machine.
 - No shell parses the command. It runs in an empty temporary directory, reads
   the prompt on stdin and prints its answer on stdout.
-- The diff and the brief are untrusted, so run the agent with no tools, MCP
-  servers or project settings. In the example, `--tools ""` loads no built-in
-  tools, `--strict-mcp-config` loads no MCP servers, and
+- The agent's prompt goes to its model provider. That includes the diff, and
+  for a subject brief the whole record. A brief can name any file in the
+  board, so keep secrets out of board files.
+- The diff, the record and the brief are untrusted, so run the agent with no
+  tools, MCP servers or project settings. In the example, `--tools ""` loads
+  no built-in tools, `--strict-mcp-config` loads no MCP servers, and
   `--setting-sources user` skips the project's settings. A verdict is no
   stronger than the agent's resistance to text in the diff.
 - The answer must end with a JSON object holding `verdict` and `findings`.
@@ -71,16 +81,22 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 - Resolves the brief's range with git, and replaces the base with the merge
   base of the base and the head, so commits the base gained after the branch
   point do not show as reverts.
-- Starts the agent with a prompt holding the brief and the diff. It has 30
+- For a subject, reads the record through Board, and fails with
+  `review::subject::moved` when its current blob is not the pinned one, or
+  `review::subject::not_found` when nothing is there. Write a new brief that
+  pins the current blob to review the new version.
+- Starts the agent with a prompt holding the brief and the diff, or for a
+  subject the record's bytes and the references it makes. It has 30
   minutes, and sees `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` when Board
   has them.
-- Tells the agent that it has no tools, so the diff is all it has.
+- Tells the agent that it has no tools, so the diff or record is all it has.
 - Stops the agent, with every process it started, when it exits, after 29
   minutes with `review::agent::timeout`, or when the plugin gets SIGTERM,
   SIGINT or SIGHUP. After a timeout it reads the agent's output for at most
   5 seconds more, in case a process that left the group still holds it.
 - Writes the report at `/reviews/<id>/report` with `board put`, and returns
-  its path, the range, the verdict and the number of findings.
+  its path, the range or the subject, the verdict and the number of findings.
+  A subject report holds the brief's `subject` and no range.
 - Fails with `review::report::exists` when the review already has a report;
   write a new brief whose `follows` names it.
 - Fails with `review::brief::not_found`, `review::agent::not_set`,
@@ -99,11 +115,11 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   returns that URL as `comment` with `posted: false`. A posted report, or
   one recorded from a GitHub review, has one. A report is posted once, to
   the pull request its `source` names.
-- Builds the comment from the report: the verdict, `by`, the range, each
-  finding with its severity, file and line, and the report it follows. A
-  footer names the report and the pull request. Every `@` is followed by a
-  zero-width joiner, so text an agent wrote from an untrusted diff mentions
-  no one.
+- Builds the comment from the report: the verdict, `by`, the range or the
+  subject's record and blob, each finding with its severity, file and line,
+  and the report it follows. A footer names the report and the pull request.
+  Every `@` is followed by a zero-width joiner, so text an agent wrote from an
+  untrusted diff mentions no one.
 - Asks the owner with `board decide --op review.post --path <report> --text -`,
   showing the whole comment. Until the owner approves, it fails with
   `review::board::refused` carrying Board's `board::settings::asked` or
@@ -138,7 +154,8 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
   `reviews/<id>/brief.json` or a `review/report/v1` at
   `reviews/<id>/report.json`. A merge, a commit that adds any other file,
   changes any other field or deletes a file always needs one.
-- A report with the verdict `changes` never covers.
+- A report with the verdict `changes` never covers, and a subject report
+  reviews a record, so it never covers a commit.
 - Another report covers each commit its range contains, and each commit whose
   patch id it lists, as after a rebase. A merge or an empty commit has no
   patch id, so only a range that contains it covers it. Several reports may
