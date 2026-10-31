@@ -185,11 +185,28 @@ dependencies = [
  "board-scenario",
  "board-validate",
  "rustix",
+ "schemars",
  "serde",
  "serde_json",
  "signal-hook",
  "strsim",
  "thiserror",
+]
+
+[[package]]
+name = "board-plugin-evals"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-scenario",
+ "board-validate",
+ "proptest",
+ "rusqlite",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -215,7 +232,6 @@ dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
- "board-plugin-plans",
  "board-scenario",
  "board-validate",
  "schemars",
@@ -228,6 +244,7 @@ name = "board-plugins"
 version = "0.0.0"
 dependencies = [
  "board-ops",
+ "board-plugin-evals",
  "board-plugin-plans",
  "board-plugin-requests",
 ]

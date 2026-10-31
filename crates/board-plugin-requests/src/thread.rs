@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::records::ReplyRecord;
-use board_plugin_plans::shape::Record;
+use board_plugin::shape::Record;
 
 /// Every pending, answered and seen record in the board's own effects
 /// directories. Each file's name is checked against its content in Rust.

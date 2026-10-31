@@ -5,6 +5,8 @@ use board_ops::BuiltIn;
 
 /// Every plugin this build of Board has built in.
 pub const BUILT_IN: BuiltIn = BuiltIn(&[
+    #[cfg(feature = "evals")]
+    &board_plugin_evals::Evals,
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
     #[cfg(feature = "requests")]

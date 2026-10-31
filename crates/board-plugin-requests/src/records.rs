@@ -1,7 +1,7 @@
 //! The record type the plugin ships. Its schema is generated from this
 //! struct; the file under `types/` is that schema, committed.
 
-use board_plugin_plans::shape::{Record, Tag};
+use board_plugin::shape::{Record, Tag};
 use schemars::JsonSchema;
 
 /// `requests/reply/v1`: the owner's reply to a pending effect. It approves
