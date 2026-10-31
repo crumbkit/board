@@ -83,7 +83,8 @@ machine with no clone at that path the mount degrades to
 `board::mount::repo_missing` until M8 (PLAN.md) adds remotes.
 
 A pointer at `dir/name.json` makes `/dir/name` its point: resolution continues
-through it. The semantics are POSIX symlinks':
+through it. Only a plain `.json` record file is a pointer; a schema under
+`.board/types/` holding one is a schema. The semantics are POSIX symlinks':
 
 - Reaching a link restarts at the link's `path` in the board that holds it,
   then continues with the remaining segments. Reaching a mount continues at the

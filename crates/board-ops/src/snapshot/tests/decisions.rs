@@ -351,11 +351,21 @@ fn linked_through(pointer: &str) -> (Scenario, Scenario, Scenario) {
     (scenario, library, target)
 }
 
+/// The code of `notes/n.md` in `scenario`, queried warm through `cache`
+/// after answering as a cold query.
+fn note_code(scenario: &Scenario, cache: &Path) -> Vec<Vec<serde_json::Value>> {
+    query_as(scenario, cache, BUILD);
+    let board = open(scenario);
+    let index = Index::open(Some(cache), board.repository().path()).unwrap();
+    let sql = "SELECT code FROM entries WHERE path = 'notes/n.md'";
+    filled(&board, index).view.query(sql, 1, None).unwrap().rows
+}
+
 #[test]
-fn a_source_linking_through_a_pointer_in_a_schema_file_is_never_kept_and_its_twin_in_a_record_file_is()
+fn a_source_linking_through_a_pointer_in_a_schema_file_is_kept_alone_and_its_twin_in_a_record_file_with_its_mount()
  {
     for (pointer, expected) in [
-        (".board/types/acme/thing/v1.schema.json", 0),
+        (".board/types/acme/thing/v1.schema.json", 1),
         ("things/t.json", 2),
     ] {
         let (scenario, _library, _target) = linked_through(pointer);
@@ -366,20 +376,24 @@ fn a_source_linking_through_a_pointer_in_a_schema_file_is_never_kept_and_its_twi
 }
 
 #[test]
-fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_once_its_repository_is_gone() {
-    let (scenario, _library, target) = linked_through(".board/types/acme/thing/v1.schema.json");
-    let cache = tempfile::tempdir().unwrap();
-    let code = |scenario: &Scenario| {
-        query_as(scenario, cache.path(), BUILD);
-        let board = open(scenario);
-        let index = Index::open(Some(cache.path()), board.repository().path()).unwrap();
-        let sql = "SELECT code FROM entries WHERE path = 'notes/n.md'";
-        filled(&board, index).view.query(sql, 1, None).unwrap().rows
-    };
-    assert_eq!(code(&scenario), [[serde_json::Value::Null]]);
-    assert_eq!(code(&scenario), [[serde_json::Value::Null]]);
-    target.write(".git", Item::Deleted);
-    assert_eq!(code(&scenario), [["board::ref::dangling"]]);
+fn a_link_through_a_pointer_in_a_schema_file_dangles_warm_as_cold_and_its_twin_in_a_record_file_resolves()
+ {
+    for (pointer, code) in [
+        (
+            ".board/types/acme/thing/v1.schema.json",
+            serde_json::json!("board::ref::dangling"),
+        ),
+        ("things/t.json", serde_json::Value::Null),
+    ] {
+        let (scenario, _library, _target) = linked_through(pointer);
+        let cache = tempfile::tempdir().unwrap();
+        assert_eq!(
+            note_code(&scenario, cache.path()),
+            [[code.clone()]],
+            "{pointer}"
+        );
+        assert_eq!(note_code(&scenario, cache.path()), [[code]], "{pointer}");
+    }
 }
 
 #[test]

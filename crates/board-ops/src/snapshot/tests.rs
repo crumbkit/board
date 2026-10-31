@@ -655,9 +655,10 @@ fn led(references: &[Referenced]) -> Vec<(String, Option<(String, usize)>)> {
 }
 
 #[test]
-fn pointer_bytes_at_a_schema_path_a_json_path_and_behind_a_symlink_are_followed_and_a_plain_record_is_not_read()
+fn pointer_bytes_at_a_json_path_and_behind_a_symlink_are_followed_and_at_a_schema_path_or_in_a_plain_record_are_not_read()
  {
-    // Three pointers to the project, each its own blob.
+    // Three pointers to the project, each its own blob. The one at a
+    // schema path is a schema, so a reference to it ends there.
     let to_p = |pad: usize| {
         let pad = " ".repeat(pad);
         format!(r#"{{"$type": "board/mount/v1", "path": "/projects/p"}}{pad}"#)
@@ -692,12 +693,17 @@ fn pointer_bytes_at_a_schema_path_a_json_path_and_behind_a_symlink_are_followed_
             "tasks/d.json".to_owned(),
             Some(("projects/p.json".to_owned(), 0)),
         );
+        let schema = (
+            "tasks/a.json".to_owned(),
+            Some((".board/types/lr/ln/v1.schema.json".to_owned(), 0)),
+        );
         assert_eq!(
             led(&snapshot.references),
-            [through("a"), through("b"), through("c"), direct]
+            [schema, through("b"), through("c"), direct]
         );
-        // Each pointer once, and not the project its facts call plain.
-        assert_eq!(snapshot.report.work.pointers_read, 3);
+        // Each pointer once, and neither the schema nor the project its
+        // facts call plain.
+        assert_eq!(snapshot.report.work.pointers_read, 2);
     }
 }
 

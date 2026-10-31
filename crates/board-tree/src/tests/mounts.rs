@@ -518,6 +518,27 @@ fn a_commit_descends_from_an_ancestor_found_within_the_limit_and_not_beyond_it()
 }
 
 #[test]
+fn a_link_through_a_mount_in_a_schema_file_dangles_and_through_one_in_a_record_file_crosses() {
+    let inner = Scenario::new();
+    let pinned = inner.commit(&[("x.json", "1")]);
+    let to_inner = mount(&inner.path(), pinned);
+    for (pointer, expected) in [
+        (
+            ".board/types/acme/thing/v1.schema.json",
+            Err(Code::RefDangling),
+        ),
+        ("things/t.json", Ok(Source::Commit(pinned))),
+    ] {
+        let outer = Scenario::new();
+        let through = pointer.strip_suffix(".json").unwrap();
+        let to_x = link(&format!("/{through}/x"));
+        let commit = outer.commit(&[(pointer, &to_inner), ("l.json", &to_x)]);
+        let reached = resolve(&outer, commit, "/l").map(|location| location.board.source);
+        assert_eq!(reached, expected, "{pointer}");
+    }
+}
+
+#[test]
 fn pinning_a_link_is_refused_naming_the_link_and_pinning_a_mount_is_admitted() {
     let inner = Scenario::new();
     let pinned = inner.commit(&[("x.json", "1")]);

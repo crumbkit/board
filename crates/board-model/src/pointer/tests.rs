@@ -81,6 +81,22 @@ fn only_a_json_file_that_parsed_and_is_no_pointer_is_known_to_hold_none() {
     }
 }
 
+#[test]
+fn a_pointer_in_a_schema_or_markdown_file_is_no_pointer_and_its_twin_in_a_record_file_is() {
+    let bytes = br#"{"$type": "board/mount/v1", "path": "/x"}"#;
+    for (path, holds) in [
+        ("things/t.json", true),
+        (".board/types/acme/thing/v1.schema.json", false),
+        (".board/types/board/thing/v1.schema.json", false),
+        ("notes/n.md", false),
+        (".json", false),
+    ] {
+        let kind = crate::classify(path, Some(bytes)).content.kind();
+        assert_eq!(can_hold_pointer(path), holds, "{path}");
+        assert_eq!(kind == Kind::Pointer, holds, "{path}");
+    }
+}
+
 fn link(path: &str) -> Pointer {
     Pointer::Link(path.parse().unwrap())
 }
