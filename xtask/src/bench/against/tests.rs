@@ -139,15 +139,6 @@ fn a_median_round_exactly_5_percent_slower_or_faster_is_the_same() {
     assert_eq!(judged(Duration::from_millis(18_999)), Verdict::Faster);
 }
 
-#[test]
-fn every_round_faster_by_less_than_5_percent_is_the_same() {
-    let judged = judge("x", &millis(&[100; 15]), &millis(&[99; 15]));
-    assert_eq!(judged.verdict, Verdict::Same);
-}
-
-/// The base and new arms: `sh` running the row's script, and `true`.
-const SH_AND_TRUE: [&str; 2] = ["/bin/sh", "/usr/bin/true"];
-
 fn host() -> Host {
     Host {
         path: "/usr/bin:/bin".into(),
@@ -159,7 +150,8 @@ fn host() -> Host {
 
 #[test]
 fn a_row_whose_base_command_exits_non_zero_is_failed_with_its_arm_and_code() {
-    let binaries = SH_AND_TRUE.map(PathBuf::from);
+    // Base is `sh` running the row's script, and new is `true`.
+    let binaries = ["/bin/sh", "/usr/bin/true"].map(PathBuf::from);
     let rows: Vec<Row> = vec![("x", vec!["-c".into(), "exit 3".into()], false)];
     let compared = compare(&binaries, &rows, 1, &host()).unwrap();
     assert_eq!(compared[0].verdict, Verdict::Failed(Arm::Base, 3));

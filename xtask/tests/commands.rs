@@ -28,7 +28,7 @@ fn lint_with_an_extra_argument_prints_the_usage_and_lint_alone_lints() {
 }
 
 #[test]
-fn profile_runs_and_is_refused_without_samply_on_path() {
+fn profile_without_samply_on_path_is_refused_with_no_samply() {
     let output = xtask(&["profile", "--", "check"]).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert_eq!(output.status.code(), Some(1), "{stderr}");
