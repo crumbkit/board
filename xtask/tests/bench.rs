@@ -30,20 +30,20 @@ fn bench_times_a_generated_board_and_skips_the_plugin_call_without_uv() {
     );
 }
 
-/// `xtask bench --against` the `board` beside xtask, with a `cargo` that
-/// builds nothing and a target directory holding `release/board` when
-/// `built`.
+/// `xtask bench --against` a `board` that is `true`, with a `cargo` that
+/// builds nothing and a target directory holding `release/board`, also
+/// `true`, when `built`. Testing xtask alone, as the slow lane's mutants
+/// jobs do, builds no real `board`.
 fn against(built: bool) -> std::io::Result<std::process::Output> {
-    let xtask = std::path::Path::new(env!("CARGO_BIN_EXE_xtask"));
-    let board = xtask.with_file_name("board");
+    let board = std::path::Path::new("/usr/bin/true");
     let target = tempfile::tempdir()?;
     if built {
         std::fs::create_dir(target.path().join("release"))?;
-        std::os::unix::fs::symlink(&board, target.path().join("release/board"))?;
+        std::os::unix::fs::symlink(board, target.path().join("release/board"))?;
     }
-    Command::new(xtask)
+    Command::new(env!("CARGO_BIN_EXE_xtask"))
         .args(["bench", "--records", "20", "--runs", "3", "--against"])
-        .arg(&board)
+        .arg(board)
         .env("PATH", "")
         .env("CARGO", "/usr/bin/true")
         .env("CARGO_TARGET_DIR", target.path())
