@@ -385,15 +385,15 @@ fn content_over_the_limit_is_refused_as_too_large_and_content_at_it_is_admitted(
 #[test]
 fn a_record_whose_canonical_json_is_over_the_limit_is_refused_though_its_input_is_under_it_and_a_smaller_one_is_admitted()
  {
-    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 20);
+    let shows = |input: &str| super::decide::shows(Some(&Shown::Record(input.into())), 13);
     // 11 bytes in, 37 bytes pretty-printed.
     let nested = shows(r#"{"a":[[1]]}"#).unwrap_err();
     assert_eq!(nested.code(), Code::JsonTooLarge);
     assert_eq!(
         nested.to_string(),
-        "the record to decide on is over the limit of 20 bytes"
+        "the record to decide on is over the limit of 13 bytes"
     );
-    // 7 bytes in, 13 bytes pretty-printed.
+    // 7 bytes in, 13 bytes pretty-printed: exactly the limit.
     assert_eq!(shows(r#"{"a":1}"#).unwrap(), (Some(json!({"a": 1})), None));
 }
 
@@ -1251,4 +1251,58 @@ fn an_owners_removal_of_the_board_config_is_refused_unless_they_sign_it_and_a_pu
     put(&declining, "/.board/board", &config).unwrap();
     rm(&owned(&mine, &mine, Some(&keep)), "/.board/board").unwrap();
     assert!(!exists(&mine, ".board/board.json"));
+}
+
+#[test]
+fn content_over_the_limit_or_not_a_record_hints_at_what_a_decide_shows_and_text_that_is_not_utf8_keeps_its_codes_hint()
+ {
+    let refused = |shown: Shown| {
+        let refusal = super::decide::shows(Some(&shown), 4).unwrap_err().refusal();
+        (refusal.code.as_str().to_owned(), refusal.hint.unwrap())
+    };
+    for shown in [text("abcde"), Shown::Record(b"[]".to_vec())] {
+        let (code, hint) = refused(shown);
+        assert!(
+            hint.starts_with("a decide shows the owner"),
+            "{code}: {hint}"
+        );
+    }
+    let (_, hint) = refused(Shown::Text(vec![0xff]));
+    assert_eq!(
+        hint,
+        Code::JsonNotUtf8.hint(&board_model::Fields::default())
+    );
+}
+
+#[test]
+fn an_owners_file_put_under_effects_shows_them_the_files_own_text_to_sign() {
+    let mine = personal();
+    let (tools, _decline, keep) = owner_signers();
+    let bytes = b"why the answers are as they are\n";
+    let signing = owned(&mine, &mine, Some(&keep));
+    (signing.put_file(&path("/effects/why.md"), Expect::Any, bytes)).unwrap();
+    let shown = std::fs::read_to_string(tools.workdir().join("shown")).unwrap();
+    let root = mine.workdir().canonicalize().unwrap();
+    assert_eq!(
+        shown,
+        format!(
+            "{WRITE_HEADER}\nop: put\npath: /effects/why.md\nboard: {}\n\
+             content: 32 bytes in 2 lines\nwhy the answers are as they are\n\n",
+            root.display()
+        )
+    );
+}
+
+#[test]
+fn deciding_through_a_link_on_a_file_that_is_not_a_record_names_the_file_and_its_twin_names_it_too()
+{
+    let (scenario, mine) = (board(), personal());
+    scenario
+        .write("l.json", Item::File(&link("/pulls")))
+        .write("pulls/a.md", Item::File("a\n"));
+    let plugin = opened(&scenario, Some("review"), Some(&mine));
+    for at in ["/l/a.md", "/pulls/a.md"] {
+        let id = asked(decide(&plugin, at));
+        assert_eq!(pending_effect(&mine, &id).path, "/pulls/a.md", "{at}");
+    }
 }

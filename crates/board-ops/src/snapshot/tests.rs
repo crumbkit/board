@@ -40,6 +40,7 @@ fn filled(board: &crate::Board, index: Index) -> Filled {
     }
 }
 
+mod cache;
 mod decisions;
 mod mounts;
 

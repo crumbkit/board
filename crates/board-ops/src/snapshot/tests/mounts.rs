@@ -120,6 +120,11 @@ fn a_check_opens_a_repository_two_mounts_name_once_and_counts_it_and_the_pointer
     // The pointer in the working tree. The project the mounted task refers
     // to is not read, because its facts say it holds no pointer.
     assert_eq!(work.pointers_read, 1);
+    assert_eq!(
+        board.check(None, None).unwrap().work.repositories,
+        0,
+        "a second check opens none"
+    );
 }
 
 #[test]
