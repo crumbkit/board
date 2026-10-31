@@ -2,7 +2,6 @@
 
 use std::ffi::OsString;
 use std::io::Read;
-use std::time::Duration;
 
 use board_model::{Code, LogicalPath, MAX_RECORD_BYTES, RecordType, Refusal};
 use board_ops::{Board, Expect};
@@ -13,7 +12,7 @@ use serde_json::{Map, Value};
 use crate::config::Context;
 use crate::render::{self, Printer};
 use crate::report::Output;
-use crate::run::{plain, plugins};
+use crate::run::{Prefix, Putting, plain, plugins, read, read_folder};
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum TypeCommand {
@@ -33,32 +32,60 @@ Examples:
     },
 }
 
-/// `put <path>`: the record on stdin, or with `file`, stdin as a file,
-/// read whole, since a file past the record bound may go to the store.
+/// Where a put writes: each line of a batch, a new name in a folder, or a
+/// path.
+enum At {
+    Batch,
+    New(LogicalPath),
+    Path(LogicalPath),
+}
+
+/// `put`: a batch on stdin, or the record on stdin at a path or a new name
+/// in a folder, or with `file`, stdin as a file, read whole, since a file
+/// past the record bound may go to the store.
 pub(crate) fn put(
     board: &Board,
     printer: Printer,
-    path: &LogicalPath,
-    expect: Option<Expect>,
-    file: bool,
-    wait: Duration,
+    prefix: Option<&Prefix>,
+    putting: Putting,
     stdin: &mut dyn Read,
 ) -> Output {
-    let read = if file {
-        let mut bytes = Vec::new();
-        stdin.read_to_end(&mut bytes).map(|_| bytes)
-    } else {
-        bounded(stdin)
+    let Putting {
+        path,
+        new,
+        expect,
+        batch,
+        file,
+        wait,
+    } = putting;
+    let at = match (path, new) {
+        _ if batch => Ok(At::Batch),
+        (Some(path), _) => read(prefix, &path, "put").map(At::Path),
+        (None, Some(folder)) => read_folder(prefix, &folder).map(At::New),
+        (None, None) => unreachable!("clap requires a path, --new or --batch"),
+    };
+    let at = match at {
+        Ok(at) => at,
+        Err(refusal) => return render::refused(printer, *refusal),
+    };
+    let read = match at {
+        At::Batch => Ok(Vec::new()),
+        At::Path(_) if file => {
+            let mut bytes = Vec::new();
+            stdin.read_to_end(&mut bytes).map(|_| bytes)
+        }
+        At::Path(_) | At::New(_) => bounded(stdin),
     };
     let bytes = match read.map_err(|error| unreadable(Code::RepoUnreadable, &error)) {
         Ok(bytes) => bytes,
         Err(refusal) => return render::refused(printer, refusal),
     };
     let expect = expect.unwrap_or(Expect::Any);
-    let written = if file {
-        board.put_file_waiting(path, expect, &bytes, wait)
-    } else {
-        board.put_waiting(path, expect, &bytes, wait)
+    let written = match &at {
+        At::Batch => board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait),
+        At::New(folder) => board.put_new_waiting(folder, &bytes, wait),
+        At::Path(path) if file => board.put_file_waiting(path, expect, &bytes, wait),
+        At::Path(path) => board.put_waiting(path, expect, &bytes, wait),
     };
     match written {
         Ok(report) => render::put(printer, &report, None),

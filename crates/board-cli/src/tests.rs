@@ -1289,6 +1289,132 @@ fn put_needs_a_path_or_batch_and_not_both() {
 }
 
 #[test]
+fn put_new_names_the_record_in_its_folder_and_prints_the_path_it_chose() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let wrote = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "/projects/"],
+        record,
+    );
+    assert_eq!(wrote.code, 0, "{}", text(&wrote.stderr));
+    let printed = text(&wrote.stdout);
+    let lines: Vec<&str> = printed.lines().collect();
+    let words: Vec<&str> = lines[0].split(' ').collect();
+    assert_eq!((words[0], words.len()), ("wrote", 3), "{printed}");
+    let name = words[1].strip_prefix("/projects/").unwrap();
+    let (minute, suffix) = name.split_once('-').unwrap();
+    assert_eq!(
+        (minute.len(), &minute[8..9], &minute[13..]),
+        (14, "T", "Z"),
+        "{name}"
+    );
+    assert!(
+        minute.bytes().filter(u8::is_ascii_digit).count() == 12,
+        "{name}"
+    );
+    assert!(
+        suffix.len() == 4
+            && suffix
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    );
+    assert_eq!(lines.len(), 1, "{printed}");
+    assert!(
+        scenario
+            .workdir()
+            .join(format!("projects/{name}.json"))
+            .exists()
+    );
+    let report = json(&board_with(
+        &scenario.workdir().join("projects"),
+        None,
+        &["put", "--new", "./", "--json"],
+        record,
+    ));
+    let display = report["data"]["writes"][0]["display"].as_str().unwrap();
+    assert!(display.starts_with("/projects/2"), "{display}");
+    assert_eq!(report["data"]["writes"][0]["previous"], Value::Null);
+}
+
+#[test]
+fn put_new_refuses_a_folder_without_its_slash_naming_the_fix_and_its_twin_is_admitted() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    let refused = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "/projects"],
+        record,
+    );
+    assert_eq!(refused.code, 1);
+    assert_eq!(
+        text(&refused.stderr),
+        "error: --new takes a folder, and /projects does not end in /\n\
+         \x20 help:  add the trailing slash: `board put --new /projects/`\n\
+         \x20 code:  board::put::not_a_folder\n"
+    );
+    let document = json(&board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "/projects", "--json"],
+        record,
+    ));
+    assert_eq!(document["code"], "board::put::not_a_folder");
+    assert_eq!(document["fields"]["path"], "/projects");
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "/projects/"],
+        record,
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
+fn put_new_takes_no_path_expect_batch_or_file() {
+    let scenario = board();
+    scenario.write(
+        ".board/board.json",
+        Item::File(r#"{"$type": "board/config/v1", "commit_on_put": false}"#),
+    );
+    let record = br#"{"$type": "lr/project/v1"}"#;
+    for arguments in [
+        &["put", "--new", "/projects/", "/projects/a"][..],
+        &["put", "--new", "/projects/", "--expect", "none"],
+        &["put", "--new", "/projects/", "--batch"],
+        &["put", "--new", "/projects/", "--file"],
+    ] {
+        let output = board_with(scenario.workdir(), None, arguments, record);
+        assert_eq!(output.code, 2, "{arguments:?}");
+        let json_arguments = [arguments, &["--json"]].concat();
+        let document = json(&board_with(
+            scenario.workdir(),
+            None,
+            &json_arguments,
+            record,
+        ));
+        assert_eq!(document["code"], "board::cli::usage", "{arguments:?}");
+    }
+    let admitted = board_with(
+        scenario.workdir(),
+        None,
+        &["put", "--new", "/projects/"],
+        record,
+    );
+    assert_eq!(admitted.code, 0, "{}", text(&admitted.stderr));
+}
+
+#[test]
 fn mount_update_reports_the_move_and_then_that_it_is_there() {
     let library = Scenario::new();
     let old = library.commit(&[("a.md", "one")]);

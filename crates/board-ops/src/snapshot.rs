@@ -158,7 +158,7 @@ impl Board {
         )?;
         drop(timed);
         let _timed = self.timed("snapshot.decide");
-        let scopes = mounts.scopes(scope);
+        let scopes = &mounts.scopes;
         let facts = mounts
             .sources
             .iter()
@@ -179,7 +179,7 @@ impl Board {
             failed: Cell::new(false),
         };
         for entry in &refresh.entries {
-            if !in_scope(&scopes, &Source::WorkingTree, entry.logical.as_ref()) {
+            if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
                 continue;
             }
             // A symlink is committed when its own blob is.
@@ -218,7 +218,7 @@ impl Board {
                 writer.reach(&source, key, &mounted.scan)?;
                 continue;
             };
-            let read = (writer, &plain, &scopes);
+            let read = (writer, &plain, scopes);
             work.pointers_read += self.decide_mounted(read, mounted, walked, &mut decided)?;
         }
         record(&mounts, writer, self.repository())?;

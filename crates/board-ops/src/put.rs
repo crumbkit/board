@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use board_model::{
     BINARY_NAME, Classified, Code, Fields, Found, FrontmatterError, JsonError, Lined, Location,
-    LogicalPath, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Refusal, Role, canonical_json,
-    classify, parse_json,
+    LogicalPath, MAX_PATH_BYTES, MAX_RECORD_BYTES, Object, ObjectId, RecordType, Refusal, Role,
+    canonical_json, classify, parse_json,
 };
 use board_tree::{
     Directory, GitError, LOCK_WAIT, Lock, PinError, Reader, ResolveError, Resolver, Working,
@@ -591,6 +591,12 @@ pub enum PutError {
         location: String,
         source: std::io::Error,
     },
+    #[error("--new takes a folder, and {folder} does not end in /")]
+    NotAFolder { folder: LogicalPath },
+    #[error("a new name under {folder} would take its path over {MAX_PATH_BYTES} bytes")]
+    TooDeep { folder: LogicalPath },
+    #[error("every name drawn under {folder} is taken, after {tries} tries")]
+    NameTaken { folder: LogicalPath, tries: usize },
     #[error(transparent)]
     Write(#[from] WriteError),
     #[error(transparent)]
@@ -620,6 +626,9 @@ impl PutError {
             Self::Nul { .. } => Code::PutNul,
             Self::Input { .. } => Code::RepoUnreadable,
             Self::Upload { .. } => Code::PutFailed,
+            Self::NotAFolder { .. } => Code::PutNotAFolder,
+            Self::NameTaken { .. } => Code::PutNameTaken,
+            Self::TooDeep { .. } => Code::PathMalformed,
             Self::Write(error) => error.code(),
             Self::Mount(error) => error.code(),
             Self::Type(error) => error.code(),
@@ -645,6 +654,11 @@ impl PutError {
                 ..Fields::default()
             },
             Self::TooLarge { path, .. } | Self::Upload { path, .. } => Fields::at(path),
+            Self::NotAFolder { folder } | Self::NameTaken { folder, .. } => Fields::at(folder),
+            Self::TooDeep { folder } => Fields {
+                directory: Some(folder.as_str().trim_start_matches('/').to_owned()),
+                ..Fields::at(folder)
+            },
             Self::Nul { path, offset } => Fields {
                 offset: Some(*offset),
                 ..Fields::at(path)
@@ -670,11 +684,13 @@ impl PutError {
 
 mod batch;
 mod file;
+mod new;
 mod remove;
 mod through;
 
 pub use batch::MAX_BATCH_LINES;
 pub(crate) use batch::{Checked, ReadLine};
+pub use new::folder_text;
 pub use remove::{Removing, Unmatched};
 use through::{Crossing, Sent};
 

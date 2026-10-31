@@ -169,6 +169,15 @@ impl Row for Flagged {
     fn text_line(&self) -> Option<String> {
         self.0.text_line()
     }
+
+    /// As crumbkit's default reads `code`, without serializing the row.
+    fn is_problem(&self) -> bool {
+        match self.0.value.get("code") {
+            None | Some(Value::Null | Value::Bool(false)) => false,
+            Some(Value::String(text)) => !text.is_empty(),
+            Some(_) => true,
+        }
+    }
 }
 
 /// One line of a note on stderr beside a result.

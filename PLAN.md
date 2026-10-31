@@ -29,9 +29,8 @@ The index keeps each mounted source's decision
 owner's board with 24 mounts, a warm `call plans.open --limit 20` takes
 about 47 ms, down from 96 ms, which meets the 50 ms target.
 
-A scoped run walks only the mounts its scope reaches, so a warm `check
-/controls` there takes about 38 ms, down from 59 ms. Compiling manifest
-schemas once per run would save `call` 3 to 4 ms, in its own pull request.
+Compiling manifest schemas once per run would save `call` 3 to 4 ms, in
+its own pull request.
 
 ## Then: runs
 

@@ -82,9 +82,11 @@ pub struct Mounted<F> {
     pub kept: bool,
     /// Whether the scope holds all of it on some route.
     pub whole: bool,
-    /// Its entries and the cache's facts about them, or `None` when the
-    /// scope does not reach it, or it is kept and the walk was asked to
-    /// skip what is kept.
+    /// Its entries and the cache's facts about them, or `None` when it was
+    /// not walked: the scope does not reach it, or it is kept, the scope
+    /// holds all of it, and the walk was asked to skip what is kept. A
+    /// source that discovery walked to find its mounts holds them even when
+    /// the scope does not reach it.
     pub walked: Option<(Vec<Entry>, F)>,
 }
 
@@ -127,6 +129,8 @@ pub struct Reached<F> {
     probes: Vec<Probe>,
     /// Each source holding a pointer whose blob could not be read.
     unread: Vec<Source>,
+    /// What remains of the scope at each source's root.
+    pub scopes: Scopes,
 }
 
 /// A mount found but not yet walked.
@@ -143,8 +147,9 @@ impl Repositories {
     /// mounted commit's trees that `cache` does not hold are stored in it,
     /// then walked from it. A repository that several pointers name is
     /// opened once. A source whose pointers `cache` lists is walked only
-    /// when `scope` reaches it, and its decision is not kept or `scope`
-    /// holds only part of it, or when `skip_kept` is false. `build` names the code that decides, for the
+    /// when `scope` reaches it, and, when `skip_kept`, its decision is not
+    /// kept or `scope` holds only part of it. `build` names the code that
+    /// decides, for the
     /// keys; with an empty `build` nothing is read from or stored in the
     /// cache's pointer lists or kept decisions.
     pub fn walk_mounts<C: Cache>(
@@ -161,6 +166,7 @@ impl Repositories {
             edges: Vec::new(),
             probes: Vec::new(),
             unread: Vec::new(),
+            scopes: HashMap::new(),
         };
         let keeping = !build.is_empty();
         let mut candidates = Vec::new();
@@ -224,13 +230,14 @@ impl Repositories {
         if keeping {
             reached.key(build);
         }
-        let scopes = reached.scopes(scope);
+        reached.scopes = reached.scopes(scope);
         for mounted in &mut reached.sources {
             mounted.kept = mounted.key.as_ref().is_some_and(|key| cache.kept(key));
-            let states = scopes.get(&Source::Commit(mounted.commit));
+            let states = reached.scopes.get(&Source::Commit(mounted.commit));
             mounted.whole = states.is_some_and(|states| states.contains(&None));
             let wanted = states.is_some();
-            if mounted.walked.is_none() && wanted && !(skip_kept && mounted.kept && mounted.whole) {
+            let skip = skip_kept && mounted.kept && mounted.whole;
+            if mounted.walked.is_none() && wanted && !skip {
                 let walked = walk(&mounted.repository, mounted.commit, mounted.root, cache)?;
                 mounted.walked = Some(walked);
             }
@@ -459,7 +466,7 @@ impl<F> Reached<F> {
     /// For each source, what remains of `scope` at its root on each route
     /// that reaches it: `None` when the whole source is in scope. Without a
     /// scope, every source is wholly in it.
-    pub fn scopes(&self, scope: Option<&LogicalPath>) -> Scopes {
+    fn scopes(&self, scope: Option<&LogicalPath>) -> Scopes {
         let mut scopes: Scopes = HashMap::new();
         let start = scope.map(|scope| scope.segments().map(str::to_owned).collect());
         let mut pending = vec![(Source::WorkingTree, start)];

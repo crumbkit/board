@@ -1111,3 +1111,31 @@ fn a_batch_through_a_mount_leaves_an_equal_schema_held_through_a_symlink_and_wri
         std::path::Path::new("../../../../schemas/task.json")
     );
 }
+
+#[test]
+fn a_new_record_through_a_mount_draws_again_past_a_name_the_pin_holds() {
+    let (library, _) = library();
+    let commit = commit_in(
+        &library,
+        &[("projects/a.json", r#"{"$type": "lr/project/v1"}"#)],
+    );
+    let scenario = mounting(&library, commit);
+    let mut names = ["b", "a"].map(str::to_owned).to_vec();
+    let report = open(&scenario)
+        .put_named(
+            &path("/vendor/projects"),
+            br#"{"$type": "lr/project/v1"}"#,
+            LOCK_WAIT,
+            &mut || names.pop().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(report.writes[0].display, path("/vendor/projects/b"));
+    assert!(
+        library
+            .head()
+            .unwrap()
+            .files
+            .contains_key("projects/b.json")
+    );
+    assert_eq!(pinned(&scenario), library.head().unwrap().id.to_string());
+}

@@ -9,7 +9,7 @@ use board_model::{
     BINARY_NAME, CapabilityName, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, PathError,
     Refusal,
 };
-use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins};
+use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
 
 /// What a plugin run gets from this command line's context.
@@ -105,6 +105,40 @@ impl From<String> for Given {
     }
 }
 
+/// `put`'s arguments.
+#[derive(Debug, clap::Args)]
+pub(crate) struct Putting {
+    /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
+    #[arg(required_unless_present_any = ["batch", "new"])]
+    pub(crate) path: Option<Given>,
+    /// Write at a new name in this folder, which ends in /
+    ///
+    /// The name is the put's UTC minute and four random hex digits, such as
+    /// 20261030T1405Z-c2e1. The put never overwrites a file, and its report names the path.
+    #[arg(long, value_name = "FOLDER", conflicts_with_all = ["path", "expect", "batch", "file"])]
+    pub(crate) new: Option<Given>,
+    /// The blob the file must hold, or `none` for a new file.
+    #[arg(long, value_parser = expect)]
+    pub(crate) expect: Option<Expect>,
+    /// Read JSON Lines of `{path, expect}` with a record, a text or `remove: true`; apply all or none.
+    ///
+    /// A line `{new, record}` writes the record in the folder `new` names, as --new does. A record line at `/.board/types/<namespace>/<kind>/v<n>.schema` adds that schema and takes
+    /// no expect. Schema lines are checked before the other lines, and a schema the board holds
+    /// is committed if HEAD lacks it, unless a symlink holds it. Every line writes in one board: this board, or the board one mount leads to. A
+    /// batch through a mount commits in the mounted board and moves the mount's pin.
+    #[arg(long, conflicts_with_all = ["path", "expect"])]
+    pub(crate) batch: bool,
+    /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
+    ///
+    /// With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under their digest and
+    /// writes a board/attachment/v1 record.
+    #[arg(long, conflicts_with = "batch")]
+    pub(crate) file: bool,
+    /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
+    #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
+    pub(crate) wait: Duration,
+}
+
 /// `refs`'s arguments.
 #[derive(Debug, clap::Args)]
 struct Refs {
@@ -170,7 +204,7 @@ Examples:
     /// List the references each entry makes and the entries that reach it.
     #[command(after_help = render::REFS_HELP)]
     Refs(Refs),
-    /// Check and write the record on stdin at a path, or a file with --file.
+    /// Write the record on stdin at a path or --new name, or a file with --file.
     #[command(after_help = "\
 The record must satisfy .board/types/<namespace>/<kind>/v<n>.schema.json, the
 schema its `$type` names. Each put is committed unless .board/board.json sets
@@ -179,34 +213,11 @@ schema its `$type` names. Each put is committed unless .board/board.json sets
 Examples:
   board put /tasks/a < task.json
   board put /tasks/a --expect none < task.json
+  board put --new /tasks/ < task.json
   board get /tasks/a | board put /tasks/b
   board put /notes/plan.md --file < plan.md
-  board put --batch < writes.jsonl
-
-With a `store` setting, --file uploads bytes over 1 MiB or not UTF-8 under
-their digest and writes a board/attachment/v1 record.")]
-    Put {
-        /// Where to write: a logical path that leaves out .json, such as /tasks/a, or a from /tasks.
-        #[arg(required_unless_present = "batch")]
-        path: Option<Given>,
-        /// The blob the file must hold, or `none` for a new file.
-        #[arg(long, value_parser = expect)]
-        expect: Option<Expect>,
-        /// Read JSON Lines of `{path, expect}` with a record, a text or `remove: true`; apply all or none.
-        ///
-        /// A record line at `/.board/types/<namespace>/<kind>/v<n>.schema` adds that schema and takes
-        /// no expect. Schema lines are checked before the other lines, and a schema the board holds
-        /// is committed if HEAD lacks it, unless a symlink holds it. Every line writes in one board: this board, or the board one mount leads to. A
-        /// batch through a mount commits in the mounted board and moves the mount's pin.
-        #[arg(long, conflicts_with_all = ["path", "expect"])]
-        batch: bool,
-        /// Write stdin as a file at a path that is its whole name, such as /notes/plan.md.
-        #[arg(long, conflicts_with = "batch")]
-        file: bool,
-        /// How long to wait for the board's lock, with a unit: 500ms, 30s, 2m or 1h.
-        #[arg(long, value_name = "DURATION", value_parser = duration, default_value = "5s")]
-        wait: Duration,
-    },
+  board put --batch < writes.jsonl")]
+    Put(Putting),
     /// Remove the file at a path.
     #[command(after_help = "\
 The path names one file: a record, a file such as /notes/plan.md, or a link
@@ -458,7 +469,7 @@ pub(crate) fn run(
     board.build_in(context.built_in.0);
     // Only a plugin's decide writes in the personal board.
     let asks = match cli.command {
-        Command::Put { .. } | Command::Rm { .. } => Some(false),
+        Command::Put(_) | Command::Rm { .. } => Some(false),
         Command::Decide(_) => Some(context.environment.plugin.is_some()),
         _ => None,
     };
@@ -527,23 +538,7 @@ fn command(
             let paths = or_refuse!(at(&paths, "get"));
             get(board, printer, &paths, fetch)
         }
-        Command::Put {
-            batch: true, wait, ..
-        } => match board.put_batch_waiting(&mut std::io::BufReader::new(stdin), wait) {
-            Ok(report) => render::put(printer, &report, None),
-            Err(error) => render::refused(printer, error.refusal()),
-        },
-        Command::Put {
-            path: Some(path),
-            expect,
-            file,
-            wait,
-            ..
-        } => {
-            let path = or_refuse!(read(prefix, &path, "put"));
-            put(board, printer, &path, expect, file, wait, stdin)
-        }
-        Command::Put { path: None, .. } => unreachable!("clap requires a path without --batch"),
+        Command::Put(putting) => put(board, printer, prefix, putting, stdin),
         Command::Rm {
             path,
             expect,
@@ -630,6 +625,21 @@ pub(crate) fn read(
             );
             Box::new(plain(Code::CliUsage, &message).with_hint(hint))
         })
+}
+
+/// The folder `--new` names, read from `prefix` without its trailing `/`,
+/// or a refusal when it has none.
+pub(crate) fn read_folder(
+    prefix: Option<&Prefix>,
+    given: &Given,
+) -> Result<LogicalPath, Box<Refusal>> {
+    let text = board_ops::folder_text(&given.0);
+    let folder = read(prefix, &Given(text.to_owned()), "put")?;
+    if given.0.ends_with('/') {
+        Ok(folder)
+    } else {
+        Err(Box::new(PutError::NotAFolder { folder }.refusal()))
+    }
 }
 
 /// `text` read from `from` with each `.` and `..` resolved, for a hint only,

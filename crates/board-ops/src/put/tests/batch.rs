@@ -143,8 +143,8 @@ fn a_line_with_both_record_and_text_or_neither_is_refused_and_a_line_with_one_is
     assert_eq!(
         messages[..2],
         [
-            "the line is not {path, expect, record}, {path, expect, text} or {path, expect, remove}: it holds both record and text",
-            "the line is not {path, expect, record}, {path, expect, text} or {path, expect, remove}: it holds no record or text and does not remove",
+            "the line is not {path, expect, record}, {path, expect, text}, {path, expect, remove} or {new, record}: it holds both record and text",
+            "the line is not {path, expect, record}, {path, expect, text}, {path, expect, remove} or {new, record}: it holds no record or text and does not remove",
         ]
     );
     let (code, refusals) = refused(result);

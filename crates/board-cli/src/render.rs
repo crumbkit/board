@@ -105,6 +105,13 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
     let shown = page.limit().unwrap_or(usize::MAX);
     let mut hints = Vec::new();
     let rows = entries.into_iter().enumerate().map(|(at, entry)| {
+        // Past the page, a row is only counted as a problem or not.
+        if at >= shown {
+            return Flagged(Whole::new(match entry.status {
+                Status::Degraded(code) => json!({"code": code.as_str()}),
+                Status::Ok => Value::Null,
+            }));
+        }
         let path = named(&entry.path, entry.logical.as_ref(), entry.status);
         let why = entry.detail.as_ref().map(detail_text).unwrap_or_default();
         let line = format!("{} {path}{why}", Health(entry.status));
@@ -122,9 +129,7 @@ pub(crate) fn check(printer: Printer, report: &CheckReport, page: &crate::run::P
             }
         }
         if let (Some(hint), Some(object)) = (entry.hint(), value.as_object_mut()) {
-            if at < shown {
-                hints.push(format!("hint: {path}: {hint}"));
-            }
+            hints.push(format!("hint: {path}: {hint}"));
             object.insert("hint".to_owned(), json!(hint));
         }
         Flagged(Whole::lined(value, line))

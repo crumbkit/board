@@ -106,6 +106,12 @@ fn a_warm_scoped_ls_walks_only_the_mounts_its_scope_reaches_and_its_wider_twin_w
         "cold: every source is walked to find mounts"
     );
     assert_eq!(walked("/tasks"), 0);
+    let report = open(&scenario).check(scope("/tasks").as_ref(), Some(cache.path()));
+    assert_eq!(
+        report.unwrap().work.kept,
+        0,
+        "a check reads no source as kept"
+    );
     assert_eq!(walked("/"), 3);
     assert_eq!(walked("/repos/a/tasks"), 1);
     assert_eq!(walked("/repos/a"), 2, "a and the board it mounts");
@@ -164,6 +170,11 @@ fn a_warm_scoped_check_and_ls_answer_as_cold_ones() {
         let cold = checked(&scenario, path, None).0;
         assert!(!cold.is_empty(), "{path}");
         assert_eq!(warm, cold, "check {path}");
+        if path == "/tasks" {
+            // Its reference resolves into a source the run does not walk.
+            assert_eq!(warm[0].path, "tasks/t.json");
+            assert_eq!(warm[0].status, board_tree::Status::Ok);
+        }
         let warm = listed(&scenario, path, Some(cache.path()));
         assert_eq!(warm, listed(&scenario, path, None), "ls {path}");
     }
@@ -186,12 +197,16 @@ fn a_scope_at_the_second_route_to_a_commit_reports_its_entries_under_the_first()
 }
 
 #[test]
-fn an_unscoped_check_after_scoped_ones_answers_as_a_cold_one() {
+fn an_unscoped_check_after_cold_and_warm_scoped_ones_answers_as_a_cold_one() {
     let (scenario, _libraries) = mounting();
+    let cold = checked(&scenario, "/", None).0;
     for path in SCOPES {
         let cache = tempfile::tempdir().unwrap();
         checked(&scenario, path, Some(cache.path()));
+        let (_, walked) = checked(&scenario, path, Some(cache.path()));
+        // `/repos` reaches every source; each other scope skips one.
+        assert!(walked < 3 || path == "/repos", "{path} walked {walked}");
         let warm = checked(&scenario, "/", Some(cache.path())).0;
-        assert_eq!(warm, checked(&scenario, "/", None).0, "after {path}");
+        assert_eq!(warm, cold, "after {path}");
     }
 }
