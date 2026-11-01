@@ -70,6 +70,7 @@ fn manifest(name: &str) -> Value {
             "description": "",
             "inputSchema": serde_json::from_str::<Value>(INPUT_SCHEMA).unwrap(),
             "outputSchema": serde_json::from_str::<Value>(OUTPUT_SCHEMA).unwrap(),
+            "env": ["FIXTURE_GIVEN"],
         }],
     })
 }
@@ -775,4 +776,6 @@ fn a_built_in_resolves_and_reads_paths_as_refs_and_get_do_and_a_missing_path_is_
     assert_eq!(output["read"], json!(["a\n", "board::path::not_found"]));
 }
 
+mod call;
+mod decide;
 mod put;

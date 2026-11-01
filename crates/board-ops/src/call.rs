@@ -10,7 +10,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::host::{Hosted, PluginError, Settings};
+use crate::host::{Held, Hosted, PluginError, Settings};
 use crate::plugins::{CallFailed, Plugins};
 
 impl Board {
@@ -97,15 +97,15 @@ impl Board {
         plugins: &Plugins<'_>,
     ) -> Result<CallReport, CallError> {
         let environment = &plugins.environment;
+        let root = self.repository().path();
         let host = Hosted {
-            board: self,
+            board: Held::Called(self),
             settings: Settings {
                 now: SystemTime::now(),
                 day_start: (environment.day_start.as_ref())
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
             },
-            cache: plugins.cache,
             // As `board call` sets `BOARD_PLUGIN` for a child: the plugin
             // already named, else this one. A put refuses a name that does
             // not parse, as the child's `board put` would.
@@ -115,6 +115,14 @@ impl Board {
                 }
                 None => Ok(chosen.manifest.name.clone()),
             },
+            // What the plugin's own `board` would read.
+            plugins: Plugins {
+                environment: environment.nested(chosen, root)?,
+                known: plugins.known,
+                signing: plugins.signing.clone(),
+                ..*plugins
+            },
+            root,
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;

@@ -492,6 +492,45 @@ fn environment<'a>(
         .collect()
 }
 
+impl Environment {
+    /// What a Board that a process plugin offering `chosen`'s capability
+    /// starts in `directory` reads: the variables `board call` gives
+    /// that plugin, one call deeper, with `directory` as where it started.
+    /// The known boards file it reads is this one's, so `day_start` stays.
+    pub fn nested(&self, chosen: &Chosen, directory: &Path) -> Result<Self, CallError> {
+        let depth = self.depth()?;
+        let given = environment(
+            self,
+            &chosen.capability().env,
+            depth + 1,
+            &chosen.manifest.name,
+        );
+        // The last of a name is the one a process sees.
+        let get = |name: &str| {
+            (given.iter().rev())
+                .find(|(given, _)| *given == name)
+                .map(|(_, value)| value.clone())
+        };
+        Ok(Self {
+            path: get("PATH"),
+            home: get("HOME"),
+            lang: get("LANG"),
+            tz: get("TZ"),
+            cache: get("XDG_CACHE_HOME"),
+            data: get("XDG_DATA_HOME"),
+            config: get("XDG_CONFIG_HOME"),
+            depth: get(DEPTH_VARIABLE),
+            timings: get("BOARD_TIMINGS"),
+            caller: Some(directory.as_os_str().to_owned()),
+            day_start: self.day_start.clone(),
+            plugin: get(PLUGIN_VARIABLE),
+            inherited: (given.into_iter())
+                .map(|(name, value)| (OsString::from(name), value))
+                .collect(),
+        })
+    }
+}
+
 /// A call Board refuses, or the plugin's own refusal.
 #[derive(Debug, thiserror::Error)]
 pub enum CallError {
