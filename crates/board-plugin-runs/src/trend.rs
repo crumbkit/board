@@ -7,7 +7,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::SuitePath;
 use crate::qualifying::{Run, qualifying};
 
 /// The most points `trend` returns, and its default `limit`. The cap keeps
@@ -20,7 +19,7 @@ const MOST: u16 = 1000;
 #[schemars(rename = "TrendInput")]
 pub(crate) struct Input {
     /// The suite's logical path, such as /suites/board-bench, here or in a mounted board.
-    #[schemars(with = "SuitePath")]
+    #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
     suite: String,
     // The description names a measure as people write it, without backticks.
     #[schemars(

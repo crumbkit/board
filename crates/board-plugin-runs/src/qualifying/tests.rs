@@ -5,7 +5,10 @@
 use std::cell::RefCell;
 
 use board_model::LogicalPath;
-use board_ops::{Absent, Board, GetReport, QueryError, ReadError, RefsError, RefsReport, Settings};
+use board_ops::{
+    Absent, Board, GetReport, Plugins, QueryError, ReadError, RefsError, RefsReport, Settings,
+};
+use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use serde_json::json;
 
@@ -17,11 +20,18 @@ pub(crate) struct Real {
     board: Board,
     pub(crate) settings: Settings,
     asked: RefCell<Vec<Limit>>,
+    /// Whether each query names a table that does not exist, so Board refuses it.
+    failing: bool,
 }
 
 impl Host for Real {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
         self.asked.borrow_mut().push(limit);
+        let sql = if self.failing {
+            "SELECT logical FROM nowhere"
+        } else {
+            sql
+        };
         self.board.query(sql, usize::MAX, None, None)
     }
 
@@ -45,9 +55,8 @@ impl Host for Real {
     }
 }
 
-/// A board that enables runs, built in, holding `files` by path, and a host
-/// over it.
-pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
+/// A board that enables runs, built in, holding `files` by path.
+pub(crate) fn built(files: &[(&str, String)]) -> (Scenario, Board) {
     let scenario = Scenario::new();
     let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
     scenario.write(".board/board.json", Item::File(config));
@@ -57,6 +66,26 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
     for (path, text) in files {
         scenario.write(path, Item::File(text));
     }
+    let mut board = Board::open(scenario.workdir(), None).unwrap();
+    board.build_in(&[&Runs]);
+    (scenario, board)
+}
+
+/// The output of `board call runs.<capability>` with `input` on a board
+/// holding `files`, which Board checks against the capability's schemas, and
+/// whether the call started a process.
+pub(crate) fn called(files: &[(&str, String)], capability: &str, input: &Value) -> (Value, bool) {
+    let (_scenario, board) = built(files);
+    let target: Target = format!("runs.{capability}").parse().unwrap();
+    let report = (board.call(&target, input.to_string().as_bytes(), &Plugins::default())).unwrap();
+    let started = board.take_trace().work.get("started").copied();
+    (report.output, started != Some(0))
+}
+
+/// A board that enables runs, built in, holding `files` by path, and a host
+/// over it.
+pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
+    let (scenario, _) = built(files);
     let host = Real {
         board: Board::open(scenario.workdir(), None).unwrap(),
         settings: Settings {
@@ -65,6 +94,7 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
             caller: None,
         },
         asked: RefCell::default(),
+        failing: false,
     };
     (scenario, host)
 }
@@ -226,6 +256,7 @@ fn a_suite_that_does_not_exist_is_refused_naming_it_and_one_that_does_is_answere
         board: Board::open(scenario.workdir(), None).unwrap(),
         settings: host.settings,
         asked: RefCell::default(),
+        failing: false,
     };
     let counted = qualifying(&host, "/suites/a").unwrap();
     assert_eq!(counted.runs.len(), 1);
@@ -282,4 +313,17 @@ fn runs_are_newest_first_by_their_instant_and_a_tie_goes_to_the_last_path() {
         ]
     );
     assert_eq!((counted.not_counted, counted.unreadable), (1, 1));
+}
+
+#[test]
+fn a_query_board_refuses_is_refused_with_boards_code_and_the_same_query_answered_is_read() {
+    let (_scenario, mut host) = board(&[("suites/a.json", suite())]);
+    host.failing = true;
+    let Err(refused) = qualifying(&host, "/suites/a") else {
+        panic!("the query names no table")
+    };
+    assert_eq!(refused.code, "runs::board::refused");
+    assert_eq!(refused.fields["code"], json!("board::query::invalid"));
+    host.failing = false;
+    assert!(qualifying(&host, "/suites/a").is_ok());
 }

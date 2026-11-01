@@ -8,7 +8,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::SuitePath;
 use crate::qualifying::qualifying;
 use crate::records::{MeasureValue, Outcome};
 
@@ -18,7 +17,7 @@ use crate::records::{MeasureValue, Outcome};
 #[schemars(rename = "LatestInput")]
 pub(crate) struct Input {
     /// The suite's logical path, such as /suites/board-bench, here or in a mounted board.
-    #[schemars(with = "SuitePath")]
+    #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
     suite: String,
 }
 

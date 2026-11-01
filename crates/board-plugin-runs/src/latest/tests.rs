@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use super::*;
-use crate::qualifying::tests::{board, run, suite};
+use crate::qualifying::tests::{board, called, run, suite};
 
 /// `seconds` after 1970-01-01T00:00:00Z.
 fn at(seconds: u64) -> std::time::SystemTime {
@@ -104,4 +104,19 @@ fn latest_says_no_run_qualifies_with_null_and_counts_what_it_left_out() {
         output,
         json!({"run": null, "not_counted": 1, "unreadable": 1})
     );
+}
+
+#[test]
+fn board_calls_runs_latest_in_its_own_process_and_its_output_meets_its_schema() {
+    let files = [
+        ("suites/a.json", suite()),
+        (
+            "suites/a/runs/1.json",
+            run("2026-10-01T09:00:00Z", &json!({"measures": {"tests": 3}})),
+        ),
+    ];
+    let (output, started) = called(&files, "latest", &json!({"suite": "/suites/a"}));
+    assert!(!started);
+    assert_eq!(output["run"]["path"], "/suites/a/runs/1");
+    assert_eq!(output["run"]["measures"], json!({"tests": 3}));
 }

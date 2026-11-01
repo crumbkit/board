@@ -14,7 +14,7 @@ pub(crate) struct Time {
 }
 
 impl Time {
-    /// `YYYY-MM-DD(T|t| )HH:MM[:SS[.F+]](Z|z|±HH:MM|±HHMM)` in ASCII digits,
+    /// `YYYY-MM-DD(T|t| |_)HH:MM[:SS[(.|,)F+]](Z|z|±HH:MM|±HHMM)` in ASCII digits,
     /// a real date from year 1, hour to 23, second to 59, and an offset under
     /// 24 hours. Fraction digits past the sixth are dropped.
     ///
@@ -31,7 +31,7 @@ impl Time {
         };
         let at =
             |index: usize, allowed: &[u8]| bytes.get(index).is_some_and(|b| allowed.contains(b));
-        if !(at(4, b"-") && at(7, b"-") && at(10, b"Tt ") && at(13, b":")) {
+        if !(at(4, b"-") && at(7, b"-") && at(10, b"Tt _") && at(13, b":")) {
             return None;
         }
         let (year, month, day) = (number(0, 4)?, number(5, 7)?, number(8, 10)?);
@@ -42,7 +42,7 @@ impl Time {
         if let Some(seconds) = rest.strip_prefix(b":") {
             second = number(17, 19)?;
             rest = &seconds[2..];
-            if let Some(fraction) = rest.strip_prefix(b".") {
+            if let Some(fraction) = rest.strip_prefix(b".").or_else(|| rest.strip_prefix(b",")) {
                 let digits = fraction.iter().take_while(|byte| byte.is_ascii_digit());
                 let (count, padded) = (digits.clone().count(), digits.chain(&[b'0'; 6]).take(6));
                 micros = padded.fold(0, |micros, &digit| micros * 10 + i64::from(digit - b'0'));

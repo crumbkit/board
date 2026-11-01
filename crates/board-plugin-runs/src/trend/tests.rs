@@ -4,7 +4,7 @@
 use serde_json::json;
 
 use super::*;
-use crate::qualifying::tests::{Real, board, run, suite};
+use crate::qualifying::tests::{Real, board, called, run, suite};
 
 /// The run that started on day `n` of October 2026, with `fields`.
 fn day(n: u8, fields: &Value) -> String {
@@ -107,8 +107,8 @@ fn a_case_gives_its_first_lowest_trials_measure_and_a_case_no_run_lists_gives_no
 }
 
 #[test]
-fn trend_shows_at_most_its_limit_and_says_how_many_it_left_out() {
-    let (_scenario, host) = board(&[
+fn board_calls_runs_trend_in_its_own_process_showing_at_most_its_limit() {
+    let files = [
         ("suites/a.json", suite()),
         (
             "suites/a/runs/1.json",
@@ -122,18 +122,19 @@ fn trend_shows_at_most_its_limit_and_says_how_many_it_left_out() {
             "suites/a/runs/3.json",
             day(3, &json!({"measures": {"s": 3}})),
         ),
-    ]);
-    for (limit, kept, truncated) in [
-        (2.0, vec![json!(3.0), json!(2.0)], true),
-        (3.0, vec![json!(3.0), json!(2.0), json!(1.0)], false),
-    ] {
-        let (values, output) = values(&host, &json!({"measure": "s", "limit": limit}));
-        assert_eq!(values, kept);
+    ];
+    for (limit, kept, truncated) in [(Some(2), 2, true), (Some(3), 3, false), (None, 3, false)] {
+        let mut input = json!({"suite": "/suites/a", "measure": "s"});
+        if let Some(limit) = limit {
+            input["limit"] = json!(limit);
+        }
+        let (output, started) = called(&files, "trend", &input);
+        assert!(!started);
+        assert_eq!(output["points"].as_array().unwrap().len(), kept, "{input}");
         assert_eq!(
             (&output["total"], &output["truncated"]),
             (&json!(3), &json!(truncated))
         );
+        assert_eq!(output["points"][0]["value"], json!(3.0));
     }
-    let (values, _) = values(&host, &json!({"measure": "s"}));
-    assert_eq!(values.len(), 3, "the limit is 1000 when left out");
 }

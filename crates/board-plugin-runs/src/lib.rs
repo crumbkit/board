@@ -6,14 +6,11 @@ pub mod records;
 mod time;
 mod trend;
 
-use std::borrow::Cow;
-
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
 use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
-use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde_json::{Map, Value, json};
 
 use records::{RunRecord, SuiteRecord};
@@ -61,24 +58,6 @@ impl Plugin for Runs {
                 fields: Map::new(),
             }),
         }
-    }
-}
-
-/// A suite named by its logical path, which `board call` reads relative to
-/// the run's prefix.
-enum SuitePath {}
-
-impl JsonSchema for SuitePath {
-    fn inline_schema() -> bool {
-        true
-    }
-
-    fn schema_name() -> Cow<'static, str> {
-        "SuitePath".into()
-    }
-
-    fn json_schema(_: &mut SchemaGenerator) -> Schema {
-        json_schema!({"type": "string", "pattern": "^/", "format": "board-path"})
     }
 }
 
