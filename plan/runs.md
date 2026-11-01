@@ -130,9 +130,10 @@ is written.
 
 ## Still to decide
 
-- Packaging: the plugins are Python run through `uv`. Adopter X's users would
-  need Python and `uv`, or the plugins need to ship with the binary. Check
-  whether `board put` needs only the schemas in the tree.
+- Packaging: the plugins are being ported into the binary as built-in
+  crates (docs/plugins/built-in/writing.md), so adopter X's users will not
+  need Python or `uv`. Check whether `board put` needs only the schemas in
+  the tree.
 - PLAN.md settled decision 2 says Board is proprietary and unpublished. The
   owner plans to open-source Board (not adopter X); that decision is not
   settled.
