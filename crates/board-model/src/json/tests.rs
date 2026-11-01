@@ -235,3 +235,29 @@ fn either_of_two_equally_short_decimals_is_held_and_a_longer_one_is_refused() {
         assert_eq!(canonical_json(&again), canonical);
     }
 }
+
+#[test]
+fn commented_json_drops_comments_and_trailing_commas_but_keeps_strings() {
+    let text = "// settings\n{\"a\": \"// x /* y */\", \"b\": [1, /* one */],\n\"c\": \"q\\\"//\", // c\n}";
+    let value = parse_commented_json(text.as_bytes()).unwrap();
+    assert_eq!(value, json!({"a": "// x /* y */", "b": [1], "c": "q\"//"}));
+}
+
+#[test]
+fn commented_json_still_refuses_what_strict_json_refuses() {
+    let commented = |text: &str| parse_commented_json(text.as_bytes()).map_err(|e| e.code());
+    assert!(commented("{\"a\": 1 /* x */}").is_ok());
+    assert_eq!(commented("{\"a\": 1 /* x }"), Err(Code::JsonParse));
+    assert!(commented("{\"a\": 1, // x\n\"b\": 2}").is_ok());
+    assert_eq!(
+        commented("{\"a\": 1, // x\n\"a\": 2}"),
+        Err(Code::JsonDuplicateKey)
+    );
+    assert!(commented("[1,]").is_ok());
+    assert_eq!(commented("[1,,]"), Err(Code::JsonParse));
+    assert!(commented("{\"a\": [1,],}").is_ok());
+    assert_eq!(commented("{\"a\": [,],}"), Err(Code::JsonParse));
+    assert_eq!(commented("{,}"), Err(Code::JsonParse));
+    assert!(commented("{} // x").is_ok());
+    assert_eq!(commented("{} /"), Err(Code::JsonParse));
+}
