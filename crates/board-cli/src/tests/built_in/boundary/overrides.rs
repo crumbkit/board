@@ -23,14 +23,15 @@ fn failing() -> Value {
 /// What the owner is shown for `parts` sent to octo/board by
 /// `github.pr-create`.
 fn shown(parts: &[(&str, &str)]) -> String {
-    let mut text = "action \"github.pr-create\"\nto \"github:octo/board\"\n".to_owned();
+    let mut lines = vec![
+        "action \"github.pr-create\"".to_owned(),
+        "to \"github:octo/board\"".to_owned(),
+    ];
     for (name, body) in parts {
-        text += &format!("\npart {name:?}\n");
-        for line in body.split('\n') {
-            text += &format!("  {line}\n");
-        }
+        lines.extend([String::new(), format!("part {name:?}")]);
+        lines.extend(body.split('\n').map(|line| format!("  {line}")));
     }
-    text
+    lines.join("\n") + "\n"
 }
 
 #[test]
