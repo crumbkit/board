@@ -257,7 +257,8 @@ class Board:
         fields = failure.get("fields") if failure else None
         carried = cast("dict[str, Any]", fields) if isinstance(fields, dict) else {}
         # A code the failure's own fields carried, such as the plugin a nested call reached refused with.
-        cause = {"cause": carried["code"]} if carried.get("code") not in {None, code} else {}
+        inner = carried.get("code")
+        cause = {"cause": inner} if isinstance(inner, str) and inner != code else {}
         return PluginError(
             f"{self.plugin}::board::refused",
             f"`{self._named(arguments)}` refused with {code}: {message}{then}",

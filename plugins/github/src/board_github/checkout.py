@@ -158,11 +158,17 @@ def commit_parts(at: str, shas: list[str]) -> dict[str, str]:
     """Each commit's message, names, emails, diff and binary paths, as parts named `commit.<short sha>.<field>`.
 
     The diff is git's text of every file, binary or not, with no textconv or
-    external diff, so it holds the bytes sent; `binary` lists, one per line,
-    the paths git would otherwise show only as "Binary files differ".
+    external diff and with file names unquoted, so it holds the bytes sent;
+    `binary` lists, one per line, the paths git would otherwise show only as
+    "Binary files differ". `headers` holds the commit's headers other than
+    tree, parents, author and committer, such as a merged tag's `mergetag`.
+    A commit that changes a file Git LFS stores is `github::push::lfs`.
     """
     parts: dict[str, str] = {}
     for sha in shas:
+        diff = ("--format=", "--diff-merges=first-parent", "--no-color", "--no-ext-diff", "--no-textconv")
+        changed = _changed(git(at, "-c", "core.quotePath=false", "show", *diff, "--numstat", "-z", sha))
+        _refuse_lfs(at, sha, [path for path, _ in changed])
         fields = git(at, "show", "-s", "--format=%an%x00%ae%x00%cn%x00%ce%x00%B", sha).split("\0", 4)
         prefix = f"commit.{sha[:SHORT]}."
         for name, value in zip(
@@ -170,16 +176,18 @@ def commit_parts(at: str, shas: list[str]) -> dict[str, str]:
         ):
             parts[prefix + name] = value
         parts[prefix + "message"] = fields[4].removesuffix("\n")
-        diff = ("--format=", "--diff-merges=first-parent", "--no-color", "--no-ext-diff", "--no-textconv")
-        parts[prefix + "diff"] = git(at, "show", *diff, "--text", sha)
-        counts = git(at, "show", *diff, "--numstat", "-z", sha)
-        parts[prefix + "binary"] = "".join(f"{path}\n" for path in _binary(counts))
+        parts[prefix + "headers"] = _headers(git(at, "cat-file", "commit", sha))
+        parts[prefix + "diff"] = git(at, "-c", "core.quotePath=false", "show", *diff, "--text", sha)
+        parts[prefix + "binary"] = "".join(f"{path}\n" for path, binary in changed if binary)
     return parts
 
 
-def _binary(numstat: str) -> list[str]:
-    """The paths `--numstat -z` counts as binary, with `-` for lines added and removed; a rename gives its target."""
-    paths: list[str] = []
+def _changed(numstat: str) -> list[tuple[str, bool]]:
+    """Each path `--numstat -z` names, and whether it counts as binary (`-` for lines added and removed).
+
+    A rename gives its target.
+    """
+    paths: list[tuple[str, bool]] = []
     fields = iter(numstat.split("\0"))
     for field in fields:
         added, _, rest = field.lstrip("\n").partition("\t")
@@ -187,13 +195,42 @@ def _binary(numstat: str) -> list[str]:
         if not path and removed:
             next(fields, "")
             path = next(fields, "")
-        if (added, removed) == ("-", "-"):
-            paths.append(path)
+        if path:
+            paths.append((path, (added, removed) == ("-", "-")))
     return paths
 
 
+def _headers(commit: str) -> str:
+    """The commit object's header lines other than tree, parent, author and committer, with their continuations."""
+    kept: list[str] = []
+    keep = False
+    for line in commit.partition("\n\n")[0].splitlines():
+        if not line.startswith(" "):
+            keep = line.split(" ", 1)[0] not in {"tree", "parent", "author", "committer"}
+        if keep:
+            kept.append(line + "\n")
+    return "".join(kept)
+
+
+def _refuse_lfs(at: str, sha: str, paths: list[str]) -> None:
+    """`github::push::lfs` when any of the commit's paths is stored by Git LFS, whose hook uploads unchecked bytes."""
+    if not paths:
+        return
+    answer = git(at, "check-attr", "-z", f"--source={sha}", "--stdin", "filter", stdin="\0".join(paths) + "\0")
+    fields = answer.split("\0")
+    stored = [fields[i] for i in range(0, len(fields) - 2, 3) if fields[i + 2] == "lfs"]
+    if stored:
+        raise PluginError(
+            "github::push::lfs",
+            f"commit {sha[:SHORT]} changes {', '.join(stored)}, which Git LFS stores; its hook uploads those files'"
+            " bytes where the boundary cannot check them, so nothing was pushed; stop tracking them with"
+            " `git lfs untrack` and commit them as plain files, or ask the owner how to send them",
+            {"commit": sha, "paths": stored},
+        )
+
+
 def push(at: str, name: str, head: str, digest: str) -> str:
-    """Push `head` to the branch on origin and set its upstream: git's porcelain line, or `github::push::failed`.
+    """Push `head` to the branch on origin: git's porcelain line, or `github::push::failed`.
 
     Only the checked commit goes: no tags, no submodule commits and no push
     options, whatever git's config says. The line, such as
@@ -220,5 +257,10 @@ def push(at: str, name: str, head: str, digest: str) -> str:
             " fix what git says, such as pulling first, and run it again",
             {"branch": name, "digest": digest},
         )
-    git(at, "branch", f"--set-upstream-to=origin/{name}", name)
     return " ".join(lines[0].split("\t")[1:])
+
+
+def track(at: str, name: str) -> None:
+    """Make origin's branch the branch's upstream as `git push -u` does, which needs no remote-tracking ref."""
+    git(at, "config", f"branch.{name}.remote", "origin")
+    git(at, "config", f"branch.{name}.merge", f"refs/heads/{name}")

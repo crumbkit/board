@@ -6,9 +6,10 @@ import os
 import subprocess
 from typing import Any
 
-from conftest import NAMES, Desk, board_binary, git
+from conftest import NAMES, ORIGIN, Desk, board_binary, git
 
 TO = "github:octo/widgets"
+PULL_NUMBER = 12
 
 
 def digest(action: str, parts: dict[str, str]) -> str:
@@ -21,7 +22,7 @@ def digest(action: str, parts: dict[str, str]) -> str:
 def commit_parts(desk: Desk, sha: str, message: str, binary: str = "") -> dict[str, str]:
     """The parts of one commit, named by its short SHA."""
     flags = ("--format=", "--diff-merges=first-parent", "--no-color", "--no-ext-diff", "--no-textconv", "--text")
-    diff = git(desk.checkout, "show", *flags, sha)
+    diff = git(desk.checkout, "-c", "core.quotePath=false", "show", *flags, sha)
     short = sha[:12]
     return {
         f"commit.{short}.message": message + "\n",
@@ -30,6 +31,7 @@ def commit_parts(desk: Desk, sha: str, message: str, binary: str = "") -> dict[s
         f"commit.{short}.committer_name": "t",
         f"commit.{short}.committer_email": "t@t",
         f"commit.{short}.diff": diff + "\n",
+        f"commit.{short}.headers": "",
         f"commit.{short}.binary": binary,
     }
 
@@ -297,3 +299,84 @@ def test_a_board_the_plugin_cannot_run_is_refused_and_one_it_can_run_is_used(des
     )
     assert (ran.returncode, json.loads(ran.stdout)["code"]) == (1, "github::board::failed")
     assert len(output(desk.call("push"))["commits"]) == 1
+
+
+def test_a_single_branch_clone_pushes_a_new_branch_and_sets_its_upstream(desk: Desk) -> None:
+    clone = desk.home / "clone"
+    git(desk.home, "clone", "-q", "--single-branch", "-b", "main", str(desk.remote), str(clone))
+    git(clone, "remote", "set-url", "origin", ORIGIN)
+    git(clone, "config", f"url.{desk.remote}.insteadOf", ORIGIN)
+    git(clone, "switch", "-q", "-c", "feature")
+    git(clone, "commit", "-q", "--allow-empty", "-m", "Add a lever")
+    desk.gh_answers("https://github.com/Octo/Widgets/pull/12\n")
+    result = output(desk.call("pr-create", "--title", "Add a lever", "--body", "Levers.", cwd=clone, personal=True))
+    assert result["number"] == PULL_NUMBER
+    assert desk.remote_head("feature") == git(clone, "rev-parse", "HEAD")
+    assert git(clone, "config", "branch.feature.merge") == "refs/heads/feature"
+
+
+def test_a_commit_of_a_file_git_lfs_stores_is_refused_and_the_same_file_outside_lfs_is_pushed(desk: Desk) -> None:
+    pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "0" * 64 + "\nsize 12\n"
+    for attributes, stored in [("*.csv filter=lfs diff=lfs merge=lfs -text\n", True), ("*.csv text\n", False)]:
+        (desk.checkout / ".gitattributes").write_text(attributes)
+        git(desk.checkout, "add", ".gitattributes")
+        sha = desk.commit("Add data", file="data.csv", text=pointer)
+        before = desk.remote_head("main")
+        result = desk.call("push")
+        if stored:
+            assert (result["exit"], result["code"]) == (1, "github::push::lfs")
+            assert result["fields"]["paths"] == ["data.csv"]
+            assert desk.remote_head("main") == before
+            git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
+        else:
+            assert output(result)["commits"] == [sha]
+
+
+def test_a_private_name_with_a_non_ascii_letter_in_a_file_name_is_refused_and_its_ascii_twin_is_pushed(
+    desk: Desk,
+) -> None:
+    desk.refuse(["commit.*.diff"])
+    desk.write("private/names.txt", "Müller\n")
+    desk.commit("Add a list", file="Müller.txt", text="fine\n")
+    assert desk.call("push")["fields"]["failures"][0]["text"] == "Müller"
+    git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
+    desk.commit("Add a list", file="Muller.txt", text="fine\n")
+    assert len(output(desk.call("push"))["commits"]) == 1
+
+
+def test_a_private_name_in_a_commit_header_is_refused_and_a_commit_without_it_is_pushed(desk: Desk) -> None:
+    desk.refuse(["commit.*.headers"])
+    git(desk.checkout, "-c", "i18n.commitEncoding=acme-123", "commit", "-q", "--allow-empty", "-m", "Empty")
+    failure = desk.call("push")
+    assert failure["fields"]["failures"][0]["part"].endswith(".headers")
+    git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
+    git(desk.checkout, "commit", "-q", "--allow-empty", "-m", "Empty")
+    assert len(output(desk.call("push"))["commits"]) == 1
+
+
+def test_git_hooks_and_gh_never_see_the_model_credentials_and_the_boundarys_agent_does(desk: Desk) -> None:
+    hook = desk.checkout / ".git" / "hooks" / "pre-push"
+    hook.write_text(f"#!/bin/sh\nenv > '{desk.home / 'hook-env.txt'}'\n")
+    hook.chmod(0o755)
+    desk.write("rubrics/plain.md", "Write plainly.\n")
+    rule = {"judged": "/rubrics/plain.md"}
+    desk.write(
+        "controls/plain.json",
+        json.dumps({"$type": "controls/control/v1", "requirement": "A test.", "purpose": "A test.", "rule": rule}),
+    )
+    checks = [{"control": "/controls/plain", "parts": ["*"]}]
+    boundary = {"$type": "boundary/boundary/v1", "to": "github:*", "actions": ["github.*"], "checks": checks}
+    desk.write("boundaries/octo.json", json.dumps(boundary))
+    agent = desk.home / "agent"
+    findings = '{"findings": []}'
+    agent.write_text(f"#!/bin/sh\ncat > /dev/null\nenv > '{desk.home / 'agent-env.txt'}'\necho '{findings}'\n")
+    agent.chmod(0o755)
+    keys = {"ANTHROPIC_API_KEY": "model-key-1", "CLAUDE_CODE_OAUTH_TOKEN": "model-token-1"}
+    extra = keys | {"BOARD_CONTROLS_AGENT": json.dumps([str(agent)])}
+    desk.commit("Add a gear")
+    output(desk.call("push", extra=extra))
+    desk.gh_answers({"html_url": "https://github.com/Octo/Widgets/issues/7#issuecomment-1"})
+    output(desk.call("comment", "--number", "7", "--body", "Fine.", extra=extra))
+    for seen in [desk.home / "hook-env.txt", desk.bin / "gh-env.txt"]:
+        assert not any(value in seen.read_text() for value in keys.values()), seen
+    assert all(value in (desk.home / "agent-env.txt").read_text() for value in keys.values())

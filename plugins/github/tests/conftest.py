@@ -151,9 +151,11 @@ def board(tmp_path: Path) -> Board:
     return fixture
 
 
-# The stub gh for the sending actions: as GH, and it also keeps what it read on stdin in `gh-stdin.txt`.
+# The stub gh for the sending actions: as GH, and it also keeps its stdin in `gh-stdin.txt` and its environment in
+# `gh-env.txt`.
 GH_SENDING = GH.replace(
-    'echo call >> "$here/gh-calls.txt"', 'echo call >> "$here/gh-calls.txt"\ncat > "$here/gh-stdin.txt"'
+    'echo call >> "$here/gh-calls.txt"',
+    'echo call >> "$here/gh-calls.txt"\ncat > "$here/gh-stdin.txt"\nenv > "$here/gh-env.txt"',
 )
 # The remote a checkout names. Its own config sends git to a local bare repository in its place.
 ORIGIN = "https://github.com/Octo/Widgets.git"

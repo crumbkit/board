@@ -63,6 +63,7 @@ def _pushed(place: Origin, action: str, extra: dict[str, str]) -> tuple[dict[str
     line = checkout.push(place.top, branch, head, passed["digest"])
     # Recorded at once, so the crossing says the commits left even when a later step fails.
     crossing.record(place.root, passed["digest"], line)
+    checkout.track(place.top, branch)
     return passed, branch, commits, line
 
 

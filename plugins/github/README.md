@@ -56,8 +56,9 @@ result it recorded.
 - `push` resolves the branch checked out to its commit once, before the
   check, and pushes that commit to the branch of the same name on origin, so
   a commit made during the check is not sent. It pushes no tags, no submodule
-  commits and no push options, whatever git's config says, then sets the
-  branch's upstream. It returns `branch`, `commits`, the commits sent, oldest
+  commits and no push options, whatever git's config says. It records git's
+  line on the crossing, then sets the branch's upstream in git's config as
+  `git push -u` does, which works in a single-branch clone too. It returns `branch`, `commits`, the commits sent, oldest
   first, and `sent`, git's line for the branch, such as
   `<sha>:refs/heads/x [new branch]`.
 - `pr-create --title <t> --body <b> [--base <branch>] [--draft true]` pushes
@@ -95,7 +96,8 @@ The parts, which a boundary's `checks` name by glob:
 | `commit.<sha>.author_email` | `push`, `pr-create` | The author's email. |
 | `commit.<sha>.committer_name` | `push`, `pr-create` | The committer's name. |
 | `commit.<sha>.committer_email` | `push`, `pr-create` | The committer's email. |
-| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, with every file as text: no textconv, external diff or `-diff` attribute hides a file's bytes. |
+| `commit.<sha>.headers` | `push`, `pr-create` | The commit object's header lines other than `tree`, `parent`, `author` and `committer`, such as `encoding` or a merged signed tag's `mergetag`; empty when there are none. |
+| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, with every file as text: no textconv, external diff or `-diff` attribute hides a file's bytes, and file names are not quoted. |
 | `commit.<sha>.binary` | `push`, `pr-create` | The paths git counts as binary, one per line, so a boundary can refuse them by name; empty when there are none. |
 | `pr.title`, `pr.body` | `pr-create`, `pr-edit` | The pull request's title and body. `pr-edit` sends only those given. |
 | `comment.body` | `comment` | The comment. |
@@ -122,6 +124,10 @@ Refusals:
 - `github::remote::split`: origin pushes to a URL other than the one it
   fetches from, or to several.
 - `github::checkout::detached`: `push` or `pr-create` on no branch.
+- `github::push::lfs`: a commit changes a file whose `filter` attribute is
+  `lfs`. Git LFS's `pre-push` hook uploads such a file's bytes, which the
+  boundary cannot see, so nothing is pushed. The fields name the commit and
+  paths.
 - `github::push::failed`: git refused the push, such as a branch that is
   behind. The crossing passed and keeps no result.
 - `github::board::failed`: the plugin could not run `board`.
@@ -133,7 +139,10 @@ The sending actions receive gh's variables, `SSH_AUTH_SOCK` for git and the
 variables the boundary's judged rules read. They pass the model credentials,
 `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`, only to `board`, never to
 git, its hooks or gh.
-They may run for 2,400 seconds, since the check alone may take 1,800.
+Git runs the checkout's `pre-push` hook during the push, as it does for any
+push. The plugin does not check what a hook sends.
+
+The sending actions may run for 2,400 seconds, since the check alone may take 1,800.
 
 Owner and repository are stored in lower case, in the path and the fields,
 because GitHub matches them without case; `url` keeps GitHub's own case. The
