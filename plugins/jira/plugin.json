@@ -1,0 +1,112 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "idempotentHint": true
+      },
+      "description": "Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The issue to record.",
+        "properties": {
+          "key": {
+            "description": "The issue key, such as ACME-123.",
+            "title": "Key",
+            "type": "string"
+          },
+          "site": {
+            "description": "The site name before .atlassian.net, such as acme.",
+            "title": "Site",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "site"
+        ],
+        "title": "RefInput",
+        "type": "object"
+      },
+      "name": "ref",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The issue's record, whether this call wrote it, and why it has no title when it has none.\n\n`title_note` is null when the record has a title or was already there.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "site": {
+            "title": "Site",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "title_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title Note"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "site",
+          "key",
+          "url",
+          "title",
+          "written",
+          "title_note"
+        ],
+        "title": "RefOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Record a Jira issue as a typed jira/issue/v1 record that other records can reference by path. Use it when work names a Jira ticket. Start with `board -C <board> call jira.ref --key ACME-123 --site acme`, which writes /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "planning"
+  },
+  "name": "jira",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_jira"
+  ],
+  "types": [
+    "jira/issue/v1"
+  ],
+  "version": "0.1.0"
+}
