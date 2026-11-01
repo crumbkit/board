@@ -2,6 +2,7 @@
 //! (docs/architecture.md, Commands). `board-cli` only parses arguments,
 //! reads configuration and prints.
 
+mod alias;
 mod attachment;
 mod board;
 mod call;

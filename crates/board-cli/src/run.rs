@@ -305,7 +305,8 @@ Examples:
         after_help = "\
 Board reads stdin only when no flag is given and the capability admits an
 input property that is not a flag; `-h` on the capability says which. With
---capability, the input goes on stdin.
+--capability, the input goes on stdin. A plugin's alias runs a capability
+too: with the alias gh, `board gh pr-create` is `board call github.pr-create`.
 
 Examples:
   board call tasks.available
@@ -404,17 +405,18 @@ pub(crate) fn run(
     stdin: &mut dyn Read,
     ran: &mut Ran,
 ) -> Output {
-    let arguments: Vec<OsString> = arguments.into_iter().collect();
+    let mut arguments: Vec<OsString> = arguments.into_iter().collect();
     if let Some(completed) = crate::complete::complete(&arguments, context) {
         return completed;
     }
     let parsing = Instant::now();
+    let aliases = crate::alias::before(&mut arguments, context);
     let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
         sink,
-        graft::command(found.as_ref()),
+        graft::command(found.as_ref()).subcommands(aliases),
         &graft::guide(found.as_ref()),
         arguments.clone(),
     );
@@ -423,7 +425,7 @@ pub(crate) fn run(
         Ok(parsed) => parsed,
         Err(unparsed) => {
             if let Unparsed::Refused(refused) = &unparsed
-                && let Some(output) = render::too_many_paths(refused)
+                && let Some(output) = reread(&arguments, context, stdin, ran, refused)
             {
                 return output;
             }
@@ -474,17 +476,8 @@ pub(crate) fn run(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     board.build_in(context.built_in.0);
-    // Only a plugin's decide writes in the personal board.
-    let asks = match cli.command {
-        Command::Put(_) | Command::Rm { .. } => Some(false),
-        Command::Decide(_) => Some(context.environment.plugin.is_some()),
-        _ => None,
-    };
-    if let Some(personal) = asks {
-        match effects::asker(context, personal) {
-            Ok(asker) => board.ask_as(asker),
-            Err(refusal) => return render::refused(printer, *refusal),
-        }
+    if let Err(refusal) = ask(&mut board, context, &cli.command) {
+        return render::refused(printer, *refusal);
     }
     ran.root = Some(board.repository().path().to_path_buf());
     ran.prefix = prefix.as_ref().map(|prefix| match prefix {
@@ -505,6 +498,41 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// The output of a refused command line that Board reads again: one that
+/// gives more paths than a run answers, or whose first word is an alias.
+fn reread(
+    arguments: &[OsString],
+    context: &Context,
+    stdin: &mut dyn Read,
+    ran: &mut Ran,
+    refused: &crumbkit::Refused,
+) -> Option<Output> {
+    if let Some(output) = render::too_many_paths(refused) {
+        return Some(output);
+    }
+    Some(match crate::alias::after(arguments, context, refused)? {
+        Ok(called) => run(called, context, stdin, ran),
+        Err(refusal) => {
+            let printer = Printer {
+                view: refused.output().clone(),
+            };
+            render::refused(printer, *refusal)
+        }
+    })
+}
+
+/// Lets `board` ask the owner to admit what `command` writes. Only a
+/// plugin's decide writes in the personal board.
+fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
+    let personal = match command {
+        Command::Put(_) | Command::Rm { .. } => false,
+        Command::Decide(_) => context.environment.plugin.is_some(),
+        _ => return Ok(()),
+    };
+    board.ask_as(effects::asker(context, personal)?);
+    Ok(())
 }
 
 /// Runs `command` against `board`, reading each path it is given from
@@ -735,7 +763,10 @@ fn refs(
 /// The board holding `start`, or else the one known board with a mount
 /// whose repository holds `start`, and `start`'s logical path in that board,
 /// opened as this build.
-fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+pub(crate) fn open(
+    context: &Context,
+    start: &Path,
+) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
     let (mut board, prefix) = board_ops::open(start, home, cache, || context.known())?;
     board.built_by(crate::timing::DECIDER);

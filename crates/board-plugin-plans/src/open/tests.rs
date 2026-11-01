@@ -356,7 +356,7 @@ fn plans_board(questions: &[(&str, Value)]) -> (Scenario, Board) {
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Plans]);
     board
-        .plugin_enable(None, None, &"plans".parse().unwrap())
+        .plugin_enable(None, None, &"plans".parse().unwrap(), &[])
         .unwrap();
     for (path, body) in questions {
         scenario.write(&format!("{path}.json"), Item::File(body.as_str().unwrap()));
