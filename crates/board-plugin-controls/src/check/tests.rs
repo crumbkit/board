@@ -86,7 +86,7 @@ pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
     scenario.write(".board/board.json", Item::File(config));
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Controls]);
-    (board.plugin_enable(None, None, &"controls".parse().unwrap())).unwrap();
+    (board.plugin_enable(None, None, &"controls".parse().unwrap(), &[])).unwrap();
     for (path, text) in files {
         scenario.write(path, Item::File(text));
     }
