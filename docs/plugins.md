@@ -4,11 +4,10 @@ This is the v0 design. docs/architecture.md says what is built, and PLAN.md
 says what comes next.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
-or a changelog. A new plugin is a Rust crate compiled into Board
-([plugins/built-in.md](plugins/built-in.md)). An installed plugin is a
-separate program that Board starts, talking JSON over stdin and stdout; it
-reads the board through `board query`. This file gives the contract both
-kinds meet.
+or a changelog. It is compiled into Board
+([plugins/built-in.md](plugins/built-in.md)), or installed as a separate
+program that Board starts, talking JSON over stdin and stdout and reading
+the board through `board query`. This file gives the contract both meet.
 
 ## Installing and enabling
 
@@ -207,11 +206,10 @@ comes right after the alias; a flag in its place is a usage error.
 
 ## Writing a plugin
 
-Write a new plugin as a built-in crate;
-[plugins/built-in/writing.md](plugins/built-in/writing.md) says how. Never
-write a new plugin in Python. `controls`, `plans`, `requests` and `evals` are
+A new plugin is a built-in crate, never a Python program;
+[plugins/built-in/writing.md](plugins/built-in/writing.md) says how. `controls`, `plans`, `requests` and `evals` are
 built in. `tasks`, `runs`, `share`, `notes`, `changes`, `review`, `prompts`,
-`jira` and `github` are still Python and are being ported;
+`jira` and `github` are still Python;
 [plugins/python.md](plugins/python.md) describes them. The README in each
 `plugins/<name>/` describes its records and capabilities.
 [plugins/share.md](plugins/share.md) explains the design of `share`, and

@@ -1,7 +1,7 @@
 # review
 
-This plugin is still a Python program and is being ported to a Rust crate
-built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
 
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the

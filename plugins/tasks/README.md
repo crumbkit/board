@@ -1,7 +1,7 @@
 # tasks
 
-This plugin is still a Python program and is being ported to a Rust crate
-built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
 
 A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks through
 `board query`. `available` sorts the tasks of the repos

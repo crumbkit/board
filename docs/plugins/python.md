@@ -1,10 +1,8 @@
 # Plugins still in Python
 
 This file holds detail for docs/plugins.md. It describes the plugins here
-that are still Python programs while they are ported to built-in crates:
-`tasks`, `runs`, `share`, `notes`, `changes`, `review`, `prompts`, `jira`
-and `github`. No new plugin is written in Python; write a new plugin as a built-in
-crate ([built-in/writing.md](built-in/writing.md)).
+that are still Python programs: `tasks`, `runs`, `share`, `notes`,
+`changes`, `review`, `prompts`, `jira` and `github`.
 
 Board validates a call's input and output, and `call` checks that the board
 holds the schemas the plugin ships. A plugin reading records with `board query`

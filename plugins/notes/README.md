@@ -1,7 +1,7 @@
 # notes
 
-This plugin is still a Python program and is being ported to a Rust crate
-built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
 
 A Board plugin that appends to and reads notes in notes repos: git
 repositories of Markdown notes in the layout of

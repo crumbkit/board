@@ -1,7 +1,7 @@
 # prompts
 
-This plugin is still a Python program and is being ported to a Rust crate
-built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
 
 A Board plugin for stored prompts. A prompt is a Markdown record a person
 writes to start one specific piece of work, such as reviewing one pull

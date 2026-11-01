@@ -1,33 +1,33 @@
 # Writing a built-in plugin
 
-This file holds detail for docs/plugins/built-in.md. A new plugin is a Rust
-crate built into Board, never a Python program. `controls`, `evals`, `plans`
-and `requests` are built this way; `controls` (#48) shows a Python plugin
-ported with its output, messages and codes unchanged.
+This file holds detail for docs/plugins/built-in.md. `controls`, `evals`,
+`plans` and `requests` are built-in crates; `controls` (#48) shows a Python
+plugin ported with its output, messages and codes unchanged.
 
 ## What a built-in plugin can do
 
 A built-in plugin reads the board through `Host` and nothing else: `query`,
 `refs`, `get_each` and `settings` (docs/plugins/built-in.md). It cannot yet
 write a record, call another plugin, start a process, read an environment
-variable, write a file outside the tree, or stop at a deadline. Clippy's
-`disallowed-methods` refuses `std::process::Command::new`, `std::env::var`
-and `std::fs::write` outside their owners (STANDARDS.md 7), so a plugin
-cannot work around a missing method. When a plugin needs one, first add the
-method to `Host` and its test in board-ops, in a pull request of its own, and
-build the plugin on it.
+variable, write a file, or stop at a deadline. Clippy's `disallowed-methods`
+refuses `std::process::Command::new`, `std::env::var` and `std::fs::write`
+outside their owners (STANDARDS.md 7), and a plugin must not work around a
+missing method. When a plugin needs one, first add the method to `Host` and
+its test in board-ops, in a pull request of its own, and build the plugin on
+it.
 
 ## The crate
 
 Make `crates/board-plugin-<name>/`:
 
-- `Cargo.toml` depends on board-model, board-ops, board-plugin, schemars,
-  serde and serde_json, with board-scenario and board-validate as
-  dev-dependencies, and sets `[lints] workspace = true`.
+- `Cargo.toml` depends on what the crate uses of board-model, board-ops,
+  board-plugin, schemars, serde and serde_json, with board-scenario and
+  board-validate as dev-dependencies, and sets `[lints] workspace = true`.
+  `cargo shear` fails on an unused dependency.
 - `src/lib.rs` holds the plugin, `src/records.rs` its record types, and one
   module per capability, such as `src/thread.rs`.
-- `types/<namespace>/<kind>/v<n>.schema.json` holds each record schema,
-  committed.
+- `types/<name>/<kind>/v<n>.schema.json` holds each record schema,
+  committed. A type's namespace is the plugin's name.
 
 Then wire it in:
 
@@ -48,10 +48,13 @@ Each record type is a struct deriving `JsonSchema` with
 `#[serde(deny_unknown_fields)]`, whose first field is
 `#[serde(rename = "$type")] pub tag: Tag<Self>`, and which implements
 `board_plugin::shape::Record` with `const TYPE: &'static str =
-"<name>/<kind>/v1"`. Doc comments become the descriptions. String fields use
-a shared shape from `board_plugin::shape`, or `Prose`
-(docs/architecture/records/shapes.md). `schemas()` returns
-`schema_of::<T>(SchemaSettings::draft2020_12())` for each type.
+"<name>/<kind>/v1"`. Doc comments become the descriptions. A reference is a
+`Ref<T>`, and each string field uses a shared shape from
+`board_plugin::shape` or `#[schemars(with = "Prose")]`
+(docs/architecture/records/shapes.md). `xtask/tests/shapes.rs` checks every
+committed schema; a new plugin adds no exemption to it. `schemas()` returns
+each type's `RecordType`, parsed from `T::TYPE`, with
+`schema_of::<T>(SchemaSettings::draft2020_12())`.
 
 ## The plugin
 
@@ -59,9 +62,11 @@ a shared shape from `board_plugin::shape`, or `Prose`
 
 - `manifest()` returns `Manifest::built_in(json!({...}))`, with `$type`,
   `name`, `version`, `description`, `metadata`, `types` and `capabilities`
-  and no `run`. Each capability's `inputSchema` is
+  and no `run`. `built_in` returns a `Result`, which the plugin `expect`s
+  because a test parses the manifest. Each capability's `inputSchema` is
   `schema_of::<Input>(SchemaSettings::draft2020_12())` and its
-  `outputSchema` is `schema_of::<Output>(SchemaSettings::draft2020_12().for_serialize())`.
+  `outputSchema` is
+  `schema_of::<Output>(SchemaSettings::draft2020_12().for_serialize())`.
 - `call()` matches the capability's name and calls its module. Any other
   name is refused with `<name>::call::unknown_capability`, naming what the
   plugin offers.
@@ -69,17 +74,19 @@ a shared shape from `board_plugin::shape`, or `Prose`
 Each capability module defines `Input` (`Deserialize`, `JsonSchema`,
 `deny_unknown_fields`) and `Output` (`Serialize`, `JsonSchema`), renamed
 with `#[schemars(rename = "<Capability>Input")]` so schema names stay
-unique. It reads its input with `PluginError::read_input`, and turns a
-refusal from `Host` into `<name>::board::refused` with
-`PluginError::board_refused`. Its own refusals are `PluginError` values
-with a `<name>::<area>::<reason>` code. It never panics: a panic ends
-Board's run instead of refusing the call. A path input carries
-`"format": "board-path"`, so it may be given relative to the run's
-prefix (docs/plugins.md, Calling a capability).
+unique. It reads its input with `PluginError::read_input`. A `Host` error
+becomes `<name>::board::refused` through
+`PluginError::board_refused(<name>, <command>, &error.refusal())`. Its own
+refusals are `PluginError` values with a `<name>::<area>::<reason>` code. A
+path input carries
+`#[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]`, so it
+may be given relative to the run's prefix (docs/plugins.md, Calling a
+capability).
 
-`plugins/<name>/` keeps the plugin's `SKILL.md`, `README.md` and any Claude
-Code mod. The manifest's `description` equals the skill's frontmatter
-`description`; a test reads the skill with `include_str!` and compares them.
+A plugin's skill, README and any Claude Code mod live in `plugins/<name>/`,
+as for `controls` and `evals`. When it has a skill, the manifest's
+`description` equals the skill's frontmatter `description`, and a test reads
+the skill with `include_str!` and compares them.
 
 ## Tests
 
@@ -96,19 +103,21 @@ The crate's `src/tests.rs` proves that:
 Each capability's tests run through a real board. They build a fixture with
 `board_scenario::Scenario`, open it with `Board::open`, call
 `build_in(&[&<Plugin>])` and `plugin_enable`, then call
-`board.call(&target, input, &Plugins::default())` and assert that
-`take_trace().work` counts no `started` process. A test that counts the work a
-capability does uses a recording `Host`, as
-`board-plugin-controls/src/check/tests.rs` does. board-cli's
-`src/tests/built_in.rs` and the help goldens under
-`src/tests/help/examples/` show the plugin in `plugin list` and
-`plugin find`.
+`board.call(&target, input.as_bytes(), &Plugins::default())` and assert that
+`take_trace().work` counts no `started` process. A test that counts the
+work a capability does uses a recording `Host`, as
+`board-plugin-controls/src/check/tests.rs` does. In board-cli,
+`src/tests/built_in.rs` calls each capability through the binary and shows
+that it answers the same from a warm index as from a cold one (STANDARDS.md
+19), and the help goldens under `src/tests/help/examples/` list the plugin
+in `plugin list` and `plugin find`.
 
 ## Porting a Python plugin
 
 - Keep the schema's bytes. A board that already enables the plugin then
-  needs no `plugin enable`. When schemars cannot produce the old bytes,
-  write a generator for that type, as `controls` does for `rule`.
+  needs no `plugin enable`. When `schema_of` cannot produce the old bytes,
+  write the type's own generator, as `controls`'s `record_schema` does to
+  keep null in `rule`.
 - Keep each capability's output, messages and codes. Drop codes that only a
   subprocess could give, such as `<name>::board::failed`.
 - Keep the Python tests as a parity suite that drives the real binary until
@@ -116,4 +125,8 @@ capability does uses a recording `Host`, as
   `pyproject.toml` and `uv.lock`.
 - Delete `plugin.json`, `src/` and `types/`, and take the plugin out of the
   packaging loop in `.github/workflows/release.yml`.
+- Search the repository for the plugin's name and `plugins/<name>`: CI
+  steps, the timing bench, `xtask/tests/shapes.rs` and STANDARDS.md. When
+  this repository's board enables the plugin, run `board plugin enable
+  <name>` so `.board/types/` holds the shipped schema.
 - Say the net production lines for Rust and for Python in the pull request.
