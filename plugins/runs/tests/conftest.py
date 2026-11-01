@@ -1,8 +1,7 @@
-"""Fixture boards that run the real `board` binary with this plugin installed and enabled."""
+"""Fixture boards that run the real `board` binary, which has this plugin built in."""
 
 import json
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +11,9 @@ import pytest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
-SCHEMAS = PLUGIN / "types" / "runs"
+# The schemas the plugin ships, kept in its crate.
+TYPES = REPOSITORY / "crates" / "board-plugin-runs" / "types"
+SCHEMAS = TYPES / "runs"
 SUITE_TYPE = "runs/suite/v1"
 RUN_TYPE = "runs/run/v1"
 
@@ -35,7 +36,7 @@ def flags(given: dict[str, Any]) -> list[str]:
 
 @dataclass(frozen=True)
 class Board:
-    """A git repository holding a board, with this plugin installed for it alone."""
+    """A git repository holding a board, run with a data directory of its own."""
 
     root: Path
     data: Path
@@ -49,9 +50,7 @@ class Board:
 
     def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         """Run `board` in the board's root, with only the variables a user's shell would pass it."""
-        uv = shutil.which("uv")
-        assert uv is not None, "uv is on PATH"
-        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        path = os.pathsep.join([str(board_binary().parent), "/usr/bin", "/bin"])
         environment = {
             "PATH": path,
             "HOME": os.environ.get("HOME", str(self.root)),
@@ -92,14 +91,11 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with runs installed and enabled through `board plugin enable`."""
+    """A board that does not commit, with runs enabled through `board plugin enable`."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
-    plugins = fixture.data / "board" / "plugins"
-    plugins.mkdir(parents=True)
-    (plugins / "runs").symlink_to(PLUGIN)
     enabled = fixture.run("plugin", "enable", "runs")
     assert enabled.returncode == 0, enabled.stderr
     return fixture
@@ -130,7 +126,7 @@ def repository(parent: Path, name: str, records: dict[str, str]) -> tuple[Path, 
     """A board in a git repository that enables runs, holding `records` by path, and its one commit."""
     root = parent / name
     for schema in SCHEMAS.rglob("*.schema.json"):
-        target = root / ".board" / "types" / schema.relative_to(PLUGIN / "types")
+        target = root / ".board" / "types" / schema.relative_to(TYPES)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(schema.read_text())
     config = {"$type": "board/config/v1", "plugins": ["runs"]}

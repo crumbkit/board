@@ -1,8 +1,8 @@
 # Plugins still in Python
 
 This file holds detail for docs/plugins.md. It describes the plugins here
-that are still Python programs: `tasks`, `runs`, `share`, `notes`,
-`changes`, `review`, `prompts`, `jira` and `github`.
+that are still Python programs: `tasks`, `share`, `notes`, `changes`,
+`review`, `prompts`, `jira` and `github`.
 
 Board validates a call's input and output, and `call` checks that the board
 holds the schemas the plugin ships. A plugin reading records with `board query`
@@ -26,6 +26,6 @@ the file name Reflect gives it.
 Each lives in `plugins/<name>/` with its lockfile and a committed
 `plugin.json` that a test compares with the one it generates.
 Its pytest suite drives the real `board` binary against fixture boards.
-`plugins/controls/`, `plugins/evals/` and `plugins/plans/` keep only that
-suite, as a parity check of the built-in. CI's `python` job runs every
+`plugins/controls/`, `plugins/evals/`, `plugins/plans/` and `plugins/runs/`
+keep only that suite, as a parity check of the built-in. CI's `python` job runs every
 Python project's gates.

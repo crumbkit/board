@@ -2,7 +2,6 @@
 
 import json
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,8 +14,8 @@ REPOSITORY = PLUGIN.parents[1]
 # The schema the plugin ships, kept in its crate.
 TYPES = REPOSITORY / "crates" / "board-plugin-evals" / "types"
 SCHEMAS = TYPES / "evals"
-# The runs plugin, whose suites and runs an eval refers to.
-RUNS = REPOSITORY / "plugins" / "runs"
+# The schemas of the runs plugin, whose suites and runs an eval refers to.
+RUNS = REPOSITORY / "crates" / "board-plugin-runs" / "types"
 EVAL_TYPE = "evals/eval/v1"
 
 
@@ -52,9 +51,7 @@ class Board:
 
     def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         """Run `board` in the board's root, with only the variables a user's shell would pass it."""
-        uv = shutil.which("uv")
-        assert uv is not None, "uv is on PATH"
-        path = os.pathsep.join([str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        path = os.pathsep.join([str(board_binary().parent), "/usr/bin", "/bin"])
         environment = {
             "PATH": path,
             "HOME": os.environ.get("HOME", str(self.root)),
@@ -92,14 +89,11 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with runs installed and both plugins enabled through `board plugin enable`."""
+    """A board that does not commit, with both built-in plugins enabled through `board plugin enable`."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
-    plugins = fixture.data / "board" / "plugins"
-    plugins.mkdir(parents=True)
-    (plugins / "runs").symlink_to(RUNS)
     for name in ("evals", "runs"):
         enabled = fixture.run("plugin", "enable", name)
         assert enabled.returncode == 0, enabled.stderr
@@ -139,7 +133,7 @@ def run(suite_path: str) -> str:
 def repository(parent: Path, name: str, records: dict[str, str]) -> tuple[Path, str]:
     """A board in a git repository that enables evals and runs, holding `records` by path, and its one commit."""
     root = parent / name
-    for types in (TYPES, RUNS / "types"):
+    for types in (TYPES, RUNS):
         for schema in types.rglob("*.schema.json"):
             target = root / ".board" / "types" / schema.relative_to(types)
             target.parent.mkdir(parents=True, exist_ok=True)

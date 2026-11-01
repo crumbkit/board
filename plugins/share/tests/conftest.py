@@ -13,7 +13,7 @@ import pytest
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
 # The evals and runs plugins' schemas: the types the records shared in these tests have.
-TYPES = [REPOSITORY / "crates" / "board-plugin-evals" / "types", REPOSITORY / "plugins" / "runs" / "types"]
+TYPES = [REPOSITORY / "crates" / "board-plugin-evals" / "types", REPOSITORY / "crates" / "board-plugin-runs" / "types"]
 EVAL_SCHEMA = ".board/types/evals/eval/v1.schema.json"
 RUN_SCHEMA = ".board/types/runs/run/v1.schema.json"
 SUITE_SCHEMA = ".board/types/runs/suite/v1.schema.json"
