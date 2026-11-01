@@ -207,8 +207,8 @@ comes right after the alias; a flag in its place is a usage error.
 ## Writing a plugin in Python
 
 The plugins here are written in Python through the shared library in
-`python/board-plugin/`. There are seven: `tasks`, `runs`, `share`, `notes`,
-`changes`, `review` and `prompts`. `controls`, `plans`, `requests` and
+`python/board-plugin/`. There are eight: `tasks`, `runs`, `share`, `notes`,
+`changes`, `review`, `prompts` and `jira`. `controls`, `plans`, `requests` and
 `evals` are built into Board ([plugins/built-in.md](plugins/built-in.md)). The README in each `plugins/<name>/` describes its records and
 capabilities. [plugins/share.md](plugins/share.md) explains the design of
 `share`, [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
