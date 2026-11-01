@@ -62,7 +62,7 @@ fn taken(data: &Scenario) -> Option<(Value, String)> {
     let directory = data.workdir().join("plugins/tasks");
     let request = std::fs::read(directory.join("request")).ok()?;
     let plugin = std::fs::read_to_string(directory.join("plugin")).ok()?;
-    std::fs::remove_file(directory.join("request")).unwrap();
+    data.write("plugins/tasks/request", Item::Deleted);
     Some((serde_json::from_slice(&request).unwrap(), plugin))
 }
 

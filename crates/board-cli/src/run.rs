@@ -410,17 +410,14 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
-    let crate::alias::Aliased {
-        arguments,
-        commands,
-        conflict,
-    } = crate::alias::read(arguments, context);
+    let aliased = crate::alias::read(arguments, context);
+    let arguments = aliased.arguments;
     let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
         sink,
-        graft::command(found.as_ref()).subcommands(commands),
+        graft::command(found.as_ref()).subcommands(aliased.commands),
         &graft::guide(found.as_ref()),
         arguments.clone(),
     );
@@ -446,7 +443,7 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     let printer = Printer { view };
-    if let Some(conflict) = conflict {
+    if let Some(conflict) = aliased.conflict {
         return render::refused(printer, conflict.refusal());
     }
     if cli.command.owner_only()
@@ -483,17 +480,8 @@ pub(crate) fn run(
         Err(refusal) => return render::refused(printer, *refusal),
     };
     board.build_in(context.built_in.0);
-    // Only a plugin's decide writes in the personal board.
-    let asks = match cli.command {
-        Command::Put(_) | Command::Rm { .. } => Some(false),
-        Command::Decide(_) => Some(context.environment.plugin.is_some()),
-        _ => None,
-    };
-    if let Some(personal) = asks {
-        match effects::asker(context, personal) {
-            Ok(asker) => board.ask_as(asker),
-            Err(refusal) => return render::refused(printer, *refusal),
-        }
+    if let Err(refusal) = ask(&mut board, context, &cli.command) {
+        return render::refused(printer, *refusal);
     }
     ran.root = Some(board.repository().path().to_path_buf());
     ran.prefix = prefix.as_ref().map(|prefix| match prefix {
@@ -514,6 +502,18 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// Lets `board` ask the owner to admit what `command` writes. Only a
+/// plugin's decide writes in the personal board.
+fn ask(board: &mut Board, context: &Context, command: &Command) -> Result<(), Box<Refusal>> {
+    let personal = match command {
+        Command::Put(_) | Command::Rm { .. } => false,
+        Command::Decide(_) => context.environment.plugin.is_some(),
+        _ => return Ok(()),
+    };
+    board.ask_as(effects::asker(context, personal)?);
+    Ok(())
 }
 
 /// Runs `command` against `board`, reading each path it is given from
