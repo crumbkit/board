@@ -29,15 +29,14 @@ pub(crate) struct Output {
     controls: Vec<Applying>,
 }
 
-/// A control that applies to the path asked about, and its rule, left out
-/// when it has none.
+/// A control that applies to the path asked about, and its rule, null when
+/// it has none.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Applying {
     control: String,
     requirement: String,
     purpose: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(schema_with = "rule_output_schema")]
     rule: Option<Rule>,
 }

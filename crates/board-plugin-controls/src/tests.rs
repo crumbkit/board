@@ -212,7 +212,7 @@ fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_se
 }
 
 #[test]
-fn the_for_path_output_schema_admits_each_kind_of_rule_or_none_and_refuses_null() {
+fn the_for_path_output_schema_admits_each_kind_of_rule_or_null_and_refuses_it_left_out() {
     let manifest = Controls.manifest();
     let output = &manifest.capabilities[0].output;
     let applying = |rule: Option<Value>| {
@@ -223,15 +223,16 @@ fn the_for_path_output_schema_admits_each_kind_of_rule_or_none_and_refuses_null(
         json!({"controls": [item]})
     };
     for rule in [
-        None,
-        Some(json!({"budget": "words", "max": 1})),
-        Some(json!({"budget": "bytes", "max": 1, "per": "file"})),
-        Some(json!({"pattern": "/private/names.txt", "show": "match-only"})),
-        Some(json!({"judged": "/rubrics/plain.md"})),
+        Value::Null,
+        json!({"budget": "words", "max": 1}),
+        json!({"budget": "bytes", "max": 1, "per": "file"}),
+        json!({"pattern": "/private/names.txt", "show": "match-only"}),
+        json!({"judged": "/rubrics/plain.md"}),
     ] {
         output
-            .validate(&applying(rule.clone()))
+            .validate(&applying(Some(rule.clone())))
             .unwrap_or_else(|e| panic!("{rule:?}: {e:?}"));
     }
-    assert!(output.validate(&applying(Some(Value::Null))).is_err());
+    assert!(output.validate(&applying(None)).is_err());
+    assert!(output.validate(&applying(Some(json!(1)))).is_err());
 }

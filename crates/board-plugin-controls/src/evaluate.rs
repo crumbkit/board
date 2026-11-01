@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 use crate::check::measure;
 use crate::index;
 use crate::logical;
-use crate::records::{Budget, Pattern, Rule, Show};
+use crate::records::{Budget, Measure, Pattern, Rule, Show};
 
 /// The findings a result shows; the rest are counted in `omitted`, so
 /// output stays bounded.
@@ -44,9 +44,9 @@ pub(crate) struct Output {
 /// One control's verdict on one part.
 ///
 /// `status` is `skipped` for a judged rule when the part failed a budget or
-/// pattern rule, and `stated` for a control without a rule. A budget result
-/// carries `used` and `max`. `omitted` counts the findings left out past the
-/// first 20.
+/// pattern rule, and `stated` for a control without a rule. `used` and `max`
+/// are null except in a budget result. `omitted` counts the findings left out
+/// past the first 20, and is null when none is.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Evaluated {
@@ -55,29 +55,24 @@ struct Evaluated {
     rule: Option<Kind>,
     status: Status,
     findings: Vec<Finding>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     used: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     max: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     omitted: Option<usize>,
 }
 
-/// What a rule found wrong in a part: the text at fault, and its line when
-/// it has one.
+/// What a rule found wrong in a part: the text at fault, and its line, or
+/// null when it has none.
 ///
 /// A pattern finding quotes what matched, and names the expression as
-/// `pattern` only when the rule's `show` is `pattern`. A judged finding
-/// carries `rewrite`, the model's instruction for fixing the text.
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+/// `pattern` only when the rule's `show` is `pattern`; otherwise `pattern`
+/// is null. A judged finding carries `rewrite`, the model's instruction for
+/// fixing the text, which is null in every other finding.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Finding {
     text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     line: Option<usize>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pattern: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     rewrite: Option<String>,
 }
 
@@ -141,8 +136,16 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
                 None => Some(stated(control, part)),
                 Some(Rule::Budget(budget)) => Some(budgeted(control, part, text, budget)),
                 Some(Rule::Pattern(pattern)) => {
-                    let found = matches(&expressions, pattern.show == Show::Pattern, text);
-                    Some(result(control, part, Kind::Pattern, found, Status::Failed))
+                    let (found, total) = matches(&expressions, pattern.show == Show::Pattern, text);
+                    let status = failed_if(total > 0);
+                    Some(result(
+                        control,
+                        part,
+                        Some(Kind::Pattern),
+                        status,
+                        found,
+                        total,
+                    ))
                 }
                 Some(Rule::Judged(_)) => None,
             };
@@ -160,11 +163,13 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             continue;
         };
         for (part, text) in &parts {
+            let kind = Some(Kind::Judged);
             let result = if failed.contains(part.as_str()) {
-                result(control, part, Kind::Judged, Vec::new(), Status::Skipped)
+                result(control, part, kind, Status::Skipped, Vec::new(), 0)
             } else {
                 let findings = judge(control, text, &sources[&judged.judged])?;
-                result(control, part, Kind::Judged, findings, Status::Failed)
+                let total = findings.len();
+                result(control, part, kind, failed_if(total > 0), findings, total)
             };
             results.insert((control, part), result);
         }
@@ -219,39 +224,41 @@ fn sources(
     Ok(sources)
 }
 
-/// A result with at most `SHOWN` findings: `failing` when it has any, else
-/// `passed`.
+/// A result with the first `SHOWN` of `findings`, which are the first of
+/// `total`, and how many were left out.
 fn result(
     control: &str,
     part: &str,
-    kind: Kind,
+    rule: Option<Kind>,
+    status: Status,
     mut findings: Vec<Finding>,
-    failing: Status,
+    total: usize,
 ) -> Evaluated {
-    let status = match failing {
-        Status::Failed if findings.is_empty() => Status::Passed,
-        other => other,
-    };
-    let omitted = findings.len().checked_sub(SHOWN).filter(|left| *left > 0);
     findings.truncate(SHOWN);
     Evaluated {
         control: control.to_owned(),
         part: part.to_owned(),
-        rule: Some(kind),
+        rule,
         status,
         findings,
         used: None,
         max: None,
-        omitted,
+        omitted: (total > SHOWN).then(|| total - SHOWN),
+    }
+}
+
+/// `failed` when a rule found something, else `passed`.
+fn failed_if(found: bool) -> Status {
+    if found {
+        Status::Failed
+    } else {
+        Status::Passed
     }
 }
 
 /// The result for a control without a rule, which never fails.
 fn stated(control: &str, part: &str) -> Evaluated {
-    Evaluated {
-        rule: None,
-        ..result(control, part, Kind::Budget, Vec::new(), Status::Stated)
-    }
+    result(control, part, None, Status::Stated, Vec::new(), 0)
 }
 
 /// The verdict of a budget on `text`, with what it used.
@@ -262,22 +269,31 @@ fn budgeted(
     &Budget { budget, max, .. }: &Budget,
 ) -> Evaluated {
     let used = measure(text.as_bytes(), budget);
-    let over = if used > max {
-        let unit = serde_json::to_value(budget).expect("a measure is a string");
-        let unit = unit.as_str().unwrap_or_default();
-        vec![Finding {
+    let unit = match budget {
+        Measure::Words => "words",
+        Measure::Bytes => "bytes",
+    };
+    let over: Vec<Finding> = (used > max)
+        .then(|| Finding {
             text: format!("{used} {unit}, more than the {max} allowed"),
             line: None,
             pattern: None,
             rewrite: None,
-        }]
-    } else {
-        Vec::new()
-    };
+        })
+        .into_iter()
+        .collect();
+    let total = over.len();
     Evaluated {
         used: Some(used),
         max: Some(max),
-        ..result(control, part, Kind::Budget, over, Status::Failed)
+        ..result(
+            control,
+            part,
+            Some(Kind::Budget),
+            failed_if(total > 0),
+            over,
+            total,
+        )
     }
 }
 
@@ -335,25 +351,59 @@ fn syntax(error: &regex_syntax::Error) -> (Option<usize>, String) {
     }
 }
 
-/// Each non-empty match in `text` of each expression, with the line it
-/// starts on, and the expression if `shown`, ordered by line.
-fn matches(expressions: &Expressions, shown: bool, text: &str) -> Vec<Finding> {
-    let mut found = Vec::new();
-    for (line, expression) in expressions {
+/// The first `SHOWN` non-empty matches in `text` of the expressions, with
+/// the line each starts on and the expression if `shown`, ordered by line,
+/// and how many there are in all.
+fn matches(expressions: &Expressions, shown: bool, text: &str) -> (Vec<Finding>, usize) {
+    let (mut hits, scanned) = hits(expressions, text);
+    debug_assert!(scanned <= text.len() * expressions.len());
+    // Stable, so matches on one line keep the expressions' order.
+    hits.sort_by_key(|hit| hit.line);
+    let findings = (hits.iter().take(SHOWN))
+        .map(|hit| Finding {
+            text: text[hit.start..hit.end].to_owned(),
+            line: Some(hit.line),
+            pattern: shown.then(|| expressions[hit.expression].0.clone()),
+            rewrite: None,
+        })
+        .collect();
+    (findings, hits.len())
+}
+
+/// Where a non-empty match lies in a part.
+struct Hit {
+    line: usize,
+    expression: usize,
+    start: usize,
+    end: usize,
+}
+
+/// Each expression's non-empty matches in `text`, in order, and how many
+/// bytes Board scanned to number their lines: each expression's matches come
+/// in increasing order, so the line count runs on from the last match and
+/// scans no byte twice for one expression.
+fn hits(expressions: &Expressions, text: &str) -> (Vec<Hit>, usize) {
+    let mut hits = Vec::new();
+    let mut scanned = 0;
+    for (index, (_, expression)) in expressions.iter().enumerate() {
+        let (mut at, mut line) = (0, 1);
         for matched in expression.find_iter(text) {
             if matched.is_empty() {
                 continue;
             }
-            found.push(Finding {
-                text: matched.as_str().to_owned(),
-                line: Some(text[..matched.start()].matches('\n').count() + 1),
-                pattern: shown.then(|| line.clone()),
-                rewrite: None,
+            let gap = &text[at..matched.start()];
+            scanned += gap.len();
+            line += gap.matches('\n').count();
+            at = matched.start();
+            hits.push(Hit {
+                line,
+                expression: index,
+                start: matched.start(),
+                end: matched.end(),
             });
         }
     }
-    found.sort_by_key(|finding| finding.line);
-    found
+    (hits, scanned)
 }
 
 /// The model's findings on `text` against `rubric`. Board cannot ask a

@@ -33,6 +33,11 @@ def failure(document: dict[str, Any]) -> dict[str, Any]:
     return document
 
 
+def finding(text: str, line: int | None = None, pattern: str | None = None) -> dict[str, Any]:
+    """A finding as the output gives it, with every key present."""
+    return {"text": text, "line": line, "pattern": pattern, "rewrite": None}
+
+
 def by_part(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """The results of a call that checked one control, by part."""
     return {result["part"]: result for result in output(document)["results"]}
@@ -52,9 +57,28 @@ def test_a_part_over_a_budget_fails_and_one_within_it_passes(board: Board) -> No
         "findings": [],
         "used": 3,
         "max": 3,
+        "omitted": None,
     }
     assert results["pr.body"]["status"] == "failed"
-    assert results["pr.body"]["findings"] == [{"text": "4 words, more than the 3 allowed"}]
+    assert results["pr.body"]["findings"] == [finding("4 words, more than the 3 allowed")]
+
+
+def test_a_bytes_budget_counts_the_bytes_of_the_text(board: Board) -> None:
+    board.write("controls/small.json", control("Small.", rule={"budget": "bytes", "max": 4}))
+    _, document = evaluate(board, ["/controls/small"], {"over": "héllo", "within": "héh"})
+    results = by_part(document)
+    assert (results["over"]["status"], results["over"]["used"]) == ("failed", 6)
+    assert results["over"]["findings"] == [finding("6 bytes, more than the 4 allowed")]
+    assert (results["within"]["status"], results["within"]["used"]) == ("passed", 4)
+
+
+def test_a_control_named_twice_is_checked_once_and_two_controls_twice(board: Board) -> None:
+    board.write("controls/short.json", control("Short.", rule={"budget": "words", "max": 3}))
+    board.write("controls/kind.json", control("Be kind."))
+    _, document = evaluate(board, ["/controls/short", "/controls/short"], {"pr.body": "Text."})
+    assert [r["control"] for r in output(document)["results"]] == ["/controls/short"]
+    _, document = evaluate(board, ["/controls/short", "/controls/kind"], {"pr.body": "Text."})
+    assert [r["control"] for r in output(document)["results"]] == ["/controls/short", "/controls/kind"]
 
 
 def test_a_pattern_shown_match_only_quotes_the_match_and_its_line_and_never_the_expression(board: Board) -> None:
@@ -65,7 +89,7 @@ def test_a_pattern_shown_match_only_quotes_the_match_and_its_line_and_never_the_
     ran, document = evaluate(board, ["/controls/names"], {"pr.body": "Fine.\nSee acme-123 here.", "ok": "Fine."})
     assert ran.returncode == 0, ran.stderr
     results = by_part(document)
-    assert results["pr.body"]["findings"] == [{"text": "acme-123", "line": 2}]
+    assert results["pr.body"]["findings"] == [finding("acme-123", 2)]
     assert results["ok"]["status"] == "passed"
     assert PRIVATE not in ran.stdout + ran.stderr
 
@@ -74,7 +98,7 @@ def test_a_pattern_shown_as_pattern_names_the_expression(board: Board) -> None:
     board.write("private/names.txt", f"{PRIVATE}\n")
     board.write("controls/names.json", control("No names.", rule={"pattern": "/private/names.txt", "show": "pattern"}))
     _, document = evaluate(board, ["/controls/names"], {"pr.body": "See acme-123."})
-    assert by_part(document)["pr.body"]["findings"] == [{"text": "acme-123", "line": 1, "pattern": PRIVATE}]
+    assert by_part(document)["pr.body"]["findings"] == [finding("acme-123", 1, PRIVATE)]
 
 
 def test_an_invalid_expression_is_refused_by_its_line_without_its_text_and_a_valid_one_is_admitted(
@@ -115,7 +139,7 @@ def test_findings_past_twenty_are_counted_and_left_out(board: Board) -> None:
     _, document = evaluate(board, ["/controls/names"], {"many": "x" * 25, "few": "x" * 20})
     results = by_part(document)
     assert (len(results["many"]["findings"]), results["many"]["omitted"]) == (20, 5)
-    assert (len(results["few"]["findings"]), "omitted" in results["few"]) == (20, False)
+    assert (len(results["few"]["findings"]), results["few"]["omitted"]) == (20, None)
 
 
 def test_a_judged_rule_skips_a_part_that_failed_a_free_rule_and_is_refused_for_one_it_must_read(board: Board) -> None:
@@ -130,6 +154,9 @@ def test_a_judged_rule_skips_a_part_that_failed_a_free_rule_and_is_refused_for_o
     assert ran.returncode == 1
     assert failure(document)["code"] == "controls::judged::unavailable"
     assert failure(document)["fields"]["control"] == "/controls/plain"
+    ran, document = evaluate(board, ["/controls/short"], {"pr.body": "Short."})
+    assert ran.returncode == 0, ran.stderr
+    assert output(document)["passed"] is True
 
 
 def test_a_control_that_is_not_there_is_refused_and_one_that_is_is_admitted(board: Board) -> None:
@@ -152,12 +179,33 @@ def test_a_rule_file_that_is_missing_is_refused_and_one_that_is_there_is_admitte
     assert ran.returncode == 0, ran.stderr
 
 
+def test_a_rubric_that_is_missing_is_refused_before_any_part_is_judged(board: Board) -> None:
+    board.write("controls/plain.json", control("Plain prose.", rule={"judged": "/rubrics/plain.md"}))
+    board.write("controls/short.json", control("Short.", rule={"budget": "words", "max": 1}))
+    ran, document = evaluate(board, ["/controls/plain", "/controls/short"], {"pr.body": "Too long."})
+    assert ran.returncode == 1
+    assert failure(document)["code"] == "controls::rule::unreadable"
+    assert failure(document)["fields"]["file"] == "/rubrics/plain.md"
+    board.write("rubrics/plain.md", "Write plainly.\n")
+    ran, _ = evaluate(board, ["/controls/plain", "/controls/short"], {"pr.body": "Too long."})
+    assert ran.returncode == 0, ran.stderr
+
+
 def test_a_control_without_a_rule_is_stated_and_never_fails(board: Board) -> None:
     board.write("controls/written.json", control("Be kind."))
     _, document = evaluate(board, ["/controls/written"], {"pr.body": "Text."})
     assert output(document) == {
         "passed": True,
         "results": [
-            {"control": "/controls/written", "part": "pr.body", "rule": None, "status": "stated", "findings": []}
+            {
+                "control": "/controls/written",
+                "part": "pr.body",
+                "rule": None,
+                "status": "stated",
+                "findings": [],
+                "used": None,
+                "max": None,
+                "omitted": None,
+            }
         ],
     }

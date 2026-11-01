@@ -1,7 +1,7 @@
 # Built-in plugins
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
-Board is called. `controls`, `plans`, `evals` and
+Board is called. `controls`, `plans`, `evals`, `runs` and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
