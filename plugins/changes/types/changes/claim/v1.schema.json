@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/claim/v1`, at `/changes/<name>/claims/<stamp>`: who holds the change and where the work is.",
+  "properties": {
+    "$type": {
+      "const": "changes/claim/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "session": {
+      "description": "The session that holds the change.",
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "worktree": {
+      "description": "The root of the clone the session works in.",
+      "pattern": "^/",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "session",
+    "worktree"
+  ],
+  "title": "ClaimRecord",
+  "type": "object"
+}

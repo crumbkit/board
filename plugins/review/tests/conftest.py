@@ -108,11 +108,12 @@ class Repo:
         return (self.agent / "prompt.txt").read_text()
 
     def run(
-        self, *arguments: str, stdin: str = "", extra: dict[str, str] | None = None
+        self, *arguments: str, stdin: str = "", extra: dict[str, str] | None = None, cwd: Path | None = None
     ) -> subprocess.CompletedProcess[str]:
-        """Run `board` in the board's root, with only the variables a user's shell would pass it, and `extra`.
+        """Run `board` in `cwd`, by default the board's root, with a user shell's variables and `extra`.
 
-        BOARD_REVIEW_AGENT names the stub agent unless `extra` sets it; an empty value in `extra` unsets a variable.
+        From another directory Board is given the board's root with `-C`. BOARD_REVIEW_AGENT names the stub agent
+        unless `extra` sets it; an empty value in `extra` unsets a variable.
         """
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
@@ -126,9 +127,10 @@ class Repo:
             "BOARD_REVIEW_AGENT": json.dumps(["sh", str(self.agent / "agent.sh")]),
         } | (extra or {})
         environment = {name: value for name, value in environment.items() if value}
+        located = [] if cwd is None else ["-C", str(self.root)]
         return subprocess.run(
-            [str(board_binary()), *arguments],
-            cwd=self.root,
+            [str(board_binary()), *located, *arguments],
+            cwd=cwd or self.root,
             env=environment,
             input=stdin,
             capture_output=True,
@@ -136,9 +138,11 @@ class Repo:
             check=False,
         )
 
-    def call(self, capability: str, *flags: str, extra: dict[str, str] | None = None) -> tuple[int, dict[str, Any]]:
-        """`board --json call review.<capability> <flags>`: its exit code, and its output or failure."""
-        ran = self.run("--json", "call", f"review.{capability}", *flags, extra=extra)
+    def call(
+        self, capability: str, *flags: str, extra: dict[str, str] | None = None, cwd: Path | None = None
+    ) -> tuple[int, dict[str, Any]]:
+        """`board --json call review.<capability> <flags>` in `cwd`: its exit code, and its output or failure."""
+        ran = self.run("--json", "call", f"review.{capability}", *flags, extra=extra, cwd=cwd)
         document: dict[str, Any] = json.loads(ran.stdout)
         return ran.returncode, document["data"]["output"] if ran.returncode == 0 else document
 

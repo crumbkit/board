@@ -2,20 +2,21 @@
 
 import json
 import re
-from datetime import UTC, datetime
 from typing import Any, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, TREE_CODES, read, write
-from board_changes.phases import next_step, referenced
+from board_changes.change import PLAN_TYPE, PLUGIN, TREE_CODES, live, read, referenced, stamp, write
+from board_changes.steps import derive
 
 # The most words a plan's text holds, and the most words the documents it uses hold in all.
 PLAN_WORDS = 3_000
 USES_WORDS = 3_000
 # The most words `brief` returns.
 BRIEF_WORDS = 600
+# What `brief` gives to list the controls on the caller's repository, from any directory in its clone.
+CONTROLS = "board --personal call controls.check"
 CONTROL_TYPE = "controls/control/v1"
 DECISION_TYPE = "plans/decision/v1"
 EVAL_TYPE = "evals/eval/v1"
@@ -38,20 +39,13 @@ def documents(board: Board, refs: list[str], records: dict[str, tuple[str, dict[
 
 
 def plan(request: CallRequest) -> dict[str, object]:
-    """Write a plan record and its text under the change, and point the change's `plan` at the text, in one write."""
+    """Write a plan record and its text under the change, in one write; the newest plan is the change's plan."""
     asked = request.input
     path, text = str(asked["path"]), str(asked["text"])
     # Board validated the input, so `uses` is a list of paths; each is kept once, in order.
     uses = list(dict.fromkeys(cast("list[str]", asked["uses"])))
     board = Board(request.board.root, PLUGIN)
-    change, blob = read(board, path)
-    if change["phase"] in FINAL:
-        raise PluginError(
-            "changes::phase::final",
-            f"the change at {path} is {change['phase']}, so it takes no new plan; "
-            "list open changes with `board call changes.open`, or start a new one",
-            {"path": path, "phase": change["phase"]},
-        )
+    live(board, path)
     if words(text) > PLAN_WORDS:
         raise PluginError(
             "changes::plan::too_long",
@@ -84,15 +78,13 @@ def plan(request: CallRequest) -> dict[str, object]:
             "limit; use fewer, choosing from each directory's index.md",
             {"path": path, "words": used},
         )
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    record, written = f"{path}/plans/{stamp}", f"{path}/plans/{stamp}.md"
-    change["plan"] = written
+    named = stamp()
+    record, written = f"{path}/plans/{named}", f"{path}/plans/{named}.md"
     write(
         board,
         [
             {"path": written, "expect": "none", "text": text},
             {"path": record, "expect": "none", "record": {"$type": PLAN_TYPE, "text": written, "uses": uses}},
-            {"path": path, "expect": blob, "record": change},
         ],
     )
     return {"path": record, "text": written, "uses": len(uses)}
@@ -134,15 +126,14 @@ def newest(board: Board, path: str) -> tuple[str | None, list[str]]:
 
 def brief(request: CallRequest) -> dict[str, object]:
     """The newest plan, one line per record it uses within the word limit, the next step and the controls command."""
-    path = str(request.input["path"])
+    path = str(request.input["path"]).rstrip("/")
     board = Board(request.board.root, PLUGIN)
-    change, _ = read(board, path)
+    read(board, path)
     text, uses = newest(board, path)
     records, _ = referenced(board, uses)
     texts = documents(board, uses, records)
-    step = next_step(request)
-    controls = f"board call controls.check --path {change['mount']}"
-    spent = words(" ".join([path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
+    step = derive(board, path)
+    spent = words(" ".join([path, text or "", str(step["next"]), str(step["actor"]), CONTROLS]))
     shown: list[dict[str, str]] = []
     for ref in uses:
         line = line_of(records.get(ref), texts.get(ref))
@@ -156,7 +147,7 @@ def brief(request: CallRequest) -> dict[str, object]:
         "plan": text,
         "uses": shown,
         "left_out": len(uses) - len(shown),
-        "phase": step["phase"],
-        "instruction": step["instruction"],
-        "controls": controls,
+        "next": step["next"],
+        "actor": step["actor"],
+        "controls": CONTROLS,
     }

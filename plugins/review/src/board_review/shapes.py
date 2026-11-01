@@ -12,6 +12,7 @@ from board_plugin.protocol import JsonValue
 
 BRIEF_TYPE = "review/brief/v1"
 REPORT_TYPE = "review/report/v1"
+CHANGE_TYPE = "changes/change/v1"
 
 # The variable that holds the agent `review.run` starts, as a JSON array of strings.
 AGENT_VARIABLE = "BOARD_REVIEW_AGENT"
@@ -72,6 +73,9 @@ BriefRecord = TypedDict(
         "focus": Annotated[str, Extra(minLength=1)],
         "questions": NotRequired[list[str]],
         "follows": NotRequired[Annotated[str, _ref(REPORT_TYPE)]],
+        "for": NotRequired[Annotated[str, _ref(CHANGE_TYPE)]],
+        "step": NotRequired[Annotated[str, Extra(pattern="^[a-z0-9][a-z0-9-]{0,59}$")]],
+        "repo": NotRequired[Annotated[str, Extra(format="board-ref")]],
     },
 )
 BriefRecord.__doc__ = """`review/brief/v1`, at /reviews/<id>/brief: what a change's author asks a review to look at.
@@ -79,7 +83,10 @@ BriefRecord.__doc__ = """`review/brief/v1`, at /reviews/<id>/brief: what a chang
 `range` is the commits under review as `base..head`, both full commit ids,
 and `subject` the record under review at its blob; a brief has one of them.
 `focus` says what matters and what to check first, `questions` what the
-author wants answered, and `follows` the report this brief continues from."""
+author wants answered, and `follows` the report this brief continues from.
+`for` is the change the review belongs to and `step` the change's step it
+completes. `repo` is the repo record of the repository the range is in; with
+it, `review.run` reads the range in the caller's clone of that repository."""
 
 
 class Finding(TypedDict):

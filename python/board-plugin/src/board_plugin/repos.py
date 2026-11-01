@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from board_plugin.board import Board, literal
@@ -18,6 +19,14 @@ from board_plugin.protocol import PluginError
 
 RECORD = "notes-repo.json"
 RECORD_TYPE = "notes/repo/v1"
+REPO_TYPE = "board/repo/v1"
+# The mounts in the board's own tree, each with the clone Board reads it from, by the mount's path.
+MOUNTS = (
+    "SELECT e.logical, s.repository FROM mounts m"
+    " JOIN sources s ON s.source = m.target"
+    " JOIN entries e ON e.source = m.source AND e.path = m.path"
+    " WHERE m.source = 'worktree' AND e.logical IS NOT NULL ORDER BY e.logical"
+)
 # The sync refusals that leave the clone's HEAD where it was: a write there can still be made.
 UNSYNCED = ("board::sync::conflict", "board::sync::edited")
 # A GitHub remote as git names it, over ssh through a host alias such as github.com-work, or `owner/repo`:
@@ -205,6 +214,61 @@ def caller_origin() -> tuple[str | None, str | None]:
         return None, None
     failed = ran.stderr.strip().splitlines()[-1:] or [f"git exited {ran.returncode}"]
     return None, f"git gave no origin for {directory}: {failed[0]}"
+
+
+def common_dir(directory: str) -> Path | None:
+    """The git directory the repository holding `directory` shares with its linked worktrees, or None outside one."""
+    found = _git(directory, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    return None if found is None else Path(found).resolve()
+
+
+def caller_root() -> str | None:
+    """The root of the clone or linked worktree BOARD_CALLER_DIR is in, or None outside one."""
+    directory = os.environ.get("BOARD_CALLER_DIR")
+    return None if not directory else _git(directory, "rev-parse", "--show-toplevel")
+
+
+def caller_repo(board: Board) -> str | None:
+    """The logical path of the repository BOARD_CALLER_DIR is in, as a mount or repo record in the board's own tree.
+
+    It is the first mount, by path, whose clone shares the directory's git
+    directory, as Board finds a mount from a directory, so a linked worktree
+    matches too; else the repo record whose `remote` is the stored form of
+    the directory's origin. Board gives plugins no pointer's body, so a repo
+    record with a checkout is found by its clone only. None when neither
+    holds the repository, or outside a git repository.
+    """
+    directory = os.environ.get("BOARD_CALLER_DIR")
+    common = None if not directory else common_dir(directory)
+    if common is None:
+        return None
+    for logical, clone in board.rows(MOUNTS):
+        if common_dir(str(clone)) == common:
+            return str(logical)
+    origin = caller_remote()
+    if origin is None:
+        return None
+    rows = board.rows(
+        "SELECT logical FROM records"  # noqa: S608 - values are quoted by literal()
+        f" WHERE type = {literal(REPO_TYPE)} AND source = 'worktree' AND status = 'ok'"
+        f" AND json_extract(body, '$.remote') = {literal(shown_remote(origin))} ORDER BY logical"
+    )
+    return str(rows[0][0]) if rows else None
+
+
+def _git(directory: str, *arguments: str) -> str | None:
+    """What `git -C <directory> <arguments>` printed, trimmed; None when it failed, printed nothing or ran 10 s."""
+    try:
+        ran = subprocess.run(  # noqa: S603 - this reads git's state only, and changes nothing
+            ["git", "-C", directory, *arguments],  # noqa: S607 - git is found on PATH
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return ran.stdout.strip() if ran.returncode == 0 and ran.stdout.strip() else None
 
 
 def covering(plugin: str, found: list[Listed], remote: str | None) -> tuple[list[str], list[str]]:

@@ -37,7 +37,20 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
     report = board.json("plugin", "list")
     plugin = next(plugin for plugin in report["data"] if plugin["name"] == "changes")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
-    assert plugin["offers"] == ["start", "next", "attach", "advance", "open", "pr", "plan", "brief"]
+    assert plugin["offers"] == [
+        "seed",
+        "start",
+        "plan",
+        "brief",
+        "claim",
+        "files",
+        "check",
+        "next",
+        "landed",
+        "drop",
+        "open",
+        "pr",
+    ]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
 
@@ -69,24 +82,32 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         for name, field in capability["inputSchema"]["properties"].items()
     }
     assert set(descriptions) == {
-        ("start", "mount"),
         ("start", "title"),
+        ("start", "session"),
         ("start", "name"),
         ("start", "handle"),
-        ("next", "path"),
-        ("attach", "path"),
-        ("attach", "ref"),
-        ("attach", "route"),
-        ("attach", "head"),
-        ("attach", "issue"),
-        ("attach", "pull_request"),
-        ("advance", "path"),
-        ("open", "limit"),
-        ("pr", "path"),
+        ("start", "issue"),
+        ("start", "suite"),
+        ("start", "workflow"),
+        ("start", "repo-name"),
         ("plan", "path"),
         ("plan", "text"),
         ("plan", "uses"),
         ("brief", "path"),
+        ("claim", "path"),
+        ("claim", "session"),
+        ("files", "path"),
+        ("files", "head"),
+        ("files", "files"),
+        ("check", "path"),
+        ("check", "run"),
+        ("next", "path"),
+        ("landed", "path"),
+        ("landed", "commit"),
+        ("drop", "path"),
+        ("drop", "why"),
+        ("open", "limit"),
+        ("pr", "path"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

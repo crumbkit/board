@@ -6,21 +6,53 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
+      "description": "Write the workflows /workflows/personal and /workflows/work when they are missing.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "Create a change in `plan` for a mounted repository.",
+        "description": "Nothing: `seed` writes the workflows it ships.",
+        "properties": {},
+        "title": "SeedInput",
+        "type": "object"
+      },
+      "name": "seed",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The workflows `seed` wrote; those already there are left as they are.",
+        "properties": {
+          "written": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Written",
+            "type": "array"
+          }
+        },
+        "required": [
+          "written"
+        ],
+        "title": "SeedOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Start a change to the repository of the clone Board runs in: its repo record when it has none, the change with its branch, workflow, suite and route, and its first claim; return the repository's owners and contributing docs.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Start a change to the repository of the clone Board was started in.",
         "properties": {
           "handle": {
             "description": "Whose change this is, as CODEOWNERS names people, such as @luke; sets the route.",
             "title": "Handle",
             "type": "string"
           },
-          "mount": {
-            "description": "The repository's mount, such as /repos/board.",
-            "format": "board-path",
-            "pattern": "^/",
-            "title": "Mount",
+          "issue": {
+            "description": "The URL of the issue the change answers.",
+            "pattern": "^https?://",
+            "title": "Issue",
             "type": "string"
           },
           "name": {
@@ -28,16 +60,41 @@
             "title": "Name",
             "type": "string"
           },
+          "repo-name": {
+            "description": "The name of a new repo record, /repos/<name>; the remote's last segment when left out.",
+            "title": "Repo-Name",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session starting the change, which its first claim names.",
+            "pattern": "\\S",
+            "title": "Session",
+            "type": "string"
+          },
+          "suite": {
+            "description": "The check suite, a runs/suite/v1; read from the contributing docs when left out.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Suite",
+            "type": "string"
+          },
           "title": {
             "description": "What the change does, in a few words.",
             "pattern": "[A-Za-z0-9]",
             "title": "Title",
             "type": "string"
+          },
+          "workflow": {
+            "description": "The workflow, a changes/workflow/v1; chosen by the repository when left out.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Workflow",
+            "type": "string"
           }
         },
         "required": [
-          "mount",
-          "title"
+          "title",
+          "session"
         ],
         "title": "StartInput",
         "type": "object"
@@ -70,7 +127,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "The new change and the repository's brief.\n\n`owners` lists the CODEOWNERS rules from `codeowners`, the file read, and\n`ask_first` the patterns someone other than `handle` owns. `docs` lists\nthe contributing docs found, to read before designing. `suite` is the\ncheck suite they name as a `runs/suite/v1` path, or `null`.",
+        "description": "The new change, its repository and the repository's brief.\n\n`repo` is the repo record, and `repo_created` says whether `start` wrote\nit. `claim` is the first claim. `owners` lists the CODEOWNERS rules from\n`codeowners`, the file read, and `ask_first` the patterns someone other\nthan `handle` owns. `docs` lists the contributing docs found, to read\nbefore designing.",
         "properties": {
           "ask_first": {
             "items": {
@@ -78,6 +135,14 @@
             },
             "title": "Ask First",
             "type": "array"
+          },
+          "branch": {
+            "title": "Branch",
+            "type": "string"
+          },
+          "claim": {
+            "title": "Claim",
+            "type": "string"
           },
           "codeowners": {
             "anyOf": [
@@ -108,519 +173,48 @@
             "title": "Path",
             "type": "string"
           },
-          "plan": {
-            "title": "Plan",
+          "repo": {
+            "title": "Repo",
             "type": "string"
+          },
+          "repo_created": {
+            "title": "Repo Created",
+            "type": "boolean"
           },
           "route": {
             "enum": [
               "owner",
               "ask-first",
-              "unowned"
+              "unowned",
+              "unread"
             ],
             "title": "Route",
             "type": "string"
           },
           "suite": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Suite"
+            "title": "Suite",
+            "type": "string"
+          },
+          "workflow": {
+            "title": "Workflow",
+            "type": "string"
           }
         },
         "required": [
           "path",
-          "plan",
+          "repo",
+          "repo_created",
+          "branch",
+          "workflow",
+          "suite",
           "route",
+          "claim",
           "owners",
           "ask_first",
           "codeowners",
-          "docs",
-          "suite"
+          "docs"
         ],
         "title": "StartOutput",
-        "type": "object"
-      }
-    },
-    {
-      "_meta": {},
-      "annotations": {
-        "readOnlyHint": true
-      },
-      "description": "The change's phase, each check of its gate as pass or missing, and what to do now.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "description": "One change, by path.",
-        "properties": {
-          "path": {
-            "description": "The change's logical path, such as /changes/suite-timeout.",
-            "format": "board-path",
-            "pattern": "^/",
-            "title": "Path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "title": "PathInput",
-        "type": "object"
-      },
-      "name": "next",
-      "outputSchema": {
-        "$defs": {
-          "Check": {
-            "additionalProperties": false,
-            "description": "One requirement of the phase's gate: `pass`, or `missing` with what is missing in `detail`.",
-            "properties": {
-              "check": {
-                "title": "Check",
-                "type": "string"
-              },
-              "detail": {
-                "title": "Detail",
-                "type": "string"
-              },
-              "status": {
-                "enum": [
-                  "pass",
-                  "missing"
-                ],
-                "title": "Status",
-                "type": "string"
-              }
-            },
-            "required": [
-              "check",
-              "status",
-              "detail"
-            ],
-            "title": "Check",
-            "type": "object"
-          }
-        },
-        "additionalProperties": false,
-        "description": "Where the change stands: its phase, route, the gate's checks and what to do now.",
-        "properties": {
-          "gate": {
-            "items": {
-              "$ref": "#/$defs/Check"
-            },
-            "title": "Gate",
-            "type": "array"
-          },
-          "instruction": {
-            "title": "Instruction",
-            "type": "string"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "phase": {
-            "enum": [
-              "plan",
-              "build",
-              "review",
-              "land",
-              "done",
-              "dropped"
-            ],
-            "title": "Phase",
-            "type": "string"
-          },
-          "route": {
-            "anyOf": [
-              {
-                "enum": [
-                  "owner",
-                  "ask-first",
-                  "unowned"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Route"
-          }
-        },
-        "required": [
-          "path",
-          "phase",
-          "route",
-          "gate",
-          "instruction"
-        ],
-        "title": "NextOutput",
-        "type": "object"
-      }
-    },
-    {
-      "_meta": {},
-      "annotations": {
-        "readOnlyHint": false
-      },
-      "description": "Add a reference to a record the change produced, or set its route, head commit or pull request.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "anyOf": [
-          {
-            "required": [
-              "ref"
-            ]
-          },
-          {
-            "required": [
-              "route"
-            ]
-          },
-          {
-            "required": [
-              "head"
-            ]
-          },
-          {
-            "required": [
-              "issue"
-            ]
-          },
-          {
-            "required": [
-              "pull_request"
-            ]
-          }
-        ],
-        "description": "Add a record reference to a change, or set its route, head commit, issue or pull request.",
-        "properties": {
-          "head": {
-            "description": "The commit under test and review.",
-            "pattern": "^[0-9a-f]{7,40}$",
-            "title": "Head",
-            "type": "string"
-          },
-          "issue": {
-            "description": "The URL of the issue the change answers.",
-            "pattern": "^https?://",
-            "title": "Issue",
-            "type": "string"
-          },
-          "path": {
-            "description": "The change's logical path, such as /changes/suite-timeout.",
-            "format": "board-path",
-            "pattern": "^/",
-            "title": "Path",
-            "type": "string"
-          },
-          "pull_request": {
-            "description": "The pull request's URL.",
-            "pattern": "^https?://",
-            "title": "Pull Request",
-            "type": "string"
-          },
-          "ref": {
-            "description": "A record the change produced, such as /suites/board-tests/runs/<id>.",
-            "format": "board-path",
-            "pattern": "^/",
-            "title": "Ref",
-            "type": "string"
-          },
-          "route": {
-            "description": "The route: owner, ask-first or unowned.",
-            "enum": [
-              "owner",
-              "ask-first",
-              "unowned"
-            ],
-            "title": "Route",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "title": "AttachInput",
-        "type": "object"
-      },
-      "name": "attach",
-      "outputSchema": {
-        "additionalProperties": false,
-        "description": "The change written, and how many records it now references.",
-        "properties": {
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "records": {
-            "title": "Records",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "path",
-          "records"
-        ],
-        "title": "AttachOutput",
-        "type": "object"
-      }
-    },
-    {
-      "_meta": {},
-      "annotations": {
-        "readOnlyHint": false
-      },
-      "description": "Move the change to its next phase when its gate passes; otherwise refuse and list what is missing.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "description": "One change, by path.",
-        "properties": {
-          "path": {
-            "description": "The change's logical path, such as /changes/suite-timeout.",
-            "format": "board-path",
-            "pattern": "^/",
-            "title": "Path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "title": "PathInput",
-        "type": "object"
-      },
-      "name": "advance",
-      "outputSchema": {
-        "additionalProperties": false,
-        "description": "The phase the change left and the phase it entered.",
-        "properties": {
-          "from": {
-            "enum": [
-              "plan",
-              "build",
-              "review",
-              "land",
-              "done",
-              "dropped"
-            ],
-            "title": "From",
-            "type": "string"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "to": {
-            "enum": [
-              "plan",
-              "build",
-              "review",
-              "land",
-              "done",
-              "dropped"
-            ],
-            "title": "To",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "from",
-          "to"
-        ],
-        "title": "AdvanceOutput",
-        "type": "object"
-      }
-    },
-    {
-      "_meta": {},
-      "annotations": {
-        "readOnlyHint": true
-      },
-      "description": "The changes that are not done or dropped, with their phase and route.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "description": "The changes that are not done or dropped, by path.",
-        "properties": {
-          "limit": {
-            "default": 100,
-            "description": "The most changes to return, 1 to 10,000; 100 when left out.",
-            "maximum": 10000,
-            "minimum": 1,
-            "title": "Limit",
-            "type": "integer"
-          }
-        },
-        "title": "OpenInput",
-        "type": "object"
-      },
-      "name": "open",
-      "outputSchema": {
-        "$defs": {
-          "OpenChange": {
-            "additionalProperties": false,
-            "description": "A change that is not done or dropped.",
-            "properties": {
-              "mount": {
-                "title": "Mount",
-                "type": "string"
-              },
-              "path": {
-                "title": "Path",
-                "type": "string"
-              },
-              "phase": {
-                "enum": [
-                  "plan",
-                  "build",
-                  "review",
-                  "land",
-                  "done",
-                  "dropped"
-                ],
-                "title": "Phase",
-                "type": "string"
-              },
-              "route": {
-                "anyOf": [
-                  {
-                    "enum": [
-                      "owner",
-                      "ask-first",
-                      "unowned"
-                    ],
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Route"
-              },
-              "title": {
-                "title": "Title",
-                "type": "string"
-              }
-            },
-            "required": [
-              "path",
-              "title",
-              "mount",
-              "phase",
-              "route"
-            ],
-            "title": "OpenChange",
-            "type": "object"
-          }
-        },
-        "additionalProperties": false,
-        "description": "Open changes by path.\n\n`total` counts every open change and `truncated` says whether the limit\nleft some out. `unreadable` is how many were left out because Board marks\nthem degraded.",
-        "properties": {
-          "changes": {
-            "items": {
-              "$ref": "#/$defs/OpenChange"
-            },
-            "title": "Changes",
-            "type": "array"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          },
-          "truncated": {
-            "title": "Truncated",
-            "type": "boolean"
-          },
-          "unreadable": {
-            "title": "Unreadable",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "changes",
-          "total",
-          "truncated",
-          "unreadable"
-        ],
-        "title": "OpenOutput",
-        "type": "object"
-      }
-    },
-    {
-      "_meta": {},
-      "annotations": {
-        "readOnlyHint": false
-      },
-      "description": "Write pr.md in the change's directory, a pull request body that says what changes, why, what the tests prove and do not prove, and the evidence, and return the gh command that would use it.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "description": "One change, by path.",
-        "properties": {
-          "path": {
-            "description": "The change's logical path, such as /changes/suite-timeout.",
-            "format": "board-path",
-            "pattern": "^/",
-            "title": "Path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ],
-        "title": "PathInput",
-        "type": "object"
-      },
-      "name": "pr",
-      "outputSchema": {
-        "additionalProperties": false,
-        "description": "The pull request drafted for a change.\n\n`path` is the logical path of `pr.md`, which holds the body. `command` is\nthe `gh pr create` line, for a POSIX shell, that would open the pull\nrequest with that body; the plugin never runs it. When the change already\nrecords a pull request, `command` is `null`, `pull_request` holds its\nURL and `pr.md` is not written. `unreadable` lists the references that reach nothing or that Board\nmarks degraded.",
-        "properties": {
-          "command": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Command"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          },
-          "pull_request": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Pull Request"
-          },
-          "unreadable": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Unreadable",
-            "type": "array"
-          }
-        },
-        "required": [
-          "path",
-          "command",
-          "pull_request",
-          "unreadable"
-        ],
-        "title": "PrOutput",
         "type": "object"
       }
     },
@@ -742,34 +336,45 @@
           }
         },
         "additionalProperties": false,
-        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.",
+        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the caller's repository.",
         "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent",
+                  "reviewer",
+                  "owner"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
           "controls": {
             "title": "Controls",
-            "type": "string"
-          },
-          "instruction": {
-            "title": "Instruction",
             "type": "string"
           },
           "left_out": {
             "title": "Left Out",
             "type": "integer"
           },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          },
           "path": {
             "title": "Path",
-            "type": "string"
-          },
-          "phase": {
-            "enum": [
-              "plan",
-              "build",
-              "review",
-              "land",
-              "done",
-              "dropped"
-            ],
-            "title": "Phase",
             "type": "string"
           },
           "plan": {
@@ -796,16 +401,628 @@
           "plan",
           "uses",
           "left_out",
-          "phase",
-          "instruction",
+          "next",
+          "actor",
           "controls"
         ],
         "title": "BriefOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Record that a session holds the change, and the root of the clone Board runs in as its worktree.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Claim a change for a session, from the clone it works in.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session that holds the change from now on.",
+            "pattern": "\\S",
+            "title": "Session",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "session"
+        ],
+        "title": "ClaimInput",
+        "type": "object"
+      },
+      "name": "claim",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The claim written and the worktree it names.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "worktree": {
+            "title": "Worktree",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "worktree"
+        ],
+        "title": "ClaimOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Record the paths the branch touches at a head, which decide the steps controls add.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The paths the branch touches at a head, given on stdin because `files` is an array.",
+        "properties": {
+          "files": {
+            "description": "Paths relative to the repository's root, as git diff --name-only gives.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "head": {
+            "description": "The commit the paths were read at.",
+            "pattern": "^[0-9a-f]{7,64}$",
+            "title": "Head",
+            "type": "string"
+          },
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "head",
+          "files"
+        ],
+        "title": "FilesInput",
+        "type": "object"
+      },
+      "name": "files",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The record written.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Record a run of the check suite; the commit it names under the repo record's name is the change's head.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Record a run of the check suite at the head it names.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "run": {
+            "description": "The runs/run/v1 the suite wrote, such as /suites/<name>/runs/<id>.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Run",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "run"
+        ],
+        "title": "CheckInput",
+        "type": "object"
+      },
+      "name": "check",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The check written and the head its run names.",
+        "properties": {
+          "head": {
+            "title": "Head",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "head"
+        ],
+        "title": "CheckOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The change's steps, each done or not with the record that did it, and the next step and its actor.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One change, by path.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathInput",
+        "type": "object"
+      },
+      "name": "next",
+      "outputSchema": {
+        "$defs": {
+          "StepState": {
+            "additionalProperties": false,
+            "description": "One step of the change: whether it is done and by which record.\n\n`added_by` is the control that added the step, `route` for the approve\nstep a route adds, or null for a step of the workflow. `if_touched` says\na control adds the step only if the branch touches its files, which no\nfiles record at the head says yet; record the files with `files` to\nsettle it.",
+            "properties": {
+              "actor": {
+                "enum": [
+                  "agent",
+                  "reviewer",
+                  "owner"
+                ],
+                "title": "Actor",
+                "type": "string"
+              },
+              "added_by": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Added By"
+              },
+              "done": {
+                "title": "Done",
+                "type": "boolean"
+              },
+              "done_by": {
+                "enum": [
+                  "plan",
+                  "answer",
+                  "check",
+                  "review",
+                  "landed"
+                ],
+                "title": "Done By",
+                "type": "string"
+              },
+              "if_touched": {
+                "title": "If Touched",
+                "type": "boolean"
+              },
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "record": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Record"
+              }
+            },
+            "required": [
+              "name",
+              "actor",
+              "done_by",
+              "done",
+              "record",
+              "added_by",
+              "if_touched"
+            ],
+            "title": "StepState",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Where the change stands: its head, its steps, the next step and its actor, and how it ended.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent",
+                  "reviewer",
+                  "owner"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "ended": {
+            "anyOf": [
+              {
+                "enum": [
+                  "landed",
+                  "dropped"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended"
+          },
+          "head": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/$defs/StepState"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "head",
+          "steps",
+          "next",
+          "actor",
+          "ended"
+        ],
+        "title": "NextOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "End the change as merged at a commit.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "End the change as merged.",
+        "properties": {
+          "commit": {
+            "description": "The merge commit.",
+            "pattern": "^[0-9a-f]{7,64}$",
+            "title": "Commit",
+            "type": "string"
+          },
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "commit"
+        ],
+        "title": "LandedInput",
+        "type": "object"
+      },
+      "name": "landed",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The record written.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "End the change as stopped, saying why.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "End the change as stopped.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "why": {
+            "description": "Why the change stopped.",
+            "pattern": "\\S",
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "why"
+        ],
+        "title": "DropInput",
+        "type": "object"
+      },
+      "name": "drop",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The record written.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "Written",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The changes that have not ended, with their repository, branch and route.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The changes that have not ended, by path.",
+        "properties": {
+          "limit": {
+            "default": 100,
+            "description": "The most changes to return, 1 to 10,000; 100 when left out.",
+            "maximum": 10000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "OpenInput",
+        "type": "object"
+      },
+      "name": "open",
+      "outputSchema": {
+        "$defs": {
+          "OpenChange": {
+            "additionalProperties": false,
+            "description": "A change that has not ended.",
+            "properties": {
+              "branch": {
+                "title": "Branch",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              },
+              "route": {
+                "enum": [
+                  "owner",
+                  "ask-first",
+                  "unowned",
+                  "unread"
+                ],
+                "title": "Route",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "title",
+              "repo",
+              "branch",
+              "route"
+            ],
+            "title": "OpenChange",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Changes with no landed or dropped record, by path.\n\n`total` counts every open change and `truncated` says whether the limit\nleft some out. `unreadable` is how many were left out because Board marks\nthem degraded.",
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/$defs/OpenChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "unreadable": {
+            "title": "Unreadable",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changes",
+          "total",
+          "truncated",
+          "unreadable"
+        ],
+        "title": "OpenOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Write pr.md in the change's directory, a pull request body that says what changes, why, what the tests prove and do not prove, and the evidence, and return the gh command that would use it.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One change, by path.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathInput",
+        "type": "object"
+      },
+      "name": "pr",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The pull request drafted for a change.\n\n`path` is the logical path of `pr.md`, which holds the body. `command` is\nthe `gh pr create` line, for a POSIX shell, that would open the pull\nrequest with that body; the plugin never runs it. When the change has an\n`opened` record, `command` is `null`, `pull_request` holds its URL and\n`pr.md` is not written. `unreadable` lists the references that reach\nnothing or that Board marks degraded.",
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "pull_request": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pull Request"
+          },
+          "unreadable": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "command",
+          "pull_request",
+          "unreadable"
+        ],
+        "title": "PrOutput",
+        "type": "object"
+      }
     }
   ],
-  "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository's clone, on the work branch, with `board --personal call changes.start --title '<title>' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "delivery"
   },
@@ -821,7 +1038,14 @@
   ],
   "types": [
     "changes/change/v1",
-    "changes/plan/v1"
+    "changes/plan/v1",
+    "changes/workflow/v1",
+    "changes/claim/v1",
+    "changes/check/v1",
+    "changes/files/v1",
+    "changes/opened/v1",
+    "changes/landed/v1",
+    "changes/dropped/v1"
   ],
   "version": "0.1.0"
 }

@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
+from board_plugin.repos import caller_repo, caller_root
 
 from board_review.git import Repository
 from board_review.shapes import (
@@ -75,7 +76,7 @@ def run(request: CallRequest) -> RunOutput:
     if subject is not None:
         prompt = _prompt(path, brief, "a record in a board", "record", _record(board, subject))
     else:
-        repository = Repository(request.board.root)
+        repository = Repository(_clone(board, brief) or request.board.root)
         # The schema gives a brief without a subject a range.
         base_name, _, head_name = cast("dict[str, str]", brief)["range"].partition("..")
         head = repository.commit(head_name)
@@ -114,6 +115,27 @@ def run(request: CallRequest) -> RunOutput:
     line = {"path": report_path, "expect": "none", "record": report}
     board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
     return output
+
+
+def _clone(board: Board, brief: BriefRecord) -> str | None:
+    """The root of the caller's clone, when the brief names the repo record it is a clone of; None without `repo`.
+
+    A brief whose `repo` is not the repository Board was started in is
+    `review::repo::not_caller`, since its range would be read elsewhere.
+    """
+    repo = brief.get("repo")
+    if repo is None:
+        return None
+    found = caller_repo(board)
+    root = caller_root()
+    if found != repo or root is None:
+        raise PluginError(
+            "review::repo::not_caller",
+            f"the brief's range is in {repo}, but Board was started in {root or 'no git clone'}, which is"
+            f" {found or 'no repository this board records'}; run review.run from a clone of {repo}",
+            {"repo": repo, "caller": found},
+        )
+    return root
 
 
 def _record(board: Board, subject: Subject) -> str:

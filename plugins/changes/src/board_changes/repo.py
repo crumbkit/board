@@ -4,7 +4,6 @@ import re
 from typing import TypedDict
 
 from board_plugin.board import Board, literal
-from board_plugin.protocol import PluginError
 
 SUITE_TYPE = "runs/suite/v1"
 # Where GitHub looks for CODEOWNERS, in its order; the first found is used.
@@ -69,18 +68,10 @@ def suite_in(board: Board, repo: str, docs: dict[str, str]) -> str | None:
     return next((candidate for candidate in candidates if candidate in suites), None)
 
 
-def check_suite(board: Board, repo: str) -> str | None:
-    """The check suite the repository's contributing docs name, or `None`."""
-    return suite_in(board, repo, files(board, repo, DOCS))
-
-
-def exists(board: Board, mount: str) -> None:
-    """Refuse a mount path that holds nothing with `changes::mount::not_found`."""
-    [answer] = board.refs([mount])
-    if answer is None:
-        raise PluginError(
-            "changes::mount::not_found",
-            f"nothing is at {mount}; name the repository by the logical path of its mount, such as /repos/<name>, "
-            "and see what is mounted with `board ls /repos`",
-            {"mount": mount},
+def is_suite(board: Board, path: str) -> bool:
+    """Whether a `runs/suite/v1` is at `path`."""
+    return bool(
+        board.rows(
+            f"SELECT 1 FROM records WHERE type = {literal(SUITE_TYPE)} AND logical = {literal(path)}"  # noqa: S608 - values are quoted by literal()
         )
+    )

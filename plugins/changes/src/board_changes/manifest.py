@@ -5,26 +5,113 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE
 from board_changes.models import (
-    CHANGE_SCHEMA_PATH,
-    PLAN_SCHEMA_PATH,
-    AdvanceOutput,
-    AttachInput,
-    AttachOutput,
+    RECORDS,
     BriefOutput,
-    ChangeRecord,
+    CheckInput,
+    CheckOutput,
+    ClaimInput,
+    ClaimOutput,
+    DropInput,
+    FilesInput,
+    LandedInput,
     NextOutput,
     OpenInput,
     OpenOutput,
     PathInput,
     PlanInput,
     PlanOutput,
-    PlanRecord,
     PrOutput,
+    SeedInput,
+    SeedOutput,
     StartInput,
     StartOutput,
+    Written,
 )
+
+# What each capability does, its input and output, and whether it only reads, in the order Board lists them.
+CAPABILITIES: list[tuple[str, str, type[BaseModel], type[BaseModel], bool]] = [
+    (
+        "seed",
+        "Write the workflows /workflows/personal and /workflows/work when they are missing.",
+        SeedInput,
+        SeedOutput,
+        False,
+    ),
+    (
+        "start",
+        (
+            "Start a change to the repository of the clone Board runs in: its repo record when it has none, the change"
+            " with its branch, workflow, suite and route, and its first claim; return the repository's owners and"
+            " contributing docs."
+        ),
+        StartInput,
+        StartOutput,
+        False,
+    ),
+    (
+        "plan",
+        (
+            "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a"
+            " plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's"
+            " plan."
+        ),
+        PlanInput,
+        PlanOutput,
+        False,
+    ),
+    (
+        "brief",
+        (
+            "What an agent needs to start: the newest plan, one line per record it uses, the next step and the"
+            " command that lists the repository's controls, in at most 600 words."
+        ),
+        PathInput,
+        BriefOutput,
+        True,
+    ),
+    (
+        "claim",
+        "Record that a session holds the change, and the root of the clone Board runs in as its worktree.",
+        ClaimInput,
+        ClaimOutput,
+        False,
+    ),
+    (
+        "files",
+        "Record the paths the branch touches at a head, which decide the steps controls add.",
+        FilesInput,
+        Written,
+        False,
+    ),
+    (
+        "check",
+        "Record a run of the check suite; the commit it names under the repo record's name is the change's head.",
+        CheckInput,
+        CheckOutput,
+        False,
+    ),
+    (
+        "next",
+        "The change's steps, each done or not with the record that did it, and the next step and its actor.",
+        PathInput,
+        NextOutput,
+        True,
+    ),
+    ("landed", "End the change as merged at a commit.", LandedInput, Written, False),
+    ("drop", "End the change as stopped, saying why.", DropInput, Written, False),
+    ("open", "The changes that have not ended, with their repository, branch and route.", OpenInput, OpenOutput, True),
+    (
+        "pr",
+        (
+            "Write pr.md in the change's directory, a pull request body that says what changes, why, what the"
+            " tests prove and do not prove, and the evidence, and return the gh command that would use it."
+        ),
+        PathInput,
+        PrOutput,
+        False,
+    ),
+]
 
 
 def capability(
@@ -49,87 +136,25 @@ def manifest() -> dict[str, JsonValue]:
         "version": "0.1.0",
         # SKILL.md's description, the callout an agent sees first.
         "description": (
-            "Walk one change to a repository from its plan to its pull request, and gather every "
-            "record it produces. Use it when you start a change to a repository mounted in the board, and whenever "
-            "you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title "
-            "'<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and "
-            "README.md in the plugin's directory say more."
+            "Record one change to a repository, from its plan to its merge, as records written once, and derive "
+            "its next step from them. Use it when you start a change to a repository, and whenever you resume "
+            "one. Start in the repository's clone, on the work branch, with `board --personal call changes.start "
+            "--title '<title>' --session <session>`, then call `changes.next --path /changes/<name>` for the "
+            "next step. SKILL.md and README.md in the plugin's directory say more."
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},
-        "types": [CHANGE_TYPE, PLAN_TYPE],
+        "types": list(RECORDS),
         "capabilities": [
-            capability(
-                "start",
-                "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the "
-                "repository's owners, contributing docs and check suite.",
-                StartInput,
-                StartOutput,
-                read_only=False,
-            ),
-            capability(
-                "next",
-                "The change's phase, each check of its gate as pass or missing, and what to do now.",
-                PathInput,
-                NextOutput,
-                read_only=True,
-            ),
-            capability(
-                "attach",
-                "Add a reference to a record the change produced, or set its route, head commit or pull request.",
-                AttachInput,
-                AttachOutput,
-                read_only=False,
-            ),
-            capability(
-                "advance",
-                "Move the change to its next phase when its gate passes; otherwise refuse and list what is missing.",
-                PathInput,
-                AdvanceOutput,
-                read_only=False,
-            ),
-            capability(
-                "open",
-                "The changes that are not done or dropped, with their phase and route.",
-                OpenInput,
-                OpenOutput,
-                read_only=True,
-            ),
-            capability(
-                "pr",
-                "Write pr.md in the change's directory, a pull request body that says what changes, why, what the"
-                " tests prove and do not prove, and the evidence, and return the gh command that would use it.",
-                PathInput,
-                PrOutput,
-                read_only=False,
-            ),
-            capability(
-                "plan",
-                "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a"
-                " plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's"
-                " plan.",
-                PlanInput,
-                PlanOutput,
-                read_only=False,
-            ),
-            capability(
-                "brief",
-                "What an agent needs to start: the newest plan, one line per record it uses, the next step and the"
-                " command that lists the repository's controls, in at most 600 words.",
-                PathInput,
-                BriefOutput,
-                read_only=True,
-            ),
+            capability(name, description, given, output, read_only=read_only)
+            for name, description, given, output, read_only in CAPABILITIES
         ],
     }
 
 
 def schemas() -> dict[str, dict[str, JsonValue]]:
     """Each type's schema, as the plugin ships it, by its path under `types/`."""
-    return {
-        CHANGE_SCHEMA_PATH: ChangeRecord.model_json_schema(by_alias=True),
-        PLAN_SCHEMA_PATH: PlanRecord.model_json_schema(by_alias=True),
-    }
+    return {f"{name}.schema.json": model.model_json_schema(by_alias=True) for name, model in RECORDS.items()}
 
 
 if __name__ == "__main__":

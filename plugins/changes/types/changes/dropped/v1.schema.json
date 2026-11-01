@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/dropped/v1`, at `/changes/<name>/dropped`: the change stopped, which ends it.",
+  "properties": {
+    "$type": {
+      "const": "changes/dropped/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "why": {
+      "description": "Why the change stopped.",
+      "pattern": "\\S",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "why"
+  ],
+  "title": "DroppedRecord",
+  "type": "object"
+}

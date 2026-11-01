@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "Step": {
+      "additionalProperties": false,
+      "description": "One step of a workflow: who takes it and the kind of record that completes it.",
+      "properties": {
+        "actor": {
+          "description": "Who takes the step: agent, reviewer or owner.",
+          "enum": [
+            "agent",
+            "reviewer",
+            "owner"
+          ],
+          "type": "string"
+        },
+        "done_by": {
+          "description": "The kind of record that completes the step; README.md gives each kind's rule.",
+          "enum": [
+            "plan",
+            "answer",
+            "check",
+            "review",
+            "landed"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "description": "The step's name, such as review.",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,59}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "actor",
+        "done_by"
+      ],
+      "title": "Step",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/workflow/v1`: the steps a change follows, in order, at `/workflows/<name>`.",
+  "properties": {
+    "$type": {
+      "const": "changes/workflow/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "steps": {
+      "description": "The steps, in order.",
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "steps"
+  ],
+  "title": "WorkflowRecord",
+  "type": "object"
+}

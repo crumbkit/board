@@ -3,15 +3,15 @@
 One read-only query answers "what is open or running right now?", and
 rescuing work after a session stops means running it and reading what it
 prints. The records it reads come from the work records
-(plan/work-records.md) and from the `runs` mod, which records each subagent
-when it starts as well as when it stops.
+(plugins/changes/README.md) and from the `runs` mod, which records each
+subagent when it starts as well as when it stops.
 
 ## Recording subagents
 
 The runs mod writes two records per subagent, each once. It runs Board as
-`board --personal`, as every call these plans add does (plan/work-records.md), so
-its records, its gate and its brief come from the personal board whatever
-the session's directory.
+`board --personal`, as every call of the changes plugin does
+(plugins/changes/README.md), so its records, its gate and its brief come
+from the personal board whatever the session's directory.
 
 - When the Agent tool call that starts it runs, a `runs/agent/v1` at
   `/agents/<id>.json`, with `session`, `cwd`, `started` and `works_on`, and
@@ -31,7 +31,7 @@ An agent record that no run names is running. After a usage stop it is
 stalled: nothing will ever write its run. Lead sessions are not recorded
 this way, because a session that a usage stop ends gets no stop hook. A
 change's newest claim says which session held it and the worktree it worked
-in (plan/work-records.md).
+in (plugins/changes/README.md).
 
 `works_on` comes from the prompt's last line, `Board: /changes/<name>`. When
 that line is missing and the parent session holds exactly one change, the

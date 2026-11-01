@@ -5,20 +5,26 @@ import sys
 from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_changes.open import open_changes
-from board_changes.phases import advance, attach, next_step
 from board_changes.plan import brief, plan
 from board_changes.pr import pr
+from board_changes.records import check, claim, drop, files, landed
 from board_changes.start import start
+from board_changes.steps import next_step
+from board_changes.workflow import seed
 
 CAPABILITIES = {
+    "seed": seed,
     "start": start,
-    "next": next_step,
-    "attach": attach,
-    "advance": advance,
-    "open": open_changes,
-    "pr": pr,
     "plan": plan,
     "brief": brief,
+    "claim": claim,
+    "files": files,
+    "check": check,
+    "next": next_step,
+    "landed": landed,
+    "drop": drop,
+    "open": open_changes,
+    "pr": pr,
 }
 
 

@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/landed/v1`, at `/changes/<name>/landed`: the change merged, which ends it.",
+  "properties": {
+    "$type": {
+      "const": "changes/landed/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "commit": {
+      "description": "The merge commit.",
+      "pattern": "^[0-9a-f]{7,64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "commit"
+  ],
+  "title": "LandedRecord",
+  "type": "object"
+}

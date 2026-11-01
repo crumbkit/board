@@ -12,11 +12,9 @@ use serde_json::{Value, json};
 /// The rules a schema may break today, by record type, until the plugin
 /// that ships it is ported. Each entry must still be broken, so a fix
 /// removes its entry.
-const EXEMPT: [(&str, &str); 25] = [
+const EXEMPT: [(&str, &str); 23] = [
     // Python plugins: pydantic titles every property and keeps field
     // meanings in the class docstring.
-    ("changes/change/v1", "described"),
-    ("changes/change/v1", "untitled"),
     ("controls/control/v1", "described"),
     ("controls/control/v1", "untitled"),
     ("notes/repo/v1", "described"),

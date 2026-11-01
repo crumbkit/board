@@ -1,77 +1,63 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
+  "description": "`changes/change/v1`: one change to a repository, at `/changes/<name>.json`.\n\nIts other records sit in `/changes/<name>/`, each written once, and its\nstate is derived from which of them exist.",
   "properties": {
     "$type": {
       "const": "changes/change/v1",
-      "title": "$Type",
+      "description": "The record's type.",
       "type": "string"
     },
-    "head": {
-      "pattern": "^[0-9a-f]{7,40}$",
-      "title": "Head",
+    "branch": {
+      "description": "The work branch in the repository.",
+      "minLength": 1,
       "type": "string"
     },
     "issue": {
+      "description": "The URL of the issue the change answers.",
       "pattern": "^https?://",
-      "title": "Issue",
       "type": "string"
     },
-    "mount": {
+    "repo": {
+      "description": "The repo record of the repository the change is to, such as /repos/board.",
       "format": "board-ref",
-      "title": "Mount",
       "type": "string"
-    },
-    "phase": {
-      "enum": [
-        "plan",
-        "build",
-        "review",
-        "land",
-        "done",
-        "dropped"
-      ],
-      "title": "Phase",
-      "type": "string"
-    },
-    "plan": {
-      "format": "board-ref",
-      "title": "Plan",
-      "type": "string"
-    },
-    "pull_request": {
-      "pattern": "^https?://",
-      "title": "Pull Request",
-      "type": "string"
-    },
-    "records": {
-      "items": {
-        "format": "board-ref",
-        "type": "string"
-      },
-      "title": "Records",
-      "type": "array"
     },
     "route": {
+      "description": "owner when nobody else owns a CODEOWNERS pattern, ask-first when someone does, unowned when no pattern names anyone, and unread when the board holds no checkout to read CODEOWNERS from.",
       "enum": [
         "owner",
         "ask-first",
-        "unowned"
+        "unowned",
+        "unread"
       ],
-      "title": "Route",
       "type": "string"
     },
+    "suite": {
+      "description": "The check suite whose runs the check step reads.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "runs/suite/v1"
+    },
     "title": {
+      "description": "What the change does, in a few words.",
       "minLength": 1,
-      "title": "Title",
       "type": "string"
+    },
+    "workflow": {
+      "description": "The workflow whose steps the change follows.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/workflow/v1"
     }
   },
   "required": [
     "$type",
     "title",
-    "mount",
-    "phase"
+    "repo",
+    "branch",
+    "workflow",
+    "suite",
+    "route"
   ],
   "title": "ChangeRecord",
   "type": "object"

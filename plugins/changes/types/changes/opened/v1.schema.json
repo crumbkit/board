@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/opened/v1`, at `/changes/<name>/opened`: the change's pull request.",
+  "properties": {
+    "$type": {
+      "const": "changes/opened/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "pull_request": {
+      "description": "The pull request's URL.",
+      "pattern": "^https?://",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "pull_request"
+  ],
+  "title": "OpenedRecord",
+  "type": "object"
+}

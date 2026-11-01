@@ -21,6 +21,10 @@ request's commits, so CI can require a review of each pull request.
 - `focus`: what matters and what to check first.
 - `questions` (optional): what the author wants answered.
 - `follows` (optional): the report this brief continues from.
+- `for` (optional): the `changes/change/v1` the review belongs to, and
+  `step` (optional) the change's step it completes
+  (plugins/changes/README.md).
+- `repo` (optional): the repo record of the repository the range is in.
 
 `review/report/v1`, one review of a range or a subject, at
 `/reviews/<id>/report`. It has either `range` and `patch_ids`, or `subject`:
@@ -78,6 +82,13 @@ export BOARD_REVIEW_AGENT='["claude", "-p", "--output-format", "json", "--settin
 `board call review.run --brief /reviews/<id>/brief`:
 
 - Reads the brief from the board's own tree.
+- Reads the range in the board's own repository, or, when the brief names a
+  `repo`, in the clone Board was started in. That clone must be the
+  repository `repo` names: the mount whose clone shares its git directory,
+  or the repo record whose `remote` is the stored form of its origin, as
+  `board_plugin.repos.caller_repo` finds it. Otherwise the run fails with
+  `review::repo::not_caller` before the agent starts. Run it as
+  `board --personal call review.run` from the clone.
 - Resolves the brief's range with git, and replaces the base with the merge
   base of the base and the head, so commits the base gained after the branch
   point do not show as reverts.

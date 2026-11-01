@@ -1,0 +1,23 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/check/v1`, at `/changes/<name>/checks/<stamp>`: a run of the check suite at a head.",
+  "properties": {
+    "$type": {
+      "const": "changes/check/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "run": {
+      "description": "The run, which names the head commit in its versions.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "runs/run/v1"
+    }
+  },
+  "required": [
+    "$type",
+    "run"
+  ],
+  "title": "CheckRecord",
+  "type": "object"
+}

@@ -1,58 +1,74 @@
 ---
 name: changes
-description: 'Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title ''<title>''`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository''s clone, on the work branch, with `board --personal call changes.start --title ''<title>'' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # changes
 
-The gate is the contract. `next` says what the current phase still lacks;
-`advance` moves on only when nothing is missing.
+Each step of a change is done when its record exists. `next` derives the
+steps from the records; nothing stores a phase.
+
+Run every command as `board --personal call …`. In a checkout of a
+repository that is itself a board, plain `board` runs as that board.
 
 ## Steps
 
-1. Run `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`.
-   Add `--handle @<you>` so the route reflects who owns what. Read every path
-   in `docs`. Treat each `ask_first` pattern as a file to ask about before
-   changing.
-2. Run `board -C <board> call changes.next --path /changes/<name>`
-   whenever you start a phase or lose context. Do what `instruction` says
-   and fix each check whose `status` is `missing`.
-3. Attach every record you make with
-   `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
-   Set the commit under test with `--head <sha>` after each push, the issue
-   with `--issue <url>`, and the pull request with `--pull-request <url>`.
-4. Run `board -C <board> call changes.advance --path /changes/<name>`
-   when every check passes.
-5. To drop a change, `board put` it with `phase` set to `dropped`.
+1. In the repository's clone, on the work branch, run
+   `board --personal call changes.start --title '<title>' --session <session>`.
+   Add `--handle @<you>` so the route reflects who owns what. Read every
+   path in `docs`, and treat each `ask_first` pattern as a file to ask about
+   before changing.
+2. Run `board --personal call changes.next --path /changes/<name>` whenever
+   you start a step or lose context. Do the step `next` names; `actor` says
+   who takes it.
+3. When you resume a change, or work on it from another clone, run
+   `changes.claim --path /changes/<name> --session <session>` there first.
+4. End a change with `changes.landed --commit <sha>` once it merges, or
+   `changes.drop --why '<text>'` to stop it.
 
-## Each phase
+## Each kind of step
 
-- **plan**: interview the owner. Use your own planning skill where one is
-  configured. Write the plan's Problem, Outcome and Out of scope sections.
-  On the `ask-first` route, attach the owner's `decisions/decision/v1` whose
-  `basis` names the plan.
-- **build**: build test-first. Attach each `tasks/task/v2`. Run the check
-  suite that `start` reported on the head commit, record the run, and attach
-  it.
-- **review**: review the head commit with clean context and attach the
-  report. Fix every critical or high finding, record the new head, and
-  review again.
-- **land**: add `## What the tests prove` and `## What the tests do not
-  prove` sections to the plan with what the runs cannot show on their own.
-  Run `board -C <board> call changes.pr --path /changes/<name>`, read
-  `/changes/<name>/pr.md` and edit it if it is wrong. Fix each path in
-  `unreadable` and run `pr` again, or say why in the body. Run `command`
-  yourself, in a POSIX shell, from a checkout of the repository on the
-  change's `head`, then record the pull request's URL. Merging happens
-  outside Board. Advancing from `land` ends the change in `done`.
+- **plan**: interview the owner, then write the plan with `changes.plan`,
+  giving `{path, text, uses}` on stdin. `uses` names the standards, controls,
+  decisions and evals it relies on.
+- **answer**: ask the owner a `plans/question/v1` whose `for` names the
+  change. The step is done when the owner answers `approve`. On any other
+  answer, plan again and ask again, or drop the change.
+- **check**: run the change's suite on a clean tree, record the run, and
+  then run `changes.check --run <run>`. The run must name the commit it
+  tested in `versions` under the repo record's name. Then record the files
+  the branch touches at that head:
+
+      git diff --name-only origin/main... | jq -R . | jq -sc \
+        '{path: "/changes/<name>", head: "<sha>", files: .}' \
+        | board --personal call changes.files
+
+- **review**: write a `review/brief/v1` at `/reviews/<id>/brief` with `for`
+  (the change), `step` (the step's name), `repo` and the range ending at the
+  head, then run `review.run` from the clone. Fix each high finding, check
+  again and review again; a new head needs a new review.
+- **landed**: run `changes.pr`, read `/changes/<name>/pr.md`, fix it, and run
+  its `command` from the clone. Merging happens outside Board; then record
+  `changes.landed`.
+
+## Subagents
+
+End every brief to a subagent with the line `Board: /changes/<name>`. A
+subagent whose prompt ends with that line runs `changes.brief` for it first
+when no brief is in its context.
+
+Work across two repositories is two changes, each plan naming the other in
+`uses`.
 
 ## Refusals
 
-- `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
-- `changes::ref::dangling`: nothing is at the path. Write the record
-  first.
-- `changes::change::exists`: pass another `--name`, or resume the
-  change with `next`.
-- `changes::mount::not_found`: run `board ls /repos` to find the mount.
-- `changes::phase::final`: the change is done or dropped. Run `open`, or
-  `start` a new change.
+- `changes::branch::default` or `changes::branch::detached`: switch to a
+  work branch.
+- `changes::workflow::unchosen`: link `/workflows/repos/<name>` or
+  `/workflows/owners/<owner>` to a workflow, or pass `--workflow`. Run
+  `changes.seed` for the two seed workflows.
+- `changes::suite::unknown`: pass `--suite /suites/<name>`.
+- `changes::repo::name_taken`: pass `--repo-name <name>`.
+- `changes::change::exists`: pass another `--name`, or resume the change.
+- `changes::change::ended`: the change landed or was dropped. Start a new
+  one.

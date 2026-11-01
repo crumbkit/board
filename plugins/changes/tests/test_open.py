@@ -2,30 +2,21 @@
 
 import json
 
-from conftest import Board, change, record
+from conftest import Board, change, record, setup
 
 
-def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -> None:
-    board.write("changes/b.json", change("build", route="owner"))
+def test_open_lists_changes_with_no_landed_or_dropped_record_by_path(board: Board) -> None:
+    board.write("changes/b.json", change(route="unread"))
     board.write("changes/a.json", change())
-    board.write("changes/c.json", change("done"))
-    board.write("changes/d.json", change("dropped"))
+    board.write("changes/c.json", change())
+    board.write("changes/c/landed.json", record("changes/landed/v1", commit="a3f9c0d"))
+    board.write("changes/d.json", change())
+    board.write("changes/d/dropped.json", record("changes/dropped/v1", why="Not needed."))
     output = board.call("open", {})
+    shown = {"title": "Let a suite declare a timeout", "repo": "/repos/app", "branch": "work"}
     assert output["changes"] == [
-        {
-            "path": "/changes/a",
-            "title": "Let a suite declare a timeout",
-            "mount": "/repos/x",
-            "phase": "plan",
-            "route": None,
-        },
-        {
-            "path": "/changes/b",
-            "title": "Let a suite declare a timeout",
-            "mount": "/repos/x",
-            "phase": "build",
-            "route": "owner",
-        },
+        {"path": "/changes/a", **shown, "route": "owner"},
+        {"path": "/changes/b", **shown, "route": "unread"},
     ]
     assert (output["total"], output["truncated"], output["unreadable"]) == (2, False, 0)
 
@@ -52,32 +43,24 @@ def checked(board: Board) -> dict[str, str | None]:
     return {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/changes/")}
 
 
-def test_the_schema_refuses_an_unknown_phase_or_field_and_reports_a_reference_that_reaches_nothing(
+def test_the_schema_refuses_an_unknown_route_or_field_and_reports_a_reference_that_reaches_nothing(
     board: Board,
 ) -> None:
-    board.write("repos/x/README.md", "x")
-    board.write("tasks/a.md", "x")
-    board.write("changes/good.json", change(records=["/tasks/a.md"], head="a3f9c0d"))
-    board.write("changes/phase.json", change("later"))
-    board.write("changes/extra.json", change(owner="someone"))
-    board.write("changes/dangling.json", change(records=["/tasks/b"]))
+    setup(board)
+    board.write("changes/route.json", change(route="later"))
+    board.write("changes/extra.json", change(phase="plan"))
+    board.write("changes/dangling.json", change(workflow="/workflows/none"))
     assert checked(board) == {
-        "/changes/good": None,
-        "/changes/phase": "board::record::invalid",
+        "/changes/t": None,
+        "/changes/route": "board::record::invalid",
         "/changes/extra": "board::record::invalid",
         "/changes/dangling": "board::ref::dangling",
     }
 
 
-def test_the_schema_refuses_a_repository_by_owner_and_name_or_under_the_old_repo_key_and_admits_its_mount(
-    board: Board,
-) -> None:
-    board.write("repos/x/README.md", "x")
-    board.write("changes/named.json", change(mount="crumbkit/board"))
-    board.write("changes/old.json", record("changes/change/v1", title="T", repo="/repos/x", phase="plan"))
-    board.write("changes/mounted.json", change(mount="/repos/x"))
-    assert checked(board) == {
-        "/changes/named": "board::ref::malformed",
-        "/changes/old": "board::record::invalid",
-        "/changes/mounted": None,
-    }
+def test_the_schema_refuses_a_change_without_its_branch_and_admits_one_with_it(board: Board) -> None:
+    setup(board)
+    fields = json.loads(change())
+    del fields["branch"]
+    board.write("changes/bare.json", json.dumps(fields))
+    assert checked(board) == {"/changes/t": None, "/changes/bare": "board::record::invalid"}

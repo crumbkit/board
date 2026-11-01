@@ -1,111 +1,163 @@
-"""`changes.start`: a new change, its plan, its route and the repository's brief."""
+"""`changes.start`: a change to the caller's repository, its repo record when it has none, and its first claim."""
 
-from conftest import Board, mount_repo, record
+from pathlib import Path
+
+from conftest import Board, clone, git, mount, record
 
 CONTRIBUTING = "Run the checks.\n\nThe check suite is `/suites/checks`.\n"
+LINK = '{"$type": "board/mount/v1", "path": "/workflows/personal"}'
 
 
-def test_start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to_fill_in(board: Board) -> None:
-    mount = mount_repo(board, {"README.md": "x"})
-    output = board.call("start", {"mount": mount, "title": "Let a suite declare a timeout!"})
-    assert (output["path"], output["plan"]) == (
-        "/changes/let-a-suite-declare-a-timeout",
-        "/changes/let-a-suite-declare-a-timeout/plan.md",
-    )
+def ready(board: Board) -> None:
+    """The seed workflows, a suite, and a link choosing the personal workflow for the owner `example`."""
+    board.call("seed", {})
+    board.write("suites/checks.json", record("runs/suite/v1", subjects=["app"], method="Run it."))
+    board.write("workflows/owners/example.json", LINK)
+
+
+def given(**more: str) -> dict[str, str]:
+    """`start`'s input: a title, a session and the suite, with `more`."""
+    return {"title": "Let a suite declare a timeout", "session": "local_1", "suite": "/suites/checks", **more}
+
+
+def test_start_in_an_unmounted_clone_creates_the_repo_record_once_and_a_second_start_reuses_it(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    first = board.call("start", given(), cwd=cloned.path)
+    path = "/changes/let-a-suite-declare-a-timeout"
+    assert (first["path"], first["repo"], first["repo_created"]) == (path, "/repos/app", True)
+    assert board.read("repos/app.json") == {"$type": "board/repo/v1", "remote": "example/app"}
     assert board.read("changes/let-a-suite-declare-a-timeout.json") == {
         "$type": "changes/change/v1",
-        "title": "Let a suite declare a timeout!",
-        "mount": "/repos/x",
-        "phase": "plan",
-        "plan": "/changes/let-a-suite-declare-a-timeout/plan.md",
-        "route": "unowned",
+        "title": "Let a suite declare a timeout",
+        "repo": "/repos/app",
+        "branch": "work",
+        "workflow": "/workflows/personal",
+        "suite": "/suites/checks",
+        "route": "unread",
     }
-    plan = (board.root / "changes/let-a-suite-declare-a-timeout/plan.md").read_text()
-    assert plan == "# Let a suite declare a timeout!\n\n## Problem\n\n## Outcome\n\n## Out of scope\n"
+    second = board.call("start", given(name="another"), cwd=cloned.path)
+    assert (second["repo"], second["repo_created"]) == ("/repos/app", False)
+    assert board.listed("repos") == ["app.json"]
 
 
-def test_start_keeps_a_plan_already_written_at_the_plan_path(board: Board) -> None:
-    mount = mount_repo(board, {"README.md": "x"})
-    board.write("changes/t/plan.md", "# Mine\n")
-    board.call("start", {"mount": mount, "title": "T"})
-    assert (board.root / "changes/t/plan.md").read_text() == "# Mine\n"
+def test_start_writes_a_first_claim_naming_the_session_and_the_clones_root(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    (cloned.path / "src").mkdir()
+    output = board.call("start", given(name="t"), cwd=cloned.path / "src")
+    claim = board.read(output["claim"].removeprefix("/") + ".json")
+    assert claim == {"$type": "changes/claim/v1", "session": "local_1", "worktree": str(cloned.path.resolve())}
 
 
-def test_the_route_is_owner_when_the_handle_owns_every_owned_pattern(board: Board) -> None:
-    mount = mount_repo(board, {".github/CODEOWNERS": "# owners\n* @luke\ndocs/ @Luke  # docs too\n"})
-    output = board.call("start", {"mount": mount, "title": "T", "handle": "@luke"})
-    assert (output["route"], output["ask_first"]) == ("owner", [])
-    assert output["codeowners"] == "/repos/x/.github/CODEOWNERS"
-    assert output["owners"] == [{"pattern": "*", "owners": ["@luke"]}, {"pattern": "docs/", "owners": ["@Luke"]}]
+def test_start_refuses_the_default_branch_and_admits_a_work_branch(board: Board) -> None:
+    ready(board)
+    cloned = clone(board, branch="main")
+    refused = board.refusal("start", given(), cwd=cloned.path)
+    assert (refused["code"], refused["fields"]["branch"]) == ("changes::branch::default", "main")
+    git(cloned.path, "switch", "-qc", "work")
+    assert board.call("start", given(), cwd=cloned.path)["branch"] == "work"
 
 
-def test_the_route_is_ask_first_and_lists_the_patterns_someone_else_owns(board: Board) -> None:
-    mount = mount_repo(board, {"CODEOWNERS": "* @luke\n/auth/ @sam @kim\n"})
-    output = board.call("start", {"mount": mount, "title": "T", "handle": "@luke"})
-    assert (output["route"], output["ask_first"]) == ("ask-first", ["/auth/"])
-    assert board.read("changes/t.json")["route"] == "ask-first"
+def test_start_refuses_a_detached_head_and_admits_a_branch(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    git(cloned.path, "switch", "-q", "--detach")
+    assert board.refusal("start", given(), cwd=cloned.path)["code"] == "changes::branch::detached"
+    git(cloned.path, "switch", "-q", "work")
+    assert board.call("start", given(), cwd=cloned.path)["branch"] == "work"
 
 
-def test_without_a_handle_every_owned_pattern_is_ask_first(board: Board) -> None:
-    mount = mount_repo(board, {"CODEOWNERS": "* @luke\n"})
-    output = board.call("start", {"mount": mount, "title": "T"})
-    assert (output["route"], output["ask_first"]) == ("ask-first", ["*"])
+def test_start_refuses_a_clone_without_an_origin_and_admits_one_with_it(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    git(cloned.path, "remote", "remove", "origin")
+    assert board.refusal("start", given(), cwd=cloned.path)["code"] == "changes::clone::no_remote"
+    git(cloned.path, "remote", "add", "origin", cloned.remote)
+    assert board.call("start", given(), cwd=cloned.path)["repo"] == "/repos/app"
 
 
-def test_the_route_is_unowned_when_the_repository_names_no_owners(board: Board) -> None:
-    mount = mount_repo(board, {"CODEOWNERS": "# nobody yet\n"})
-    output = board.call("start", {"mount": mount, "title": "T", "handle": "@luke"})
-    assert (output["route"], output["owners"], output["codeowners"]) == ("unowned", [], "/repos/x/CODEOWNERS")
+def test_start_outside_a_git_clone_is_refused_and_inside_one_is_admitted(board: Board, tmp_path: Path) -> None:
+    ready(board)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    assert board.refusal("start", given(), cwd=outside)["code"] == "changes::clone::none"
+    assert board.call("start", given(), cwd=clone(board).path)["repo"] == "/repos/app"
 
 
-def test_the_brief_lists_the_contributing_docs_and_the_check_suite_they_name(board: Board) -> None:
-    mount = mount_repo(board, {"CONTRIBUTING.md": CONTRIBUTING, "AGENTS.md": "Read `/nowhere`.\n"})
-    board.write("suites/checks.json", record("runs/suite/v1", subjects=["x"], method="Run it."))
-    output = board.call("start", {"mount": mount, "title": "T"})
-    assert output["docs"] == ["/repos/x/CONTRIBUTING.md", "/repos/x/AGENTS.md"]
-    assert output["suite"] == "/suites/checks"
+def test_a_repo_name_another_remote_holds_is_refused_and_another_name_is_admitted(board: Board) -> None:
+    ready(board)
+    board.write("repos/app.json", record("board/repo/v1", remote="other/app"))
+    cloned = clone(board)
+    refused = board.refusal("start", given(), cwd=cloned.path)
+    assert (refused["code"], refused["fields"]["repo"]) == ("changes::repo::name_taken", "/repos/app")
+    output = board.call("start", given(**{"repo-name": "example-app"}), cwd=cloned.path)
+    assert (output["repo"], output["repo_created"]) == ("/repos/example-app", True)
 
 
-def test_a_contributing_doc_in_the_github_directory_is_found(board: Board) -> None:
-    mount = mount_repo(board, {".github/CONTRIBUTING.md": CONTRIBUTING})
-    board.write("suites/checks.json", record("runs/suite/v1", subjects=["x"], method="Run it."))
-    output = board.call("start", {"mount": mount, "title": "T"})
-    assert (output["docs"], output["suite"]) == (["/repos/x/.github/CONTRIBUTING.md"], "/suites/checks")
+def test_a_repository_link_chooses_the_workflow_before_its_owners_link(board: Board) -> None:
+    ready(board)
+    board.write("workflows/repos/app.json", '{"$type": "board/mount/v1", "path": "/workflows/work"}')
+    cloned = clone(board)
+    assert board.call("start", given(name="a"), cwd=cloned.path)["workflow"] == "/workflows/work"
+    (board.root / "workflows/repos/app.json").unlink()
+    assert board.call("start", given(name="b"), cwd=cloned.path)["workflow"] == "/workflows/personal"
 
 
-def test_a_suite_in_the_repositorys_own_board_is_found_before_one_in_this_board(board: Board) -> None:
-    suite = record("runs/suite/v1", subjects=["x"], method="Run it.")
-    files = {
-        "CONTRIBUTING.md": CONTRIBUTING,
-        "suites/checks.json": suite,
-        ".board/types/runs/suite/v1.schema.json": "{}",
-    }
-    mount = mount_repo(board, files)
-    board.write("suites/checks.json", suite)
-    assert board.call("start", {"mount": mount, "title": "T"})["suite"] == "/repos/x/suites/checks"
+def test_with_no_link_start_refuses_naming_both_links_and_admits_a_workflow_given(board: Board) -> None:
+    ready(board)
+    (board.root / "workflows/owners/example.json").unlink()
+    cloned = clone(board)
+    refused = board.refusal("start", given(), cwd=cloned.path)
+    assert refused["code"] == "changes::workflow::unchosen"
+    assert refused["fields"]["candidates"] == ["/workflows/repos/app", "/workflows/owners/example"]
+    assert board.call("start", given(workflow="/workflows/work"), cwd=cloned.path)["workflow"] == "/workflows/work"
 
 
-def test_a_named_path_that_holds_no_suite_is_not_the_check_suite(board: Board) -> None:
-    mount = mount_repo(board, {"CONTRIBUTING.md": CONTRIBUTING})
-    board.write("suites/checks.json", record("plans/decision/v1", refs=[]))
-    assert board.call("start", {"mount": mount, "title": "T"})["suite"] is None
+def test_a_workflow_given_that_holds_no_workflow_is_refused_and_one_that_does_is_admitted(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    refused = board.refusal("start", given(workflow="/workflows/none"), cwd=cloned.path)
+    assert (refused["code"], refused["fields"]["workflow"]) == ("changes::workflow::not_found", "/workflows/none")
+    assert board.call("start", given(workflow="/workflows/work"), cwd=cloned.path)["workflow"] == "/workflows/work"
+
+
+def test_without_a_suite_start_refuses_and_with_one_it_is_admitted(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    asked = given()
+    del asked["suite"]
+    assert board.refusal("start", asked, cwd=cloned.path)["code"] == "changes::suite::unknown"
+    refused = board.refusal("start", given(suite="/suites/none"), cwd=cloned.path)
+    assert (refused["code"], refused["fields"]["suite"]) == ("changes::suite::unknown", "/suites/none")
+    assert board.call("start", given(), cwd=cloned.path)["suite"] == "/suites/checks"
+
+
+def test_in_a_mounted_clone_the_route_comes_from_codeowners_and_the_suite_from_the_contributing_docs(
+    board: Board,
+) -> None:
+    ready(board)
+    files = {"CODEOWNERS": "* @luke\n/auth/ @sam\n", "CONTRIBUTING.md": CONTRIBUTING}
+    cloned = clone(board, files)
+    mount(board, cloned)
+    asked = given(handle="@luke")
+    del asked["suite"]
+    output = board.call("start", asked, cwd=cloned.path)
+    assert (output["repo"], output["repo_created"], output["route"]) == ("/repos/app", False, "ask-first")
+    assert (output["ask_first"], output["codeowners"]) == (["/auth/"], "/repos/app/CODEOWNERS")
+    assert (output["docs"], output["suite"]) == (["/repos/app/CONTRIBUTING.md"], "/suites/checks")
 
 
 def test_start_refuses_a_name_a_change_already_has_and_admits_another(board: Board) -> None:
-    mount = mount_repo(board, {"README.md": "x"})
-    board.call("start", {"mount": mount, "title": "T"})
-    refused = board.refusal("start", {"mount": mount, "title": "T"})
-    assert refused["code"] == "changes::change::exists"
-    assert board.call("start", {"mount": mount, "title": "T", "name": "t-2"})["path"] == "/changes/t-2"
+    ready(board)
+    cloned = clone(board)
+    board.call("start", given(name="t"), cwd=cloned.path)
+    assert board.refusal("start", given(name="t"), cwd=cloned.path)["code"] == "changes::change::exists"
+    assert board.call("start", given(name="t-2"), cwd=cloned.path)["path"] == "/changes/t-2"
 
 
-def test_start_refuses_a_repository_path_that_holds_nothing_and_admits_a_mounted_one(board: Board) -> None:
-    mount_repo(board, {"README.md": "x"})
-    assert board.refusal("start", {"mount": "/repos/y", "title": "T"})["code"] == "changes::mount::not_found"
-    assert board.call("start", {"mount": "/repos/x", "title": "T"})["path"] == "/changes/t"
-
-
-def test_start_refuses_the_old_repo_input_and_admits_the_same_path_as_mount(board: Board) -> None:
-    mount = mount_repo(board, {"README.md": "x"})
-    assert board.refusal("start", {"repo": mount, "title": "T"})["code"] == "board::cli::usage"
-    assert board.call("start", {"mount": mount, "title": "T"})["path"] == "/changes/t"
+def test_start_records_the_issue_when_one_is_given(board: Board) -> None:
+    ready(board)
+    issue = "https://github.com/example/app/issues/2"
+    output = board.call("start", given(name="t", issue=issue), cwd=clone(board).path)
+    assert board.read(output["path"].removeprefix("/") + ".json")["issue"] == issue

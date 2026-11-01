@@ -1,5 +1,7 @@
 """`changes.plan`: a change's plan, the records it uses, and the limits on both."""
 
+import json
+
 from conftest import PLAN, Board, change, record
 
 from board_changes.plan import PLAN_WORDS, USES_WORDS
@@ -17,7 +19,7 @@ def plans(board: Board) -> list[str]:
     return sorted(path.name for path in (board.root / "changes/t/plans").iterdir())
 
 
-def test_plan_writes_the_plan_and_its_text_and_points_the_change_at_the_text(board: Board) -> None:
+def test_plan_writes_the_plan_and_its_text_and_leaves_the_change_as_it_was(board: Board) -> None:
     board.write("changes/t.json", change())
     board.write("standards/errors.md", "# Errors\n")
     output = board.call("plan", {"path": PATH, "text": PLAN, "uses": ["/standards/errors.md"]}, stdin=True)
@@ -29,7 +31,7 @@ def test_plan_writes_the_plan_and_its_text_and_points_the_change_at_the_text(boa
         "uses": ["/standards/errors.md"],
     }
     assert (board.root / f"changes/t/plans/{stamp}.md").read_text() == PLAN
-    assert board.read("changes/t.json")["plan"] == f"/changes/t/plans/{stamp}.md"
+    assert board.read("changes/t.json") == json.loads(change())
 
 
 def test_a_second_plan_is_written_beside_the_first_and_becomes_the_change_s_plan(board: Board) -> None:
@@ -38,7 +40,7 @@ def test_a_second_plan_is_written_beside_the_first_and_becomes_the_change_s_plan
     second = board.call("plan", {"path": PATH, "text": PLAN + "More.\n", "uses": []}, stdin=True)
     assert first["path"] < second["path"]
     assert len(plans(board)) == 2 * 2  # two plans, each a record and its text
-    assert board.read("changes/t.json")["plan"] == second["text"]
+    assert plans(board)[-1] == second["text"].rsplit("/", 1)[-1]
 
 
 def test_a_plan_that_uses_a_path_holding_nothing_is_refused_and_writes_nothing(board: Board) -> None:
@@ -74,13 +76,12 @@ def test_documents_used_over_3000_words_in_all_are_refused_and_3000_are_admitted
     assert board.call("plan", {"path": PATH, "text": PLAN, "uses": uses}, stdin=True)["uses"] == len(uses)
 
 
-def test_a_plan_for_a_done_change_is_refused_and_one_for_a_change_in_build_is_written(board: Board) -> None:
-    board.write("changes/t.json", change("done"))
-    assert (
-        board.refusal("plan", {"path": PATH, "text": PLAN, "uses": []}, stdin=True)["code"] == "changes::phase::final"
-    )
-    board.write("changes/t.json", change("build"))
+def test_a_plan_for_a_landed_change_is_refused_and_one_for_an_open_change_is_written(board: Board) -> None:
+    board.write("changes/t.json", change())
     assert board.call("plan", {"path": PATH, "text": PLAN, "uses": []}, stdin=True)["uses"] == 0
+    board.write("changes/t/landed.json", record("changes/landed/v1", commit="a3f9c0d"))
+    refused = board.refusal("plan", {"path": PATH, "text": PLAN, "uses": []}, stdin=True)
+    assert (refused["code"], refused["fields"]["ended"]) == ("changes::change::ended", "landed")
 
 
 def test_a_plan_that_uses_a_directory_is_refused_and_one_using_a_document_in_it_is_written(board: Board) -> None:

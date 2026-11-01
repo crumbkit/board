@@ -379,3 +379,45 @@ def test_the_agent_starts_in_an_empty_directory_away_from_the_board_s_mcp_server
     assert listed == []
     assert not Path(directory).resolve().is_relative_to(repo.root.resolve())
     assert not Path(directory).exists()
+
+
+def clone_of_app(repo: Repo, tmp_path: Path) -> tuple[Path, str, str]:
+    """A repository `app` with two commits, recorded in the board as /repos/app without a checkout, and a clone of it.
+
+    Returns the clone and the range of the second commit.
+    """
+    origin = tmp_path / "app"
+    library(origin, {"README.md": "An app.\n"})
+    git = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
+    base = subprocess.run(
+        [*git, "rev-parse", "HEAD"], cwd=origin, env=os.environ | ISOLATED, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    (origin / "app.rs").write_text("fn app() {}\n")
+    for arguments in (["add", "."], ["commit", "-qm", "app"]):
+        subprocess.run([*git, *arguments], cwd=origin, env=os.environ | ISOLATED, check=True)
+    head = subprocess.run(
+        [*git, "rev-parse", "HEAD"], cwd=origin, env=os.environ | ISOLATED, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    clone = tmp_path / "app-clone"
+    subprocess.run([*git, "clone", "-q", "--local", str(origin), str(clone)], env=os.environ | ISOLATED, check=True)
+    subprocess.run(
+        [*git, "remote", "set-url", "origin", "git@github.com:example/app.git"],
+        cwd=clone,
+        env=os.environ | ISOLATED,
+        check=True,
+    )
+    repo.commit("repos/app.json", json.dumps({"$type": "board/repo/v1", "remote": "example/app"}))
+    return clone, base, head
+
+
+def test_a_brief_naming_a_repo_reads_its_range_in_the_callers_clone_and_one_run_elsewhere_is_refused(
+    repo: Repo, tmp_path: Path
+) -> None:
+    clone, base, head = clone_of_app(repo, tmp_path)
+    brief = repo.brief("app", f"{base}..{head}", repo="/repos/app", step="review")
+    code, refused = repo.call("run", "--brief", brief)
+    assert (code, refused["code"]) == (1, "review::repo::not_caller")
+    code, output = repo.call("run", "--brief", brief, cwd=clone)
+    assert code == 0, output
+    assert output["range"] == f"{base}..{head}"
+    assert "+fn app() {}" in repo.prompt()
