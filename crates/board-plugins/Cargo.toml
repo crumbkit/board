@@ -9,6 +9,7 @@ publish.workspace = true
 boundary = ["dep:board-plugin-boundary"]
 controls = ["dep:board-plugin-controls"]
 evals = ["dep:board-plugin-evals"]
+github = ["dep:board-plugin-github"]
 jira = ["dep:board-plugin-jira"]
 plans = ["dep:board-plugin-plans"]
 requests = ["dep:board-plugin-requests"]
@@ -19,6 +20,7 @@ board-ops.workspace = true
 board-plugin-boundary = { workspace = true, optional = true }
 board-plugin-controls = { workspace = true, optional = true }
 board-plugin-evals = { workspace = true, optional = true }
+board-plugin-github = { workspace = true, optional = true }
 board-plugin-jira = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }

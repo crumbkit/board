@@ -1,7 +1,7 @@
 # Writing a built-in plugin
 
 This file holds detail for docs/plugins/built-in.md. `boundary`, `controls`,
-`evals`, `jira`, `plans`, `requests` and `runs` are built-in crates;
+`evals`, `github`, `jira`, `plans`, `requests` and `runs` are built-in crates;
 `controls` (#48) shows a Python plugin ported with its output, messages and
 codes unchanged.
 
@@ -123,14 +123,16 @@ in `plugin list` and `plugin find`.
 - Keep the schema's bytes. A board that already enables the plugin then
   needs no `plugin enable`. When `schema_of` cannot produce the old bytes,
   write the type's own generator, as `controls`'s `record_schema` does to
-  keep null in `rule`.
+  keep null in `rule`. Keeping the bytes may put `$type` after the other
+  fields.
 - Keep each capability's output, messages and codes. Drop codes that only a
   subprocess could give, such as `<name>::board::failed`.
 - Port each Python test into `crates/board-cli/src/tests/built_in/<name>.rs`,
   which runs the same commands in process on a `Fixture` board (split it into
   `<name>/` beside it when it passes the line limit), and delete
   the plugin's `tests/`, `pyproject.toml` and `uv.lock` with its entries in
-  `bin/lint` and `bin/test`.
+  `bin/lint` and `bin/test`. A plugin that runs a process through
+  `Host::run` tests its capability in its crate with a recording `Host`.
 - Delete `plugin.json`, `src/` and `types/`, and take the plugin out of the
   packaging loop in `.github/workflows/release.yml`.
 - Search the repository for the plugin's name and `plugins/<name>`: CI
