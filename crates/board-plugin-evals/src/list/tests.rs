@@ -100,13 +100,12 @@ fn each_capability_asks_for_every_eval_and_every_decision_once_with_no_row_limit
         (EVALS.to_owned(), Limit::ALL),
         (DECISIONS.to_owned(), Limit::ALL),
     ];
-    let capabilities: [(fn(&dyn Host, &Value) -> _, _); 2] =
-        [(about, json!({"subject": "gix"})), (open, json!({}))];
-    for (capability, input) in capabilities {
-        let host = host(Vec::new());
-        capability(&host, &input).unwrap();
-        assert_eq!(host.asked.take(), both);
-    }
+    let about_host = host(Vec::new());
+    about(&about_host, &json!({"subject": "gix"})).unwrap();
+    assert_eq!(about_host.asked.take(), both);
+    let open_host = host(Vec::new());
+    open(&open_host, &json!({})).unwrap();
+    assert_eq!(open_host.asked.take(), both);
 }
 
 #[test]
