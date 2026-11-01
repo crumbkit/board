@@ -555,9 +555,11 @@ fn every_string_field_of_a_committed_record_schema_uses_a_shared_shape_or_is_lis
     assert!(UNSHARED.iter().all(|entry| !entry.3.is_empty()));
 }
 
-#[test]
-fn each_string_shape_the_lint_refuses_has_an_admitted_twin() {
-    let kept = json!({
+/// A record schema that holds each string shape rule 14 admits, under each
+/// keyword the shapes lint reads.
+#[cfg(test)]
+fn admitted() -> Value {
+    json!({
         "type": "object",
         "additionalProperties": false,
         "required": ["$type"],
@@ -608,7 +610,12 @@ fn each_string_shape_the_lint_refuses_has_an_admitted_twin() {
                 }
             }
         }
-    });
+    })
+}
+
+#[test]
+fn each_string_shape_the_lint_refuses_has_an_admitted_twin() {
+    let kept = admitted();
     let mut registry = registry();
     registry.insert("Remote".into(), json!({"type": "string", "pattern": "^r$"}));
     registry.insert("Url".into(), json!({"type": "string", "format": "uri"}));
