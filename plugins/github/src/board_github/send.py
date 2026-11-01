@@ -39,6 +39,11 @@ class Origin:
     def sent(self, passed: dict[str, Any], result: str) -> dict[str, object]:
         """Record what GitHub returned on the crossing, and the output fields every action shares."""
         crossing.record(self.root, passed["digest"], result)
+        return self.shared(passed, result)
+
+    @staticmethod
+    def shared(passed: dict[str, Any], result: str) -> dict[str, object]:
+        """The output fields every action shares, for a result already recorded."""
         return {"digest": passed["digest"], "crossing": passed["crossing"], "note": passed["note"], "sent": result}
 
 
@@ -51,18 +56,21 @@ def origin(request: CallRequest) -> Origin:
 
 def _pushed(place: Origin, action: str, extra: dict[str, str]) -> tuple[dict[str, Any], str, list[str], str]:
     """Check the commits a push would send with `extra` parts, then push: the check, branch, commits and git's line."""
-    branch = checkout.branch(place.top)
-    commits = checkout.outgoing(place.top)
+    branch, head = checkout.branch(place.top)
+    commits = checkout.outgoing(place.top, head)
     parts = {"push.branch": branch} | checkout.commit_parts(place.top, commits) | extra
     passed = place.check(action, parts)
-    return passed, branch, commits, checkout.push(place.top, branch, passed["digest"])
+    line = checkout.push(place.top, branch, head, passed["digest"])
+    # Recorded at once, so the crossing says the commits left even when a later step fails.
+    crossing.record(place.root, passed["digest"], line)
+    return passed, branch, commits, line
 
 
 def push(request: CallRequest) -> dict[str, object]:
     """Push the branch checked out, once the boundary passes its name and each commit it would send."""
     place = origin(request)
     passed, branch, commits, line = _pushed(place, "push", {})
-    return place.sent(passed, line) | {"branch": branch, "commits": commits}
+    return place.shared(passed, line) | {"branch": branch, "commits": commits}
 
 
 def pr_create(request: CallRequest) -> dict[str, object]:

@@ -1,16 +1,15 @@
 """Checking content at the boundary before it is sent, and recording what GitHub returned, in the personal board."""
 
 import json
-import subprocess
-from typing import Any, cast
+from typing import Any
 
 from board_plugin.board import Board
 from board_plugin.protocol import PluginError
 
 # The fields Board adds to every plugin error, which it adds again to the error this plugin passes on.
 ADDED = ("plugin", "stderr")
-# How long the check may run, in seconds: the boundary's own limit, since judged rules wait on a model.
-CHECK_TIMEOUT = 1800
+# How long the check may run, in seconds: the boundary's own limit, since judged rules wait on a model, and a minute.
+CHECK_TIMEOUT = 1860
 
 
 def check(root: str, action: str, to: str, origin: str | None, parts: dict[str, str]) -> dict[str, Any]:
@@ -19,40 +18,23 @@ def check(root: str, action: str, to: str, origin: str | None, parts: dict[str, 
     Board requires this plugin's codes to start with `github::`, so a refusal
     from the boundary is `github::boundary::refused`. Its message and fields
     are the boundary's own, `recovery` and its `Next:` step among them, with
-    the boundary's code in `code`.
+    the boundary's code in `code` and any code the boundary carried in `cause`.
     """
     given: dict[str, object] = {"action": action, "to": to, "parts": parts}
     if origin is not None:
         given["from"] = origin
-    command = ["board", "--personal", "--json", "call", "boundary.check"]
+    personal = Board(root, "github", flags=("--personal",))
     try:
-        ran = subprocess.run(  # noqa: S603 - the program is Board itself, found on PATH
-            command,
-            cwd=root,
-            input=json.dumps(given).encode(),
-            capture_output=True,
-            timeout=CHECK_TIMEOUT + 60,
-            check=False,
-        )
-        document = cast("dict[str, Any]", json.loads(ran.stdout))
-    except (OSError, subprocess.TimeoutExpired, ValueError) as error:
-        raise PluginError(
-            "github::board::failed",
-            f"`board --personal call boundary.check` gave no answer ({error}), so nothing was sent;"
-            " check that the `board` first on PATH is this Board",
-        ) from None
-    if ran.returncode == 0:
-        return cast("dict[str, Any]", document["data"]["output"])
-    code, fields = str(document.get("code")), cast("dict[str, Any]", document.get("fields") or {})
-    if code.startswith("boundary::"):
-        kept: dict[str, object] = {key: value for key, value in fields.items() if key not in ADDED}
-        raise PluginError("github::boundary::refused", str(document.get("message")), kept | {"code": code})
-    raise PluginError(
-        "github::board::refused",
-        f"`board --personal call boundary.check` refused with {code}: {document.get('message')}; nothing was sent;"
-        " when the code says a plugin is missing, enable boundary and controls in the personal board",
-        {"code": code},
-    )
+        report = personal.document("call", "boundary.check", stdin=json.dumps(given).encode(), timeout=CHECK_TIMEOUT)
+    except PluginError as error:
+        code = str(error.fields.get("code", ""))
+        if error.code != "github::board::refused" or not code.startswith("boundary::"):
+            raise
+        message = error.message.removeprefix(f"`board --personal call` refused with {code}: ")
+        kept = {key: value for key, value in error.fields.items() if key not in ADDED}
+        raise PluginError("github::boundary::refused", message, kept) from None
+    output: dict[str, Any] = report["data"]["output"]
+    return output
 
 
 def record(root: str, digest: str, result: str) -> None:

@@ -191,22 +191,31 @@ class Desk:
             "GIT_CONFIG_NOSYSTEM": "1",
         }
 
-    def run(self, *arguments: str, cwd: Path | None = None, stdin: str = "") -> subprocess.CompletedProcess[str]:
-        """Run `board` in the checkout, or in `cwd`."""
+    def run(
+        self, *arguments: str, cwd: Path | None = None, stdin: str = "", extra: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run `board` in the checkout, or in `cwd`, with the `extra` variables."""
         return subprocess.run(
             [str(board_binary()), *arguments],
             cwd=cwd or self.checkout,
-            env=self.environment(),
+            env=self.environment() | (extra or {}),
             input=stdin,
             capture_output=True,
             text=True,
             check=False,
         )
 
-    def call(self, capability: str, *flags: str, cwd: Path | None = None, personal: bool = False) -> dict[str, Any]:
+    def call(
+        self,
+        capability: str,
+        *flags: str,
+        cwd: Path | None = None,
+        personal: bool = False,
+        extra: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """The one document `board --json call github.<capability> <flags>` prints, with its exit code as `exit`."""
         front = ["--personal"] if personal else []
-        ran = self.run(*front, "--json", "call", f"github.{capability}", *flags, cwd=cwd)
+        ran = self.run(*front, "--json", "call", f"github.{capability}", *flags, cwd=cwd, extra=extra)
         document: dict[str, Any] = json.loads(ran.stdout)
         return document | {"exit": ran.returncode}
 

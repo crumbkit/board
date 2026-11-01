@@ -53,14 +53,19 @@ sends only when the check passes. Then it records what GitHub returned with
 `boundary.record`, and returns `digest`, `crossing`, `note` and `sent`, the
 result it recorded.
 
-- `push` pushes the branch checked out to origin under the same name, with
-  `git push -u`. It returns `branch`, `commits`, the commits sent, oldest
+- `push` resolves the branch checked out to its commit once, before the
+  check, and pushes that commit to the branch of the same name on origin, so
+  a commit made during the check is not sent. It pushes no tags, no submodule
+  commits and no push options, whatever git's config says, then sets the
+  branch's upstream. It returns `branch`, `commits`, the commits sent, oldest
   first, and `sent`, git's line for the branch, such as
-  `refs/heads/x:refs/heads/x [new branch]`.
+  `<sha>:refs/heads/x [new branch]`.
 - `pr-create --title <t> --body <b> [--base <branch>] [--draft true]` pushes
   as `push` does, then runs `gh pr create`. One check covers the commits,
-  title and body. It writes the `github/pull/v1` record and returns `number`
-  and `path`; `sent` is the pull request's URL.
+  title and body. It records git's line on the crossing as soon as the push
+  lands, so a gh failure after it still leaves the push recorded. It writes
+  the `github/pull/v1` record and returns `number` and `path`; `sent` is the
+  pull request's URL, which replaces git's line on the crossing.
 - `pr-edit --number <n> [--title <t>] [--body <b>]` changes the title, the
   body or both through `gh api`. Board refuses a call with neither as
   `board::plugin::bad_input`.
@@ -70,7 +75,11 @@ result it recorded.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin` in the https or ssh form. It is read
-before any `insteadOf` rewrite. The check names `from`, the checkout's mount
+before any `insteadOf` rewrite. `insteadOf` moves fetch and push alike, so
+the commits checked are still those the push sends. A `pushurl` or
+`pushInsteadOf` that makes origin push somewhere other than it fetches is
+refused as `github::remote::split`. No message quotes a URL's user or
+password. The check names `from`, the checkout's mount
 in the personal board, as `board refs .` reports it in the checkout. A
 checkout no board mounts, or one mounted only in another board, is checked
 without `from`, so every boundary on the destination applies. Run
@@ -82,9 +91,12 @@ The parts, which a boundary's `checks` name by glob:
 | --- | --- | --- |
 | `push.branch` | `push`, `pr-create` | The branch's name. |
 | `commit.<sha>.message` | `push`, `pr-create` | The commit's message. |
+| `commit.<sha>.author_name` | `push`, `pr-create` | The author's name. |
 | `commit.<sha>.author_email` | `push`, `pr-create` | The author's email. |
+| `commit.<sha>.committer_name` | `push`, `pr-create` | The committer's name. |
 | `commit.<sha>.committer_email` | `push`, `pr-create` | The committer's email. |
-| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch, against its first parent for a merge. |
+| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch against its first parent, with every file as text: no textconv, external diff or `-diff` attribute hides a file's bytes. |
+| `commit.<sha>.binary` | `push`, `pr-create` | The paths git counts as binary, one per line, so a boundary can refuse them by name; empty when there are none. |
 | `pr.title`, `pr.body` | `pr-create`, `pr-edit` | The pull request's title and body. `pr-edit` sends only those given. |
 | `comment.body` | `comment` | The comment. |
 | `issue.title`, `issue.body` | `issue-create` | The issue's title and body. |
@@ -100,20 +112,27 @@ Refusals:
   plugin's codes to start with its own name, so `fields.code` holds the
   boundary's code, such as `boundary::check::failed`. The message and the
   other fields are the boundary's own, unchanged: `failures`, `digest`,
-  `crossing` and `recovery`, whose `text` starts `Next:`. Nothing is sent.
+  `crossing` and `recovery`, whose `text` starts `Next:`. A code the
+  boundary's refusal carried, such as `controls::control::not_found` inside
+  `boundary::board::refused`, is in `cause`. Nothing is sent.
 - Any other refusal of the check, such as boundary not being enabled in the
   personal board, is `github::board::refused` with Board's code.
 - `github::checkout::not_found`: Board was not started in a git checkout.
 - `github::remote::not_github`: origin is not a GitHub URL.
+- `github::remote::split`: origin pushes to a URL other than the one it
+  fetches from, or to several.
 - `github::checkout::detached`: `push` or `pr-create` on no branch.
 - `github::push::failed`: git refused the push, such as a branch that is
   behind. The crossing passed and keeps no result.
+- `github::board::failed`: the plugin could not run `board`.
 - `github::gh::failed`: gh failed after the check passed. The message says
   the content may have been sent.
 - `github::git::failed`: another git command failed.
 
-The sending actions pass gh the same variables as `ref`, and also
-`SSH_AUTH_SOCK` for git and the variables the boundary's judged rules read.
+The sending actions receive gh's variables, `SSH_AUTH_SOCK` for git and the
+variables the boundary's judged rules read. They pass the model credentials,
+`ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`, only to `board`, never to
+git, its hooks or gh.
 They may run for 2,400 seconds, since the check alone may take 1,800.
 
 Owner and repository are stored in lower case, in the path and the fields,

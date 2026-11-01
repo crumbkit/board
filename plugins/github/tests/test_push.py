@@ -2,9 +2,11 @@
 
 import hashlib
 import json
+import os
+import subprocess
 from typing import Any
 
-from conftest import NAMES, Desk, git
+from conftest import NAMES, Desk, board_binary, git
 
 TO = "github:octo/widgets"
 
@@ -16,15 +18,19 @@ def digest(action: str, parts: dict[str, str]) -> str:
     return hashlib.sha256(canonical.encode()).hexdigest()
 
 
-def commit_parts(desk: Desk, sha: str, message: str) -> dict[str, str]:
+def commit_parts(desk: Desk, sha: str, message: str, binary: str = "") -> dict[str, str]:
     """The parts of one commit, named by its short SHA."""
-    diff = git(desk.checkout, "show", "--format=", "--diff-merges=first-parent", sha)
+    flags = ("--format=", "--diff-merges=first-parent", "--no-color", "--no-ext-diff", "--no-textconv", "--text")
+    diff = git(desk.checkout, "show", *flags, sha)
     short = sha[:12]
     return {
         f"commit.{short}.message": message + "\n",
+        f"commit.{short}.author_name": "t",
         f"commit.{short}.author_email": "t@t",
+        f"commit.{short}.committer_name": "t",
         f"commit.{short}.committer_email": "t@t",
         f"commit.{short}.diff": diff + "\n",
+        f"commit.{short}.binary": binary,
     }
 
 
@@ -49,7 +55,8 @@ def test_a_push_checks_each_new_commit_by_name_then_pushes_and_records_the_cross
     assert crossing is not None
     assert (crossing["passed"], crossing["to"], crossing["from"]) == (True, TO, "/repos/widgets")
     assert crossing["result"] == result["sent"]
-    assert result["sent"].startswith("refs/heads/main:refs/heads/main")
+    assert result["sent"].startswith(f"{second}:refs/heads/main")
+    assert git(desk.checkout, "rev-parse", "--abbrev-ref", "main@{upstream}") == "origin/main"
 
 
 def test_a_new_branch_sends_only_the_commits_its_remote_lacks(desk: Desk) -> None:
@@ -83,15 +90,20 @@ def test_a_private_name_in_a_commit_message_is_refused_with_the_boundarys_next_s
     assert desk.remote_head("main") != before
 
 
-def test_a_private_name_in_a_diff_or_an_author_email_is_refused_and_the_same_commit_without_it_is_pushed(
+def test_a_private_name_in_a_diff_an_author_email_or_a_name_is_refused_and_the_same_commit_without_it_is_pushed(
     desk: Desk,
 ) -> None:
-    desk.refuse(["commit.*.diff", "commit.*.author_email"])
+    desk.refuse(["commit.*.diff", "commit.*.author_*", "commit.*.committer_name"])
     desk.commit("Add a gear", text="see acme-123\n")
     assert desk.call("push")["fields"]["failures"][0]["part"].endswith(".diff")
-    git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
-    git(desk.checkout, "-c", "user.email=acme-456@example.com", "commit", "-q", "--allow-empty", "-m", "Empty")
-    assert desk.call("push")["fields"]["failures"][0]["part"].endswith(".author_email")
+    for setting, part in [
+        ("user.email=acme-456@example.com", ".author_email"),
+        ("user.name=Pat (acme-789)", ".author_name"),
+    ]:
+        git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
+        git(desk.checkout, "-c", setting, "commit", "-q", "--allow-empty", "-m", "Empty")
+        parts = {failure["part"][-len(part) :] for failure in desk.call("push")["fields"]["failures"]}
+        assert part in parts, setting
     git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
     desk.commit("Add a gear", text="fine\n")
     assert len(output(desk.call("push"))["commits"]) == 1
@@ -165,3 +177,123 @@ def test_a_mount_in_a_board_other_than_the_personal_one_gives_no_from(desk: Desk
     crossing = desk.record(output(desk.call("push"))["crossing"])
     assert crossing is not None
     assert "from" not in crossing
+
+
+def test_text_hidden_from_diffs_by_an_attribute_is_checked_and_binary_paths_are_named(desk: Desk) -> None:
+    desk.refuse(["commit.*.diff"])
+    (desk.checkout / ".gitattributes").write_text("*.txt -diff\n")
+    git(desk.checkout, "add", ".gitattributes")
+    sha = desk.commit("Add notes", file="notes.txt", text="token acme-123\n")
+    failure = desk.call("push")
+    assert failure["fields"]["failures"][0]["part"] == f"commit.{sha[:12]}.diff"
+    git(desk.checkout, "reset", "-q", "--hard", "HEAD~1")
+    (desk.checkout / ".gitattributes").write_text("*.txt -diff\n")
+    git(desk.checkout, "add", ".gitattributes")
+    sha = desk.commit("Add notes", file="notes.txt", text="token fine\n")
+    result = output(desk.call("push"))
+    assert result["digest"] == digest(
+        "github.push", {"push.branch": "main"} | commit_parts(desk, sha, "Add notes", "notes.txt\n")
+    )
+
+
+def test_the_push_sends_the_commit_checked_even_when_the_branch_moves_during_the_check(desk: Desk) -> None:
+    desk.write("rubrics/plain.md", "Write plainly.\n")
+    control = {
+        "$type": "controls/control/v1",
+        "requirement": "A test.",
+        "purpose": "A test.",
+        "rule": {"judged": "/rubrics/plain.md"},
+    }
+    desk.write("controls/plain.json", json.dumps(control))
+    checks = [{"control": "/controls/plain", "parts": ["push.branch"]}]
+    desk.write(
+        "boundaries/octo.json",
+        json.dumps({"$type": "boundary/boundary/v1", "to": "github:*", "actions": ["github.*"], "checks": checks}),
+    )
+    agent = desk.home / "agent"
+    agent.write_text(
+        "#!/bin/sh\ncat > /dev/null\n"
+        f"git -C '{desk.checkout}' -c user.name=t -c user.email=t@t commit -q --allow-empty -m Later\n"
+        "echo '{\"findings\": []}'\n"
+    )
+    agent.chmod(0o755)
+    checked = desk.commit("Add a gear")
+    result = output(desk.call("push", extra={"BOARD_CONTROLS_AGENT": json.dumps([str(agent)])}))
+    assert result["commits"] == [checked]
+    assert desk.remote_head("main") == checked
+    assert git(desk.checkout, "log", "-1", "--format=%s") == "Later"
+
+
+def test_a_push_url_unlike_the_fetch_url_is_refused_and_the_same_checkout_without_it_is_pushed(desk: Desk) -> None:
+    desk.commit("Add a gear")
+    git(desk.checkout, "remote", "set-url", "--push", "origin", "https://user:secret@github.com/me/widgets.git")
+    failure = desk.call("push")
+    assert (failure["exit"], failure["code"]) == (1, "github::remote::split")
+    assert "secret" not in json.dumps(failure)
+    git(desk.checkout, "config", "--unset", "remote.origin.pushurl")
+    assert len(output(desk.call("push"))["commits"]) == 1
+
+
+def test_tags_git_would_follow_are_not_pushed_and_the_branch_is(desk: Desk) -> None:
+    git(desk.checkout, "config", "push.followTags", "true")
+    sha = desk.commit("Add a gear")
+    git(desk.checkout, "tag", "-a", "v1", "-m", "Release acme-123")
+    output(desk.call("push"))
+    assert desk.remote_head("main") == sha
+    assert git(desk.remote, "tag") == ""
+
+
+def test_an_origin_url_holding_a_password_is_never_quoted(desk: Desk) -> None:
+    git(desk.checkout, "remote", "set-url", "origin", "https://user:secret@gitlab.example/octo/widgets.git")
+    failure = desk.call("push")
+    assert (failure["exit"], failure["code"]) == (1, "github::remote::not_github")
+    assert "secret" not in json.dumps(failure)
+    assert "https://gitlab.example/octo/widgets.git" in failure["message"]
+
+
+def test_a_remote_git_cannot_reach_is_refused_and_a_reachable_one_is_pushed(desk: Desk) -> None:
+    desk.commit("Add a gear")
+    git(
+        desk.checkout,
+        "config",
+        "--replace-all",
+        f"url.{desk.home / 'missing.git'}.insteadOf",
+        "https://github.com/Octo/Widgets.git",
+    )
+    git(desk.checkout, "config", "--unset", f"url.{desk.remote}.insteadOf")
+    failure = desk.call("push")
+    assert (failure["exit"], failure["code"]) == (1, "github::git::failed")
+    git(desk.checkout, "config", "--unset", f"url.{desk.home / 'missing.git'}.insteadOf")
+    git(desk.checkout, "config", f"url.{desk.remote}.insteadOf", "https://github.com/Octo/Widgets.git")
+    assert len(output(desk.call("push"))["commits"]) == 1
+
+
+def test_a_personal_board_without_boundary_is_refused_and_with_it_enabled_the_push_goes(desk: Desk) -> None:
+    desk.commit("Add a gear")
+    config = desk.personal / ".board" / "board.json"
+    enabled = config.read_text()
+    settings = json.loads(enabled)
+    settings["plugins"] = [name for name in settings["plugins"] if name != "boundary"]
+    config.write_text(json.dumps(settings))
+    failure = desk.call("push")
+    assert (failure["exit"], failure["code"]) == (1, "github::board::refused")
+    assert failure["fields"]["code"] == "board::plugin::not_enabled"
+    assert desk.remote_head("main") != git(desk.checkout, "rev-parse", "HEAD")
+    config.write_text(enabled)
+    assert len(output(desk.call("push"))["commits"]) == 1
+
+
+def test_a_board_the_plugin_cannot_run_is_refused_and_one_it_can_run_is_used(desk: Desk) -> None:
+    desk.commit("Add a gear")
+    environment = desk.environment()
+    environment["PATH"] = environment["PATH"].replace(str(board_binary().parent) + os.pathsep, "")
+    ran = subprocess.run(
+        [str(board_binary()), "--json", "call", "github.push"],
+        cwd=desk.checkout,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (ran.returncode, json.loads(ran.stdout)["code"]) == (1, "github::board::failed")
+    assert len(output(desk.call("push"))["commits"]) == 1

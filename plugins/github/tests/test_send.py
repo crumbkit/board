@@ -132,3 +132,33 @@ def test_a_failing_gh_after_a_pass_is_reported_and_no_record_is_written(desk: De
     assert desk.record("/gh/octo/widgets/issues/7") is None
     desk.gh_answers({"html_url": ISSUE_URL, "number": 7})
     assert output(desk.call("issue-create", "--title", "Widgets wobble", "--body", "It wobbles."))["sent"] == ISSUE_URL
+
+
+def test_a_push_that_lands_before_gh_fails_is_recorded_and_gh_working_records_the_url(desk: Desk) -> None:
+    git(desk.checkout, "switch", "-q", "-c", "feature")
+    sha = desk.commit("Add a lever")
+    desk.gh_answers("", code=1, stderr="could not create\n")
+    failure = desk.call("pr-create", "--title", "Add a lever", "--body", "Levers lift.")
+    assert (failure["exit"], failure["code"]) == (1, "github::gh::failed")
+    assert desk.remote_head("feature") == sha
+    pushed = list((desk.personal / "crossings").glob("*.json"))
+    assert [json.loads(each.read_text())["result"] for each in pushed] == [f"{sha}:refs/heads/feature [new branch]"]
+    desk.gh_answers(f"{PULL_URL}\n")
+    result = output(desk.call("pr-create", "--title", "Add a lever", "--body", "Levers lift."))
+    assert (desk.record(result["crossing"]) or {}).get("result") == PULL_URL
+
+
+def test_a_boundary_naming_a_missing_control_passes_on_the_controls_code_and_with_the_control_passes(
+    desk: Desk,
+) -> None:
+    desk.refuse(["comment.body"])
+    control = (desk.personal / "controls" / "names.json").read_text()
+    (desk.personal / "controls" / "names.json").unlink()
+    failure = desk.call("comment", "--number", "7", "--body", "Fine.")
+    assert (failure["exit"], failure["code"]) == (1, "github::boundary::refused")
+    assert failure["fields"]["code"] == "boundary::board::refused"
+    assert failure["fields"]["cause"] == "controls::control::not_found"
+    assert desk.gh_calls() == 0
+    desk.write("controls/names.json", control)
+    desk.gh_answers({"html_url": f"{ISSUE_URL}#issuecomment-1"})
+    assert output(desk.call("comment", "--number", "7", "--body", "Fine."))["sent"].endswith("issuecomment-1")

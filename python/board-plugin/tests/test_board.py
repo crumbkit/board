@@ -41,7 +41,9 @@ def test_a_board_that_prints_no_json_is_a_failure_and_one_that_does_is_read(monk
     assert DEMO.rows("SELECT 1") == [[1]]
 
 
-def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint_and_an_inner_code_as_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     error: dict[str, Any] = {
         "schema": "board/failure/v1",
         "code": "board::query::invalid",
@@ -59,7 +61,7 @@ def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint(monkeyp
     )
     with pytest.raises(PluginError) as refused:
         DEMO.rows("SELECT 1")
-    assert refused.value.fields == {"refusals": refusals, "code": "board::query::invalid"}
+    assert refused.value.fields == {"refusals": refusals, "code": "board::query::invalid", "cause": "not Board's"}
     assert refused.value.message == "`board query` refused with board::query::invalid: no such table; fix it"
     error["recovery"] = {"kind": "run", "call": "board query -h"}
     printing(monkeypatch, json.dumps(error).encode(), code=1)

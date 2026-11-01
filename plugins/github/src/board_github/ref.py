@@ -28,15 +28,9 @@ def ref(request: CallRequest) -> dict[str, object]:
     if not isinstance(url, str) or not url.startswith("https://"):
         raise gh.failed(endpoint, "answered without an https html_url", f"run `gh api {endpoint}` to see the answer")
     kind = PULL_TYPE if "pull_request" in issue else ISSUE_TYPE
-    title = title if isinstance(title, str) and title else None
-    record: dict[str, object] = {
-        "$type": kind,
-        "owner": owner,
-        "repo": repo,
-        "number": number,
-        "url": url,
-        "title": title,
-    }
+    record: dict[str, object] = {"$type": kind, "owner": owner, "repo": repo, "number": number, "url": url}
+    if isinstance(title, str) and title:
+        record["title"] = title
     return answer(write(board, record), record, written=True)
 
 

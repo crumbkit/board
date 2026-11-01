@@ -249,14 +249,19 @@ class Board:
     def _refused(
         self, arguments: tuple[str, ...], code: str, message: str, hint: object, failure: dict[str, Any] | None = None
     ) -> PluginError:
-        """`<plugin>::board::refused`, carrying Board's code and the fields of Board's `failure`, such as `refusals`."""
+        """`<plugin>::board::refused`, carrying Board's code and the fields of Board's `failure`, such as `refusals`.
+
+        A `code` among those fields is kept as `cause`.
+        """
         then = f"; {hint}" if isinstance(hint, str) and hint else ""
         fields = failure.get("fields") if failure else None
         carried = cast("dict[str, Any]", fields) if isinstance(fields, dict) else {}
+        # A code the failure's own fields carried, such as the plugin a nested call reached refused with.
+        cause = {"cause": carried["code"]} if carried.get("code") not in {None, code} else {}
         return PluginError(
             f"{self.plugin}::board::refused",
             f"`{self._named(arguments)}` refused with {code}: {message}{then}",
-            {**carried, "code": code},
+            {**carried, "code": code, **cause},
         )
 
 

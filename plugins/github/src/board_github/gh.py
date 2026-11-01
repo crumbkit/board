@@ -6,6 +6,8 @@ from typing import Any, cast
 
 from board_plugin.protocol import PluginError
 
+from board_github.checkout import without_model_keys
+
 # How long gh may run, in seconds: less than Board's 30-second limit, so the plugin can report a stopped gh.
 TIMEOUT = 20
 # How much of gh's stderr a failure's message carries.
@@ -21,6 +23,7 @@ def _run(arguments: list[str], stdin: bytes, cwd: str | None = None) -> subproce
     return subprocess.run(  # noqa: S603 - the arguments are the plugin's own
         ["gh", *arguments],  # noqa: S607 - gh is found on PATH, as the person runs it
         cwd=cwd,
+        env=without_model_keys(),
         input=stdin,
         capture_output=True,
         timeout=TIMEOUT,
