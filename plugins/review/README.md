@@ -21,7 +21,7 @@ request's commits, so CI can require a review of each pull request.
 - `focus`: what matters and what to check first.
 - `questions` (optional): what the author wants answered.
 - `follows` (optional): the report this brief continues from.
-- `for` (optional): the `changes/change/v1` the review belongs to, and
+- `for` (optional): the `changes/change/v2` the review belongs to, and
   `step` (optional) the change's step it completes
   (plugins/changes/README.md).
 - `repo` (optional): the repo record of the repository the range is in.

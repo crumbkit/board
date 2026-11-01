@@ -11,12 +11,12 @@ repository that is itself a board, Board finds that board's
 
 ## Records
 
-The change is `changes/change/v1` at `/changes/<name>.json`. Every other
+The change is `changes/change/v2` at `/changes/<name>.json`. Every other
 record of the change sits in `/changes/<name>/`.
 
 ```json
 {
-  "$type": "changes/change/v1",
+  "$type": "changes/change/v2",
   "title": "Let a suite declare a timeout",
   "repo": "/repos/board",
   "branch": "suite-timeout",
@@ -156,6 +156,7 @@ and `open`.
   record, by path, at most 100 by default, with `total`, `truncated` and
   `unreadable`.
 - `pr` drafts the pull request; see below.
+- `migrate` rewrites each `changes/change/v1`; see Migrating below.
 
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`. Every capability that writes a
@@ -208,9 +209,37 @@ URL.
 
 `next` and `brief` call `controls.check`, so the board needs the controls
 plugin enabled too. Enabling writes the schemas to `.board/types/changes/`
-and names the plugin in `.board/board.json`. The types stay at v1 and change
-in place while the plugin has one user; after such a change, enable it
-again.
+and names the plugin in `.board/board.json`.
+
+## Migrating from changes/change/v1
+
+A `changes/change/v1` held a `phase` and the change's state in one record.
+Enabling this version keeps the v1 schema while such records exist
+(docs/plugins/lifecycle/updating.md). `migrate` rewrites each one:
+
+- The change becomes a `changes/change/v2` at the same path. It keeps
+  `title`, `route` and `issue`, takes `repo` from `mount`, and follows
+  `/workflows/personal`, which `migrate` writes when it is missing.
+- The branch is the one branch whose tip, in the mounted clone, is the v1
+  `head`. The suite is the first one the repository's contributing docs
+  name, as `start` finds it.
+- `plan`, the Markdown path, becomes a `changes/plan/v1` whose `text`
+  references it and whose `uses` is empty. The Markdown stays where it is.
+- `pull_request` becomes an `opened` record.
+- `phase`, `head` and `records` are dropped. The steps are derived, the head
+  comes from checks, and the files `records` listed stay in the change's
+  directory.
+
+A change whose branch or suite cannot be found is left as v1, and `owed`
+says what to give for it. Give it on stdin:
+
+    board --personal call changes.migrate <<'JSON'
+    {"changes": {"/changes/<name>": {"branch": "<branch>", "suite": "/suites/<suite>"}}}
+    JSON
+
+Without `"apply": true` the call only lists the lines it would write. With
+it, one write rewrites every change it can. Run `board plugin enable changes`
+afterwards, and it removes the v1 schema once no record uses it.
 
 ## Developing
 

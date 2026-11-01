@@ -15,6 +15,8 @@ from board_changes.models import (
     DropInput,
     FilesInput,
     LandedInput,
+    MigrateInput,
+    MigrateOutput,
     NextOutput,
     OpenInput,
     OpenOutput,
@@ -109,6 +111,16 @@ CAPABILITIES: list[tuple[str, str, type[BaseModel], type[BaseModel], bool]] = [
         ),
         PathInput,
         PrOutput,
+        False,
+    ),
+    (
+        "migrate",
+        (
+            "Rewrite each phase-based changes/change/v1 as a changes/change/v2 with its plan and opened records,"
+            " in one write with apply; without it, list the lines and the changes left owed."
+        ),
+        MigrateInput,
+        MigrateOutput,
         False,
     ),
 ]

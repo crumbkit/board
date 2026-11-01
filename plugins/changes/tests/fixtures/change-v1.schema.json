@@ -1,0 +1,78 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
+  "properties": {
+    "$type": {
+      "const": "changes/change/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "head": {
+      "pattern": "^[0-9a-f]{7,40}$",
+      "title": "Head",
+      "type": "string"
+    },
+    "issue": {
+      "pattern": "^https?://",
+      "title": "Issue",
+      "type": "string"
+    },
+    "mount": {
+      "format": "board-ref",
+      "title": "Mount",
+      "type": "string"
+    },
+    "phase": {
+      "enum": [
+        "plan",
+        "build",
+        "review",
+        "land",
+        "done",
+        "dropped"
+      ],
+      "title": "Phase",
+      "type": "string"
+    },
+    "plan": {
+      "format": "board-ref",
+      "title": "Plan",
+      "type": "string"
+    },
+    "pull_request": {
+      "pattern": "^https?://",
+      "title": "Pull Request",
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "title": "Records",
+      "type": "array"
+    },
+    "route": {
+      "enum": [
+        "owner",
+        "ask-first",
+        "unowned"
+      ],
+      "title": "Route",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "title",
+    "mount",
+    "phase"
+  ],
+  "title": "ChangeRecord",
+  "type": "object"
+}

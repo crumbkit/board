@@ -1,9 +1,9 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, at `/changes/<name>.json`.\n\nIts other records sit in `/changes/<name>/`, each written once, and its\nstate is derived from which of them exist.",
+  "description": "`changes/change/v2`: one change to a repository, at `/changes/<name>.json`.\n\nIts other records sit in `/changes/<name>/`, each written once, and its\nstate is derived from which of them exist.",
   "properties": {
     "$type": {
-      "const": "changes/change/v1",
+      "const": "changes/change/v2",
       "description": "The record's type.",
       "type": "string"
     },

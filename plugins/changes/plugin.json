@@ -1020,6 +1020,110 @@
         "title": "PrOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Rewrite each phase-based changes/change/v1 as a changes/change/v2 with its plan and opened records, in one write with apply; without it, list the lines and the changes left owed.",
+      "inputSchema": {
+        "$defs": {
+          "Given": {
+            "additionalProperties": false,
+            "description": "What the owner gives for one v1 change whose record cannot supply it.",
+            "properties": {
+              "branch": {
+                "description": "The change's branch.",
+                "title": "Branch",
+                "type": "string"
+              },
+              "suite": {
+                "description": "The change's check suite, a runs/suite/v1.",
+                "format": "board-ref",
+                "title": "Suite",
+                "type": "string"
+              }
+            },
+            "title": "Given",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Whether to write, and what the owner gives for v1 changes, by path.",
+        "properties": {
+          "apply": {
+            "description": "Write the lines; without it, only list them.",
+            "title": "Apply",
+            "type": "boolean"
+          },
+          "changes": {
+            "additionalProperties": {
+              "$ref": "#/$defs/Given"
+            },
+            "description": "The branch or suite of each v1 change, by its logical path.",
+            "title": "Changes",
+            "type": "object"
+          }
+        },
+        "title": "MigrateInput",
+        "type": "object"
+      },
+      "name": "migrate",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The lines `migrate` wrote or would write, and the v1 changes it left, in `owed`.",
+        "properties": {
+          "applied": {
+            "title": "Applied",
+            "type": "boolean"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "lines": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "owed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Owed",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "applied",
+          "commit",
+          "lines",
+          "total",
+          "truncated",
+          "owed"
+        ],
+        "title": "MigrateOutput",
+        "type": "object"
+      }
     }
   ],
   "description": "Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository's clone, on the work branch, with `board --personal call changes.start --title '<title>' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
@@ -1037,7 +1141,7 @@
     "board_changes"
   ],
   "types": [
-    "changes/change/v1",
+    "changes/change/v2",
     "changes/plan/v1",
     "changes/workflow/v1",
     "changes/claim/v1",

@@ -9,7 +9,7 @@ from board_plugin.board import Board, literal
 from board_plugin.protocol import PluginError
 
 PLUGIN = "changes"
-CHANGE_TYPE = "changes/change/v1"
+CHANGE_TYPE = "changes/change/v2"
 PLAN_TYPE = "changes/plan/v1"
 WORKFLOW_TYPE = "changes/workflow/v1"
 CLAIM_TYPE = "changes/claim/v1"

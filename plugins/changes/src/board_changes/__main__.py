@@ -4,6 +4,7 @@ import sys
 
 from board_plugin.protocol import CallRequest, PluginError, main
 
+from board_changes.migrate import migrate
 from board_changes.open import open_changes
 from board_changes.plan import brief, plan
 from board_changes.pr import pr
@@ -25,6 +26,7 @@ CAPABILITIES = {
     "drop": drop,
     "open": open_changes,
     "pr": pr,
+    "migrate": migrate,
 }
 
 

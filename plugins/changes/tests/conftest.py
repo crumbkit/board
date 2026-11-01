@@ -236,7 +236,7 @@ WORKFLOW = [
 
 
 def change(**fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """A `changes/change/v1` record to /repos/app on its work branch, with the personal workflow."""
+    """A `changes/change/v2` record to /repos/app on its work branch, with the personal workflow."""
     defaults: dict[str, Any] = {
         "title": "Let a suite declare a timeout",
         "repo": "/repos/app",
@@ -245,7 +245,7 @@ def change(**fields: Any) -> str:  # noqa: ANN401 - the record's other fields, a
         "suite": "/suites/checks",
         "route": "owner",
     }
-    return record("changes/change/v1", **(defaults | fields))
+    return record("changes/change/v2", **(defaults | fields))
 
 
 def setup(board: Board, **fields: Any) -> None:  # noqa: ANN401 - the change's other fields, as JSON

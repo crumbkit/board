@@ -58,7 +58,7 @@
       "format": "board-ref",
       "title": "For",
       "type": "string",
-      "x-board-type": "changes/change/v1"
+      "x-board-type": "changes/change/v2"
     },
     "questions": {
       "items": {

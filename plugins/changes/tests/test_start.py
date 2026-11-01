@@ -28,7 +28,7 @@ def test_start_in_an_unmounted_clone_creates_the_repo_record_once_and_a_second_s
     assert (first["path"], first["repo"], first["repo_created"]) == (path, "/repos/app", True)
     assert board.read("repos/app.json") == {"$type": "board/repo/v1", "remote": "example/app"}
     assert board.read("changes/let-a-suite-declare-a-timeout.json") == {
-        "$type": "changes/change/v1",
+        "$type": "changes/change/v2",
         "title": "Let a suite declare a timeout",
         "repo": "/repos/app",
         "branch": "work",

@@ -12,7 +12,7 @@ from board_plugin.protocol import JsonValue
 
 BRIEF_TYPE = "review/brief/v1"
 REPORT_TYPE = "review/report/v1"
-CHANGE_TYPE = "changes/change/v1"
+CHANGE_TYPE = "changes/change/v2"
 
 # The variable that holds the agent `review.run` starts, as a JSON array of strings.
 AGENT_VARIABLE = "BOARD_REVIEW_AGENT"

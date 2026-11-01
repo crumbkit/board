@@ -69,13 +69,13 @@ class Record(BaseModel):
 
 
 class ChangeRecord(Record):
-    """`changes/change/v1`: one change to a repository, at `/changes/<name>.json`.
+    """`changes/change/v2`: one change to a repository, at `/changes/<name>.json`.
 
     Its other records sit in `/changes/<name>/`, each written once, and its
     state is derived from which of them exist.
     """
 
-    tag: Literal["changes/change/v1"] = Field(alias="$type", description="The record's type.")
+    tag: Literal["changes/change/v2"] = Field(alias="$type", description="The record's type.")
     title: str = Field(min_length=1, description="What the change does, in a few words.")
     repo: str = ref("The repo record of the repository the change is to, such as /repos/board.")
     branch: str = Field(min_length=1, description="The work branch in the repository.")
@@ -419,6 +419,39 @@ class PrOutput(Strict):
     command: str | None
     pull_request: str | None
     unreadable: list[str]
+
+
+class Given(Strict):
+    """What the owner gives for one v1 change whose record cannot supply it."""
+
+    model_config = ConfigDict(json_schema_extra=shipped)
+
+    branch: str | SkipJsonSchema[None] = Field(default=None, description="The change's branch.")
+    suite: Reference | SkipJsonSchema[None] = Field(
+        default=None, description="The change's check suite, a runs/suite/v1."
+    )
+
+
+class MigrateInput(Strict):
+    """Whether to write, and what the owner gives for v1 changes, by path."""
+
+    model_config = ConfigDict(json_schema_extra=shipped)
+
+    apply: bool = Field(default=False, description="Write the lines; without it, only list them.")
+    changes: dict[str, Given] = Field(
+        default_factory=dict, description="The branch or suite of each v1 change, by its logical path."
+    )
+
+
+class MigrateOutput(Strict):
+    """The lines `migrate` wrote or would write, and the v1 changes it left, in `owed`."""
+
+    applied: bool
+    commit: str | None
+    lines: list[dict[str, Any]]
+    total: int
+    truncated: bool
+    owed: list[str]
 
 
 # Each record type the plugin ships, by its type.
