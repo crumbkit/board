@@ -76,7 +76,8 @@ def pr_create(request: CallRequest) -> dict[str, object]:
         arguments += ["--base", str(given["base"])]
     if given.get("draft") is True:
         arguments.append("--draft")
-    printed = gh.send(arguments, body, "gh pr create").split()
+    # In the checkout, so gh reads no other repository's state.
+    printed = gh.send(arguments, body, "gh pr create", place.top).split()
     url = printed[-1] if printed else ""
     number = url.rpartition("/pull/")[2]
     if not url.startswith("https://") or not number.isdigit():

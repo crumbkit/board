@@ -16,10 +16,11 @@ NOT_FOUND = "(HTTP 404)"
 UNSURE = "it may have been sent, so look on GitHub before you run it again"
 
 
-def _run(arguments: list[str], stdin: bytes) -> subprocess.CompletedProcess[bytes]:
-    """Run `gh <arguments>` with `stdin`, or raise OSError or TimeoutExpired."""
+def _run(arguments: list[str], stdin: bytes, cwd: str | None = None) -> subprocess.CompletedProcess[bytes]:
+    """Run `gh <arguments>` in `cwd` with `stdin`, or raise OSError or TimeoutExpired."""
     return subprocess.run(  # noqa: S603 - the arguments are the plugin's own
         ["gh", *arguments],  # noqa: S607 - gh is found on PATH, as the person runs it
+        cwd=cwd,
         input=stdin,
         capture_output=True,
         timeout=TIMEOUT,
@@ -48,10 +49,10 @@ def api(endpoint: str) -> dict[str, Any] | None:
     return answer
 
 
-def send(arguments: list[str], stdin: str, named: str) -> str:
-    """What `gh <arguments>` prints on stdout after reading `stdin`, or `github::gh::failed` naming `named`."""
+def send(arguments: list[str], stdin: str, named: str, cwd: str | None = None) -> str:
+    """What `gh <arguments>` prints in `cwd` after reading `stdin`, or `github::gh::failed` naming `named`."""
     try:
-        ran = _run(arguments, stdin.encode())
+        ran = _run(arguments, stdin.encode(), cwd)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise unsent(named, f"did not finish: {error}") from None
     if ran.returncode != 0:
