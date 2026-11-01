@@ -36,7 +36,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`. `basis` names the decisions the control rests on.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
@@ -49,6 +49,14 @@
         "type": "string"
       },
       "title": "Applies To",
+      "type": "array"
+    },
+    "basis": {
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "title": "Basis",
       "type": "array"
     },
     "paths": {

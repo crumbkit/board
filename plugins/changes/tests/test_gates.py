@@ -79,12 +79,15 @@ def test_the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() -> 
         assert statuses(observed("plan", route=named))["route"] == "pass", named
 
 
-def test_on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_refs_name_the_plan_or_the_change() -> None:
-    unrelated = {"/d": ("plans/decision/v1", {"refs": ["/changes/other"]})}
-    assert statuses(observed("plan", unrelated, route="ask-first"))["owner-approval"] == "missing"
-    for named in ("/changes/t/plan.md", PATH):
-        approved = {"/d": ("plans/decision/v1", {"refs": [named]})}
-        assert statuses(observed("plan", approved, route="ask-first"))["owner-approval"] == "pass", named
+def test_on_the_ask_first_route_the_plan_gate_needs_a_decision_whose_basis_names_the_plan_or_the_change() -> None:
+    for type_name, field_name in (("decisions/decision/v1", "basis"), ("plans/decision/v1", "refs")):
+        unrelated = {"/d": (type_name, {field_name: ["/changes/other"]})}
+        assert statuses(observed("plan", unrelated, route="ask-first"))["owner-approval"] == "missing"
+        for named in ("/changes/t/plan.md", PATH):
+            approved = {"/d": (type_name, {field_name: [named]})}
+            assert statuses(observed("plan", approved, route="ask-first"))["owner-approval"] == "pass", named
+    crossed = {"/d": ("decisions/decision/v1", {"refs": [PATH]})}
+    assert statuses(observed("plan", crossed, route="ask-first"))["owner-approval"] == "missing"
 
 
 def test_the_build_gate_passes_with_tasks_done_or_dropped_and_a_passing_run_on_the_head() -> None:

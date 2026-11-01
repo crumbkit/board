@@ -1,0 +1,51 @@
+[project]
+name = "board-decisions"
+version = "0.1.0"
+description = "Tests that run the decisions plugin built into Board through the real `board` binary, and the one-off migration to its record."
+requires-python = ">=3.12"
+dependencies = ["board-plugin"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+board-plugin = { path = "../../python/board-plugin", editable = true }
+
+[dependency-groups]
+dev = ["pyright>=1.1.400", "pytest>=8.4", "ruff>=0.13"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # conflicts with the formatter
+  "CPY001", # the repository is proprietary; no file carries its own notice
+  "D203",   # conflicts with D211 (no blank line before a class docstring)
+  "D213",   # conflicts with D212 (the summary starts on the first line)
+  "D401",   # a docstring may name what a function returns, as Board's Rust does
+  "EM101",  # an error's message is written where it is raised
+  "EM102",  # as EM101
+  "TRY003", # as EM101
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "S101",   # pytest asserts
+  "S603",   # the tests run the real board, git and the plugin
+  "S607",   # board, git and uv are found on PATH
+  "INP001", # tests/ is a plain directory, not a package
+  "D103",   # a test's name is the sentence that describes it
+]
+"migrate.py" = [
+  "INP001", # a script run by path, not a package
+  "T201",   # printing what it rewrites is the script's job
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["migrate.py", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

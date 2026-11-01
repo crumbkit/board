@@ -64,7 +64,7 @@ request changes that comment and gives the reason.
 
 After a pull request is created, the mod writes the change's `opened` record
 with its URL, and stops writing the decision stub it writes today
-(plan/decisions.md).
+(plugins/decisions/README.md).
 
 ## The query
 
@@ -113,7 +113,7 @@ Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
    request gate, the `opened` record, the end of the decision stub with the
-   second migration run (plan/decisions.md), and the artifacts mod's `for`.
+   second migration run (plugins/decisions/README.md), and the artifacts mod's `for`.
    `for` is an optional list on `artifacts/version/v1` of references to the
    changes, evals or projects the version belongs to, which the mod sets
    from the session's `Board:` line or its held change. An artifact belongs

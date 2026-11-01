@@ -44,6 +44,10 @@ pub struct QuestionRecord {
     pub why: Option<String>,
     /// What cannot proceed until the question is answered.
     pub blocks: Option<String>,
+    /// What the question belongs to, such as the decisions it asks the owner
+    /// to review. The question reviews each of them once it is answered.
+    #[serde(rename = "for")]
+    pub belongs_to: Option<Vec<Ref>>,
     /// A Markdown file in the board that holds long background.
     pub context_path: Option<Ref>,
     /// What the asker did not know, such as details nobody has written down

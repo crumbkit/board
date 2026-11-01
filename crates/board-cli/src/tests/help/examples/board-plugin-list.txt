@@ -1,3 +1,4 @@
+ok decisions 0.1.0 disabled offers about, open
 ok evals 0.1.0 disabled offers about, open
 ok plans 0.1.0 disabled offers open
 ok requests 0.1.0 disabled offers thread

@@ -1,41 +1,36 @@
 {
   "additionalProperties": false,
-  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what\nit rests on, and what was concluded. A `concluded` eval has a `verdict`.",
-  "if": {
-    "properties": {
-      "status": {
-        "const": "concluded"
-      }
-    },
-    "required": [
-      "status"
-    ]
-  },
+  "description": "`evals/eval/v1`: a question about some subjects, how it is tested, what\nit rests on, and what was concluded.\n\nIts status is derived, never stored: `abandoned` once `abandoned` is\nset, else `concluded` once it has a `verdict`, else `running` once it\nlists `runs`, else `planned`.",
   "properties": {
     "$type": {
       "const": "evals/eval/v1",
       "description": "The record's type.",
       "type": "string"
     },
+    "abandoned": {
+      "description": "Why the eval was stopped before it concluded.",
+      "minLength": 1,
+      "type": "string"
+    },
     "conclusion": {
       "description": "What was concluded, in words.",
       "type": "string"
     },
-    "decision": {
-      "description": "The decision this eval informs.",
+    "informs": {
+      "description": "The question of the decision this eval informs, written before any\ndecision exists.",
       "type": "string"
     },
-    "mounts": {
-      "description": "The mount of each repository the eval concerns, such as\n`/repos/crumbkit`.",
+    "question": {
+      "description": "The question the eval answers.",
+      "type": "string"
+    },
+    "repos": {
+      "description": "The repo record of each repository the eval concerns, such as\n`/repos/crumbkit`.",
       "items": {
         "format": "board-ref",
         "type": "string"
       },
       "type": "array"
-    },
-    "question": {
-      "description": "The question the eval answers.",
-      "type": "string"
     },
     "runs": {
       "description": "The runs its verdict rests on.",
@@ -46,18 +41,8 @@
       },
       "type": "array"
     },
-    "status": {
-      "description": "Where the eval stands.",
-      "enum": [
-        "planned",
-        "running",
-        "concluded",
-        "abandoned"
-      ],
-      "type": "string"
-    },
     "subjects": {
-      "description": "The names of what is tested, such as `crumbkit` or `clap`, without\nversions, which go in a run's `versions`. Name a repository by its\nmount, in `mounts`.",
+      "description": "The names of what is tested, such as `crumbkit` or `clap`, without\nversions, which go in a run's `versions`. Name a repository by its\nrepo record, in `repos`.",
       "items": {
         "type": "string"
       },
@@ -91,14 +76,8 @@
   "required": [
     "$type",
     "question",
-    "subjects",
-    "status"
+    "subjects"
   ],
-  "then": {
-    "required": [
-      "verdict"
-    ]
-  },
   "title": "EvalRecord",
   "type": "object"
 }

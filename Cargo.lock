@@ -194,12 +194,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-decisions"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-plugin-plans",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-evals"
 version = "0.0.0"
 dependencies = [
  "board-model",
  "board-ops",
  "board-plugin",
+ "board-plugin-decisions",
  "board-scenario",
  "board-validate",
  "proptest",
@@ -243,6 +258,7 @@ name = "board-plugins"
 version = "0.0.0"
 dependencies = [
  "board-ops",
+ "board-plugin-decisions",
  "board-plugin-evals",
  "board-plugin-plans",
  "board-plugin-requests",

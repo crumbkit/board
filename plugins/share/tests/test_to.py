@@ -205,7 +205,7 @@ def test_a_reference_through_a_mount_the_team_lacks_is_refused_and_one_the_team_
     head = commit(library)
     pointer = json.dumps({"$type": "board/mount/v1", "repo": str(library), "follow": "main", "commit": head})
     boards.write(boards.personal, "repos/library.json", pointer)
-    experiment(boards, mounts=["/repos/library"])
+    experiment(boards, repos=["/repos/library"])
     code, document = boards.share(path="/evals/x")
     assert (code, document["code"]) == (1, "share::closure::unresolved")
     assert document["fields"]["paths"] == ["/repos/library"]
@@ -300,7 +300,7 @@ def test_a_link_to_the_mount_is_refused_and_the_mount_it_links_to_is_admitted(bo
 def test_a_record_its_schema_refuses_is_refused_before_any_write_and_a_dangling_reference_is_admitted(
     boards: Boards,
 ) -> None:
-    experiment(boards, status="sideways")
+    experiment(boards, verdict="sideways")
     before = git(boards.team, "rev-parse", "HEAD")
     code, document = boards.share(path="/evals/x")
     assert (code, document["code"]) == (1, "share::record::invalid"), document

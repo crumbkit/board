@@ -18,35 +18,41 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
   "$type": "evals/eval/v1",
   "question": "Can gix resolve a ref faster than git2?",
   "subjects": ["gix", "git2"],
-  "mounts": ["/repos/board"],
+  "repos": ["/repos/board"],
   "suites": ["/suites/gix-refs"],
   "runs": ["/suites/gix-refs/runs/20261001T090000Z-a3f9"],
-  "decision": "Which git library board-tree uses.",
-  "status": "concluded",
+  "informs": "Which git library board-tree uses.",
   "verdict": "supported",
   "conclusion": "gix resolved 1,000 refs in 41 ms against 63 ms for git2."
 }
 ```
 
-- `question`, `subjects` and `status` are required.
+- `question` and `subjects` are required.
 - `subjects` are the names of what is tested, without versions, such as `gix`
-  or a model family. A repository the eval concerns goes in `mounts`, by its
-  mount, and never as `owner/name` here. `evals.about` matches subjects
+  or a model family. A repository the eval concerns goes in `repos`, by its
+  repo record, and never as `owner/name` here. `evals.about` matches subjects
   without regard to case. A run holds the versions used.
-- `mounts` references the mount of each repository the eval concerns, such as
-  `/repos/board`, a `board/mount/v1` record at `/repos/board.json`. `check`
-  reports `board::ref::dangling` for a path the board does not have, and
-  `board refs /repos/board` lists the evals that name it.
+- `repos` references the repo record of each repository the eval concerns,
+  such as `/repos/board`, a `board/repo/v1` record at `/repos/board.json`
+  (docs/architecture/paths/repos.md); a `board/mount/v1` mount there serves
+  too. `check` reports `board::ref::dangling` for a path the board does not
+  have, and `board refs /repos/board` lists the evals that name it.
 - `suites` references the `runs/suite/v1` records that hold the method, the
   cases and the measures.
 - `runs` references the `runs/run/v1` records the verdict rests on. A run
   names only its suite, so `board refs` on a run lists the evals that cite it.
 - `check` reports `board::ref::dangling` or `board::ref::wrong_type` for a
   suite or run that reaches nothing or a record of another type.
-- `decision` is the decision this eval informs.
-- `status` is `planned`, `running`, `concluded` or `abandoned`. A `concluded`
-  eval needs a `verdict` (`supported`, `refuted` or `inconclusive`); the
-  schema refuses one without it. `conclusion` holds the prose.
+- `informs` is the question of the decision this eval informs, written
+  before any decision exists. A decision that rests on the eval names it in
+  its `basis` (plugins/decisions/README.md).
+- `verdict` is `supported`, `refuted` or `inconclusive`, and `conclusion`
+  holds the prose.
+- `abandoned` says why the eval stopped before it concluded.
+
+The status is derived, never stored: `abandoned` when `abandoned` is set,
+else `concluded` when there is a `verdict`, else `running` when `runs` lists
+a run, else `planned`.
 - `written_by` names the plugin and hook that wrote the eval, such as
   `runs/test-run`, when a hook wrote it without an agent. An eval an agent or a
   person wrote leaves it out.
@@ -54,22 +60,24 @@ An eval is a file `/evals/<name>.json`. Its evidence sits beside it, in
 ## Capabilities
 
 `board call evals.about --subject gix` returns the evals that name that
-subject, whatever their status. `board call evals.about --mount /repos/board`
-returns the evals whose `mounts` include that exact path, and the
+subject, whatever their status. `board call evals.about --repo /repos/board`
+returns the evals whose `repos` include that exact path, and the
 evals stored in that mounted board, whose paths start with `/repos/board/`.
 Board refuses input with both or neither as `board::plugin::bad_input`.
 `board call evals.open` returns the evals whose status is
-`planned` or `running`. A `concluded` eval without a verdict is not valid, so
-neither lists it.
+`planned` or `running`.
 
 Both take an optional `limit`, 1 to 100 (default 100), and return
 `{"evals": [...], "total": n, "truncated": bool}`. Each eval is its `path`,
-`question`, `subjects`, `status`, `verdict` and `decision`, ordered by path.
+`question`, `subjects`, derived `status`, `verdict`, `informs` and
+`decisions`, ordered by path. `decisions` lists the decisions not superseded
+whose `basis` names the eval, by path; the decisions plugin's README says how
+they are read.
 Board checks the limit before the plugin runs. Case folding covers ASCII
 letters only, as SQLite's `lower` does.
 
-Each capability reads every eval with one query over the `records` view and
-filters them in Rust. It lists an eval whose only fault is a dangling or
+Each capability reads every eval with one query over the `records` view, and
+every decision with another, and filters them in Rust. It lists an eval whose only fault is a dangling or
 wrong-typed reference, and leaves out one that Board marks degraded for any
 other reason. It also leaves out an eval that a board's own looser schema
 admits but the plugin cannot read.

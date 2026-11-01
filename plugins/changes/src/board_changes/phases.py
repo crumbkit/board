@@ -12,7 +12,7 @@ from board_changes.repo import check_suite
 
 INSTRUCTIONS = {
     "plan": "Interview the owner and fill in the plan's Problem, Outcome and Out of scope sections. On the "
-    "ask-first route, attach the owner's plans/decision/v1 whose refs name the plan.",
+    "ask-first route, attach the owner's decisions/decision/v1 whose basis names the plan.",
     "build": "Build test-first. Attach each task, record the head commit with --head, run the check suite on it "
     "and attach the run.",
     "review": "Review the head commit with clean context and attach the review/report/v1. Fix blocking findings, "

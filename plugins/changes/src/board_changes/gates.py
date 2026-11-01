@@ -8,7 +8,9 @@ from board_changes.change import Change
 
 TASK_TYPE = "tasks/task/v2"
 RUN_TYPE = "runs/run/v1"
-DECISION_TYPE = "plans/decision/v1"
+# A decision and the field that names what it rests on. plans/decision/v1 is read until the runs mod stops
+# writing stubs of it.
+DECISIONS = {"decisions/decision/v1": "basis", "plans/decision/v1": "refs"}
 REPORT_TYPE = "review/report/v1"
 # The plan's sections the plan gate requires, by heading, compared without case.
 SECTIONS = ("Problem", "Outcome", "Out of scope")
@@ -106,13 +108,14 @@ def route_missing(observed: Observed) -> str | None:
 
 
 def approval_missing(observed: Observed) -> str | None:
-    """Whether a decision approving the plan is attached: one whose `refs` name the plan or the change."""
+    """Whether a decision approving the plan is attached: one whose `basis` (or old `refs`) names the plan or change."""
     approves = {observed.path, observed.change.get("plan")}
-    for _, body in of_type(observed, DECISION_TYPE):
-        refs: list[Any] = body.get("refs") or []
-        if approves.intersection(ref for ref in refs if isinstance(ref, str)):
-            return None
-    return "no plans/decision/v1 whose refs name the plan or the change is attached"
+    for type_name, field_name in DECISIONS.items():
+        for _, body in of_type(observed, type_name):
+            refs: list[Any] = body.get(field_name) or []
+            if approves.intersection(ref for ref in refs if isinstance(ref, str)):
+                return None
+    return "no decisions/decision/v1 whose basis names the plan or the change is attached"
 
 
 def tasks_missing(observed: Observed) -> str | None:

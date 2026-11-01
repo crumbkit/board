@@ -44,6 +44,14 @@
       "format": "board-ref",
       "type": "string"
     },
+    "for": {
+      "description": "What the question belongs to, such as the decisions it asks the owner\nto review. The question reviews each of them once it is answered.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
     "mount": {
       "description": "The mount of the repository the question concerns, such as\n`/repos/board`, when there is one.",
       "format": "board-ref",

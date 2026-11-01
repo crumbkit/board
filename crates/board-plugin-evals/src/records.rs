@@ -6,13 +6,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// `evals/eval/v1`: a question about some subjects, how it is tested, what
-/// it rests on, and what was concluded. A `concluded` eval has a `verdict`.
+/// it rests on, and what was concluded.
+///
+/// Its status is derived, never stored: `abandoned` once `abandoned` is
+/// set, else `concluded` once it has a `verdict`, else `running` once it
+/// lists `runs`, else `planned`.
 #[derive(Debug, JsonSchema)]
 #[serde(deny_unknown_fields)]
-#[schemars(extend(
-    "if" = {"properties": {"status": {"const": "concluded"}}, "required": ["status"]},
-    "then" = {"required": ["verdict"]},
-))]
 pub struct EvalRecord {
     /// The record's type.
     #[serde(rename = "$type")]
@@ -21,24 +21,26 @@ pub struct EvalRecord {
     pub question: String,
     /// The names of what is tested, such as `crumbkit` or `clap`, without
     /// versions, which go in a run's `versions`. Name a repository by its
-    /// mount, in `mounts`.
+    /// repo record, in `repos`.
     #[schemars(length(min = 1))]
     pub subjects: Vec<String>,
-    /// Where the eval stands.
-    pub status: Status,
-    /// The mount of each repository the eval concerns, such as
+    /// The repo record of each repository the eval concerns, such as
     /// `/repos/crumbkit`.
-    pub mounts: Option<Vec<Ref>>,
+    pub repos: Option<Vec<Ref>>,
     /// The suites that say how the eval is tested.
     pub suites: Option<Vec<Ref<Suite>>>,
     /// The runs its verdict rests on.
     pub runs: Option<Vec<Ref<Run>>>,
-    /// The decision this eval informs.
-    pub decision: Option<String>,
+    /// The question of the decision this eval informs, written before any
+    /// decision exists.
+    pub informs: Option<String>,
     /// What the runs show.
     pub verdict: Option<Verdict>,
     /// What was concluded, in words.
     pub conclusion: Option<String>,
+    /// Why the eval was stopped before it concluded.
+    #[schemars(length(min = 1))]
+    pub abandoned: Option<String>,
     /// The plugin and hook that wrote this record, such as runs/test-run;
     /// absent when an agent or a person wrote it.
     #[schemars(regex(pattern = r"^[a-z0-9-]+/[a-z0-9-]+$"))]
@@ -63,17 +65,6 @@ pub enum Run {}
 
 impl Record for Run {
     const TYPE: &'static str = "runs/run/v1";
-}
-
-/// Where an eval stands.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-#[schemars(inline)]
-pub enum Status {
-    Planned,
-    Running,
-    Concluded,
-    Abandoned,
 }
 
 /// What a concluded eval's runs show.
