@@ -106,6 +106,11 @@ impl Board {
                 caller: environment.caller.as_ref().map(PathBuf::from),
             },
             cache: plugins.cache,
+            // As `board call` sets `BOARD_PLUGIN` for a child: the plugin
+            // already named, else this one. Either way the put is a plugin's.
+            plugin: (environment.plugin.as_ref())
+                .and_then(|name| name.to_str()?.parse().ok())
+                .unwrap_or_else(|| chosen.manifest.name.clone()),
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;

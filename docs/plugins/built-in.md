@@ -31,6 +31,11 @@ Board is called. `controls`, `plans`, `evals` and
     does. Each resolves every path in one snapshot of the working tree and
     returns one answer per path, in order, so one path's refusal does not
     stop the others. Neither has a byte budget.
+  - `put(lines)` writes the lines of one `board put --batch`, as JSON
+    values, as that command does under `BOARD_PLUGIN`: the same checks,
+    `expect`, refusals and report, one commit or nothing. It is checked as
+    the plugin `BOARD_PLUGIN` names, else the called one, so it is refused
+    what only the owner writes (docs/architecture/writes/effects.md).
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. A built-in plugin
     reads no environment.

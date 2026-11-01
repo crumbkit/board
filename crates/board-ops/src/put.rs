@@ -17,7 +17,7 @@ use board_tree::{
 };
 use board_validate::Schema;
 
-use crate::board::Board;
+use crate::board::{Board, OpenError};
 use crate::check::{Detail, Tally, follow, unresolved};
 use crate::effects::{Change, EffectError, Shape};
 use crate::snapshot::read_type;
@@ -607,6 +607,9 @@ pub enum PutError {
     Type(Box<TypeError>),
     #[error(transparent)]
     Effect(Box<EffectError>),
+    /// The board a built-in plugin's put opens again cannot be opened.
+    #[error(transparent)]
+    Open(Box<OpenError>),
 }
 
 impl From<EffectError> for PutError {
@@ -638,6 +641,7 @@ impl PutError {
             Self::Mount(error) => error.code(),
             Self::Type(error) => error.code(),
             Self::Effect(error) => error.code(),
+            Self::Open(error) => error.code(),
         }
     }
 
@@ -688,6 +692,7 @@ impl PutError {
             Self::Mount(error) => error.fields(),
             Self::Type(error) => error.fields(),
             Self::Effect(error) => error.fields(),
+            Self::Open(error) => error.fields(),
             Self::HeadMoved { .. }
             | Self::Line { .. }
             | Self::TooManyLines
