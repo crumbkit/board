@@ -134,6 +134,34 @@ impl JsonSchema for Date {
     }
 }
 
+/// A web address: an absolute `http` or `https` URI with a host, such as
+/// `https://example.com/pull/1`. A `urls` field takes it with
+/// `#[schemars(with = "Vec<Url>")]`. Board's validator is the only check.
+#[derive(Debug)]
+pub enum Url {}
+
+/// `format: uri` admits `https://`, `https://:80` and `https://u@`, which
+/// have no host. After any user information the pattern needs a host
+/// character, and its tail is anchored at the next `/`, `?`, `#` or the end,
+/// so that the optional user-information group must take an `@` rather than
+/// let the regex read the user as the host. JSON Schema patterns are
+/// case-sensitive, so `HTTPS://` is refused.
+const URL_PATTERN: &str = "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)";
+
+impl JsonSchema for Url {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Url".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "uri", "pattern": URL_PATTERN})
+    }
+}
+
 /// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
 /// is this map, committed, and the shapes lint admits a string field whose
 /// schema is one of its entries.
@@ -142,6 +170,7 @@ pub fn registry() -> Map<String, Value> {
     Map::from_iter([
         entry::<Date>(&mut generator),
         entry::<Prose>(&mut generator),
+        entry::<Url>(&mut generator),
     ])
 }
 

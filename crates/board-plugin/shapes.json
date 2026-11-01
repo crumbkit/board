@@ -6,5 +6,10 @@
   "Prose": {
     "type": "string",
     "x-board-prose": true
+  },
+  "Url": {
+    "format": "uri",
+    "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+    "type": "string"
   }
 }

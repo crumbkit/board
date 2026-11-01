@@ -20,8 +20,10 @@ needs to know.
    under any other keyword that applies subschemas, or behind a
    `$dynamicRef`, with `schema::invalid`.
 6. References and URLs never share a field. URLs go in a field named `urls`,
-   whose items match `^https?://`. A field that holds one URL is named for
-   what it is, such as `pull_request`.
+   whose items have the shared shape `Url`: `format: uri` with a pattern
+   that needs a lower-case `http` or `https` scheme and a host. Board's
+   validator is the only check; no Rust code parses a URL. A field that
+   holds one URL is named for what it is, such as `pull_request`.
 7. A field that names a repository is a reference to that repository's mount
    record at `/repos/<name>`, named for what it is, such as `mount` or
    `mounts`. A pinned version is a sibling field, such as `commit`. A field
@@ -97,8 +99,9 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose` and `Date` are shared shapes. A `String` field takes one with
-  `#[schemars(with = "Prose")]`. `shape::registry()` lists every shared
+- `Prose`, `Date` and `Url` are shared shapes. A `String` field takes one
+  with `#[schemars(with = "Prose")]`, and a `urls` field with
+  `#[schemars(with = "Vec<Url>")]`. `shape::registry()` lists every shared
   shape by name, and `crates/board-plugin/shapes.json` is its golden.
 - `schema_of` removes null from every optional field and drops an integer's
   `format`.

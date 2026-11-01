@@ -225,7 +225,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
     let registry = registry();
     assert_eq!(
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["Date", "Prose"]
+        ["Date", "Prose", "Url"]
     );
     let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
     let mut why = properties["why"].clone();
@@ -253,4 +253,27 @@ fn the_committed_shapes_file_is_the_registry() {
         file.display(),
         String::from_utf8_lossy(generated.as_bytes())
     );
+}
+
+/// Board's validator refuses each URL without a lower-case `http` or `https`
+/// scheme or without a host, and admits its twin.
+#[test]
+fn a_url_without_a_host_or_a_web_scheme_is_refused_and_its_twin_is_admitted() {
+    let schema =
+        board_validate::Schema::compile(schema_of::<Url>(SchemaSettings::draft2020_12())).unwrap();
+    let code = |text: &str| schema.validate(&json!(text)).err().map(|e| e.code());
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("https://", "https://a"),
+        ("http://u@", "http://u@h"),
+        ("https://:80", "https://h:80"),
+        ("https://u@:80/x", "https://u@[::1]:80/x"),
+        ("HTTPS://example.com", "https://example.com"),
+        ("ftp://example.com/x", "https://example.com/x"),
+        ("/pull/1", "https://example.com/pull/1"),
+        ("https://a b", "http://localhost:8080/x"),
+    ] {
+        assert_eq!((refused, code(refused)), (refused, invalid));
+        assert_eq!((admitted, code(admitted)), (admitted, None));
+    }
 }
