@@ -1,8 +1,8 @@
 # Built-in plugins
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
-Board is called. `plans`, `evals` and [`requests`](built-in/requests.md) are
-built in.
+Board is called. `controls`, `plans`, `evals` and
+[`requests`](built-in/requests.md) are built in.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
   of `board-plugins` that board-cli enables by default. It generates its
@@ -24,6 +24,11 @@ built in.
   - `query(sql, limit)` runs SQL as `board query` does, with the caller's
     index cache. `Limit::rows(n)` takes 1 to 10,000 rows; `Limit::ALL` every
     row. There is no byte budget.
+  - `refs(paths, absent)` answers each path as `board refs` does, with no
+    fields and no limit, and `get_each(paths)` reads each as `board get`
+    does. Each resolves every path in one snapshot of the working tree and
+    returns one answer per path, in order, so one path's refusal does not
+    stop the others. Neither has a byte budget.
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. A built-in plugin
     reads no environment.

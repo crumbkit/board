@@ -1,19 +1,15 @@
 [project]
 name = "board-controls"
 version = "0.1.0"
-description = "Requirements on files, and the budgets a program can check, as a Board plugin."
+description = "Tests that run the controls plugin built into Board through the real `board` binary."
 requires-python = ">=3.12"
-dependencies = ["board-plugin", "pydantic>=2.11"]
-
-[tool.uv.sources]
-board-plugin = { path = "../../python/board-plugin", editable = true }
+dependencies = []
 
 [dependency-groups]
 dev = ["pyright>=1.1.400", "pytest>=8.4", "ruff>=0.13"]
 
-[build-system]
-requires = ["uv_build>=0.8.17,<0.9"]
-build-backend = "uv_build"
+[tool.uv]
+package = false
 
 [tool.ruff]
 line-length = 120
@@ -42,7 +38,7 @@ ignore = [
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["src", "tests"]
+include = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

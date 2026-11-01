@@ -1,5 +1,5 @@
-//! The plugins built into the binary, run in-process: plans, requests and
-//! evals, beside installed plugins.
+//! The plugins built into the binary, run in-process: controls, plans,
+//! requests and evals, beside installed plugins.
 
 use super::plugins::{TASKS, installed};
 use super::*;
@@ -290,4 +290,45 @@ fn call_evals_about_help_lists_its_input_as_flags() {
     for flag in ["--limit", "--mount", "--subject", "whatever their status"] {
         assert!(help.contains(flag), "{flag}: {help}");
     }
+}
+
+/// A control in `/controls/docs` that limits `docs/*.md` to `max` words.
+fn docs_budget(max: u64) -> String {
+    let control = json!({
+        "$type": "controls/control/v1",
+        "requirement": "Short docs.",
+        "purpose": "A test.",
+        "paths": ["docs/*.md"],
+        "rule": {"budget": "words", "max": max},
+    });
+    control.to_string()
+}
+
+#[test]
+fn call_controls_check_answers_from_a_warm_index_as_from_a_cold_one_after_a_control_changes() {
+    let board = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    let (output, _) = built_in(board.workdir(), None, &["plugin", "enable", "controls"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    board
+        .write("docs/a.md", Item::File("one two three"))
+        .write("controls/docs.json", Item::File(&docs_budget(9)));
+    let cache = tempfile::tempdir().unwrap();
+    let answer = |cache: Option<&Path>| {
+        let arguments = ["--json", "call", "controls.check", "--path", "/docs"];
+        let (output, ran) = cached(board.workdir(), None, cache, &arguments);
+        assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        assert_eq!(ran.trace.work.get("started"), Some(&0));
+        json(&output)["data"]["output"].clone()
+    };
+    let before = answer(Some(cache.path()));
+    assert_eq!(before["measured"][0]["used"], 3);
+    board
+        .write("docs/b.md", Item::File("four"))
+        .write("controls/docs.json", Item::File(&docs_budget(8)));
+    let warm = answer(Some(cache.path()));
+    assert_ne!(warm, before, "the change is seen");
+    assert_eq!(warm["measured"][0]["max"], 8);
+    assert_eq!(warm, answer(None));
 }
