@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
+  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`tickets` references the Jira or GitHub issues the change works on, and\n`pulls` its GitHub pull requests, each as a record of that type.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
   "properties": {
     "$type": {
       "const": "changes/change/v1",
@@ -44,6 +44,17 @@
       "title": "Pull Request",
       "type": "string"
     },
+    "pulls": {
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": [
+          "github/pull/v1"
+        ]
+      },
+      "title": "Pulls",
+      "type": "array"
+    },
     "records": {
       "items": {
         "format": "board-ref",
@@ -60,6 +71,18 @@
       ],
       "title": "Route",
       "type": "string"
+    },
+    "tickets": {
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": [
+          "jira/issue/v1",
+          "github/issue/v1"
+        ]
+      },
+      "title": "Tickets",
+      "type": "array"
     },
     "title": {
       "minLength": 1,

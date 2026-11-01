@@ -76,6 +76,8 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("next", "path"),
         ("attach", "path"),
         ("attach", "ref"),
+        ("attach", "ticket"),
+        ("attach", "pull"),
         ("attach", "route"),
         ("attach", "head"),
         ("attach", "issue"),
