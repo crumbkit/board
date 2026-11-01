@@ -163,8 +163,10 @@ fn listed(
     let report = (host.query(EVALS, Limit::ALL))
         .map_err(|error| PluginError::board_refused("evals", "query", &error.refusal()))?;
     let mut resting: HashMap<String, Vec<String>> = HashMap::new();
-    let standing = (board_plugin_decisions::standing::decisions(host, "evals")?.into_iter())
-        .filter(|decision| !decision.superseded);
+    let standing = (board_plugin_decisions::standing::decisions(host, "evals")?
+        .decisions
+        .into_iter())
+    .filter(|decision| !decision.superseded);
     for decision in standing {
         for named in decision.basis {
             resting

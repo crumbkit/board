@@ -78,6 +78,11 @@ def evaluation(old: dict[str, Any]) -> dict[str, Any]:
     return new
 
 
+def counted(number: int) -> str:
+    """`number` decisions, in words: `1 decision`, `2 decisions`."""
+    return f"{number} decision{'' if number == 1 else 's'}"
+
+
 def question_id(now: datetime) -> str:
     """A sortable UTC time and a short random suffix, such as `20261024T1830Z-k3`."""
     suffix = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(2))
@@ -101,7 +106,7 @@ def plan(board: Board, session: str, now: datetime) -> tuple[list[Line], list[st
         path = f"{project}/questions/{question_id(now)}"
         record = {
             "$type": QUESTION,
-            "question": f"Do you accept the {len(paths)} decisions listed in `for`? Each was marked for your review, "
+            "question": f"Do you accept the {counted(len(paths))} listed in `for`? Each was marked for your review, "
             "or a hook wrote it as a stub when a pull request was opened.",
             "session": session,
             "asked": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -109,7 +114,7 @@ def plan(board: Board, session: str, now: datetime) -> tuple[list[Line], list[st
             "for": paths,
         }
         lines.append({"path": path, "expect": "none", "record": record})
-        said.append(f"ask {path} to review {len(paths)} decision{'' if len(paths) == 1 else 's'}")
+        said.append(f"ask {path} to review {counted(len(paths))}")
     for old in olds(board, [EVAL]):
         lines.extend(evals(old, said))
     return lines, said

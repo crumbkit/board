@@ -123,6 +123,9 @@ def board(tmp_path: Path) -> Board:
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     fixture.git("init", "-q")
+    # Board commits its puts, so the repository needs an identity to commit as.
+    fixture.git("config", "user.name", "t")
+    fixture.git("config", "user.email", "t@t")
     fixture.write(".board/board.json", {"$type": "board/config/v1"})
     for name in ("decisions", "evals", "plans"):
         enabled = fixture.run("plugin", "enable", name)

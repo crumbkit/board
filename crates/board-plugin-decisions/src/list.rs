@@ -65,7 +65,10 @@ fn most() -> u16 {
 }
 
 /// Decisions with their derived state. `total` counts every match, and
-/// `truncated` says whether the limit left some out.
+/// `truncated` says whether the limit left some out. `unreadable` counts the
+/// decisions, and the questions with a `for`, that were left out because
+/// Board marks them degraded or this plugin cannot read them, in this board
+/// and its mounted boards.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "ListOutput")]
@@ -73,6 +76,7 @@ pub(crate) struct Output {
     decisions: Vec<Listed>,
     total: usize,
     truncated: bool,
+    unreadable: usize,
 }
 
 /// A decision by path, with its derived state. `questions` are the open
@@ -131,35 +135,36 @@ struct Reviews {
 pub(crate) fn open(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let OpenInput { path, limit } = PluginError::read_input("decisions", "open", input)?;
     let below = format!("{}/", path.trim_end_matches('/'));
-    let mut found = listed(host, |decision| decision.path.starts_with(&below))?;
+    let (mut found, unreadable) = listed(host, |decision| decision.path.starts_with(&below))?;
     found.retain(|(_, listed)| listed.review == Review::Awaiting);
     found.sort_by(|(a, first), (b, second)| (a, &first.path).cmp(&(b, &second.path)));
-    Ok(output(found, limit))
+    Ok(output(found, limit, unreadable))
 }
 
 pub(crate) fn about(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let AboutInput { target, limit } = PluginError::read_input("decisions", "about", input)?;
     let target = target.trim_end_matches('/');
     let below = format!("{target}/");
-    let mut found = listed(host, |decision| {
+    let (mut found, unreadable) = listed(host, |decision| {
         !decision.superseded
             && (decision.basis.iter()).any(|named| named == target || named.starts_with(&below))
     })?;
     found.sort_by(|(a, first), (b, second)| {
         (Reverse(a), &first.path).cmp(&(Reverse(b), &second.path))
     });
-    Ok(output(found, limit))
+    Ok(output(found, limit, unreadable))
 }
 
 /// The readable decisions `keep` admits, each with its review state and
-/// the instant it was decided.
+/// the instant it was decided, and how many decisions and questions were
+/// unreadable.
 fn listed(
     host: &dyn Host,
     keep: impl Fn(&Decision) -> bool,
-) -> Result<Vec<(board_plugin_plans::Instant, Listed)>, PluginError> {
-    let decisions = decisions(host, "decisions")?;
-    let mut reviews = reviews(host)?;
-    let listed = (decisions.into_iter().filter(keep)).map(|decision| {
+) -> Result<(Vec<(board_plugin_plans::Instant, Listed)>, usize), PluginError> {
+    let read = decisions(host, "decisions")?;
+    let (mut reviews, unasked) = reviews(host)?;
+    let listed = (read.decisions.into_iter().filter(keep)).map(|decision| {
         let Reviews { mut open, answered } = reviews.remove(&decision.path).unwrap_or_default();
         open.sort();
         let review = match (open.is_empty(), answered) {
@@ -180,21 +185,24 @@ fn listed(
         };
         (decision.when, listed)
     });
-    Ok(listed.collect())
+    Ok((listed.collect(), read.unreadable + unasked))
 }
 
-/// What the readable questions say about each path their `for` names. Paths
-/// are compared as written, as `supersedes` is (`crate::standing`).
-fn reviews(host: &dyn Host) -> Result<HashMap<String, Reviews>, PluginError> {
+/// What the readable questions say about each path their `for` names, and
+/// how many questions were unreadable. Paths are compared as written, as
+/// `supersedes` is (`crate::standing`).
+fn reviews(host: &dyn Host) -> Result<(HashMap<String, Reviews>, usize), PluginError> {
     let report = (host.query(QUESTIONS, Limit::ALL))
         .map_err(|error| PluginError::board_refused("decisions", "query", &error.refusal()))?;
     let mut reviews: HashMap<String, Reviews> = HashMap::new();
+    let mut unreadable = 0;
     for row in &report.rows {
         let [Value::String(question), code, body] = &row[..] else {
             continue;
         };
         let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
         let Some(asked) = tree.then(|| readable(body)).flatten() else {
+            unreadable += 1;
             continue;
         };
         for named in asked.belongs_to {
@@ -206,7 +214,7 @@ fn reviews(host: &dyn Host) -> Result<HashMap<String, Reviews>, PluginError> {
             }
         }
     }
-    Ok(reviews)
+    Ok((reviews, unreadable))
 }
 
 fn readable(body: &Value) -> Option<Asked> {
@@ -214,7 +222,11 @@ fn readable(body: &Value) -> Option<Asked> {
     Asked::deserialize(&record).ok()
 }
 
-fn output(found: Vec<(board_plugin_plans::Instant, Listed)>, limit: u16) -> Value {
+fn output(
+    found: Vec<(board_plugin_plans::Instant, Listed)>,
+    limit: u16,
+    unreadable: usize,
+) -> Value {
     let (total, limit) = (found.len(), usize::from(limit));
     let output = Output {
         decisions: found
@@ -224,6 +236,7 @@ fn output(found: Vec<(board_plugin_plans::Instant, Listed)>, limit: u16) -> Valu
             .collect(),
         total,
         truncated: total > limit,
+        unreadable,
     };
     serde_json::to_value(output).expect("Output holds only strings, numbers and bools")
 }
