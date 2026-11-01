@@ -25,6 +25,9 @@ PATHS_PER_RUN = 10_000
 OVER_BUDGET = "board::output::over_budget"
 # The schema of the document Board prints when a command fails.
 FAILURE = "board/failure/v1"
+# The codes Board gives a valid record whose reference dangles or reaches the wrong type, as
+# board_plugin::shape::TREE_CODES lists them; a query admits a record with one of them as valid.
+TREE_CODES = ("board::ref::dangling", "board::ref::wrong_type")
 
 
 def literal(text: str) -> str:
@@ -40,6 +43,8 @@ class Board:
     plugin: str
     # The most paths one run is asked; more are split over several runs.
     paths_per_run: int = PATHS_PER_RUN
+    # Board's own flags that start every run, such as `--personal` to run as the personal board.
+    flags: tuple[str, ...] = ()
 
     def document(
         self, *arguments: str, partial: str | None = None, stdin: bytes = b"", timeout: float | None = None
@@ -205,7 +210,7 @@ class Board:
         A run still going after `timeout` seconds is left to finish in a session of its own, and is not
         stopped: stopping Board mid-write would leave its lock behind, and every later write would be refused.
         """
-        command = ["board", *arguments]
+        command = ["board", *self.flags, *arguments]
         try:
             child = subprocess.Popen(  # noqa: S603 - the program is Board itself, found on PATH
                 command,
@@ -227,27 +232,37 @@ class Board:
             raise PluginError(f"{self.plugin}::board::timed_out", why, {"seconds": timeout}) from None
         return subprocess.CompletedProcess(command, child.returncode, stdout, stderr)
 
+    def _named(self, arguments: tuple[str, ...]) -> str:
+        """The command a message names: `board`, its flags and the subcommand."""
+        return " ".join(("board", *self.flags, arguments[0]))
+
     def _failed(
         self, arguments: tuple[str, ...], ran: subprocess.CompletedProcess[bytes] | None, why: str
     ) -> PluginError:
         stderr = ran.stderr.decode(errors="replace")[-4096:] if ran is not None else ""
         return PluginError(
             f"{self.plugin}::board::failed",
-            f"`board {arguments[0]}` {why}; check that the `board` first on PATH is this Board",
+            f"`{self._named(arguments)}` {why}; check that the `board` first on PATH is this Board",
             {"stderr": stderr},
         )
 
     def _refused(
         self, arguments: tuple[str, ...], code: str, message: str, hint: object, failure: dict[str, Any] | None = None
     ) -> PluginError:
-        """`<plugin>::board::refused`, carrying Board's code and the fields of Board's `failure`, such as `refusals`."""
+        """`<plugin>::board::refused`, carrying Board's code and the fields of Board's `failure`, such as `refusals`.
+
+        A `code` among those fields is kept as `cause`.
+        """
         then = f"; {hint}" if isinstance(hint, str) and hint else ""
         fields = failure.get("fields") if failure else None
         carried = cast("dict[str, Any]", fields) if isinstance(fields, dict) else {}
+        # A code the failure's own fields carried, such as the plugin a nested call reached refused with.
+        inner = carried.get("code")
+        cause = {"cause": inner} if isinstance(inner, str) and inner != code else {}
         return PluginError(
             f"{self.plugin}::board::refused",
-            f"`board {arguments[0]}` refused with {code}: {message}{then}",
-            {**carried, "code": code},
+            f"`{self._named(arguments)}` refused with {code}: {message}{then}",
+            {**carried, "code": code, **cause},
         )
 
 

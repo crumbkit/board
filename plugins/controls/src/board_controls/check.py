@@ -20,9 +20,9 @@ def check(request: CallRequest) -> CheckOutput:
     """The controls that apply to a file at or under the path asked, `/` when left out.
 
     Under `/`, every control applies, even one that reaches no file. Under
-    another path, only those reaching a file there do. A control with a rule
+    another path, only those reaching a file there do. A control with a budget
     is measured over all its files, wherever they are, and must be within
-    its budget; one without a rule is stated, with its patterns and the
+    it; any other is stated, with its patterns and the
     number of its files under the path. A path that names a link or mount is
     checked where it leads. A control Board marks degraded, such as one
     whose reference dangles, is `controls::control::degraded`, under any
@@ -59,7 +59,7 @@ def check(request: CallRequest) -> CheckOutput:
     applying = [
         logical for logical in sorted(controls) if scope == "/" or any(_under(path, scope) for path in files[logical])
     ]
-    budgets = [logical for logical in applying if controls[logical].get("rule") is not None]
+    budgets = [logical for logical in applying if "budget" in controls[logical].get("rule", {})]
     for logical in budgets:
         if logical in unreadable:
             raise _unreadable(logical, *unreadable[logical])
@@ -110,6 +110,8 @@ def _under(path: str, scope: str) -> bool:
 def _checked(logical: str, record: ControlRecord, files: list[str], reads: dict[str, bytes | PluginError]) -> Checked:
     rule = record.get("rule")
     assert rule is not None  # noqa: S101 - check measures only budget controls
+    assert "budget" in rule  # noqa: S101 - as above
+    assert "max" in rule  # noqa: S101 - the schema requires max beside budget
     usage: dict[str, int] = {}
     for path in files:
         read = reads[path]

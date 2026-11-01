@@ -1,0 +1,45 @@
+{
+  "additionalProperties": false,
+  "description": "`github/issue/v1`: one issue, at `/gh/<owner>/<repo>/issues/<number>`.",
+  "properties": {
+    "$type": {
+      "const": "github/issue/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "number": {
+      "description": "The number GitHub gave it in the repository.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "owner": {
+      "description": "The repository's owner, a user or organisation, in lower case, such as octo.",
+      "pattern": "^[^A-Z]+$",
+      "type": "string"
+    },
+    "repo": {
+      "description": "The repository's name, in lower case, such as widgets.",
+      "pattern": "^[^A-Z]+$",
+      "type": "string"
+    },
+    "title": {
+      "description": "Its title when the record was written; later edits on GitHub leave it as is.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "url": {
+      "description": "Its page on GitHub.",
+      "pattern": "^https://",
+      "type": "string"
+    }
+  },
+  "required": [
+    "owner",
+    "repo",
+    "number",
+    "url",
+    "$type"
+  ],
+  "title": "IssueRecord",
+  "type": "object"
+}

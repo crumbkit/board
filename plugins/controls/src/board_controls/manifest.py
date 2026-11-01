@@ -6,10 +6,14 @@ from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
 from pydantic_core import core_schema
 
 from board_controls.shapes import (
+    AGENT_VARIABLE,
     CONTROL_TYPE,
+    EVALUATE_TIMEOUT,
     CheckInput,
     CheckOutput,
     ControlRecord,
+    EvaluateInput,
+    EvaluateOutput,
     ForPathInput,
     ForPathOutput,
 )
@@ -62,6 +66,17 @@ def manifest() -> dict[str, JsonValue]:
                 "outputSchema": _schema(CheckOutput),
                 "annotations": {"readOnlyHint": True},
                 "_meta": {},
+            },
+            {
+                "name": "evaluate",
+                "description": "Check named parts of text against controls' budget, pattern and judged rules,"
+                " and return each control's verdict on each part with its findings.",
+                "inputSchema": _schema(EvaluateInput),
+                "outputSchema": _schema(EvaluateOutput),
+                "annotations": {"readOnlyHint": True},
+                "_meta": {},
+                "timeout": EVALUATE_TIMEOUT,
+                "env": [AGENT_VARIABLE, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
             },
         ],
     }

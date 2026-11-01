@@ -41,7 +41,9 @@ def test_a_board_that_prints_no_json_is_a_failure_and_one_that_does_is_read(monk
     assert DEMO.rows("SELECT 1") == [[1]]
 
 
-def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint_and_an_inner_code_as_cause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     error: dict[str, Any] = {
         "schema": "board/failure/v1",
         "code": "board::query::invalid",
@@ -59,7 +61,7 @@ def test_a_board_error_is_a_refusal_carrying_boards_code_fields_and_hint(monkeyp
     )
     with pytest.raises(PluginError) as refused:
         DEMO.rows("SELECT 1")
-    assert refused.value.fields == {"refusals": refusals, "code": "board::query::invalid"}
+    assert refused.value.fields == {"refusals": refusals, "code": "board::query::invalid", "cause": "not Board's"}
     assert refused.value.message == "`board query` refused with board::query::invalid: no such table; fix it"
     error["recovery"] = {"kind": "run", "call": "board query -h"}
     printing(monkeypatch, json.dumps(error).encode(), code=1)
@@ -378,6 +380,23 @@ def test_a_run_past_its_timeout_is_given_up_on_with_its_code_and_one_within_it_i
     assert stopped.value.code == "demo::board::timed_out"
     assert stopped.value.fields == {"seconds": 0.2}
     assert demo.document("fast", timeout=5) == {"data": 1}
+
+
+def test_a_boards_flags_start_every_run_and_a_board_without_flags_runs_its_arguments_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = tmp_path / "board"
+    fake.write_text('#!/bin/sh\nprintf \'{"argv": "%s"}\' "$*"\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    assert Board(str(tmp_path), "demo", flags=("--personal",)).document("ls") == {"argv": "--personal --json ls"}
+    assert Board(str(tmp_path), "demo").document("ls") == {"argv": "--json ls"}
+    fake.write_text(
+        '#!/bin/sh\necho \'{"schema": "board/failure/v1", "code": "board::x::y", "message": "no"}\'\nexit 1\n'
+    )
+    with pytest.raises(PluginError) as refused:
+        Board(str(tmp_path), "demo", flags=("--personal",)).document("ls")
+    assert refused.value.message.startswith("`board --personal ls` refused with board::x::y")
 
 
 def test_a_literal_doubles_its_quotes() -> None:

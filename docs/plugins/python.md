@@ -21,7 +21,10 @@ remote to their records, its `day` module dates the person's day by
 ([lifecycle/updating.md](lifecycle/updating.md)). Its `writing` module writes a
 notes repo's file through `board put`, retrying a stale or moved write, then
 pushes and moves the mount's pin; its `slug` module turns a note's title into
-the file name Reflect gives it.
+the file name Reflect gives it. Its `agent` module starts the clean-context
+model agent a user names in an environment variable, for `review.run` and for
+the judged rules of `controls.evaluate`, and stops it with everything it
+started.
 
 Each plugin lives in `plugins/<name>/` here, or in its own repository pinning
 `python/board-plugin/` to a commit, with its lockfile and a committed

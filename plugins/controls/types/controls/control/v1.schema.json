@@ -1,8 +1,8 @@
 {
   "$defs": {
-    "Budget": {
+    "Rule": {
       "additionalProperties": false,
-      "description": "A limit on the words or bytes of the files the control applies to.\n\nWith `per` `total`, the default, the files' usage is summed; with `file`,\neach file on its own must be within `max`. Words are separated by any\nwhitespace.",
+      "description": "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against.",
       "properties": {
         "budget": {
           "enum": [
@@ -12,10 +12,20 @@
           "title": "Budget",
           "type": "string"
         },
+        "judged": {
+          "format": "board-ref",
+          "title": "Judged",
+          "type": "string"
+        },
         "max": {
           "minimum": 0,
           "title": "Max",
           "type": "integer"
+        },
+        "pattern": {
+          "format": "board-ref",
+          "title": "Pattern",
+          "type": "string"
         },
         "per": {
           "default": "total",
@@ -25,18 +35,22 @@
           ],
           "title": "Per",
           "type": "string"
+        },
+        "show": {
+          "enum": [
+            "match-only",
+            "pattern"
+          ],
+          "title": "Show",
+          "type": "string"
         }
       },
-      "required": [
-        "budget",
-        "max"
-      ],
-      "title": "Budget",
+      "title": "Rule",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
@@ -67,15 +81,98 @@
       "type": "string"
     },
     "rule": {
-      "anyOf": [
+      "$ref": "#/$defs/Rule",
+      "oneOf": [
         {
-          "$ref": "#/$defs/Budget"
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "budget",
+            "max"
+          ]
         },
         {
-          "type": "null"
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "pattern",
+            "show"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "judged"
+          ]
         }
-      ],
-      "default": null
+      ]
     }
   },
   "required": [

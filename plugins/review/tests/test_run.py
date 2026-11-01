@@ -3,22 +3,13 @@
 import json
 import os
 import re
-import signal
 import subprocess
-import sys
-import time
-from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-from board_plugin.protocol import PluginError
 from conftest import ISOLATED, Repo, answer, library
 
-from board_review import run as run_module
 from board_review.git import Repository
-from board_review.run import _agent  # pyright: ignore[reportPrivateUsage]
 
-SLEEP = 6
 FINDING = {"severity": "high", "file": "src/sync.rs", "line": 3, "text": "The retry never stops."}
 
 
@@ -298,76 +289,6 @@ def test_a_base_that_moved_after_the_branch_point_is_replaced_by_the_merge_base(
     assert output["range"] == f"{point}..{head}"
     assert "later" not in repo.prompt()
     assert "+fn sync() {}" in repo.prompt()
-
-
-def test_an_agent_past_its_time_is_stopped_and_one_within_it_answers(tmp_path: Path) -> None:
-    sleeper = ["sh", "-c", f"sleep {SLEEP}; echo late"]
-    started = time.monotonic()
-    with pytest.raises(PluginError) as refused:
-        _agent(sleeper, "", str(tmp_path), 0.2)
-    assert refused.value.code == "review::agent::timeout"
-    assert time.monotonic() - started < SLEEP / 2, "the sleep the agent started was not stopped with it"
-    assert _agent(["sh", "-c", "echo soon"], "", str(tmp_path), 5) == "soon\n"
-
-
-def soon(condition: Callable[[], bool]) -> bool:
-    """Whether `condition` holds within five seconds."""
-    deadline = time.monotonic() + 5
-    while not condition():
-        if time.monotonic() > deadline:
-            return False
-        time.sleep(0.05)
-    return True
-
-
-def gone(pid: int) -> bool:
-    """Whether the process `pid` stops within five seconds."""
-
-    def stopped() -> bool:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        return False
-
-    return soon(stopped)
-
-
-@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT, signal.SIGHUP])
-def test_a_signal_that_stops_the_plugin_stops_the_agent_and_what_it_started(tmp_path: Path, signum: int) -> None:
-    pidfile = tmp_path / "pid"
-    command = ["sh", "-c", f"sleep {SLEEP} & echo $! > {pidfile}; wait"]
-    script = f"from board_review.run import _agent; _agent({command!r}, '', {str(tmp_path)!r}, {SLEEP})"
-    plugin = subprocess.Popen([sys.executable, "-c", script])
-    assert soon(lambda: pidfile.exists() and pidfile.read_text().strip() != "")
-    plugin.send_signal(signum)
-    assert plugin.wait(timeout=10) == 128 + signum
-    assert gone(int(pidfile.read_text()))
-
-
-def test_a_process_the_agent_leaves_behind_is_stopped_when_the_agent_exits(tmp_path: Path) -> None:
-    out = _agent(["sh", "-c", f"sleep {SLEEP} >/dev/null 2>&1 & echo $!"], "", str(tmp_path), 5)
-    assert gone(int(out))
-
-
-def test_an_agent_whose_escaped_child_holds_its_output_is_stopped_after_the_drain(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(run_module, "DRAIN", 0.5)
-    pidfile = tmp_path / "pid"
-    escape = (
-        "import subprocess, sys, time\n"
-        f"sleeper = [sys.executable, '-c', 'import time; time.sleep({SLEEP})']\n"
-        "child = subprocess.Popen(sleeper, start_new_session=True)\n"
-        f"open({str(pidfile)!r}, 'w').write(str(child.pid))\n"
-        f"time.sleep({SLEEP})\n"
-    )
-    started = time.monotonic()
-    with pytest.raises(PluginError) as refused:
-        _agent([sys.executable, "-c", escape], "", str(tmp_path), 1)
-    assert refused.value.code == "review::agent::timeout"
-    assert time.monotonic() - started < SLEEP / 2, "the plugin waited for the escaped child's output"
-    os.kill(int(pidfile.read_text()), signal.SIGKILL)
 
 
 def test_the_agent_starts_in_an_empty_directory_away_from_the_board_s_mcp_servers(repo: Repo) -> None:

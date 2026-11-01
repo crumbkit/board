@@ -9,6 +9,10 @@ from collections.abc import Callable
 from typing import Annotated, Literal, NotRequired, TypedDict
 
 CONTROL_TYPE = "controls/control/v1"
+# The variable that holds the agent `evaluate` starts for a judged rule, as a JSON array of strings.
+AGENT_VARIABLE = "BOARD_CONTROLS_AGENT"
+# How long `evaluate` may take, in seconds: each judged part waits on a model.
+EVALUATE_TIMEOUT = 1800
 
 
 class Extra:
@@ -29,17 +33,39 @@ class Extra:
 BoardRef = Annotated[str, Extra(format="board-ref")]
 
 
-class Budget(TypedDict):
-    """A limit on the words or bytes of the files the control applies to.
+def _kind(required: list[str], others: list[str]) -> dict[str, object]:
+    """One kind of rule: the fields it requires, and none of the other kinds' fields."""
+    return {"required": required, "not": {"anyOf": [{"required": [field]} for field in others]}}
 
-    With `per` `total`, the default, the files' usage is summed; with `file`,
-    each file on its own must be within `max`. Words are separated by any
-    whitespace.
+
+# The kind of a rule, chosen by which fields it holds. Board searches no reference under `anyOf`, so the
+# kinds share one object whose `pattern` and `judged` are references Board checks.
+KINDS = [
+    _kind(["budget", "max"], ["pattern", "show", "judged"]),
+    _kind(["pattern", "show"], ["budget", "max", "per", "judged"]),
+    _kind(["judged"], ["budget", "max", "per", "pattern", "show"]),
+]
+
+
+class Rule(TypedDict, total=False):
+    """What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.
+
+    A budget, `budget` and `max`, limits the words or bytes of the files or
+    text; with `per` `total`, the default, the files' usage is summed, and
+    with `file` each file on its own must be within `max`. Words are
+    separated by any whitespace. A pattern, `pattern` and `show`, names a file
+    of regular expressions, one per line, that text must not match; with
+    `show` `match-only`, a finding quotes what matched and never the
+    expression. A judged rule, `judged`, names a rubric that a clean-context
+    model reads text against.
     """
 
     budget: Literal["words", "bytes"]
     max: Annotated[int, Extra(minimum=0)]
-    per: NotRequired[Annotated[Literal["total", "file"], Extra(default="total")]]
+    per: Annotated[Literal["total", "file"], Extra(default="total")]
+    pattern: BoardRef
+    show: Literal["match-only", "pattern"]
+    judged: BoardRef
 
 
 ControlRecord = TypedDict(
@@ -50,11 +76,11 @@ ControlRecord = TypedDict(
         "purpose": str,
         "applies_to": NotRequired[list[BoardRef]],
         "paths": NotRequired[list[str]],
-        "rule": NotRequired[Annotated[Budget | None, Extra(default=None)]],
+        "rule": NotRequired[Annotated[Rule, Extra(oneOf=KINDS)]],
     },
 )
 ControlRecord.__doc__ = (
-    "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks."
+    "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks."
     """
 
 It applies to the entries `applies_to` references and to every entry of
@@ -83,7 +109,7 @@ class Applying(TypedDict):
     control: str
     requirement: str
     purpose: str
-    rule: Budget | None
+    rule: NotRequired[Rule]
 
 
 class ForPathOutput(TypedDict):
@@ -134,7 +160,7 @@ class Checked(TypedDict):
 
 
 class Stated(TypedDict):
-    """A control without a rule, its patterns, and how many of its files are at or under the path."""
+    """A control without a budget, its patterns, and how many of its files are at or under the path."""
 
     control: str
     requirement: str
@@ -148,3 +174,66 @@ class CheckOutput(TypedDict):
 
     measured: list[Checked]
     stated: list[Stated]
+
+
+class EvaluateInput(TypedDict):
+    """Check each part of text against each control's rule."""
+
+    controls: Annotated[
+        list[Annotated[str, Extra(pattern="^/")]],
+        Extra(
+            minItems=1,
+            description="The controls to check the parts against, by their logical paths in the board's own tree.",
+        ),
+    ]
+    parts: Annotated[
+        dict[str, str],
+        Extra(
+            minProperties=1,
+            description="Each part of text to check, by its name, such as pr.body.",
+        ),
+    ]
+
+
+class Finding(TypedDict):
+    """What a rule found wrong in a part: the text at fault, and its line when it has one.
+
+    A pattern finding quotes what matched, and names the expression as
+    `pattern` only when the rule's `show` is `pattern`. A judged finding
+    carries `rewrite`, the model's instruction for fixing the text.
+    """
+
+    text: str
+    line: NotRequired[int]
+    pattern: NotRequired[str]
+    rewrite: NotRequired[str]
+
+
+type Kind = Literal["budget", "pattern", "judged"]
+type Status = Literal["passed", "failed", "skipped", "stated"]
+
+
+class Evaluated(TypedDict):
+    """One control's verdict on one part.
+
+    `status` is `skipped` for a judged rule when the part failed a budget or
+    pattern rule, and `stated` for a control without a rule. A budget result
+    carries `used` and `max`. `omitted` counts the findings left out past the
+    first 20.
+    """
+
+    control: str
+    part: str
+    rule: Kind | None
+    status: Status
+    findings: list[Finding]
+    used: NotRequired[int]
+    max: NotRequired[int]
+    omitted: NotRequired[int]
+
+
+class EvaluateOutput(TypedDict):
+    """Each control's verdict on each part, by control as given and then by part; `passed` when none failed."""
+
+    passed: bool
+    results: list[Evaluated]
