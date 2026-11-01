@@ -55,6 +55,7 @@ impl Plugin for Github {
                 code: "github::call::unknown_capability".to_owned(),
                 message: format!("github offers no capability {other}; it offers ref"),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

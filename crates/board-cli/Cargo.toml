@@ -10,7 +10,8 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["controls", "evals", "github", "plans", "requests", "runs"]
+default = ["boundary", "controls", "evals", "github", "plans", "requests", "runs"]
+boundary = ["board-plugins/boundary"]
 controls = ["board-plugins/controls"]
 evals = ["board-plugins/evals"]
 github = ["board-plugins/github"]

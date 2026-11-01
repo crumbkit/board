@@ -45,6 +45,7 @@ pub(crate) fn reference(host: &dyn Host, input: &Value) -> Result<Value, PluginE
             code: "github::call::bad_input".to_owned(),
             message: format!("{reference} is not owner/repo#number"),
             fields: Map::new(),
+            hint: None,
         });
     };
     if let Some(Held { path, kind, record }) = held(host, &object)? {
@@ -66,6 +67,7 @@ pub(crate) fn reference(host: &dyn Host, input: &Value) -> Result<Value, PluginE
                  check the number with `gh issue view {number} --repo {owner}/{repo}`"
             ),
             fields,
+            hint: None,
         });
     };
     let Some(url) =

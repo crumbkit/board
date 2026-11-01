@@ -2,7 +2,7 @@
 //! finding one already written.
 
 use board_model::parse_json;
-use board_ops::{Host, Limit, PluginError};
+use board_ops::{Host, Limit, PluginError, literal};
 use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -125,6 +125,7 @@ pub(crate) fn held(host: &dyn Host, object: &Object) -> Result<Option<Held>, Plu
             code: "github::record::degraded".to_owned(),
             message: format!("the record at {path} {why}; run `board check {path}` and fix it"),
             fields,
+            hint: None,
         }
     };
     if let Value::String(code) = code {
@@ -144,9 +145,4 @@ pub(crate) fn held(host: &dyn Host, object: &Object) -> Result<Option<Held>, Plu
             "does not read as a pull or issue record".to_owned(),
         )),
     }
-}
-
-/// `text` as an SQL string literal.
-fn literal(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
 }

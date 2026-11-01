@@ -79,5 +79,6 @@ pub(crate) fn failed(endpoint: &str, why: &str, then: &str) -> PluginError {
         code: "github::gh::failed".to_owned(),
         message: format!("`gh api {endpoint}` {why}; {then}"),
         fields,
+        hint: None,
     }
 }

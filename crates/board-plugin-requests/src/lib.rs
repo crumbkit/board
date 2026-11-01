@@ -39,6 +39,7 @@ impl Plugin for Requests {
                 code: "requests::call::unknown_capability".to_owned(),
                 message: format!("requests offers no capability {other}; it offers thread"),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }
