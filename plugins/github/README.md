@@ -1,8 +1,5 @@
 # github
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
 A Board plugin that records GitHub pull requests and issues as typed records,
 so other records can reference them. SKILL.md holds the procedure.
 
@@ -49,30 +46,28 @@ because GitHub matches them without case; `url` keeps GitHub's own case. The
 record keeps the path it was asked under, and `url` is where GitHub answered
 from, which differs after a repository is renamed or an issue transferred.
 
-`ref` passes gh `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` when Board has
-them.
+`ref` declares `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` as its `env`,
+so gh sees them when Board has them, with the variables any plugin's process
+sees.
 
 ## Layout
 
-Each capability is one module in `src/board_github/`, listed in
-`__main__.py`. Every call to GitHub goes through `gh.py`. `objects.py` holds
-the record types and their paths.
+The plugin is built into Board as the crate `crates/board-plugin-github`.
+Each capability is one module in its `src/`, listed in `CAPABILITIES` in
+`lib.rs`. Every call to GitHub goes through `gh.rs`, which runs gh through
+the host with a 20-second deadline. `objects.rs` holds the record kinds and
+their paths, and `records.rs` the record types.
 
 ## Installing
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/github"
-    board plugin enable github
-
-Enabling writes the schemas to `.board/types/github/` and names the plugin in
-`.board/board.json`.
+It is built into Board. `board plugin enable github` writes the schemas to
+`.board/types/github/` and names the plugin in `.board/board.json`.
 
 ## Developing
 
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. They put a stub gh first on PATH, so no test
-reaches GitHub. `plugin.json` and the shipped schemas are generated from
-`src/board_github/models.py` by `board_github.manifest`, and a test checks that
-the committed files match.
+The shipped schemas are generated from `src/records.rs`, and the files under
+the crate's `types/` keep the bytes the Python plugin shipped. A test checks
+that they match; `SNAPSHOTS=overwrite` rewrites them. The tests of the plugin
+through the binary are in `crates/board-cli/src/tests/built_in/github.rs`.
+They put a stub gh first on the PATH the plugin's process sees, so no test
+reaches GitHub.

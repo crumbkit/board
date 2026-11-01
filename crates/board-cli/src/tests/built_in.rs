@@ -20,14 +20,18 @@ fn cached(
     cache: Option<&Path>,
     arguments: &[&str],
 ) -> (Output, Ran) {
-    cached_with(directory, data, cache, arguments, b"")
+    cached_with(directory, data, cache, PATH, arguments, b"")
 }
 
-/// [`cached`] with `stdin` as the standard input.
+/// The `PATH` the built-in plugins' processes see.
+const PATH: &str = "/usr/bin:/bin";
+
+/// [`cached`] with `path` as the `PATH` and `stdin` as the standard input.
 fn cached_with(
     directory: &Path,
     data: Option<&Scenario>,
     cache: Option<&Path>,
+    path: &str,
     arguments: &[&str],
     stdin: &[u8],
 ) -> (Output, Ran) {
@@ -40,7 +44,7 @@ fn cached_with(
         signer: None,
         allowed_signers: None,
         environment: board_plugin::Environment {
-            path: Some("/usr/bin:/bin".into()),
+            path: Some(path.into()),
             ..board_plugin::Environment::default()
         },
         complete: None,
@@ -408,10 +412,12 @@ fn call_runs_latest_and_trend_answer_from_a_warm_index_as_from_a_cold_one_after_
 
 /// A board that does not commit, with built-in plugins enabled and an index
 /// cache of its own. The parity modules below run the commands each plugin's
-/// former pytest suite ran through the binary.
+/// former pytest suite ran through the binary. The plugins' processes see
+/// `path` as their `PATH`.
 struct Fixture {
     board: Scenario,
     cache: tempfile::TempDir,
+    path: String,
 }
 
 impl Fixture {
@@ -423,6 +429,7 @@ impl Fixture {
         let fixture = Self {
             board,
             cache: tempfile::tempdir().unwrap(),
+            path: PATH.to_owned(),
         };
         for plugin in plugins {
             let enabled = fixture.run(&["plugin", "enable", plugin]);
@@ -457,6 +464,7 @@ impl Fixture {
             self.board.workdir(),
             None,
             Some(self.cache.path()),
+            &self.path,
             arguments,
             stdin.as_bytes(),
         )
@@ -480,7 +488,14 @@ impl Fixture {
             .chain(flags.iter().copied())
             .collect();
         let cache = (!cold).then(|| self.cache.path());
-        let (output, ran) = cached(self.board.workdir(), None, cache, &arguments);
+        let (output, ran) = cached_with(
+            self.board.workdir(),
+            None,
+            cache,
+            &self.path,
+            &arguments,
+            b"",
+        );
         assert_eq!(
             output.code,
             0,
@@ -581,5 +596,6 @@ fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId)
 
 mod controls;
 mod evals;
+mod github;
 mod plans;
 mod runs;

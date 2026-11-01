@@ -226,6 +226,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-github"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-plans"
 version = "0.0.0"
 dependencies = [
@@ -276,6 +289,7 @@ dependencies = [
  "board-ops",
  "board-plugin-controls",
  "board-plugin-evals",
+ "board-plugin-github",
  "board-plugin-plans",
  "board-plugin-requests",
  "board-plugin-runs",

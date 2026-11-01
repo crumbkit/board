@@ -362,7 +362,7 @@ STANDARDS.md 23 to 26 hold the rules.
 | `board-plugin` | manifests, discovery, child processes, signals, schema shapes | board-model, board-validate, schemars, rustix and signal-hook (Unix) |
 | `board-ops` | every operation as a typed function returning its report; opening the board a directory is in, or the known board that mounts it; who asks for an effect; the host of built-in plugins | all of the above |
 | `board-plugins` | the plugins built into the binary, each behind a feature | board-ops, each `board-plugin-<name>` |
-| `board-plugin-<name>` | one built-in plugin: controls, plans, requests, evals or runs ([plugins/built-in.md](plugins/built-in.md)) | board-model, board-ops, board-plugin, schemars |
+| `board-plugin-<name>` | one built-in plugin: controls, plans, requests, evals, runs or github ([plugins/built-in.md](plugins/built-in.md)) | board-model, board-ops, board-plugin, schemars |
 | `board-serve` | the local web server and the app it embeds ([architecture/ui/serve.md](architecture/ui/serve.md)) | board-index, board-model, board-ops, tiny_http |
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-plugins, board-serve, board-tree |
 
