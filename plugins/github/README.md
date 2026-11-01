@@ -35,13 +35,16 @@ so other records can reference them. SKILL.md holds the procedure.
   - A reference that is not `owner/repo#number` is refused by Board with
     `board::plugin::bad_input`.
   - GitHub's 404 is `github::ref::not_found`.
-  - gh missing, failing, running past 20 seconds or printing no `html_url`
-    is `github::gh::failed`, with gh's error in the message.
-  - A record already there that Board marks degraded is
-    `github::record::degraded`.
+  - gh missing, failing, running past 20 seconds or answering without an
+    `html_url` is `github::gh::failed`, with gh's error or the command that
+    shows the answer in the message.
+  - A record already there that Board marks degraded, such as one with
+    capitals in `owner`, is `github::record::degraded`.
 
-The owner and repository are kept as given. GitHub matches them without case,
-so `Octo/Widgets#12` and `octo/widgets#12` make two records.
+Owner and repository are stored in lower case, in the path and the fields,
+because GitHub matches them without case; `url` keeps GitHub's own case. The
+record keeps the path it was asked under, and `url` is where GitHub answered
+from, which differs after a repository is renamed or an issue transferred.
 
 `ref` passes gh `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` when Board has
 them.

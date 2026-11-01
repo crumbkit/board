@@ -13,13 +13,13 @@
       "type": "integer"
     },
     "owner": {
-      "description": "The repository's owner, a user or organisation, such as octo.",
-      "minLength": 1,
+      "description": "The repository's owner, a user or organisation, in lower case, such as octo.",
+      "pattern": "^[^A-Z]+$",
       "type": "string"
     },
     "repo": {
-      "description": "The repository's name, such as widgets.",
-      "minLength": 1,
+      "description": "The repository's name, in lower case, such as widgets.",
+      "pattern": "^[^A-Z]+$",
       "type": "string"
     },
     "title": {

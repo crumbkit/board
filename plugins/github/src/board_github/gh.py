@@ -43,10 +43,10 @@ def api(endpoint: str) -> dict[str, Any] | None:
     return cast("dict[str, Any]", answer)
 
 
-def failed(endpoint: str, why: str) -> PluginError:
-    """`github::gh::failed` for `gh api <endpoint>`."""
+def failed(endpoint: str, why: str, then: str = "check gh on PATH and `gh auth status`") -> PluginError:
+    """`github::gh::failed` for `gh api <endpoint>`, saying `why` and what to do `then`."""
     return PluginError(
         "github::gh::failed",
-        f"`gh api {endpoint}` {why}; check gh on PATH and `gh auth status`",
+        f"`gh api {endpoint}` {why}; {then}",
         {"endpoint": endpoint},
     )

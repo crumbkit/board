@@ -9,8 +9,20 @@ from board_plugin.protocol import PluginError
 PLUGIN = "github"
 PULL_TYPE = "github/pull/v1"
 ISSUE_TYPE = "github/issue/v1"
+# `owner/repo#number`. A repository name may start with a dot, but `.` and `..` are not names.
+REF_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9-]*/(\.?[A-Za-z0-9_-][A-Za-z0-9._-]*)#[1-9][0-9]{0,9}$"
 # The folder under `/gh/<owner>/<repo>/` that holds each type, as GitHub names it in its API.
 FOLDERS = {PULL_TYPE: "pulls", ISSUE_TYPE: "issues"}
+
+
+def parse(text: str) -> tuple[str, str, int]:
+    """The owner, repository and number of a reference Board has checked against REF_PATTERN.
+
+    Owner and repository are lowercased, since GitHub matches them without case, so one object has one path.
+    """
+    owner, _, rest = text.lower().partition("/")
+    repo, _, digits = rest.partition("#")
+    return owner, repo, int(digits)
 
 
 def path(kind: str, owner: str, repo: str, number: int) -> str:
