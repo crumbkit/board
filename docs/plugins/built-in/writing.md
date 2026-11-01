@@ -7,11 +7,12 @@ Python plugin ported with its output, messages and codes unchanged.
 ## What a built-in plugin can do
 
 A built-in plugin reads and writes the board through `Host` and nothing
-else: `query`, `refs`, `get_each`, `put` and `settings`
-(docs/plugins/built-in.md). It writes records only with `put`, which takes
+else: `query`, `refs`, `get_each`, `put`, `call`, `board`, `decide` and
+`settings` (docs/plugins/built-in.md). It writes records only with `put`, which takes
 the lines a Python plugin gives `board put --batch`, and maps its error with
-`PluginError::board_refused(<name>, "put --batch", &error.refusal())`. It
-cannot yet call another plugin, start a process, read an environment
+`PluginError::board_refused(<name>, "put --batch", &error.refusal())`; a
+refused `call` or `decide` maps the same way, with `"call"` or `"decide"`.
+It cannot yet start a process, read an environment
 variable, write a file outside a put, or stop at a deadline. Clippy's
 `disallowed-methods` refuses `std::process::Command::new`, `std::env::var`
 and `std::fs::write` outside their owners (STANDARDS.md 7), and a plugin

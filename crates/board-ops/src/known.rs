@@ -5,6 +5,7 @@
 //! (docs/architecture.md, Boards and entries). Hints name `board` commands.
 
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 
@@ -20,7 +21,7 @@ pub type Prefix = Result<LogicalPath, PathError>;
 /// The file's shape: `{"boards": ["/Users/me/Code/board"], "personal":
 /// "/Users/me/Code/board"}`. A relative path is read against the file's
 /// directory.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawKnown {
     #[serde(default)]
@@ -33,7 +34,7 @@ struct RawKnown {
 }
 
 /// What a known boards file names, and the file.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct KnownBoards {
     file: Option<PathBuf>,
     known: RawKnown,
@@ -186,6 +187,40 @@ pub fn unopened(
     } else {
         refusal
     }
+}
+
+/// `start` after entering each of `directories` in turn, as `git -C` does,
+/// or the refusal of the first that is not a directory.
+pub fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Refusal>> {
+    let mut start = start.to_path_buf();
+    for directory in directories {
+        let joined = start.join(directory);
+        let fault = match std::fs::canonicalize(&joined) {
+            Ok(path) if path.is_dir() => {
+                start = path;
+                continue;
+            }
+            Ok(_) => "is not a directory".to_owned(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                "does not exist".to_owned()
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => {
+                "is not a directory".to_owned()
+            }
+            Err(error) => format!("cannot be read: {error}"),
+        };
+        let message = format!(
+            "cannot change to '{}': {} {fault}",
+            Path::new(directory).display(),
+            joined.display()
+        );
+        let hint = "give -C a directory that exists, such as the board's root or a directory \
+                    inside it; a relative -C is taken from the one before it";
+        return Err(Box::new(
+            Refusal::new(Code::CliUsage, message, &Fields::default()).with_hint(hint),
+        ));
+    }
+    Ok(start)
 }
 
 /// `root` read against the directory of `file`, the known boards file.

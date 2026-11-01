@@ -3,21 +3,24 @@
 
 use std::ffi::OsString;
 use std::fmt;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use board_model::{CapabilityName, LogicalPath, PluginName, RecordType, Refusal};
-use board_plugin::Manifest;
+use board_model::{CapabilityName, Code, Fields, LogicalPath, PluginName, RecordType, Refusal};
 use board_plugin::child::{Exited, Process, ProcessError};
+use board_plugin::{CallReport, Manifest, Target};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
-use crate::Board;
-use crate::effects::Asker;
+use crate::effects::{Asker, DecideReport, Shown};
+use crate::known::{self, KnownBoards};
+use crate::plugins::Plugins;
 use crate::put::{PutError, PutReport};
 use crate::query::{MAX_LIMIT, QueryError, QueryReport};
 use crate::read::{GetReport, ReadError};
 use crate::refs::{Absent, RefsError, RefsReport};
+use crate::{Board, OpenError};
 
 /// A plugin compiled into Board, which runs in Board's own process.
 pub trait Plugin: Sync {
@@ -56,6 +59,26 @@ pub trait Host {
     /// command does under `BOARD_PLUGIN`: every line checked, the effects
     /// check run as the plugin, and one commit or nothing.
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError>;
+    /// Runs `target` with `input` as the plugin's own `board call` does:
+    /// one call deeper, under the `BOARD_PLUGIN` it would set, with only
+    /// the capability's declared `env` among the variables. Board's
+    /// refusal, or the called plugin's, is returned as `board call` prints
+    /// it.
+    fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>>;
+    /// The board that `board --personal` or `board -C <directory>` opens
+    /// when the plugin runs it, as the same plugin at the same depth.
+    fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>>;
+    /// Whether the plugin may run `op`, `<plugin>.<capability>`, at `path`,
+    /// showing `shown`, as `board decide` answers under `BOARD_PLUGIN`: the
+    /// owner's signed approval admits it, their refusal refuses it, and with
+    /// no answer the pending effect is written in the personal board and
+    /// it is refused as asked.
+    fn decide(
+        &self,
+        op: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+    ) -> Result<DecideReport, Box<Refusal>>;
     fn settings(&self) -> &Settings;
     /// Runs `run` through board-plugin's process module with the settings'
     /// `environment` and nothing else, as the leader of its own process
@@ -93,6 +116,16 @@ pub struct Run<'a> {
     pub directory: Option<&'a Path>,
     pub input: &'a [u8],
     pub deadline: std::time::Duration,
+}
+
+/// Another board a built-in plugin acts on, as its own `board` opens it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Elsewhere {
+    /// `--personal`: the personal board the known boards file names.
+    Personal,
+    /// `-C <directory>`: the board holding the directory, read against
+    /// the called board's root, or the one known board that mounts it.
+    Directory(PathBuf),
 }
 
 /// What a built-in plugin reads in place of a process plugin's environment.
@@ -197,18 +230,60 @@ impl fmt::Debug for BuiltIn {
 
 /// The host a built-in plugin sees during one call.
 pub(crate) struct Hosted<'a> {
-    pub(crate) board: &'a Board,
+    pub(crate) board: HostBoard<'a>,
     pub(crate) settings: Settings,
-    /// Where the caller keeps the index.
-    pub(crate) cache: Option<&'a Path>,
     /// The plugin a put is checked as, or the `BOARD_PLUGIN` that names
     /// none.
     pub(crate) plugin: Result<PluginName, OsString>,
+    /// What the plugin's own `board` reads: the caller's plugins directory,
+    /// cache, known boards and signing, and the environment
+    /// `Environment::nested` gives it.
+    pub(crate) plugins: Plugins<'a>,
+    /// Where a process plugin's `board` runs: the called board's root.
+    pub(crate) root: &'a Path,
+}
+
+/// The board a host acts on: the called one, or one it opened.
+pub(crate) enum HostBoard<'a> {
+    Called(&'a Board),
+    Opened(Box<Board>),
+}
+
+impl Deref for HostBoard<'_> {
+    type Target = Board;
+
+    fn deref(&self) -> &Board {
+        match self {
+            Self::Called(board) => board,
+            Self::Opened(board) => board,
+        }
+    }
+}
+
+impl Hosted<'_> {
+    /// The board opened again, with the same built-in plugins and build,
+    /// as the plugin's own `board` opens it. Its timings stay in the board
+    /// it opens, outside the call's trace.
+    fn again(&self) -> Result<Board, OpenError> {
+        let home = self.board.repositories().home().map(Into::into);
+        let mut board = Board::open(self.board.repository().path(), home)?;
+        board.build_in(self.board.built_in.0);
+        board.built_by(self.board.build);
+        Ok(board)
+    }
+
+    fn plugin(&self) -> Result<PluginName, PutError> {
+        (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })
+    }
+}
+
+fn opened(error: &OpenError) -> Box<Refusal> {
+    Box::new(Refusal::new(error.code(), error, &error.fields()))
 }
 
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
-        self.board.query(sql, limit.0, None, self.cache)
+        self.board.query(sql, limit.0, None, self.plugins.cache)
     }
 
     fn refs(
@@ -218,7 +293,7 @@ impl Host for Hosted<'_> {
     ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
         Ok(self
             .board
-            .refs(paths, absent, &[], None, self.cache)?
+            .refs(paths, absent, &[], None, self.plugins.cache)?
             .collect())
     }
 
@@ -232,11 +307,10 @@ impl Host for Hosted<'_> {
     /// Opens the board again as the plugin, as a put through a mount opens
     /// the mounted board, so every check reads the plugin where it already
     /// does.
-    /// Its timings stay in the board it opens, outside the call's trace.
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
-        let plugin = (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })?;
-        let home = self.board.repositories().home().map(Into::into);
-        let mut board = Board::open(self.board.repository().path(), home)
+        let plugin = self.plugin()?;
+        let mut board = self
+            .again()
             .map_err(|error| PutError::Open(Box::new(error)))?;
         board.ask_as(Asker {
             plugin: Some(plugin),
@@ -248,6 +322,70 @@ impl Host for Hosted<'_> {
             .collect::<Vec<_>>()
             .join("\n");
         board.put_batch(&mut text.as_bytes())
+    }
+
+    fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {
+        let board = self.again().map_err(|error| opened(&error))?;
+        // As bytes, so the input passes the size limit and parse a process
+        // plugin's `board call` reads it through.
+        let called = board.call(target, input.to_string().as_bytes(), &self.plugins);
+        // The processes it started count in this call's trace.
+        let started = board.take_trace().work.get("started").copied();
+        (self.board.trace.borrow_mut()).count("started", started.unwrap_or(0));
+        called.map_err(|error| Box::new(error.refusal()))
+    }
+
+    fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
+        let home = self.board.repositories().home();
+        let known = self.plugins.known.cloned().unwrap_or_default();
+        let start = match elsewhere {
+            Elsewhere::Personal => known.personal(home)?,
+            Elsewhere::Directory(directory) => {
+                known::entered(self.root, &[directory.as_os_str().to_owned()])?
+            }
+        };
+        let (mut board, _) = known::open(&start, home, self.plugins.cache, || Ok(known))?;
+        board.build_in(self.board.built_in.0);
+        board.built_by(self.board.build);
+        Ok(Box::new(Hosted {
+            board: HostBoard::Opened(Box::new(board)),
+            settings: self.settings.clone(),
+            plugin: self.plugin.clone(),
+            plugins: self.plugins.clone(),
+            root: self.root,
+        }))
+    }
+
+    /// Opens the board again asking as the plugin, with the personal
+    /// board and signing `board decide` reads.
+    fn decide(
+        &self,
+        op: &str,
+        path: &LogicalPath,
+        shown: Option<&Shown>,
+    ) -> Result<DecideReport, Box<Refusal>> {
+        if !matches!(op.parse(), Ok(Target::Named { .. })) {
+            let message = format!(
+                "the op {op:?} to decide must be `<plugin>.<capability>`, such as review.comment"
+            );
+            let refusal = Refusal::new(Code::CliUsage, message, &Fields::default());
+            return Err(Box::new(refusal.with_hint(
+                "name the op as the plugin's name, a dot and the capability, as `board decide --op` takes it",
+            )));
+        }
+        let plugin = self.plugin().map_err(|error| Box::new(error.refusal()))?;
+        let default = KnownBoards::default();
+        let known = self.plugins.known.unwrap_or(&default);
+        let home = self.board.repositories().home().map(Path::to_path_buf);
+        let asker = known::asker(
+            Some(plugin),
+            Some(known),
+            home,
+            self.plugins.signing.clone(),
+        )?;
+        let mut board = self.again().map_err(|error| opened(&error))?;
+        board.ask_as(asker);
+        (board.decide_op(op, path, shown)).map_err(|error| Box::new(error.refusal()))
     }
 
     fn settings(&self) -> &Settings {

@@ -36,6 +36,11 @@ Board is called. `controls`, `plans`, `evals`, `runs` and
     `expect`, refusals and report, one commit or nothing. It is checked as
     the plugin `BOARD_PLUGIN` names, else the called one, so it is refused
     what only the owner writes (docs/architecture/writes/effects.md).
+  - `call`, `board` and `decide` run another capability, act on the
+    personal board or the board holding another directory, and ask the
+    owner, as the plugin's own `board call`,
+    `board --personal`, `board -C` and `board decide` do
+    ([built-in/elsewhere.md](built-in/elsewhere.md)).
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. It also gives
     `environment`, the variables a process plugin offering the capability
