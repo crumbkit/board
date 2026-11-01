@@ -70,6 +70,7 @@ fn manifest(name: &str) -> Value {
             "description": "",
             "inputSchema": serde_json::from_str::<Value>(INPUT_SCHEMA).unwrap(),
             "outputSchema": serde_json::from_str::<Value>(OUTPUT_SCHEMA).unwrap(),
+            "env": ["FIXTURE_GIVEN"],
         }],
     })
 }
@@ -587,6 +588,44 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
         (&unset["day_start"], &unset["caller"]),
         (&Value::Null, &Value::Null)
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_no_others() {
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    let mut board = open(&scenario);
+    board.build_in(built(vec![answering(
+        "fixture",
+        Box::new(|host| {
+            let arguments = [
+                "-c".to_owned(),
+                "printf '%s' \"$FIXTURE_GIVEN-$FIXTURE_HIDDEN\"".to_owned(),
+            ];
+            let process = board_plugin::child::Process {
+                program: "sh",
+                arguments: &arguments,
+                directory: None,
+                input: b"",
+                deadline: Duration::from_secs(5),
+            };
+            let exited = host.run(&process).unwrap();
+            Ok(json!({"count": exited.code, "seen": String::from_utf8(exited.stdout).unwrap()}))
+        }),
+    )]));
+    let set = Plugins {
+        environment: Environment {
+            path: Some(OsString::from("/usr/bin:/bin")),
+            inherited: [("FIXTURE_GIVEN", "yes"), ("FIXTURE_HIDDEN", "no")]
+                .into_iter()
+                .map(|(name, value)| (OsString::from(name), OsString::from(value)))
+                .collect(),
+            ..Environment::default()
+        },
+        ..Plugins::default()
+    };
+    let output = call_base(&board, &set).unwrap().output;
+    assert_eq!(output, json!({"count": 0, "seen": "yes-"}));
 }
 
 /// `fixture` answering the query `sql` with how many rows it returned and

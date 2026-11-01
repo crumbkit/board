@@ -97,6 +97,7 @@ pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
             caller: None,
+            environment: board_ops::Variables::default(),
         },
         calls: RefCell::default(),
     };

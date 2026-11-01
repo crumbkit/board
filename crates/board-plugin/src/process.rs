@@ -120,10 +120,6 @@ enum Event {
 /// the processes `scope` names and stops waiting, even while a grandchild
 /// holds a pipe. Off Unix, Board ignores `scope` and kills only the child.
 /// Beside the result it returns the child it started, if it started one.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "board-plugin owns child processes"
-)]
 pub(crate) fn run(
     program: &Path,
     arguments: &[String],
@@ -132,6 +128,60 @@ pub(crate) fn run(
     input: Vec<u8>,
     limits: Limits,
     scope: Scope,
+) -> (Option<Spawned>, Result<Finished, Stopped>) {
+    let command = Running {
+        program,
+        arguments,
+        directory,
+        environment,
+    };
+    supervise(&command, input, limits, scope, false)
+}
+
+/// Runs as [`run`] does with `Scope::Group`, and when the child exits,
+/// kills every process still in its group before reaping it, so nothing it
+/// started outlives it.
+pub(crate) fn run_alone(
+    program: &Path,
+    arguments: &[String],
+    directory: &Path,
+    environment: &[(&str, OsString)],
+    input: Vec<u8>,
+    limits: Limits,
+) -> (Option<Spawned>, Result<Finished, Stopped>) {
+    let command = Running {
+        program,
+        arguments,
+        directory,
+        environment,
+    };
+    supervise(&command, input, limits, Scope::Group, true)
+}
+
+/// What to start: a program, its arguments, its directory and its only
+/// variables.
+struct Running<'a> {
+    program: &'a Path,
+    arguments: &'a [String],
+    directory: &'a Path,
+    environment: &'a [(&'a str, OsString)],
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "board-plugin owns child processes"
+)]
+fn supervise(
+    &Running {
+        program,
+        arguments,
+        directory,
+        environment,
+    }: &Running<'_>,
+    input: Vec<u8>,
+    limits: Limits,
+    scope: Scope,
+    sweep: bool,
 ) -> (Option<Spawned>, Result<Finished, Stopped>) {
     let deadline = Instant::now() + limits.time;
     let mut command = Command::new(program);
@@ -194,6 +244,18 @@ pub(crate) fn run(
         // Board reaps the child only after both pipes close, so until then
         // its pid, and the group it leads, name no other process.
         if open == 0 {
+            #[cfg(unix)]
+            if sweep {
+                // Reap only a child seen exited and its group killed: a
+                // child that exits between a check and a reap would leave
+                // its group alive. Unreaped, its pid still names its group.
+                if !exited(&child) {
+                    continue;
+                }
+                let _ = rustix::process::kill_process_group(Pid::from_child(&child), Signal::KILL);
+            }
+            #[cfg(not(unix))]
+            let _ = sweep;
             match reap(&mut child) {
                 Ok(Some(status)) => {
                     break Ok(Finished {
@@ -287,6 +349,17 @@ fn groups() -> MutexGuard<'static, Vec<Pid>> {
 fn unlist(groups: &mut Vec<Pid>, child: &Child) {
     let pid = Pid::from_child(child);
     groups.retain(|group| *group != pid);
+}
+
+/// Whether `child` has exited, leaving it unreaped.
+#[cfg(unix)]
+fn exited(child: &Child) -> bool {
+    use rustix::process::{WaitId, WaitIdOptions, waitid};
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    matches!(
+        waitid(WaitId::Pid(Pid::from_child(child)), options),
+        Ok(Some(_))
+    )
 }
 
 /// Reaps `child` if it has exited. On Unix, Board unlists its group under

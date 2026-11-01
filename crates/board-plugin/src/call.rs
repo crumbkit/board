@@ -492,6 +492,22 @@ fn environment<'a>(
         .collect()
 }
 
+/// The variables a process plugin offering `chosen`'s capability would see,
+/// for a built-in plugin to pass on to a child it starts, such as an agent.
+pub fn passed(
+    chosen: &Chosen,
+    inherited: &Environment,
+) -> Result<Vec<(String, OsString)>, CallError> {
+    let depth = inherited.depth()?;
+    let pass = &chosen.capability().env;
+    let plugin = &chosen.manifest.name;
+    Ok(
+        (environment(inherited, pass, depth + 1, plugin).into_iter())
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+    )
+}
+
 /// A call Board refuses, or the plugin's own refusal.
 #[derive(Debug, thiserror::Error)]
 pub enum CallError {

@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use board_model::{CapabilityName, LogicalPath, RecordType, Refusal};
 use board_plugin::Manifest;
+use board_plugin::child::{Exited, Process, ProcessError};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
@@ -49,6 +50,12 @@ pub trait Host {
         paths: &[LogicalPath],
     ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError>;
     fn settings(&self) -> &Settings;
+    /// Runs `process` through board-plugin's process module with the
+    /// settings' `environment`, as the leader of its own process group,
+    /// killed when it exits, past its deadline or when Board is stopped.
+    fn run(&self, process: &Process<'_>) -> Result<Exited, ProcessError> {
+        board_plugin::child::run(process, &self.settings().environment.0)
+    }
 }
 
 /// What a built-in plugin reads in place of a process plugin's environment.
@@ -60,6 +67,22 @@ pub struct Settings {
     pub day_start: Option<String>,
     /// `BOARD_CALLER_DIR`: the directory Board was started in.
     pub caller: Option<PathBuf>,
+    /// The variables a process plugin offering the capability would see,
+    /// its `env` among them, which `Host::run` gives a process it starts.
+    pub environment: Variables,
+}
+
+/// Variables by name and value. Its `Debug` shows only the names, since the
+/// values may be secrets.
+#[derive(Clone, Default)]
+pub struct Variables(pub Vec<(String, std::ffi::OsString)>);
+
+impl fmt::Debug for Variables {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (formatter.debug_list())
+            .entries(self.0.iter().map(|(name, _)| name))
+            .finish()
+    }
 }
 
 /// How many rows a query returns: 1 to `MAX_LIMIT`, or all of them.
