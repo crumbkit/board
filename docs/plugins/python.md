@@ -2,7 +2,7 @@
 
 This file holds detail for docs/plugins.md. It describes the plugins here
 that are still Python programs: `tasks`, `share`, `notes`, `changes`,
-`review`, `prompts` and `jira`.
+`review` and `prompts`.
 
 Board validates a call's input and output, and `call` checks that the board
 holds the schemas the plugin ships. A plugin reading records with `board query`

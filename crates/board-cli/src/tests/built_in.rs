@@ -599,5 +599,6 @@ mod boundary;
 mod controls;
 mod evals;
 mod github;
+mod jira;
 mod plans;
 mod runs;
