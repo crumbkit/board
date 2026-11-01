@@ -95,6 +95,8 @@ def test_list_answers_the_same_from_a_cold_cache(board: Board) -> None:
 
 
 def test_for_keeps_the_artifacts_with_a_version_that_belongs_to_the_reference(board: Board) -> None:
+    for belonging in ("changes/t.json", "changes/u.json", "evals/e.json"):
+        board.write(belonging, "{}")
     board.write("artifacts/A.json", artifact(A))
     board.write("artifacts/A/versions/1.json", version("2026-10-01T09:00:00Z", version="1", **{"for": ["/changes/t"]}))
     board.write("artifacts/A/versions/2.json", version("2026-10-02T09:00:00Z", version="2"))

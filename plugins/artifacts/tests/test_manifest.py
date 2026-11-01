@@ -84,7 +84,13 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         for capability in capabilities
         for name, field in capability["inputSchema"]["properties"].items()
     }
-    assert set(descriptions) == {("list", "account"), ("list", "limit"), ("import", "account"), ("import", "listing")}
+    assert set(descriptions) == {
+        ("list", "account"),
+        ("list", "for"),
+        ("list", "limit"),
+        ("import", "account"),
+        ("import", "listing"),
+    }
     for key, description in descriptions.items():
         assert isinstance(description, str), key
         assert description.endswith("."), key
