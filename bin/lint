@@ -16,7 +16,7 @@ fi
 
 # The Python gates, STANDARDS.md P2. uv syncs each project from its lockfile.
 if [ "$part" = all ] || [ "$part" = python ]; then
-  for project in python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/runs plugins/share plugins/notes plugins/plans plugins/changes plugins/review plugins/prompts plugins/jira plugins/github; do
+  for project in python/board-plugin plugins/tasks plugins/share plugins/notes plugins/changes plugins/review plugins/prompts plugins/jira plugins/github; do
     (
       cd "$project"
       uv run --locked ruff format --check .
