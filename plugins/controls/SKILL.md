@@ -1,6 +1,6 @@
 ---
 name: controls
-description: 'The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board -C <board> call controls.check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board -C <board> call controls.check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. `board -C <board> call controls.evaluate` checks text, such as a draft, against the rules of the controls it names before the text is written. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # controls
@@ -42,4 +42,12 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    something owed, write a new control that says what is owed, which change
    owes it, and the file it applies to.
 
-The plugin's README.md gives the control record's fields.
+4. To check text before it leaves the checkout, such as a pull request
+   body, pass the controls and the named parts on stdin:
+
+       echo '{"controls": ["/<control>"], "parts": {"pr.body": "<text>"}}' | board -C <board> call controls.evaluate
+
+   Each result says whether that part passed that control, with the line
+   and text of each finding. Fix each failed part and evaluate it again.
+
+The plugin's README.md gives the control record's fields and rules.

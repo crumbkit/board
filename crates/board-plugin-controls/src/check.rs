@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 use crate::index::{self, Control, File, Health};
 use crate::logical;
-use crate::records::{Budget, Measure, Per};
+use crate::records::{Budget, Measure, Per, Rule};
 
 /// Check the controls that apply to a file at or under `path`, `/` when left out.
 #[derive(Deserialize, JsonSchema)]
@@ -73,8 +73,8 @@ struct FileUsed {
     used: u64,
 }
 
-/// A control without a rule, its patterns, and how many of its files are at
-/// or under the path.
+/// A control without a budget, its patterns, and how many of its files are
+/// at or under the path.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Stated {
@@ -93,10 +93,10 @@ fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 /// left out.
 ///
 /// Under `/`, every control applies, even one that reaches no file. Under
-/// another path, only those reaching a file there do. A control with a rule
-/// is measured over all its files, wherever they are, and must be within
-/// its budget; one without a rule is stated, with its patterns and the
-/// number of its files under the path. A path that names a link or mount is
+/// another path, only those reaching a file there do. A control with a
+/// budget is measured over all its files, wherever they are, and must be
+/// within it; any other, such as one with a pattern or judged rule, is
+/// stated, with its patterns and the number of its files under the path. A path that names a link or mount is
 /// checked where it leads. A control Board marks degraded is
 /// `controls::control::degraded` under any path, since what it applies to
 /// is unknown; a measured control over its budget is
@@ -147,7 +147,10 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         .filter(|logical| root || files[*logical].iter().any(|path| under(path, &scope)))
         .collect();
     let budgets: Vec<(&String, &Budget)> = (applying.iter())
-        .filter_map(|logical| Some((*logical, controls[*logical].rule.as_ref()?)))
+        .filter_map(|logical| match &controls[*logical].rule {
+            Some(Rule::Budget(budget)) => Some((*logical, budget)),
+            _ => None,
+        })
         .collect();
     if let Some((logical, (file, code))) = (budgets.iter())
         .find_map(|(logical, _)| unreadable.get(*logical).map(|found| (*logical, found)))
@@ -170,7 +173,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         return Err(exceeded(&failing));
     }
     let stated = (applying.into_iter())
-        .filter(|logical| controls[*logical].rule.is_none())
+        .filter(|logical| !matches!(controls[*logical].rule, Some(Rule::Budget(_))))
         .map(|logical| {
             let control = &controls[logical];
             Stated {
@@ -276,7 +279,7 @@ fn under(path: &LogicalPath, scope: &LogicalPath) -> bool {
 /// The words or bytes in `data`. Words are separated by whitespace as
 /// Python's `str.split` finds it: Unicode whitespace and the four ASCII
 /// separators U+001C to U+001F, which Rust's `char::is_whitespace` leaves out.
-fn measure(data: &[u8], budget: Measure) -> u64 {
+pub(crate) fn measure(data: &[u8], budget: Measure) -> u64 {
     let count = match budget {
         Measure::Bytes => data.len(),
         Measure::Words => String::from_utf8_lossy(data)

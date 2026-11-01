@@ -80,6 +80,10 @@ proptest = "1.11.0"
 # board-index/src/schema.rs, or a warm index keeps the old links.
 pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = "1.12.2"
+# The column of a syntax error in a pattern rule's expression, which regex's
+# own error gives only inside a message that quotes the expression. regex
+# already brings this version in.
+regex-syntax = { version = "0.8.11", default-features = false, features = ["std", "unicode"] }
 # A symlink text in a refusal escapes Unicode format characters, such as
 # U+202E, which reorder text. jsonschema already brings this crate in.
 unicode-general-category = "1.1.0"
