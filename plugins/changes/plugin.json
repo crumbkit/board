@@ -623,6 +623,186 @@
         "title": "PrOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's plan.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "A plan for a change, given on stdin because `uses` is an array.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "text": {
+            "description": "The plan in Markdown, at most 3,000 words.",
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "uses": {
+            "description": "The records and documents the plan relies on; the documents hold at most 3,000 words in all.",
+            "items": {
+              "format": "board-path",
+              "pattern": "^/",
+              "type": "string"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "text",
+          "uses"
+        ],
+        "title": "PlanInput",
+        "type": "object"
+      },
+      "name": "plan",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The plan record written, its text, and how many references it uses.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "uses": {
+            "title": "Uses",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "text",
+          "uses"
+        ],
+        "title": "PlanOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "What an agent needs to start: the newest plan, one line per record it uses, the next step and the command that lists the repository's controls, in at most 600 words.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One change, by path.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathInput",
+        "type": "object"
+      },
+      "name": "brief",
+      "outputSchema": {
+        "$defs": {
+          "BriefUse": {
+            "additionalProperties": false,
+            "description": "One record the plan uses, and one line saying what it holds.",
+            "properties": {
+              "line": {
+                "title": "Line",
+                "type": "string"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "line"
+            ],
+            "title": "BriefUse",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.",
+        "properties": {
+          "controls": {
+            "title": "Controls",
+            "type": "string"
+          },
+          "instruction": {
+            "title": "Instruction",
+            "type": "string"
+          },
+          "left_out": {
+            "title": "Left Out",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan"
+          },
+          "uses": {
+            "items": {
+              "$ref": "#/$defs/BriefUse"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "plan",
+          "uses",
+          "left_out",
+          "phase",
+          "instruction",
+          "controls"
+        ],
+        "title": "BriefOutput",
+        "type": "object"
+      }
     }
   ],
   "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
@@ -640,7 +820,8 @@
     "board_changes"
   ],
   "types": [
-    "changes/change/v1"
+    "changes/change/v1",
+    "changes/plan/v1"
   ],
   "version": "0.1.0"
 }

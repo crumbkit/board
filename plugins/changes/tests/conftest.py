@@ -131,6 +131,20 @@ class Board:
         failure: dict[str, Any] = json.loads(ran.stdout)
         return failure
 
+    def given(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
+        """The output of `board call changes.<capability>` with `given` on stdin, for input no flag can give."""
+        report = self.json("call", f"changes.{capability}", stdin=json.dumps(given))
+        assert report.get("schema") == "board/call-report/v2", report
+        output: dict[str, Any] = report["data"]["output"]
+        return output
+
+    def refused(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
+        """The failure `board call changes.<capability>` prints when the plugin refuses `given` on stdin."""
+        ran = self.run("--json", "call", f"changes.{capability}", stdin=json.dumps(given))
+        assert ran.returncode != 0, ran.stdout
+        failure: dict[str, Any] = json.loads(ran.stdout)
+        return failure
+
     def plugin(self, capability: str, given: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """Run the plugin once on a call of `capability`, as Board runs it, for a call Board itself would refuse."""
         request = {

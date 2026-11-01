@@ -33,6 +33,21 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 - `issue` and `pull_request` are URLs. `head` is the commit under test and
   review.
 
+`changes/plan/v1` at `/changes/<name>/plans/<stamp>.json`, beside its text
+at `<stamp>.md`. The newest stamp is the change's current plan.
+
+```json
+{
+  "$type": "changes/plan/v1",
+  "text": "/changes/suite-timeout/plans/20261101T120000000000Z.md",
+  "uses": ["/repos/board/STANDARDS.md", "/controls/rules/pair-refusals", "/evals/board-standards-selection"]
+}
+```
+
+- `text` and each of `uses` are references. `uses` names the standards
+  documents, controls, decisions, evals and other changes the plan relies
+  on.
+
 ## Capabilities
 
 - `start --mount /repos/<name> --title '<title>' [--name <name>] [--handle @<you>]`
@@ -61,6 +76,24 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   to `/changes/<name>/pr.md`, replacing an earlier one, and returns `path`,
   `command`, `pull_request` and `unreadable`. It never opens the pull request, never runs
   `gh` or git, and makes no model calls. See "The pull request body".
+
+- `plan` takes `{path, text, uses}` on stdin, since `uses` is an array. It
+  writes the plan record and its text and points the change's `plan` at the
+  text, in one write, in any phase but `done` and `dropped`
+  (`changes::phase::final`). It refuses a reference that reaches nothing or
+  is degraded (`changes::ref::dangling`, whose `refs` lists them), a text over
+  3,000 words (`changes::plan::too_long`), and Markdown documents in `uses`
+  over 3,000 words in all (`changes::plan::uses_too_long`). Words are counted
+  as `wc -w` counts them. The second limit comes from
+  `/evals/board-standards-selection` in the owner's board: agents that chose
+  standards from each directory's `index.md` stayed within it.
+- `brief --path /changes/<name>`: read-only. The newest plan's text path,
+  one line per record it uses (a control's `summary`, else its
+  `requirement`; a decision's `decision`; an eval's question and verdict; a
+  document's first heading), `left_out`, the phase and instruction `next`
+  gives, and the `controls.check` command for the change's mount. It holds at
+  most 600 words, counting each line with its reference, and `left_out`
+  counts the lines it dropped.
 
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`.

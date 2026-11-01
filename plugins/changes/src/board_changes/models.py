@@ -12,8 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_changes.change import CHANGE_TYPE
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE
 from board_changes.open import OPEN_LIMIT
+from board_changes.plan import PLAN_WORDS, USES_WORDS
 
 # The most changes `open` returns.
 OPEN_MAX = 10_000
@@ -44,6 +45,12 @@ def shipped(extra: JsonDict | None = None) -> Callable[[JsonDict], None]:
     return hook
 
 
+def untitled(schema: JsonDict) -> None:
+    """A schema hook: no `title` on a property, which the shape rules forbid (docs/architecture/records/shapes.md)."""
+    for field in cast("dict[str, JsonDict]", schema.get("properties", {})).values():
+        field.pop("title", None)
+
+
 class ChangeRecord(BaseModel):
     """`changes/change/v1`: one change to a repository, its phase, and every record it produced.
 
@@ -72,6 +79,66 @@ class ChangeRecord(BaseModel):
     head: Commit | SkipJsonSchema[None] = None
     pull_request: Url | SkipJsonSchema[None] = None
     records: list[Ref] | SkipJsonSchema[None] = None
+
+
+class PlanRecord(BaseModel):
+    """`changes/plan/v1`: one plan for a change, and the records it uses.
+
+    A plan lives at `/changes/<name>/plans/<stamp>.json`, beside its text at
+    `<stamp>.md`; the newest stamp is the current plan. `text` references the
+    Markdown. `uses` references the standards documents, controls, decisions,
+    evals and other changes the plan relies on.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
+
+    tag: Literal["changes/plan/v1"] = Field(alias="$type", description="The record's type.")
+    text: Ref = Field(description="The plan's Markdown text, beside this record.")
+    uses: list[Ref] = Field(description="The records and documents the plan relies on.")
+
+
+class PlanInput(Strict):
+    """A plan for a change, given on stdin because `uses` is an array."""
+
+    path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
+    text: str = Field(min_length=1, description=f"The plan in Markdown, at most {PLAN_WORDS:,} words.")
+    uses: list[LogicalPath] = Field(
+        description="The records and documents the plan relies on; the documents hold at most "
+        f"{USES_WORDS:,} words in all."
+    )
+
+
+class PlanOutput(Strict):
+    """The plan record written, its text, and how many references it uses."""
+
+    path: str
+    text: str
+    uses: int
+
+
+class BriefUse(Strict):
+    """One record the plan uses, and one line saying what it holds."""
+
+    ref: str
+    line: str
+
+
+class BriefOutput(Strict):
+    """What an agent needs to start a change, in at most 600 words.
+
+    `plan` is the newest plan's text, or `null` when the change has no plan
+    record. `uses` gives one line per record it uses, in order, and
+    `left_out` counts those the word limit left out. `controls` is the
+    command that lists the controls on the change's repository.
+    """
+
+    path: str
+    plan: str | None
+    uses: list[BriefUse]
+    left_out: int
+    phase: Phase
+    instruction: str
+    controls: str
 
 
 class StartInput(Strict):
@@ -226,3 +293,4 @@ class PrOutput(Strict):
 
 
 CHANGE_SCHEMA_PATH = f"{CHANGE_TYPE}.schema.json"
+PLAN_SCHEMA_PATH = f"{PLAN_TYPE}.schema.json"
