@@ -6,12 +6,10 @@ from pydantic import JsonValue
 from board_artifacts.models import (
     ARTIFACT_TYPE,
     VERSION_TYPE,
-    ArtifactRecord,
     ImportInput,
     ImportOutput,
     ListInput,
     ListOutput,
-    VersionRecord,
     schema_of,
 )
 
@@ -54,16 +52,6 @@ def manifest() -> dict[str, JsonValue]:
             },
         ],
     }
-
-
-def artifact_schema() -> dict[str, JsonValue]:
-    """The schema of `artifacts/artifact/v1`, as the plugin ships it."""
-    return schema_of(ArtifactRecord)
-
-
-def version_schema() -> dict[str, JsonValue]:
-    """The schema of `artifacts/version/v1`, as the plugin ships it."""
-    return schema_of(VersionRecord)
 
 
 if __name__ == "__main__":

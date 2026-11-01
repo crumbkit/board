@@ -22,8 +22,8 @@ const QUIET = ['board::config::not_found', 'board::record::unknown_type', 'board
 
 /** Where a page's bytes are: a file on disk, or text the tool's result held. */
 export type Page = { file: string; ext: 'html' | 'md' } | { text: string; ext: 'html' | 'md' }
-/** One version the tool's result showed. */
-type Seen = { url: string; version?: string; title?: string; description?: string; source?: string; page?: Page }
+/** One version the tool's result showed. An undefined field is left out of the record, as JSON.stringify drops it. */
+type Seen = { url: string; version?: string | undefined; title?: string | undefined; description?: string | undefined; source?: string | undefined; page?: Page | undefined }
 type Refused = { code: string; message: string }
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
@@ -136,11 +136,12 @@ async function record($: EngineInterface, seen: Seen) {
     const copied = seen.page === undefined ? false : await put($, `${path}.${seen.page.ext}`, { page: seen.page })
     const version = {
       $type: 'artifacts/version/v1',
-      ...(seen.version === undefined ? {} : { version: seen.version }),
-      ...(seen.title === undefined ? {} : { title: seen.title }),
-      ...(seen.description === undefined ? {} : { description: seen.description }),
-      ...(sha === undefined ? { copy: 'none' } : { sha256: sha }),
-      ...(seen.source === undefined ? {} : { source: seen.source }),
+      version: seen.version,
+      title: seen.title,
+      description: seen.description,
+      copy: sha === undefined ? 'none' : undefined,
+      sha256: sha,
+      source: seen.source,
       session: await $.session.id(),
       at: now,
     }
@@ -199,13 +200,7 @@ export const register: Register = on => {
       // A publish to another person's artifact, which the owner may edit, is not the owner's artifact.
       if (result.url !== undefined && result.owned !== false) {
         const page = sentPage(source)
-        await record($, {
-          url: result.url,
-          ...(result.version === undefined ? {} : { version: result.version }),
-          ...(result.title === undefined ? {} : { title: result.title }),
-          ...(e.description === undefined ? {} : { description: e.description }),
-          ...(page === undefined ? {} : { source: page.file, page }),
-        })
+        await record($, { url: result.url, version: result.version, title: result.title, description: e.description, source: page === undefined ? undefined : source, page })
       }
     } else if (action === 'read' && e.path === undefined && e.paths === undefined && e.type_url === undefined) {
       const result = ran.result as Read
@@ -216,13 +211,7 @@ export const register: Register = on => {
         $.ui.log(`board: the read of ${result.read.url} held no whole page, so it was not recorded`, { to: 'debug' })
         return ran
       }
-      const version = result.artifactRead?.ver
-      await record($, {
-        url: result.read.url,
-        ...(version === undefined ? {} : { version }),
-        ...(result.read.title === undefined ? {} : { title: result.read.title }),
-        page,
-      })
+      await record($, { url: result.read.url, version: result.artifactRead?.ver, title: result.read.title, page })
     } else if (action === 'list' && (e.scope ?? 'mine') === 'mine' && e.type === undefined && e.type_url === undefined && e.url === undefined) {
       const listing = ran.result as Listing
       if (!Array.isArray(listing.artifacts) || listing.scope !== undefined) return ran
