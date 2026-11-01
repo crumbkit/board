@@ -2,11 +2,10 @@
 
 import hashlib
 import json
-import subprocess
 from fnmatch import fnmatchcase
-from typing import Any, cast
+from typing import cast
 
-from board_plugin.board import Board, literal
+from board_plugin.board import TREE_CODES, Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_boundary.shapes import (
@@ -16,6 +15,7 @@ from board_boundary.shapes import (
     BoundaryRecord,
     CheckOutput,
     CrossingRecord,
+    Failure,
     Finding,
     RecordOutput,
     Verdict,
@@ -24,17 +24,13 @@ from board_boundary.shapes import (
 
 # The failures a refusal's message names; its `failures` field holds them all.
 NAMED = 20
-# Board marks a valid record degraded for a reference that dangles or reaches the wrong type.
-VALID = "(status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type'))"
+# A valid record: one Board marks ok, or degraded only for a reference that dangles or reaches the wrong type.
+VALID = f"(status = 'ok' OR code IN ({', '.join(map(literal, TREE_CODES))}))"
 
 
-class Personal(Board):
+def personal(request: CallRequest) -> Board:
     """The personal board, which holds the boundaries, their controls and the crossings, whichever board called."""
-
-    def _run(
-        self, *arguments: str, stdin: bytes = b"", timeout: float | None = None
-    ) -> subprocess.CompletedProcess[bytes]:
-        return super()._run("--personal", *arguments, stdin=stdin, timeout=timeout)
+    return Board(request.board.root, "boundary", flags=("--personal",))
 
 
 def digest(action: str, to: str, parts: dict[str, str]) -> str:
@@ -52,7 +48,7 @@ def check(request: CallRequest) -> CheckOutput:
     one `controls.evaluate`, so a part's budget and pattern rules run before
     its judged rules. Groups run one after another within the one timeout.
     """
-    board = Personal(request.board.root, "boundary")
+    board = personal(request)
     action, to = str(request.input["action"]), str(request.input["to"])
     origin = cast("str | None", request.input.get("from"))
     parts = cast("dict[str, str]", request.input["parts"])
@@ -91,7 +87,13 @@ def check(request: CallRequest) -> CheckOutput:
     if origin is not None:
         crossing["from"] = origin
     path = CROSSINGS + key
-    board.document("put", "--batch", stdin=(json.dumps({"path": path, "record": crossing}) + "\n").encode())
+    line: dict[str, object] = {"path": path, "record": crossing}
+    prior = _crossing(board, key)
+    if prior is not None:
+        line["expect"] = prior[1]
+        if not failed and "result" in prior[0]:
+            crossing["result"] = prior[0]["result"]
+    board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
     if failed:
         raise _refusal(action, key, path, failed)
     note = None
@@ -103,12 +105,26 @@ def check(request: CallRequest) -> CheckOutput:
 
 
 def _boundaries(board: Board) -> dict[str, BoundaryRecord]:
-    """Every valid boundary in the personal board's own tree, by its path."""
+    """Every boundary in the personal board's own tree, by its path, or `boundary::boundary::invalid`.
+
+    A boundary that fails its schema refuses every check, so a broken rule
+    stops content instead of letting it pass unchecked.
+    """
     rows = board.rows(
-        "SELECT logical, body FROM records"  # noqa: S608 - the values are constants
-        f" WHERE type = {literal(BOUNDARY_TYPE)} AND source = 'worktree' AND {VALID} ORDER BY logical"
+        f"SELECT logical, body, {VALID}, code FROM records"  # noqa: S608 - the values are constants
+        f" WHERE type = {literal(BOUNDARY_TYPE)} AND source = 'worktree' ORDER BY logical"
     )
-    return {logical: json.loads(body) for logical, body in rows}
+    invalid = {logical: code for logical, _, valid, code in rows if not valid}
+    if invalid:
+        named = ", ".join(f"{logical} ({code})" for logical, code in invalid.items())
+        first = next(iter(invalid))
+        raise PluginError(
+            "boundary::boundary::invalid",
+            f"the personal board holds boundaries that are not valid, so nothing can be checked: {named};"
+            f" run `board --personal check {first}`, fix each record, and check again",
+            {"boundaries": invalid},
+        )
+    return {logical: json.loads(body) for logical, body, _, _ in rows}
 
 
 def _matches(record: BoundaryRecord, action: str, to: str, origin: str | None) -> bool:
@@ -129,10 +145,10 @@ def _matches(record: BoundaryRecord, action: str, to: str, origin: str | None) -
 
 def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginError:
     """`boundary::check::failed`, naming each failing control, part and line, with the next step."""
-    failures: list[dict[str, Any]] = []
+    failures: list[Failure] = []
     for verdict in failed:
         for finding in verdict["findings"] or [Finding(text="failed")]:
-            failure: dict[str, Any] = {"control": verdict["control"], "part": verdict["part"], "text": finding["text"]}
+            failure = Failure(control=verdict["control"], part=verdict["part"], text=finding["text"])
             if "line" in finding:
                 failure["line"] = finding["line"]
             if "rewrite" in finding:
@@ -143,7 +159,8 @@ def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginE
     parts = ", ".join(sorted({verdict["part"] for verdict in failed}))
     recovery = (
         f"Next: change {parts}: remove or reword each quoted match, shorten each part over its budget,"
-        f" and follow each rewrite. Then run `board call {action}` again, which checks the changed parts."
+        f" and follow each rewrite. Then run `board call {action}` again, or"
+        " `board --personal call boundary.check` with the changed parts on stdin."
     )
     return PluginError(
         "boundary::check::failed",
@@ -152,7 +169,7 @@ def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginE
     )
 
 
-def _named(failure: dict[str, Any]) -> str:
+def _named(failure: Failure) -> str:
     """One failure as the message names it: control, part, line, the quoted text and any rewrite."""
     line = f" line {failure['line']}" if "line" in failure else ""
     rewrite = f" ({failure['rewrite']})" if "rewrite" in failure else ""
@@ -163,7 +180,7 @@ def _crossing(board: Board, key: str) -> tuple[CrossingRecord, str] | None:
     """The valid crossing of `key` in the personal board, and its blob, or None."""
     rows = board.rows(
         "SELECT body, blob FROM records"  # noqa: S608 - values are quoted by literal()
-        f" WHERE type = {literal(CROSSING_TYPE)} AND source = 'worktree' AND status = 'ok'"
+        f" WHERE type = {literal(CROSSING_TYPE)} AND source = 'worktree' AND {VALID}"
         f" AND logical = {literal(CROSSINGS + key)}"
     )
     return (cast("CrossingRecord", json.loads(rows[0][0])), str(rows[0][1])) if rows else None
@@ -174,11 +191,15 @@ def verify(request: CallRequest) -> VerifyOutput:
     given = request.input
     content = [name for name in ("action", "to", "parts") if name in given]
     if ("digest" in given) == bool(content) or 0 < len(content) < 3:  # noqa: PLR2004 - all three or none
+        then = (
+            f"run `board --personal call boundary.verify --digest {given['digest']}`"
+            if "digest" in given
+            else "pass all of action, to and parts on stdin, or only --digest"
+        )
         raise PluginError(
             "boundary::verify::bad_input",
             "verify takes a digest, or the action, to and parts of the content, and not both;"
-            f" it was given {', '.join(sorted(given)) or 'nothing'};"
-            " run `board call boundary.verify --digest <digest>`",
+            f" it was given {', '.join(sorted(given)) or 'nothing'}; {then}",
             {"given": sorted(given)},
         )
     key = (
@@ -186,7 +207,7 @@ def verify(request: CallRequest) -> VerifyOutput:
         if "digest" in given
         else digest(str(given["action"]), str(given["to"]), cast("dict[str, str]", given["parts"]))
     )
-    found = _crossing(Personal(request.board.root, "boundary"), key)
+    found = _crossing(personal(request), key)
     if found is None:
         return VerifyOutput(digest=key, crossing=None, passed=False, result=None)
     record = found[0]
@@ -195,14 +216,15 @@ def verify(request: CallRequest) -> VerifyOutput:
 
 def record(request: CallRequest) -> RecordOutput:
     """Set the result of the passing crossing of the digest, or refuse naming why there is none."""
-    board = Personal(request.board.root, "boundary")
+    board = personal(request)
     key, result = str(request.input["digest"]), str(request.input["result"])
     path = CROSSINGS + key
     found = _crossing(board, key)
     if found is None:
         raise PluginError(
             "boundary::crossing::not_found",
-            f"no crossing is at {path} in the personal board; run `board call boundary.check` on the content first",
+            f"no crossing is at {path} in the personal board;"
+            " run `board --personal call boundary.check` on the content first",
             {"crossing": path},
         )
     crossing, blob = found
@@ -210,7 +232,7 @@ def record(request: CallRequest) -> RecordOutput:
         raise PluginError(
             "boundary::crossing::failed",
             f"the crossing at {path} failed its checks, so nothing was sent to record;"
-            " change the content and run `board call boundary.check` again",
+            " change the content and run `board --personal call boundary.check` again",
             {"crossing": path},
         )
     line = {"path": path, "expect": blob, "record": crossing | {"result": result}}

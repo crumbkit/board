@@ -37,6 +37,8 @@ def described(text: str, **keywords: object) -> Extra:
     return Extra(description=text, **keywords)
 
 
+# A local pattern, exempt from the shared-shape rule: board_plugin::shape has no SHA-256 shape yet, and the
+# one other copy is requests/reply/v1's. A shared shape replaces both when the shapes lint adds one.
 Digest = Annotated[
     str, described("The SHA-256 of the crossing's content, in 64 lowercase hex digits.", pattern="^[0-9a-f]{64}$")
 ]
@@ -46,12 +48,13 @@ Parts = Annotated[
     dict[str, str],
     described("Each part of the content, by its name, such as pr.body.", minProperties=1),
 ]
-From = Annotated[
-    str,
-    described(
-        "The checkout's path in the personal board, such as /repos/board; left out for a checkout no board mounts.",
-        pattern="^/",
-    ),
+FROM = "The checkout's path in the personal board, such as /repos/board; left out for a checkout no board mounts."
+# A capability input marks a path as a board-path; the crossing keeps it as a reference.
+FromInput = Annotated[str, described(FROM, pattern="^/", format="board-path")]
+From = Annotated[str, described(FROM, format="board-ref")]
+Boundaries = Annotated[
+    list[Annotated[str, Extra(format="board-ref", **{"x-board-type": "boundary/boundary/v1"})]],
+    described("The boundaries that matched, by their paths."),
 ]
 
 
@@ -99,6 +102,16 @@ Globs are shell-style, matched with case: `*` matches any characters,
 )
 
 
+class Failure(TypedDict):
+    """One finding of a failed check, as a refusal's `failures` field names it."""
+
+    control: str
+    part: str
+    text: str
+    line: NotRequired[int]
+    rewrite: NotRequired[str]
+
+
 class Finding(TypedDict):
     """What a control found wrong in a part: the text at fault, and its line when it has one."""
 
@@ -114,7 +127,9 @@ type Status = Literal["passed", "failed", "skipped", "stated"]
 class Verdict(TypedDict):
     """One control's verdict on one part, as `controls.evaluate` gave it."""
 
-    control: Annotated[str, described("The control's path.")]
+    control: Annotated[
+        str, described("The control's path.", format="board-ref", **{"x-board-type": "controls/control/v1"})
+    ]
     part: Annotated[str, described("The part's name.")]
     rule: Annotated[
         Literal["budget", "pattern", "judged"] | None,
@@ -124,7 +139,6 @@ class Verdict(TypedDict):
     findings: Annotated[list[Finding], described("What the control found wrong, at most 20.")]
     used: NotRequired[Annotated[int, described("What a budget counted.")]]
     max: NotRequired[Annotated[int, described("A budget's limit.")]]
-    cached: NotRequired[Annotated[bool, described("Whether a judged verdict came from the cache.")]]
     omitted: NotRequired[Annotated[int, described("How many findings were left out past the first 20.")]]
 
 
@@ -137,7 +151,7 @@ CrossingRecord = TypedDict(
         "to": Destination,
         "from": NotRequired[From],
         "passed": Annotated[bool, described("Whether every check passed.")],
-        "boundaries": Annotated[list[str], described("The boundaries that matched, by their paths.")],
+        "boundaries": Boundaries,
         "verdicts": Annotated[list[Verdict], described("Each check's verdict on each part it applies to.")],
         "result": NotRequired[Annotated[str, described("What the destination returned, such as a URL.")]],
     },
@@ -149,7 +163,7 @@ CrossingRecord.__doc__ = (
 
 CheckInput = TypedDict(
     "CheckInput",
-    {"action": Action, "to": Destination, "from": NotRequired[From], "parts": Parts},
+    {"action": Action, "to": Destination, "from": NotRequired[FromInput], "parts": Parts},
 )
 CheckInput.__doc__ = "Check the parts against every boundary that matches the action, destination and checkout."
 
@@ -159,7 +173,7 @@ class CheckOutput(TypedDict):
 
     digest: Digest
     crossing: Annotated[str, described("The crossing's path in the personal board.")]
-    boundaries: Annotated[list[str], described("The boundaries that matched, by their paths.")]
+    boundaries: Boundaries
     verdicts: Annotated[list[Verdict], described("Each check's verdict on each part it applies to.")]
     note: Annotated[str | None, described("Why nothing was checked, or null.")]
 

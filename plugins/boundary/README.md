@@ -51,7 +51,9 @@ run before its judged rules, and a judged rule skips a part that failed a
 free one. The groups run one after another within the capability's 1,800
 seconds. A refusal from `controls.evaluate`, such as
 `controls::control::not_found`, is `boundary::board::refused` carrying that
-code. The check passes `BOARD_CONTROLS_AGENT`, `ANTHROPIC_API_KEY` and
+code. A boundary in the personal board that fails its schema refuses every
+check with `boundary::boundary::invalid`, naming each such boundary and its
+code, so a broken rule stops content. The check passes `BOARD_CONTROLS_AGENT`, `ANTHROPIC_API_KEY` and
 `CLAUDE_CODE_OAUTH_TOKEN` on, for judged rules.
 
 Then it writes the crossing and returns `digest`, `crossing`, `boundaries`,
@@ -62,7 +64,8 @@ each failing control, part and line with the quoted text and any rewrite,
 the first 20 of them, and ends with the next step. Its fields hold `digest`,
 `crossing`, every failure in `failures` (`control`, `part`, `text`, `line`
 and `rewrite` when known), and `recovery`, `{kind: hint, text}`, whose text
-starts `Next:`. A pattern control shown `match-only` never reveals its
+starts `Next:` and names `board call <action>` and
+`board --personal call boundary.check` to run again. A pattern control shown `match-only` never reveals its
 expression here either.
 
 `boundary.verify` takes `--digest`, or `action`, `to` and `parts` on stdin,
@@ -85,8 +88,11 @@ and characters unescaped, as Python's
 writes it. The record holds the `digest`, `action`, `to`, `from` when
 given, `passed`, the matching `boundaries`, each verdict in `verdicts` as
 `controls.evaluate` gave it, and `result` once recorded. It holds no part's
-text, but it keeps each finding's quoted text. Checking the same content
-again replaces the crossing, and a recorded `result` with it.
+text, but it keeps each finding's quoted text. `from`, `boundaries` and
+each verdict's `control` are references, so deleting a boundary or control
+leaves an old crossing degraded but still read. Checking the same content
+again replaces the crossing; a re-check that passes keeps its `result`, and
+one that fails drops it.
 
 ## Developing
 

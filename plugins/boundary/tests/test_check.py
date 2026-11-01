@@ -53,7 +53,10 @@ def test_a_private_match_refuses_naming_control_part_and_line_and_never_the_patt
     assert fields["failures"] == [{"control": "/controls/names", "part": "pr.body", "text": "acme-123", "line": 2}]
     assert fields["recovery"]["kind"] == "hint"
     assert fields["recovery"]["text"].startswith("Next: change pr.body:")
-    assert "`board call github.pr-create` again" in fields["recovery"]["text"]
+    assert (
+        "run `board call github.pr-create` again, or `board --personal call boundary.check`"
+        in fields["recovery"]["text"]
+    )
     assert '/controls/names on pr.body line 2: "acme-123"' in document["message"]
     assert PRIVATE not in ran.stdout + ran.stderr
     crossing = personal.record(fields["crossing"])
@@ -161,6 +164,24 @@ def test_a_judged_rule_is_skipped_for_a_part_another_boundary_fails_on_a_pattern
         {"control": "/controls/plain", "part": "pr.body", "text": "Clever.", "line": 1, "rewrite": "Say it plainly."}
     ]
     assert '"Clever." (Say it plainly.)' in document["message"]
+
+
+def test_an_invalid_boundary_refuses_every_check_naming_it_and_the_same_boundary_made_valid_is_used(
+    personal: Board,
+) -> None:
+    private_names(personal)
+    names_boundary(personal)
+    personal.write("boundaries/broken.json", boundary(to="github:*", action=["github.*"], checks=[]))
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 1
+    assert document["code"] == "boundary::boundary::invalid"
+    assert document["fields"]["boundaries"] == {"/boundaries/broken": "board::record::invalid"}
+    assert "run `board --personal check /boundaries/broken`" in document["message"]
+    checks = [{"control": "/controls/names", "parts": ["*"]}]
+    personal.write("boundaries/broken.json", boundary(to="github:*", actions=["github.*"], checks=checks))
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 0, ran.stderr
+    assert output(document)["boundaries"] == ["/boundaries/broken", "/boundaries/octo"]
 
 
 def test_a_boundary_naming_a_missing_control_refuses_with_the_controls_code(personal: Board) -> None:

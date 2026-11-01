@@ -22,6 +22,7 @@
           },
           "from": {
             "description": "The checkout's path in the personal board, such as /repos/board; left out for a checkout no board mounts.",
+            "format": "board-path",
             "pattern": "^/",
             "type": "string"
           },
@@ -89,13 +90,11 @@
             "additionalProperties": false,
             "description": "One control's verdict on one part, as `controls.evaluate` gave it.",
             "properties": {
-              "cached": {
-                "description": "Whether a judged verdict came from the cache.",
-                "type": "boolean"
-              },
               "control": {
                 "description": "The control's path.",
-                "type": "string"
+                "format": "board-ref",
+                "type": "string",
+                "x-board-type": "controls/control/v1"
               },
               "findings": {
                 "description": "What the control found wrong, at most 20.",
@@ -158,7 +157,9 @@
           "boundaries": {
             "description": "The boundaries that matched, by their paths.",
             "items": {
-              "type": "string"
+              "format": "board-ref",
+              "type": "string",
+              "x-board-type": "boundary/boundary/v1"
             },
             "type": "array"
           },

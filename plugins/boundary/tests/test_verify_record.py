@@ -10,9 +10,11 @@ PR = {"action": "github.pr-create", "to": "github:octo/board"}
 URL = "https://github.com/octo/board/pull/7"
 
 
-def checked(board: Board, body: str) -> str:
-    """Check a pull request body against a boundary that refuses private names, and return its digest."""
+def checked(board: Board, body: str, names: str | None = None) -> str:
+    """Check a pull request body against a boundary that refuses private names, or `names`, and return its digest."""
     private_names(board)
+    if names is not None:
+        board.write("private/names.txt", f"{names}\n")
     checks = [{"control": "/controls/names", "parts": ["*"]}]
     board.write("boundaries/octo.json", boundary(to="github:octo/*", actions=["github.*"], checks=checks))
     _, document = board.call("check", PR | {"parts": {"pr.body": body}})
@@ -54,8 +56,10 @@ def test_verify_refuses_a_digest_given_with_content_and_takes_either_alone(perso
     ran, document = personal.call("verify", PR | {"parts": {"pr.body": "Fine."}, "digest": digest})
     assert ran.returncode == 1
     assert document["code"] == "boundary::verify::bad_input"
+    assert f"run `board --personal call boundary.verify --digest {digest}`" in document["message"]
     ran, document = personal.call("verify", {"to": PR["to"], "parts": {"pr.body": "Fine."}})
     assert document["code"] == "boundary::verify::bad_input"
+    assert "pass all of action, to and parts on stdin, or only --digest" in document["message"]
     ran, _ = personal.call("verify", {"digest": digest})
     assert ran.returncode == 0, ran.stderr
 
@@ -77,6 +81,21 @@ def test_record_adds_the_result_to_a_passing_crossing_and_verify_reports_it(pers
     assert crossing["result"] == URL
     assert crossing["passed"] is True
     assert verify(personal, "--digest", digest)["result"] == URL
+
+
+def test_a_passing_recheck_keeps_the_recorded_result_and_a_failing_one_drops_it(personal: Board) -> None:
+    digest = checked(personal, "Fine.")
+    ran, _ = record(personal, digest)
+    assert ran.returncode == 0, ran.stderr
+    assert checked(personal, "Fine.") == digest
+    assert verify(personal, "--digest", digest)["result"] == URL
+    assert checked(personal, "Fine.", names="Fine") == digest
+    assert verify(personal, "--digest", digest) == {
+        "digest": digest,
+        "crossing": f"/crossings/{digest}",
+        "passed": False,
+        "result": None,
+    }
 
 
 def test_record_refuses_a_failed_crossing_and_one_never_checked(personal: Board) -> None:
