@@ -5,9 +5,8 @@ from typing import Any, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest
-from board_plugin.repos import MOUNTS, REPO_TYPE, shown_remote
+from board_plugin.repos import MOUNTS, REPO_TYPE, git, shown_remote
 
-from board_changes import clone
 from board_changes.change import CHANGE_TYPE, CLAIM_TYPE, ENDS, PLUGIN, READABLE, TREE_CODES
 
 # The default `limit` (STANDARDS 23).
@@ -77,7 +76,7 @@ def remotes(board: Board, repos: set[str]) -> dict[str, str]:
     found = {str(path): str(json.loads(body)["remote"]) for path, body in rows}
     for path, repository in board.rows(MOUNTS):
         if path in repos and path not in found:
-            origin = clone.git(str(repository), "remote", "get-url", "origin")
+            origin = git(str(repository), "remote", "get-url", "origin")
             if origin:
                 found[str(path)] = shown_remote(origin)
     return found

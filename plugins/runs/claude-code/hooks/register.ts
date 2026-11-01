@@ -231,10 +231,7 @@ async function heldChange($: EngineInterface): Promise<string | undefined> {
 /** The prompt with the change's brief before it, so the subagent starts with the plan and the controls command; undefined when there is no brief. */
 async function briefed($: EngineInterface, prompt: string, change: string): Promise<string | undefined> {
   const brief = await call<object>($, 'changes.brief', ['--path', change])
-  if (!('output' in brief)) {
-    refused($, `no brief for ${change}`, brief)
-    return undefined
-  }
+  if (!('output' in brief)) return void refused($, `no brief for ${change}`, brief)
   const told = `The runs mod ran \`board --personal call changes.brief --path ${change}\` before you started. It printed:`
   return `${told}\n\n${JSON.stringify(brief.output, null, 2)}\n\n${prompt}`
 }

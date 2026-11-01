@@ -1,11 +1,13 @@
 """`check`: the controls that apply under a path, each budget measured against the files it applies to."""
 
+import os
 from typing import Any, Literal, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
+from board_plugin.repos import caller_remote, caller_repo, common_dir, shown_remote
 
-from board_controls import board, caller
+from board_controls import board
 from board_controls.shapes import LIMIT_DEFAULT, REPO_TYPE, Checked, CheckOutput, Counts, Cut, FileUsed, Stated
 
 type Usage = dict[Literal["words", "bytes"], int]
@@ -19,27 +21,19 @@ def measure(data: bytes) -> Usage:
 def check(request: CallRequest) -> CheckOutput:
     """The controls that apply to a file at or under the path asked, or to the files named beneath it.
 
-    Without a path, the caller's repository is checked (caller.py); when it
+    Without a path, the caller's repository is checked (`_caller`); when it
     is none the board knows, nothing is. Under its board's root, every
     control of that board applies, even one that reaches no file. Under
-    another path, only those reaching a file there do. With `files`, only
-    those matching one of the named files do. A path in a mounted board also
-    reads that board's own controls, whose patterns are anchored at the
-    mount. A control with a rule is measured over all its files, wherever
-    they are, and must be within its budget; one without a rule is stated,
-    with its patterns and the number of its files under the path. A path that
-    names a link or mount is checked where it leads. A control Board marks
-    degraded, such as one whose reference dangles, is
-    `controls::control::degraded`, under any path, since what it applies to
-    is unknown; a measured control over its budget is
-    `controls::budget::exceeded`. Each error names every control it applies
-    to. A file reached by a reference and a pattern, or through a link,
-    counts once. Each file is read once, however many controls reach it,
-    with `board get` runs of up to 10,000 paths, and another run for paths
-    left over a run's 64 MiB output budget. The files each control's
-    patterns match come from `board query` pages of up to 10,000 rows. Each
-    list is cut at `limit`, after every budget is checked. With `measure`
-    false, budgets are listed among `stated` without being measured, so no
+    another path, only those reaching a file there do; with `files`, only
+    those matching a named file. A path in a mounted board also reads that
+    board's own controls, anchored at the mount. A control with a rule is
+    measured over all its files, wherever they are; one without is stated.
+    A degraded control is `controls::control::degraded` under any path, and
+    a budget overrun is `controls::budget::exceeded`, each naming every
+    control it applies to. A file counts once, and is read once, in batched
+    `board get` runs; matches come from `board query` pages of up to 10,000
+    rows. Each list is cut at `limit` after every budget is checked. With
+    `measure` false, budgets are listed among `stated` unmeasured, so no
     budget refuses the check.
     """
     reading = Board(request.board.root, "controls")
@@ -47,7 +41,7 @@ def check(request: CallRequest) -> CheckOutput:
     limit = int(cast("int", given.get("limit", LIMIT_DEFAULT)))
     path = given.get("path")
     if path is None:
-        path, why = caller.repository(reading, request.board.root)
+        path, why = _caller(reading, request.board.root)
         if path is None:
             nothing = _listed(None, [], [], limit)
             nothing["next"] = why
@@ -59,20 +53,15 @@ def check(request: CallRequest) -> CheckOutput:
     controls = board.controls(reading, own)
     files, unreadable = _files(reading, controls, own)
     named = given.get("files")
+    listed: set[str] = set()
     if named is None:
         reached = {logical: {file for file in files[logical] if _under(file, scope)} for logical in controls}
-        # A repo record without a checkout holds no files, so a control on it applies when it names it.
-        applying_by_name = {logical for logical, control in controls.items() if scope in _repos(control)}
+        # Under its board's root every control is listed, even one reaching no file, and a repo record
+        # without a checkout holds no files, so a control on it is listed when it names it.
+        listed = {logical for logical, control in controls.items() if scope in (control.board, *_repos(control))}
     else:
-        applying_by_name: set[str] = set()
         reached = _named(reading, files, scope, own, cast("list[str]", named))
-    # Under its board's root every control is listed, so one whose pattern reaches nothing shows with no files.
-    everything = named is None
-    applying = [
-        logical
-        for logical in sorted(controls)
-        if reached[logical] or logical in applying_by_name or (everything and scope == controls[logical].board)
-    ]
+    applying = [logical for logical in sorted(controls) if reached[logical] or logical in listed]
     # Without measuring, a budget is listed as a stated control and never refuses the check.
     measuring = bool(given.get("measure", True))
     budgets = [logical for logical in applying if measuring and controls[logical].record.get("rule") is not None]
@@ -104,6 +93,31 @@ def check(request: CallRequest) -> CheckOutput:
             " give the record a checkout to mount the repository (docs/architecture/paths/repos.md)"
         )
     return output
+
+
+def _caller(reading: Board, root: str) -> tuple[str | None, str]:
+    """The logical path of the repository `BOARD_CALLER_DIR` is in, and, when there is none, why.
+
+    It is `/` in the board's own repository or when Board names no directory, else what `caller_repo`
+    finds. This follows `Repositories::places` in crates/board-tree/src/mounts.rs; change both together.
+    """
+    directory = os.environ.get("BOARD_CALLER_DIR")
+    if not directory:
+        return "/", ""
+    common = common_dir(directory)
+    if common is None:
+        return None, f"{directory} is in no git repository, so there is no repository to check; pass --path"
+    if common_dir(root) == common:
+        return "/", ""
+    found = caller_repo(reading)
+    if found is not None:
+        return found, ""
+    origin = caller_remote()
+    named = "" if origin is None else f", origin {shown_remote(origin)},"
+    return None, (
+        f"no mount or repo record in this board holds the repository at {directory}{named} so nothing was"
+        " checked; pass --path, or record the repository with `board put /repos/<name>`"
+    )
 
 
 def _repos(control: board.Control) -> list[str]:
