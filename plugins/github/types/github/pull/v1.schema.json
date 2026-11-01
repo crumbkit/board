@@ -25,7 +25,8 @@
     "title": {
       "description": "Its title when the record was written; later edits on GitHub leave it as is.",
       "minLength": 1,
-      "type": "string"
+      "type": "string",
+      "x-board-prose": true
     },
     "url": {
       "description": "Its page on GitHub.",

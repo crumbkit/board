@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 97] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
@@ -36,6 +36,12 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 91] = [
     ("evals/eval/v1", "/question", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/subjects/-", UntilAdopted, "Subject (audit row 23)"),
     ("evals/eval/v1", "/written_by", UntilAdopted, "HookName (audit row 46)"),
+    ("github/issue/v1", "/owner", Local, "a GitHub repository owner is the github plugin's own identifier"),
+    ("github/issue/v1", "/repo", Local, "a GitHub repository name is the github plugin's own identifier"),
+    ("github/issue/v1", "/url", UntilAdopted, "Url, when that shape lands"),
+    ("github/pull/v1", "/owner", Local, "a GitHub repository owner is the github plugin's own identifier"),
+    ("github/pull/v1", "/repo", Local, "a GitHub repository name is the github plugin's own identifier"),
+    ("github/pull/v1", "/url", UntilAdopted, "Url, when that shape lands"),
     ("jira/issue/v1", "/key", Local, "a Jira issue key is the jira plugin's own identifier"),
     ("jira/issue/v1", "/site", Local, "a Jira site name is the jira plugin's own identifier"),
     ("jira/issue/v1", "/url", UntilAdopted, "Url, when that shape lands"),

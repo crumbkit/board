@@ -36,7 +36,10 @@ class _Object(BaseModel):
     number: int = Field(ge=1, description="The number GitHub gave it in the repository.")
     url: str = Field(pattern="^https://", description="Its page on GitHub.")
     title: str | SkipJsonSchema[None] = Field(
-        None, min_length=1, description="Its title when the record was written; later edits on GitHub leave it as is."
+        None,
+        min_length=1,
+        json_schema_extra={"x-board-prose": True},
+        description="Its title when the record was written; later edits on GitHub leave it as is.",
     )
 
 
