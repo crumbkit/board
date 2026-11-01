@@ -409,6 +409,22 @@ fn boards_own_types_are_checked_as_their_rust_types() {
 }
 
 #[test]
+fn a_repo_record_is_put_as_boards_own_type_and_an_invalid_one_is_refused() {
+    let scenario = board();
+    let record = r#"{"$type": "board/repo/v1", "remote": "example-org/lib"}"#;
+    assert!(put(&scenario, "/repos/lib", Expect::Any, record).is_ok());
+    assert_eq!(
+        file(&scenario, "repos/lib.json").unwrap(),
+        canonical(record)
+    );
+    let unshown = r#"{"$type": "board/repo/v1", "remote": "git@github.com:example-org/x.git"}"#;
+    assert_eq!(
+        put(&scenario, "/repos/x", Expect::Any, unshown).unwrap_err(),
+        Code::MountInvalid
+    );
+}
+
+#[test]
 fn a_write_through_a_link_lands_at_its_target() {
     let scenario = board();
     scenario.write(

@@ -14,6 +14,7 @@ mod path;
 mod pointer;
 mod record;
 mod refusal;
+mod repo;
 mod stat;
 mod ui;
 
@@ -44,6 +45,7 @@ pub use crate::record::{
     RecordTypeError, Role, TYPES_DIRECTORY, classify, is_json_file,
 };
 pub use crate::refusal::{Refusal, RefusalCode};
+pub use crate::repo::{REPO_TYPE, Repo, shown_remote};
 pub use crate::stat::{Change, Stat};
 pub use crate::ui::{
     BINDING_TYPE, Binding, ComponentKind, DERIVED_TYPE, Fill, PatchError, Slot, UiError, VIEW_TYPE,

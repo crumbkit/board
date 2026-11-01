@@ -1,5 +1,6 @@
-//! Pointers: records of type `board/mount/v1` that resolution continues
-//! through (docs/architecture/paths.md, Pointers: links and mounts).
+//! Pointers: records of type `board/mount/v1`, and repo records of type
+//! `board/repo/v1` with a checkout, that resolution continues through
+//! (docs/architecture/paths.md, Pointers: links and mounts).
 
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -10,8 +11,9 @@ use crate::json::{JsonError, canonical_json, parse_json};
 use crate::location::ObjectId;
 use crate::path::LogicalPath;
 use crate::record::{Kind, Role};
+use crate::repo::{REPO_TYPE, Repo};
 
-/// The `$type` of a pointer.
+/// The `$type` of a link or of a mount that is not a repo record.
 pub const POINTER_TYPE: &str = "board/mount/v1";
 
 /// The largest record Board reads, in bytes.
@@ -55,8 +57,9 @@ struct RawPointer {
 }
 
 /// The pointer `bytes` hold, if they are a record whose `$type` is
-/// [`POINTER_TYPE`]. Anything else, including bytes that are not a JSON
-/// object, is not a pointer; deciding what it is instead is not this
+/// [`POINTER_TYPE`], or a repo record with a checkout. Anything else,
+/// including bytes that are not a JSON object and a repo record with no
+/// checkout, is not a pointer; deciding what it is instead is not this
 /// function's job. A pointer must also pass the strict parse.
 pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
     // A struct deserializes from a sequence too, which would read
@@ -65,11 +68,11 @@ pub fn pointer(bytes: &[u8]) -> Result<Option<Pointer>, PointerError> {
         return Ok(None);
     }
     match serde_json::from_slice::<RawTag>(bytes) {
-        Ok(RawTag { tag: Some(tag) }) if tag == POINTER_TYPE => {}
+        Ok(RawTag { tag: Some(tag) }) if tag == POINTER_TYPE || tag == REPO_TYPE => {}
         _ => return Ok(None),
     }
     let value = parse_json(bytes).map_err(|source| PointerError::Json { source })?;
-    pointer_from_value(&value).map(Some)
+    pointer_from_value(&value)
 }
 
 /// Whether the file at the `/`-separated physical `path` can hold a
@@ -82,7 +85,7 @@ pub fn can_hold_pointer(path: &str) -> bool {
 
 /// Whether a file of `role` that [`Role::classify`] gave `kind` and `code`
 /// holds no pointer: it is JSON that parsed, strictly or with comments, and
-/// has no `$type` or one that is valid and not [`POINTER_TYPE`]. Resolution trusts this in
+/// has no `$type` or one that is valid and holds no pointer. Resolution trusts this in
 /// place of reading the file, so [`pointer()`] must answer `Ok(None)` for
 /// every file this calls plain, and the property test checks it. The
 /// index's stored facts and tree-row codes depend on [`pointer()`] and
@@ -92,8 +95,12 @@ pub fn holds_no_pointer(role: Role, kind: Kind, code: Option<Code>) -> bool {
     role == Role::Json && code.is_none() && matches!(kind, Kind::Json | Kind::Record)
 }
 
-/// The pointer a parsed record of type [`POINTER_TYPE`] holds.
-pub(crate) fn pointer_from_value(value: &Value) -> Result<Pointer, PointerError> {
+/// The pointer a parsed record of type [`POINTER_TYPE`] or [`REPO_TYPE`]
+/// holds, `None` for a repo record with no checkout.
+pub(crate) fn pointer_from_value(value: &Value) -> Result<Option<Pointer>, PointerError> {
+    if value.get("$type").and_then(Value::as_str) == Some(REPO_TYPE) {
+        return Ok(Repo::from_value(value)?.checkout.map(Pointer::Mount));
+    }
     let raw = RawPointer::deserialize(value).map_err(|source| PointerError::Invalid { source })?;
     match raw {
         RawPointer {
@@ -102,35 +109,44 @@ pub(crate) fn pointer_from_value(value: &Value) -> Result<Pointer, PointerError>
             follow: None,
             commit: None,
             ..
-        } => Ok(Pointer::Link(path)),
+        } => Ok(Some(Pointer::Link(path))),
         RawPointer {
             path: None,
             repo: Some(repo),
             follow: Some(follow),
             commit: Some(commit),
             ..
-        } => {
-            if is_remote(&repo) {
-                return Err(PointerError::Remote { repo });
-            }
-            let Some(commit) = ObjectId::from_hex(&commit) else {
-                return Err(PointerError::Commit { commit });
-            };
-            Ok(Pointer::Mount(Mount {
-                repo,
-                follow,
-                commit,
-            }))
-        }
+        } => Ok(Some(Pointer::Mount(Mount::new(repo, follow, commit)?))),
         _ => Err(PointerError::Target),
     }
 }
 
+impl Mount {
+    /// The mount of a local `repo` at the hex `commit`.
+    pub(crate) fn new(repo: String, follow: String, commit: String) -> Result<Self, PointerError> {
+        if is_remote(&repo) {
+            return Err(PointerError::Remote { repo });
+        }
+        let Some(commit) = ObjectId::from_hex(&commit) else {
+            return Err(PointerError::Commit { commit });
+        };
+        Ok(Self {
+            repo,
+            follow,
+            commit,
+        })
+    }
+}
+
 /// The mount pointer `bytes` with its `commit` set to `commit`, in
-/// canonical form.
+/// canonical form: a repo record's `checkout.commit`, else `commit`.
 pub fn repinned(bytes: &[u8], commit: ObjectId) -> Result<Vec<u8>, JsonError> {
     let mut value = parse_json(bytes)?;
-    value["commit"] = Value::String(commit.to_string());
+    let pin = Value::String(commit.to_string());
+    match value.get_mut("checkout") {
+        Some(checkout) if checkout.is_object() => checkout["commit"] = pin,
+        _ => value["commit"] = pin,
+    }
     Ok(canonical_json(&value).into_bytes())
 }
 
@@ -162,13 +178,18 @@ pub enum PointerError {
     Commit { commit: String },
     #[error("pointer repo {repo:?} is remote, and only local repositories mount")]
     Remote { repo: String },
+    /// Only the stored form is kept, because the remote may hold a token.
+    #[error("repo record remote is not in its stored form; write {shown:?}")]
+    Unshown { shown: String },
 }
 
 impl PointerError {
     pub fn code(&self) -> Code {
         match self {
             Self::Json { source } => source.code(),
-            Self::Invalid { .. } | Self::Target | Self::Commit { .. } => Code::MountInvalid,
+            Self::Invalid { .. } | Self::Target | Self::Commit { .. } | Self::Unshown { .. } => {
+                Code::MountInvalid
+            }
             Self::Remote { .. } => Code::MountRemoteUnsupported,
         }
     }

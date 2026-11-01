@@ -63,6 +63,7 @@ codes! {
     ResolveTooManyHops => "board::resolve::too_many_hops",
     RepoUnreadable => "board::repo::unreadable",
     RepoSubmodule => "board::repo::submodule",
+    RepoDuplicateRemote => "board::repo::duplicate_remote",
     SymlinkOutside => "board::symlink::outside",
     SymlinkLoop => "board::symlink::loop",
     SymlinkDangling => "board::symlink::dangling",

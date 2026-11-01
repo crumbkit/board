@@ -4,10 +4,19 @@
 
 use super::*;
 
+/// A mount of `repo` at `commit`: a `board/mount/v1` record, or a repo
+/// record with a checkout when this file runs as `repo_mounts`, so that
+/// both resolve alike in every case.
 fn mount(repo: &str, commit: ObjectId) -> String {
-    format!(
-        r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
-    )
+    if module_path!().ends_with("::repo_mounts") {
+        format!(
+            r#"{{"$type": "board/repo/v1", "remote": "example-org/lib", "checkout": {{"repo": "{repo}", "follow": "main", "commit": "{commit}"}}}}"#
+        )
+    } else {
+        format!(
+            r#"{{"$type": "board/mount/v1", "repo": "{repo}", "follow": "main", "commit": "{commit}"}}"#
+        )
+    }
 }
 
 fn link(target: &str) -> String {

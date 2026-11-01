@@ -6,10 +6,17 @@ mod commits;
 mod kept;
 mod links;
 mod mounts;
+// The mount tests again, each mount written as a repo record with a checkout.
 mod places;
 mod planned;
 mod reading;
 mod removing;
+#[expect(
+    clippy::duplicate_mod,
+    reason = "the mount tests run twice, once for each way to write a mount"
+)]
+#[path = "tests/mounts.rs"]
+mod repo_mounts;
 mod scoped;
 mod symlinks;
 mod syncing;

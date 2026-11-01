@@ -236,17 +236,18 @@ fn known_boards_that_do_not_mount_the_repository_are_named_as_read_and_one_that_
     let lost = refused(unmounted.workdir(), &xdg);
     assert_eq!(lost.code.as_str(), "board::config::not_found");
     let read = format!(
-        "; the known boards in `{}` were read and none mounts this repository, \
-         and these could not be opened or refreshed: {}",
+        "; the known boards in `{}` were read and none has a mount or repo record for this \
+         repository, and these could not be opened or refreshed: {}",
         file(&xdg).display(),
         nowhere.display()
     );
     assert!(lost.message.ends_with(&read), "{}", lost.message);
     let hint = lost.hint.unwrap();
-    let put = "put a `board/mount/v1` record whose `repo` is this repository";
+    let put = "put a `board/repo/v1` record whose `remote` is this repository's origin";
     assert!(hint.starts_with(put), "{hint}");
     let all_opened = refused(unmounted.workdir(), &listing(&[&board]));
-    assert!(all_opened.message.ends_with("none mounts this repository"));
+    let none = "none has a mount or repo record for this repository";
+    assert!(all_opened.message.ends_with(none), "{}", all_opened.message);
     assert_eq!(opened(library.workdir(), &xdg, None).unwrap(), "/repos/lib");
 }
 
@@ -372,4 +373,74 @@ fn a_day_start_that_is_not_hh_mm_is_refused_and_one_that_is_or_is_null_is_admitt
         let xdg = config(Some(&json!({"day_start": start}).to_string()));
         assert_eq!(known(&xdg).unwrap().day_start(), wanted);
     }
+}
+
+/// A clone with `url` as its `origin` and a `docs` directory.
+fn clone_of(url: &str) -> Scenario {
+    let clone = library();
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    clone.write(".git/config", Item::Appended(&remote));
+    clone
+}
+
+/// A board holding a repo record with no checkout for `remote` at `at`.
+fn recording(remote: &str, at: &str) -> Scenario {
+    let scenario = board();
+    let record = json!({"$type": "board/repo/v1", "remote": remote}).to_string();
+    scenario.write(at, Item::File(&record));
+    scenario
+}
+
+#[test]
+fn an_unmounted_clone_runs_with_its_repo_records_path_and_one_with_no_record_finds_no_board() {
+    let clone = clone_of("git@github.com:example-org/lib.git");
+    let stranger = clone_of("git@github.com:example-org/other.git");
+    let board = recording("example-org/lib", "repos/lib.json");
+    let xdg = listing(&[&board]);
+    assert_eq!(opened(clone.workdir(), &xdg, None).unwrap(), "/repos/lib");
+    let docs = clone.workdir().join("docs");
+    assert_eq!(opened(&docs, &xdg, None).unwrap(), "/repos/lib");
+    let lost = refused(stranger.workdir(), &xdg);
+    assert_eq!(lost.code.as_str(), "board::config::not_found");
+    assert!(lost.hint.unwrap().contains("board/repo/v1"));
+}
+
+#[test]
+fn two_known_boards_with_a_repo_record_for_one_remote_are_ambiguous_and_one_is_admitted() {
+    let clone = clone_of("https://github.com/example-org/lib.git");
+    let one = recording("example-org/lib", "repos/lib.json");
+    let two = recording("example-org/lib", "work/lib.json");
+    let refusal = refused(clone.workdir(), &listing(&[&one, &two]));
+    assert_eq!(refusal.code.as_str(), "board::config::ambiguous");
+    assert!(
+        refusal.message.contains("mount or repo record"),
+        "{}",
+        refusal.message
+    );
+    let admitted = opened(clone.workdir(), &listing(&[&one]), None).unwrap();
+    assert_eq!(admitted, "/repos/lib");
+}
+
+#[test]
+fn a_board_that_mounts_the_clone_wins_over_its_own_repo_record_by_remote() {
+    let library = clone_of("git@github.com:example-org/lib.git");
+    let commit = library.commit(&[("x.json", "1")]);
+    let scenario = board();
+    let record = json!({"$type": "board/repo/v1", "remote": "example-org/lib",
+        "checkout": {"repo": library.path(), "follow": "main", "commit": commit.to_string()}});
+    scenario.write("repos/lib.json", Item::File(&record.to_string()));
+    let xdg = listing(&[&scenario]);
+    let docs = library.workdir().join("docs");
+    assert_eq!(opened(&docs, &xdg, None).unwrap(), "/repos/lib/docs");
+}
+
+#[test]
+fn a_clone_one_board_mounts_runs_there_though_another_has_its_repo_record() {
+    let library = clone_of("git@github.com:example-org/lib.git");
+    let mounted = mounting(&library);
+    let recorded = recording("example-org/lib", "repos/lib.json");
+    let both = listing(&[&recorded, &mounted]);
+    let docs = library.workdir().join("docs");
+    let (_, prefix) = open(&docs, None, None, || known(&both)).unwrap();
+    assert_eq!(prefix.unwrap().unwrap().as_str(), "/repos/lib/docs");
 }

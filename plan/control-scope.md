@@ -24,7 +24,7 @@ personal board and from the repository's own board.
 - `summary` is one line of at most 120 characters that names the code the
   control covers and what it asks. `changes.brief` shows it, so a brief stays
   short. `controls.check` shows the full `requirement`, as today.
-- `repos` lists repo record references (plan/repos.md). With `repos`, each
+- `repos` lists repo record references (docs/architecture/paths/repos.md). With `repos`, each
   pattern in `paths` is matched against a file's path from the root of each
   listed repository, and the control reaches nothing outside them. A
   repository the board does not mount still matches, through files the
@@ -88,7 +88,7 @@ starts.
 An agent in a checkout does not know its repository's path in the board.
 So `controls.check` with neither `--path` nor `files.path` checks the
 caller's repository: it finds the repo record whose `remote` equals
-`shown_remote(caller_remote())` of `BOARD_CALLER_DIR` (plan/repos.md) and
+`shown_remote(caller_remote())` of `BOARD_CALLER_DIR` (docs/architecture/paths/repos.md) and
 checks `/repos/<name>`. With no such record it says so and checks nothing.
 The command from any checkout is therefore:
 

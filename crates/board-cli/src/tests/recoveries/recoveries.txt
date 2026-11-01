@@ -336,6 +336,14 @@ board refs /repo/nested
   fails with board::repo::submodule
   hint
 
+board check /repos/a
+  fails with board::repo::duplicate_remote
+  hint
+
+board check /repos/again
+  fails with board::repo::duplicate_remote
+  hint
+
 board check /symlink/dangling
   fails with board::symlink::dangling
   hint

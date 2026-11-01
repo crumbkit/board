@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use board_model::{
     Code, Digest, Fields, LogicalPath, Malformation, Mount, Object, ObjectId, PathError, Pointer,
-    Source,
+    Repo, Source,
 };
 
 use crate::git::{Contents, GitError, Repository, latest};
@@ -288,6 +288,15 @@ impl Repositories {
 pub struct Place {
     pub mount: LogicalPath,
     pub within: LogicalPath,
+    pub matched: Matched,
+}
+
+/// How a place was found: a mount of the directory's repository, or a repo
+/// record whose `remote` is that repository's origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Matched {
+    Mount,
+    Remote,
 }
 
 impl Place {
@@ -302,13 +311,16 @@ impl Repositories {
     /// Each mount among `entries`, the working tree's, whose repository is
     /// the one holding `directory`. Repositories are compared by the git
     /// directory a linked worktree shares with its main one, so a linked
-    /// worktree matches too. `is_pointer` says, from a cache, which physical
-    /// paths hold a pointer that parses. Each call opens and compares every
-    /// mounted repository again.
+    /// worktree matches too. When no mount holds it, each repo record whose
+    /// `remote` is the stored form of that repository's `origin`, at its
+    /// own path. `is_pointer` says, from a cache, which physical paths hold
+    /// a pointer that parses, and `is_repo` which hold a valid repo record.
+    /// Each call opens and compares every mounted repository again.
     pub fn places(
         &self,
         entries: &[Entry],
         is_pointer: &dyn Fn(&str) -> bool,
+        is_repo: &dyn Fn(&str) -> bool,
         directory: &Path,
     ) -> Vec<Place> {
         let Some((common, Ok(within))) = holding(directory) else {
@@ -320,15 +332,49 @@ impl Repositories {
             mounted.and_then(|mounted| mounted.git().common_dir().canonicalize().ok())
                 == Some(common.clone())
         };
-        pointers(root, &Source::WorkingTree, entries, is_pointer)
+        let mounted: Vec<Place> = pointers(root, &Source::WorkingTree, entries, is_pointer)
             .into_iter()
             .filter(|(_, _, mount)| shares(mount))
             .map(|(mount, _, _)| Place {
                 mount,
                 within: within.clone(),
+                matched: Matched::Mount,
             })
-            .collect()
+            .collect();
+        if !mounted.is_empty() {
+            return mounted;
+        }
+        let Some(origin) = origin(directory) else {
+            return Vec::new();
+        };
+        let remote = board_model::shown_remote(&origin);
+        let reader = &mut root.reader();
+        let named = |entry: &Entry| {
+            let blob = entry
+                .blob
+                .filter(|_| entry.status == Status::Ok && is_repo(&entry.path))?;
+            let read = reader
+                .read(&Source::WorkingTree, &entry.path, blob)
+                .ok()??;
+            let value = board_model::parse_json(&read.bytes).ok()?;
+            (Repo::from_value(&value).ok()?.remote == remote).then_some(())?;
+            Some(Place {
+                mount: entry.logical.clone()?,
+                within: LogicalPath::root(),
+                matched: Matched::Remote,
+            })
+        };
+        entries.iter().filter_map(named).collect()
     }
+}
+
+/// The URL of the `origin` remote of the repository holding `directory`,
+/// as `git remote get-url origin` gives it, with any `insteadOf` applied.
+fn origin(directory: &Path) -> Option<String> {
+    let git = gix::discover(directory).ok()?;
+    let remote = git.find_remote("origin").ok()?;
+    let url = remote.url(gix::remote::Direction::Fetch)?;
+    Some(url.to_bstring().to_string())
 }
 
 /// `directory`'s path beneath the working tree of the repository holding

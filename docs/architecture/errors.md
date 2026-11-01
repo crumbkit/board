@@ -16,7 +16,7 @@ The codes, which change as STANDARDS.md 3 and 4 say:
 | `schema` | `invalid`, `differs` |
 | `ref` | `malformed`, `dangling`, `wrong_type` |
 | `path` | `malformed`, `shadowed`, `case_collision`, `not_found` |
-| `repo` | `unreadable`, `submodule` |
+| `repo` | `unreadable`, `submodule`, `duplicate_remote` |
 | `symlink` | `outside`, `loop`, `dangling`; see docs/architecture/paths/symlinks.md |
 | `mount` | `invalid`, `repo_missing`, `commit_missing`, `remote_unsupported`, `follow_missing`, `not_ancestor`, `stale` |
 | `resolve` | `cycle`, `too_many_hops` |

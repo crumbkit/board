@@ -28,13 +28,25 @@ fn board(mounts: &[(&str, &Scenario)]) -> Scenario {
 /// as a possible pointer.
 fn places(board: &Scenario, directory: &Path) -> Vec<Place> {
     let entries = board.open().walk(&Source::WorkingTree).unwrap();
-    board.repositories().places(&entries, &|_| true, directory)
+    let every = |_: &str| true;
+    board
+        .repositories()
+        .places(&entries, &every, &every, directory)
 }
 
 fn place(mount: &str, within: &str) -> Place {
     Place {
         mount: path(mount),
         within: path(within),
+        matched: crate::Matched::Mount,
+    }
+}
+
+/// The place of a repo record found by its remote.
+fn by_remote(record: &str) -> Place {
+    Place {
+        matched: crate::Matched::Remote,
+        ..place(record, "/")
     }
 }
 
@@ -169,8 +181,78 @@ fn only_entries_the_cache_calls_pointers_are_read_as_mounts() {
     let board = board(&[("lib.json", &mounted)]);
     let entries = board.open().walk(&Source::WorkingTree).unwrap();
     let repositories = board.repositories();
-    let none = repositories.places(&entries, &|_| false, mounted.workdir());
+    let (no, lib) = (|_: &str| false, |path: &str| path == "lib.json");
+    let none = repositories.places(&entries, &no, &no, mounted.workdir());
     assert_eq!(none, []);
-    let only = repositories.places(&entries, &|path| path == "lib.json", mounted.workdir());
+    let only = repositories.places(&entries, &lib, &no, mounted.workdir());
     assert_eq!(only, [place("/lib", "/")]);
+}
+
+/// `scenario` with `url` as its `origin`.
+fn originating<'s>(scenario: &'s Scenario, url: &str) -> &'s Scenario {
+    let remote = format!("[remote \"origin\"]\n\turl = {url}\n");
+    scenario.write(".git/config", Item::Appended(&remote))
+}
+
+fn repo(remote: &str) -> String {
+    format!(r#"{{"$type": "board/repo/v1", "remote": "{remote}"}}"#)
+}
+
+#[test]
+fn an_unmounted_clone_is_placed_at_the_repo_record_its_origin_names_and_one_named_by_none_nowhere()
+{
+    let (clone, other) = (Scenario::new(), Scenario::new());
+    originating(&clone, "git@github.com-work:example-org/lib.git");
+    originating(&other, "https://github.com/example-org/other.git");
+    clone.write("docs/a.md", Item::File("a"));
+    let board = Scenario::new();
+    board.write("repos/lib.json", Item::File(&repo("example-org/lib")));
+    assert_eq!(places(&board, clone.workdir()), [by_remote("/repos/lib")]);
+    let docs = places(&board, &clone.workdir().join("docs"));
+    assert_eq!(docs, [by_remote("/repos/lib")]);
+    assert_eq!(places(&board, other.workdir()), []);
+}
+
+#[test]
+fn a_clone_with_no_origin_is_placed_nowhere_and_its_twin_with_one_at_its_record() {
+    let (bare, originated) = (Scenario::new(), Scenario::new());
+    originating(&originated, "https://github.com/example-org/lib");
+    let board = Scenario::new();
+    board.write("repos/lib.json", Item::File(&repo("example-org/lib")));
+    assert_eq!(places(&board, bare.workdir()), []);
+    assert_eq!(
+        places(&board, originated.workdir()),
+        [by_remote("/repos/lib")]
+    );
+}
+
+#[test]
+fn a_second_clone_of_a_mounted_repository_is_placed_at_its_repo_record_by_its_origin() {
+    let (mounted, clone) = (Scenario::new(), Scenario::new());
+    let commit = mounted.commit(&[("x.json", "1")]);
+    originating(&clone, "git@github.com:example-org/lib.git");
+    let record = format!(
+        r#"{{"$type": "board/repo/v1", "remote": "example-org/lib", "checkout": {{"repo": "{}", "follow": "main", "commit": "{commit}"}}}}"#,
+        mounted.path()
+    );
+    let board = Scenario::new();
+    board.write("repos/lib.json", Item::File(&record));
+    let deep = mounted.workdir().join("docs");
+    mounted.write("docs/a.md", Item::File("a"));
+    assert_eq!(places(&board, &deep), [place("/repos/lib", "/docs")]);
+    assert_eq!(places(&board, clone.workdir()), [by_remote("/repos/lib")]);
+}
+
+#[test]
+fn only_entries_the_cache_calls_repo_records_are_read_for_their_remote() {
+    let clone = Scenario::new();
+    originating(&clone, "example-org/lib");
+    let board = Scenario::new();
+    board.write("repos/lib.json", Item::File(&repo("example-org/lib")));
+    let entries = board.open().walk(&Source::WorkingTree).unwrap();
+    let repositories = board.repositories();
+    let (no, lib) = (|_: &str| false, |path: &str| path == "repos/lib.json");
+    assert_eq!(repositories.places(&entries, &no, &no, clone.workdir()), []);
+    let only = repositories.places(&entries, &no, &lib, clone.workdir());
+    assert_eq!(only, [by_remote("/repos/lib")]);
 }
