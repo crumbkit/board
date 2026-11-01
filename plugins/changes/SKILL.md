@@ -23,6 +23,9 @@ repository that is itself a board, plain `board` runs as that board.
    who takes it.
 3. When you resume a change, or work on it from another clone, run
    `changes.claim --path /changes/<name> --session <session>` there first.
+   After a usage stop, `board --personal call inflight.now --stopped-at <time>`
+   lists each change in flight with its worktree and next step
+   (plugins/inflight/README.md).
 4. End a change with `changes.landed --commit <sha>` once it merges, or
    `changes.drop --why '<text>'` to stop it.
 

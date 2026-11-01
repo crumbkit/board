@@ -1,0 +1,450 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "List the open changes with their next step and actor, subagents, pull request and artifacts, the unattached subagents, the open questions and the open evals, each part bounded.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "What is open or running right now.",
+        "properties": {
+          "holder": {
+            "description": "Only the changes this session holds, their agents, and the agents it started.",
+            "pattern": "\\S",
+            "title": "Holder",
+            "type": "string"
+          },
+          "limit": {
+            "description": "The most entries each part returns, 1 to 100; 20 when left out.",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "stopped-at": {
+            "description": "When the sessions stopped, with a time zone; an agent with no run that started before it is stalled.",
+            "format": "date-time",
+            "title": "Stopped-At",
+            "type": "string"
+          }
+        },
+        "title": "NowInput",
+        "type": "object"
+      },
+      "name": "now",
+      "outputSchema": {
+        "$defs": {
+          "Agent": {
+            "additionalProperties": false,
+            "description": "A subagent with no run yet: its record, its prompt beside it, and whether it is running or stalled.",
+            "properties": {
+              "cwd": {
+                "title": "Cwd",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "prompt": {
+                "title": "Prompt",
+                "type": "string"
+              },
+              "session": {
+                "title": "Session",
+                "type": "string"
+              },
+              "started": {
+                "format": "date-time",
+                "title": "Started",
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "stalled"
+                ],
+                "title": "State",
+                "type": "string"
+              },
+              "works_on": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Works On"
+              }
+            },
+            "required": [
+              "path",
+              "prompt",
+              "session",
+              "cwd",
+              "started",
+              "works_on",
+              "state"
+            ],
+            "title": "Agent",
+            "type": "object"
+          },
+          "Artifact": {
+            "additionalProperties": false,
+            "description": "An artifact one of whose versions names the change in `for`, with its newest version's title and time.",
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "title": "At",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Title"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "url",
+              "title",
+              "at"
+            ],
+            "title": "Artifact",
+            "type": "object"
+          },
+          "Change": {
+            "additionalProperties": false,
+            "description": "An open change, its next step and who takes it, its pull request, its agents and its artifacts.\n\n`next` and `actor` are null when `changes.next` refused, and `refused`\nsays why. `pr_state` is the command that says whether the pull request\nmerged, since this query makes no network call. `agents_left_out` and\n`artifacts_left_out` count what the limit left out.",
+            "properties": {
+              "actor": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "agent",
+                      "reviewer",
+                      "owner"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Actor"
+              },
+              "agents": {
+                "items": {
+                  "$ref": "#/$defs/Agent"
+                },
+                "title": "Agents",
+                "type": "array"
+              },
+              "agents_left_out": {
+                "title": "Agents Left Out",
+                "type": "integer"
+              },
+              "artifacts": {
+                "items": {
+                  "$ref": "#/$defs/Artifact"
+                },
+                "title": "Artifacts",
+                "type": "array"
+              },
+              "artifacts_left_out": {
+                "title": "Artifacts Left Out",
+                "type": "integer"
+              },
+              "branch": {
+                "title": "Branch",
+                "type": "string"
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Holder"
+              },
+              "next": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Next"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "pr_state": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Pr State"
+              },
+              "pull_request": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Pull Request"
+              },
+              "refused": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Refusal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "repo": {
+                "title": "Repo",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "worktree": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Worktree"
+              }
+            },
+            "required": [
+              "path",
+              "title",
+              "repo",
+              "branch",
+              "holder",
+              "worktree",
+              "next",
+              "actor",
+              "refused",
+              "pull_request",
+              "pr_state",
+              "agents",
+              "agents_left_out",
+              "artifacts",
+              "artifacts_left_out"
+            ],
+            "title": "Change",
+            "type": "object"
+          },
+          "Changes": {
+            "additionalProperties": false,
+            "description": "Open changes, by path. `unreadable` counts the ones Board marks degraded.",
+            "properties": {
+              "changes": {
+                "items": {
+                  "$ref": "#/$defs/Change"
+                },
+                "title": "Changes",
+                "type": "array"
+              },
+              "left_out": {
+                "title": "Left Out",
+                "type": "integer"
+              },
+              "total": {
+                "title": "Total",
+                "type": "integer"
+              },
+              "unreadable": {
+                "title": "Unreadable",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "changes",
+              "total",
+              "left_out",
+              "unreadable"
+            ],
+            "title": "Changes",
+            "type": "object"
+          },
+          "Refusal": {
+            "additionalProperties": false,
+            "description": "Why a part or a step derivation is missing: the code and message of the call that refused.",
+            "properties": {
+              "code": {
+                "title": "Code",
+                "type": "string"
+              },
+              "message": {
+                "title": "Message",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "title": "Refusal",
+            "type": "object"
+          },
+          "Unattached": {
+            "additionalProperties": false,
+            "description": "Agents whose `works_on` names no open change, or who have none, oldest first.\n\n`unreadable` counts the agent records, here or under a change, that Board\nmarks degraded or that this plugin cannot read.",
+            "properties": {
+              "agents": {
+                "items": {
+                  "$ref": "#/$defs/Agent"
+                },
+                "title": "Agents",
+                "type": "array"
+              },
+              "left_out": {
+                "title": "Left Out",
+                "type": "integer"
+              },
+              "total": {
+                "title": "Total",
+                "type": "integer"
+              },
+              "unreadable": {
+                "title": "Unreadable",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "agents",
+              "total",
+              "left_out",
+              "unreadable"
+            ],
+            "title": "Unattached",
+            "type": "object"
+          },
+          "Waiting": {
+            "additionalProperties": false,
+            "description": "Entries from another plugin's capability, as it gives them, or why it refused.",
+            "properties": {
+              "entries": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "title": "Entries",
+                "type": "array"
+              },
+              "left_out": {
+                "title": "Left Out",
+                "type": "integer"
+              },
+              "refused": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Refusal"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "total": {
+                "title": "Total",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "entries",
+              "total",
+              "left_out",
+              "refused"
+            ],
+            "title": "Waiting",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "What is open or running: changes with their agents, unattached agents, questions and evals.\n\nEach part returns at most `limit` entries and counts in `left_out` those\nit left out. `questions` are the entries of `plans.open`, and `evals` those\nof `evals.open`.",
+        "properties": {
+          "changes": {
+            "$ref": "#/$defs/Changes"
+          },
+          "evals": {
+            "$ref": "#/$defs/Waiting"
+          },
+          "questions": {
+            "$ref": "#/$defs/Waiting"
+          },
+          "unattached": {
+            "$ref": "#/$defs/Unattached"
+          }
+        },
+        "required": [
+          "changes",
+          "unattached",
+          "questions",
+          "evals"
+        ],
+        "title": "NowOutput",
+        "type": "object"
+      },
+      "timeout": 120
+    }
+  ],
+  "description": "What is open or running right now: each open change with its worktree, holder, next step and actor, subagents, pull request and artifacts, then unattached subagents, questions waiting on the owner and open evals. Use it to see what is in flight, and after a usage stop to rescue it with `board --personal call inflight.now --stopped-at <time>`. README.md in the plugin's directory says how to rescue each change.",
+  "metadata": {
+    "area": "planning"
+  },
+  "name": "inflight",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_inflight"
+  ],
+  "types": [],
+  "version": "0.1.0"
+}

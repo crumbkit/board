@@ -49,15 +49,6 @@ command line or a gate window. No answer depends on `board serve`.
 The `review` plugin follows, designed in [plan/review.md](plan/review.md),
 which brings review accounting into scope.
 
-## Then: work records
-
-Every change, decision and artifact is recorded as small records written
-once, and each one's state is derived from which records exist. Decisions,
-control scope and work records are built (plugins/decisions/README.md,
-plugins/controls/README.md, plugins/changes/README.md), as is the runs
-mod (docs/plugins/claude-code/runs.md). Build
-[inflight](plan/inflight.md) next.
-
 ## Out of scope
 
 Each of these waits until a real need has its own plan: effects beyond the
