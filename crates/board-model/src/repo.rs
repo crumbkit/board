@@ -6,8 +6,7 @@ use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Value;
 
-use crate::location::ObjectId;
-use crate::pointer::{Mount, PointerError, is_remote};
+use crate::pointer::{Mount, PointerError};
 
 /// The `$type` of a repo record.
 pub const REPO_TYPE: &str = "board/repo/v1";
@@ -45,33 +44,20 @@ impl Repo {
         if raw.remote.is_empty() || shown != raw.remote {
             return Err(PointerError::Unshown { shown });
         }
-        let checkout = raw.checkout.map(mount).transpose()?;
+        let checkout = (raw.checkout)
+            .map(
+                |RawCheckout {
+                     repo,
+                     follow,
+                     commit,
+                 }| Mount::new(repo, follow, commit),
+            )
+            .transpose()?;
         Ok(Self {
             remote: raw.remote,
             checkout,
         })
     }
-}
-
-/// The mount a checkout names, which means exactly what a mount pointer's
-/// `repo`, `follow` and `commit` mean.
-fn mount(checkout: RawCheckout) -> Result<Mount, PointerError> {
-    let RawCheckout {
-        repo,
-        follow,
-        commit,
-    } = checkout;
-    if is_remote(&repo) {
-        return Err(PointerError::Remote { repo });
-    }
-    let Some(commit) = ObjectId::from_hex(&commit) else {
-        return Err(PointerError::Commit { commit });
-    };
-    Ok(Mount {
-        repo,
-        follow,
-        commit,
-    })
 }
 
 /// `remote`, a git origin URL, as it may be shown and stored: `owner/name`
