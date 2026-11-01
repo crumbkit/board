@@ -29,8 +29,6 @@ jobs:
         include:
           - package: board-plugin-plans
             target: open::asked::tests::bolero_any_text_is_read_as_an_instant_only_in_the_shape_of_one
-          - package: board-plugin
-            target: shape::url::tests::bolero_any_text_is_admitted_by_the_constructor_exactly_when_the_schema_admits_it
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:

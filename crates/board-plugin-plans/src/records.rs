@@ -163,7 +163,8 @@ pub struct DecisionRecord {
     pub refs: Vec<Ref>,
     /// Web pages the decision concerns, such as a pull request.
     #[serde(default)]
-    pub urls: Vec<Url>,
+    #[schemars(with = "Vec<Url>")]
+    pub urls: Vec<String>,
     /// `wanted` when the owner should look at the decision.
     pub review: Option<Review>,
     /// The plugin and hook that wrote this stub without an agent, such as

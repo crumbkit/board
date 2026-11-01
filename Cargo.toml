@@ -60,10 +60,6 @@ gix = { version = "0.88.0", default-features = false, features = ["excludes", "p
 humantime = "2.4.0"
 jsonschema = { version = "0.58.5", default-features = false }
 jsonschema-regex = "0.58.5"
-# board_plugin::shape::Url parses with the crate whose result jsonschema's
-# `uri` format is tested against, so the type and its schema agree.
-# jsonschema already brings this crate in, through referencing.
-fluent-uri = { version = "0.4.1", default-features = false, features = ["alloc"] }
 # The owner's home from the passwd entry, which no variable a caller sets can
 # move, so the signer and allowed signers file an approval trusts stay put.
 # Without default features it brings only libc, bitflags and cfg-if; only
