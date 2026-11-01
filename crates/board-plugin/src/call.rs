@@ -576,7 +576,7 @@ pub enum CallError {
     #[error("{}", failure.message)]
     Plugin {
         plugin: PluginName,
-        failure: PluginFailure,
+        failure: Box<PluginFailure>,
         stderr: Vec<u8>,
     },
 }

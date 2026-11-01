@@ -59,7 +59,7 @@ impl PluginFailure {
 #[derive(Debug)]
 pub(crate) enum Reply<T> {
     Result(T),
-    Error(PluginFailure),
+    Error(Box<PluginFailure>),
 }
 
 /// `board/call-result/v1`.
@@ -99,13 +99,13 @@ pub(crate) fn reply<T: DeserializeOwned>(
         }
         Some(ERROR_TYPE) => {
             let raw = RawError::deserialize(value).map_err(shape)?;
-            Ok(Reply::Error(PluginFailure::parse(
+            Ok(Reply::Error(Box::new(PluginFailure::parse(
                 plugin,
                 raw.code,
                 raw.message,
                 raw.fields,
                 raw.hint,
-            )?))
+            )?)))
         }
         found => Err(BadOutput::Type {
             found: found.map(str::to_owned),
