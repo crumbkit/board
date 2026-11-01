@@ -52,8 +52,8 @@ which brings review accounting into scope.
 ## Then: work records
 
 Every change, decision and artifact is recorded as small records written
-once, and each one's state is derived from which records exist. Each step's
-plan arrives in its own pull request. Build them in this order.
+once, and each one's state is derived from which records exist. Build them in
+this order.
 
 1. [Repos](plan/repos.md).
 
