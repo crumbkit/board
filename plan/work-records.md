@@ -68,7 +68,7 @@ All live under `/changes/<name>/`, except the change itself at
 | Record | Holds |
 | --- | --- |
 | change | `title`, `repo` (a repo record), `branch`, `issue`, and the `workflow` (the link's resolved target), `suite` and `route` resolved at start |
-| `plans/<stamp>` + `.md` | `uses`: references to standards nodes, controls, decisions, evals and other changes. The `.md` holds at most 3,000 words. The newest plan is the current one. |
+| `plans/<stamp>` + `.md` | Built: `changes/plan/v1` (plugins/changes/README.md). The newest plan is the current one. |
 | `claims/<stamp>` | `session`, and `worktree`: the root of the caller's clone. The newest claim names the holder and where the work is. |
 | `checks/<stamp>` | `run`: the check run at a head |
 | `files/<head>` | `files`: the repository-relative paths the branch touches at that head |
@@ -117,21 +117,14 @@ board, Board finds its `.board/board.json` first and runs as that board.
   path segment, unless one has its remote, then the change and a claim.
   Another remote's record there is `changes::repo::name_taken`, suggesting
   `--repo-name`.
-- `plan` writes a plan from `{path, file, uses}` on stdin, since `uses` is
-  an array. It refuses a reference that reaches nothing
-  (`changes::ref::dangling`) and a file over 3,000 words
-  (`changes::plan::too_long`).
+- `plan` and `brief` are built (plugins/changes/README.md). This milestone
+  moves `brief`'s next step to the derived steps.
 - `claim --session <s>` writes a claim, reading `worktree` from
   `BOARD_CALLER_DIR`.
 - `files` writes the files record from `{path, head, files}` on stdin, and
   `check --run <r>` writes a check.
 - `next`: read-only. Steps, each done or not with the record that did it,
   the next step and its actor.
-- `brief`: read-only. What an agent needs to start: the plan's path, one
-  line per record in `uses` (a control's `summary`, a decision's text, an
-  eval's question and verdict, a document's first heading), the next step,
-  and the exact `controls.check` command for the change's repository. It
-  holds at most 600 words and says what it left out.
 - `landed --commit <sha>` and `drop --why '<text>'` end the change.
 - `open [--limit <n>]`: read-only. Unended changes.
 - `pr` still drafts the pull request body; `pr.md` stays a draft file.
@@ -159,7 +152,6 @@ One pull request in the changes, review and runs plugins. The tests:
   start reuses it.
 - A control's added step appears only when the files record at the head
   includes a match.
-- `brief` stays within 600 words with 100 `uses` and says what it left out.
 
 Done when a change in the owner's board goes from `start` to `landed` with
 `next` reporting each step correctly.
