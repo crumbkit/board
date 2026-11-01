@@ -17,8 +17,8 @@ pub use crate::open::{Fallback, Index, IndexError, Storage, location};
 pub use crate::query::{Budget, Rows};
 pub use crate::schema::INDEX_VERSION;
 pub use crate::server::{
-    read_server, remove_opener, remove_server, server_file, write_opener, write_server,
-    write_statement,
+    empty_directory, read_server, remove_opener, remove_server, server_file, write_opener,
+    write_server, write_statement,
 };
 pub use crate::store::{
     BlobFact, Decided, RefFact, Resolved, ValidationFact, View, Worktree, Writer, source_name,

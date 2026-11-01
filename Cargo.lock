@@ -190,6 +190,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "strsim",
+ "tempfile",
  "thiserror",
 ]
 
@@ -202,6 +203,8 @@ dependencies = [
  "board-plugin",
  "board-scenario",
  "board-validate",
+ "regex",
+ "regex-syntax",
  "schemars",
  "serde",
  "serde_json",

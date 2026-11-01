@@ -38,7 +38,7 @@ impl Recording {
     }
 
     /// The `refs` and `get_each` calls made since the last time this was asked.
-    fn resolved(&self) -> Vec<Call> {
+    pub(crate) fn resolved(&self) -> Vec<Call> {
         (self.calls.take().into_iter())
             .filter(|call| *call != Call::Query)
             .collect()
@@ -128,6 +128,7 @@ pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
             caller: None,
+            environment: board_ops::Variables::default(),
         },
         calls: RefCell::default(),
     };

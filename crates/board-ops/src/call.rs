@@ -10,7 +10,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::host::{HostBoard, Hosted, PluginError, Settings};
+use crate::host::{HostBoard, Hosted, PluginError, Settings, Variables};
 use crate::plugins::{CallFailed, Plugins};
 
 impl Board {
@@ -106,6 +106,7 @@ impl Board {
                 day_start: (environment.day_start.as_ref())
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
+                environment: Variables(board_plugin::passed(chosen, environment)?),
             },
             // As `board call` sets `BOARD_PLUGIN` for a child: the plugin
             // already named, else this one. A put refuses a name that does

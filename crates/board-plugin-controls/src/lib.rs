@@ -1,6 +1,7 @@
 //! The controls plugin built into Board (plugins/controls/README.md).
 
 mod check;
+mod evaluate;
 mod for_path;
 mod index;
 pub mod records;
@@ -9,9 +10,7 @@ use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
 use board_plugin::shape::{Record, schema_of};
-use schemars::Schema;
 use schemars::generate::SchemaSettings;
-use schemars::transform::RecursiveTransform;
 use serde_json::{Map, Value, json};
 
 use records::ControlRecord;
@@ -41,10 +40,11 @@ impl Plugin for Controls {
         match capability.as_str() {
             "for-path" => for_path::for_path(host, &input),
             "check" => check::check(host, &input),
+            "evaluate" => evaluate::evaluate(host, &input),
             other => Err(PluginError {
                 code: "controls::call::unknown_capability".to_owned(),
                 message: format!(
-                    "controls offers no capability {other}; it offers for-path and check"
+                    "controls offers no capability {other}; it offers for-path, check and evaluate"
                 ),
                 fields: Map::new(),
             }),
@@ -52,21 +52,9 @@ impl Plugin for Controls {
     }
 }
 
-/// The schema of `controls/control/v1`. `schema_of` would take null out of
-/// `rule`, which the committed schema admits, so this generator only drops
-/// an integer's `format`, as `schema_of` does.
+/// The schema of `controls/control/v1`.
 fn record_schema() -> Value {
-    let mut settings =
-        SchemaSettings::draft2020_12().with_transform(RecursiveTransform(|schema: &mut Schema| {
-            if schema.get("type").and_then(Value::as_str) == Some("integer") {
-                schema.remove("format");
-            }
-        }));
-    settings.meta_schema = None;
-    let schema = settings
-        .into_generator()
-        .into_root_schema_for::<ControlRecord>();
-    schema.into()
+    schema_of::<ControlRecord>(SchemaSettings::draft2020_12())
 }
 
 /// `path` as a logical path, or the refusal `board refs` gives a path it
@@ -89,7 +77,8 @@ fn manifest() -> Value {
             you edit a file a control may govern. Start with `board -C <board> call controls.check --path \
             /<directory>`, which lists the budgets it measures and the written requirements under that \
             path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. \
-            SKILL.md and README.md in the plugin's directory say more.",
+            `board -C <board> call controls.evaluate` checks text, such as a draft, against the rules of \
+            the controls it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
         "types": [ControlRecord::TYPE],
         "capabilities": [{
@@ -105,6 +94,14 @@ fn manifest() -> Value {
                 control over budget or degraded.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
+            "annotations": {"readOnlyHint": true},
+            "_meta": {},
+        }, {
+            "name": "evaluate",
+            "description": "Check named parts of text against controls' budget, pattern and judged \
+                rules, and return each control's verdict on each part with its findings.",
+            "inputSchema": schema_of::<evaluate::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<evaluate::Output>(settings()),
             "annotations": {"readOnlyHint": true},
             "_meta": {},
         }],

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, PluginName, RecordType, Refusal};
+use board_plugin::child::{Exited, Process, ProcessError};
 use board_plugin::{CallReport, Manifest, Target};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
@@ -79,6 +80,42 @@ pub trait Host {
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>>;
     fn settings(&self) -> &Settings;
+    /// Runs `run` through board-plugin's process module with the settings'
+    /// `environment` and nothing else, as the leader of its own process
+    /// group. Every process still in the group is killed when it exits, past
+    /// its deadline or when Board is stopped.
+    fn run(&self, run: &Run<'_>) -> Result<Exited, ProcessError> {
+        let empty;
+        let directory = if let Some(directory) = run.directory {
+            directory
+        } else {
+            empty = board_index::empty_directory()
+                .map_err(|source| ProcessError::NotStarted { source })?;
+            empty.path()
+        };
+        let process = Process {
+            program: run.program,
+            arguments: run.arguments,
+            directory,
+            input: run.input,
+            deadline: run.deadline,
+        };
+        board_plugin::child::run(&process, &self.settings().environment.0)
+    }
+}
+
+/// A process a built-in plugin runs through [`Host::run`]: its program,
+/// found on the environment's `PATH`, its arguments, the directory it runs
+/// in, what it reads on stdin, and how long it may run.
+#[derive(Clone, Copy, Debug)]
+pub struct Run<'a> {
+    pub program: &'a str,
+    pub arguments: &'a [String],
+    /// The directory it runs in; none runs it in a new empty temporary
+    /// directory, removed when it exits.
+    pub directory: Option<&'a Path>,
+    pub input: &'a [u8],
+    pub deadline: std::time::Duration,
 }
 
 /// Another board a built-in plugin acts on, as its own `board` opens it.
@@ -100,6 +137,22 @@ pub struct Settings {
     pub day_start: Option<String>,
     /// `BOARD_CALLER_DIR`: the directory Board was started in.
     pub caller: Option<PathBuf>,
+    /// The variables a process plugin offering the capability would see,
+    /// its `env` among them, which `Host::run` gives a process it starts.
+    pub environment: Variables,
+}
+
+/// Variables by name and value. Its `Debug` shows only the names, since the
+/// values may be secrets.
+#[derive(Clone, Default)]
+pub struct Variables(pub Vec<(String, std::ffi::OsString)>);
+
+impl fmt::Debug for Variables {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (formatter.debug_list())
+            .entries(self.0.iter().map(|(name, _)| name))
+            .finish()
+    }
 }
 
 /// How many rows a query returns: 1 to `MAX_LIMIT`, or all of them.

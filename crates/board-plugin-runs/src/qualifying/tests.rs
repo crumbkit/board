@@ -123,6 +123,7 @@ pub(crate) fn board(files: &[(&str, String)]) -> (Scenario, Real) {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
             caller: None,
+            environment: board_ops::Variables::default(),
         },
         asked: RefCell::default(),
         failing: false,

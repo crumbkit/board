@@ -338,7 +338,7 @@ fn a_put_in_the_personal_board_is_checked_as_the_plugin_so_an_owner_only_path_is
             ..Plugins::default()
         };
         let called = board.call(&target("outer.due"), br#"{"n": 1}"#, &plugins);
-        (called.map(|report| report.output)).map_err(|error| error.refusal())
+        (called.map(|report| report.output)).map_err(|error| Box::new(error.refusal()))
     };
     let refusal = put("/effects/a").unwrap_err();
     assert_eq!(refusal.code.as_str(), "outer::board::refused");

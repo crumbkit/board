@@ -22,6 +22,7 @@ pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
         cache: context.cache.as_deref(),
         known: None,
         signing: effects::signing(context),
+        leads: false,
     }
 }
 use clap::{CommandFactory, Parser, Subcommand};

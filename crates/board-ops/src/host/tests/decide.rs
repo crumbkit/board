@@ -9,6 +9,7 @@ use board_scenario::signer::Signer;
 
 use super::*;
 use crate::effects::{Asker, Shown, Signing};
+use crate::host::Elsewhere;
 use crate::{KnownBoards, answer};
 
 /// `outer` asking to run `op` at `/pulls/7`, showing `shown`, answering
@@ -195,4 +196,43 @@ fn a_built_ins_decide_with_no_personal_board_or_a_malformed_op_is_refused_and_it
         owner.signing(true),
     );
     assert_eq!(asked.unwrap_err().0, "board::settings::asked");
+}
+
+#[test]
+fn a_decide_through_the_personal_board_asks_as_the_plugin_for_that_board_and_one_in_its_own_board_names_its_own()
+ {
+    let (scenario, owner) = (scenario(), Owner::new());
+    let known = owner.known();
+    let mut board = open(&scenario);
+    board.build_in(built(vec![answering(
+        "outer",
+        Box::new(|host| {
+            let path = "/pulls/7".parse().unwrap();
+            let refused =
+                |refusal: &Refusal| PluginError::board_refused("outer", "decide", refusal);
+            let personal = host.board(&Elsewhere::Personal).map_err(|r| refused(&r))?;
+            let there = personal.decide("outer.override", &path, None).unwrap_err();
+            let here = host.decide("outer.override", &path, None).unwrap_err();
+            Ok(json!({"count": 0, "there": there.fields["effect"], "here": here.fields["effect"]}))
+        }),
+    )]));
+    let plugins = Plugins {
+        known: Some(&known),
+        signing: owner.signing(true),
+        ..Plugins::default()
+    };
+    let output = (board.call(&target("outer.due"), br#"{"n": 1}"#, &plugins))
+        .unwrap()
+        .output;
+    let effect = |id: &Value| {
+        let file = format!("effects/pending/{}.json", id.as_str().unwrap());
+        let text = std::fs::read_to_string(owner.personal.workdir().join(file)).unwrap();
+        serde_json::from_str::<Value>(&text).unwrap()
+    };
+    let (there, here) = (effect(&output["there"]), effect(&output["here"]));
+    assert_eq!(there["plugin"], json!("outer"));
+    assert_eq!(here["plugin"], json!("outer"));
+    let root = |scenario: &Scenario| json!(scenario.workdir().canonicalize().unwrap());
+    assert_eq!(there["board"], root(&owner.personal));
+    assert_eq!(here["board"], root(&scenario));
 }
