@@ -19,10 +19,14 @@ pub struct IssueRecord {
     /// The issue key, such as ACME-123.
     #[schemars(regex(pattern = r"^[A-Z][A-Z0-9_]+-[1-9][0-9]*$"))]
     pub key: String,
-    /// The address of the issue's page, such as https://acme.atlassian.net/browse/ACME-123.
-    #[schemars(regex(
-        pattern = r"^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?\.atlassian\.net/browse/[A-Z][A-Z0-9_]+-[1-9][0-9]*$"
-    ))]
+    // The description names an address, which a doc comment would have to
+    // mark up and so change the schema's bytes.
+    #[schemars(
+        description = "The address of the issue's page, such as https://acme.atlassian.net/browse/ACME-123.",
+        regex(
+            pattern = r"^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?\.atlassian\.net/browse/[A-Z][A-Z0-9_]+-[1-9][0-9]*$"
+        )
+    )]
     pub url: String,
     /// The issue's summary when the record was written; absent when it could not be read.
     #[schemars(with = "Option<Prose>", length(min = 1))]
