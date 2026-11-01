@@ -61,7 +61,10 @@ their paths, and `records.rs` the record types.
 ## Installing
 
 It is built into Board. `board plugin enable github` writes the schemas to
-`.board/types/github/` and names the plugin in `.board/board.json`.
+`.board/types/github/` and names the plugin in `.board/board.json`. An older
+install at `${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/github` makes
+`call` and `plugin enable` fail with `board::plugin::duplicate`. Remove it;
+it is usually a symlink to a checkout, so remove the link, not the checkout.
 
 ## Developing
 

@@ -177,12 +177,12 @@ fn a_reference_parses_in_lower_case_to_its_paths_and_endpoint() {
     assert_eq!(Object::parse("octo/widgets"), None);
 }
 
-fn exited(code: Option<i32>, stdout: &str, stderr: &str) -> Result<Exited, ProcessError> {
-    Ok(Exited {
+fn exited(code: Option<i32>, stdout: &str, stderr: &str) -> Exited {
+    Exited {
         code,
         stdout: stdout.as_bytes().to_vec(),
         stderr: stderr.as_bytes().to_vec(),
-    })
+    }
 }
 
 /// What `gh::api` gives for the run `answer` returns, and how gh was run.
@@ -207,27 +207,27 @@ fn failed(answer: fn() -> Result<Exited, ProcessError>) -> String {
 
 #[test]
 fn gh_api_gives_the_object_gh_prints_and_none_for_githubs_404() {
-    let object = asked(|| exited(Some(0), r#"{"title": "T"}"#, "")).unwrap();
+    let object = asked(|| Ok(exited(Some(0), r#"{"title": "T"}"#, ""))).unwrap();
     assert_eq!(object.unwrap()["title"], "T");
-    let missing = asked(|| exited(Some(1), "{}", "gh: Not Found (HTTP 404)\n")).unwrap();
+    let missing = asked(|| Ok(exited(Some(1), "{}", "gh: Not Found (HTTP 404)\n"))).unwrap();
     assert_eq!(missing, None);
 }
 
 #[test]
 fn gh_api_fails_naming_gh_s_error_when_gh_fails_cannot_start_or_prints_no_object() {
     assert_eq!(
-        failed(|| exited(Some(4), "", "gh auth login\n")),
+        failed(|| Ok(exited(Some(4), "", "gh auth login\n"))),
         "`gh api repos/octo/widgets/issues/7` exited 4: gh auth login; check gh on PATH and \
          `gh auth status`"
     );
-    let long = failed(|| exited(Some(1), "", &"x".repeat(2500)));
+    let long = failed(|| Ok(exited(Some(1), "", &"x".repeat(2500))));
     assert!(
         long.contains(&format!("exited 1: {};", "x".repeat(2000))),
         "{long}"
     );
     assert!(!long.contains(&"x".repeat(2001)), "{long}");
-    assert!(failed(|| exited(Some(0), "[1]", "")).contains("printed no JSON object"));
-    assert!(failed(|| exited(Some(0), "not json", "")).contains("printed no JSON object"));
+    assert!(failed(|| Ok(exited(Some(0), "[1]", ""))).contains("printed no JSON object"));
+    assert!(failed(|| Ok(exited(Some(0), "not json", ""))).contains("printed no JSON object"));
     let missing = failed(|| {
         Err(ProcessError::NotStarted {
             source: io::Error::from(io::ErrorKind::NotFound),
