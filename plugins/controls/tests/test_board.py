@@ -12,7 +12,7 @@ from board_plugin import board as plugin_board
 from board_plugin.protocol import PluginError
 from conftest import Board, board_binary, control, library
 
-from board_controls.board import matched, matching, referenced
+from board_controls.board import Control, matched, matching, referenced
 
 
 def logged(board: Board, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -38,6 +38,10 @@ def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_ru
     for name in names:
         board.write(f"docs/{name}.md", name)
         board.write(f"controls/{name}.json", control("Small.", applies_to=[f"/docs/{name}.md"]))
+    found = {
+        f"/controls/{name}": Control(json.loads(control("Small.", applies_to=[f"/docs/{name}.md"])), "/", "worktree")
+        for name in names
+    }
     log = logged(board, monkeypatch)
 
     def runs() -> list[str]:
@@ -46,11 +50,10 @@ def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_ru
         log.unlink()
         return asked
 
-    controls = [f"/controls/{name}" for name in names]
     expected = {f"/controls/{name}": {f"/docs/{name}.md"} for name in names}
-    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=4), controls) == expected
+    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=4), found) == (expected, [])
     assert runs() == ["/controls/a /controls/b /controls/c /controls/d"]
-    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=3), controls) == expected
+    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=3), found) == (expected, [])
     assert runs() == ["/controls/a /controls/b /controls/c", "/controls/d"]
 
 
@@ -144,7 +147,7 @@ def test_matched_names_a_symlink_named_json_and_a_json_file_by_their_file_names(
 
 
 @pytest.mark.parametrize(
-    "rows", [[], [["/controls/a", "/docs/1.md", "ok", None, "controls/a.json", "docs/1.md", "worktree"]]]
+    "rows", [[], [["/controls/a", "/docs/1.md", "ok", None, "/controls/a", "docs/1.md", "worktree"]]]
 )
 def test_a_truncated_page_that_ends_no_later_than_the_last_fails_and_one_that_is_complete_is_read(
     monkeypatch: pytest.MonkeyPatch, rows: list[list[Any]]

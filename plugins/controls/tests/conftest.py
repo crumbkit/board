@@ -46,8 +46,8 @@ class Board:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
 
-    def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
-        """Run `board` in the board's root, with only the variables a user's shell would pass it."""
+    def run(self, *arguments: str, stdin: str = "", cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        """Run `board` in `cwd`, the board's root by default, with only the variables a user's shell would pass it."""
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
         directories = [board_binary().parent, Path(uv).parent, Path("/usr/bin"), Path("/bin")]
@@ -63,7 +63,7 @@ class Board:
         }
         return subprocess.run(
             [str(board_binary()), *arguments],
-            cwd=self.root,
+            cwd=cwd or self.root,
             env=environment,
             input=stdin,
             capture_output=True,
@@ -74,6 +74,14 @@ class Board:
     def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
         """Run `board --json call controls.<capability>` and read its one document."""
         ran = self.run("--json", "call", f"controls.{capability}", *flags(given))
+        document: dict[str, Any] = json.loads(ran.stdout)
+        return document
+
+    def call_json(self, capability: str, given: dict[str, Any], cwd: Path | None = None) -> dict[str, Any]:
+        """Run `board --json -C <root> call controls.<capability>` in `cwd`, `given` on stdin, and read its document."""
+        ran = self.run(
+            "--json", "-C", str(self.root), "call", f"controls.{capability}", stdin=json.dumps(given), cwd=cwd
+        )
         document: dict[str, Any] = json.loads(ran.stdout)
         return document
 
@@ -100,14 +108,29 @@ def control(requirement: str, **fields: Any) -> str:  # noqa: ANN401 - the recor
 
 def library(root: Path, files: dict[str, str]) -> str:
     """Commit `files` to a new repository at `root`, and return a mount pointer to that commit."""
+    return json.dumps({"$type": "board/mount/v1", "repo": str(root), "follow": "main", "commit": commit(root, files)})
+
+
+def repo(remote: str, root: Path | None = None, files: dict[str, str] | None = None) -> str:
+    """A repo record for `remote`; with `root`, mounting `files` committed to a new repository there."""
+    record: dict[str, Any] = {"$type": "board/repo/v1", "remote": remote}
+    if root is not None:
+        record["checkout"] = {"repo": str(root), "follow": "main", "commit": commit(root, files or {}, remote)}
+    return json.dumps(record)
+
+
+def commit(root: Path, files: dict[str, str], origin: str | None = None) -> str:
+    """Commit `files` to a new repository at `root`, with `origin` as its remote when given, and return the commit."""
+    root.mkdir(parents=True, exist_ok=True)
     for path, text in files.items():
         (root / path).parent.mkdir(parents=True, exist_ok=True)
         (root / path).write_text(text)
     git = ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com"]
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
     subprocess.run([*git, "add", "."], cwd=root, check=True)
-    subprocess.run([*git, "commit", "-qm", "library"], cwd=root, check=True)
-    commit = subprocess.run(
+    subprocess.run([*git, "commit", "-qm", "library", "--allow-empty"], cwd=root, check=True)
+    if origin is not None:
+        subprocess.run(["git", "remote", "add", "origin", f"https://github.com/{origin}.git"], cwd=root, check=True)
+    return subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True
     ).stdout.strip()
-    return json.dumps({"$type": "board/mount/v1", "repo": str(root), "follow": "main", "commit": commit})
