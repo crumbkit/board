@@ -47,7 +47,8 @@ needs to know.
     string, or a shared shape from `crates/board-plugin/shapes.json`. A
     `Prose` string carries `x-board-prose: true` and may add `minLength` and
     `maxLength`; any other string must equal a shared shape once its
-    `description` and `title` are removed. A meaning no shape holds gets a
+    `description` and `title` are removed. A property schema with no `type`
+    that admits strings counts as a string. A meaning no shape holds gets a
     new shape in `board_plugin::shape`, never a local `pattern` or a lone
     `format`. A field named `urls` holds `Url` items, `mount` and `mounts`
     are references to `board/mount/v1`, and `remote` is a `Remote`.
@@ -58,6 +59,8 @@ today, until their plugins are ported. For rule 14 it lists each field by
 record type and its pointer in a record (`-` for list items, `{key}` for map
 values), as "until adopted", which the pull request that adopts the named
 shape deletes, or as "local", with why the meaning belongs to one plugin.
+The test fails on a subschema under a keyword it does not read, and on a
+`$ref` to anything but an entry of `$defs`.
 
 ## Writing references
 

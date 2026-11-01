@@ -5,10 +5,9 @@
 //! 2026-11-01.
 
 /// Why a field may break the rule.
-#[derive(Debug)]
 pub(super) enum Kind {
-    /// A shared shape will own the meaning. The pull request that adopts it
-    /// deletes the entry. The reason names the shape.
+    /// A later pull request fixes the field and deletes the entry. The reason
+    /// names the shared shape or inline enum that fixes it.
     UntilAdopted,
     /// The meaning belongs to one plugin and stays. The reason says why.
     Local,
@@ -17,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 89] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
@@ -75,7 +74,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
     ("review/brief/v1", "/questions/-", UntilAdopted, "Prose"),
     ("review/brief/v1", "/range", UntilAdopted, "CommitRange (audit row 4)"),
     ("review/brief/v1", "/subject/blob", UntilAdopted, "ObjectId (audit row 7)"),
-    ("review/report/v1", "/by", UntilAdopted, "a model, program or person; no shape yet (audit row 58)"),
+    ("review/report/v1", "/by", UntilAdopted, "Actor, once a model name has its own shape (audit row 58)"),
     ("review/report/v1", "/findings/-/file", UntilAdopted, "RepoPath (audit row 35)"),
     ("review/report/v1", "/findings/-/text", UntilAdopted, "Prose"),
     ("review/report/v1", "/patch_ids/-", UntilAdopted, "ObjectId (audit row 6)"),
@@ -87,7 +86,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
     ("runs/run/v1", "/host/arch", UntilAdopted, "an inline enum (audit row 54)"),
     ("runs/run/v1", "/host/os", UntilAdopted, "an inline enum (audit row 53)"),
     ("runs/run/v1", "/measures/{key}", UntilAdopted, "Prose: a measure's value as a label"),
-    ("runs/run/v1", "/results/-/case", UntilAdopted, "the shape of a suite's case id, with a put check (audit row 55)"),
+    ("runs/run/v1", "/results/-/case", UntilAdopted, "Slug, the shape a suite's case ids take, with a put check (audit row 55)"),
     ("runs/run/v1", "/results/-/measures/{key}", UntilAdopted, "Prose: a measure's value as a label"),
     ("runs/run/v1", "/results/-/note", UntilAdopted, "Prose"),
     ("runs/run/v1", "/setup", UntilAdopted, "Prose"),
@@ -95,7 +94,9 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
     ("runs/run/v1", "/summary", UntilAdopted, "Prose"),
     ("runs/run/v1", "/versions/{key}", UntilAdopted, "Prose, once the run has its own ObjectId commit (audit row 1)"),
     ("runs/run/v1", "/written_by", UntilAdopted, "HookName (audit row 49)"),
+    ("runs/suite/v1", "/cases/-/expected", Local, "a case's expected result is any JSON value"),
     ("runs/suite/v1", "/cases/-/id", UntilAdopted, "Slug, an identifier the audit did not list"),
+    ("runs/suite/v1", "/cases/-/input", Local, "a case's input is any JSON value"),
     ("runs/suite/v1", "/command", UntilAdopted, "Prose"),
     ("runs/suite/v1", "/measures/-/description", UntilAdopted, "Prose"),
     ("runs/suite/v1", "/measures/-/name", UntilAdopted, "Slug, an identifier the audit did not list"),
