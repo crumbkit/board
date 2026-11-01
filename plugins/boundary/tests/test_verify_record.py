@@ -43,6 +43,18 @@ def test_a_passing_crossing_verifies_by_digest_and_by_its_content(personal: Boar
     assert output(document) == expected
 
 
+def test_a_crossing_checked_before_a_boundary_now_covers_it_does_not_verify(personal: Board) -> None:
+    _, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    digest = output(document)["digest"]
+    assert verify(personal, "--digest", digest)["passed"] is True
+    private_names(personal)
+    checks = [{"control": "/controls/names", "parts": ["*"]}]
+    personal.write("boundaries/other.json", boundary(to="github:other/*", actions=["github.*"], checks=checks))
+    assert verify(personal, "--digest", digest)["passed"] is True
+    personal.write("boundaries/octo.json", boundary(to="github:octo/*", actions=["github.*"], checks=checks))
+    assert verify(personal, "--digest", digest)["passed"] is False
+
+
 def test_a_failed_crossing_and_a_missing_one_do_not_verify(personal: Board) -> None:
     digest = checked(personal, "acme-123")
     assert verify(personal, "--digest", digest)["passed"] is False

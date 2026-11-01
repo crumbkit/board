@@ -104,6 +104,7 @@ def test_a_check_applies_only_to_the_parts_its_globs_name(personal: Board) -> No
     ran, document = personal.call("check", PR | {"parts": {"pr.title": "Two words", "pr.body": "Many more words."}})
     assert ran.returncode == 0, ran.stderr
     assert [verdict["part"] for verdict in output(document)["verdicts"]] == ["pr.title"]
+    assert output(document)["unchecked"] == ["pr.body"]
     ran, document = personal.call("check", PR | {"parts": {"pr.body": "Many more words."}})
     assert output(document)["boundaries"] == ["/boundaries/octo"]
     assert output(document)["note"] == "the boundaries that match name no control for these parts; nothing was checked"
@@ -118,12 +119,16 @@ def test_a_boundary_matches_by_destination_action_and_checkout(personal: Board) 
     private_names(personal)
     names_boundary(personal, **{"from": ["/repos/board"]})
     parts = {"parts": {"pr.body": "acme-123"}}
-    covered = [PR, PR | {"from": "/repos/board/docs"}]
+    covered = [
+        PR,
+        PR | {"from": "/repos/board/docs"},
+        PR | {"to": "github:Octo/Board"},
+        {"action": PR["action"], "to": PR["to"]},
+    ]
     uncovered = [
         PR | {"to": "github:other/board"},
         PR | {"action": "github.push"},
         PR | {"from": "/repos/boarding"},
-        {"action": PR["action"], "to": PR["to"]},
     ]
     for given in covered:
         ran, document = personal.call("check", given | parts)
@@ -200,6 +205,49 @@ def test_a_boundary_file_that_does_not_parse_or_has_another_type_refuses_and_mad
     ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
     assert ran.returncode == 0, ran.stderr
     assert output(document)["boundaries"] == ["/boundaries/broken", "/boundaries/octo"]
+
+
+def test_an_entry_under_boundaries_that_is_not_a_boundary_refuses_with_the_step_to_move_it_out(
+    personal: Board,
+) -> None:
+    private_names(personal)
+    names_boundary(personal)
+    personal.write("boundaries/README.md", "# Boundaries\n")
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 1
+    assert document["fields"]["boundaries"] == {"/boundaries/README.md": "not a boundary"}
+    assert "move each entry that is not a boundary out of /boundaries/" in document["message"]
+    (personal.root / "boundaries/README.md").rename(personal.root / "README.md")
+    ran, _ = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 0, ran.stderr
+
+
+def test_a_boundary_outside_boundaries_is_used(personal: Board) -> None:
+    private_names(personal)
+    checks = [{"control": "/controls/names", "parts": ["*"]}]
+    personal.write("policies/octo.json", boundary(to="github:octo/*", actions=["github.*"], checks=checks))
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "acme-123"}})
+    assert ran.returncode == 1
+    assert document["code"] == "boundary::check::failed"
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert output(document)["boundaries"] == ["/policies/octo"]
+
+
+def test_a_symlink_at_boundaries_refuses_and_the_same_files_in_a_directory_pass(personal: Board) -> None:
+    private_names(personal)
+    checks = [{"control": "/controls/names", "parts": ["*"]}]
+    personal.write("policies/octo.json", boundary(to="github:octo/*", actions=["github.*"], checks=checks))
+    (personal.root / "boundaries").symlink_to("policies")
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 1
+    assert document["code"] == "boundary::boundary::invalid"
+    assert document["fields"]["boundaries"]["/boundaries"] == "is not a directory"
+    assert "make /boundaries/ a directory" in document["message"]
+    (personal.root / "boundaries").unlink()
+    (personal.root / "policies").rename(personal.root / "boundaries")
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 0, ran.stderr
+    assert output(document)["boundaries"] == ["/boundaries/octo"]
 
 
 def test_a_control_without_a_rule_fails_the_crossing_and_the_same_control_with_a_rule_passes(personal: Board) -> None:

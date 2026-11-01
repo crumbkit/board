@@ -28,15 +28,19 @@ calls it. Enable `controls` and `boundary` in the personal board, and
 }
 ```
 
-- `to`, `actions` and `checks` are required. Boundaries live under
-  `/boundaries/` in the personal board, such as `/boundaries/octo`.
+- `to`, `actions` and `checks` are required. Boundaries belong under
+  `/boundaries/` in the personal board, such as `/boundaries/octo`, and
+  `/boundaries/` must be a directory. A valid boundary elsewhere is still
+  read. A file git ignores is not read.
 - `to` is a glob of destinations, and `actions` holds globs of action
-  names, such as `github.pr-create`. Globs are shell-style and match case:
-  `*` matches any characters, `/` and `.` included.
+  names, such as `github.pr-create`. Globs are shell-style: `*` matches any
+  characters, `/` and `.` included. Destinations match without case, as
+  GitHub names do; action and part names match with case.
 - `from` holds references to checkouts, usually mounts. It matches a
   checkout at or under one of its paths, compared as text, so a checkout
   named through a link is not matched. Without `from`, the boundary covers
-  any checkout, including one no board mounts.
+  any checkout, including one no board mounts. A check that names no
+  checkout is covered by every boundary, `from` or not.
 - Each check names a control in the personal board and globs of the part
   names it applies to. Board checks the reference, so a deleted control
   makes the boundary `board::ref::dangling`. Each control must have a rule.
@@ -56,13 +60,16 @@ free one. The groups run one after another within the capability's 1,800
 seconds. A refusal from `controls.evaluate`, such as
 `controls::control::not_found`, is `boundary::board::refused` carrying that
 code. Any entry under `/boundaries/` that is not a valid boundary, because
-it does not parse, has another type or fails its schema, refuses every
-check with `boundary::boundary::invalid`, naming each entry and its code, so
-a broken rule stops content. The check passes `BOARD_CONTROLS_AGENT`,
+it does not parse, has another type or fails its schema, a boundary
+elsewhere that fails its schema, and a `/boundaries` that is a symlink or a
+file each refuse every check with `boundary::boundary::invalid`. Its
+`boundaries` field maps each entry to its code, `not a boundary` or
+`is not a directory`, and the message says to fix the record, move the
+entry out of `/boundaries/`, or make `/boundaries/` a directory. The check passes `BOARD_CONTROLS_AGENT`,
 `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` on, for judged rules.
 
 Then it writes the crossing and returns `digest`, `crossing`, `boundaries`,
-`verdicts` and `note`. `note` says why nothing was checked when no boundary
+`verdicts`, `unchecked`, the parts no check named, and `note`. `note` says why nothing was checked when no boundary
 matched or no check named a part; otherwise it is null. When any verdict
 failed, the check refuses with `boundary::check::failed`. Its message names
 each failing control, part and line with the quoted text and any rewrite,
@@ -76,7 +83,10 @@ expression here either.
 
 `boundary.verify` takes `--digest`, or `action`, `to` and `parts` on stdin,
 and returns `digest`, `crossing` (null when there is none), `passed` and
-`result`. Giving both or a part of the content is
+`result`. `passed` is true only while the boundaries that match the
+crossing's action, destination and checkout are the ones it was checked
+against. It does not notice an edit to a matched boundary's checks or to a
+control's rule, so a gate that must see those runs `check` again. Giving both or a part of the content is
 `boundary::verify::bad_input`.
 
 `boundary.record --digest <digest> --result <text>` sets `result` on a

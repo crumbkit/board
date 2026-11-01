@@ -183,6 +183,13 @@
             ],
             "description": "Why nothing was checked, or null."
           },
+          "unchecked": {
+            "description": "The parts no check of a matching boundary names, by name.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "verdicts": {
             "description": "Each check's verdict on each part it applies to.",
             "items": {
@@ -196,6 +203,7 @@
           "crossing",
           "boundaries",
           "verdicts",
+          "unchecked",
           "note"
         ],
         "title": "CheckOutput",
@@ -260,7 +268,7 @@
             "type": "string"
           },
           "passed": {
-            "description": "Whether the crossing exists and every check passed.",
+            "description": "Whether the crossing exists, every check passed, and the same boundaries match it now.",
             "type": "boolean"
           },
           "result": {

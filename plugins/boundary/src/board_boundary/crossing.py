@@ -24,6 +24,11 @@ from board_boundary.shapes import (
 )
 
 # The finding of a control without a rule, which cannot check content, so its verdict fails the crossing.
+# Why an entry is not a boundary, and the step that fixes it.
+NOT_A_BOUNDARY = "not a boundary"
+MOVE_OUT = "move each entry that is not a boundary out of /boundaries/"
+NOT_A_DIRECTORY = "is not a directory"
+MAKE_DIRECTORY = "make /boundaries/ a directory, not a symlink or a file"
 GIVE_RULE = "give each control without a rule a rule, or remove it from the boundary"
 NO_RULE = "this control has no rule, so it cannot check content; give it a rule, or remove it from the boundary"
 # The failures a refusal's message names; its `failures` field holds them all.
@@ -58,7 +63,8 @@ def check(request: CallRequest) -> CheckOutput:
     parts = cast("dict[str, str]", request.input["parts"])
     matched = {path: record for path, record in _boundaries(board).items() if _matches(record, action, to, origin)}
     groups: dict[tuple[str, ...], dict[str, str]] = {}
-    for name, text in parts.items():
+    unchecked: list[str] = []
+    for name, text in sorted(parts.items()):
         controls = sorted(
             {
                 check["control"]
@@ -69,6 +75,8 @@ def check(request: CallRequest) -> CheckOutput:
         )
         if controls:
             groups.setdefault(tuple(controls), {})[name] = text
+        else:
+            unchecked.append(name)
     verdicts: list[Verdict] = []
     for controls, texts in groups.items():
         stdin = json.dumps({"controls": list(controls), "parts": texts}).encode()
@@ -105,52 +113,74 @@ def check(request: CallRequest) -> CheckOutput:
         note = f"no boundary matches {action} to {to}" + (f" from {origin}" if origin else "") + "; nothing was checked"
     elif not verdicts:
         note = "the boundaries that match name no control for these parts; nothing was checked"
-    return CheckOutput(digest=key, crossing=path, boundaries=sorted(matched), verdicts=verdicts, note=note)
+    return CheckOutput(
+        digest=key, crossing=path, boundaries=sorted(matched), verdicts=verdicts, unchecked=unchecked, note=note
+    )
 
 
 def _boundaries(board: Board) -> dict[str, BoundaryRecord]:
-    """Every boundary under /boundaries/ in the personal board, by its path, or `boundary::boundary::invalid`.
+    """Every boundary in the personal board's own tree, by its path, or `boundary::boundary::invalid`.
 
-    Any entry there that is not a valid boundary, whether it does not parse,
-    has another type or fails its schema, refuses every check, so a broken
-    rule stops content instead of letting it pass unchecked.
+    Boundaries belong under /boundaries/, but a valid boundary elsewhere is
+    read too. Any entry under /boundaries/ that is not a valid boundary,
+    a boundary elsewhere that fails its schema, and a /boundaries that is not
+    a directory, such as a symlink, refuse every check, so a broken or
+    misplaced rule stops content instead of letting it pass unchecked.
     """
+    folder = BOUNDARIES.rstrip("/")
     rows = board.rows(
-        f"SELECT COALESCE(logical, '/' || path), type, {VALID}, code,"  # noqa: S608 - values are quoted by literal()
+        f"SELECT path, COALESCE(logical, '/' || path), type, {VALID}, code,"  # noqa: S608 - values are quoted
         " (SELECT body FROM records r WHERE r.source = e.source AND r.path = e.path)"
-        f" FROM entries e WHERE source = 'worktree' AND path GLOB {literal(BOUNDARIES + '*')} ORDER BY path"
+        f" FROM entries e WHERE source = 'worktree' AND (path GLOB {literal(BOUNDARIES + '*')}"
+        f" OR path = {literal(folder)} OR type = {literal(BOUNDARY_TYPE)}) ORDER BY path"
     )
-    invalid = {
-        logical: code or "not a boundary"
-        for logical, kind, valid, code, _ in rows
-        if kind != BOUNDARY_TYPE or not valid
-    }
+    invalid: dict[str, str] = {}
+    for path, logical, kind, valid, code, _ in rows:
+        if path == folder:
+            invalid[logical] = NOT_A_DIRECTORY
+        elif kind != BOUNDARY_TYPE:
+            invalid[logical] = code or NOT_A_BOUNDARY
+        elif not valid:
+            invalid[logical] = code
     if invalid:
-        named = ", ".join(f"{logical} ({code})" for logical, code in invalid.items())
-        first = next(iter(invalid))
-        raise PluginError(
-            "boundary::boundary::invalid",
-            f"the personal board holds entries under /{BOUNDARIES} that are not valid boundaries, so nothing can be"
-            f" checked: {named}; run `board --personal check {first}`, fix each one, and check again",
-            {"boundaries": invalid},
-        )
-    return {logical: json.loads(body) for logical, _, _, _, body in rows}
+        raise _invalid(invalid)
+    return {logical: json.loads(body) for _, logical, _, _, _, body in rows}
+
+
+def _invalid(invalid: dict[str, str]) -> PluginError:
+    """`boundary::boundary::invalid`, naming each entry and why, with the step that fixes each kind."""
+    named = ", ".join(f"{logical} ({reason})" for logical, reason in invalid.items())
+    reasons = set(invalid.values())
+    steps = [MOVE_OUT] if NOT_A_BOUNDARY in reasons else []
+    steps += [MAKE_DIRECTORY] if NOT_A_DIRECTORY in reasons else []
+    broken = [logical for logical, reason in invalid.items() if reason not in {NOT_A_BOUNDARY, NOT_A_DIRECTORY}]
+    if broken:
+        steps.append(f"run `board --personal check {broken[0]}` and fix each record that is not valid")
+    return PluginError(
+        "boundary::boundary::invalid",
+        f"the personal board holds boundaries that are not valid, so nothing can be checked: {named};"
+        f" {'; '.join(steps)}; then check again",
+        {"boundaries": invalid},
+    )
 
 
 def _matches(record: BoundaryRecord, action: str, to: str, origin: str | None) -> bool:
     """Whether the boundary covers the action to the destination from the checkout.
 
-    `from` is compared as path text, at or under each path, so a checkout
-    named through a link to its mount is not matched (a soft limit; `board refs`
-    resolving both paths would match it).
+    Destinations match without case, as GitHub names do. A boundary limited by
+    `from` also applies when the caller names no checkout, so a caller that
+    could not resolve its checkout is still checked. `from` is compared as
+    path text, at or under each path, so a checkout named through a link to
+    its mount is not matched (a soft limit; `board refs` resolving both paths
+    would match it).
     """
-    if not fnmatchcase(to, record["to"]) or not any(fnmatchcase(action, glob) for glob in record["actions"]):
+    if not fnmatchcase(to.lower(), record["to"].lower()):
         return False
-    if "from" not in record:
+    if not any(fnmatchcase(action, glob) for glob in record["actions"]):
+        return False
+    if "from" not in record or origin is None:
         return True
-    return origin is not None and any(
-        origin == path or origin.startswith(path.rstrip("/") + "/") for path in record["from"]
-    )
+    return any(origin == path or origin.startswith(path.rstrip("/") + "/") for path in record["from"])
 
 
 def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginError:
@@ -224,11 +254,20 @@ def verify(request: CallRequest) -> VerifyOutput:
         if "digest" in given
         else digest(str(given["action"]), str(given["to"]), cast("dict[str, str]", given["parts"]))
     )
-    found = _crossing(personal(request), key)
+    board = personal(request)
+    found = _crossing(board, key)
     if found is None:
         return VerifyOutput(digest=key, crossing=None, passed=False, result=None)
     record = found[0]
-    return VerifyOutput(digest=key, crossing=CROSSINGS + key, passed=record["passed"], result=record.get("result"))
+    # The crossing passes only while the same boundaries match. This misses an edit to a matched boundary's
+    # checks or to a control's rule, until the crossing records the blob of each record it was checked against.
+    matching = sorted(
+        path
+        for path, boundary in _boundaries(board).items()
+        if _matches(boundary, record["action"], record["to"], record.get("from"))
+    )
+    passed = record["passed"] and matching == record["boundaries"]
+    return VerifyOutput(digest=key, crossing=CROSSINGS + key, passed=passed, result=record.get("result"))
 
 
 def record(request: CallRequest) -> RecordOutput:

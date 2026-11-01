@@ -12,7 +12,7 @@ BOUNDARY_TYPE = "boundary/boundary/v1"
 CROSSING_TYPE = "boundary/crossing/v1"
 # Where crossings live in the personal board, each named by its digest.
 CROSSINGS = "/crossings/"
-# Where boundaries live in the personal board; every entry there must be a valid boundary.
+# Where boundaries belong in the personal board; every entry there must be a valid boundary.
 BOUNDARIES = "boundaries/"
 # How long `check` may take, in seconds: as long as `controls.evaluate`, whose judged rules wait on a model.
 CHECK_TIMEOUT = 1800
@@ -177,6 +177,7 @@ class CheckOutput(TypedDict):
     crossing: Annotated[str, described("The crossing's path in the personal board.")]
     boundaries: Boundaries
     verdicts: Annotated[list[Verdict], described("Each check's verdict on each part it applies to.")]
+    unchecked: Annotated[list[str], described("The parts no check of a matching boundary names, by name.")]
     note: Annotated[str | None, described("Why nothing was checked, or null.")]
 
 
@@ -194,7 +195,10 @@ class VerifyOutput(TypedDict):
 
     digest: Digest
     crossing: Annotated[str | None, described("The crossing's path, or null when there is none.")]
-    passed: Annotated[bool, described("Whether the crossing exists and every check passed.")]
+    passed: Annotated[
+        bool,
+        described("Whether the crossing exists, every check passed, and the same boundaries match it now."),
+    ]
     result: Annotated[str | None, described("What the destination returned, or null.")]
 
 
