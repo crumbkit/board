@@ -59,12 +59,17 @@ def check(request: CallRequest) -> CheckOutput:
     named = given.get("files")
     if named is None:
         reached = {logical: {file for file in files[logical] if _under(file, scope)} for logical in controls}
+        # A repo record without a checkout holds no files, so a control on it applies when it names it.
+        applying_by_name = {logical for logical, control in controls.items() if scope in _repos(control)}
     else:
+        applying_by_name: set[str] = set()
         reached = _named(reading, files, scope, own, cast("list[str]", named))
     # Under its board's root every control is listed, so one whose pattern reaches nothing shows with no files.
     everything = named is None
     applying = [
-        logical for logical in sorted(controls) if reached[logical] or (everything and scope == controls[logical].board)
+        logical
+        for logical in sorted(controls)
+        if reached[logical] or logical in applying_by_name or (everything and scope == controls[logical].board)
     ]
     budgets = [logical for logical in applying if controls[logical].record.get("rule") is not None]
     for logical in budgets:
@@ -97,6 +102,12 @@ def check(request: CallRequest) -> CheckOutput:
     return output
 
 
+def _repos(control: board.Control) -> list[str]:
+    """The display paths of the repositories a control's `repos` names, beneath its board's root."""
+    root = "" if control.board == "/" else control.board
+    return [root + repo for repo in control.record.get("repos", [])]
+
+
 def _mark_superseded(reading: Board, controls: dict[str, board.Control], items: list[Checked | Stated]) -> None:
     """Add `basis_superseded` to each item whose control rests on a decision a decision in its board supersedes."""
     replaced = board.superseded(reading)
@@ -123,7 +134,15 @@ def _files(
     reading: Board, controls: dict[str, board.Control], own: board.Own | None
 ) -> tuple[dict[str, set[str]], dict[str, tuple[str, object]]]:
     """Every file each control reaches, by reference or pattern, and for each the first one Board cannot read."""
-    files = board.referenced(reading, controls)
+    files, indirect = board.referenced(reading, controls)
+    if indirect:
+        names = ", ".join(f"{control} names {written}, which is {display}" for control, written, display in indirect)
+        raise PluginError(
+            "controls::repos::indirect",
+            f"repos entries that are not the repository's own path, so they match nothing: {names};"
+            " write each repository's own path in `repos`",
+            {"repos": [{"control": c, "repo": w, "display": d} for c, w, d in indirect]},
+        )
     files.update({logical: set() for logical in controls if logical not in files})
     unreadable: dict[str, tuple[str, object]] = {}
     for control, found, status, code in board.matched(reading, own):

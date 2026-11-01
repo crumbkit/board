@@ -393,7 +393,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "The controls that apply under the path, by the control's path; each budget is met.\n\n`path` is what was checked, null when no path was given and the caller's\nrepository is none the board knows; `next` then says what to do.\n`own_controls` is `read` when the path is in a mounted board, whose own\ncontrols are listed with the board's, and `not_read` when it is a repo\nrecord without a checkout. Each control's `board` is the root of the board\nthat holds it.",
+        "description": "The controls that apply under the path, by the control's path; each budget is met.\n\n`path` is what was checked, null when no path was given and the caller's\nrepository is none the board knows; `next` then says what to do.\n`own_controls` is `read` when the path is in a mounted tree, whose own\ncontrols are listed with the board's; a tree that is not a board, or\nholds no controls, lists none. It is `not_read` when the path is a repo\nrecord without a checkout. Each control's `board` is the root of the board\nthat holds it.",
         "properties": {
           "measured": {
             "items": {

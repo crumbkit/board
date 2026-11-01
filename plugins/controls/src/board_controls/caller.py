@@ -21,6 +21,10 @@ MOUNTS = (
 def repository(board: Board, root: str) -> tuple[str | None, str]:
     """The logical path of the repository `BOARD_CALLER_DIR` is in, and, when there is none, why.
 
+    This copies `Repositories::places` in crates/board-tree/src/mounts.rs,
+    which is the source of truth for finding a repository from a directory;
+    change both together.
+
     It is `/` when the directory is in the board's own repository or Board
     names no directory. Otherwise it is the first mount, by path, whose clone
     shares the directory's git directory, as Board finds a mount from a

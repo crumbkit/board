@@ -99,6 +99,30 @@ def test_named_files_match_an_unmounted_repositorys_files_and_files_the_control_
     assert stated(board.call_json("check", {"path": "/repos/app", "files": ["README.md"]})) == []
 
 
+def test_a_check_of_an_unmounted_repository_lists_the_controls_naming_it_and_not_one_naming_another(
+    board: Board, tmp_path: Path
+) -> None:
+    unmounted(board)
+    board.write("repos/web.json", repo("owner/web"))
+    board.write("controls/web.json", control("Web only.", repos=["/repos/web"], paths=["*"]))
+    assert stated(board.call("check", {"path": "/repos/app"})) == ["/controls/secrets"]
+    commit(tmp_path / "app", {}, "owner/app")
+    assert stated(board.call_json("check", {}, cwd=tmp_path / "app")) == ["/controls/secrets"]
+
+
+def test_a_repos_entry_through_a_link_is_refused_and_the_repositorys_own_path_is_admitted(board: Board) -> None:
+    unmounted(board)
+    board.write("alias.json", '{"$type": "board/mount/v1", "path": "/repos"}')
+    board.write("controls/linked.json", control("Review.", repos=["/alias/app"], paths=["src/*"]))
+    refused = board.call("check", {"path": "/repos/app"})
+    assert refused["code"] == "controls::repos::indirect", refused
+    assert refused["fields"]["repos"] == [
+        {"control": "/controls/linked", "repo": "/alias/app", "display": "/repos/app"}
+    ]
+    board.write("controls/linked.json", control("Review.", repos=["/repos/app"], paths=["src/*"]))
+    assert stated(board.call("check", {"path": "/repos/app"})) == ["/controls/linked", "/controls/secrets"]
+
+
 def test_a_named_file_with_a_leading_slash_is_refused_and_the_same_file_without_it_is_admitted(board: Board) -> None:
     unmounted(board)
     refused = board.call_json("check", {"path": "/repos/app", "files": [f"/{SECRETS}"]})
