@@ -72,11 +72,6 @@ pub(crate) enum Health {
     Degraded(Option<String>),
 }
 
-/// SQL `text` as a string literal. Board's query takes no parameters.
-pub(crate) fn literal(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
-}
-
 /// The rows of `sql`, every one of them.
 pub(crate) fn rows(host: &dyn Host, sql: &str) -> Result<QueryReport, PluginError> {
     (host.query(sql, Limit::ALL))

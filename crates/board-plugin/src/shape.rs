@@ -9,7 +9,8 @@ use std::marker::PhantomData;
 use schemars::generate::SchemaSettings;
 use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
-use serde::{Deserialize, Deserializer};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 
 /// Codes that depend on the tree rather than the record. A record holding
@@ -48,9 +49,41 @@ impl Accepts for Any {
     const TYPES: &'static [&'static str] = &[];
 }
 
-/// A record's `$type` field: the string `R::TYPE` and nothing else.
-#[derive(Debug)]
+/// A record's `$type` field: the string `R::TYPE` and nothing else. It
+/// writes `R::TYPE` and reads only that string.
 pub struct Tag<R>(PhantomData<fn() -> R>);
+
+impl<R> std::fmt::Debug for Tag<R> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Tag")
+    }
+}
+
+impl<R> Default for Tag<R> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<R: Record> Serialize for Tag<R> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(R::TYPE)
+    }
+}
+
+impl<'de, R: Record> Deserialize<'de> for Tag<R> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text == R::TYPE {
+            Ok(Self::default())
+        } else {
+            Err(D::Error::custom(format!(
+                "$type is {text:?}, not {:?}",
+                R::TYPE
+            )))
+        }
+    }
+}
 
 impl<R: Record> JsonSchema for Tag<R> {
     fn inline_schema() -> bool {
@@ -162,6 +195,48 @@ impl JsonSchema for Url {
     }
 }
 
+/// A SHA-256 in 64 lowercase hex digits, such as an effect's id or the
+/// digest of some content. A `String` field takes it with
+/// `#[schemars(with = "Sha256")]`.
+#[derive(Debug)]
+pub enum Sha256 {}
+
+impl JsonSchema for Sha256 {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Sha256".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "pattern": "^[0-9a-f]{64}$"})
+    }
+}
+
+/// An `SQLite` GLOB pattern, matched with case: `*` matches any characters,
+/// `/` and `.` included, `?` one character, and `[...]` one of a set, with
+/// `[^...]` its complement. A `String` field takes it with
+/// `#[schemars(with = "Glob")]`, and a plugin matches it with GLOB in a
+/// query, never with code of its own.
+#[derive(Debug)]
+pub enum Glob {}
+
+impl JsonSchema for Glob {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Glob".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "minLength": 1, "x-board-glob": true})
+    }
+}
+
 /// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
 /// is this map, committed, and the shapes lint admits a string field whose
 /// schema is one of its entries.
@@ -169,7 +244,9 @@ pub fn registry() -> Map<String, Value> {
     let mut generator = SchemaGenerator::default();
     Map::from_iter([
         entry::<Date>(&mut generator),
+        entry::<Glob>(&mut generator),
         entry::<Prose>(&mut generator),
+        entry::<Sha256>(&mut generator),
         entry::<Url>(&mut generator),
     ])
 }

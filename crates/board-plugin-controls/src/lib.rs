@@ -47,6 +47,7 @@ impl Plugin for Controls {
                     "controls offers no capability {other}; it offers for-path, check and evaluate"
                 ),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

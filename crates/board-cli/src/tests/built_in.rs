@@ -1,5 +1,5 @@
-//! The plugins built into the binary, run in-process: controls, plans,
-//! requests, evals and runs, beside installed plugins.
+//! The plugins built into the binary, run in-process: boundary, controls,
+//! plans, requests, evals and runs, beside installed plugins.
 
 use std::collections::BTreeMap;
 
@@ -594,6 +594,7 @@ fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId)
     fixture.write(path, &mount_of(&repository.path(), commit));
 }
 
+mod boundary;
 mod controls;
 mod evals;
 mod jira;

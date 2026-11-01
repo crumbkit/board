@@ -351,6 +351,7 @@ fn degraded(broken: &[(String, Value)]) -> PluginError {
             names.join(", ")
         ),
         fields: Map::from_iter([("controls".to_owned(), Value::from(controls))]),
+        hint: None,
     }
 }
 
@@ -385,6 +386,7 @@ fn exceeded(failing: &[&Checked]) -> PluginError {
             names.join(", ")
         ),
         fields: Map::from_iter([("controls".to_owned(), controls)]),
+        hint: None,
     }
 }
 
@@ -401,6 +403,7 @@ fn unreadable_file(control: &str, path: &str, code: Option<&str>) -> PluginError
             ("file".to_owned(), Value::from(path)),
             ("code".to_owned(), Value::from(code)),
         ]),
+        hint: None,
     }
 }
 
