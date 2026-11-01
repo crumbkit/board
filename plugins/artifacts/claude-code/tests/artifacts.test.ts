@@ -148,6 +148,18 @@ test('an upload of an asset and a refused publish write nothing, and the same pu
   expect(writes).toHaveLength(3)
 })
 
+test('a publish to an artifact the owner does not own writes nothing, and one to an owned artifact writes', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { writes } = host(on)
+  let owned = false
+  on('tool.call', () => ({ result: { ...published('1793473476-1c42').result, owned } }))
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE, url: URL })
+  expect(writes).toEqual([])
+  owned = true
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE, url: URL })
+  expect(writes).toHaveLength(3)
+})
+
 test('a publish when .claude.json names no account writes nothing and says so, and one that names it writes', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { account, writes, logs } = host(on)
@@ -250,15 +262,17 @@ test('a read of a file inside an artifact, or of an artifact the owner does not 
   expect(writes).toHaveLength(3)
 })
 
-const listing = { artifacts: [{ title: 'Release plan', url: URL, updatedAt: '2026-11-01T02:41:45Z' }], truncated: true, total: 238, pins_enabled: true }
+const row = (id: string) => ({ title: `Page ${id}`, url: `https://claude.ai/artifact/${id}`, updatedAt: '2026-11-01T02:41:45Z' })
+const listing = { artifacts: [{ ...row('x'), title: 'Release plan', url: URL }], truncated: true, total: 238, pins_enabled: true }
+const full = { artifacts: [{ ...row('x'), url: URL }, ...Array.from({ length: 199 }, (_, n) => row(`Id${n}`))], truncated: true, total: 238 }
 
-test('a listing of the account\'s own artifacts is imported, and the agent is asked to read the new ones', async ($, on) => {
+test('the sync step\'s listing is imported, and the agent is asked to read the new ones and told a full listing is truncated', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const message = 'the listing holds the 1 most recently updated of 238 artifacts of owner@example.com'
-  const { imports, logs } = host(on, { imported: { written: ['/artifacts/AbCdEf0123456789xyzQ'], known: 0, truncated: { message } } })
-  on('tool.call', () => ({ result: listing }))
+  const message = 'the listing holds the 200 most recently updated of 238 artifacts of owner@example.com'
+  const { imports, logs } = host(on, { imported: { written: ['/artifacts/AbCdEf0123456789xyzQ'], known: 199, truncated: { message } } })
+  on('tool.call', () => ({ result: full }))
   const ran = await $.tool.call({ tool: 'Artifact', action: 'list', limit: 200 })
-  expect(imports).toEqual([{ account: 'owner@example.com', listing }])
+  expect(imports).toEqual([{ account: 'owner@example.com', listing: full }])
   expect(ran.context).toEqual([
     [
       'The artifacts mod recorded 1 new artifact of owner@example.com without a version.',
@@ -267,7 +281,25 @@ test('a listing of the account\'s own artifacts is imported, and the agent is as
       `The listing was truncated: ${message}.`,
     ].join('\n'),
   ])
-  expect(logs).toEqual([{ text: 'board: imported 1 new artifact of owner@example.com; 0 already recorded', to: 'transcript' }])
+  expect(logs).toEqual([{ text: 'board: imported 1 new artifact of owner@example.com; 199 already recorded', to: 'transcript' }])
+})
+
+test('a listing shorter than 200 rows is not called truncated, and a list call of another limit imports without asking the agent anything', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const truncated = { message: 'the listing holds the 1 most recently updated of 238 artifacts of owner@example.com' }
+  const { imports } = host(on, { imported: { written: ['/artifacts/AbCdEf0123456789xyzQ'], known: 0, truncated } })
+  on('tool.call', () => ({ result: listing }))
+  const synced = await $.tool.call({ tool: 'Artifact', action: 'list', limit: 200 })
+  expect(synced.context).toEqual([
+    [
+      'The artifacts mod recorded 1 new artifact of owner@example.com without a version.',
+      "Read each with the Artifact tool's read action so the mod records its current version:",
+      `- ${URL}`,
+    ].join('\n'),
+  ])
+  const browsed = await $.tool.call({ tool: 'Artifact', action: 'list', limit: 25 })
+  expect(browsed.context).toBeUndefined()
+  expect(imports).toHaveLength(2)
 })
 
 test('a listing of shared artifacts or of an Artifact type is not imported', async ($, on) => {
@@ -289,6 +321,29 @@ test('a page is read from the text the tool returned, or from the file it names'
   expect(readPage(header('1-a', 'raw Markdown follows') + '# A')).toEqual({ text: '# A', ext: 'md' })
   expect(readPage(header('1-a', 'full HTML saved to /t/artifact-1.html — that file; head follows') + '<head>')).toEqual({ file: '/t/artifact-1.html', ext: 'html' })
   expect(readPage(header('1-a', 'an isolated summary follows') + 'It is a plan.')).toBeUndefined()
+  expect(readPage('no header at all\n<p>')).toBeUndefined()
+})
+
+test('a read of a newer version, whose notice comes before the header, copies the file the header names', () => {
+  // The form of a real read result, shortened.
+  const text =
+    '[This read is of a newer version than the one you had. If you have local edits made from the older version, merge them onto it before you publish.]\n\n' +
+    '[Artifact 165b4894-fb39-4df3-86af-af62c3603fc9 (version 1792958356-47ca) — owned by you, private; may include content not published from this session; 1.3MB total — ' +
+    'full HTML saved to /home/owner/.claude/projects/p/s/tool-results/artifact-165b4894-1792958356-47ca.html — that file was not published from this session; head follows]\n' +
+    '<!doctype html><head>'
+  expect(readPage(text)).toEqual({ file: '/home/owner/.claude/projects/p/s/tool-results/artifact-165b4894-1792958356-47ca.html', ext: 'html' })
+})
+
+test('every bracketed note between the header and an inline page is left out of the page', () => {
+  // The form of a real read result, shortened.
+  const page = '<!doctype html><html><head><meta charset=utf8></head><body>\n<title>Icons</title>'
+  const text =
+    '[Artifact 661a7707-e0eb-4129-b5d3-4fcbdc530b61 (version 1793319093-6e99) — owned by you, private; raw HTML follows]\n' +
+    '[This version has 12 published files, this page included; the Artifact tool\'s list action with `scope: "files"` shows their paths.]\n' +
+    '[Stored for the live version, as the artifact service holds it: no contract pin · no runtime capabilities declared.]\n' +
+    page
+  expect(readPage(text)).toEqual({ text: page, ext: 'html' })
+  expect(readPage(text.replace(/\[This version[^\n]*\n/, ''))).toEqual({ text: page, ext: 'html' })
   expect(sentPage('/t/plan.md')).toEqual({ file: '/t/plan.md', ext: 'md' })
   expect(sentPage('/t/data.json')).toBeUndefined()
   expect(sentPage(undefined)).toBeUndefined()
