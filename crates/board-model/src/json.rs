@@ -41,6 +41,83 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, JsonError> {
     })
 }
 
+/// Parses `bytes` as [`parse_json`] does once `//` and `/* */` comments, and
+/// commas before a closing bracket, are blanked: the commented JSON that
+/// editors' settings files use. Line breaks are kept, so an error's line and
+/// column are the file's.
+pub(crate) fn parse_commented_json(bytes: &[u8]) -> Result<Value, JsonError> {
+    parse_json(&uncommented(bytes))
+}
+
+/// `bytes` with each comment and each trailing comma outside a string
+/// replaced by spaces. A comma is trailing when a value comes before it and
+/// a closing bracket after it. An unclosed block comment is left for the
+/// parser.
+fn uncommented(bytes: &[u8]) -> Vec<u8> {
+    let mut text = bytes.to_vec();
+    let mut comma = None;
+    let mut after_value = false;
+    let mut index = 0;
+    while let Some(&byte) = text.get(index) {
+        let rest = text.get(index + 1).copied();
+        let end = match (byte, rest) {
+            (b'"', _) => {
+                (comma, after_value) = (None, true);
+                string_end(&text, index)
+            }
+            (b'/', Some(b'/')) => text[index..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(text.len(), |length| index + length),
+            (b'/', Some(b'*')) => match text[index + 2..].windows(2).position(|w| w == b"*/") {
+                Some(length) => index + length + 4,
+                None => return text,
+            },
+            (b',', _) => {
+                comma = after_value.then_some(index);
+                after_value = false;
+                index + 1
+            }
+            (b'}' | b']', _) => {
+                if let Some(at) = comma.take() {
+                    text[at] = b' ';
+                }
+                after_value = true;
+                index + 1
+            }
+            (byte, _) => {
+                if !byte.is_ascii_whitespace() {
+                    comma = None;
+                    after_value = !matches!(byte, b'{' | b'[' | b':');
+                }
+                index + 1
+            }
+        };
+        if byte == b'/' && matches!(rest, Some(b'/' | b'*')) {
+            for blanked in &mut text[index..end] {
+                if *blanked != b'\n' {
+                    *blanked = b' ';
+                }
+            }
+        }
+        index = end;
+    }
+    text
+}
+
+/// The index just past the string whose opening quote is at `start`.
+fn string_end(text: &[u8], start: usize) -> usize {
+    let mut index = start + 1;
+    while let Some(&byte) = text.get(index) {
+        match byte {
+            b'"' => return index + 1,
+            b'\\' => index += 2,
+            _ => index += 1,
+        }
+    }
+    text.len()
+}
+
 /// A document in canonical form (docs/architecture.md, Canonical form),
 /// which only [`canonical_json`] makes: a store of bodies takes this type,
 /// so no other text can be stored as one.
