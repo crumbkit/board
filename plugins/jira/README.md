@@ -1,5 +1,8 @@
 # jira
 
+This plugin is still a Python program and is being ported to a Rust crate
+built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+
 A Board plugin that records Jira issues as typed records. Other records can
 reference an issue by its path, such as `/jira/acme/ACME-123`. `ref` writes
 one issue's record. The plugin never creates, edits or comments on a Jira issue, and it

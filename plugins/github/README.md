@@ -1,5 +1,8 @@
 # github
 
+This plugin is still a Python program and is being ported to a Rust crate
+built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+
 A Board plugin that records GitHub pull requests and issues as typed records,
 so other records can reference them. SKILL.md holds the procedure.
 

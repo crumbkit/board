@@ -1,5 +1,8 @@
 # changes
 
+This plugin is still a Python program and is being ported to a Rust crate
+built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+
 A Board plugin that walks an agent through one change to a mounted
 repository, from its plan to its pull request, and gathers every record the
 change produces. SKILL.md holds the procedure for each phase.

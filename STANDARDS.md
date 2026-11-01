@@ -1,7 +1,8 @@
 # Standards
 
-Rules 1 to 29 cover the Rust workspace; P1 to P5 cover Python. Each rule says
-what enforces it. A rule without a gate is still a rule.
+Rules 1 to 29 cover the Rust workspace, built-in plugins included; P1 to P5
+cover the Python plugins still being ported. Each rule says what enforces
+it. A rule without a gate is still a rule.
 
 ## Types
 
@@ -226,7 +227,12 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     print_stdout = "deny"
     print_stderr = "deny"
 
-## Python: plugins
+## Python: plugins being ported
+
+A new plugin is a built-in Rust crate under rules 1 to 29
+(docs/plugins/built-in/writing.md), never a Python project. P1 to P5 hold for
+the Python plugins and the shared `python/board-plugin/` library until each
+is ported (docs/plugins/python.md).
 
 - **P1. Toolchain.** Python 3.12 or newer, managed with uv. Commit the lockfile; CI installs with `uv sync --frozen`.
 - **P2. Gates.** `ruff format --check`, `ruff check` with every rule selected and each ignored rule listed with its reason, `pyright` in strict mode, and `pytest`, run in every Python project by `bin/lint` and `bin/test`.

@@ -1,5 +1,8 @@
 # runs
 
+This plugin is still a Python program and is being ported to a Rust crate
+built into Board (docs/plugins/python.md, docs/plugins/built-in/writing.md).
+
 A Board plugin for recording what test suites, benchmarks and evals gave each
 time they ran. A suite says what gets run. Each run of it is a separate
 record holding curated results. Raw output, such as `junit.xml`, stays outside
