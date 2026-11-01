@@ -181,6 +181,18 @@ class CheckOutput(TypedDict):
     note: Annotated[str | None, described("Why nothing was checked, or null.")]
 
 
+CoversInput = TypedDict("CoversInput", {"action": Action, "to": Destination, "from": NotRequired[FromInput]})
+CoversInput.__doc__ = (
+    "Name the boundaries that cover the action to the destination from the checkout, checking nothing."
+)
+
+
+class CoversOutput(TypedDict):
+    """The boundaries that cover it; none when nothing would be checked."""
+
+    boundaries: Boundaries
+
+
 class VerifyInput(TypedDict):
     """Find the crossing of a digest, or of the content that `action`, `to` and `parts` give."""
 

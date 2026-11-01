@@ -75,8 +75,23 @@ result it recorded.
   `github/issue/v1` record and returns `number` and `path`.
 
 The destination is `github:<owner>/<repo>` in lower case, from the URL
-configured for the checkout's `origin` in the https or ssh form. It is read
-before any `insteadOf` rewrite. `insteadOf` moves fetch and push alike, so
+configured for the checkout's `origin`. It is read before any `insteadOf`
+rewrite. The sending actions, the pre-push hook and `covers` read every URL
+by one rule, `github_repository` in `checkout.py`. The host is matched
+without case, with any port, without the brackets git strips and without a
+trailing dot. `github.com`, `www.github.com` and `ssh.github.com` count as
+GitHub, and so does `github.com-<alias>` over ssh. An ssh host with another
+name is resolved through `ssh -G`, so a `Host` alias whose `HostName` is
+github.com counts too. Only a plain host name, letters, digits, `.`, `_` and
+`-`, is passed to ssh. When git runs another ssh command, through
+`core.sshCommand`, `GIT_SSH_COMMAND` or `GIT_SSH`, that command may resolve
+hosts differently, so an ssh host that is not plainly GitHub's is
+`github::remote::unknown`. A local path, a `file://` URL and
+another host are not GitHub, which the sending actions refuse as
+`github::remote::not_github`. A URL that could reach GitHub but names no
+repository the rule reads, such as a `<transport>::<address>` remote helper,
+an ssh host that `ssh -G` cannot resolve or that is not a plain name, or a
+GitHub URL with no repository, is `github::remote::unknown`. `insteadOf` moves fetch and push alike, so
 the commits checked are still those the push sends. A `pushurl` or
 `pushInsteadOf` that makes origin push somewhere other than it fetches is
 refused as `github::remote::split`. No message quotes a URL's user or
@@ -133,14 +148,22 @@ Refusals:
 - `github::board::failed`: the plugin could not run `board`.
 - `github::gh::failed`: gh failed after the check passed. The message says
   the content may have been sent.
+- `github::remote::unknown`: a URL could reach GitHub, but the plugin cannot
+  tell which repository it names.
+- `github::push::not_commit`: the pre-push hook found a ref whose object is a
+  tree or a blob, which it cannot check as commits.
 - `github::git::failed`: another git command failed.
+- `github::hook::exists`: `install-hook` found a different `pre-push` hook.
+- `github::hook::shared`: `core.hooksPath` comes from the global or system
+  git config, so the hook would serve every repository.
 
 The sending actions receive gh's variables, `SSH_AUTH_SOCK` for git and the
 variables the boundary's judged rules read. They pass the model credentials,
 `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`, only to `board`, never to
 git, its hooks or gh.
 Git runs the checkout's `pre-push` hook during the push, as it does for any
-push. The plugin does not check what a hook sends.
+push. The plugin does not check what a hook sends. When the hook is this
+plugin's own, it checks the same parts again, as below.
 
 The sending actions may run for 2,400 seconds, since the check alone may take 1,800.
 
@@ -152,10 +175,137 @@ from, which differs after a repository is renamed or an issue transferred.
 `ref` passes gh `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` when Board has
 them.
 
+## Pushes and writes made without Board
+
+The sending actions check only what goes through them. Two layers catch a
+push or write made another way. GitHub's own controls, such as branch
+protection and push rules, stay in place behind both, as the last layer.
+
+### The git pre-push hook
+
+`install-hook` writes a `pre-push` hook in the checkout Board was started in,
+in the directory `git rev-parse --git-path hooks` names, so it honours a
+`core.hooksPath` the repository sets and serves every worktree of the
+repository. It returns `path` and `installed`, which is false when the same
+hook was already there. A hook whose marker line says this plugin installed
+it is replaced by the current one. Any other hook at that path is
+`github::hook::exists`, and the file is left as it was. A `core.hooksPath`
+from the global or system git config would serve every repository on the
+machine, so it is `github::hook::shared`, and nothing is written.
+
+Before each push, git runs the hook. The hook first runs
+`board --json --personal refs /`. When the `code` field of Board's failure
+document is `board::config::not_found`, no config names a personal board,
+so there is no boundary at all, and the push goes. That output holds nothing
+of the push, so no text in a commit can match it. Otherwise the hook runs
+`board --personal call github.pre-push` with the remote and the refs git
+gives it, and the URL git pushes to in `BOARD_GITHUB_PUSH_URL`, so the URL
+and any password in it stay off the command line.
+
+For each ref, `pre-push` builds the parts `push` builds. `push.branch` is the
+remote ref without `refs/heads/`, so a tag is `refs/tags/<name>`. The commits
+are those no ref at the URL git pushes to reaches, so a push URL unlike the
+fetch URL is compared with what the push URL holds. The hook lists that
+URL's refs once per push, however many refs it pushes. An annotated tag adds
+`tag.<sha>.message`, `tag.<sha>.tagger_name`, `tag.<sha>.tagger_email` and
+`tag.<sha>.headers` for each tag down to the commit, with `<sha>` the tag
+object's first 12 hex digits. `headers` holds the tag's header lines other
+than `object`, `type` and `tagger`, so it holds the tag's own name, which can
+differ from the ref it is pushed to, and the name of a tag nested in another. A ref whose object is a tree or a blob is `github::push::not_commit`.
+A ref git deletes sends nothing and is not checked. It runs `boundary.check`
+on the parts as the action `github.push`. It never relies on
+`boundary.verify`, which misses an edit to a boundary's checks. A push made
+by `push` or `pr-create` gives the hook the same content, so judged verdicts
+come from the controls plugin's cache and cost no second model call. It
+returns `checked`, each ref's `ref`, `to`, `digest` and `note`.
+
+The destinations are every GitHub repository among the URL git pushes to
+and the remote's configured push URLs, else its URLs, so a push rewritten to
+a local path, as in the tests, is still checked against the repository the
+person wrote. A URL that is `github::remote::unknown` refuses the push. A push
+to no GitHub repository is not checked.
+
+The hook refuses the push whenever the check fails or cannot run, with
+Board's message, which ends with the boundary's `Next:` step. It refuses
+when board is not on PATH, and when the boundary plugin is not enabled,
+because it cannot then tell whether a boundary covers the push. A push no
+boundary covers passes the check with a `note` and goes. Some pushes skip
+the hook, which is why GitHub's controls stay: `git push --no-verify`,
+`git -c core.hooksPath=<elsewhere> push` and an alias that sets it, and
+submodule commits that `push.recurseSubmodules` pushes through the
+submodule's own hooks directory, where no hook is installed.
+
+### The Claude Code mod
+
+The mod in `claude-code/`, `board-github`, adds a hook on Bash calls. It
+refuses `git push`, `gh pr create`, `gh pr edit`, `gh pr comment`,
+`gh issue create`, `gh issue comment` and `gh api` calls that write to a
+repository, when a boundary in the personal board covers the destination.
+It also refuses these commands when they carry text by flag, with no
+matching action: `gh pr review`, `gh pr merge`, `gh pr close`,
+`gh pr reopen`, `gh issue close`, `gh issue reopen`, `gh issue edit`,
+`gh release create`, `gh release edit` and `gh repo edit`. It does not read
+other gh commands, such as `gh repo create --push`, `gh gist create` or
+`gh workflow run`.
+The refusal names the github action that sends the same content, with the
+title, body, base and number the command gave, such as
+`Next: run \`board call github.pr-create --title "Add a gear" --body "..."\``.
+The command name is the constant `BOARD_COMMAND` in `claude-code/hooks/command.ts`.
+
+The mod refuses only when it is sure. It must be sure the command writes to
+GitHub, and sure a boundary covers that destination for that action.
+Whenever it cannot tell, the call runs and the mod says nothing. It cannot
+tell when board is missing or fails, when the personal board cannot be read,
+when the command does not parse, such as an unclosed quote, or when a
+directory or remote the command names is expanded by the shell, such as
+`cd "$DIR"`, or another git directory such as `--git-dir` or `GIT_DIR`. A
+wrong refusal costs the agent a working command and teaches it to route
+around the mod, so the mod leans towards letting a call run. A missed push
+still meets the pre-push hook where it is installed, and GitHub's controls.
+Missed pull request, issue or comment text has no later check.
+
+How it reads a command:
+
+- It reads only the text. A command that names neither `git` nor `gh` runs
+  with nothing read. A read, such as `gh pr view` or a `gh api` call with no
+  method and no fields, runs with nothing read either.
+- It splits the text at `;`, `&&`, `||`, `|`, `&`, parentheses and line ends,
+  skips here-document bodies, and drops redirections, leading variable
+  assignments and `env`, `command`, `exec`, `time` and `nohup`. `cd` and
+  `git -C` move the commands after them, up to the end of a subshell they
+  are in, and the refusal names the same directory. A here-document inside
+  `$(...)` is literal text, so a quote in it opens nothing. A command inside
+  `$(...)` is not read.
+- gh flags are read as each command takes them: `gh api` takes a field after
+  `-f`, and a short flag's value may be joined to it, as in `-XPOST`.
+- For each write, it runs `board --json --personal call github.covers` in
+  the directory, with the action and the repository `--repo` or a `gh api`
+  path names, or the remote a `git push` names. `covers` finds the
+  destinations by the URL rule above, else from the branch's push remote,
+  else origin. A push goes to the remote's push URLs, else its URLs, and a gh
+  write to the remote's URLs, since gh reads the fetch URL. It asks
+  `boundary.covers` with the checkout's mount, as the sending actions do. A `--repo` on a host other than github.com is not
+  read. gh may pick another repository, such as a fork's parent, and the mod
+  does not follow it.
+- `gh api graphql` is not refused, because a mutation names its repository
+  by node id, which the text does not show.
+- `covers` reads the git config and board mount of the directory the
+  command names before the person approves the command. No git hook runs.
+- The run stops after 5 seconds, and the call then runs.
+
+`covers --action <action> [--remote <remote>] [--repo <owner>/<repo>]`
+returns `covered`, each destination a boundary covers, with `to` and
+`boundaries`. It checks nothing and writes nothing.
+
+Install it with `claude plugin install board-github@board`, after
+`claude plugin marketplace add crumbkit/board`. `claude plugin test
+plugins/github/claude-code` runs its tests, which stand in for board and git.
+
 ## Layout
 
 Each capability is one module in `src/board_github/`, listed in
-`__main__.py`; the sending actions share `send.py`. Every call to GitHub goes
+`__main__.py`; the sending actions share `send.py`, and `hook.py` holds `install-hook`,
+`pre-push` and `covers`. Every call to GitHub goes
 through `gh.py`, every git command through `checkout.py`, and every call to the
 boundary through `crossing.py`. `objects.py` holds the record types and their
 paths.

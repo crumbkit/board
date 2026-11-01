@@ -4,6 +4,7 @@ import sys
 
 from board_plugin.protocol import CallRequest, PluginError, main
 
+from board_github.hook import covers, install_hook, pre_push
 from board_github.ref import ref
 from board_github.send import comment, issue_create, pr_create, pr_edit, push
 
@@ -14,6 +15,9 @@ CAPABILITIES = {
     "pr-edit": pr_edit,
     "comment": comment,
     "issue-create": issue_create,
+    "install-hook": install_hook,
+    "pre-push": pre_push,
+    "covers": covers,
 }
 
 

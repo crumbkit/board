@@ -525,6 +525,225 @@
         "type": "object"
       },
       "timeout": 2400
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Install a git pre-push hook in the checkout that has the boundary check what each push sends, refusing to replace a different pre-push hook.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Install the git pre-push hook in the checkout Board was started in.",
+        "properties": {},
+        "title": "InstallHookInput",
+        "type": "object"
+      },
+      "name": "install-hook",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "Where the hook is, and whether this call wrote it; false when the same hook was already there.",
+        "properties": {
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "installed"
+        ],
+        "title": "InstallHookOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Run by the pre-push hook: check the refs git pushes as github.push checks a push, and refuse when the boundary refuses or the check cannot run.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK",
+        "BOARD_GITHUB_PUSH_URL",
+        "GIT_SSH_COMMAND",
+        "GIT_SSH"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "What git gives its pre-push hook: the remote and the refs it pushes. The URL is in BOARD_GITHUB_PUSH_URL.",
+        "properties": {
+          "refs": {
+            "description": "What git writes on the hook's stdin: one `<local ref> <local sha> <remote ref> <remote sha>` per line.",
+            "title": "Refs",
+            "type": "string"
+          },
+          "remote": {
+            "description": "The remote's name, or the URL git was given in its place.",
+            "title": "Remote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remote",
+          "refs"
+        ],
+        "title": "PrePushInput",
+        "type": "object"
+      },
+      "name": "pre-push",
+      "outputSchema": {
+        "$defs": {
+          "Checked": {
+            "additionalProperties": false,
+            "description": "One ref's check against one destination.",
+            "properties": {
+              "digest": {
+                "title": "Digest",
+                "type": "string"
+              },
+              "note": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Note"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              },
+              "to": {
+                "title": "To",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "to",
+              "digest",
+              "note"
+            ],
+            "title": "Checked",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Each ref checked against each GitHub destination; empty when the push goes nowhere on GitHub or sends nothing.",
+        "properties": {
+          "checked": {
+            "items": {
+              "$ref": "#/$defs/Checked"
+            },
+            "title": "Checked",
+            "type": "array"
+          }
+        },
+        "required": [
+          "checked"
+        ],
+        "title": "PrePushOutput",
+        "type": "object"
+      },
+      "timeout": 2400
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.",
+      "env": [
+        "GIT_SSH_COMMAND",
+        "GIT_SSH"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Name the boundaries that cover a write from the checkout, checking nothing.",
+        "properties": {
+          "action": {
+            "description": "The github action that sends the write, such as push or pr-create.",
+            "pattern": "^[a-z-]+$",
+            "title": "Action",
+            "type": "string"
+          },
+          "remote": {
+            "description": "The remote a push names; the branch's push remote, else origin, when left out.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repo": {
+            "description": "The owner/repo the write names, in place of the remote.",
+            "minLength": 1,
+            "title": "Repo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "CoversInput",
+        "type": "object"
+      },
+      "name": "covers",
+      "outputSchema": {
+        "$defs": {
+          "Covered": {
+            "additionalProperties": false,
+            "description": "One destination a boundary covers, and the boundaries.",
+            "properties": {
+              "boundaries": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Boundaries",
+                "type": "array"
+              },
+              "to": {
+                "title": "To",
+                "type": "string"
+              }
+            },
+            "required": [
+              "to",
+              "boundaries"
+            ],
+            "title": "Covered",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Each destination of the write that a boundary covers; empty when none is.",
+        "properties": {
+          "covered": {
+            "items": {
+              "$ref": "#/$defs/Covered"
+            },
+            "title": "Covered",
+            "type": "array"
+          }
+        },
+        "required": [
+          "covered"
+        ],
+        "title": "CoversOutput",
+        "type": "object"
+      }
     }
   ],
   "description": "Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board call github.ref --ref <owner>/<repo>#<number>`, or `board call github.push`, `github.pr-create`, `github.pr-edit`, `github.comment` or `github.issue-create` from the checkout. SKILL.md and README.md in the plugin's directory say more.",

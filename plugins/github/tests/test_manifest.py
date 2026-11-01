@@ -45,7 +45,17 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_shi
     report = board.json("plugin", "list")
     plugin = next(plugin for plugin in report["data"] if plugin["name"] == "github")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
-    assert plugin["offers"] == ["ref", "push", "pr-create", "pr-edit", "comment", "issue-create"]
+    assert plugin["offers"] == [
+        "ref",
+        "push",
+        "pr-create",
+        "pr-edit",
+        "comment",
+        "issue-create",
+        "install-hook",
+        "pre-push",
+        "covers",
+    ]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
 
@@ -105,6 +115,11 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("comment", "body"),
         ("issue-create", "title"),
         ("issue-create", "body"),
+        ("pre-push", "remote"),
+        ("pre-push", "refs"),
+        ("covers", "action"),
+        ("covers", "remote"),
+        ("covers", "repo"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

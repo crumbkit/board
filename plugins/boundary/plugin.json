@@ -216,6 +216,60 @@
       "annotations": {
         "readOnlyHint": true
       },
+      "description": "Name the boundaries that cover an action to a destination from a checkout, checking nothing and writing nothing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Name the boundaries that cover the action to the destination from the checkout, checking nothing.",
+        "properties": {
+          "action": {
+            "description": "The capability that sends the parts, such as github.pr-create.",
+            "type": "string"
+          },
+          "from": {
+            "description": "The checkout's path in the personal board, such as /repos/board; left out for a checkout no board mounts.",
+            "format": "board-path",
+            "pattern": "^/",
+            "type": "string"
+          },
+          "to": {
+            "description": "Where the parts go, such as github:octo/board.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "to"
+        ],
+        "title": "CoversInput",
+        "type": "object"
+      },
+      "name": "covers",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The boundaries that cover it; none when nothing would be checked.",
+        "properties": {
+          "boundaries": {
+            "description": "The boundaries that matched, by their paths.",
+            "items": {
+              "format": "board-ref",
+              "type": "string",
+              "x-board-type": "boundary/boundary/v1"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "boundaries"
+        ],
+        "title": "CoversOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
       "description": "Whether a passing crossing exists for a digest, or for given content.",
       "inputSchema": {
         "additionalProperties": false,

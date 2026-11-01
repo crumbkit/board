@@ -42,3 +42,11 @@ def record(root: str, digest: str, result: str) -> None:
     Board(root, "github", flags=("--personal",)).document(
         "call", "boundary.record", "--digest", digest, "--result", result
     )
+
+
+def covers(root: str, action: str, to: str, origin: str | None) -> list[str]:
+    """The boundaries `boundary.covers` names for the action to the destination from the checkout."""
+    flags = ["--action", action, "--to", to] + ([] if origin is None else ["--from", origin])
+    report = Board(root, "github", flags=("--personal",)).document("call", "boundary.covers", *flags)
+    boundaries: list[str] = report["data"]["output"]["boundaries"]
+    return boundaries

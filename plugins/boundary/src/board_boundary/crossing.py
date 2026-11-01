@@ -15,6 +15,7 @@ from board_boundary.shapes import (
     CROSSINGS,
     BoundaryRecord,
     CheckOutput,
+    CoversOutput,
     CrossingRecord,
     Failure,
     Finding,
@@ -115,6 +116,16 @@ def check(request: CallRequest) -> CheckOutput:
         note = "the boundaries that match name no control for these parts; nothing was checked"
     return CheckOutput(
         digest=key, crossing=path, boundaries=sorted(matched), verdicts=verdicts, unchecked=unchecked, note=note
+    )
+
+
+def covers(request: CallRequest) -> CoversOutput:
+    """The boundaries that `check` would apply to the action, destination and checkout, matched by the same rules."""
+    action, to = str(request.input["action"]), str(request.input["to"])
+    origin = cast("str | None", request.input.get("from"))
+    every = _boundaries(personal(request))
+    return CoversOutput(
+        boundaries=sorted(path for path, record in every.items() if _matches(record, action, to, origin))
     )
 
 

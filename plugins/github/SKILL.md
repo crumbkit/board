@@ -40,6 +40,18 @@ the message, which ends with the boundary's `Next:` step, also in
 `git commit --amend` or the body you pass, and run the action again. A
 boundary is a record the owner keeps, so ask before you change one.
 
+## Raw git push and gh
+
+Do not send to GitHub with `git push` or `gh` directly. In Claude Code, the
+`board-github` mod refuses them when a boundary covers the repository, and
+its message ends with a `Next:` step naming the `board call github.<action>`
+that sends the same content. Run that command.
+
+To check pushes made outside Board too, such as from a terminal, run
+`board call github.install-hook` in the checkout once. It installs a git
+`pre-push` hook that has the boundary check what each push sends. When it
+refuses a push, read its message, change what it names, and push again.
+
 ## Refusals
 
 - `board::plugin::bad_input`: the reference is not `owner/repo#number`, or
@@ -57,5 +69,7 @@ boundary is a record the owner keeps, so ask before you change one.
 - `github::gh::failed`: gh is missing, signed out or failed. Run
   `gh auth status`. After a check passed, look on GitHub before you run the
   action again, since the content may have been sent.
+- `github::hook::exists`: the checkout already has a different `pre-push`
+  hook. Ask the owner before you move it aside.
 - `github::record::degraded`: the record already there fails its schema.
   Run `board check` on its path and fix it.
