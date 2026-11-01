@@ -5,6 +5,8 @@ use std::path::Path;
 
 use board_model::canonical_json;
 use board_ops::{Limit, QueryError, QueryReport, Settings};
+use board_plugin::shape::{Url, schema_of};
+use schemars::generate::SchemaSettings;
 use serde_json::json;
 
 use super::*;
@@ -265,6 +267,22 @@ fn a_decision_keeps_board_paths_in_refs_and_web_addresses_in_urls() {
     let refused = schema.validate(&decision("urls", path)).unwrap_err();
     assert_eq!(refused.code(), board_model::Code::RecordInvalid);
     assert!(schema.validate(&decision("refs", path)).is_ok());
+    // A URL with no host is refused; its twin with one is admitted.
+    let refused = schema.validate(&decision("urls", "https://")).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
+    assert!(schema.validate(&decision("urls", "https://a")).is_ok());
+}
+
+/// Each `urls` item is a `board_plugin::shape::Url`: a URI string whose
+/// pattern needs a host, the schema `Url` generates.
+#[test]
+fn a_decision_states_each_url_with_the_shared_url_schema() {
+    let schema = Plans.schemas()[2].1.clone();
+    let url = schema_of::<Url>(SchemaSettings::draft2020_12());
+    let mut items = schema["properties"]["urls"]["items"].clone();
+    items["title"] = url["title"].clone();
+    assert_eq!(items, url);
+    assert_eq!(url["format"], "uri");
 }
 
 /// A question names its repository by a reference to the repository's

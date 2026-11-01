@@ -56,11 +56,13 @@ def test_a_decision_refers_to_board_entries_in_refs_and_to_web_pages_in_urls(boa
     board.write("decisions/ref-url.json", decision(refs=["https://example.com/pull/1"]))
     board.write("decisions/url.json", decision(urls=["https://example.com/pull/1"]))
     board.write("decisions/url-path.json", decision(urls=["/projects/a/questions/q"]))
+    board.write("decisions/url-hostless.json", decision(urls=["https://"]))
     assert checked(board, "/decisions/") == {
         "/decisions/ref": None,
         "/decisions/ref-url": "board::ref::malformed",
         "/decisions/url": None,
         "/decisions/url-path": INVALID,
+        "/decisions/url-hostless": INVALID,
     }
 
 

@@ -225,7 +225,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
     let registry = registry();
     assert_eq!(
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["Date", "Prose"]
+        ["Date", "Prose", "Url"]
     );
     let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
     let mut why = properties["why"].clone();

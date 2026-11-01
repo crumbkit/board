@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 89] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 88] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
@@ -49,7 +49,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 89] = [
     ("plans/decision/v1", "/decided", UntilAdopted, "Timestamp (audit row 39)"),
     ("plans/decision/v1", "/decision", UntilAdopted, "Prose"),
     ("plans/decision/v1", "/session", UntilAdopted, "SessionId (audit row 14)"),
-    ("plans/decision/v1", "/urls/-", UntilAdopted, "Url (audit row 10)"),
     ("plans/decision/v1", "/why", UntilAdopted, "Prose"),
     ("plans/decision/v1", "/written_by", UntilAdopted, "HookName (audit row 48)"),
     ("plans/question/v1", "/asked", UntilAdopted, "Timestamp (audit row 37)"),

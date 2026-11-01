@@ -20,8 +20,11 @@ needs to know.
    under any other keyword that applies subschemas, or behind a
    `$dynamicRef`, with `schema::invalid`.
 6. References and URLs never share a field. URLs go in a field named `urls`,
-   whose items match `^https?://`. A field that holds one URL is named for
-   what it is, such as `pull_request`.
+   whose items are `board_plugin::shape::Url`: an absolute `http` or `https`
+   URI with a host. Its schema is `format: uri` with a pattern that needs a
+   lower-case scheme and a host, so the schema admits exactly the strings
+   `Url::from_str` admits. A field that holds one URL is named for what it
+   is, such as `pull_request`.
 7. A field that names a repository is a reference to that repository's mount
    record at `/repos/<name>`, named for what it is, such as `mount` or
    `mounts`. A pinned version is a sibling field, such as `commit`. A field
@@ -97,9 +100,14 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose` and `Date` are shared shapes. A `String` field takes one with
-  `#[schemars(with = "Prose")]`. `shape::registry()` lists every shared
-  shape by name, and `crates/board-plugin/shapes.json` is its golden.
+- `Prose`, `Date` and `Url` are shared shapes. A `String` field takes
+  `Prose` or `Date` with `#[schemars(with = "Prose")]`; a `urls` field is
+  `Vec<Url>`. `shape::registry()` lists every shared shape by name, and
+  `crates/board-plugin/shapes.json` is its golden.
+- `Url`'s constructor refuses text with `board::url::malformed`,
+  `board::url::scheme` or `board::url::no_host`. Board's schema check
+  refuses such a record first, so only Rust code that reads a stored record
+  sees these codes.
 - `schema_of` removes null from every optional field and drops an integer's
   `format`.
 - `#[schemars(extend("x-board-folder" = "..."))]` on a record struct

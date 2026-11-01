@@ -1,7 +1,8 @@
 //! Record and reference shapes for schemars
 //! (docs/architecture/records/shapes.md): a record's `$type`, a typed
-//! reference, the shared shapes a string field uses, and the settings every
-//! schema a built-in plugin ships is made with; and what its readers share.
+//! reference, the shared shapes a string field uses, such as a web address,
+//! and the settings every schema a built-in plugin ships is made with; and
+//! what its readers share.
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -11,6 +12,10 @@ use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value, json};
+
+mod url;
+
+pub use url::{Url, UrlError};
 
 /// Codes that depend on the tree rather than the record. A record holding
 /// one is still a record to read.
@@ -142,6 +147,7 @@ pub fn registry() -> Map<String, Value> {
     Map::from_iter([
         entry::<Date>(&mut generator),
         entry::<Prose>(&mut generator),
+        entry::<Url>(&mut generator),
     ])
 }
 
