@@ -61,8 +61,7 @@ fn every_input_property_carries_a_sentence_and_names_a_board_path() {
 }
 
 #[test]
-fn the_check_output_schema_admits_a_per_file_budget_with_no_largest_and_refuses_one_without_its_total_twin()
- {
+fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number() {
     let manifest = Controls.manifest();
     let output = &manifest.capabilities[1].output;
     let measured = |largest: Value| {

@@ -4,12 +4,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use board_model::LogicalPath;
-use board_ops::{Absent, Host, PluginError};
+use board_ops::{Absent, Host, PluginError, RefsError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
-use crate::index::{self, Control, Health};
+use crate::index::{self, Control, File, Health};
 use crate::logical;
 use crate::records::{Budget, Measure, Per};
 
@@ -120,19 +120,31 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         files.entry(logical.clone()).or_default();
     }
     let mut unreadable: BTreeMap<String, (String, Option<String>)> = BTreeMap::new();
+    // Files with no display path, by control. They lie under no path but `/`.
+    let mut unnamed: BTreeMap<String, usize> = BTreeMap::new();
     for found in index::matched(host)? {
-        if let Some(reached) = files.get_mut(&found.control) {
-            reached.insert(found.file.clone());
-            if let Health::Degraded(code) = found.health {
-                unreadable
-                    .entry(found.control)
-                    .or_insert((found.file, code));
+        let Some(reached) = files.get_mut(&found.control) else {
+            continue;
+        };
+        let shown = match found.file {
+            File::Named(path) => {
+                let shown = path.to_string();
+                reached.insert(path);
+                shown
             }
+            File::Unnamed(path) => {
+                *unnamed.entry(found.control.clone()).or_default() += 1;
+                path
+            }
+        };
+        if let Health::Degraded(code) = found.health {
+            unreadable.entry(found.control).or_insert((shown, code));
         }
     }
+    let root = scope == LogicalPath::root();
     // Under the root every control is listed, so one whose pattern reaches nothing shows with no files.
     let applying: Vec<&String> = (controls.keys())
-        .filter(|logical| scope == "/" || files[*logical].iter().any(|path| under(path, &scope)))
+        .filter(|logical| root || files[*logical].iter().any(|path| under(path, &scope)))
         .collect();
     let budgets: Vec<(&String, &Budget)> = (applying.iter())
         .filter_map(|logical| Some((*logical, controls[*logical].rule.as_ref()?)))
@@ -142,7 +154,7 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     {
         return Err(unreadable_file(logical, file, code.as_deref()));
     }
-    let distinct: BTreeSet<&String> = (budgets.iter())
+    let distinct: BTreeSet<&LogicalPath> = (budgets.iter())
         .flat_map(|(logical, _)| &files[*logical])
         .collect();
     let reads = read(host, distinct)?;
@@ -169,7 +181,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 files: files[logical]
                     .iter()
                     .filter(|path| under(path, &scope))
-                    .count(),
+                    .count()
+                    + if root {
+                        unnamed.get(logical).copied().unwrap_or(0)
+                    } else {
+                        0
+                    },
             }
         })
         .collect();
@@ -178,22 +195,17 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
 }
 
 /// The display path `path` resolves to, through any link or mount.
-fn scope(host: &dyn Host, path: &str) -> Result<String, PluginError> {
+fn scope(host: &dyn Host, path: &str) -> Result<LogicalPath, PluginError> {
     if path == "/" {
-        return Ok(path.to_owned());
+        return Ok(LogicalPath::root());
     }
-    let asked = [logical(path)?];
-    let answers = (host.refs(&asked, Absent::Refuse))
-        .map_err(|error| PluginError::board_refused("controls", "refs", &error.refusal()))?;
-    match answers.into_iter().next() {
-        Some(Ok(report)) => Ok(report.display.to_string()),
-        Some(Err(error)) => Err(PluginError::board_refused(
-            "controls",
-            "refs",
-            &error.refusal(),
-        )),
-        None => Ok(path.to_owned()),
-    }
+    let refused =
+        |error: &RefsError| PluginError::board_refused("controls", "refs", &error.refusal());
+    let answers = host
+        .refs(&[logical(path)?], Absent::Refuse)
+        .map_err(|e| refused(&e))?;
+    let [answer] = <[_; 1]>::try_from(answers).expect("refs answers each path it is asked once");
+    Ok(answer.map_err(|e| refused(&e))?.display)
 }
 
 /// For each of `controls`, the display path of each entry its `applies_to`
@@ -202,16 +214,15 @@ fn scope(host: &dyn Host, path: &str) -> Result<String, PluginError> {
 fn referenced(
     host: &dyn Host,
     controls: &[&str],
-) -> Result<BTreeMap<String, BTreeSet<String>>, PluginError> {
+) -> Result<BTreeMap<String, BTreeSet<LogicalPath>>, PluginError> {
     if controls.is_empty() {
         return Ok(BTreeMap::new());
     }
     let paths = (controls.iter())
         .map(|control| logical(control))
         .collect::<Result<Vec<LogicalPath>, PluginError>>()?;
-    let refused = |error: &board_ops::RefsError| {
-        PluginError::board_refused("controls", "refs", &error.refusal())
-    };
+    let refused =
+        |error: &RefsError| PluginError::board_refused("controls", "refs", &error.refusal());
     let answers = host.refs(&paths, Absent::Refuse).map_err(|e| refused(&e))?;
     let mut found = BTreeMap::new();
     for (control, answer) in controls.iter().zip(answers) {
@@ -220,10 +231,11 @@ fn referenced(
             .filter(|outgoing| outgoing.pointer.starts_with("/applies_to/"))
             .filter_map(|outgoing| {
                 let location = outgoing.location.as_ref()?;
-                let display = location
-                    .display_path()
-                    .unwrap_or_else(|| outgoing.target.clone());
-                Some(display.to_string())
+                Some(
+                    location
+                        .display_path()
+                        .unwrap_or_else(|| outgoing.target.clone()),
+                )
             })
             .collect();
         found.insert((*control).to_owned(), reached);
@@ -235,42 +247,30 @@ fn referenced(
 /// for why it cannot be read.
 fn read(
     host: &dyn Host,
-    paths: BTreeSet<&String>,
-) -> Result<BTreeMap<String, Result<Vec<u8>, String>>, PluginError> {
-    let mut reads = BTreeMap::new();
-    let mut asked = Vec::new();
-    let mut names = Vec::new();
-    for path in paths {
-        match path.parse::<LogicalPath>() {
-            Ok(logical) => {
-                asked.push(logical);
-                names.push(path.clone());
-            }
-            Err(error) => {
-                reads.insert(path.clone(), Err(error.code().as_str().to_owned()));
-            }
-        }
+    paths: BTreeSet<&LogicalPath>,
+) -> Result<BTreeMap<LogicalPath, Result<Vec<u8>, String>>, PluginError> {
+    if paths.is_empty() {
+        return Ok(BTreeMap::new());
     }
-    if asked.is_empty() {
-        return Ok(reads);
-    }
+    let asked: Vec<LogicalPath> = paths.into_iter().cloned().collect();
     let answers = (host.get_each(&asked))
         .map_err(|error| PluginError::board_refused("controls", "get", &error.refusal("get")))?;
-    for (name, answer) in names.into_iter().zip(answers) {
-        let read = answer
-            .map(|report| report.bytes)
-            .map_err(|error| error.code().as_str().to_owned());
-        reads.insert(name, read);
-    }
-    Ok(reads)
+    Ok((asked.into_iter().zip(answers))
+        .map(|(path, answer)| {
+            let read = answer
+                .map(|report| report.bytes)
+                .map_err(|error| error.code().as_str().to_owned());
+            (path, read)
+        })
+        .collect())
 }
 
-fn under(path: &str, scope: &str) -> bool {
-    scope == "/"
-        || scope == path
-        || path
-            .strip_prefix(scope)
-            .is_some_and(|rest| rest.starts_with('/'))
+/// Whether `path` is `scope` or lies beneath it.
+fn under(path: &LogicalPath, scope: &LogicalPath) -> bool {
+    let mut segments = path.segments();
+    scope
+        .segments()
+        .all(|segment| segments.next() == Some(segment))
 }
 
 /// The words or bytes in `data`. Words are separated by whitespace as
@@ -291,14 +291,14 @@ fn checked(
     logical: &str,
     control: &Control,
     &Budget { budget, max, per }: &Budget,
-    files: &BTreeSet<String>,
-    reads: &BTreeMap<String, Result<Vec<u8>, String>>,
+    files: &BTreeSet<LogicalPath>,
+    reads: &BTreeMap<LogicalPath, Result<Vec<u8>, String>>,
 ) -> Result<Checked, PluginError> {
     let mut usage = Vec::new();
     for path in files {
         match &reads[path] {
-            Ok(data) => usage.push((path, measure(data, budget))),
-            Err(code) => return Err(unreadable_file(logical, path, Some(code))),
+            Ok(data) => usage.push((path.to_string(), measure(data, budget))),
+            Err(code) => return Err(unreadable_file(logical, path.as_str(), Some(code))),
         }
     }
     let mut checked = Checked {
@@ -307,7 +307,7 @@ fn checked(
         budget,
         max,
         used: usage.iter().map(|(_, used)| used).sum(),
-        files: files.iter().cloned().collect(),
+        files: files.iter().map(ToString::to_string).collect(),
         each: None,
     };
     if per.unwrap_or(Per::Total) == Per::Total {
@@ -317,11 +317,11 @@ fn checked(
     let most = usage.iter().map(|(_, used)| *used).max();
     let largest = (usage.iter())
         .find(|(_, used)| Some(*used) == most)
-        .map(|(path, _)| (*path).clone());
+        .map(|(path, _)| path.clone());
     let over = (usage.iter())
         .filter(|(_, used)| *used > max)
         .map(|(path, used)| FileUsed {
-            file: (*path).clone(),
+            file: path.clone(),
             used: *used,
         })
         .collect();

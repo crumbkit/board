@@ -30,6 +30,13 @@ pub(crate) struct Recording {
 }
 
 impl Recording {
+    /// How many queries were made since the last time calls were taken.
+    fn queries(&self) -> usize {
+        (self.calls.borrow().iter())
+            .filter(|call| **call == Call::Query)
+            .count()
+    }
+
     /// The `refs` and `get_each` calls made since the last time this was asked.
     fn resolved(&self) -> Vec<Call> {
         (self.calls.take().into_iter())
@@ -124,6 +131,11 @@ fn check_resolves_every_controls_references_in_one_refs_call_and_makes_none_when
         ("controls/pattern.json", &pattern),
     ]);
     check(&host, &json!({})).unwrap();
+    assert_eq!(
+        host.queries(),
+        3,
+        "degraded controls, controls and matched files"
+    );
     let refs: Vec<Call> = (host.resolved().into_iter())
         .filter(|call| matches!(call, Call::Refs(_)))
         .collect();
@@ -200,6 +212,11 @@ fn for_path_makes_one_refs_call_and_reads_no_file() {
         ("controls/pattern.json", &pattern),
     ]);
     let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
+    assert_eq!(
+        host.queries(),
+        2,
+        "controls and the patterns matching the path"
+    );
     let controls: Vec<&Value> = (output["controls"].as_array().unwrap().iter())
         .map(|item| &item["control"])
         .collect();
@@ -231,6 +248,7 @@ fn words_are_split_at_whitespace_as_python_splits_them_and_bytes_are_counted_who
 
 #[test]
 fn a_path_is_under_itself_and_its_directories_and_not_under_a_sibling_that_shares_its_prefix() {
+    let under = |path: &str, scope: &str| under(&path.parse().unwrap(), &scope.parse().unwrap());
     assert!(under("/docs/a.md", "/"));
     assert!(under("/docs/a.md", "/docs"));
     assert!(under("/docs", "/docs"));

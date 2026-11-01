@@ -55,16 +55,16 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         PluginError::board_refused("controls", "refs", &error.refusal())
     };
     let answers = host.refs(&asked, Absent::Locate).map_err(|e| refused(&e))?;
+    let [answer] = <[_; 1]>::try_from(answers).expect("refs answers each path it is asked once");
     let mut applying = BTreeSet::new();
-    match answers.into_iter().next() {
-        Some(Ok(report)) => {
+    match answer {
+        Ok(report) => {
             applying.extend(referencing(&report));
             applying.extend(matching(host, &report)?);
         }
         // Only a path beneath a file names nothing, and nothing can be written there.
-        Some(Err(error)) if error.code() == Code::PathNotFound => {}
-        Some(Err(error)) => return Err(refused(&error)),
-        None => {}
+        Err(error) if error.code() == Code::PathNotFound => {}
+        Err(error) => return Err(refused(&error)),
     }
     let controls = (applying.into_iter())
         .filter_map(|logical| {

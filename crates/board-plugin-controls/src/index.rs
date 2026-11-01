@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use board_model::parse_json;
+use board_model::{LogicalPath, parse_json};
 use board_ops::{Host, Limit, PluginError, QueryReport};
 use serde::Deserialize;
 use serde_json::Value;
@@ -35,8 +35,9 @@ const CONTROLS: &str = "SELECT logical, body FROM records \
     WHERE type = 'controls/control/v1' AND source = 'worktree' \
     AND (status = 'ok' OR code IN ('board::ref::dangling', 'board::ref::wrong_type'))";
 
-/// Each control in the board's own tree that Board marks degraded.
-const DEGRADED: &str = "SELECT logical, code FROM records \
+/// Each control in the board's own tree that Board marks degraded, by its
+/// logical path, or by its path when it has none.
+const DEGRADED: &str = "SELECT COALESCE(logical, path), code FROM records \
     WHERE type = 'controls/control/v1' AND status != 'ok' AND source = 'worktree' ORDER BY logical";
 
 /// A control as the board's own copy of the schema admits it, which equals
@@ -50,12 +51,19 @@ pub(crate) struct Control {
     pub(crate) rule: Option<Budget>,
 }
 
-/// One file a control's pattern matches: its display path, or its path
-/// when it has none, and whether Board can read it.
+/// One file a control's pattern matches, and whether Board can read it.
 pub(crate) struct Match {
     pub(crate) control: String,
-    pub(crate) file: String,
+    pub(crate) file: File,
     pub(crate) health: Health,
+}
+
+/// A matched file by its display path, or, for a file in the board's own
+/// tree whose path is malformed and which so has none, by its path from the
+/// board's root. Board marks such a file degraded.
+pub(crate) enum File {
+    Named(LogicalPath),
+    Unnamed(String),
 }
 
 /// Whether Board reads a file whole, or marks it degraded with a code.
@@ -127,6 +135,10 @@ pub(crate) fn matched(host: &dyn Host) -> Result<Vec<Match>, PluginError> {
                 Health::Whole
             } else {
                 Health::Degraded(code)
+            };
+            let file = match file.parse() {
+                Ok(path) => File::Named(path),
+                Err(_) => File::Unnamed(file),
             };
             Some(Match {
                 control,

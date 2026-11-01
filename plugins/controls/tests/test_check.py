@@ -403,3 +403,16 @@ def test_a_per_file_control_with_no_files_measures_nothing_as_its_largest(board:
     )
     [measured] = board.call("check", {})["data"]["output"]["measured"]
     assert (measured["used"], measured["largest"], measured["over"]) == (0, None, [])
+
+
+def test_a_control_at_a_malformed_path_fails_the_check_naming_its_file_and_its_twin_at_a_well_formed_path_passes(
+    board: Board,
+) -> None:
+    malformed = "controls/bad\u200bname.json"
+    board.write("a.md", "one two three")
+    board.write(malformed, control("Short.", paths=["*.md"], rule={"budget": "words", "max": WORDS}))
+    refused = board.call("check", {})
+    assert refused["code"] == "controls::control::degraded", refused
+    assert refused["fields"]["controls"] == [{"control": malformed, "code": "board::path::malformed"}]
+    (board.root / malformed).rename(board.root / "controls/name.json")
+    assert board.call("check", {})["data"]["output"]["measured"][0]["used"] == WORDS
