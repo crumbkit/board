@@ -33,10 +33,64 @@
       ],
       "title": "Budget",
       "type": "object"
+    },
+    "Judged": {
+      "additionalProperties": false,
+      "description": "A rubric at `judged` that a clean-context model reads the text against.",
+      "properties": {
+        "judged": {
+          "pattern": "^/",
+          "title": "Judged",
+          "type": "string"
+        }
+      },
+      "required": [
+        "judged"
+      ],
+      "title": "Judged",
+      "type": "object"
+    },
+    "Pattern": {
+      "additionalProperties": false,
+      "description": "Regular expressions the text must not match, one per line of the file at `pattern`.\n\nWith `show` `match-only`, a finding quotes what matched and never the\nexpression, so the file can stay private; with `pattern`, it names the\nexpression too. Blank lines are skipped.",
+      "properties": {
+        "pattern": {
+          "pattern": "^/",
+          "title": "Pattern",
+          "type": "string"
+        },
+        "show": {
+          "enum": [
+            "match-only",
+            "pattern"
+          ],
+          "title": "Show",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern",
+        "show"
+      ],
+      "title": "Pattern",
+      "type": "object"
+    },
+    "Rule": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Budget"
+        },
+        {
+          "$ref": "#/$defs/Pattern"
+        },
+        {
+          "$ref": "#/$defs/Judged"
+        }
+      ]
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
@@ -69,7 +123,7 @@
     "rule": {
       "anyOf": [
         {
-          "$ref": "#/$defs/Budget"
+          "$ref": "#/$defs/Rule"
         },
         {
           "type": "null"

@@ -1,16 +1,12 @@
 """`run`: review the range or record a brief names with the agent BOARD_REVIEW_AGENT names, and record the report."""
 
-import contextlib
 import hashlib
 import json
-import os
-import signal
-import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Any, cast
 
+from board_plugin import agent
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
@@ -29,14 +25,8 @@ from board_review.shapes import (
 
 # Codes that depend on the tree rather than the record. A record holding one is still one to read.
 TREE_CODES = ("board::ref::dangling", "board::ref::wrong_type")
-# How much of the agent's stdout or stderr an error carries.
-TAIL = 4096
 # How long the agent may run: a minute less than the capability's timeout, so the plugin can stop it and report.
 AGENT_TIMEOUT = RUN_TIMEOUT - 60
-# How long to read the agent's output after its group is killed. A process that left the group may hold it open.
-DRAIN = 5
-# The signals that stop the plugin, and with it the agent: Board's SIGTERM, Ctrl-C and a closed terminal.
-STOPPING = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 INSTRUCTIONS = """You review {what}. You have not seen it before.
 Read the brief, then the {shown}. You have no tools and no copy of the repository, so the {shown} is all you have.
@@ -69,7 +59,7 @@ def run(request: CallRequest) -> RunOutput:
             f" {report_path}, and run that",
             {"report": report_path},
         )
-    command = _command()
+    command = agent.command("review", AGENT_VARIABLE)
     subject = brief.get("subject")
     covered: tuple[str, list[str]] | None = None
     if subject is not None:
@@ -87,10 +77,8 @@ def run(request: CallRequest) -> RunOutput:
         prompt = _prompt(path, brief, "a change to a git repository", "diff", shown)
         covered = (f"{base}..{head}", [ids[commit] for commit in commits if commit in ids])
     clock = time.monotonic()
-    # An empty directory, so the agent finds no project settings or MCP servers beside the untrusted input.
-    with tempfile.TemporaryDirectory(prefix="board-review-") as empty:
-        stdout = _agent(command, prompt, empty, AGENT_TIMEOUT)
-    answer, tokens, models = _envelope(stdout)
+    stdout = agent.ask("review", command, prompt, AGENT_TIMEOUT)
+    answer, tokens, models = agent.envelope(stdout)
     verdict, findings = _answer(answer, stdout)
     cost: Cost = {"seconds": round(time.monotonic() - clock, 3)}
     if tokens:
@@ -149,31 +137,6 @@ def _record(board: Board, subject: Subject) -> str:
     )
 
 
-def _command() -> list[str]:
-    """The agent's argv from BOARD_REVIEW_AGENT, a JSON array of strings, or why it cannot be read."""
-    text = os.environ.get(AGENT_VARIABLE)
-    if text is None:
-        raise PluginError(
-            "review::agent::not_set",
-            f"{AGENT_VARIABLE} is not set; set it to the agent's argv as a JSON array of strings, as README.md shows",
-            {"variable": AGENT_VARIABLE},
-        )
-    try:
-        parsed: object = json.loads(text)
-    except ValueError:
-        parsed = None
-    parts = cast("list[object]", parsed) if isinstance(parsed, list) else []
-    # An argument may be empty, as in `--tools ""`; the program may not.
-    if not parts or not parts[0] or not all(isinstance(part, str) for part in parts):
-        raise PluginError(
-            "review::agent::invalid",
-            f"{AGENT_VARIABLE} is {text[:200]!r}, which is not a JSON array of strings whose first names a program;"
-            ' set it to one, such as ["claude", "-p"]',
-            {"variable": AGENT_VARIABLE},
-        )
-    return [str(part) for part in parts]
-
-
 def read_record(board: Board, path: str, record_type: str, area: str) -> tuple[dict[str, Any], str]:
     """The valid record of `record_type` at `path` in the board's own tree, and its blob.
 
@@ -206,126 +169,17 @@ def _prompt(path: str, brief: BriefRecord, what: str, shown: str, body: str) -> 
     )
 
 
-def _agent(command: list[str], prompt: str, directory: str, timeout: float) -> str:
-    """What the agent printed on stdout, given `prompt` on stdin in `directory`.
-
-    The agent leads its own process group. The group is killed when the
-    agent exits, after `timeout` seconds, or when the plugin gets one of
-    `STOPPING`, so neither the agent nor a process it started outlives the call.
-    """
-    try:
-        agent = subprocess.Popen(  # noqa: S603 - the user's own BOARD_REVIEW_AGENT names the agent
-            command,
-            cwd=directory,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-        )
-    except OSError as error:
-        raise PluginError(
-            "review::agent::not_started",
-            f"the agent {command[0]!r} cannot be started: {error}; change {AGENT_VARIABLE}",
-            {"command": command},
-        ) from error
-
-    def stop(signum: int, _frame: object) -> None:
-        _kill(agent.pid)
-        raise SystemExit(128 + signum)
-
-    previous = {signum: signal.signal(signum, stop) for signum in STOPPING}
-    try:
-        out, err = agent.communicate(prompt.encode(), timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill(agent.pid)
-        out = _drain(agent)
-        raise PluginError(
-            "review::agent::timeout",
-            f"the agent {command[0]!r} ran past {timeout:g} seconds and was stopped; narrow the brief's range,"
-            f" or make the agent {AGENT_VARIABLE} names answer sooner",
-            {"seconds": timeout, "stdout": out.decode(errors="replace")[-TAIL:]},
-        ) from None
-    finally:
-        _kill(agent.pid)
-        for signum, handler in previous.items():
-            signal.signal(signum, handler)
-    stdout = out.decode(errors="replace")
-    if agent.returncode != 0:
-        stderr = err.decode(errors="replace")[-TAIL:]
-        raise PluginError(
-            "review::agent::failed",
-            f"the agent {command[0]!r} exited {agent.returncode}; its stdout ends: {stdout.strip()[-200:]}; its"
-            f" stderr ends: {stderr.strip()[-200:]}",
-            {"exit": agent.returncode, "stderr": stderr, "stdout": stdout[-TAIL:]},
-        )
-    return stdout
-
-
-def _drain(agent: "subprocess.Popen[bytes]") -> bytes:
-    """What the killed agent printed on stdout, read for at most `DRAIN` seconds."""
-    try:
-        out, _ = agent.communicate(timeout=DRAIN)
-    except subprocess.TimeoutExpired:
-        for stream in (agent.stdout, agent.stderr):
-            if stream is not None:
-                stream.close()
-        agent.wait()
-        return b""
-    return out
-
-
-def _kill(group: int) -> None:
-    """Kill every process in the agent's group, which may already have exited.
-
-    macOS refuses with EPERM a group whose processes have all exited but are not yet reaped.
-    """
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(group, signal.SIGKILL)
-
-
-def _envelope(stdout: str) -> tuple[str, dict[str, int], list[str]]:
-    """The agent's answer, its tokens and models: from `claude -p --output-format json`'s envelope, else none."""
-    try:
-        parsed: object = json.loads(stdout)
-    except ValueError:
-        return stdout, {}, []
-    if not isinstance(parsed, dict) or not isinstance(cast("dict[str, Any]", parsed).get("result"), str):
-        return stdout, {}, []
-    envelope = cast("dict[str, Any]", parsed)
-    usage = envelope.get("usage")
-    tokens: dict[str, int] = {}
-    if isinstance(usage, dict):
-        counts = {key: value for key, value in cast("dict[str, Any]", usage).items() if isinstance(value, int)}
-        inputs = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-        tokens = {
-            "input_tokens": sum(counts.get(key, 0) for key in inputs),
-            "output_tokens": counts.get("output_tokens", 0),
-        }
-    models = envelope.get("modelUsage")
-    names = sorted(cast("dict[str, Any]", models)) if isinstance(models, dict) else []
-    return str(envelope["result"]), tokens, names
-
-
 def _answer(answer: str, stdout: str) -> tuple[Any, list[Finding]]:
     """The verdict and findings of the last JSON object in `answer` that holds a verdict."""
-    decoder = json.JSONDecoder()
-    start = answer.rfind("{")
-    while start != -1:
-        try:
-            found, _ = decoder.raw_decode(answer, start)
-        except ValueError:
-            found = None
-        if isinstance(found, dict) and "verdict" in found:
-            checked = _checked(cast("dict[str, Any]", found))
-            if checked is not None:
-                return checked
-            break
-        start = answer.rfind("{", 0, start)
+    found = agent.last_object(answer, "verdict")
+    checked = None if found is None else _checked(found)
+    if checked is not None:
+        return checked
     raise PluginError(
         "review::agent::bad_output",
         "the agent's answer does not end with a JSON object holding a verdict of approve, changes or comment and"
         " findings each with a severity of high, medium or low and a text; change the agent's command or prompt",
-        {"stdout": stdout[-TAIL:]},
+        {"stdout": stdout[-agent.TAIL :]},
     )
 
 

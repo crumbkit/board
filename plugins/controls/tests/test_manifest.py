@@ -68,7 +68,12 @@ def input_descriptions() -> dict[tuple[str, str], object]:
 
 def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> None:
     descriptions = input_descriptions()
-    assert set(descriptions) == {("check", "path"), ("for-path", "path")}
+    assert set(descriptions) == {
+        ("check", "path"),
+        ("for-path", "path"),
+        ("evaluate", "controls"),
+        ("evaluate", "parts"),
+    }
     for key, description in descriptions.items():
         assert isinstance(description, str), key
         assert description.endswith("."), key
@@ -89,3 +94,13 @@ def test_a_budget_measured_per_directory_is_invalid_and_one_measured_per_file_is
     status = {entry["logical"]: entry for entry in report["data"]}
     assert status["/controls/file"]["status"] == "ok"
     assert status["/controls/directory"]["code"] == "board::record::invalid"
+
+
+def test_a_pattern_rule_with_an_unknown_show_is_invalid_and_one_with_a_known_show_is_not(board: Board) -> None:
+    board.write("private/names.txt", "acme\n")
+    board.write("controls/known.json", control("R.", rule={"pattern": "/private/names.txt", "show": "match-only"}))
+    board.write("controls/unknown.json", control("R.", rule={"pattern": "/private/names.txt", "show": "all"}))
+    report = json.loads(board.run("--json", "check").stdout)
+    status = {entry["logical"]: entry for entry in report["data"]}
+    assert status["/controls/known"]["status"] == "ok"
+    assert status["/controls/unknown"]["code"] == "board::record::invalid"

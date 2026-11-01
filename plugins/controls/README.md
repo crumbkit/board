@@ -2,7 +2,8 @@
 
 A Board plugin for requirements on a board's files. Each requirement is a
 `controls/control/v1` record stored in the board, so it is versioned with the
-files it governs.
+files it governs. `controls.evaluate` applies a control's rule to given text,
+such as a pull request body, instead of files.
 
 ## The control record
 
@@ -33,11 +34,26 @@ files it governs.
   `controls::file::unreadable`; in a mounted board it matches nothing, and
   that board's own `board check` reports it.
 - `rule` is optional. Without it, the control is a written requirement.
-  With a budget, it limits the `words` (separated by any whitespace) or
-  `bytes` of the files the control applies to. Its optional `per` says how:
-  `total`, the default, limits the sum over every file, and `file` limits
-  each file on its own, such as
-  `{"budget": "words", "max": 500, "per": "file"}` on `changes/*/plan.md`.
+  There are three kinds of rule:
+  - A budget limits the `words` (separated by any whitespace) or `bytes` of
+    the files the control applies to. Its optional `per` says how: `total`,
+    the default, limits the sum over every file, and `file` limits each file
+    on its own, such as `{"budget": "words", "max": 500, "per": "file"}` on
+    `changes/*/plan.md`.
+  - A pattern, such as
+    `{"pattern": "/private/names.txt", "show": "match-only"}`, names a file
+    of Python regular expressions, one per line, that text must not match.
+    Blank lines are skipped. With `show` `match-only`, a finding quotes what
+    matched and never the expression, so the file can stay private; with
+    `pattern`, it names the expression too.
+  - A judged rule, such as `{"judged": "/rubrics/plain-prose.md"}`, names a
+    rubric that a clean-context model reads text against.
+
+  A pattern file or rubric is named by its absolute logical path. Board
+  does not check that path, because it searches no reference inside `rule`,
+  so `evaluate` reports a missing file. `check` measures
+  budgets over files; it lists a pattern or judged control as stated, and
+  only `evaluate` applies those rules.
 
 The plugin ships the record's schema. `board plugin enable controls` writes it
 to `.board/types/controls/control/v1.schema.json`.
@@ -81,13 +97,63 @@ to `.board/types/controls/control/v1.schema.json`.
   per file, and `board query` pages of 10,000 control–file pairs, so a file
   changed between pages may or may not be counted.
 
-Board refuses both calls with `board::plugin::schema_differs` when the board's
+- `controls.evaluate` checks named parts of text, such as a pull request's
+  title and body, against controls' rules. It reads its input on stdin:
+
+  ```sh
+  echo '{"controls": ["/controls/plain-prose"], "parts": {"pr.body": "..."}}' \
+    | board call controls.evaluate
+  ```
+
+  `controls` lists the controls by their paths in the board's own tree, and
+  `parts` maps each part's name to its text. Every control applies to every
+  part. The output is `passed`, false when any result failed, and
+  `results`, one per control and part, ordered by control as given and then
+  by part name. Each result holds `control`, `part`, `rule` (`budget`,
+  `pattern`, `judged`, or null), `status` and `findings`:
+  - `status` is `passed` or `failed`; `stated` for a control without a rule;
+    `skipped` for a judged rule when the part failed a budget or pattern
+    rule. Budget and pattern rules always run first, whatever the order of
+    `controls`.
+  - A finding holds `text`, the words at fault, and `line` when it has one.
+    A pattern finding quotes the match, and adds `pattern` only with
+    `show` `pattern`. A judged finding adds `rewrite`, the model's
+    instruction for fixing the sentence. A failed budget has one finding
+    without a line.
+  - A budget result adds `used` and `max`. A judged result adds `cached`.
+    A result shows at most 20 findings and counts the rest in `omitted`.
+
+  A failed part is an answer, so the call still exits 0. It fails with
+  `controls::control::not_found` when a named control is not a valid
+  control in the board's own tree, `controls::rule::unreadable` when a
+  pattern file or rubric cannot be read, and `controls::pattern::invalid`
+  when a line of a pattern file is not a valid expression. That error names
+  the line by its number, and quotes it only with `show` `pattern`.
+
+  A judged rule starts the agent `BOARD_CONTROLS_AGENT` names, a JSON array
+  of strings, as `review.run` starts `BOARD_REVIEW_AGENT` (the review
+  plugin's README explains the variable and how to run the agent without
+  tools). The agent gets the rubric and the part's numbered lines on stdin,
+  and its answer must end with a JSON object holding `findings`. The part's
+  text is untrusted, and a verdict is no stronger than the agent's
+  resistance to instructions in it. The variable is read only when a judged
+  rule has a part to read, so free rules need no agent. Each verdict is
+  cached in `$XDG_CACHE_HOME/board-controls/judged/` (else
+  `~/.cache/board-controls/judged/`), in a file named by the SHA-256 of the
+  prompt's instructions, the rubric's bytes, the agent's command and the
+  text. A retry judges only text that changed. The command stands for the
+  model, so name the model in it, such as `--model <id>`, or a new default
+  model reuses old verdicts. Deleting the directory costs only new
+  judgements. The judged rules share 29 minutes, and Board stops the call
+  at 30.
+
+Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of the control schema differs from the one the plugin ships;
 `board plugin enable controls` replaces the board's copy. When Board refuses a request the plugin makes, such as
 a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
 
-Both capabilities read the board through `board query`, `board refs` and
+The capabilities read the board through `board query`, `board refs` and
 `board get`. They consider only the controls in the board's own working tree,
 never those in mounted boards, though those controls' patterns reach mounted
 files.
@@ -131,4 +197,5 @@ the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
 from the TypedDicts in `src/board_controls/shapes.py` by
 `board_controls.manifest`, and a test checks that the committed files match.
+The tests start a stub agent script, never a model.
 `claude plugin test claude-code` runs the mod's tests.
