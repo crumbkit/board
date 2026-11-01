@@ -349,7 +349,7 @@ impl Repositories {
         };
         let remote = board_model::shown_remote(&origin);
         let reader = &mut root.reader();
-        let mut named = |entry: &&Entry| {
+        let mut named = |entry: &Entry| {
             let blob = entry
                 .blob
                 .filter(|_| entry.status == Status::Ok && is_repo(&entry.path))?;
@@ -357,18 +357,14 @@ impl Repositories {
                 .read(&Source::WorkingTree, &entry.path, blob)
                 .ok()??;
             let value = board_model::parse_json(&read.bytes).ok()?;
-            (Repo::from_value(&value).ok()?.remote == remote).then_some(())
-        };
-        (entries.iter())
-            .filter(|entry| named(entry).is_some())
-            .filter_map(|entry| {
-                Some(Place {
-                    mount: entry.logical.clone()?,
-                    within: LogicalPath::root(),
-                    matched: Matched::Remote,
-                })
+            (Repo::from_value(&value).ok()?.remote == remote).then_some(())?;
+            Some(Place {
+                mount: entry.logical.clone()?,
+                within: LogicalPath::root(),
+                matched: Matched::Remote,
             })
-            .collect()
+        };
+        entries.iter().filter_map(|entry| named(entry)).collect()
     }
 }
 

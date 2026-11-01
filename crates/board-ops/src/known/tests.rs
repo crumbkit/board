@@ -412,6 +412,11 @@ fn two_known_boards_with_a_repo_record_for_one_remote_are_ambiguous_and_one_is_a
     let two = recording("example-org/lib", "work/lib.json");
     let refusal = refused(clone.workdir(), &listing(&[&one, &two]));
     assert_eq!(refusal.code.as_str(), "board::config::ambiguous");
+    assert!(
+        refusal.message.contains("mount or repo record"),
+        "{}",
+        refusal.message
+    );
     let admitted = opened(clone.workdir(), &listing(&[&one]), None).unwrap();
     assert_eq!(admitted, "/repos/lib");
 }
@@ -430,8 +435,7 @@ fn a_board_that_mounts_the_clone_wins_over_its_own_repo_record_by_remote() {
 }
 
 #[test]
-fn a_clone_one_board_mounts_runs_there_though_another_has_its_repo_record_and_two_records_are_ambiguous()
- {
+fn a_clone_one_board_mounts_runs_there_though_another_has_its_repo_record() {
     let library = clone_of("git@github.com:example-org/lib.git");
     let mounted = mounting(&library);
     let recorded = recording("example-org/lib", "repos/lib.json");
@@ -439,12 +443,4 @@ fn a_clone_one_board_mounts_runs_there_though_another_has_its_repo_record_and_tw
     let docs = library.workdir().join("docs");
     let (_, prefix) = open(&docs, None, None, || known(&both)).unwrap();
     assert_eq!(prefix.unwrap().unwrap().as_str(), "/repos/lib/docs");
-    let other = recording("example-org/lib", "work/lib.json");
-    let refusal = refused(library.workdir(), &listing(&[&recorded, &other]));
-    assert_eq!(refusal.code.as_str(), "board::config::ambiguous");
-    assert!(
-        refusal.message.contains("mount or repo record"),
-        "{}",
-        refusal.message
-    );
 }

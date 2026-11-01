@@ -116,20 +116,25 @@ pub(crate) fn pointer_from_value(value: &Value) -> Result<Option<Pointer>, Point
             follow: Some(follow),
             commit: Some(commit),
             ..
-        } => {
-            if is_remote(&repo) {
-                return Err(PointerError::Remote { repo });
-            }
-            let Some(commit) = ObjectId::from_hex(&commit) else {
-                return Err(PointerError::Commit { commit });
-            };
-            Ok(Some(Pointer::Mount(Mount {
-                repo,
-                follow,
-                commit,
-            })))
-        }
+        } => Ok(Some(Pointer::Mount(Mount::new(repo, follow, commit)?))),
         _ => Err(PointerError::Target),
+    }
+}
+
+impl Mount {
+    /// The mount of a local `repo` at the hex `commit`.
+    pub(crate) fn new(repo: String, follow: String, commit: String) -> Result<Self, PointerError> {
+        if is_remote(&repo) {
+            return Err(PointerError::Remote { repo });
+        }
+        let Some(commit) = ObjectId::from_hex(&commit) else {
+            return Err(PointerError::Commit { commit });
+        };
+        Ok(Self {
+            repo,
+            follow,
+            commit,
+        })
     }
 }
 
@@ -147,7 +152,7 @@ pub fn repinned(bytes: &[u8], commit: ObjectId) -> Result<Vec<u8>, JsonError> {
 
 /// Whether `repo` names a remote repository: a URL, or git's scp-like
 /// `user@host:path`.
-pub(crate) fn is_remote(repo: &str) -> bool {
+fn is_remote(repo: &str) -> bool {
     repo.contains("://")
         || repo
             .split_once(':')
