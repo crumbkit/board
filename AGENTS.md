@@ -3,8 +3,9 @@
 Board is a fast, validated view of a git tree. It indexes every file in a
 board, validates JSON records against schemas stored in the tree, resolves
 typed references through links and mounts, and gives agents an easy way to
-read and write records. Plugins add higher-level constructs as separate
-programs. DOCS.md is the map; PLAN.md says what is being built now.
+read and write records. Plugins add higher-level constructs; a new plugin
+is a Rust crate built into Board, never a Python program. DOCS.md is the
+map; PLAN.md says what is being built now.
 
 ## Gates
 

@@ -1,5 +1,8 @@
 # tasks
 
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
+
 A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks through
 `board query`. `available` sorts the tasks of the repos
 in scope into the tasks to work on now, those due soon, the stale ones and

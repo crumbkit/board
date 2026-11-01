@@ -3,6 +3,7 @@
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
 Board is called. `controls`, `plans`, `evals` and
 [`requests`](built-in/requests.md) are built in.
+[built-in/writing.md](built-in/writing.md) says how to write one.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
   of `board-plugins` that board-cli enables by default. It generates its
