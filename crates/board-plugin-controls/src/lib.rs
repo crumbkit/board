@@ -1,6 +1,7 @@
 //! The controls plugin built into Board (plugins/controls/README.md).
 
 mod check;
+mod evaluate;
 mod for_path;
 mod index;
 pub mod records;
@@ -26,20 +27,14 @@ impl Plugin for Controls {
 
     fn schemas(&self) -> Vec<(RecordType, Value)> {
         let schema = |name: &str, schema: Value| {
-            let name = name
-                .parse()
-                .expect("each record's TYPE is a record type; a test parses it");
+            let name =
+                (name.parse()).expect("each record's TYPE is a record type; a test parses it");
             (name, schema)
         };
+        let settings = SchemaSettings::draft2020_12;
         vec![
-            schema(
-                ControlRecord::TYPE,
-                schema_of::<ControlRecord>(SchemaSettings::draft2020_12()),
-            ),
-            schema(
-                SourceRecord::TYPE,
-                schema_of::<SourceRecord>(SchemaSettings::draft2020_12()),
-            ),
+            schema(ControlRecord::TYPE, schema_of::<ControlRecord>(settings())),
+            schema(SourceRecord::TYPE, schema_of::<SourceRecord>(settings())),
         ]
     }
 
@@ -52,10 +47,11 @@ impl Plugin for Controls {
         match capability.as_str() {
             "for-path" => for_path::for_path(host, &input),
             "check" => check::check(host, &input),
+            "evaluate" => evaluate::evaluate(host, &input),
             other => Err(PluginError {
                 code: "controls::call::unknown_capability".to_owned(),
                 message: format!(
-                    "controls offers no capability {other}; it offers for-path and check"
+                    "controls offers no capability {other}; it offers for-path, check and evaluate"
                 ),
                 fields: Map::new(),
             }),
@@ -83,7 +79,8 @@ fn manifest() -> Value {
             you edit a file a control may govern. Start with `board -C <board> call controls.check --path \
             /<directory>`, which lists the budgets it measures and the written requirements under that \
             path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. \
-            SKILL.md and README.md in the plugin's directory say more.",
+            `board -C <board> call controls.evaluate` checks text, such as a draft, against the rules of \
+            the controls it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
         "types": [ControlRecord::TYPE, SourceRecord::TYPE],
         "capabilities": [{
@@ -99,6 +96,14 @@ fn manifest() -> Value {
                 control over budget or degraded.",
             "inputSchema": schema_of::<check::Input>(SchemaSettings::draft2020_12()),
             "outputSchema": schema_of::<check::Output>(settings()),
+            "annotations": {"readOnlyHint": true},
+            "_meta": {},
+        }, {
+            "name": "evaluate",
+            "description": "Check named parts of text against controls' budget, pattern and judged \
+                rules, and return each control's verdict on each part with its findings.",
+            "inputSchema": schema_of::<evaluate::Input>(SchemaSettings::draft2020_12()),
+            "outputSchema": schema_of::<evaluate::Output>(settings()),
             "annotations": {"readOnlyHint": true},
             "_meta": {},
         }],

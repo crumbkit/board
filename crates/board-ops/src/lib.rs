@@ -33,7 +33,7 @@ pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Shown, Signing, answer};
 pub use crate::enable::{EnableError, EnableReport, Kept};
-pub use crate::host::{BuiltIn, Host, Limit, Plugin, PluginError, Settings};
+pub use crate::host::{BuiltIn, Host, Limit, Plugin, PluginError, Run, Settings, Variables};
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};
 pub use crate::known::{KnownBoards, Prefix, asker, open, unopened};

@@ -431,3 +431,18 @@ def test_a_control_at_a_malformed_path_fails_the_check_naming_its_file_and_its_t
     assert refused["fields"]["controls"] == [{"control": malformed, "code": "board::path::malformed"}]
     (board.root / malformed).rename(board.root / "controls/name.json")
     assert board.call("check", {})["data"]["output"]["measured"][0]["used"] == WORDS
+
+
+def test_a_pattern_or_judged_control_is_stated_and_a_budget_beside_it_is_measured(board: Board) -> None:
+    board.write("docs/a.md", "one two")
+    board.write("private/names.txt", "acme\n")
+    board.write("rubrics/plain.md", "Write plainly.\n")
+    board.write(
+        "controls/names.json",
+        control("No names.", paths=["docs/*.md"], rule={"pattern": "/private/names.txt", "show": "match-only"}),
+    )
+    board.write("controls/plain.json", control("Plain.", paths=["docs/*.md"], rule={"judged": "/rubrics/plain.md"}))
+    board.write("controls/short.json", control("Short.", paths=["docs/*.md"], rule={"budget": "words", "max": 2}))
+    output = board.call("check", {})["data"]["output"]
+    assert [item["control"] for item in output["measured"]] == ["/controls/short"]
+    assert [item["control"] for item in output["stated"]] == ["/controls/names", "/controls/plain"]

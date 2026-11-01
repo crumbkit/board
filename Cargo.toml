@@ -9,6 +9,7 @@ members = [
     "crates/board-plugin-evals",
     "crates/board-plugin-plans",
     "crates/board-plugin-requests",
+    "crates/board-plugin-runs",
     "crates/board-plugins",
     "crates/board-scenario",
     "crates/board-serve",
@@ -35,6 +36,7 @@ board-plugin-controls = { path = "crates/board-plugin-controls", version = "0.0.
 board-plugin-evals = { path = "crates/board-plugin-evals", version = "0.0.0" }
 board-plugin-plans = { path = "crates/board-plugin-plans", version = "0.0.0" }
 board-plugin-requests = { path = "crates/board-plugin-requests", version = "0.0.0" }
+board-plugin-runs = { path = "crates/board-plugin-runs", version = "0.0.0" }
 board-plugins = { path = "crates/board-plugins", version = "0.0.0" }
 board-scenario = { path = "crates/board-scenario", version = "0.0.0" }
 board-serve = { path = "crates/board-serve", version = "0.0.0" }
@@ -78,6 +80,10 @@ proptest = "1.11.0"
 # board-index/src/schema.rs, or a warm index keeps the old links.
 pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = "1.12.2"
+# The column of a syntax error in a pattern rule's expression, which regex's
+# own error gives only inside a message that quotes the expression. regex
+# already brings this version in.
+regex-syntax = { version = "0.8.11", default-features = false, features = ["std", "unicode"] }
 # A symlink text in a refusal escapes Unicode format characters, such as
 # U+202E, which reorder text. jsonschema already brings this crate in.
 unicode-general-category = "1.1.0"

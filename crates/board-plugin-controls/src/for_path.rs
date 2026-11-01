@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::index::{self, FILES, literal};
 use crate::logical;
-use crate::records::{Budget, Kind, Show};
+use crate::records::{Kind, Rule, ShowAt, rule_output_schema};
 
 /// The controls that apply to this logical path.
 #[derive(Deserialize, JsonSchema)]
@@ -29,16 +29,18 @@ pub(crate) struct Output {
     controls: Vec<Applying>,
 }
 
-/// A control that applies to the path asked about.
+/// A control that applies to the path asked about, and its rule, null when
+/// it has none.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Applying {
     control: String,
     requirement: String,
     purpose: String,
-    rule: Option<Budget>,
+    #[schemars(schema_with = "rule_output_schema")]
+    rule: Option<Rule>,
     kind: Kind,
-    show: Show,
+    show: ShowAt,
 }
 
 /// Each readable control whose `applies_to` reaches the path or whose
@@ -72,9 +74,9 @@ pub(crate) fn for_path(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
         .filter_map(|logical| {
             let control = controls.remove(&logical)?;
             Some(Applying {
-                control: logical,
                 show: control.show(),
                 kind: control.kind,
+                control: logical,
                 requirement: control.requirement,
                 purpose: control.purpose,
                 rule: control.rule,

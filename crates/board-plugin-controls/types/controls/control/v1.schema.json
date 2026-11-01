@@ -1,53 +1,68 @@
 {
   "$defs": {
-    "Budget": {
+    "Rule": {
       "additionalProperties": false,
-      "description": "A limit on the words or bytes of the files the control applies to.\n\nWith `per` `total`, the default, the files' usage is summed; with `file`,\neach file on its own must be within `max`. Words are separated by any\nwhitespace.",
+      "description": "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against.",
       "properties": {
         "budget": {
-          "description": "What the budget counts: `words` or `bytes`.",
           "enum": [
             "words",
             "bytes"
           ],
+          "title": "Budget",
+          "type": "string"
+        },
+        "judged": {
+          "format": "board-ref",
+          "title": "Judged",
           "type": "string"
         },
         "max": {
-          "description": "The most the files may use.",
           "minimum": 0,
+          "title": "Max",
           "type": "integer"
+        },
+        "pattern": {
+          "format": "board-ref",
+          "title": "Pattern",
+          "type": "string"
         },
         "per": {
           "default": "total",
-          "description": "`total`, the default, to sum the files, or `file` to limit each one.",
           "enum": [
             "total",
             "file"
           ],
+          "title": "Per",
+          "type": "string"
+        },
+        "show": {
+          "enum": [
+            "match-only",
+            "pattern"
+          ],
+          "title": "Show",
           "type": "string"
         }
       },
-      "required": [
-        "budget",
-        "max"
-      ],
+      "title": "Rule",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and\noptionally a budget a program checks. It applies to the entries\n`applies_to` references and to every entry of the board whose path\nmatches one of `paths`.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
-      "description": "The record's type.",
+      "title": "$Type",
       "type": "string"
     },
     "applies_to": {
-      "description": "The entries the control applies to.",
       "items": {
         "format": "board-ref",
         "type": "string"
       },
+      "title": "Applies To",
       "type": "array"
     },
     "kind": {
@@ -56,28 +71,119 @@
         "standing",
         "obligation"
       ],
+      "title": "Kind",
       "type": "string"
     },
     "paths": {
-      "description": "`SQLite` GLOB patterns, such as `docs/*.md`, matched against each\nentry's path from the board's root.",
       "items": {
         "type": "string"
       },
+      "title": "Paths",
       "type": "array"
     },
     "purpose": {
-      "description": "Why the requirement exists.",
+      "title": "Purpose",
       "type": "string",
       "x-board-prose": true
     },
     "requirement": {
-      "description": "What the files must do, in a sentence or two.",
+      "title": "Requirement",
       "type": "string",
       "x-board-prose": true
     },
     "rule": {
-      "$ref": "#/$defs/Budget",
-      "description": "The budget a program checks; a control without one is stated."
+      "$ref": "#/$defs/Rule",
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "budget",
+            "max"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "pattern",
+            "show"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "judged"
+          ]
+        }
+      ]
     },
     "show": {
       "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol with a budget when `failing`, and any other at `edit`.",
@@ -86,6 +192,7 @@
         "edit",
         "failing"
       ],
+      "title": "Show",
       "type": "string"
     },
     "sources": {
@@ -94,6 +201,7 @@
         "format": "board-ref",
         "type": "string"
       },
+      "title": "Sources",
       "type": "array"
     }
   },
