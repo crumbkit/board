@@ -122,11 +122,15 @@ class Unattached(Strict):
 
 
 class Waiting(Strict):
-    """Entries from another plugin's capability, as it gives them, or why it refused."""
+    """Entries from another plugin's capability, as it gives them, or why it refused.
+
+    `unreadable` is the count the capability gives of records it could not read, or 0 when it gives none.
+    """
 
     entries: list[dict[str, Any]]
     total: int
     left_out: int
+    unreadable: int
     refused: Refusal | None
 
 

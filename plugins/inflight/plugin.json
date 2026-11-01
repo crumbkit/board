@@ -364,7 +364,7 @@
           },
           "Waiting": {
             "additionalProperties": false,
-            "description": "Entries from another plugin's capability, as it gives them, or why it refused.",
+            "description": "Entries from another plugin's capability, as it gives them, or why it refused.\n\n`unreadable` is the count the capability gives of records it could not read, or 0 when it gives none.",
             "properties": {
               "entries": {
                 "items": {
@@ -391,12 +391,17 @@
               "total": {
                 "title": "Total",
                 "type": "integer"
+              },
+              "unreadable": {
+                "title": "Unreadable",
+                "type": "integer"
               }
             },
             "required": [
               "entries",
               "total",
               "left_out",
+              "unreadable",
               "refused"
             ],
             "title": "Waiting",

@@ -72,8 +72,12 @@ def now(request: CallRequest) -> dict[str, object]:
 
 
 def _call(board: Board, capability: str, given: Mapping[str, object]) -> Entry:
-    """The output of `board call <capability>` with `given` on stdin."""
-    report = board.document("call", capability, stdin=json.dumps(given).encode())
+    """The output of `board call <capability>` with `given` as its flags.
+
+    Board reads no stdin for a capability whose input is all flags, so each value goes as its flag.
+    """
+    arguments = [part for name, value in given.items() for part in (f"--{name}", str(value))]
+    report = board.document("call", capability, *arguments)
     return cast("Entry", report["data"]["output"])
 
 
@@ -223,10 +227,17 @@ def _waiting(board: Board, capability: str, key: str, limit: int) -> Entry:
     try:
         output = _call(board, capability, {"limit": limit})
     except PluginError as error:
-        return {"entries": [], "total": 0, "left_out": 0, "refused": _refusal(error)}
+        return {"entries": [], "total": 0, "left_out": 0, "unreadable": 0, "refused": _refusal(error)}
     entries = cast("list[Entry]", output[key])
     total = int(output["total"])
-    return {"entries": entries, "total": total, "left_out": total - len(entries), "refused": None}
+    unreadable = int(output.get("unreadable", 0))
+    return {
+        "entries": entries,
+        "total": total,
+        "left_out": total - len(entries),
+        "unreadable": unreadable,
+        "refused": None,
+    }
 
 
 def _object(body: object) -> Entry | None:

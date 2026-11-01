@@ -43,6 +43,7 @@ and at most 100, and counts in `left_out` the entries the limit left out.
   `started` time with a zone.
 - `questions`: the entries of `plans.open`, the questions waiting on the
   owner. A decision awaiting review appears once, through its question.
+  `unreadable` counts the open questions `plans.open` could not read.
 - `evals`: the entries of `evals.open`, the evals planned or running.
 
 When `plans.open` or `evals.open` refuses, as when the plugin is not

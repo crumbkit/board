@@ -19,7 +19,12 @@ def stopped_board(board: Board) -> None:
     board.write("changes/c/opened.json", record("changes/opened/v1", pull_request=PR))
     change(board, "d", route="ask-first", session="s2")
     planned(board, "d")
-    question = {"question": "Go ahead with d?", "session": "s2", "asked": "2026-11-01T08:10:00Z", "status": "open"}
+    question = {
+        "question": "Go ahead with d?",
+        "session": "local_0002",
+        "asked": "2026-11-01T08:10:00Z",
+        "status": "open",
+    }
     board.write("projects/p/questions/q1.json", record("plans/question/v1", **question, **{"for": ["/changes/d"]}))
     board.write("evals/e.json", record("evals/eval/v1", question="Is it fast?", subjects=["app"]))
     board.write("artifacts/x.json", record("artifacts/artifact/v1", url="https://claude.ai/artifact/x", account="o"))
@@ -111,11 +116,8 @@ def test_now_lists_the_waiting_question_once_and_the_open_eval(board: Board) -> 
     stopped_board(board)
     output = board.now()
     assert [entry["path"] for entry in output["questions"]["entries"]] == ["/projects/p/questions/q1"]
-    assert (output["questions"]["total"], output["questions"]["left_out"], output["questions"]["refused"]) == (
-        1,
-        0,
-        None,
-    )
+    questions = output["questions"]
+    assert (questions["total"], questions["left_out"], questions["unreadable"], questions["refused"]) == (1, 0, 0, None)
     assert [entry["path"] for entry in output["evals"]["entries"]] == ["/evals/e"]
     assert all("questions" not in entry for entry in output["changes"]["changes"])
 
