@@ -1,0 +1,73 @@
+{
+  "additionalProperties": false,
+  "description": "`artifacts/version/v1` at `/artifacts/<id>/versions/<key>`: one version, written once.\n\nThe page is beside it as `<key>.html` or `<key>.md`. `<key>` is `version`,\nthe version id the Artifact tool returned, or, when it returned none, the\nfirst 16 hex digits of `sha256`, and the record leaves `version` out.\n`title` and `description` are the artifact's at this version. A version\nwith no local page, such as one an Artifact type wrote, has no copy and\nsays `copy: \"none\"`, and then has no `sha256`.",
+  "else": {
+    "required": [
+      "sha256"
+    ]
+  },
+  "if": {
+    "required": [
+      "copy"
+    ]
+  },
+  "properties": {
+    "$type": {
+      "const": "artifacts/version/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "at": {
+      "description": "When the session published or read this version, with a time zone.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "copy": {
+      "const": "none",
+      "description": "none when the version has no local page, so nothing was copied.",
+      "type": "string"
+    },
+    "description": {
+      "description": "The description the publish passed, when it passed one.",
+      "type": "string"
+    },
+    "session": {
+      "description": "The Claude Code session that published or read this version.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "sha256": {
+      "description": "The SHA-256 of the page copied beside this record, in hex.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "source": {
+      "description": "The local file the publish sent, when a publish wrote this version.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "title": {
+      "description": "The artifact's title at this version.",
+      "type": "string"
+    },
+    "version": {
+      "description": "The version id the Artifact tool returned, such as 1793473476-1c42.",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "session",
+    "at"
+  ],
+  "then": {
+    "not": {
+      "required": [
+        "sha256"
+      ]
+    }
+  },
+  "title": "VersionRecord",
+  "type": "object"
+}

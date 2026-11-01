@@ -1,0 +1,312 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "The artifacts in the board with their newest version and its title, newest first.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The artifacts in the board, newest first.",
+        "properties": {
+          "account": {
+            "description": "Only the artifacts of this account, by its email address.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "default": 50,
+            "description": "The most artifacts to return, 1 to 200; 50 when left out.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "title": "ListInput",
+        "type": "object"
+      },
+      "name": "list",
+      "outputSchema": {
+        "$defs": {
+          "Current": {
+            "additionalProperties": false,
+            "description": "An artifact's newest version: its record's path, version id, title and when it was recorded.\n\n`version` is null for a version keyed by its page's hash.",
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "path",
+              "version",
+              "title",
+              "at"
+            ],
+            "title": "Current",
+            "type": "object"
+          },
+          "Listed": {
+            "additionalProperties": false,
+            "description": "One artifact, by its record's path, with its newest version, or null when it has none yet.",
+            "properties": {
+              "account": {
+                "type": "string"
+              },
+              "current": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Current"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "first_seen": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "url",
+              "account",
+              "first_seen",
+              "current"
+            ],
+            "title": "Listed",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Artifacts, newest first by their newest version, or by `first_seen` for one with no version.\n\n`total` counts every artifact that matched and `truncated` says whether the\nlimit left some out. `unreadable` counts the artifact and version records\nBoard marks degraded or this plugin cannot read, which were left out.",
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/$defs/Listed"
+            },
+            "type": "array"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "unreadable": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifacts",
+          "total",
+          "truncated",
+          "unreadable"
+        ],
+        "title": "ListOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "description": "Write an artifact record, without a version, for each artifact of an Artifact tool listing that the board does not have.",
+      "inputSchema": {
+        "$defs": {
+          "Listing": {
+            "additionalProperties": true,
+            "description": "The Artifact tool's `list` result, unchanged: `{artifacts, truncated?, total?}` and the tool's other fields.\n\nOnly a listing of the account's own artifacts is admitted, so a `scope` of\n`shared` or `all` is refused.",
+            "properties": {
+              "artifacts": {
+                "description": "The listed artifacts, at most 200, most recently updated first.",
+                "items": {
+                  "$ref": "#/$defs/Row"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              "scope": {
+                "const": "mine",
+                "description": "Absent in a listing of the account's own artifacts; mine is the same.",
+                "type": "string"
+              },
+              "total": {
+                "description": "How many artifacts the account has.",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "truncated": {
+                "description": "Whether the account has more artifacts than the listing holds.",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "artifacts"
+            ],
+            "title": "Listing",
+            "type": "object"
+          },
+          "Row": {
+            "additionalProperties": true,
+            "description": "One artifact of the Artifact tool's list result. The tool's other fields are kept out of the record.",
+            "properties": {
+              "title": {
+                "description": "The artifact's title in the listing.",
+                "type": "string"
+              },
+              "updatedAt": {
+                "description": "When the artifact was last updated, with a time zone.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "description": "The artifact's claude.ai link, such as https://claude.ai/artifact/AbCdEf0123456789xyzQ.",
+                "pattern": "^https://claude\\.ai/(code/)?artifact/[A-Za-z0-9_-]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "url",
+              "title"
+            ],
+            "title": "Row",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Record each artifact of an Artifact tool listing that the board does not have.",
+        "properties": {
+          "account": {
+            "description": "The email address of the claude.ai account that published the artifact.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "listing": {
+            "$ref": "#/$defs/Listing",
+            "description": "The Artifact tool's list result, unchanged. Board reads stdin only when no flag is given, so give the whole input as JSON on stdin: {\"account\": \"owner@example.com\", \"listing\": {...}}."
+          }
+        },
+        "required": [
+          "account",
+          "listing"
+        ],
+        "title": "ImportInput",
+        "type": "object"
+      },
+      "name": "import",
+      "outputSchema": {
+        "$defs": {
+          "Truncated": {
+            "additionalProperties": false,
+            "description": "A listing that left artifacts out: how many it listed, how many the account has, and what that means.",
+            "properties": {
+              "listed": {
+                "type": "integer"
+              },
+              "message": {
+                "type": "string"
+              },
+              "total": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "listed",
+              "total",
+              "message"
+            ],
+            "title": "Truncated",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The artifact records written, by path, how many the board already had, and whether the listing was cut short.",
+        "properties": {
+          "known": {
+            "type": "integer"
+          },
+          "truncated": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Truncated"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "written": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "written",
+          "known",
+          "truncated"
+        ],
+        "title": "ImportOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "The claude.ai artifacts the owner publishes, each with a copy of every version's page, recorded by the board-artifacts Claude Code mod. Use it to find an artifact, or to sync the artifacts published outside Claude Code. Start with `board --personal call artifacts.list`, which lists the artifacts with their newest version, newest first. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "publishing"
+  },
+  "name": "artifacts",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_artifacts"
+  ],
+  "types": [
+    "artifacts/artifact/v1",
+    "artifacts/version/v1"
+  ],
+  "version": "0.1.0"
+}

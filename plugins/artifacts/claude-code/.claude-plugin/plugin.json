@@ -1,0 +1,8 @@
+{
+  "name": "board-artifacts",
+  "version": "0.1.0",
+  "description": "Records every claude.ai artifact a Claude Code session publishes or reads in the personal board, with a copy of each version's page, and imports the artifacts an Artifact listing names.",
+  "author": {
+    "name": "Luke Randall"
+  }
+}

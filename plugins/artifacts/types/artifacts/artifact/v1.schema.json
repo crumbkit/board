@@ -1,0 +1,34 @@
+{
+  "additionalProperties": false,
+  "description": "`artifacts/artifact/v1` at `/artifacts/<id>`: one claude.ai artifact, written once.\n\n`<id>` is the last segment of `url`. `first_seen` is the first publish the\nmod saw, or for an import the listing row's `updatedAt`, or the import time\nwhen the row has none. The newest version record under `<id>/versions/` is\nthe artifact's current version.",
+  "properties": {
+    "$type": {
+      "const": "artifacts/artifact/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "account": {
+      "description": "The email address of the claude.ai account that published the artifact.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "first_seen": {
+      "description": "When the board first saw the artifact, with a time zone.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "url": {
+      "description": "The artifact's claude.ai link, such as https://claude.ai/artifact/AbCdEf0123456789xyzQ.",
+      "pattern": "^https://claude\\.ai/(code/)?artifact/[A-Za-z0-9_-]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "url",
+    "account",
+    "first_seen"
+  ],
+  "title": "ArtifactRecord",
+  "type": "object"
+}

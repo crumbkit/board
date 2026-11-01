@@ -113,8 +113,12 @@ Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
    request gate, the `opened` record, the end of the decision stub with the
-   second migration run (plan/decisions.md), and the artifacts mod's `for`
-   (plan/artifacts.md). Its
+   second migration run (plan/decisions.md), and the artifacts mod's `for`.
+   `for` is an optional list on `artifacts/version/v1` of references to the
+   changes, evals or projects the version belongs to, which the mod sets
+   from the session's `Board:` line or its held change. An artifact belongs
+   to every `for` of its versions, and `artifacts.list` gains `--for <ref>`.
+   Its
    tests cover each hook with a twin that is refused or left out.
 2. The `inflight` plugin. Its fixture is a board holding four changes
    stopped at different steps, with running subagents, a waiting question
