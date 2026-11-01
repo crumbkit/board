@@ -56,6 +56,29 @@ pub trait Host {
     fn run(&self, process: &Process<'_>) -> Result<Exited, ProcessError> {
         board_plugin::child::run(process, &self.settings().environment.0)
     }
+    /// The value cached under `digest` in `place`, a directory under the
+    /// cache home such as `board-controls/judged`, or none when there is
+    /// none, it cannot be read, or the cache home is unknown.
+    fn cached(&self, place: &str, digest: &[u8]) -> Option<Vec<u8>> {
+        board_index::cached(&cache_place(self.settings(), place)?, digest)
+    }
+    /// Caches `value` under `digest` in `place`. Deleting the cache loses
+    /// nothing but the time to compute the value again. With no cache home,
+    /// or a `place` that is not plain relative names, nothing is cached.
+    fn cache(&self, place: &str, digest: &[u8], value: &[u8]) -> std::io::Result<()> {
+        match cache_place(self.settings(), place) {
+            Some(directory) => board_index::cache(&directory, digest, value),
+            None => Ok(()),
+        }
+    }
+}
+
+/// `place` under the settings' cache home, when there is one and `place`
+/// is relative names only, none of them `.` or `..`.
+fn cache_place(settings: &Settings, place: &str) -> Option<PathBuf> {
+    let plain = !place.is_empty()
+        && (place.split('/')).all(|name| !name.is_empty() && name != "." && name != "..");
+    plain.then(|| settings.cache_home.as_ref().map(|home| home.join(place)))?
 }
 
 /// What a built-in plugin reads in place of a process plugin's environment.
@@ -70,6 +93,9 @@ pub struct Settings {
     /// The variables a process plugin offering the capability would see,
     /// its `env` among them, which `Host::run` gives a process it starts.
     pub environment: Variables,
+    /// Where the person's caches go: `XDG_CACHE_HOME` when it is absolute,
+    /// else `~/.cache`; none when neither is known.
+    pub cache_home: Option<PathBuf>,
 }
 
 /// Variables by name and value. Its `Debug` shows only the names, since the

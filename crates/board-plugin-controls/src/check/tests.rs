@@ -98,6 +98,7 @@ pub(crate) fn recording(files: &[(&str, &str)]) -> (Scenario, Recording) {
             day_start: None,
             caller: None,
             environment: board_ops::Variables::default(),
+            cache_home: None,
         },
         calls: RefCell::default(),
     };

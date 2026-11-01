@@ -33,7 +33,8 @@ Board is called. `controls`, `plans`, `evals` and
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. It also gives
     `environment`, the variables a process plugin offering the capability
-    would see, its `env` among them. A built-in plugin reads no environment
+    would see, its `env` among them, and `cache_home`, `XDG_CACHE_HOME` when
+    it is absolute, else `~/.cache`. A built-in plugin reads no environment
     of its own.
   - `run(process)` starts a program, such as git, gh or an agent, through
     board-plugin's process module, with `environment` and nothing else. It
@@ -43,6 +44,16 @@ Board is called. `controls`, `plans`, `evals` and
     Board gets SIGINT, SIGTERM or SIGHUP, so nothing it started outlives
     it. It returns the exit code, stdout and the end of stderr, or why it
     did not start or was stopped.
+  - `cached(place, digest)` and `cache(place, digest, value)` read and
+    write a small value under `place`, plain names under the cache home
+    such as `board-controls/judged`, in a file named by the hex of
+    `digest`, a content hash the plugin derives from what the value
+    answers. board-index owns the files. Deleting them loses only the time
+    to compute the values again.
+- `board_ops::agent` starts a clean-context model agent, the argv a person
+  names in a variable, through `Host::run` in an empty directory, and
+  refuses each way it fails in the plugin's namespace, such as
+  `controls::agent::timeout`.
 
 ## Registration
 
