@@ -14,13 +14,15 @@ const README = { control: '/controls/example/readme', requirement: 'Keep the usa
 const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
 const CHECK = report({ path: '/repos/crumbkit', measured: [DOCS], stated: [README] })
+const MISSING = JSON.stringify({ schema: 'board/failure/v1', code: 'board::config::not_found', message: 'no board' })
+const OWN = report({ path: '/', measured: [], stated: [README] })
 const BAND = {
   plugin: 'board-controls',
   component: 'AbovePrompt',
   props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
-type Answers = { check?: { exitCode: number; stdout: string }; forPath?: Record<string, object[]> | 'fails'; tools?: string[] }
+type Answers = { check?: { exitCode: number; stdout: string }; fallback?: { exitCode: number; stdout: string }; forPath?: Record<string, object[]> | 'fails'; tools?: string[] }
 
 /** Stands in for the engine beneath the plugin: git, board, the tool list, the status line and the transcript. */
 function engine(on: On, answers: Answers) {
@@ -37,7 +39,9 @@ function engine(on: On, answers: Answers) {
     if (line.includes('controls.check')) {
       events.push('check')
       checks.push(line)
-      const check = answers.check ?? { exitCode: 0, stdout: CHECK }
+      const check = line.includes('--personal')
+        ? (answers.check ?? { exitCode: 0, stdout: CHECK })
+        : (answers.fallback ?? { exitCode: 1, stdout: MISSING })
       return run(check.exitCode, check.stdout)
     }
     const file = (e.argv.at(-1) ?? '').replace(/^\.\//, '')
@@ -93,6 +97,26 @@ test('the check asks the personal board about the repository it runs in, naming 
   expect(checks).toHaveLength(1)
   expect(checks[0]).toContain('board --personal --json call controls.check')
   expect(checks[0]).not.toContain('--path')
+})
+
+for (const [why, check] of [
+  ['there is no personal board', { exitCode: 1, stdout: MISSING }],
+  ['the personal board does not know the repository', { exitCode: 0, stdout: report({ path: null, measured: [], stated: [] }) }],
+] as const) {
+  test(`when ${why}, the check asks the board that holds the directory once, as before`, async ($, on) => {
+    const { checks } = engine(on, { check, fallback: { exitCode: 0, stdout: OWN } })
+    await start($)
+    expect(checks).toHaveLength(2)
+    expect(checks[1]).toContain('board --json call controls.check --path .')
+    const context = await $.prompt.context({ blocks: [] })
+    expect(context.blocks[0]?.text).toContain('/controls/example/readme')
+  })
+}
+
+test('a check the personal board answers asks no other board', async ($, on) => {
+  const { checks } = engine(on, { fallback: { exitCode: 0, stdout: OWN } })
+  await start($)
+  expect(checks).toHaveLength(1)
 })
 
 test('a check of a repository the personal board does not know has no controls, and one it knows has them', () => {

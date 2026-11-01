@@ -14,6 +14,10 @@ const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 // Without a path, the personal board checks the repository the session is in,
 // with that repository's own controls when it is a board itself.
 const CHECK = `PATH=${PATH} exec board --personal --json call controls.check`
+// When there is no personal board, or it does not know the repository, the
+// board that holds or mounts the directory is asked once, as before, so a
+// checkout that is itself a board keeps its own controls.
+const FALLBACK = `PATH=${PATH} exec board --json call controls.check --path .`
 const FOR_PATH = `PATH=${PATH} exec board --json call controls.for-path --path "$1"`
 // The tool the attention mod registers. While it is listed, the controls line
 // joins the band that mod draws; otherwise it goes to the status line.
@@ -40,10 +44,13 @@ const toldBy = (answer: Checked | null) => (answer?.kind === 'read' ? answer.con
 /** Runs the personal board's controls.check at the repository root and keeps the answer for the session. */
 async function check($: EngineInterface, cwd: string): Promise<Checked | null> {
   const root = await repositoryRoot($, cwd)
-  let answer: Checked | null
+  let answer: Checked | null = null
   try {
-    const ran = await $.process.run(['/bin/sh', '-c', CHECK], { cwd: root, timeoutMs: TIMEOUT_MS })
-    answer = parseCheck(root, ran.exitCode, ran.stdout, ran.stderr)
+    for (const command of [CHECK, FALLBACK]) {
+      const ran = await $.process.run(['/bin/sh', '-c', command], { cwd: root, timeoutMs: TIMEOUT_MS })
+      answer = parseCheck(root, ran.exitCode, ran.stdout, ran.stderr)
+      if (answer !== null) break
+    }
   } catch (error) {
     answer = { kind: 'failed', root, code: 'not run', message: String(error) }
   }

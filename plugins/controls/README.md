@@ -36,9 +36,11 @@ files it governs.
   `paths` is matched against a file's path from the root of each listed
   repository, so `src/secrets/*` covers `/repos/app/src/secrets/key.rs`, and
   the control reaches nothing outside them. A repository the board does not
-  mount still matches, through the files a caller names to `check`. A
-  repository is matched by the path written in `repos`, so name it by its
-  own path, not through a link.
+  mount still matches, through the files a caller names to `check`, and a
+  check of the repository's own path lists the control. A repository is
+  matched by the path written in `repos`, so `check` fails with
+  `controls::repos::indirect`, naming each, when an entry resolves to
+  another display path, such as one through a link.
 - `adds_step` names a workflow step that the work on the control's files
   gains. Nothing adds the step yet; `check` stores and shows it.
 - `paths` holds SQLite `GLOB` patterns, matched against each entry's path
@@ -125,6 +127,8 @@ to `.board/types/controls/control/v1.schema.json`.
   A path inside a mounted board, such as a repository mounted at
   `/repos/board` that is itself a board, also reads that board's own
   controls at the commit the mount pins, and says `own_controls: "read"`.
+  `read` means the plugin read the mounted tree's controls; a tree that is
+  not a board, or holds none, lists none.
   They are read as data, with `board query`, `board refs` and `board get`,
   and nothing in the repository runs. Their references are read in their
   own board, and their `paths`, and their `repos`, are anchored at the

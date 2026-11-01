@@ -168,29 +168,41 @@ def named(board: Board, files: list[str], own: Own | None = None) -> set[tuple[s
     return found
 
 
-def referenced(board: Board, controls: dict[str, Control]) -> dict[str, set[str]]:
-    """For each control with `applies_to`, the display path of each entry it reaches.
+def referenced(board: Board, controls: dict[str, Control]) -> tuple[dict[str, set[str]], list[list[str]]]:
+    """For each control with `applies_to`, the display path of each entry it reaches, and each indirect `repos` entry.
 
     Every link is replaced by its target. A reference in a mounted board is
-    read in that board, so its display path is put beneath the mount's. One
-    `board refs` resolves every reference the controls make, and no controls
-    start no run.
+    read in that board, so its display path is put beneath the mount's. A
+    `repos` entry is matched as written, so one whose written form is not
+    the display path it resolves to, such as one through a link, would match
+    nothing; each is listed as its control, its entry and that display path.
+    One `board refs` resolves every reference the controls make, and no
+    controls start no run.
     """
-    asked = sorted(logical for logical, control in controls.items() if control.record.get("applies_to"))
+    asked = sorted(
+        logical
+        for logical, control in controls.items()
+        if control.record.get("applies_to") or control.record.get("repos")
+    )
     found: dict[str, set[str]] = {}
+    indirect: list[list[str]] = []
     for control, report in zip(asked, board.refs(asked), strict=True):
         if report is None:
             raise PluginError("controls::board::failed", f"nothing is at {control}")
         reached: set[str] = set()
         for outgoing in report["from"]:
-            if outgoing["pointer"].startswith("/applies_to/"):
-                if outgoing["location"] is None:
+            location = outgoing["location"]
+            if outgoing["pointer"].startswith("/repos/"):
+                if location is not None and location["display"] != outgoing["target"]:
+                    indirect.append([control, str(outgoing["target"]), str(location["display"])])
+            elif outgoing["pointer"].startswith("/applies_to/"):
+                if location is None:
                     raise PluginError("controls::board::failed", f"{control} reaches nothing at {outgoing['target']}")
-                display = str(outgoing["location"]["display"])
+                display = str(location["display"])
                 root = controls[control].board
                 reached.add(display if root == "/" else root + display.rstrip("/"))
         found[control] = reached
-    return found
+    return found, indirect
 
 
 def referencing(report: dict[str, Any]) -> set[str]:

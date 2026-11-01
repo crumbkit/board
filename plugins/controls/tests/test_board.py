@@ -51,9 +51,9 @@ def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_ru
         return asked
 
     expected = {f"/controls/{name}": {f"/docs/{name}.md"} for name in names}
-    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=4), found) == expected
+    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=4), found) == (expected, [])
     assert runs() == ["/controls/a /controls/b /controls/c /controls/d"]
-    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=3), found) == expected
+    assert referenced(plugin_board.Board(str(board.root), "controls", paths_per_run=3), found) == (expected, [])
     assert runs() == ["/controls/a /controls/b /controls/c", "/controls/d"]
 
 

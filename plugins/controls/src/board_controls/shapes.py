@@ -211,8 +211,9 @@ class CheckOutput(TypedDict):
 
     `path` is what was checked, null when no path was given and the caller's
     repository is none the board knows; `next` then says what to do.
-    `own_controls` is `read` when the path is in a mounted board, whose own
-    controls are listed with the board's, and `not_read` when it is a repo
+    `own_controls` is `read` when the path is in a mounted tree, whose own
+    controls are listed with the board's; a tree that is not a board, or
+    holds no controls, lists none. It is `not_read` when the path is a repo
     record without a checkout. Each control's `board` is the root of the board
     that holds it.
     """
