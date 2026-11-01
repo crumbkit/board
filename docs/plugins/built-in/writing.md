@@ -1,8 +1,8 @@
 # Writing a built-in plugin
 
-This file holds detail for docs/plugins/built-in.md. `controls`, `evals`,
-`plans`, `requests` and `runs` are built-in crates; `controls` (#48) shows a
-Python plugin ported with its output, messages and codes unchanged.
+This file holds detail for docs/plugins/built-in.md. `boundary`, `controls`,
+`evals`, `plans`, `requests` and `runs` are built-in crates; `controls` (#48)
+shows a Python plugin ported with its output, messages and codes unchanged.
 
 ## What a built-in plugin can do
 

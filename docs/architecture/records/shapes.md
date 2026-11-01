@@ -99,10 +99,14 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
-- `Prose`, `Date` and `Url` are shared shapes. A `String` field takes one
-  with `#[schemars(with = "Prose")]`, and a `urls` field with
-  `#[schemars(with = "Vec<Url>")]`. `shape::registry()` lists every shared
-  shape by name, and `crates/board-plugin/shapes.json` is its golden.
+- `Prose`, `Date`, `Url`, `Sha256` and `Glob` are shared shapes. A
+  `String` field takes one with `#[schemars(with = "Prose")]`, and a `urls`
+  field with `#[schemars(with = "Vec<Url>")]`. `Sha256` is 64 lowercase hex
+  digits, such as an effect's id. `Glob` is an SQLite GLOB pattern, which a
+  plugin matches with GLOB in a query. `shape::registry()` lists every
+  shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
+- `Tag<R>` writes `R::TYPE` and reads only that string, so a record struct
+  can derive `Serialize` and `Deserialize`.
 - `schema_of` removes null from every optional field and drops an integer's
   `format`.
 - `#[schemars(extend("x-board-folder" = "..."))]` on a record struct

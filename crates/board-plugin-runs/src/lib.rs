@@ -56,6 +56,7 @@ impl Plugin for Runs {
                 code: "runs::call::unknown_capability".to_owned(),
                 message: format!("runs offers no capability {other}; it offers latest and trend"),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

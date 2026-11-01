@@ -142,11 +142,12 @@ impl Board {
                 code,
                 message,
                 fields,
+                hint,
             }) => {
                 return Err(CallError::Plugin {
                     plugin: plugin.clone(),
                     failure: Box::new(
-                        PluginFailure::parse(plugin, code, message, fields, None).map_err(bad)?,
+                        PluginFailure::parse(plugin, code, message, fields, hint).map_err(bad)?,
                     ),
                     stderr: Vec::new(),
                 });
