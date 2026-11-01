@@ -28,6 +28,12 @@ def aliases(host: str) -> str | None:
         "git@github.com-work:octo/widgets.git",
         "git@work-gh:octo/widgets.git",
         "git://github.com/octo/widgets.git",
+        "[github.com]:octo/widgets",
+        "git@[github.com]:octo/widgets.git",
+        "ssh://git@[github.com]/octo/widgets",
+        "[github.com:22]:octo/widgets",
+        "https://github.com./octo/widgets",
+        "git@github.com.:octo/widgets.git",
     ],
 )
 def test_every_form_of_a_github_url_names_its_repository(url: str) -> None:
@@ -35,7 +41,14 @@ def test_every_form_of_a_github_url_names_its_repository(url: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "url", ["/srv/git/widgets.git", "../widgets.git", "file:///srv/widgets.git", "https://gitlab.example/o/w.git"]
+    "url",
+    [
+        "/srv/git/widgets.git",
+        "../widgets.git",
+        "file:///srv/widgets.git",
+        "https://gitlab.example/o/w.git",
+        "https://github.com-evil.example/octo/widgets",
+    ],
 )
 def test_a_local_path_or_another_host_is_not_github(url: str) -> None:
     assert checkout.github_repository(url, aliases) is None
@@ -82,3 +95,26 @@ def test_a_push_to_another_host_goes_to_no_github_repository(tmp_path: Path) -> 
     at = repository(tmp_path)
     git(tmp_path, "remote", "add", "elsewhere", "https://gitlab.example/o/w.git")
     assert checkout.destinations(at, "elsewhere", "https://gitlab.example/o/w.git") == []
+
+
+def test_an_ssh_command_of_gits_own_makes_an_alias_unreadable_and_leaves_github_plain(tmp_path: Path) -> None:
+    at = repository(tmp_path)
+    git(tmp_path, "config", "core.sshCommand", "ssh -F /dev/null")
+    with pytest.raises(PluginError) as raised:
+        checkout.github_repository("git@work-gh:octo/widgets.git", checkout.resolver(at))
+    assert raised.value.code == "github::remote::unknown"
+    assert checkout.github_repository("git@github.com:octo/widgets.git", checkout.resolver(at)) == ("octo", "widgets")
+
+
+def test_only_a_plain_host_name_reaches_ssh() -> None:
+    assert checkout.ssh_hostname("a%h;b") is None
+    with pytest.raises(PluginError):
+        checkout.github_repository("git@a%h;b:octo/widgets.git")
+    assert checkout.ssh_hostname("localhost") == "localhost"
+
+
+def test_a_gh_write_goes_to_the_fetch_url_and_a_push_to_the_push_url(tmp_path: Path) -> None:
+    at = repository(tmp_path)
+    git(tmp_path, "remote", "set-url", "--push", "origin", "git@github.com:octo/covered.git")
+    assert checkout.destinations(at, "origin", "", push=False) == ["github:octo/widgets"]
+    assert checkout.destinations(at, "origin", "") == ["github:octo/covered"]

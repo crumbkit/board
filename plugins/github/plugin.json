@@ -575,7 +575,9 @@
         "ANTHROPIC_API_KEY",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "SSH_AUTH_SOCK",
-        "BOARD_GITHUB_PUSH_URL"
+        "BOARD_GITHUB_PUSH_URL",
+        "GIT_SSH_COMMAND",
+        "GIT_SSH"
       ],
       "inputSchema": {
         "additionalProperties": false,
@@ -665,6 +667,10 @@
         "readOnlyHint": true
       },
       "description": "Name the boundaries that cover a git push or gh write from the checkout, and where it goes, checking nothing and writing nothing.",
+      "env": [
+        "GIT_SSH_COMMAND",
+        "GIT_SSH"
+      ],
       "inputSchema": {
         "additionalProperties": false,
         "description": "Name the boundaries that cover a write from the checkout, checking nothing.",
@@ -683,6 +689,7 @@
           },
           "repo": {
             "description": "The owner/repo the write names, in place of the remote.",
+            "minLength": 1,
             "title": "Repo",
             "type": "string"
           }

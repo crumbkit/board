@@ -195,6 +195,21 @@ def test_a_tag_of_a_tag_is_checked_at_each_level_and_its_tagger_is_a_part(desk: 
     assert push(desk, "origin", "outer").returncode == 0
 
 
+def test_the_name_inside_a_nested_tag_is_checked_and_the_same_tags_named_plainly_go(desk: Desk) -> None:
+    output(install(desk))
+    desk.refuse(["tag.*.headers"])
+    git(desk.checkout, "tag", "-a", "acme-123", "-m", "Inner")
+    git(desk.checkout, "tag", "-a", "outer", "-m", "Outer", "acme-123")
+    git(desk.checkout, "tag", "-d", "acme-123")
+    refused = push(desk, "origin", "outer")
+    assert refused.returncode != 0
+    assert "headers" in refused.stderr
+    git(desk.checkout, "tag", "-d", "outer")
+    git(desk.checkout, "tag", "-a", "inner", "-m", "Inner")
+    git(desk.checkout, "tag", "-a", "outer", "-m", "Outer", "inner")
+    assert push(desk, "origin", "outer").returncode == 0
+
+
 def test_a_push_url_unlike_the_fetch_url_checks_the_commits_the_push_url_lacks(desk: Desk) -> None:
     fork = desk.home / "fork.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(fork)], check=True)

@@ -57,7 +57,7 @@ def origin(request: CallRequest) -> Origin:
 def _pushed(place: Origin, action: str, extra: dict[str, str]) -> tuple[dict[str, Any], str, list[str], str]:
     """Check the commits a push would send with `extra` parts, then push: the check, branch, commits and git's line."""
     branch, head = checkout.branch(place.top)
-    commits, parts = checkout.push_parts(place.top, branch, head)
+    commits, parts = checkout.push_parts(place.top, branch, head, checkout.advertised(place.top, "origin"))
     parts |= extra
     passed = place.check(action, parts)
     line = checkout.push(place.top, branch, head, passed["digest"])

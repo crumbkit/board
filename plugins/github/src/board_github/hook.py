@@ -12,8 +12,9 @@ MARKER = "# Installed by `board call github.install-hook`."
 # The variable that carries the URL git pushes to, kept off board's command line, where `ps` would show it.
 PUSH_URL = "BOARD_GITHUB_PUSH_URL"
 # The hook git runs before each push. It refuses the push when board is missing or the check fails or cannot run.
-# It lets the push go only when Board's own failure document says no config names a personal board: the probe's
-# output holds no content of the push, so no quoted text can match it.
+# It lets the push go only when the code field of Board's failure document says no config names a personal board.
+# The probe's output holds no content of the push, so no quoted text can match it. The sed reads the first `code`
+# field before any nested object, which is the document's own; JSON escapes a quote inside any string.
 HOOK = f"""#!/bin/sh
 {MARKER}
 # Before git pushes, it runs `board --personal call github.pre-push`, which
@@ -24,9 +25,9 @@ if ! command -v board >/dev/null 2>&1; then
   echo "board is not on PATH, so the boundary cannot check this push. Next: put board on PATH and push again." >&2
   exit 1
 fi
-case $(board --json --personal refs / 2>/dev/null) in
-  '{{"schema":"board/failure/v1","code":"board::config::not_found",'*) exit 0 ;;
-esac
+code=$(board --json --personal refs / 2>/dev/null |
+  sed -n 's/^{{[^{{}}]*"code"[[:space:]]*:[[:space:]]*"\\([^"]*\\)".*/\\1/p')
+[ "$code" = board::config::not_found ] && exit 0
 {PUSH_URL}=$2 board --personal call github.pre-push --remote "$1" --refs "$refs" >/dev/null || exit 1
 """
 # The fields of each line git writes on the hook's stdin.
@@ -85,9 +86,11 @@ def pre_push(request: CallRequest) -> dict[str, object]:
     if not destinations or not pushed:
         return {"checked": []}
     origin = checkout.mount(top, request.board.root)
+    # One `ls-remote` serves every ref, so `git push --tags` makes one round trip.
+    have = checkout.advertised(top, url or remote)
     checked: list[dict[str, object]] = []
     for _, sha, ref, _ in pushed:
-        parts = checkout.ref_parts(top, ref, sha, url or remote)
+        parts = checkout.ref_parts(top, ref, sha, have)
         for to in destinations:
             passed = crossing.check(request.board.root, "github.push", to, origin, parts)
             checked.append({"ref": ref, "to": to, "digest": passed["digest"], "note": passed["note"]})
@@ -112,7 +115,7 @@ def covers(request: CallRequest) -> dict[str, object]:
         if not remote and given["action"] == "push":
             branch = checkout.run(top, "symbolic-ref", "-q", "HEAD").stdout.strip()
             remote = checkout.run(top, "for-each-ref", "--format=%(push:remotename)", branch).stdout.strip()
-        destinations = checkout.destinations(top, remote or "origin", "")
+        destinations = checkout.destinations(top, remote or "origin", "", push=given["action"] == "push")
     origin = checkout.mount(top, request.board.root)
     covered: list[dict[str, object]] = []
     for to in destinations:

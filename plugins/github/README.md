@@ -78,15 +78,20 @@ The destination is `github:<owner>/<repo>` in lower case, from the URL
 configured for the checkout's `origin`. It is read before any `insteadOf`
 rewrite. The sending actions, the pre-push hook and `covers` read every URL
 by one rule, `github_repository` in `checkout.py`. The host is matched
-without case and with any port, and `github.com`, `www.github.com`,
-`ssh.github.com` and `github.com-<alias>` count as GitHub. An ssh host with
-another name is resolved through `ssh -G`, so a `Host` alias whose
-`HostName` is github.com counts too. A local path, a `file://` URL and
+without case, with any port, without the brackets git strips and without a
+trailing dot. `github.com`, `www.github.com` and `ssh.github.com` count as
+GitHub, and so does `github.com-<alias>` over ssh. An ssh host with another
+name is resolved through `ssh -G`, so a `Host` alias whose `HostName` is
+github.com counts too. Only a plain host name, letters, digits, `.`, `_` and
+`-`, is passed to ssh. When git runs another ssh command, through
+`core.sshCommand`, `GIT_SSH_COMMAND` or `GIT_SSH`, that command may resolve
+hosts differently, so an ssh host that is not plainly GitHub's is
+`github::remote::unknown`. A local path, a `file://` URL and
 another host are not GitHub, which the sending actions refuse as
 `github::remote::not_github`. A URL that could reach GitHub but names no
 repository the rule reads, such as a `<transport>::<address>` remote helper,
-an ssh host that `ssh -G` cannot resolve, or a GitHub URL with no
-repository, is `github::remote::unknown`. `insteadOf` moves fetch and push alike, so
+an ssh host that `ssh -G` cannot resolve or that is not a plain name, or a
+GitHub URL with no repository, is `github::remote::unknown`. `insteadOf` moves fetch and push alike, so
 the commits checked are still those the push sends. A `pushurl` or
 `pushInsteadOf` that makes origin push somewhere other than it fetches is
 refused as `github::remote::split`. No message quotes a URL's user or
@@ -189,8 +194,8 @@ from the global or system git config would serve every repository on the
 machine, so it is `github::hook::shared`, and nothing is written.
 
 Before each push, git runs the hook. The hook first runs
-`board --json --personal refs /`. When that prints Board's failure document
-with the code `board::config::not_found`, no config names a personal board,
+`board --json --personal refs /`. When the `code` field of Board's failure
+document is `board::config::not_found`, no config names a personal board,
 so there is no boundary at all, and the push goes. That output holds nothing
 of the push, so no text in a commit can match it. Otherwise the hook runs
 `board --personal call github.pre-push` with the remote and the refs git
@@ -200,10 +205,13 @@ and any password in it stay off the command line.
 For each ref, `pre-push` builds the parts `push` builds. `push.branch` is the
 remote ref without `refs/heads/`, so a tag is `refs/tags/<name>`. The commits
 are those no ref at the URL git pushes to reaches, so a push URL unlike the
-fetch URL is compared with what the push URL holds. An annotated tag adds
-`tag.<sha>.message`, `tag.<sha>.tagger_name` and `tag.<sha>.tagger_email`
-for each tag down to the commit, with `<sha>` the tag object's first 12 hex
-digits. A ref whose object is a tree or a blob is `github::push::not_commit`.
+fetch URL is compared with what the push URL holds. The hook lists that
+URL's refs once per push, however many refs it pushes. An annotated tag adds
+`tag.<sha>.message`, `tag.<sha>.tagger_name`, `tag.<sha>.tagger_email` and
+`tag.<sha>.headers` for each tag down to the commit, with `<sha>` the tag
+object's first 12 hex digits. `headers` holds the tag's header lines other
+than `object`, `type` and `tagger`, so it holds the tag's own name, which can
+differ from the ref it is pushed to, and the name of a tag nested in another. A ref whose object is a tree or a blob is `github::push::not_commit`.
 A ref git deletes sends nothing and is not checked. It runs `boundary.check`
 on the parts as the action `github.push`. It never relies on
 `boundary.verify`, which misses an edit to a boundary's checks. A push made
@@ -274,8 +282,9 @@ How it reads a command:
   the directory, with the action and the repository `--repo` or a `gh api`
   path names, or the remote a `git push` names. `covers` finds the
   destinations by the URL rule above, else from the branch's push remote,
-  else origin, and asks `boundary.covers` with the checkout's mount, as the
-  sending actions do. A `--repo` on a host other than github.com is not
+  else origin. A push goes to the remote's push URLs, else its URLs, and a gh
+  write to the remote's URLs, since gh reads the fetch URL. It asks
+  `boundary.covers` with the checkout's mount, as the sending actions do. A `--repo` on a host other than github.com is not
   read. gh may pick another repository, such as a fork's parent, and the mod
   does not follow it.
 - `gh api graphql` is not refused, because a mutation names its repository

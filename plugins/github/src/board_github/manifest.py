@@ -35,6 +35,8 @@ GH_ENV = ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]
 # What a sending action passes on: gh's variables, those the boundary's judged rules read, and the ssh agent git
 # pushes through.
 SEND_ENV = [*GH_ENV, "BOARD_CONTROLS_AGENT", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "SSH_AUTH_SOCK"]
+# The variables that make git run another ssh command, which the URL rule reads to fail closed on an ssh alias.
+SSH_ENV = ["GIT_SSH_COMMAND", "GIT_SSH"]
 # How long a sending action may run, in seconds: the boundary's 1,800 for its check, then the push and gh.
 SEND_TIMEOUT = 2400
 # The sending actions: name, description, input and output.
@@ -133,7 +135,7 @@ def manifest() -> dict[str, JsonValue]:
                 PrePushOutput,
                 read_only=False,
             )
-            | {"env": list[JsonValue]([*SEND_ENV, "BOARD_GITHUB_PUSH_URL"]), "timeout": SEND_TIMEOUT},
+            | {"env": list[JsonValue]([*SEND_ENV, "BOARD_GITHUB_PUSH_URL", *SSH_ENV]), "timeout": SEND_TIMEOUT},
             capability(
                 "covers",
                 "Name the boundaries that cover a git push or gh write from the checkout, and where it goes, "
@@ -141,7 +143,8 @@ def manifest() -> dict[str, JsonValue]:
                 CoversInput,
                 CoversOutput,
                 read_only=True,
-            ),
+            )
+            | {"env": list[JsonValue](SSH_ENV)},
         ],
     }
 

@@ -12,12 +12,16 @@ from board_plugin.protocol import PluginError
 TIMEOUT = 300
 # How much of git's stderr a failure's message carries.
 TAIL = 2000
-# The hosts that serve GitHub's git, and the `github.com-<alias>` ssh hosts kept for several accounts.
-GITHUB_HOSTS = re.compile(r"(?:www\.|ssh\.)?github\.com|github\.com-[\w.-]+")
+# The hosts that serve GitHub's git.
+GITHUB_HOSTS = re.compile(r"(?:www\.|ssh\.)?github\.com")
+# The `github.com-<alias>` ssh hosts kept for several accounts, which count as GitHub over ssh alone.
+GITHUB_ALIAS = re.compile(r"github\.com-[\w.-]+")
+# A host name ssh may be asked about: no space, quote, `%` or other character an ssh config could expand.
+PLAIN_HOST = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
 # A URL with a scheme, as host and path, any user and port left out.
 SCHEMED = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://(?:[^@/]*@)?(\[[^\]/]*\]|[^:/]*)(?::\d*)?(/.*)?")
-# Git's scp-like ssh form, `[user@]host:path`, whose host holds no slash.
-SCP = re.compile(r"(?:[^@/:]*@)?([^@/:]+):(.*)")
+# Git's scp-like ssh form, `[user@]host:path`, whose host holds no slash, or is in brackets with any port.
+SCP = re.compile(r"(?:[^@/:]*@)?(\[[^\]/]*\]|[^@/:]+):(.*)")
 # A GitHub repository's path: owner and repository, with an optional `.git` and trailing slash.
 REPOSITORY = re.compile(r"/?([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?/?")
 # The schemes git reaches a host over ssh by.
@@ -85,7 +89,13 @@ def top() -> str:
 
 
 def ssh_hostname(host: str) -> str | None:
-    """The host ssh connects to for `host`, from `ssh -G`, which reads ssh's config and connects to nothing."""
+    """The host ssh connects to for `host`, from `ssh -G`, which reads ssh's config and connects to nothing.
+
+    Only a plain host name is asked about, so no host from a checkout's config
+    reaches an ssh config's `Match exec` as shell text; any other is None.
+    """
+    if PLAIN_HOST.fullmatch(host) is None:
+        return None
     try:
         ran = subprocess.run(  # noqa: S603 - the host is passed after `--`
             ["ssh", "-G", "--", host],  # noqa: S607 - ssh is found on PATH
@@ -99,6 +109,18 @@ def ssh_hostname(host: str) -> str | None:
         return None
     names = [line.split(None, 1)[1] for line in ran.stdout.splitlines() if line.startswith("hostname ")]
     return names[0].strip().lower() if ran.returncode == 0 and names else None
+
+
+def resolver(at: str) -> Callable[[str], str | None]:
+    """How the checkout's git resolves an ssh host: `ssh -G`, or nothing when git runs another ssh command.
+
+    `core.sshCommand`, `GIT_SSH_COMMAND` and `GIT_SSH` may pass ssh options
+    such as `-F` or `-o HostName=`, which a plain `ssh -G` does not see, so an
+    ssh host not plainly GitHub's then counts as unreadable.
+    """
+    custom = os.environ.get("GIT_SSH_COMMAND") or os.environ.get("GIT_SSH")
+    custom = custom or run(at, "config", "--get", "core.sshCommand").stdout.strip()
+    return (lambda _: None) if custom else ssh_hostname
 
 
 def github_repository(url: str, resolve: Callable[[str], str | None] = ssh_hostname) -> tuple[str, str] | None:
@@ -122,10 +144,16 @@ def github_repository(url: str, resolve: Callable[[str], str | None] = ssh_hostn
         return None
     if found is not None and found[0] == "file":
         return None
-    if found is not None and found[0] in SSH and not GITHUB_HOSTS.fullmatch(found[1]):
-        resolved = None if found[1].startswith("-") else resolve(found[1])
-        found = None if resolved is None else (found[0], resolved, found[2])
-    if found is not None and not GITHUB_HOSTS.fullmatch(found[1]):
+    if found is not None:
+        # Git strips the brackets, and any port in them, before it calls ssh; a trailing dot names the same host.
+        host = found[1].removeprefix("[").removesuffix("]") if found[1].startswith("[") else found[1]
+        host = (host.rsplit(":", 1)[0] if host.count(":") == 1 else host).removesuffix(".")
+        found = (found[0], host, found[2])
+    ssh = found is not None and found[0] in SSH
+    if found is not None and ssh and not GITHUB_HOSTS.fullmatch(found[1]) and not GITHUB_ALIAS.fullmatch(found[1]):
+        resolved = resolve(found[1])
+        found = None if resolved is None else (found[0], resolved.removesuffix("."), found[2])
+    if found is not None and not GITHUB_HOSTS.fullmatch(found[1]) and not (ssh and GITHUB_ALIAS.fullmatch(found[1])):
         return None
     matched = None if found is None else REPOSITORY.fullmatch(found[2])
     if matched is None:
@@ -149,7 +177,7 @@ def repository(at: str) -> tuple[str, str]:
     that differs from the fetch URL is `github::remote::split`.
     """
     url = run(at, "config", "--get", "remote.origin.url").stdout.strip()
-    matched = github_repository(url)
+    matched = github_repository(url, resolver(at))
     if matched is None:
         raise PluginError(
             "github::remote::not_github",
@@ -170,20 +198,22 @@ def repository(at: str) -> tuple[str, str]:
     return matched
 
 
-def destinations(at: str, remote: str, url: str) -> list[str]:
+def destinations(at: str, remote: str, url: str, *, push: bool = True) -> list[str]:
     """The GitHub destinations, `github:<owner>/<repo>` in lower case, of a push git makes to `remote` at `url`.
 
     Git names the remote, or the URL it was given in its place, and the URL it
     pushes to, after any rewrite. Each of them is read, and so are the
     remote's push URLs as configured, else its URLs, as `repository` reads
-    origin's. A URL that could reach GitHub but cannot be read is
+    origin's. A gh write goes where the fetch URL points, so with `push` false
+    only the remote's URLs are read. A URL that could reach GitHub but cannot be read is
     `github::remote::unknown`, so the hook fails closed. None naming GitHub
     means no boundary on GitHub covers the push.
     """
-    configured = run(at, "config", "--get-all", f"remote.{remote}.pushurl").stdout.split()
+    configured = run(at, "config", "--get-all", f"remote.{remote}.pushurl").stdout.split() if push else []
     configured = configured or run(at, "config", "--get-all", f"remote.{remote}.url").stdout.split()
     named = [url, *configured] if configured else [url, remote]
-    found = (github_repository(each) for each in named if each)
+    resolve = resolver(at)
+    found = (github_repository(each, resolve) for each in named if each)
     return sorted({f"github:{owner}/{repo}" for owner, repo in (each for each in found if each is not None)})
 
 
@@ -221,24 +251,28 @@ def branch(at: str) -> tuple[str, str]:
     return name, git(at, "rev-parse", "--verify", "HEAD^{commit}").strip()
 
 
-def outgoing(at: str, head: str, remote: str = "origin") -> list[str]:
-    """The commits a push of `head` to `remote` would send, oldest first: those no ref on the remote reaches.
+def advertised(at: str, remote: str) -> list[str]:
+    """The commits the refs on `remote` name, as `git ls-remote` lists them: one network round trip."""
+    return git(at, "ls-remote", remote).split()[::2]
 
-    A ref on origin that names a commit the checkout lacks cannot reach `head`,
-    so `--ignore-missing` leaves it out.
+
+def outgoing(at: str, head: str, have: list[str]) -> list[str]:
+    """The commits a push of `head` would send, oldest first: those no commit in `have` reaches.
+
+    A ref on the remote that names a commit the checkout lacks cannot reach
+    `head`, so `--ignore-missing` leaves it out.
     """
-    advertised = git(at, "ls-remote", remote).split()
-    have = "".join(f"^{sha}\n" for sha in advertised[::2])
-    return git(at, "rev-list", "--reverse", "--ignore-missing", "--stdin", head, stdin=have).split()
+    stdin = "".join(f"^{sha}\n" for sha in have)
+    return git(at, "rev-list", "--reverse", "--ignore-missing", "--stdin", head, stdin=stdin).split()
 
 
-def push_parts(at: str, branch: str, head: str, remote: str = "origin") -> tuple[list[str], dict[str, str]]:
-    """The commits a push of `head` to `branch` on `remote` sends, and the parts that name the branch and each commit.
+def push_parts(at: str, branch: str, head: str, have: list[str]) -> tuple[list[str], dict[str, str]]:
+    """The commits a push of `head` sends past `have`, and the parts that name `branch` and each commit.
 
     `github.push` and the pre-push hook both build their parts here, so a push
     the action makes gives the hook the same content to check.
     """
-    commits = outgoing(at, head, remote)
+    commits = outgoing(at, head, have)
     return commits, {"push.branch": branch} | commit_parts(at, commits)
 
 
@@ -246,12 +280,13 @@ def push_parts(at: str, branch: str, head: str, remote: str = "origin") -> tuple
 TAGGER = re.compile(r"tagger (.*) <([^>]*)> \d+ [+-]\d{4}")
 
 
-def ref_parts(at: str, name: str, sha: str, remote: str) -> dict[str, str]:
-    """The parts of a push of object `sha` to the ref `name` on `remote`: the tags it peels through, then the commits.
+def ref_parts(at: str, name: str, sha: str, have: list[str]) -> dict[str, str]:
+    """The parts of a push of object `sha` to the ref `name` past `have`: the tags it peels through, then the commits.
 
-    An annotated tag's message, tagger name and tagger email are parts named
-    `tag.<short sha>.<field>`, for each tag down to the commit. A ref whose
-    object is a tree or a blob is `github::push::not_commit`.
+    An annotated tag's message, tagger name, tagger email and other headers,
+    its own name among them, are parts named `tag.<short sha>.<field>`, for
+    each tag down to the commit. A ref whose object is a tree or a blob is
+    `github::push::not_commit`.
     """
     parts: dict[str, str] = {}
     kind = git(at, "cat-file", "-t", sha).strip()
@@ -263,6 +298,7 @@ def ref_parts(at: str, name: str, sha: str, remote: str) -> dict[str, str]:
         parts[prefix + "message"] = message.removesuffix("\n")
         parts[prefix + "tagger_name"] = tagger[1] if tagger else ""
         parts[prefix + "tagger_email"] = tagger[2] if tagger else ""
+        parts[prefix + "headers"] = _headers(headers, {"object", "type", "tagger"})
         sha = next(line.split()[1] for line in lines if line.startswith("object "))
         kind = git(at, "cat-file", "-t", sha).strip()
     if kind != "commit":
@@ -271,7 +307,7 @@ def ref_parts(at: str, name: str, sha: str, remote: str) -> dict[str, str]:
             f"{name} names a {kind}, which the boundary cannot check as commits; push a branch or a tag of a commit",
             {"ref": name, "object": sha},
         )
-    return push_parts(at, name.removeprefix("refs/heads/"), sha, remote)[1] | parts
+    return push_parts(at, name.removeprefix("refs/heads/"), sha, have)[1] | parts
 
 
 def commit_parts(at: str, shas: list[str]) -> dict[str, str]:
@@ -296,7 +332,9 @@ def commit_parts(at: str, shas: list[str]) -> dict[str, str]:
         ):
             parts[prefix + name] = value
         parts[prefix + "message"] = fields[4].removesuffix("\n")
-        parts[prefix + "headers"] = _headers(git(at, "cat-file", "commit", sha))
+        parts[prefix + "headers"] = _headers(
+            git(at, "cat-file", "commit", sha), {"tree", "parent", "author", "committer"}
+        )
         parts[prefix + "diff"] = git(at, "-c", "core.quotePath=false", "show", *diff, "--text", sha)
         parts[prefix + "binary"] = "".join(f"{path}\n" for path, binary in changed if binary)
     return parts
@@ -320,13 +358,13 @@ def _changed(numstat: str) -> list[tuple[str, bool]]:
     return paths
 
 
-def _headers(commit: str) -> str:
-    """The commit object's header lines other than tree, parent, author and committer, with their continuations."""
+def _headers(text: str, skipped: set[str]) -> str:
+    """An object's header lines other than those named `skipped`, with their continuations."""
     kept: list[str] = []
     keep = False
-    for line in commit.partition("\n\n")[0].splitlines():
+    for line in text.partition("\n\n")[0].splitlines():
         if not line.startswith(" "):
-            keep = line.split(" ", 1)[0] not in {"tree", "parent", "author", "committer"}
+            keep = line.split(" ", 1)[0] not in skipped
         if keep:
             kept.append(line + "\n")
     return "".join(kept)

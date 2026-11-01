@@ -210,7 +210,7 @@ class CoversInput(Strict):
         None, min_length=1, description="The remote a push names; the branch's push remote, else origin, when left out."
     )
     repo: str | SkipJsonSchema[None] = Field(
-        None, pattern="^[^/]+/[^/]+$", description="The owner/repo the write names, in place of the remote."
+        None, min_length=1, description="The owner/repo the write names, in place of the remote."
     )
 
 
