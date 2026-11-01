@@ -119,7 +119,10 @@ Parsing is strict, and the first failure is the entry's code: over 16 MiB
 (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not JSON
 (`parse`), a duplicate key at any depth, then a number that a double or a
 64-bit integer cannot hold exactly (`lossy_number`). These rules follow RFC
-7493 (I-JSON), except that an integer may use the full 64-bit range. A
+7493 (I-JSON), except that an integer may use the full 64-bit range.
+A plain JSON file, one with no `$type`, may hold `//` and `/* */` comments
+and trailing commas, as editors' settings files do; a record or a schema may
+not, and `put` refuses them. A
 malformed `$type` is `record::bad_type`; a type with no schema file is
 `record::unknown_type`, and so is one whose schema file git ignores and does
 not track, or whose schema path is spelled in another case on disk. In `check`

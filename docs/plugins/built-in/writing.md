@@ -6,15 +6,18 @@ Python plugin ported with its output, messages and codes unchanged.
 
 ## What a built-in plugin can do
 
-A built-in plugin reads the board through `Host` and nothing else: `query`,
-`refs`, `get_each` and `settings` (docs/plugins/built-in.md). It cannot yet
-write a record, call another plugin, start a process, read an environment
-variable, write a file, or stop at a deadline. Clippy's `disallowed-methods`
-refuses `std::process::Command::new`, `std::env::var` and `std::fs::write`
-outside their owners (STANDARDS.md 7), and a plugin must not work around a
-missing method. When a plugin needs one, first add the method to `Host` and
-its test in board-ops, in a pull request of its own, and build the plugin on
-it.
+A built-in plugin reads and writes the board through `Host` and nothing
+else: `query`, `refs`, `get_each`, `put` and `settings`
+(docs/plugins/built-in.md). It writes records only with `put`, which takes
+the lines a Python plugin gives `board put --batch`, and maps its error with
+`PluginError::board_refused(<name>, "put --batch", &error.refusal())`. It
+cannot yet call another plugin, start a process, read an environment
+variable, write a file outside a put, or stop at a deadline. Clippy's
+`disallowed-methods` refuses `std::process::Command::new`, `std::env::var`
+and `std::fs::write` outside their owners (STANDARDS.md 7), and a plugin
+must not work around a missing method. When a plugin needs one, first add
+the method to `Host` and its test in board-ops, in a pull request of its
+own, and build the plugin on it.
 
 ## The crate
 

@@ -306,6 +306,36 @@ fn a_file_that_does_not_parse_keeps_its_kind_and_takes_the_parse_code() {
 }
 
 #[test]
+fn a_plain_json_file_may_hold_comments_and_trailing_commas() {
+    assert_eq!(classified("x.json", r#"{"a": [1]}"#), (Kind::Json, None));
+    assert_eq!(
+        classified("x.json", "// editor settings\n{\"a\": [1,], /* one */\n}"),
+        (Kind::Json, None)
+    );
+}
+
+#[test]
+fn a_record_or_schema_with_a_comment_takes_the_parse_code() {
+    assert_eq!(
+        classified("x.json", r#"{"$type": "lr/task/v1"}"#),
+        (Kind::Record, None)
+    );
+    assert_eq!(
+        classified("x.json", "// a task\n{\"$type\": \"lr/task/v1\"}"),
+        (Kind::Json, Some(Code::JsonParse))
+    );
+    let schema = ".board/types/lr/t/v1.schema.json";
+    assert_eq!(
+        classified(schema, r#"{"type": "object"}"#),
+        (Kind::Schema, None)
+    );
+    assert_eq!(
+        classified(schema, "// a task\n{\"type\": \"object\"}"),
+        (Kind::Schema, Some(Code::JsonParse))
+    );
+}
+
+#[test]
 fn the_board_configuration_is_a_record() {
     assert_eq!(
         classified(
