@@ -34,7 +34,7 @@ pub use crate::check::{CheckError, CheckReport, Checked, Detail};
 pub use crate::effects::{AnswerReport, Asker, DecideReport, EffectError, Shown, Signing, answer};
 pub use crate::enable::{EnableError, EnableReport, Kept};
 pub use crate::host::{
-    BuiltIn, Elsewhere, Host, Limit, Plugin, PluginError, Run, Settings, Variables,
+    BuiltIn, Elsewhere, Host, Limit, Plugin, PluginError, Run, Settings, Variables, literal,
 };
 pub use crate::index::{RefreshError, Refreshed};
 pub use crate::init::{InitError, InitReport, init};

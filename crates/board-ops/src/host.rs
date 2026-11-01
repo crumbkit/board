@@ -168,6 +168,12 @@ impl Limit {
     }
 }
 
+/// SQL `text` as a string literal, for the statement a built-in plugin gives
+/// [`Host::query`], which takes no parameters.
+pub fn literal(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "''"))
+}
+
 /// A built-in plugin's own refusal, whose code is
 /// `<plugin>::<area>::<reason>` with the plugin's own name, as in
 /// `board/error/v1`.
@@ -176,6 +182,9 @@ pub struct PluginError {
     pub code: String,
     pub message: String,
     pub fields: Map<String, Value>,
+    /// The next thing to try, which Board prints after the message, as a
+    /// process plugin's `hint`.
+    pub hint: Option<String>,
 }
 
 impl PluginError {
@@ -193,6 +202,7 @@ impl PluginError {
                 refusal.message
             ),
             fields,
+            hint: None,
         }
     }
 
@@ -211,6 +221,7 @@ impl PluginError {
                  the input struct and its schema disagree, so report this to Board's developers"
             ),
             fields: Map::new(),
+            hint: None,
         })
     }
 }

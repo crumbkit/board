@@ -5,6 +5,8 @@ use board_ops::BuiltIn;
 
 /// Every plugin this build of Board has built in.
 pub const BUILT_IN: BuiltIn = BuiltIn(&[
+    #[cfg(feature = "boundary")]
+    &board_plugin_boundary::Boundary,
     #[cfg(feature = "controls")]
     &board_plugin_controls::Controls,
     #[cfg(feature = "evals")]

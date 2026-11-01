@@ -45,6 +45,7 @@ impl Plugin for Plans {
                 code: "plans::call::unknown_capability".to_owned(),
                 message: format!("plans offers no capability {other}; it offers open"),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

@@ -1,3 +1,4 @@
+ok boundary 0.1.0 disabled offers check, verify, record
 ok controls 0.1.0 disabled offers for-path, check, evaluate
 ok evals 0.1.0 disabled offers about, open
 ok plans 0.1.0 disabled offers open
