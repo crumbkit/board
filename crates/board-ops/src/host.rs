@@ -5,13 +5,15 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use board_model::{CapabilityName, RecordType, Refusal};
+use board_model::{CapabilityName, LogicalPath, RecordType, Refusal};
 use board_plugin::Manifest;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::Board;
 use crate::query::{MAX_LIMIT, QueryError, QueryReport};
+use crate::read::{GetReport, ReadError};
+use crate::refs::{Absent, RefsError, RefsReport};
 
 /// A plugin compiled into Board, which runs in Board's own process.
 pub trait Plugin: Sync {
@@ -33,6 +35,19 @@ pub trait Plugin: Sync {
 pub trait Host {
     /// Runs `sql` as `board query` does, returning at most `limit` rows.
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError>;
+    /// Answers `paths` as `board refs` does, each in order, through one
+    /// snapshot.
+    fn refs(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError>;
+    /// Reads `paths` as `board get` does, each in order, through one
+    /// snapshot.
+    fn get_each(
+        &self,
+        paths: &[LogicalPath],
+    ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError>;
     fn settings(&self) -> &Settings;
 }
 
@@ -131,6 +146,24 @@ pub(crate) struct Hosted<'a> {
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
         self.board.query(sql, limit.0, None, self.cache)
+    }
+
+    fn refs(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        Ok(self
+            .board
+            .refs(paths, absent, &[], None, self.cache)?
+            .collect())
+    }
+
+    fn get_each(
+        &self,
+        paths: &[LogicalPath],
+    ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
+        Ok(self.board.get_each(paths)?.collect())
     }
 
     fn settings(&self) -> &Settings {

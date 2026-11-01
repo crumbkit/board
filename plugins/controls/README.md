@@ -1,6 +1,6 @@
 # controls
 
-A Board plugin for requirements on a board's files. Each requirement is a
+A plugin built into Board for requirements on a board's files. Each requirement is a
 `controls/control/v1` record stored in the board, so it is versioned with the
 files it governs.
 
@@ -77,9 +77,8 @@ to `.board/types/controls/control/v1.schema.json`.
   something that is not a readable file, such as a directory. Each error names
   every control it applies to. A file counts once, however many references,
   patterns, links or mounts reach it, and a link's own file counts nothing.
-  Reads are batched: one `board refs` per 10,000 controls, `board get` once
-  per file, and `board query` pages of 10,000 control–file pairs, so a file
-  changed between pages may or may not be counted.
+  The call reads each file once, and resolves every control's `applies_to`
+  in one pass.
 
 Board refuses both calls with `board::plugin::schema_differs` when the board's
 copy of the control schema differs from the one the plugin ships;
@@ -87,19 +86,21 @@ copy of the control schema differs from the one the plugin ships;
 a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
 
-Both capabilities read the board through `board query`, `board refs` and
-`board get`. They consider only the controls in the board's own working tree,
+Both capabilities run in Board's own process and read the board as
+`board query`, `board refs` and `board get` do. They consider only the controls in the board's own working tree,
 never those in mounted boards, though those controls' patterns reach mounted
 files.
 
-## Installing
+## Enabling
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/controls"
+Board has the plugin built in, so nothing is installed:
+
     board plugin enable controls
 
-The plugin runs `.venv/bin/python` directly, so run `uv sync --frozen --no-dev`
-again after pulling a change to `uv.lock`.
+An older install at `${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/controls`
+makes `call` and `plugin enable` fail with `board::plugin::duplicate`.
+Remove it; it is usually a symlink to a checkout, so remove the link, not the
+checkout.
 
 The directory also holds `SKILL.md`, the instructions an agent follows when it
 works in a board that holds controls. Link the directory into the agent's
@@ -121,14 +122,17 @@ explains the design.
 
 ## Developing
 
-The plugin talks to Board through the shared library in
-`python/board-plugin/`, which `pyproject.toml` installs from this checkout, so
-install the plugin by linking its directory in this repository.
+The plugin is the crate `crates/board-plugin-controls`. It generates the
+manifest's input and output schemas from Rust structs with schemars, and
+generates the control schema from `ControlRecord` in `src/records.rs`. Its
+`types/` directory holds that schema as a committed golden, which a test
+compares with what the struct generates. The schema keeps the bytes the
+former Python plugin generated, so its properties carry titles and `rule`
+admits null.
 
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
-from the TypedDicts in `src/board_controls/shapes.py` by
-`board_controls.manifest`, and a test checks that the committed files match.
+This directory keeps `SKILL.md`, the mod and a uv project that only tests
+the plugin through the real binary. The gates, which CI runs:
+`uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and
+`uv run pytest`. The tests drive `$BOARD_BIN`, by default the workspace's
+`target/debug/board`, so build it first with `cargo build -p board-cli`.
 `claude plugin test claude-code` runs the mod's tests.

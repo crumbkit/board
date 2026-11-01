@@ -717,3 +717,60 @@ fn built_in_plugins_debug_as_their_names() {
         r#"[PluginName("first"), PluginName("second")]"#
     );
 }
+
+/// `fixture` answering with what `refs` and `get_each` give for
+/// `/notes/a.md` and `/gone`: each path's display path, bytes or code.
+fn resolving() -> Fixture {
+    answering(
+        "fixture",
+        Box::new(|host| {
+            let paths: Vec<LogicalPath> = ["/notes/a.md", "/gone"]
+                .iter()
+                .map(|path| path.parse().unwrap())
+                .collect();
+            let answered = |result: Result<String, Code>| match result {
+                Ok(display) => json!(display),
+                Err(code) => json!(code.as_str()),
+            };
+            let refs: Vec<Value> = (host.refs(&paths, Absent::Refuse).unwrap().into_iter())
+                .map(|report| {
+                    answered(
+                        report
+                            .map(|report| report.display.to_string())
+                            .map_err(|error| error.code()),
+                    )
+                })
+                .collect();
+            let located = host.refs(&paths[1..], Absent::Locate).unwrap();
+            let missing = located[0].as_ref().unwrap().missing.as_ref().unwrap();
+            let read: Vec<Value> = (host.get_each(&paths).unwrap().into_iter())
+                .map(|report| {
+                    answered(
+                        report
+                            .map(|report| String::from_utf8(report.bytes).unwrap())
+                            .map_err(|error| error.code()),
+                    )
+                })
+                .collect();
+            Ok(
+                json!({"count": 0, "refs": refs, "missing": missing.display.to_string(), "read": read}),
+            )
+        }),
+    )
+}
+
+#[test]
+fn a_built_in_resolves_and_reads_paths_as_refs_and_get_do_and_a_missing_path_is_refused_or_located()
+{
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    scenario.write("notes/a.md", Item::File("a\n"));
+    let mut board = open(&scenario);
+    board.build_in(built(vec![resolving()]));
+    let output = call_base(&board, &Plugins::default()).unwrap().output;
+    assert_eq!(
+        output["refs"],
+        json!(["/notes/a.md", "board::path::not_found"])
+    );
+    assert_eq!(output["missing"], json!("/gone"));
+    assert_eq!(output["read"], json!(["a\n", "board::path::not_found"]));
+}

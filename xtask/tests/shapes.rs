@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 /// that ships it is ported. Each entry must still be broken, so a fix
 /// removes its entry.
 const EXEMPT: [(&str, &str); 25] = [
-    // Python plugins: pydantic titles every property and keeps field
+    // Python plugins, and controls, which ships the pydantic-generated
+    // schema file unchanged: pydantic titles every property and keeps field
     // meanings in the class docstring.
     ("changes/change/v1", "described"),
     ("changes/change/v1", "untitled"),
