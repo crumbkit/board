@@ -275,18 +275,22 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
                 "part": verdict.part,
                 "text": finding.text,
             });
-            let mut name = format!("{} on {}", verdict.control, verdict.part);
             if let Some(line) = finding.line {
                 failure["line"] = json!(line);
-                name += &format!(" line {line}");
             }
-            name += &format!(": {}", quoted(&finding.text));
             if let Some(rewrite) = &finding.rewrite {
                 failure["rewrite"] = json!(rewrite);
-                name += &format!(" ({rewrite})");
             }
+            let line = (finding.line).map_or_else(String::new, |line| format!(" line {line}"));
+            let rewrite = (finding.rewrite.as_ref())
+                .map_or_else(String::new, |rewrite| format!(" ({rewrite})"));
             failures.push(failure);
-            named.push(name);
+            named.push(format!(
+                "{} on {}{line}: {}{rewrite}",
+                verdict.control,
+                verdict.part,
+                quoted(&finding.text)
+            ));
         }
     }
     let more = (named.len().checked_sub(NAMED))

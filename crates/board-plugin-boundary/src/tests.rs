@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use board_model::{Code, canonical_json};
+use board_plugin::VariableName;
 use serde_json::json;
 
 use super::*;
@@ -38,7 +39,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
         check.timeout,
         Some(std::time::Duration::from_secs(CHECK_TIMEOUT))
     );
-    let env: Vec<&str> = check.env.iter().map(|name| name.as_str()).collect();
+    let env: Vec<&str> = check.env.iter().map(VariableName::as_str).collect();
     assert_eq!(env, AGENT_VARIABLES);
     assert_eq!(manifest.description, skill_description());
 }

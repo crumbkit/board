@@ -136,13 +136,13 @@ pub(crate) fn verify(host: &dyn Host, input: &Value) -> Result<Value, PluginErro
 /// `boundary::verify::bad_input`: a digest given with content, or content
 /// given in part.
 fn bad_input(given: &VerifyInput) -> PluginError {
-    let named = [
+    let present = [
         ("action", given.action.is_some()),
         ("digest", given.digest.is_some()),
         ("parts", given.parts.is_some()),
         ("to", given.to.is_some()),
     ];
-    let names: Vec<&str> = (named.iter())
+    let names: Vec<&str> = (present.iter())
         .filter(|(_, present)| *present)
         .map(|(name, _)| *name)
         .collect();
