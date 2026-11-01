@@ -14,7 +14,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 # The most entries each part returns by default, and at most.
 LIMIT = 20
-MAX = 100
+MAX = 50
 
 
 def shipped(schema: JsonDict) -> None:
@@ -79,7 +79,10 @@ class Change(Strict):
     `next` and `actor` are null when `changes.next` refused, and `refused`
     says why. `pr_state` is the command that says whether the pull request
     merged, since this query makes no network call. `agents_left_out` and
-    `artifacts_left_out` count what the limit left out.
+    `artifacts_left_out` count what the limit left out. An agent is listed
+    when the change has no holder, its session holds the change, or it
+    started after the newest claim; `agents_superseded` counts the others,
+    whose session gave the change up, as a rescue's claim does.
     """
 
     path: str
@@ -95,6 +98,7 @@ class Change(Strict):
     pr_state: str | None
     agents: list[Agent]
     agents_left_out: int
+    agents_superseded: int
     artifacts: list[Artifact]
     artifacts_left_out: int
 
@@ -111,13 +115,16 @@ class Changes(Strict):
 class Unattached(Strict):
     """Agents whose `works_on` names no open change, or who have none, oldest first.
 
-    `unreadable` counts the agent records, here or under a change, that Board
+    Only the agents whose session holds an open change are listed, so a
+    session that gave every change up, as to a rescue, drops out;
+    `superseded` counts the others. `unreadable` counts the agent records, here or under a change, that Board
     marks degraded or that this plugin cannot read.
     """
 
     agents: list[Agent]
     total: int
     left_out: int
+    superseded: int
     unreadable: int
 
 
@@ -139,9 +146,11 @@ class NowOutput(Strict):
 
     Each part returns at most `limit` entries and counts in `left_out` those
     it left out. `questions` are the entries of `plans.open`, and `evals` those
-    of `evals.open`.
+    of `evals.open`. `stopped_at` is the time given, or null when none was,
+    and then every agent with no run is running.
     """
 
+    stopped_at: dt.datetime | None
     changes: Changes
     unattached: Unattached
     questions: Waiting

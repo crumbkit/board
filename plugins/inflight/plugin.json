@@ -18,8 +18,8 @@
             "type": "string"
           },
           "limit": {
-            "description": "The most entries each part returns, 1 to 100; 20 when left out.",
-            "maximum": 100,
+            "description": "The most entries each part returns, 1 to 50; 20 when left out.",
+            "maximum": 50,
             "minimum": 1,
             "title": "Limit",
             "type": "integer"
@@ -134,7 +134,7 @@
           },
           "Change": {
             "additionalProperties": false,
-            "description": "An open change, its next step and who takes it, its pull request, its agents and its artifacts.\n\n`next` and `actor` are null when `changes.next` refused, and `refused`\nsays why. `pr_state` is the command that says whether the pull request\nmerged, since this query makes no network call. `agents_left_out` and\n`artifacts_left_out` count what the limit left out.",
+            "description": "An open change, its next step and who takes it, its pull request, its agents and its artifacts.\n\n`next` and `actor` are null when `changes.next` refused, and `refused`\nsays why. `pr_state` is the command that says whether the pull request\nmerged, since this query makes no network call. `agents_left_out` and\n`artifacts_left_out` count what the limit left out. An agent is listed\nwhen the change has no holder, its session holds the change, or it\nstarted after the newest claim; `agents_superseded` counts the others,\nwhose session gave the change up, as a rescue's claim does.",
             "properties": {
               "actor": {
                 "anyOf": [
@@ -161,6 +161,10 @@
               },
               "agents_left_out": {
                 "title": "Agents Left Out",
+                "type": "integer"
+              },
+              "agents_superseded": {
+                "title": "Agents Superseded",
                 "type": "integer"
               },
               "artifacts": {
@@ -270,6 +274,7 @@
               "pr_state",
               "agents",
               "agents_left_out",
+              "agents_superseded",
               "artifacts",
               "artifacts_left_out"
             ],
@@ -331,7 +336,7 @@
           },
           "Unattached": {
             "additionalProperties": false,
-            "description": "Agents whose `works_on` names no open change, or who have none, oldest first.\n\n`unreadable` counts the agent records, here or under a change, that Board\nmarks degraded or that this plugin cannot read.",
+            "description": "Agents whose `works_on` names no open change, or who have none, oldest first.\n\nOnly the agents whose session holds an open change are listed, so a\nsession that gave every change up, as to a rescue, drops out;\n`superseded` counts the others. `unreadable` counts the agent records, here or under a change, that Board\nmarks degraded or that this plugin cannot read.",
             "properties": {
               "agents": {
                 "items": {
@@ -342,6 +347,10 @@
               },
               "left_out": {
                 "title": "Left Out",
+                "type": "integer"
+              },
+              "superseded": {
+                "title": "Superseded",
                 "type": "integer"
               },
               "total": {
@@ -357,6 +366,7 @@
               "agents",
               "total",
               "left_out",
+              "superseded",
               "unreadable"
             ],
             "title": "Unattached",
@@ -409,7 +419,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "What is open or running: changes with their agents, unattached agents, questions and evals.\n\nEach part returns at most `limit` entries and counts in `left_out` those\nit left out. `questions` are the entries of `plans.open`, and `evals` those\nof `evals.open`.",
+        "description": "What is open or running: changes with their agents, unattached agents, questions and evals.\n\nEach part returns at most `limit` entries and counts in `left_out` those\nit left out. `questions` are the entries of `plans.open`, and `evals` those\nof `evals.open`. `stopped_at` is the time given, or null when none was,\nand then every agent with no run is running.",
         "properties": {
           "changes": {
             "$ref": "#/$defs/Changes"
@@ -420,11 +430,24 @@
           "questions": {
             "$ref": "#/$defs/Waiting"
           },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stopped At"
+          },
           "unattached": {
             "$ref": "#/$defs/Unattached"
           }
         },
         "required": [
+          "stopped_at",
           "changes",
           "unattached",
           "questions",

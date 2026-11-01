@@ -29,7 +29,9 @@ to show.
     board --personal call inflight.now [--holder <session>] [--stopped-at <time>] [--limit <n>]
 
 It returns four parts. Each returns at most `limit` entries, 20 by default
-and at most 100, and counts in `left_out` the entries the limit left out.
+and at most 50, and counts in `left_out` the entries the limit left out.
+`stopped_at` repeats the time given, or is null when `--stopped-at` was not
+given, and then every agent with no run is `running`.
 
 - `changes`: the open changes, by path. Each gives its `title`, `repo`,
   `branch`, `holder` and `worktree` from its newest claim, `next` and
@@ -38,7 +40,9 @@ and at most 100, and counts in `left_out` the entries the limit left out.
   refuses, `next` and `actor` are null and `refused` gives the code and
   message. `unreadable` counts the changes Board marks degraded.
 - `unattached`: the agents with no `works_on`, or whose `works_on` names no
-  open change, such as a change that landed. `unreadable` counts the agent
+  open change, such as a change that landed. Only the agents whose session
+  holds an open change are listed, and `superseded` counts the others.
+  `unreadable` counts the agent
   records, here or under a change, that Board marks degraded or that lack a
   `started` time with a zone.
 - `questions`: the entries of `plans.open`, the questions waiting on the
@@ -55,7 +59,18 @@ write its run after its session stopped. Agents are listed oldest first,
 each with its `session`, `cwd`, `started`, `works_on` and `prompt`, the
 path of the prompt it was started with. Each change lists at most `limit`
 agents and artifacts, and counts the rest in `agents_left_out` and
-`artifacts_left_out`. An artifact gives its `path`, `url`, and the `title`
+`artifacts_left_out`.
+
+No record says that a stalled agent is finished with, so the newest claim
+decides which agents of a change are current. A change lists an agent when
+the change has no claim, when the agent's session is the change's holder,
+or when the agent started after the newest claim. A rescue writes a claim,
+so the stalled agents of the session that stopped drop out, and
+`agents_superseded` counts them. An agent outside the listed changes is
+listed only while its session holds some open change, so it drops out once
+the rescue has claimed every change that session held.
+
+An artifact gives its `path`, `url`, and the `title`
 and `at` of its newest version, newest first.
 
 `--holder` keeps only the changes whose newest claim names that session,
@@ -70,7 +85,9 @@ checks it: `gh pr view <url> --json state`. A change that merged has a
 `landed` record and is no longer open.
 
 `now` runs `changes.next` once per change it lists, each a plugin call of
-its own, so its capability has a timeout of 120 seconds rather than 30.
+its own that takes up to about a second on a large board. Its capability
+has a timeout of 120 seconds rather than 30, and the limit stops at 50 so
+the listed changes fit in it.
 
 ## Rescue
 
@@ -78,10 +95,17 @@ After a usage stop, a new session runs:
 
     board --personal call inflight.now --stopped-at <time>
 
+The stop time is when the usage-limit message appeared, or the time of the
+last entry in the stopped session's transcript. A later time, such as the
+reset time the message names, also works, as long as it comes before the
+new session starts its own agents.
+
 For each change it lists, the session:
 
 1. goes to the change's `worktree`. Uncommitted work there is still there,
-   since a usage stop ends the session and leaves its files;
+   since a usage stop ends the session and leaves its files. A change with
+   no `worktree` has no claim yet: create a worktree on the change's
+   `branch` in a clone of its `repo`;
 2. writes a claim from there with `changes.claim`;
 3. runs `changes.brief` and restarts the `next` step.
 

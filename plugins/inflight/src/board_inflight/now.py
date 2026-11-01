@@ -20,6 +20,7 @@ PLUGIN = "inflight"
 AGENT_TYPE = "runs/agent/v1"
 RUN_TYPE = "runs/run/v1"
 OPENED_TYPE = "changes/opened/v1"
+CLAIM_TYPE = "changes/claim/v1"
 ARTIFACT_TYPE = "artifacts/artifact/v1"
 VERSION_TYPE = "artifacts/version/v1"
 # Codes that depend on the tree rather than the record. A record holding one is still a record to read.
@@ -40,30 +41,31 @@ def now(request: CallRequest) -> dict[str, object]:
     holder = cast("str | None", asked.get("holder"))
     stopped = _instant(asked["stopped-at"]) if "stopped-at" in asked else None
     board = Board(request.board.root, PLUGIN)
-    given = {"limit": EVERY_CHANGE} | ({"holder": holder} if holder is not None else {})
-    opened = _call(board, "changes.open", given)
+    opened = _call(board, "changes.open", {"limit": EVERY_CHANGE})
     every = cast("list[Entry]", opened["changes"])
-    listed = every[:limit]
+    kept = [change for change in every if holder is None or change["holder"] == holder]
+    listed = kept[:limit]
     agents, unreadable = _agents(board, stopped)
-    seen = Seen(agents, _pull_requests(board), _artifacts(board))
+    seen = Seen(agents, _claimed(board), _pull_requests(board), _artifacts(board))
     changes = [_change(board, change, seen, limit) for change in listed]
     open_paths = {str(change["path"]) for change in every}
-    others = [
-        agent
-        for agent in agents
-        if agent["works_on"] not in open_paths and (holder is None or agent["session"] == holder)
-    ]
+    holders = {change["holder"] for change in every if change["holder"] is not None}
+    others = [agent for agent in agents if agent["works_on"] not in open_paths]
+    active = [agent for agent in others if agent["session"] in holders]
+    current = [agent for agent in active if holder is None or agent["session"] == holder]
     return {
+        "stopped_at": None if stopped is None else asked["stopped-at"],
         "changes": {
             "changes": changes,
-            "total": opened["total"],
-            "left_out": int(opened["total"]) - len(listed),
+            "total": len(kept),
+            "left_out": len(kept) - len(listed),
             "unreadable": opened["unreadable"],
         },
         "unattached": {
-            "agents": others[:limit],
-            "total": len(others),
-            "left_out": max(len(others) - limit, 0),
+            "agents": [_shown(agent) for agent in current[:limit]],
+            "total": len(current),
+            "left_out": max(len(current) - limit, 0),
+            "superseded": len(others) - len(active),
             "unreadable": unreadable,
         },
         "questions": _waiting(board, "plans.open", "questions", limit),
@@ -91,6 +93,7 @@ class Seen:
     """What the records say about every change: agents with no run, pull requests and artifacts, by change."""
 
     agents: list[Entry]
+    claimed: dict[str, dt.datetime]
     pulls: dict[str, str]
     artifacts: dict[str, list[Entry]]
 
@@ -103,7 +106,16 @@ def _change(board: Board, change: Entry, seen: Seen, limit: int) -> Entry:
         nxt, actor, refused = step["next"], step["actor"], None
     except PluginError as error:
         nxt, actor, refused = None, None, _refusal(error)
-    mine = [agent for agent in seen.agents if agent["works_on"] == path]
+    attached = [agent for agent in seen.agents if agent["works_on"] == path]
+    claimed = seen.claimed.get(path)
+    # A rescue writes a claim, so the agents of the session that held the change before it drop out.
+    mine = [
+        agent
+        for agent in attached
+        if change["holder"] is None
+        or agent["session"] == change["holder"]
+        or (claimed is not None and agent["at"] > claimed)
+    ]
     held = seen.artifacts.get(path, [])
     url = seen.pulls.get(path)
     return {
@@ -113,8 +125,9 @@ def _change(board: Board, change: Entry, seen: Seen, limit: int) -> Entry:
         "refused": refused,
         "pull_request": url,
         "pr_state": None if url is None else f"gh pr view {shlex.quote(url)} --json state",
-        "agents": mine[:limit],
+        "agents": [_shown(agent) for agent in mine[:limit]],
         "agents_left_out": max(len(mine) - limit, 0),
+        "agents_superseded": len(attached) - len(mine),
         "artifacts": held[:limit],
         "artifacts_left_out": max(len(held) - limit, 0),
     }
@@ -168,7 +181,28 @@ def _agents(board: Board, stopped: dt.datetime | None) -> tuple[list[Entry], int
             }
         )
     found.sort(key=lambda agent: (agent["at"], agent["path"]))
-    return [{key: value for key, value in agent.items() if key != "at"} for agent in found], unreadable
+    return found, unreadable
+
+
+def _shown(agent: Entry) -> Entry:
+    """An agent as the output gives it, without the parsed start time kept for comparing."""
+    return {key: value for key, value in agent.items() if key != "at"}
+
+
+def _claimed(board: Board) -> dict[str, dt.datetime]:
+    """When each change's newest claim was written, from its stamp, by the change's path."""
+    rows = board.rows(
+        f"SELECT logical FROM records WHERE type = {literal(CLAIM_TYPE)} AND {READABLE} ORDER BY logical"  # noqa: S608 - values are quoted by literal()
+    )
+    found: dict[str, dt.datetime] = {}
+    for (path,) in rows:
+        # /changes/<name>/claims/<stamp>, where a stamp such as 20261101T120000000000Z sorts by time.
+        change, _, stamp = str(path).rpartition("/claims/")
+        try:
+            found[change] = dt.datetime.strptime(stamp, "%Y%m%dT%H%M%S%fZ").replace(tzinfo=dt.UTC)
+        except ValueError:
+            continue
+    return found
 
 
 def _pull_requests(board: Board) -> dict[str, str]:

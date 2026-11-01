@@ -89,6 +89,7 @@ def test_now_groups_agents_with_no_run_under_their_change_and_stalls_those_start
 def test_without_stopped_at_every_agent_with_no_run_is_running(board: Board) -> None:
     stopped_board(board)
     output = board.now()
+    assert (output["stopped_at"], board.now(**{"stopped-at": STOP})["stopped_at"]) == (None, STOP)
     states = [each["state"] for each in by_path(output)["/changes/b"]["agents"] + output["unattached"]["agents"]]
     assert states == ["running"] * 4
 
@@ -165,6 +166,7 @@ def test_a_change_whose_steps_cannot_be_derived_says_why_and_the_rest_are_still_
 
 
 def test_an_agent_record_without_a_start_time_is_counted_as_unreadable_and_its_twin_is_listed(board: Board) -> None:
+    change(board, "a", session="s1")
     agent(board, "fine", "2026-11-01T08:30:00Z")
     agent(board, "bad", "yesterday")
     output = board.now()
@@ -176,3 +178,43 @@ def test_a_stopped_at_without_a_time_zone_is_refused_and_one_with_a_zone_is_admi
     refused = board.refusal("inflight.now", {"stopped-at": "2026-11-01T09:00:00"})
     assert refused["code"] == "board::plugin::bad_input"
     assert board.now(**{"stopped-at": STOP})["changes"]["changes"] == []
+
+
+RESCUED = "20261101T100000000000Z"
+
+
+def claimed(board: Board, name: str, session: str) -> None:
+    """A claim of /changes/<name> by `session`, newer than the fixture's first claims."""
+    claim = record("changes/claim/v1", session=session, worktree=f"/work/{name}")
+    board.write(f"changes/{name}/claims/{RESCUED}.json", claim)
+
+
+def test_a_rescues_claim_hides_the_old_sessions_stalled_agents_and_lists_its_replacement(board: Board) -> None:
+    stopped_board(board)
+    claimed(board, "b", "s9")
+    agent(board, "again", "2026-11-01T10:05:00Z", works_on="/changes/b", session="s9")
+    b = by_path(board.now(**{"stopped-at": STOP}))["/changes/b"]
+    assert ([each["path"] for each in b["agents"]], b["agents_superseded"]) == (["/agents/again"], 2)
+
+
+def test_a_new_claim_by_the_same_holder_keeps_its_agents(board: Board) -> None:
+    stopped_board(board)
+    claimed(board, "b", "s1")
+    b = by_path(board.now(**{"stopped-at": STOP}))["/changes/b"]
+    assert ([each["path"] for each in b["agents"]], b["agents_superseded"]) == (["/agents/early", "/agents/late"], 0)
+
+
+def test_unattached_agents_drop_out_once_their_session_holds_no_open_change(board: Board) -> None:
+    stopped_board(board)
+    claimed(board, "a", "s9")
+    assert [each["path"] for each in board.now()["unattached"]["agents"]] == ["/agents/loose", "/agents/orphan"]
+    claimed(board, "b", "s9")
+    unattached = board.now()["unattached"]
+    assert (unattached["agents"], unattached["superseded"]) == ([], 2)
+
+
+def test_with_holder_an_agent_of_another_sessions_open_change_is_not_unattached(board: Board) -> None:
+    stopped_board(board)
+    agent(board, "helper", "2026-11-01T08:40:00Z", works_on="/changes/c", session="s1")
+    output = board.now(holder="s1")
+    assert [each["path"] for each in output["unattached"]["agents"]] == ["/agents/loose", "/agents/orphan"]
