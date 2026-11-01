@@ -314,28 +314,7 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
             parts.into_iter().collect::<Vec<_>>().join(", ")
         ));
     }
-    let (owner, effect) = match answer {
-        Answer::TooLarge => (
-            "This content is over 1 MiB as the owner would see it, so the owner cannot approve \
-             it; shorten it."
-                .to_owned(),
-            None,
-        ),
-        Answer::Refused(effect) => (
-            format!(
-                "The owner refused to let this exact content through ({effect}); the owner can \
-                 ask again by deleting /effects/seen/{effect} in the personal board."
-            ),
-            Some(effect),
-        ),
-        Answer::Asked(effect) | Answer::Approved(effect) => (
-            format!(
-                "The owner may approve this exact content instead with \
-                 `board answer {effect} approve`; then check again."
-            ),
-            Some(effect),
-        ),
-    };
+    let (owner, effect) = owner(answer);
     let mut fields = Map::from_iter([
         ("digest".to_owned(), json!(digest)),
         ("crossing".to_owned(), json!(crossing::path(digest))),
@@ -357,5 +336,32 @@ fn refusal(action: &str, digest: &str, failed: &[&Verdict], answer: &Answer) -> 
              `board --personal call boundary.check` with the changed parts on stdin. {owner}",
             steps.join("; ")
         )),
+    }
+}
+
+/// What the owner may do about the failed content, given how they answered,
+/// and the effect that asks or refused.
+fn owner(answer: &Answer) -> (String, Option<&String>) {
+    match answer {
+        Answer::TooLarge => (
+            "This content is over 1 MiB as the owner would see it, so the owner cannot approve \
+             it; shorten it."
+                .to_owned(),
+            None,
+        ),
+        Answer::Refused(effect) => (
+            format!(
+                "The owner refused to let this exact content through ({effect}); the owner can \
+                 ask again by deleting /effects/seen/{effect} in the personal board."
+            ),
+            Some(effect),
+        ),
+        Answer::Asked(effect) | Answer::Approved(effect) => (
+            format!(
+                "The owner may approve this exact content instead with \
+                 `board answer {effect} approve`; then check again."
+            ),
+            Some(effect),
+        ),
     }
 }
