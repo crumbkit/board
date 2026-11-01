@@ -18,6 +18,8 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   "route": "owner",
   "plan": "/changes/suite-timeout/plan.md",
   "head": "a3f9c0d",
+  "tickets": ["/repos/board/tickets/ACME-123"],
+  "pulls": ["/repos/board/pulls/octo-widgets-7"],
   "records": ["/tasks/suite-timeout-schema", "/suites/board-tests/runs/20261025T101500Z-a3f9"]
 }
 ```
@@ -30,6 +32,12 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
 - `mount`, `plan` and each of `records` are references, so `board check`
   reports one that reaches nothing.
+- `tickets` references the `jira/issue/v1` or `github/issue/v1` records the
+  change works on, and `pulls` its `github/pull/v1` records. The jira and
+  github plugins write those records. `board check` reports a ticket or pull
+  that reaches nothing (`board::ref::dangling`) or a record of another type
+  (`board::ref::wrong_type`). `board refs <ticket>` lists the changes that
+  reference a ticket.
 - `issue` and `pull_request` are URLs. `head` is the commit under test and
   review.
 
@@ -62,9 +70,11 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   (`changes::mount::not_found`).
 - `next --path /changes/<name>`: read-only. The phase, each gate check as
   `pass` or `missing` with a detail, and the instruction.
-- `attach --path /changes/<name> [--ref <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
-  adds a reference once or sets the fields. Refuses a reference that reaches
-  nothing (`changes::ref::dangling`).
+- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
+  adds a reference once or sets the fields. `--ref` adds to `records`,
+  `--ticket` to `tickets` and `--pull` to `pulls`. Refuses a reference that
+  reaches nothing (`changes::ref::dangling`), and a ticket or pull that is
+  not a record of a type its list accepts (`changes::ref::wrong_type`).
 - `advance --path /changes/<name>` moves to the next phase when the gate
   passes. Otherwise refuses with `changes::gate::unmet`, whose `missing`
   lists the failed checks. Leaving `done` or `dropped` is

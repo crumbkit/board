@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE, PULL_TYPES, TICKET_TYPES
 from board_changes.open import OPEN_LIMIT
 from board_changes.plan import PLAN_WORDS, USES_WORDS
 
@@ -23,6 +23,8 @@ Phase = Literal["plan", "build", "review", "land", "done", "dropped"]
 Route = Literal["owner", "ask-first", "unowned"]
 # References Board resolves and checks. Each is a plain property, never an `anyOf` with null.
 Ref = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
+TicketRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": list(TICKET_TYPES)})]
+PullRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": list(PULL_TYPES)})]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
 # Input properties `board call` takes as flags, relative to the run's prefix.
@@ -30,7 +32,7 @@ LogicalPath = Annotated[str, Field(pattern="^/", json_schema_extra={"format": "b
 
 # `attach` changes at least one thing. pydantic cannot emit this itself.
 ATTACH_SOMETHING: JsonDict = {
-    "anyOf": [{"required": [name]} for name in ("ref", "route", "head", "issue", "pull_request")],
+    "anyOf": [{"required": [name]} for name in ("ref", "ticket", "pull", "route", "head", "issue", "pull_request")],
 }
 
 
@@ -63,6 +65,8 @@ class ChangeRecord(BaseModel):
     names no owners. `plan` references the Markdown plan.
     `issue` links the spec issue, when there is one. `head` is the commit
     under test and review. `pull_request` is the pull request's URL.
+    `tickets` references the Jira or GitHub issues the change works on, and
+    `pulls` its GitHub pull requests, each as a record of that type.
     `records` references every record the change produced: tasks, runs,
     evals, questions, decisions and review reports.
     """
@@ -78,6 +82,8 @@ class ChangeRecord(BaseModel):
     issue: Url | SkipJsonSchema[None] = None
     head: Commit | SkipJsonSchema[None] = None
     pull_request: Url | SkipJsonSchema[None] = None
+    tickets: list[TicketRef] | SkipJsonSchema[None] = None
+    pulls: list[PullRef] | SkipJsonSchema[None] = None
     records: list[Ref] | SkipJsonSchema[None] = None
 
 
@@ -167,13 +173,19 @@ class PathInput(Strict):
 
 
 class AttachInput(Strict):
-    """Add a record reference to a change, or set its route, head commit, issue or pull request."""
+    """Add a record, ticket or pull reference to a change, or set its route, head commit, issue or pull request."""
 
     model_config = ConfigDict(json_schema_extra=shipped(ATTACH_SOMETHING))
 
     path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
     ref: LogicalPath | SkipJsonSchema[None] = Field(
         default=None, description="A record the change produced, such as /suites/board-tests/runs/<id>."
+    )
+    ticket: LogicalPath | SkipJsonSchema[None] = Field(
+        default=None, description=f"A ticket the change works on, a {' or '.join(TICKET_TYPES)} record."
+    )
+    pull: LogicalPath | SkipJsonSchema[None] = Field(
+        default=None, description=f"A pull request of the change, a {' or '.join(PULL_TYPES)} record."
     )
     route: Route | SkipJsonSchema[None] = Field(default=None, description="The route: owner, ask-first or unowned.")
     head: Commit | SkipJsonSchema[None] = Field(default=None, description="The commit under test and review.")

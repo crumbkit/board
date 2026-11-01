@@ -159,3 +159,31 @@ def test_a_change_board_marks_degraded_is_refused_and_a_valid_one_is_answered(bo
     assert board.refusal("next", {"path": PATH})["code"] == "changes::change::degraded"
     board.write("changes/t.json", change())
     assert board.call("next", {"path": PATH})["phase"] == "plan"
+
+
+def test_attach_refuses_a_ticket_or_pull_that_reaches_nothing_and_adds_one_that_does_once(board: Board) -> None:
+    board.write("changes/t.json", change())
+    board.write("tickets/ACME-123.json", record("jira/issue/v1"))
+    board.write("pulls/octo-widgets-7.json", record("github/pull/v1"))
+    for field, target in (("ticket", "/tickets/ACME-124"), ("pull", "/pulls/octo-widgets-8")):
+        refused = board.refusal("attach", {"path": PATH, field: target})
+        assert (refused["code"], refused["fields"]["ref"]) == ("changes::ref::dangling", target), field
+    for _ in range(2):
+        board.call("attach", {"path": PATH, "ticket": "/tickets/ACME-123", "pull": "/pulls/octo-widgets-7"})
+    written = board.read("changes/t.json")
+    assert (written["tickets"], written["pulls"]) == (["/tickets/ACME-123"], ["/pulls/octo-widgets-7"])
+
+
+def test_attach_refuses_a_ticket_or_pull_of_another_type_and_adds_each_type_it_accepts(board: Board) -> None:
+    board.write("changes/t.json", change())
+    board.write("tickets/ACME-123.json", record("jira/issue/v1"))
+    board.write("issues/octo-widgets-6.json", record("github/issue/v1"))
+    board.write("pulls/octo-widgets-7.json", record("github/pull/v1"))
+    for field, target in (("ticket", "/pulls/octo-widgets-7"), ("pull", "/issues/octo-widgets-6")):
+        refused = board.refusal("attach", {"path": PATH, field: target})
+        assert (refused["code"], refused["fields"]["ref"]) == ("changes::ref::wrong_type", target), field
+    board.call("attach", {"path": PATH, "ticket": "/tickets/ACME-123"})
+    board.call("attach", {"path": PATH, "ticket": "/issues/octo-widgets-6", "pull": "/pulls/octo-widgets-7"})
+    written = board.read("changes/t.json")
+    assert written["tickets"] == ["/tickets/ACME-123", "/issues/octo-widgets-6"]
+    assert written["pulls"] == ["/pulls/octo-widgets-7"]

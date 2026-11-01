@@ -15,7 +15,15 @@ PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
 HEAD = "a3f9c0de1234567890abcdef1234567890abcdef"
 # Types other plugins own, which a change references. The fixture board keeps a loose schema of its own for each.
-FOREIGN_TYPES = ("tasks/task/v2", "runs/suite/v1", "runs/run/v1", "plans/decision/v1")
+FOREIGN_TYPES = (
+    "tasks/task/v2",
+    "runs/suite/v1",
+    "runs/run/v1",
+    "plans/decision/v1",
+    "jira/issue/v1",
+    "github/issue/v1",
+    "github/pull/v1",
+)
 REVIEW_TYPE = "review/report/v1"
 # A review report as the review plugin's design defines it: the range and patch ids covered, findings and a verdict.
 REVIEW_SCHEMA = {

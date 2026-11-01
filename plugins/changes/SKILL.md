@@ -21,6 +21,8 @@ The gate is the contract. `next` says what the current phase still lacks;
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
    Set the commit under test with `--head <sha>` after each push, the issue
    with `--issue <url>`, and the pull request with `--pull-request <url>`.
+   When the board holds the ticket or pull request as a record, attach it
+   with `--ticket <path>` or `--pull <path>`.
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
 5. To drop a change, `board put` it with `phase` set to `dropped`.
