@@ -166,8 +166,13 @@ fn private_names(board: &Personal) {
 /// A boundary at `/boundaries/octo` that checks every part of a pull
 /// request to octo against `/controls/names`, with `fields` changed.
 fn names_boundary(board: &Personal, fields: &Value) {
-    let base = json!({"to": "github:octo/*", "actions": ["github.pr-*"], "checks": names_check()});
-    board.write("boundaries/octo.json", &boundary(&record(base, fields)));
+    let base = json!({
+        "$type": "boundary/boundary/v1",
+        "to": "github:octo/*",
+        "actions": ["github.pr-*"],
+        "checks": names_check(),
+    });
+    board.write("boundaries/octo.json", &record(base, fields));
 }
 
 /// A pull request to octo/board from `/repos/board`, with `parts`.
