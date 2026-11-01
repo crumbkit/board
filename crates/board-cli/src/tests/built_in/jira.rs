@@ -287,3 +287,25 @@ fn a_key_or_site_longer_than_a_path_segment_is_refused_with_boards_code_and_its_
     let written = board.answer(&["--key", &key(200), "--site", &site(255)]);
     assert_eq!(written["written"], true);
 }
+
+#[test]
+fn a_held_issue_without_its_site_is_refused_and_a_whole_one_is_admitted() {
+    let board = board();
+    let mut held = issue(&json!({"title": "Fix it"}));
+    held.as_object_mut().unwrap().remove("site");
+    let path = "jira/acme/ACME-123.json";
+    board.board.write(path, &held.to_string());
+    let flags = ["--key", "ACME-123", "--site", "acme"];
+    let (code, refused) = board.refused(&flags);
+    assert_eq!(
+        (code, &refused["code"]),
+        (1, &json!("jira::record::unreadable")),
+        "{refused}"
+    );
+    assert_eq!(refused["fields"]["path"], "/jira/acme/ACME-123");
+    board
+        .board
+        .write(path, &issue(&json!({"title": "Fix it"})).to_string());
+    assert_eq!(board.answer(&flags)["title"], "Fix it");
+    assert!(board.acli_calls().is_empty());
+}

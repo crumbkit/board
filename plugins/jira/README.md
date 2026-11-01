@@ -63,7 +63,7 @@ The output holds `path`, `site`, `key`, `url`, `title`, `written` and
 - `jira::site::invalid`: the site is not a lowercase site name, such as
   `acme`. A full host such as `acme.atlassian.net` is refused.
 - `jira::board::refused`: Board refused a read or the put. `fields.code`
-  holds Board's code.
+  holds Board's code, unless Board gave no answer at all.
 - `jira::record::unreadable`: the record already at the path lacks `site`,
   `key` or `url`. `fields.path` names it.
 - `jira::call::unknown_capability`: the plugin offers only `ref`.

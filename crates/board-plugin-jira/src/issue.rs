@@ -153,7 +153,13 @@ fn read(host: &dyn Host, path: &str) -> Result<Option<Value>, PluginError> {
             "get",
             &error.refusal("get"),
         )),
-        None => unreachable_answer(),
+        // Board answers a get of one path once; this stands in for an
+        // answer it never leaves out.
+        None => Err(PluginError {
+            code: "jira::board::refused".to_owned(),
+            message: "board get gave no answer for the issue's path".to_owned(),
+            fields: Map::new(),
+        }),
     }
 }
 
@@ -187,16 +193,6 @@ fn reported(
         title_note: note,
     };
     Ok(serde_json::to_value(output).expect("the output is plain strings and booleans"))
-}
-
-/// The answer to a `get_each` of one path that gave none, which Board never
-/// does.
-fn unreachable_answer() -> Result<Option<Value>, PluginError> {
-    Err(PluginError {
-        code: "jira::board::refused".to_owned(),
-        message: "board get gave no answer for the issue's path".to_owned(),
-        fields: Map::new(),
-    })
 }
 
 /// Runs `acli jira workitem view <key> --fields summary --json`, found on
