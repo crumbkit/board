@@ -281,8 +281,9 @@ fn a_key_or_site_longer_than_a_path_segment_is_refused_with_boards_code_and_its_
         );
         assert_eq!(refused["fields"]["code"], "board::path::malformed");
     }
-    // A key's file name adds `.json`, so 250 bytes is the longest a file
-    // system holds; a site is a directory, whose name may take 255.
-    let written = board.answer(&["--key", &key(247), "--site", &site(255)]);
+    // A key's file name adds `.json`, and a put writes it through a
+    // temporary file with a longer name, so the twin's key keeps well inside
+    // the file system's 255 bytes; a site is a directory and may take them.
+    let written = board.answer(&["--key", &key(200), "--site", &site(255)]);
     assert_eq!(written["written"], true);
 }
