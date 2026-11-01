@@ -60,6 +60,25 @@ pub struct Settings {
     pub day_start: Option<String>,
     /// `BOARD_CALLER_DIR`: the directory Board was started in.
     pub caller: Option<PathBuf>,
+    /// The variables a process plugin offering the capability would see,
+    /// its `env` among them, for a child the plugin starts.
+    pub environment: Variables,
+    /// Where the person's caches go: `XDG_CACHE_HOME` when it is absolute,
+    /// else `~/.cache`; none when neither is known.
+    pub cache_home: Option<PathBuf>,
+}
+
+/// Variables by name and value. Its `Debug` shows only the names, since the
+/// values may be secrets.
+#[derive(Clone, Default)]
+pub struct Variables(pub Vec<(String, std::ffi::OsString)>);
+
+impl fmt::Debug for Variables {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (formatter.debug_list())
+            .entries(self.0.iter().map(|(name, _)| name))
+            .finish()
+    }
 }
 
 /// How many rows a query returns: 1 to `MAX_LIMIT`, or all of them.

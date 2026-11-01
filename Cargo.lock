@@ -190,6 +190,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "strsim",
+ "tempfile",
  "thiserror",
 ]
 
@@ -197,6 +198,7 @@ dependencies = [
 name = "board-plugin-controls"
 version = "0.0.0"
 dependencies = [
+ "board-index",
  "board-model",
  "board-ops",
  "board-plugin",
@@ -207,6 +209,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

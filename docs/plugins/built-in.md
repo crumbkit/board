@@ -31,8 +31,16 @@ Board is called. `controls`, `plans`, `evals` and
     returns one answer per path, in order, so one path's refusal does not
     stop the others. Neither has a byte budget.
   - `settings()` gives `now`, the time the call started, and `day_start` and
-    `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. A built-in plugin
-    reads no environment.
+    `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. It also gives
+    `environment`, the variables a process plugin offering the capability
+    would see, its `env` among them, and `cache_home`, `XDG_CACHE_HOME` when
+    it is absolute, else `~/.cache`. A built-in plugin reads no environment
+    of its own; it passes `environment` to a child it starts.
+- A built-in plugin that asks a model starts the agent through
+  `board_plugin::agent`, which runs it in an empty temporary directory as
+  the leader of its own process group, under the deadline the plugin gives,
+  and kills the group when the agent exits. It keeps what it learns through
+  `board_index`'s verdict cache, which owns the files.
 
 ## Registration
 
@@ -47,7 +55,9 @@ the same name is `board::plugin::duplicate` for `call` and `plugin enable`;
 `board call` chooses a plugin, checks the board's copies of its schemas,
 and validates input and output the same way for both kinds, with the same
 codes. A built-in plugin runs in Board's process, so it has no time or size
-limit and never gives `not_started`, `failed`, `timeout` or `too_large`. It
+limit and never gives `not_started`, `failed`, `timeout` or `too_large`;
+a capability's `timeout` is not enforced for it, so a plugin that waits on a
+child enforces its own deadline. It
 must not panic: a panic ends Board's run instead of refusing the call. Its
 refusal carries an empty `stderr`. The `plugin.call` phase of the timing
 log includes the queries it makes, and `started` counts no process.

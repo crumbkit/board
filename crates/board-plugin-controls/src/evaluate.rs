@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::check::measure;
 use crate::index;
+use crate::judged::Judge;
 use crate::logical;
 use crate::records::{Budget, Pattern, Rule, Show};
 
@@ -74,11 +75,24 @@ struct Evaluated {
 pub(crate) struct Finding {
     text: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    line: Option<usize>,
+    pub(crate) line: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pattern: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rewrite: Option<String>,
+}
+
+impl Finding {
+    /// A judged finding: the text at fault, how to rewrite it, and its line
+    /// when the model gave one.
+    pub(crate) fn judged(text: &str, rewrite: &str, line: Option<usize>) -> Self {
+        Self {
+            text: text.to_owned(),
+            line,
+            pattern: None,
+            rewrite: Some(rewrite.to_owned()),
+        }
+    }
 }
 
 /// The kind of rule a result comes from.
@@ -106,7 +120,9 @@ type Expressions = Vec<(String, Regex)>;
 /// Each control's verdict on each part: budget and pattern rules first,
 /// then judged rules.
 ///
-/// A judged rule skips a part that failed a budget or pattern rule. A
+/// A judged rule skips a part that failed a budget or pattern rule, and a
+/// verdict kept for the same prompt and agent is reused. The agent is read
+/// from the settings only when a judged rule has a part to read. A
 /// control named twice is checked once. Each pattern file and rubric is
 /// read once, through one `get_each`, and each pattern file is compiled
 /// once per control.
@@ -151,6 +167,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             }
         }
     }
+    let mut judge = Judge::new(host.settings());
     let failed: BTreeSet<&str> = (results.iter())
         .filter(|(_, result)| result.status == Status::Failed)
         .map(|((_, part), _)| *part)
@@ -163,7 +180,7 @@ pub(crate) fn evaluate(host: &dyn Host, input: &Value) -> Result<Value, PluginEr
             let result = if failed.contains(part.as_str()) {
                 result(control, part, Kind::Judged, Vec::new(), Status::Skipped)
             } else {
-                let findings = judge(control, text, &sources[&judged.judged])?;
+                let findings = judge.findings(text, &sources[&judged.judged])?;
                 result(control, part, Kind::Judged, findings, Status::Failed)
             };
             results.insert((control, part), result);
@@ -354,20 +371,6 @@ fn matches(expressions: &Expressions, shown: bool, text: &str) -> Vec<Finding> {
     }
     found.sort_by_key(|finding| finding.line);
     found
-}
-
-/// The model's findings on `text` against `rubric`. Board cannot ask a
-/// model yet, so a judged rule with a part to read is
-/// `controls::judged::unavailable`; the runner lands in a follow-up.
-fn judge(control: &str, _text: &str, _rubric: &[u8]) -> Result<Vec<Finding>, PluginError> {
-    Err(PluginError {
-        code: "controls::judged::unavailable".to_owned(),
-        message: format!(
-            "{control} has a judged rule, which this Board cannot apply yet: the agent that \
-             judges text lands in a follow-up change; leave {control} out of `controls` until then"
-        ),
-        fields: Map::from_iter([("control".to_owned(), Value::from(control))]),
-    })
 }
 
 fn not_found(missing: &[&String]) -> PluginError {

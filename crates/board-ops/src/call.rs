@@ -10,7 +10,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::host::{Hosted, PluginError, Settings};
+use crate::host::{Hosted, PluginError, Settings, Variables};
 use crate::plugins::{CallFailed, Plugins};
 
 impl Board {
@@ -104,6 +104,8 @@ impl Board {
                 day_start: (environment.day_start.as_ref())
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
+                environment: Variables(board_plugin::passed(chosen, environment)?),
+                cache_home: cache_home(environment),
             },
             cache: plugins.cache,
         };
@@ -140,3 +142,13 @@ impl Board {
 
 #[cfg(test)]
 mod tests;
+
+/// `XDG_CACHE_HOME` when it is absolute, else `$HOME/.cache`, as the XDG
+/// rule reads them; none when neither is known.
+fn cache_home(environment: &board_plugin::Environment) -> Option<PathBuf> {
+    let cache = environment.cache.as_ref().map(PathBuf::from);
+    match cache {
+        Some(cache) if cache.is_absolute() => Some(cache),
+        _ => Some(PathBuf::from(environment.home.as_ref()?).join(".cache")),
+    }
+}

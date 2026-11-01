@@ -50,6 +50,8 @@ fn empty() -> Empty {
         now: std::time::SystemTime::UNIX_EPOCH,
         day_start: None,
         caller: None,
+        environment: board_ops::Variables::default(),
+        cache_home: None,
     })
 }
 
