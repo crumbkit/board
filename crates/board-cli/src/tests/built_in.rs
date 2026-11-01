@@ -20,6 +20,17 @@ fn cached(
     cache: Option<&Path>,
     arguments: &[&str],
 ) -> (Output, Ran) {
+    cached_with(directory, data, cache, arguments, b"")
+}
+
+/// [`cached`] with `stdin` as the standard input.
+fn cached_with(
+    directory: &Path,
+    data: Option<&Scenario>,
+    cache: Option<&Path>,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> (Output, Ran) {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
@@ -43,7 +54,7 @@ fn cached(
         .chain(arguments.iter().copied())
         .map(OsString::from);
     let mut ran = Ran::default();
-    let output = run(arguments, &context, &mut &b""[..], &mut ran);
+    let output = run(arguments, &context, &mut &stdin[..], &mut ran);
     (output, ran)
 }
 
@@ -436,24 +447,20 @@ impl Fixture {
 
     /// Runs `board` in the board's root with its cache.
     fn run(&self, arguments: &[&str]) -> Output {
-        cached(
-            self.board.workdir(),
-            None,
-            Some(self.cache.path()),
-            arguments,
-        )
-        .0
+        self.run_with(arguments, "")
     }
 
     /// Runs `board` in the board's root with its cache and `stdin` as its
     /// standard input.
     fn run_with(&self, arguments: &[&str], stdin: &str) -> Output {
-        board_with(
+        cached_with(
             self.board.workdir(),
+            None,
             Some(self.cache.path()),
             arguments,
             stdin.as_bytes(),
         )
+        .0
     }
 
     /// Runs `board --json` and reads its one document.
