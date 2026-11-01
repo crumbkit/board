@@ -5,17 +5,22 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_changes.change import CHANGE_TYPE
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE
 from board_changes.models import (
     CHANGE_SCHEMA_PATH,
+    PLAN_SCHEMA_PATH,
     AdvanceOutput,
     AttachInput,
     AttachOutput,
+    BriefOutput,
     ChangeRecord,
     NextOutput,
     OpenInput,
     OpenOutput,
     PathInput,
+    PlanInput,
+    PlanOutput,
+    PlanRecord,
     PrOutput,
     StartInput,
     StartOutput,
@@ -52,7 +57,7 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},
-        "types": [CHANGE_TYPE],
+        "types": [CHANGE_TYPE, PLAN_TYPE],
         "capabilities": [
             capability(
                 "start",
@@ -98,13 +103,33 @@ def manifest() -> dict[str, JsonValue]:
                 PrOutput,
                 read_only=False,
             ),
+            capability(
+                "plan",
+                "Write a plan for the change and the records it uses, refusing a reference that reaches nothing, a"
+                " plan over 3,000 words and used documents over 3,000 words in all; the newest plan is the change's"
+                " plan.",
+                PlanInput,
+                PlanOutput,
+                read_only=False,
+            ),
+            capability(
+                "brief",
+                "What an agent needs to start: the newest plan, one line per record it uses, the next step and the"
+                " command that lists the repository's controls, in at most 600 words.",
+                PathInput,
+                BriefOutput,
+                read_only=True,
+            ),
         ],
     }
 
 
 def schemas() -> dict[str, dict[str, JsonValue]]:
     """Each type's schema, as the plugin ships it, by its path under `types/`."""
-    return {CHANGE_SCHEMA_PATH: ChangeRecord.model_json_schema(by_alias=True)}
+    return {
+        CHANGE_SCHEMA_PATH: ChangeRecord.model_json_schema(by_alias=True),
+        PLAN_SCHEMA_PATH: PlanRecord.model_json_schema(by_alias=True),
+    }
 
 
 if __name__ == "__main__":

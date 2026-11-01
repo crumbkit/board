@@ -1,0 +1,31 @@
+{
+  "additionalProperties": false,
+  "description": "`changes/plan/v1`: one plan for a change, and the records it uses.\n\nA plan lives at `/changes/<name>/plans/<stamp>.json`, beside its text at\n`<stamp>.md`; the newest stamp is the current plan. `text` references the\nMarkdown. `uses` references the standards documents, controls, decisions,\nevals and other changes the plan relies on.",
+  "properties": {
+    "$type": {
+      "const": "changes/plan/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "text": {
+      "description": "The plan's Markdown text, beside this record.",
+      "format": "board-ref",
+      "type": "string"
+    },
+    "uses": {
+      "description": "The records and documents the plan relies on.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "text",
+    "uses"
+  ],
+  "title": "PlanRecord",
+  "type": "object"
+}
