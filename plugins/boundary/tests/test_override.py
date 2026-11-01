@@ -8,6 +8,8 @@ from typing import Any
 
 from conftest import Board, boundary, private_names
 
+from board_boundary.crossing import shown
+
 PR = {"action": "github.pr-create", "to": "github:octo/board"}
 FAILING = {"pr.title": "Fine", "pr.body": "See acme-123 here."}
 
@@ -34,9 +36,7 @@ def test_a_failed_check_asks_the_owner_once_and_names_the_effect_after_the_next_
     assert asked.stem == effect
     record = json.loads(asked.read_text())
     assert (record["plugin"], record["op"], record["path"]) == ("boundary", "boundary.override", fields["crossing"])
-    assert (
-        record["text"] == "github.pr-create to github:octo/board\n\npr.body:\nSee acme-123 here.\n\npr.title:\nFine\n"
-    )
+    assert record["text"] == shown(PR["action"], PR["to"], FAILING)
     owner = f"The owner may approve this exact content instead with `board answer {effect} approve`; then check again."
     assert fields["recovery"]["text"].startswith("Next: change pr.body:")
     assert fields["recovery"]["text"].endswith(owner)
@@ -108,10 +108,45 @@ def test_an_override_the_owner_refused_stays_refused_and_does_not_offer_approval
     assert document["code"] == "boundary::check::failed"
     fields: dict[str, Any] = document["fields"]
     assert fields["effect"] == effect
-    refused = f"The owner refused to let this exact content through ({effect})."
+    refused = (
+        f"The owner refused to let this exact content through ({effect});"
+        f" the owner can ask again by deleting /effects/seen/{effect} in the personal board."
+    )
     assert fields["recovery"]["text"].endswith(refused)
     assert "board answer" not in document["message"]
     record = personal.record(fields["crossing"])
     assert record is not None
     assert record["passed"] is False
     assert "override" not in record
+
+
+def test_the_owner_is_shown_each_part_so_that_no_two_contents_show_the_same_text() -> None:
+    assert shown("github.pr-create", "github:octo/board", {"pr.body": "Fine.\n\nSee acme-123.", "pr.title": "T"}) == (
+        'action "github.pr-create"\nto "github:octo/board"\n\npart "pr.body"\n  Fine.\n  \n  See acme-123.\n'
+        '\npart "pr.title"\n  T\n'
+    )
+    assert shown("a", "t", {"pr.body": "x\n\npr.title:\ny"}) != shown("a", "t", {"pr.body": "x", "pr.title": "y"})
+    assert shown("a", "t", {"pr.body": 'x\n\npart "pr.title"\n  y'}) != shown(
+        "a", "t", {"pr.body": "x", "pr.title": "y"}
+    )
+    assert shown('a\nto "t"', "t", {"p": "x"}) != shown("a", "t", {"p": "x"})
+
+
+def test_failing_content_too_large_to_show_the_owner_still_fails_with_its_findings_and_no_effect(
+    personal: Board,
+) -> None:
+    covered(personal)
+    large = {"pr.body": "acme-123\n" + "x" * (1 << 20)}
+    ran, document = personal.call("check", PR | {"parts": large})
+    assert ran.returncode == 1
+    assert document["code"] == "boundary::check::failed"
+    fields = document["fields"]
+    assert fields["failures"] == [{"control": "/controls/names", "part": "pr.body", "text": "acme-123", "line": 1}]
+    assert "effect" not in fields
+    ending = "This content is over 1 MiB as the owner would see it, so the owner cannot approve it; shorten it."
+    assert fields["recovery"]["text"].startswith("Next: change pr.body:")
+    assert fields["recovery"]["text"].endswith(ending)
+    assert pending(personal) == []
+    record = personal.record(fields["crossing"])
+    assert record is not None
+    assert record["passed"] is False

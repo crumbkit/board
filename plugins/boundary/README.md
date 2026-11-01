@@ -102,11 +102,17 @@ changing a rule. Only a failed check asks; a passing check writes no effect.
 - The digest covers the action, destination and every part, so an approval
   admits exactly that content. Any other content has another crossing path
   and asks again.
-- When the owner refused the effect, the check still fails, and the
-  message says the owner refused this content and names the effect.
-- Content over 1 MiB as shown cannot be asked: Board refuses the decide
-  with `board::json::too_large`, which reaches the caller as
-  `boundary::board::refused`.
+- The text quotes the action, destination and each part name as JSON, and
+  indents every line of a part by two spaces, so no two contents show the
+  same text.
+- When the owner refused the effect, the check still fails. The message
+  says the owner refused this content, names the effect, and says the owner
+  can ask again by deleting `/effects/seen/<effect>`.
+- Content over 1 MiB as shown cannot be asked. Board refuses the decide
+  with `board::json::too_large`, and the check fails as usual, with no
+  `effect`, ending that the owner cannot approve content this large.
+- The text shows the content, not the failed controls, so an approval keeps
+  covering the content if a later control also fails it.
 - An approval does not expire and covers one crossing. The owner withdraws
   one by deleting its seen record from `/effects/seen/`.
 
@@ -148,6 +154,8 @@ which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 default the workspace's `target/debug/board`, against a temporary personal
 board named in a temporary `XDG_CONFIG_HOME`, and start a stub agent script,
 never a model. An approval needs Touch ID, so a `board` shim on the plugin's
-PATH runs an approved decide as the owner and names the effect in its report. `plugin.json` and the shipped schemas are generated from
-`src/board_boundary/shapes.py` by `board_boundary.manifest`, and a test
-checks that the committed files match.
+PATH runs an approved decide as the owner and names the effect in its
+report. The tests therefore do not prove that Board finds a signed approval
+for the plugin's decide. `plugin.json` and the shipped schemas are
+generated from `src/board_boundary/shapes.py` by `board_boundary.manifest`,
+and a test checks that the committed files match.

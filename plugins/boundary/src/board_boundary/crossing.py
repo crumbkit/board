@@ -3,6 +3,7 @@
 import hashlib
 import json
 from fnmatch import fnmatchcase
+from functools import partial
 from typing import cast
 
 from board_plugin.board import TREE_CODES, Board, literal
@@ -39,6 +40,7 @@ VALID = f"(status = 'ok' OR code IN ({', '.join(map(literal, TREE_CODES))}))"
 OVERRIDE = "boundary.override"
 ASKED = "board::settings::asked"
 REFUSED = "board::settings::refused"
+TOO_LARGE = "board::json::too_large"
 ADMITTED = "admitted"
 
 
@@ -98,7 +100,7 @@ def check(request: CallRequest) -> CheckOutput:
             crossing["result"] = prior[0]["result"]
     board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
     if not passed:
-        raise _overridable(_refusal(action, key, path, failed), cast("str", effect), refused=answer == REFUSED)
+        raise _overridable(_refusal(action, key, path, failed), cast("str", answer), effect)
     note = None
     if not matched:
         note = f"no boundary matches {action} to {to}" + (f" from {origin}" if origin else "") + "; nothing was checked"
@@ -143,26 +145,40 @@ def _evaluate(
     return verdicts, unchecked
 
 
+def shown(action: str, to: str, parts: dict[str, str]) -> str:
+    """The content as the owner's approval shows it: names quoted as JSON, and every body line indented.
+
+    No body line starts in the first column, and a quoted name holds no line
+    break, so no two contents show the same text.
+    """
+    quoted = partial(json.dumps, ensure_ascii=False)
+    lines = [f"action {quoted(action)}", f"to {quoted(to)}"]
+    for name, body in sorted(parts.items()):
+        lines += ["", f"part {quoted(name)}", *(f"  {line}" for line in body.split("\n"))]
+    return "\n".join(lines) + "\n"
+
+
 def _override(board: Board, path: str, action: str, to: str, parts: dict[str, str]) -> tuple[str, str | None]:
     """How the owner answered letting the failed crossing at `path` through, and the effect that asks or approved it.
 
-    The answer is ADMITTED, ASKED or REFUSED.
+    The answer is ADMITTED, ASKED, REFUSED or TOO_LARGE, which has no effect.
 
     `board decide` shows the owner the content, so the signed approval names
     what it lets through, and the path's digest binds the approval to that
-    content. Board refuses content over 1 MiB with `board::json::too_large`,
-    which reaches the caller as `boundary::board::refused`, so such content
-    cannot be overridden (a soft limit; showing only the parts the checks
-    failed on would raise it). Under `board call` Board always
-    names the plugin, so an admitted decide names the effect that approved it.
+    content. Board refuses to show more than 1 MiB, so such content cannot be
+    overridden (a soft limit; showing only the parts the checks failed on
+    would raise it). Under `board call` Board always names the plugin, so an
+    admitted decide names the effect that approved it.
     """
-    text = f"{action} to {to}\n" + "".join(f"\n{name}:\n{body}\n" for name, body in sorted(parts.items()))
+    text = shown(action, to, parts)
     try:
         report = board.document("decide", "--op", OVERRIDE, "--path", path, "--text", "-", stdin=text.encode())
     except PluginError as error:
         code = error.fields.get("code")
         if code in {ASKED, REFUSED}:
             return str(code), str(error.fields["effect"])
+        if code == TOO_LARGE:
+            return TOO_LARGE, None
         raise
     return ADMITTED, cast("str | None", report["data"]["effect"])
 
@@ -232,16 +248,23 @@ def _matches(record: BoundaryRecord, action: str, to: str, origin: str | None) -
     return any(origin == path or origin.startswith(path.rstrip("/") + "/") for path in record["from"])
 
 
-def _overridable(refusal: PluginError, effect: str, *, refused: bool) -> PluginError:
-    """`refusal`, ending with what the owner may do about the override `effect`, or that they refused it."""
-    if refused:
-        owner = f" The owner refused to let this exact content through ({effect})."
+def _overridable(refusal: PluginError, answer: str, effect: str | None) -> PluginError:
+    """`refusal`, ending with what the owner may do about overriding it, given Board's `answer` and the `effect`."""
+    if answer == TOO_LARGE:
+        owner = " This content is over 1 MiB as the owner would see it, so the owner cannot approve it; shorten it."
+    elif answer == REFUSED:
+        owner = (
+            f" The owner refused to let this exact content through ({effect});"
+            f" the owner can ask again by deleting /effects/seen/{effect} in the personal board."
+        )
     else:
         owner = (
             f" The owner may approve this exact content instead with `board answer {effect} approve`; then check again."
         )
     recovery = cast("dict[str, str]", refusal.fields["recovery"])
-    fields = refusal.fields | {"effect": effect, "recovery": recovery | {"text": recovery["text"] + owner}}
+    fields = refusal.fields | {"recovery": recovery | {"text": recovery["text"] + owner}}
+    if effect is not None:
+        fields["effect"] = effect
     return PluginError(refusal.code, refusal.message + owner, fields)
 
 
