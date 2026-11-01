@@ -8,10 +8,15 @@ use crate::{Asker, PutError, PutReport};
 const NOTE_SCHEMA: &str =
     r#"{"type": "object", "required": ["title"], "properties": {"title": {"type": "string"}}}"#;
 
-/// The board `BASE` calls, with notes and a note at `/notes/held`.
+/// The board `BASE` calls, committing as an identity of its own, with
+/// notes and a note at `/notes/held`.
 fn notes() -> Scenario {
     let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
     scenario
+        .write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        )
         .write(
             ".board/types/fixture/note/v1.schema.json",
             Item::File(NOTE_SCHEMA),
@@ -172,6 +177,7 @@ fn a_built_ins_put_refuses_as_put_batch_does_inside_the_plugin_and_writes_nothin
     } in twins(&blob)
     {
         let scenario = notes();
+        let before = scenario.head().map(|head| head.id);
         let refusal = hosted(&scenario, &refused, None).unwrap_err();
         assert_eq!(refusal.code.as_str(), "fixture::board::refused", "{case}");
         assert_eq!(line_codes(&refusal), codes, "{case}");
@@ -183,7 +189,11 @@ fn a_built_ins_put_refuses_as_put_batch_does_inside_the_plugin_and_writes_nothin
             (&json!(expected.code.as_str()), &expected.fields["refusals"]),
             "{case}"
         );
-        assert!(!exists(&scenario, "notes/a.json"), "{case}");
+        assert_eq!(scenario.head().map(|head| head.id), before, "{case}");
+        for line in refused.iter().filter(|line| line["path"] != "/notes/held") {
+            let file = format!("{}.json", &line["path"].as_str().unwrap()[1..]);
+            assert!(!exists(&scenario, &file), "{case}: {file}");
+        }
         assert_eq!(
             std::fs::read_to_string(scenario.workdir().join("notes/held.json")).unwrap(),
             HELD,
@@ -191,10 +201,12 @@ fn a_built_ins_put_refuses_as_put_batch_does_inside_the_plugin_and_writes_nothin
         );
 
         let scenario = notes();
+        let before = scenario.head().map(|head| head.id);
         let output = hosted(&scenario, &admitted, None).unwrap();
         assert_eq!(output["count"], json!(admitted.len()), "{case}");
         let head = scenario.head().unwrap();
         assert_eq!(output["commit"], json!(head.id.to_string()), "{case}");
+        assert_eq!(head.parents, Vec::from_iter(before), "{case}: one commit");
         for line in &admitted {
             let file = format!("{}.json", &line["path"].as_str().unwrap()[1..]);
             assert!(head.files.contains_key(&file), "{case}: {file}");
@@ -223,4 +235,14 @@ fn a_built_ins_put_under_board_plugin_names_that_plugin_and_without_it_names_the
             "{inside:?}"
         );
     }
+}
+
+#[test]
+fn a_built_ins_put_under_a_board_plugin_that_names_no_plugin_is_refused_as_invalid_and_one_that_names_a_plugin_is_written()
+ {
+    let line = [note("/notes/a", Some("t"))];
+    let refusal = hosted(&notes(), &line, Some("Not A Plugin")).unwrap_err();
+    assert_eq!(refusal.fields["code"], json!("board::config::invalid"));
+    let output = hosted(&notes(), &line, Some("outer")).unwrap();
+    assert_eq!(output["count"], json!(1));
 }

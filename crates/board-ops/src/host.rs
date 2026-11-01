@@ -1,6 +1,7 @@
 //! Plugins built into Board, and what Board offers them
 //! (docs/plugins/built-in.md).
 
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -147,8 +148,9 @@ pub(crate) struct Hosted<'a> {
     pub(crate) settings: Settings,
     /// Where the caller keeps the index.
     pub(crate) cache: Option<&'a Path>,
-    /// The plugin a put is checked as.
-    pub(crate) plugin: PluginName,
+    /// The plugin a put is checked as, or the `BOARD_PLUGIN` that names
+    /// none.
+    pub(crate) plugin: Result<PluginName, OsString>,
 }
 
 impl Host for Hosted<'_> {
@@ -177,12 +179,14 @@ impl Host for Hosted<'_> {
     /// Opens the board again as the plugin, as a put through a mount opens
     /// the mounted board, so every check reads the plugin where it already
     /// does.
+    /// Its timings stay in the board it opens, outside the call's trace.
     fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
+        let plugin = (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })?;
         let home = self.board.repositories().home().map(Into::into);
         let mut board = Board::open(self.board.repository().path(), home)
             .map_err(|error| PutError::Open(Box::new(error)))?;
         board.ask_as(Asker {
-            plugin: Some(self.plugin.clone()),
+            plugin: Some(plugin),
             ..Asker::default()
         });
         let text = lines

@@ -607,6 +607,10 @@ pub enum PutError {
     Type(Box<TypeError>),
     #[error(transparent)]
     Effect(Box<EffectError>),
+    /// A built-in plugin's put under a `BOARD_PLUGIN` that is not a
+    /// plugin's name.
+    #[error("BOARD_PLUGIN is {text:?}, which is not a plugin's name")]
+    BadPlugin { text: std::ffi::OsString },
     /// The board a built-in plugin's put opens again cannot be opened.
     #[error(transparent)]
     Open(Box<OpenError>),
@@ -642,6 +646,7 @@ impl PutError {
             Self::Type(error) => error.code(),
             Self::Effect(error) => error.code(),
             Self::Open(error) => error.code(),
+            Self::BadPlugin { .. } => Code::ConfigInvalid,
         }
     }
 
@@ -697,6 +702,7 @@ impl PutError {
             | Self::Line { .. }
             | Self::TooManyLines
             | Self::Path(_)
+            | Self::BadPlugin { .. }
             | Self::Input { .. } => Fields::default(),
         }
     }
