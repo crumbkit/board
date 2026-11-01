@@ -14,18 +14,15 @@ Board, so it needs no state of its own beyond the session.
 When a session starts, the mod finds the repository root with
 `git rev-parse --show-toplevel` and runs
 `board --personal --json call controls.check` there. With no path, the check
-finds the repository the directory is in by its clone or its origin, so it
-works in a checkout that is itself a board, where `--path .` would read only
-that board. The answer lists the personal board's controls on the repository
-and the repository's own, and goes into one `prompt.context` block, which
-the engine sends in the first request and again after a compaction. Without
-a personal board the run is `board::config::not_found`, and when the
-personal board knows no such repository the answer's `path` is null. In
-either case the mod asks once more with `board --json call controls.check
---path .`, the board that holds or mounts the directory, so a checkout that
-is itself a board keeps its own controls; when that also finds no board, the
-mod adds nothing. Any other failure is said in the block, with the command
-to run by hand.
+finds the repository by its clone or its origin, so it also works in a
+checkout that is itself a board. The answer lists the personal board's
+controls on the repository and the repository's own, and goes into one
+`prompt.context` block, which the engine sends in the first request and
+again after a compaction. When there is no personal board, or its answer's
+`path` is null, the mod asks once more with
+`board --json call controls.check --path .`, the board that holds or mounts
+the directory; when that finds no board either, the mod adds nothing. Any
+other failure is said in the block, with the command to run by hand.
 
 The mod shows one line, such as "2 controls on crumbkit". When the attention
 mod is loaded, which the mod learns from its
