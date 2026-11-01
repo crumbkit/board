@@ -1,9 +1,7 @@
 """The caller's clone: the git repository Board was started in, read with git and never written."""
 
-import subprocess
-
 from board_plugin.protocol import PluginError
-from board_plugin.repos import caller_origin, caller_root
+from board_plugin.repos import caller_origin, caller_root, git
 
 # The branches taken as the default when the clone records no origin/HEAD.
 DEFAULTS = ("main", "master")
@@ -31,21 +29,6 @@ def remote() -> str:
             " clone whose origin names the repository",
         )
     return origin
-
-
-def git(directory: str, *arguments: str) -> str | None:
-    """What `git -C <directory> <arguments>` printed, trimmed, or None when it failed or ran past 10 s."""
-    try:
-        ran = subprocess.run(  # noqa: S603 - this reads git's state only, and changes nothing
-            ["git", "-C", directory, *arguments],  # noqa: S607 - git is found on PATH
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return ran.stdout.strip() if ran.returncode == 0 else None
 
 
 def branch(directory: str) -> str:

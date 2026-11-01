@@ -36,7 +36,6 @@ Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,64}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
 # A name of lowercase letters, digits and hyphens: a step, a change or a repo record.
 Slug = Annotated[str, Field(pattern="^[a-z0-9][a-z0-9-]{0,59}$")]
-StepName = Slug
 # A handle as CODEOWNERS names people, such as @luke.
 Handle = Annotated[str, Field(pattern=r"^@\S+$")]
 Session = Annotated[str, Field(pattern=r"\S")]
@@ -95,7 +94,7 @@ class ChangeRecord(Record):
 class Step(Record):
     """One step of a workflow: who takes it and the kind of record that completes it."""
 
-    name: StepName = Field(description="The step's name, such as review.")
+    name: Slug = Field(description="The step's name, such as review.")
     actor: Actor = Field(description="Who takes the step: agent, reviewer or owner.")
     done_by: Kind = Field(description="The kind of record that completes the step; README.md gives each kind's rule.")
 

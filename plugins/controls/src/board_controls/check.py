@@ -1,11 +1,13 @@
 """`check`: the controls that apply under a path, each budget measured against the files it applies to."""
 
+import os
 from typing import Any, Literal, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
+from board_plugin.repos import caller_remote, caller_repo, common_dir, shown_remote
 
-from board_controls import board, caller
+from board_controls import board
 from board_controls.shapes import LIMIT_DEFAULT, REPO_TYPE, Checked, CheckOutput, Counts, Cut, FileUsed, Stated
 
 type Usage = dict[Literal["words", "bytes"], int]
@@ -19,7 +21,7 @@ def measure(data: bytes) -> Usage:
 def check(request: CallRequest) -> CheckOutput:
     """The controls that apply to a file at or under the path asked, or to the files named beneath it.
 
-    Without a path, the caller's repository is checked (caller.py); when it
+    Without a path, the caller's repository is checked (`_caller`); when it
     is none the board knows, nothing is. Under its board's root, every
     control of that board applies, even one that reaches no file. Under
     another path, only those reaching a file there do; with `files`, only
@@ -39,7 +41,7 @@ def check(request: CallRequest) -> CheckOutput:
     limit = int(cast("int", given.get("limit", LIMIT_DEFAULT)))
     path = given.get("path")
     if path is None:
-        path, why = caller.repository(reading, request.board.root)
+        path, why = _caller(reading, request.board.root)
         if path is None:
             nothing = _listed(None, [], [], limit)
             nothing["next"] = why
@@ -91,6 +93,31 @@ def check(request: CallRequest) -> CheckOutput:
             " give the record a checkout to mount the repository (docs/architecture/paths/repos.md)"
         )
     return output
+
+
+def _caller(reading: Board, root: str) -> tuple[str | None, str]:
+    """The logical path of the repository `BOARD_CALLER_DIR` is in, and, when there is none, why.
+
+    It is `/` in the board's own repository or when Board names no directory, else what `caller_repo`
+    finds. This follows `Repositories::places` in crates/board-tree/src/mounts.rs; change both together.
+    """
+    directory = os.environ.get("BOARD_CALLER_DIR")
+    if not directory:
+        return "/", ""
+    common = common_dir(directory)
+    if common is None:
+        return None, f"{directory} is in no git repository, so there is no repository to check; pass --path"
+    if common_dir(root) == common:
+        return "/", ""
+    found = caller_repo(reading)
+    if found is not None:
+        return found, ""
+    origin = caller_remote()
+    named = "" if origin is None else f", origin {shown_remote(origin)},"
+    return None, (
+        f"no mount or repo record in this board holds the repository at {directory}{named} so nothing was"
+        " checked; pass --path, or record the repository with `board put /repos/<name>`"
+    )
 
 
 def _repos(control: board.Control) -> list[str]:

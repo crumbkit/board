@@ -218,14 +218,14 @@ def caller_origin() -> tuple[str | None, str | None]:
 
 def common_dir(directory: str) -> Path | None:
     """The git directory the repository holding `directory` shares with its linked worktrees, or None outside one."""
-    found = _git(directory, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    found = git(directory, "rev-parse", "--path-format=absolute", "--git-common-dir")
     return None if found is None else Path(found).resolve()
 
 
 def caller_root() -> str | None:
     """The root of the clone or linked worktree BOARD_CALLER_DIR is in, or None outside one."""
     directory = os.environ.get("BOARD_CALLER_DIR")
-    return None if not directory else _git(directory, "rev-parse", "--show-toplevel")
+    return None if not directory else git(directory, "rev-parse", "--show-toplevel")
 
 
 def caller_repo(board: Board) -> str | None:
@@ -256,7 +256,7 @@ def caller_repo(board: Board) -> str | None:
     return str(rows[0][0]) if rows else None
 
 
-def _git(directory: str, *arguments: str) -> str | None:
+def git(directory: str, *arguments: str) -> str | None:
     """What `git -C <directory> <arguments>` printed, trimmed; None when it failed, printed nothing or ran 10 s."""
     try:
         ran = subprocess.run(  # noqa: S603 - this reads git's state only, and changes nothing

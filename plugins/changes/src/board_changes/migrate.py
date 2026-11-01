@@ -24,9 +24,8 @@ from board_plugin.board import Board
 from board_plugin.migrate import Line, Old, olds, put
 from board_plugin.migrate import migrate as written
 from board_plugin.protocol import CallRequest
-from board_plugin.repos import MOUNTS
+from board_plugin.repos import MOUNTS, git
 
-from board_changes import clone
 from board_changes.change import (
     CHANGE_TYPE,
     DROPPED_TYPE,
@@ -56,9 +55,7 @@ def short(ref: str) -> str:
 
 def branch_at(directory: str, head: str) -> str | None:
     """The one branch, local or on origin, whose tip in `directory` is `head`; None when git fails or finds not one."""
-    found = clone.git(
-        directory, "for-each-ref", "--points-at", head, "--format=%(refname)", "refs/heads", "refs/remotes"
-    )
+    found = git(directory, "for-each-ref", "--points-at", head, "--format=%(refname)", "refs/heads", "refs/remotes")
     if found is None:
         return None
     names = {short(ref) for ref in found.split()} - DEFAULTS
