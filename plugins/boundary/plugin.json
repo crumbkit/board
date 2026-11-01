@@ -1,0 +1,353 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Check content against every boundary that matches where it goes, and record the crossing in the personal board. Fails naming each failing control, part and line.",
+      "env": [
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Check the parts against every boundary that matches the action, destination and checkout.",
+        "properties": {
+          "action": {
+            "description": "The capability that sends the parts, such as github.pr-create.",
+            "type": "string"
+          },
+          "from": {
+            "description": "The checkout's path in the personal board, such as /repos/board; left out for a checkout no board mounts.",
+            "pattern": "^/",
+            "type": "string"
+          },
+          "parts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Each part of the content, by its name, such as pr.body.",
+            "minProperties": 1,
+            "type": "object"
+          },
+          "to": {
+            "description": "Where the parts go, such as github:octo/board.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "to",
+          "parts"
+        ],
+        "title": "CheckInput",
+        "type": "object"
+      },
+      "name": "check",
+      "outputSchema": {
+        "$defs": {
+          "Finding": {
+            "additionalProperties": false,
+            "description": "What a control found wrong in a part: the text at fault, and its line when it has one.",
+            "properties": {
+              "line": {
+                "description": "The line of the part the text starts on.",
+                "type": "integer"
+              },
+              "pattern": {
+                "description": "The expression that matched, when its control shows it.",
+                "type": "string"
+              },
+              "rewrite": {
+                "description": "How to rewrite the text, from a judged rule.",
+                "type": "string"
+              },
+              "text": {
+                "description": "The text at fault: a match, a budget's count, or a quoted sentence.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "title": "Finding",
+            "type": "object"
+          },
+          "Status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped",
+              "stated"
+            ],
+            "type": "string"
+          },
+          "Verdict": {
+            "additionalProperties": false,
+            "description": "One control's verdict on one part, as `controls.evaluate` gave it.",
+            "properties": {
+              "cached": {
+                "description": "Whether a judged verdict came from the cache.",
+                "type": "boolean"
+              },
+              "control": {
+                "description": "The control's path.",
+                "type": "string"
+              },
+              "findings": {
+                "description": "What the control found wrong, at most 20.",
+                "items": {
+                  "$ref": "#/$defs/Finding"
+                },
+                "type": "array"
+              },
+              "max": {
+                "description": "A budget's limit.",
+                "type": "integer"
+              },
+              "omitted": {
+                "description": "How many findings were left out past the first 20.",
+                "type": "integer"
+              },
+              "part": {
+                "description": "The part's name.",
+                "type": "string"
+              },
+              "rule": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "budget",
+                      "pattern",
+                      "judged"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The kind of the control's rule, or null for a written requirement."
+              },
+              "status": {
+                "$ref": "#/$defs/Status",
+                "description": "passed, failed, skipped after a free rule failed, or stated."
+              },
+              "used": {
+                "description": "What a budget counted.",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "control",
+              "part",
+              "rule",
+              "status",
+              "findings"
+            ],
+            "title": "Verdict",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The crossing written, the boundaries that matched, and every verdict; each check passed.",
+        "properties": {
+          "boundaries": {
+            "description": "The boundaries that matched, by their paths.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "crossing": {
+            "description": "The crossing's path in the personal board.",
+            "type": "string"
+          },
+          "digest": {
+            "description": "The SHA-256 of the crossing's content, in 64 lowercase hex digits.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why nothing was checked, or null."
+          },
+          "verdicts": {
+            "description": "Each check's verdict on each part it applies to.",
+            "items": {
+              "$ref": "#/$defs/Verdict"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "boundaries",
+          "verdicts",
+          "note"
+        ],
+        "title": "CheckOutput",
+        "type": "object"
+      },
+      "timeout": 1800
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "Whether a passing crossing exists for a digest, or for given content.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Find the crossing of a digest, or of the content that `action`, `to` and `parts` give.",
+        "properties": {
+          "action": {
+            "description": "The capability that sends the parts, such as github.pr-create.",
+            "type": "string"
+          },
+          "digest": {
+            "description": "The SHA-256 of the crossing's content, in 64 lowercase hex digits.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "parts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Each part of the content, by its name, such as pr.body.",
+            "minProperties": 1,
+            "type": "object"
+          },
+          "to": {
+            "description": "Where the parts go, such as github:octo/board.",
+            "type": "string"
+          }
+        },
+        "title": "VerifyInput",
+        "type": "object"
+      },
+      "name": "verify",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "Whether a passing crossing exists for the digest.",
+        "properties": {
+          "crossing": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The crossing's path, or null when there is none."
+          },
+          "digest": {
+            "description": "The SHA-256 of the crossing's content, in 64 lowercase hex digits.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "passed": {
+            "description": "Whether the crossing exists and every check passed.",
+            "type": "boolean"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the destination returned, or null."
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "passed",
+          "result"
+        ],
+        "title": "VerifyOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Add what the destination returned, such as a URL, to a passing crossing.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Add what the destination returned to the passing crossing of `digest`.",
+        "properties": {
+          "digest": {
+            "description": "The SHA-256 of the crossing's content, in 64 lowercase hex digits.",
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "result": {
+            "description": "What the destination returned, such as the pull request's URL.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "result"
+        ],
+        "title": "RecordInput",
+        "type": "object"
+      },
+      "name": "record",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The crossing and the result it now holds.",
+        "properties": {
+          "crossing": {
+            "description": "The crossing's path in the personal board.",
+            "type": "string"
+          },
+          "result": {
+            "description": "What the destination returned.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "crossing",
+          "result"
+        ],
+        "title": "RecordOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "The boundary plugin checks content, such as a pull request body, before it leaves a checkout, against the controls that boundaries in the personal board name for its destination. Use it before you send anything a boundary may cover. Run `board --personal call boundary.check` with the action, destination, checkout and parts on stdin; on `boundary::check::failed`, change what it names and check again. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "governance"
+  },
+  "name": "boundary",
+  "run": [
+    ".venv/bin/python",
+    "-m",
+    "board_boundary"
+  ],
+  "types": [
+    "boundary/boundary/v1",
+    "boundary/crossing/v1"
+  ],
+  "version": "0.1.0"
+}

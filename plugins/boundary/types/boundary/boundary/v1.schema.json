@@ -1,0 +1,75 @@
+{
+  "$defs": {
+    "Check": {
+      "additionalProperties": false,
+      "description": "A control, and the names of the parts it applies to.",
+      "properties": {
+        "control": {
+          "description": "The control to check the parts against, in the personal board's own tree.",
+          "format": "board-ref",
+          "type": "string",
+          "x-board-type": "controls/control/v1"
+        },
+        "parts": {
+          "description": "Globs of the part names it applies to, such as pr.* or *.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "control",
+        "parts"
+      ],
+      "title": "Check",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`boundary/boundary/v1`: the controls content must pass to leave a checkout for a destination by an action.\n\nGlobs are shell-style, matched with case: `*` matches any characters,\n`/` and `.` included.",
+  "properties": {
+    "$type": {
+      "const": "boundary/boundary/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "actions": {
+      "description": "Globs of the actions it applies to, such as github.*.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "checks": {
+      "description": "The controls to check and the parts each applies to.",
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "from": {
+      "description": "The checkouts it applies to, by their paths, usually mounts; left out for any checkout.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "to": {
+      "description": "A glob of the destinations it applies to, such as github:octo/*.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "to",
+    "actions",
+    "checks"
+  ],
+  "title": "BoundaryRecord",
+  "type": "object"
+}
