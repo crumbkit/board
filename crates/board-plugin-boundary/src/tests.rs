@@ -149,8 +149,8 @@ fn the_crossing_schema_refuses_a_bad_digest_null_or_unknown_field_and_admits_its
         (json!({"digest": "AB".repeat(32)}), json!({})),
         (json!({"override": "x"}), json!({"override": digest})),
         (
-            json!({"result": null}),
-            json!({"result": "https://example.com/pull/7"}),
+            json!({"verdicts": [{"control": "/controls/names", "part": "p", "status": "late", "findings": []}]}),
+            json!({"verdicts": [{"control": "/controls/names", "part": "p", "status": "stated", "findings": []}]}),
         ),
         (
             json!({"from": null, "via": "/repos/board"}),
