@@ -122,13 +122,31 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "Check the controls under a path, `/` when left out. Fails naming each control over budget or degraded.",
+      "description": "Check the controls under a path, or on the files named beneath it; the caller's repository when left out. Fails naming each control over budget or degraded.",
       "inputSchema": {
         "additionalProperties": false,
-        "description": "Check the controls that apply to a file at or under `path`, `/` when left out.",
+        "description": "Check the controls that apply to a file at or under `path`, or to the `files` named beneath it.\n\nWithout `path`, the caller's repository: `/` in the board's own repository.",
         "properties": {
+          "files": {
+            "description": "The files to check, each by its path relative to `path` as git names it, such as src/main.rs, so a repository the board does not mount is checked too.",
+            "items": {
+              "minLength": 1,
+              "pattern": "^[^/]",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "limit": {
+            "default": 100,
+            "description": "The most controls each of `measured` and `stated` lists, 1 to 10,000; 100 when left out.",
+            "maximum": 10000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
           "path": {
-            "description": "The directory or file whose controls to check, by its logical path, such as /docs; / when left out.",
+            "description": "The directory or file whose controls to check, by its logical path, such as /repos/app; the caller's repository when left out, / in the board's own.",
             "format": "board-path",
             "pattern": "^/",
             "title": "Path",
@@ -145,6 +163,35 @@
             "additionalProperties": false,
             "description": "A budget control and what its files use: all of them summed, or its largest file when `per` is `file`.\n\nOnly a per-file control carries `per`, `largest`, the file it measured\nas `used` (null when it has none), and `over`, every file over `max`.",
             "properties": {
+              "adds_step": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Adds Step"
+              },
+              "basis": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Basis",
+                "type": "array"
+              },
+              "basis_superseded": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Basis Superseded",
+                "type": "array"
+              },
+              "board": {
+                "title": "Board",
+                "type": "string"
+              },
               "budget": {
                 "enum": [
                   "words",
@@ -202,13 +249,56 @@
             },
             "required": [
               "control",
+              "board",
               "requirement",
               "budget",
               "max",
               "used",
-              "files"
+              "files",
+              "adds_step",
+              "basis"
             ],
             "title": "Checked",
+            "type": "object"
+          },
+          "Counts": {
+            "additionalProperties": false,
+            "description": "A number for each of `check`'s lists.",
+            "properties": {
+              "measured": {
+                "title": "Measured",
+                "type": "integer"
+              },
+              "stated": {
+                "title": "Stated",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "measured",
+              "stated"
+            ],
+            "title": "Counts",
+            "type": "object"
+          },
+          "Cut": {
+            "additionalProperties": false,
+            "description": "Whether the limit cut each of `check`'s lists short.",
+            "properties": {
+              "measured": {
+                "title": "Measured",
+                "type": "boolean"
+              },
+              "stated": {
+                "title": "Stated",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "measured",
+              "stated"
+            ],
+            "title": "Cut",
             "type": "object"
           },
           "FileUsed": {
@@ -233,8 +323,37 @@
           },
           "Stated": {
             "additionalProperties": false,
-            "description": "A control without a rule, its patterns, and how many of its files are at or under the path.",
+            "description": "A control without a rule, its patterns, and how many of its files are at or under the path.\n\nWith `files` in the input, `files` counts the named files the control matches.",
             "properties": {
+              "adds_step": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Adds Step"
+              },
+              "basis": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Basis",
+                "type": "array"
+              },
+              "basis_superseded": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Basis Superseded",
+                "type": "array"
+              },
+              "board": {
+                "title": "Board",
+                "type": "string"
+              },
               "control": {
                 "title": "Control",
                 "type": "string"
@@ -261,17 +380,20 @@
             },
             "required": [
               "control",
+              "board",
               "requirement",
               "purpose",
               "paths",
-              "files"
+              "files",
+              "adds_step",
+              "basis"
             ],
             "title": "Stated",
             "type": "object"
           }
         },
         "additionalProperties": false,
-        "description": "The controls that apply under the path, by the control's path; each budget is met.",
+        "description": "The controls that apply under the path, by the control's path; each budget is met.\n\n`path` is what was checked, null when no path was given and the caller's\nrepository is none the board knows; `next` then says what to do.\n`own_controls` is `read` when the path is in a mounted board, whose own\ncontrols are listed with the board's, and `not_read` when it is a repo\nrecord without a checkout. Each control's `board` is the root of the board\nthat holds it.",
         "properties": {
           "measured": {
             "items": {
@@ -280,24 +402,56 @@
             "title": "Measured",
             "type": "array"
           },
+          "next": {
+            "title": "Next",
+            "type": "string"
+          },
+          "own_controls": {
+            "enum": [
+              "read",
+              "not_read"
+            ],
+            "title": "Own Controls",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
           "stated": {
             "items": {
               "$ref": "#/$defs/Stated"
             },
             "title": "Stated",
             "type": "array"
+          },
+          "total": {
+            "$ref": "#/$defs/Counts"
+          },
+          "truncated": {
+            "$ref": "#/$defs/Cut"
           }
         },
         "required": [
+          "path",
           "measured",
-          "stated"
+          "stated",
+          "total",
+          "truncated"
         ],
         "title": "CheckOutput",
         "type": "object"
       }
     }
   ],
-  "description": "The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board -C <board> call controls.check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board --personal call controls.check` in the repository, which lists the budgets it measures and the written requirements on it, the repository's own included. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "governance"
   },

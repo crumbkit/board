@@ -1,6 +1,7 @@
 """The committed manifest and schema are the generated ones, and enabling the plugin installs the schema."""
 
 import json
+import re
 import subprocess
 import sys
 from typing import Any, cast
@@ -80,7 +81,7 @@ def input_descriptions() -> dict[tuple[str, str], object]:
 
 def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> None:
     descriptions = input_descriptions()
-    assert set(descriptions) == {("check", "path"), ("for-path", "path")}
+    assert set(descriptions) == {("check", "path"), ("check", "files"), ("check", "limit"), ("for-path", "path")}
     for key, description in descriptions.items():
         assert isinstance(description, str), key
         assert description.endswith("."), key
@@ -91,7 +92,7 @@ def test_call_help_prints_the_path_flag_with_its_sentence(board: Board) -> None:
     relative = "; a path without a leading / is read from the current directory."
     ran = board.run("call", "controls.check", "-h")
     assert ran.returncode == 0, ran.stderr
-    assert f"--path <path>  {sentence}{relative}\n" in ran.stdout, ran.stdout
+    assert re.search(rf"--path <path> +{re.escape(sentence + relative)}\n", ran.stdout), ran.stdout
 
 
 def test_a_budget_measured_per_directory_is_invalid_and_one_measured_per_file_is_not(board: Board) -> None:

@@ -23,7 +23,24 @@ files it governs.
   `board check`.
 - `basis` holds references to the records the control rests on, such as
   the `decisions/decision/v1` it comes from (plugins/decisions/README.md).
-  Board checks them as it checks `applies_to`.
+  Board checks them as it checks `applies_to`. A control whose `basis` names
+  a decision copies the decision's rule into `requirement`. Changing the rule
+  means a new decision that supersedes the old one and a new control citing
+  it; until the old control is deleted, `check` marks it `basis_superseded`.
+  Only a personal-board control can name a personal-board decision, since an
+  absolute reference in a mounted board means that board's own path.
+- `summary` is one line of at most 120 characters that names the code the
+  control covers and what it asks, for a listing that must stay short.
+- `repos` lists repo records (docs/architecture/paths/repos.md), such as
+  `/repos/app`, as references Board checks. With `repos`, each pattern in
+  `paths` is matched against a file's path from the root of each listed
+  repository, so `src/secrets/*` covers `/repos/app/src/secrets/key.rs`, and
+  the control reaches nothing outside them. A repository the board does not
+  mount still matches, through the files a caller names to `check`. A
+  repository is matched by the path written in `repos`, so name it by its
+  own path, not through a link.
+- `adds_step` names a workflow step that the work on the control's files
+  gains. Nothing adds the step yet; `check` stores and shows it.
 - `paths` holds SQLite `GLOB` patterns, matched against each entry's path
   from the board's root, such as `docs/*.md`. In a `GLOB` pattern `*` also
   matches `/`. Patterns reach files in mounted boards, by their path through
@@ -41,6 +58,8 @@ files it governs.
   `total`, the default, limits the sum over every file, and `file` limits
   each file on its own, such as
   `{"budget": "words", "max": 500, "per": "file"}` on `changes/*/plan.md`.
+
+A control ends when it is deleted, and git history keeps it.
 
 The plugin ships the record's schema. `board plugin enable controls` writes it
 to `.board/types/controls/control/v1.schema.json`.
@@ -60,29 +79,69 @@ to `.board/types/controls/control/v1.schema.json`.
   no pattern.
 - `board call controls.check --path /repos/crumbkit` checks the controls
   under that path, following any link or mount on the way. Without `--path`
-  it checks `/`. A path with nothing there fails with
-  `controls::board::refused`. Under `/` it lists every control, so one whose
-  pattern matches nothing shows with `files: []` if measured and `files: 0` if
-  stated; under another path, only those reaching a file there. `measured`
-  holds the budget controls, with `used`, `max` and `files`: every file the
-  budget counts, inside the path or not. A `total` control's `used` is the
-  sum over its files. A `file` control also carries `per: "file"`,
-  `largest`, the file with the most usage (`null` when it has no files),
-  `used`, that file's usage, and `over`, each file over `max` with its
-  usage, so the error names the files to shorten. `stated` holds the rest,
-  with their `paths` patterns and `files`, the number of their files under
-  the path, so the output stays short; `board get <control>` shows its
-  `applies_to` and `paths`. A stated control never fails the call. It
+  it checks the repository Board was started in, as Board finds a
+  repository from a directory (docs/architecture/paths/repos.md): `/` in the
+  board's own repository or one of its linked worktrees, else the first
+  mount, by path, whose clone shares the directory's git directory, else the
+  repo record whose `remote` is the stored form of the directory's origin. A
+  repo record with a checkout is matched by its clone only, since Board
+  gives plugins no pointer's body. When none matches, it checks nothing and
+  says why in `next`, with `path` null. From any checkout, then:
+
+      board --personal call controls.check
+
+  A path with nothing there fails with `controls::board::refused`. Under the
+  root of a board it lists every control of that board, so one whose
+  pattern matches nothing shows with `files: []` if measured and `files: 0`
+  if stated; under another path, only those reaching a file there.
+  `measured` holds the budget controls, with `used`, `max` and `files`:
+  every file the budget counts, inside the path or not. A `total` control's
+  `used` is the sum over its files. A `file` control also carries
+  `per: "file"`, `largest`, the file with the most usage (`null` when it has
+  no files), `used`, that file's usage, and `over`, each file over `max` with
+  its usage, so the error names the files to shorten. `stated` holds the
+  rest, with their `paths` patterns and `files`, the number of their files
+  under the path, so the output stays short; `board get <control>` shows its
+  `applies_to` and `paths`. Each control in either list also has `board`,
+  the root of the board that holds it, `adds_step` (null when it adds none),
+  `basis`, and `basis_superseded` when a decision in its board supersedes a
+  decision its `basis` names. Each list holds at most `--limit` controls, 1
+  to 10,000 and 100 by default, by the control's path, and `total` and
+  `truncated` say for each how many applied and whether the limit cut it.
+  The budgets are checked before the cut, so a control left out still
+  fails the call. A stated control never fails the call. It
   fails, exiting 1, with `controls::budget::exceeded` when a measured
   control is over budget;
-  `controls::control::degraded` when Board marks any control degraded, under
-  any path; and `controls::file::unreadable` when a measured control reaches
-  something that is not a readable file, such as a directory. Each error names
-  every control it applies to. A file counts once, however many references,
-  patterns, links or mounts reach it, and a link's own file counts nothing.
-  Reads are batched: one `board refs` per 10,000 controls, `board get` once
-  per file, and `board query` pages of 10,000 control–file pairs, so a file
-  changed between pages may or may not be counted.
+  `controls::control::degraded` when Board marks any control it reads
+  degraded, under any path; and `controls::file::unreadable` when a measured
+  control reaches something that is not a readable file, such as a
+  directory. Each error names every control it applies to. A file counts
+  once, however many references, patterns, links or mounts reach it, and a
+  link's own file counts nothing. Reads are batched: one `board refs` per
+  10,000 controls, `board get` once per file, and `board query` pages of
+  10,000 control–file pairs, so a file changed between pages may or may not
+  be counted.
+
+  A path inside a mounted board, such as a repository mounted at
+  `/repos/board` that is itself a board, also reads that board's own
+  controls at the commit the mount pins, and says `own_controls: "read"`.
+  They are read as data, with `board query`, `board refs` and `board get`,
+  and nothing in the repository runs. Their references are read in their
+  own board, and their `paths`, and their `repos`, are anchored at the
+  mount's path, so they match beneath `/repos/board/`. A path that is a repo
+  record without a checkout has no tree to read, so the output says
+  `own_controls: "not_read"`, and `next` suggests mounting it.
+
+  The index holds a repository's mounted commit, not the files a branch
+  changes, and an unmounted repository has no files in the board. So the
+  caller can name files: `files` lists paths relative to the path checked,
+  such as `src/main.rs`. Then a control applies when it matches one of them
+  by pattern or reaches it by reference, and a stated control's `files`
+  counts the named files it matches; a budget still measures the files the
+  board holds. An array is not a flag, so the input goes on stdin as JSON:
+
+      git diff --name-only origin/main... | jq -R . | jq -sc '{path: "/repos/app", files: .}' \
+        | board --personal call controls.check
 
 Board refuses both calls with `board::plugin::schema_differs` when the board's
 copy of the control schema differs from the one the plugin ships;
@@ -91,9 +150,10 @@ a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
 
 Both capabilities read the board through `board query`, `board refs` and
-`board get`. They consider only the controls in the board's own working tree,
-never those in mounted boards, though those controls' patterns reach mounted
-files.
+`board get`. `for-path` considers only the controls in the board's own
+working tree, though their patterns reach mounted files, and matches a
+control with `repos` as `check` does. `check` also reads the own controls of
+the mounted board its path is in.
 
 ## Installing
 

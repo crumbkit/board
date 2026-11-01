@@ -37,9 +37,9 @@ def manifest() -> dict[str, JsonValue]:
         "description": (
             "The controls plugin keeps requirements on files as records in the board that holds the files. "
             "Use it when you start work in a board or a repository it mounts, and before you edit a file a "
-            "control may govern. Start with `board -C <board> call controls.check --path /<directory>`, "
-            "which lists the budgets it measures and the written requirements under that path. "
-            "`board -C <board> call controls.for-path --path /<file>` lists the controls on one file. "
+            "control may govern. Start with `board --personal call controls.check` in the repository, "
+            "which lists the budgets it measures and the written requirements on it, the repository's own "
+            "included. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. "
             "SKILL.md and README.md in the plugin's directory say more."
         ),
         "run": [".venv/bin/python", "-m", "board_controls"],
@@ -56,8 +56,8 @@ def manifest() -> dict[str, JsonValue]:
             },
             {
                 "name": "check",
-                "description": "Check the controls under a path, `/` when left out."
-                " Fails naming each control over budget or degraded.",
+                "description": "Check the controls under a path, or on the files named beneath it;"
+                " the caller's repository when left out. Fails naming each control over budget or degraded.",
                 "inputSchema": _schema(CheckInput),
                 "outputSchema": _schema(CheckOutput),
                 "annotations": {"readOnlyHint": True},

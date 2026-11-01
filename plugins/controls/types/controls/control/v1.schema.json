@@ -36,11 +36,16 @@
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`. `basis` names the decisions the control rests on.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`. With `repos`, each pattern is matched against a file's path from\nthe root of each listed repository, and reaches nothing outside them.\n`summary` is one line naming the code covered and what is asked. `adds_step`\nnames a workflow step the control adds to the work on its files; it is stored\nand shown, and adds nothing yet. `basis` names the decisions the control\nrests on.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
       "title": "$Type",
+      "type": "string"
+    },
+    "adds_step": {
+      "minLength": 1,
+      "title": "Adds Step",
       "type": "string"
     },
     "applies_to": {
@@ -70,6 +75,15 @@
       "title": "Purpose",
       "type": "string"
     },
+    "repos": {
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Repos",
+      "type": "array"
+    },
     "requirement": {
       "title": "Requirement",
       "type": "string"
@@ -84,6 +98,11 @@
         }
       ],
       "default": null
+    },
+    "summary": {
+      "maxLength": 120,
+      "title": "Summary",
+      "type": "string"
     }
   },
   "required": [

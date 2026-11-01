@@ -40,11 +40,13 @@ type Stated = { control: string; requirement: string }
 type Measured = Stated & { budget: string; used: number; max: number }
 
 /**
- * Reads `board --json call controls.check --path .` run at `root`. `null`
- * when no board holds the repository, which is no failure: it has no controls.
+ * Reads `board --personal --json call controls.check` run at `root`. `null`
+ * when there is no personal board, or it knows no such repository, which is
+ * no failure: the repository has no controls.
  */
 export function parseCheck(root: string, exitCode: number, stdout: string, stderr: string): Checked | null {
   const found = exitCode === 0 ? output(stdout) : null
+  if (found !== null && found.path === null) return null
   if (found !== null && Array.isArray(found.stated) && Array.isArray(found.measured)) {
     const measured = (found.measured as Measured[]).map(m => ({
       control: m.control,
@@ -70,7 +72,7 @@ export function parseForPath(exitCode: number, stdout: string): Control[] | null
 export function contextText(checked: Checked): string | null {
   if (checked.kind === 'failed') {
     return (
-      `\`board call controls.check\` failed for ${checked.root}, so the controls on its files are unknown:\n\n` +
+      `\`board --personal call controls.check\` failed for ${checked.root}, so the controls on its files are unknown:\n\n` +
       `${checked.code}: ${checked.message}\n\n` +
       'Before you edit a file, run `board call controls.for-path --path <file>` in its directory.'
     )

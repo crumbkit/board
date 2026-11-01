@@ -53,11 +53,10 @@ which brings review accounting into scope.
 
 Every change, decision and artifact is recorded as small records written
 once, and each one's state is derived from which records exist. Decisions
-are built (plugins/decisions/README.md). Build the rest in this order.
+and control scope are built (plugins/decisions/README.md,
+plugins/controls/README.md). Build the rest in this order.
 
-1. [Control scope](plan/control-scope.md).
-
-2. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
+1. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
 
 ## Out of scope
 

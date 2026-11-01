@@ -9,6 +9,9 @@ from typing import Any
 import pytest
 from conftest import Board, board_binary, control, library
 
+# What `check` adds to a control in the board's own tree that names no step and no basis.
+UNSCOPED: dict[str, Any] = {"board": "/", "adds_step": None, "basis": []}
+
 
 def test_check_measures_each_budget_control_over_its_files(board: Board) -> None:
     board.write("AGENTS.md", "one two\nthree\n")
@@ -32,6 +35,7 @@ def test_check_measures_each_budget_control_over_its_files(board: Board) -> None
             "max": 3,
             "used": 3,
             "files": ["/AGENTS.md"],
+            **UNSCOPED,
         },
         {
             "control": "/controls/docs",
@@ -40,6 +44,7 @@ def test_check_measures_each_budget_control_over_its_files(board: Board) -> None
             "max": 12,
             "used": 12,
             "files": ["/docs/a.md", "/docs/b.md"],
+            **UNSCOPED,
         },
     ]
 
@@ -292,7 +297,14 @@ def test_a_path_reports_the_controls_under_it_and_leaves_out_their_twins_elsewhe
     report = board.call("check", {"path": "/docs"})
     assert names(report) == (["/controls/docs-budget"], ["/controls/docs-style"])
     assert report["data"]["output"]["stated"] == [
-        {"control": "/controls/docs-style", "requirement": "Plain docs.", "purpose": "A test.", "paths": [], "files": 1}
+        {
+            "control": "/controls/docs-style",
+            "requirement": "Plain docs.",
+            "purpose": "A test.",
+            "paths": [],
+            "files": 1,
+            **UNSCOPED,
+        }
     ]
     assert report["data"]["output"]["measured"][0]["used"] == 2  # noqa: PLR2004 - the words in docs/a.md
     assert names(board.call("check", {"path": "/src"})) == (["/controls/src-budget"], ["/controls/src-style"])
@@ -449,6 +461,7 @@ def test_a_per_file_control_passes_when_each_file_is_within_it_and_a_total_one_s
             "per": "file",
             "largest": "/docs/a.md",
             "over": [],
+            **UNSCOPED,
         }
     ], admitted
     summed = per(board, "total", BOTH)
@@ -487,7 +500,15 @@ def test_a_control_naming_per_total_measures_exactly_as_one_naming_no_per(board:
     named = per(board, "total", BOTH)
     unnamed = per(board, None, BOTH)
     assert named["data"]["output"] == unnamed["data"]["output"], (named, unnamed)
-    assert set(unnamed["data"]["output"]["measured"][0]) == {"control", "requirement", "budget", "max", "used", "files"}
+    assert set(unnamed["data"]["output"]["measured"][0]) == {
+        "control",
+        "requirement",
+        "budget",
+        "max",
+        "used",
+        "files",
+        *UNSCOPED,
+    }
 
 
 def test_a_per_file_control_with_no_files_measures_nothing_as_its_largest(board: Board) -> None:

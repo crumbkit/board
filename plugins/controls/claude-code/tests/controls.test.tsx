@@ -13,7 +13,7 @@ const DOCS = { control: '/controls/crumbkit/docs-1', requirement: 'AGENTS.md has
 const README = { control: '/controls/example/readme', requirement: 'Keep the usage section of the README current.', files: 3, paths: [], purpose: 'p' }
 const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
-const CHECK = report({ measured: [DOCS], stated: [README] })
+const CHECK = report({ path: '/repos/crumbkit', measured: [DOCS], stated: [README] })
 const BAND = {
   plugin: 'board-controls',
   component: 'AbovePrompt',
@@ -27,6 +27,7 @@ function engine(on: On, answers: Answers) {
   const events: string[] = []
   const appended: string[] = []
   const statuses: (string | undefined)[] = []
+  const checks: string[] = []
   const run = (exitCode: number, stdout: string) => ({
     value: { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
   })
@@ -35,6 +36,7 @@ function engine(on: On, answers: Answers) {
     if (line.includes('rev-parse')) return run(0, `${ROOT}\n`)
     if (line.includes('controls.check')) {
       events.push('check')
+      checks.push(line)
       const check = answers.check ?? { exitCode: 0, stdout: CHECK }
       return run(check.exitCode, check.stdout)
     }
@@ -61,7 +63,7 @@ function engine(on: On, answers: Answers) {
   on('ui.render', ($, e) => $.ui.resolve(e).Box({}))
   on('prompt.context', (_, e) => ({ blocks: e.blocks }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
-  return { events, appended, statuses }
+  return { events, appended, statuses, checks }
 }
 
 const start = ($: Engine) => $.session.start({ cwd: `${ROOT}/src`, surface: 'terminal', isInteractive: true })
@@ -83,6 +85,20 @@ test('a repository no board holds has no controls, and a check that fails is sai
   expect(parseCheck(ROOT, 1, missing, '')).toBeNull()
   const over = JSON.stringify({ schema: 'board/failure/v1', code: 'controls::budget::exceeded', message: 'docs-1 is over' })
   expect(parseCheck(ROOT, 1, over, '')).toEqual({ kind: 'failed', root: ROOT, code: 'controls::budget::exceeded', message: 'docs-1 is over' })
+})
+
+test('the check asks the personal board about the repository it runs in, naming no path', async ($, on) => {
+  const { checks } = engine(on, {})
+  await start($)
+  expect(checks).toHaveLength(1)
+  expect(checks[0]).toContain('board --personal --json call controls.check')
+  expect(checks[0]).not.toContain('--path')
+})
+
+test('a check of a repository the personal board does not know has no controls, and one it knows has them', () => {
+  const unknown = report({ path: null, measured: [], stated: [], next: 'no mount or repo record' })
+  expect(parseCheck(ROOT, 0, unknown, '')).toBeNull()
+  expect(parseCheck(ROOT, 0, CHECK, '')?.kind).toBe('read')
 })
 
 test('session start checks the repository root once, and the first message carries its controls as one block', async ($, on) => {

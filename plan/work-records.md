@@ -54,7 +54,7 @@ organisation. With neither, `start` refuses with
 `changes::workflow::unchosen`, naming both. `--workflow` overrides
 both.
 
-A step that a control adds (plan/control-scope.md), such as
+A step that a control adds (`adds_step`, plugins/controls/README.md), such as
 `security-review`, comes after the last step whose actor is `reviewer` and
 uses the `review` kind. A change whose route is `ask-first` gains the
 `approve` step if its workflow lacks one, and so does a change whose route is
