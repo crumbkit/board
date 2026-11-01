@@ -34,9 +34,12 @@ def board_binary() -> Path:
 
 
 def git(root: Path, *arguments: str) -> str:
-    """Run git in `root` with an identity of its own and return its output."""
+    """Run git in `root` with an identity of its own and no global config, and return its output."""
     identity = ["-c", "user.name=t", "-c", "user.email=t@t"]
-    ran = subprocess.run(["git", *identity, *arguments], cwd=root, capture_output=True, text=True, check=True)
+    alone = os.environ | {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    ran = subprocess.run(
+        ["git", *identity, *arguments], cwd=root, env=alone, capture_output=True, text=True, check=True
+    )
     return ran.stdout.strip()
 
 
@@ -145,4 +148,168 @@ def board(tmp_path: Path) -> Board:
     (fixture.bin / "gh").chmod(0o755)
     enabled = fixture.run("plugin", "enable", "github")
     assert enabled.returncode == 0, enabled.stderr
+    return fixture
+
+
+# The stub gh for the sending actions: as GH, and it also keeps what it read on stdin in `gh-stdin.txt`.
+GH_SENDING = GH.replace(
+    'echo call >> "$here/gh-calls.txt"', 'echo call >> "$here/gh-calls.txt"\ncat > "$here/gh-stdin.txt"'
+)
+# The remote a checkout names. Its own config sends git to a local bare repository in its place.
+ORIGIN = "https://github.com/Octo/Widgets.git"
+# A pattern a test's control refuses, and the control's path in the personal board.
+PRIVATE = r"acme-\d{3}"
+NAMES = "/controls/names"
+
+
+@dataclass(frozen=True)
+class Desk:
+    """A personal board with github, boundary and controls enabled, a checkout it mounts, and the checkout's remote.
+
+    The checkout's origin names GitHub, and its git config sends every fetch
+    and push to the bare repository at `remote` instead, so no test reaches a
+    network. HOME is a temporary directory, so no global git config applies.
+    """
+
+    personal: Path
+    checkout: Path
+    remote: Path
+    home: Path
+    bin: Path
+
+    def environment(self) -> dict[str, str]:
+        """The variables a shell would pass `board`, with the stub gh first on PATH."""
+        uv = shutil.which("uv")
+        assert uv is not None, "uv is on PATH"
+        path = os.pathsep.join([str(self.bin), str(board_binary().parent), str(Path(uv).parent), "/usr/bin", "/bin"])
+        return {
+            "PATH": path,
+            "HOME": str(self.home),
+            "XDG_DATA_HOME": str(self.home / "data"),
+            "XDG_CACHE_HOME": str(self.home / "cache"),
+            "XDG_CONFIG_HOME": str(self.home / "config"),
+            "GIT_CONFIG_NOSYSTEM": "1",
+        }
+
+    def run(self, *arguments: str, cwd: Path | None = None, stdin: str = "") -> subprocess.CompletedProcess[str]:
+        """Run `board` in the checkout, or in `cwd`."""
+        return subprocess.run(
+            [str(board_binary()), *arguments],
+            cwd=cwd or self.checkout,
+            env=self.environment(),
+            input=stdin,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def call(self, capability: str, *flags: str, cwd: Path | None = None, personal: bool = False) -> dict[str, Any]:
+        """The one document `board --json call github.<capability> <flags>` prints, with its exit code as `exit`."""
+        front = ["--personal"] if personal else []
+        ran = self.run(*front, "--json", "call", f"github.{capability}", *flags, cwd=cwd)
+        document: dict[str, Any] = json.loads(ran.stdout)
+        return document | {"exit": ran.returncode}
+
+    def write(self, path: str, text: str) -> None:
+        """Write a fixture file at `path` in the personal board. Every test writes there through here."""
+        target = self.personal / path.lstrip("/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
+
+    def record(self, path: str) -> dict[str, Any] | None:
+        """The record at the logical `path` in the personal board, or None."""
+        file = self.personal / f"{path.lstrip('/')}.json"
+        return json.loads(file.read_text()) if file.exists() else None
+
+    def refuse(self, parts: list[str], actions: str = "github.*") -> None:
+        """A boundary on octo's repositories that checks `parts` of `actions` against a control refusing PRIVATE."""
+        self.write("private/names.txt", f"{PRIVATE}\n")
+        control = {"pattern": "/private/names.txt", "show": "match-only"}
+        self.write(
+            f"{NAMES}.json",
+            json.dumps(
+                {"$type": "controls/control/v1", "requirement": "A test.", "purpose": "A test.", "rule": control}
+            ),
+        )
+        checks = [{"control": NAMES, "parts": parts}]
+        record = {"$type": "boundary/boundary/v1", "to": "github:octo/*", "actions": [actions], "checks": checks}
+        self.write("boundaries/octo.json", json.dumps(record))
+
+    def commit(self, message: str, file: str = "widget.txt", text: str | None = None) -> str:
+        """Commit a change to `file` in the checkout and return the commit's full SHA."""
+        (self.checkout / file).write_text(text if text is not None else message + "\n")
+        git(self.checkout, "add", file)
+        git(self.checkout, "commit", "-q", "-m", message)
+        return git(self.checkout, "rev-parse", "HEAD")
+
+    def remote_head(self, branch: str) -> str | None:
+        """The commit the bare remote's `branch` points at, or None."""
+        ran = subprocess.run(
+            ["git", "rev-parse", "--verify", "-q", f"refs/heads/{branch}"],
+            cwd=self.remote,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return ran.stdout.strip() or None
+
+    def gh_answers(self, answer: dict[str, Any] | str, code: int = 0, stderr: str = "") -> None:
+        """Make the stub gh print `answer`, as JSON unless it is text, and `stderr`, and exit with `code`."""
+        (self.bin / "gh-out.txt").write_text(answer if isinstance(answer, str) else json.dumps(answer))
+        (self.bin / "gh-err.txt").write_text(stderr)
+        (self.bin / "gh-exit.txt").write_text(str(code))
+
+    def gh_calls(self) -> int:
+        """How many times the stub gh ran."""
+        calls = self.bin / "gh-calls.txt"
+        return len(calls.read_text().splitlines()) if calls.exists() else 0
+
+    def gh_argv(self) -> list[str]:
+        """The arguments of the stub gh's last run."""
+        return (self.bin / "gh-argv.txt").read_text().splitlines()
+
+    def gh_stdin(self) -> str:
+        """What the stub gh read on stdin in its last run."""
+        return (self.bin / "gh-stdin.txt").read_text()
+
+
+@pytest.fixture
+def desk(tmp_path: Path) -> Desk:
+    """A checkout on `main`, pushed to its remote, mounted at /repos/widgets in a personal board."""
+    tmp_path = tmp_path.resolve()
+    fixture = Desk(
+        personal=tmp_path / "personal",
+        checkout=tmp_path / "widgets",
+        remote=tmp_path / "remote.git",
+        home=tmp_path / "home",
+        bin=tmp_path / "bin",
+    )
+    plugins = fixture.home / "data" / "board" / "plugins"
+    plugins.mkdir(parents=True)
+    for name in ("github", "boundary", "controls"):
+        (plugins / name).symlink_to(REPOSITORY / "plugins" / name)
+    config = fixture.home / "config" / "board"
+    config.mkdir(parents=True)
+    known = {"boards": [str(fixture.personal)], "personal": str(fixture.personal)}
+    (config / "config.json").write_text(json.dumps(known))
+    fixture.bin.mkdir()
+    (fixture.bin / "gh").write_text(GH_SENDING)
+    (fixture.bin / "gh").chmod(0o755)
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(fixture.remote)], check=True)
+    fixture.checkout.mkdir()
+    git(fixture.checkout, "init", "-q", "-b", "main")
+    git(fixture.checkout, "remote", "add", "origin", ORIGIN)
+    git(fixture.checkout, "config", f"url.{fixture.remote}.insteadOf", ORIGIN)
+    git(fixture.checkout, "config", "user.name", "t")
+    git(fixture.checkout, "config", "user.email", "t@t")
+    head = fixture.commit("Start")
+    git(fixture.checkout, "push", "-q", "-u", "origin", "main")
+    fixture.personal.mkdir()
+    git(fixture.personal, "init", "-q")
+    fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
+    mount = {"$type": "board/mount/v1", "repo": str(fixture.checkout), "follow": "origin/main", "commit": head}
+    fixture.write("repos/widgets.json", json.dumps(mount))
+    for name in ("controls", "boundary", "github"):
+        enabled = fixture.run("plugin", "enable", name, cwd=fixture.personal)
+        assert enabled.returncode == 0, enabled.stderr
     return fixture

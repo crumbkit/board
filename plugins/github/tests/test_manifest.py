@@ -45,7 +45,7 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_shi
     report = board.json("plugin", "list")
     plugin = next(plugin for plugin in report["data"] if plugin["name"] == "github")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
-    assert plugin["offers"] == ["ref"]
+    assert plugin["offers"] == ["ref", "push", "pr-create", "pr-edit", "comment", "issue-create"]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
 
@@ -67,7 +67,7 @@ def test_a_capability_the_plugin_does_not_offer_is_refused_and_one_it_offers_is_
         )
         return ran.returncode, json.loads(ran.stdout)
 
-    code, document = served("push")
+    code, document = served("pull")
     assert (code, document["code"]) == (1, "github::call::unknown_capability")
     assert served("ref") == (0, {"$type": "board/call-result/v1", "output": board.call("octo/widgets#7")})
 
@@ -92,7 +92,20 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         for capability in capabilities
         for name, field in capability["inputSchema"]["properties"].items()
     }
-    assert set(descriptions) == {("ref", "ref")}
+    assert set(descriptions) == {
+        ("ref", "ref"),
+        ("pr-create", "title"),
+        ("pr-create", "body"),
+        ("pr-create", "base"),
+        ("pr-create", "draft"),
+        ("pr-edit", "number"),
+        ("pr-edit", "title"),
+        ("pr-edit", "body"),
+        ("comment", "number"),
+        ("comment", "body"),
+        ("issue-create", "title"),
+        ("issue-create", "body"),
+    }
     for key, description in descriptions.items():
         assert isinstance(description, str), key
         assert description.endswith("."), key

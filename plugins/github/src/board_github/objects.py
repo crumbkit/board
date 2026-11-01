@@ -50,3 +50,13 @@ def held(board: Board, owner: str, repo: str, number: int) -> tuple[str, dict[st
             {"path": logical, "code": code},
         )
     return str(logical), cast("dict[str, Any]", json.loads(body))
+
+
+def write(board: Board, record: dict[str, Any]) -> str:
+    """Write a pull or issue record with an expect-none put, leaving out an empty title, and return its path."""
+    if not record.get("title"):
+        record = {key: value for key, value in record.items() if key != "title"}
+    at = path(record["$type"], record["owner"], record["repo"], record["number"])
+    line = {"path": at, "expect": "none", "record": record}
+    board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
+    return at

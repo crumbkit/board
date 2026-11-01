@@ -1,12 +1,10 @@
 """The `ref` capability: record one pull request or issue, asking GitHub only when it is not yet recorded."""
 
-import json
-
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_github import gh
-from board_github.objects import ISSUE_TYPE, PLUGIN, PULL_TYPE, held, parse, path
+from board_github.objects import ISSUE_TYPE, PLUGIN, PULL_TYPE, held, parse, write
 
 
 def ref(request: CallRequest) -> dict[str, object]:
@@ -30,13 +28,16 @@ def ref(request: CallRequest) -> dict[str, object]:
     if not isinstance(url, str) or not url.startswith("https://"):
         raise gh.failed(endpoint, "answered without an https html_url", f"run `gh api {endpoint}` to see the answer")
     kind = PULL_TYPE if "pull_request" in issue else ISSUE_TYPE
-    record: dict[str, object] = {"$type": kind, "owner": owner, "repo": repo, "number": number, "url": url}
-    if isinstance(title, str) and title:
-        record["title"] = title
-    at = path(kind, owner, repo, number)
-    line = {"path": at, "expect": "none", "record": record}
-    board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
-    return answer(at, record, written=True)
+    title = title if isinstance(title, str) and title else None
+    record: dict[str, object] = {
+        "$type": kind,
+        "owner": owner,
+        "repo": repo,
+        "number": number,
+        "url": url,
+        "title": title,
+    }
+    return answer(write(board, record), record, written=True)
 
 
 def answer(at: str, record: dict[str, object], *, written: bool) -> dict[str, object]:

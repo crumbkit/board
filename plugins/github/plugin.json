@@ -76,9 +76,458 @@
         "title": "RefOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Push the branch checked out to origin, once the boundary passes its name and each commit it would send.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Push the branch checked out to origin, once the boundary passes the commits it would send.",
+        "properties": {},
+        "title": "PushInput",
+        "type": "object"
+      },
+      "name": "push",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The branch pushed and the commits sent, oldest first; `sent` is git's line for the branch.",
+        "properties": {
+          "branch": {
+            "title": "Branch",
+            "type": "string"
+          },
+          "commits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Commits",
+            "type": "array"
+          },
+          "crossing": {
+            "title": "Crossing",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "note",
+          "sent",
+          "branch",
+          "commits"
+        ],
+        "title": "PushOutput",
+        "type": "object"
+      },
+      "timeout": 2400
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Push the branch checked out and open a pull request from it, once the boundary passes the commits, title and body in one check, and write the pull request's record.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Push the branch checked out and open a pull request from it, once the boundary passes both.",
+        "properties": {
+          "base": {
+            "description": "The branch to merge into; GitHub's default branch when left out.",
+            "minLength": 1,
+            "title": "Base",
+            "type": "string"
+          },
+          "body": {
+            "description": "The pull request's body, in Markdown.",
+            "title": "Body",
+            "type": "string"
+          },
+          "draft": {
+            "description": "Whether to open it as a draft.",
+            "title": "Draft",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "The pull request's title.",
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ],
+        "title": "PrCreateInput",
+        "type": "object"
+      },
+      "name": "pr-create",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The pushed branch and the pull request opened from it; `sent` is its URL and `path` its record.",
+        "properties": {
+          "branch": {
+            "title": "Branch",
+            "type": "string"
+          },
+          "commits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Commits",
+            "type": "array"
+          },
+          "crossing": {
+            "title": "Crossing",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "note",
+          "sent",
+          "branch",
+          "commits",
+          "number",
+          "path"
+        ],
+        "title": "PrCreateOutput",
+        "type": "object"
+      },
+      "timeout": 2400
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Change a pull request's title or body, once the boundary passes the new text.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "anyOf": [
+          {
+            "required": [
+              "title"
+            ]
+          },
+          {
+            "required": [
+              "body"
+            ]
+          }
+        ],
+        "description": "Change a pull request's title or body, once the boundary passes the new text.",
+        "properties": {
+          "body": {
+            "description": "The new body, in Markdown.",
+            "title": "Body",
+            "type": "string"
+          },
+          "number": {
+            "description": "The pull request's number in the checkout's repository.",
+            "minimum": 1,
+            "title": "Number",
+            "type": "integer"
+          },
+          "title": {
+            "description": "The new title.",
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number"
+        ],
+        "title": "PrEditInput",
+        "type": "object"
+      },
+      "name": "pr-edit",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The crossing the boundary passed, and what GitHub returned for what was sent.\n\n`note` says why nothing was checked, when no boundary covered the content.\n`sent` is what GitHub returned, also recorded on the crossing.",
+        "properties": {
+          "crossing": {
+            "title": "Crossing",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "note",
+          "sent"
+        ],
+        "title": "SentOutput",
+        "type": "object"
+      },
+      "timeout": 2400
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Comment on a pull request or issue, once the boundary passes the comment.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Comment on a pull request or issue, once the boundary passes the comment.",
+        "properties": {
+          "body": {
+            "description": "The comment, in Markdown.",
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
+          "number": {
+            "description": "The pull request's or issue's number in the checkout's repository.",
+            "minimum": 1,
+            "title": "Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "number",
+          "body"
+        ],
+        "title": "CommentInput",
+        "type": "object"
+      },
+      "name": "comment",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The crossing the boundary passed, and what GitHub returned for what was sent.\n\n`note` says why nothing was checked, when no boundary covered the content.\n`sent` is what GitHub returned, also recorded on the crossing.",
+        "properties": {
+          "crossing": {
+            "title": "Crossing",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "note",
+          "sent"
+        ],
+        "title": "SentOutput",
+        "type": "object"
+      },
+      "timeout": 2400
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Open an issue, once the boundary passes its title and body, and write the issue's record.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR",
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "SSH_AUTH_SOCK"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Open an issue in the checkout's repository, once the boundary passes it.",
+        "properties": {
+          "body": {
+            "description": "The issue's body, in Markdown.",
+            "title": "Body",
+            "type": "string"
+          },
+          "title": {
+            "description": "The issue's title.",
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ],
+        "title": "IssueCreateInput",
+        "type": "object"
+      },
+      "name": "issue-create",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The issue opened; `sent` is its URL and `path` its record.",
+        "properties": {
+          "crossing": {
+            "title": "Crossing",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "sent": {
+            "title": "Sent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "digest",
+          "crossing",
+          "note",
+          "sent",
+          "number",
+          "path"
+        ],
+        "title": "IssueCreateOutput",
+        "type": "object"
+      },
+      "timeout": 2400
     }
   ],
-  "description": "Record a GitHub pull request or issue as a typed record that other records can reference. Use it when a record should name a pull request or issue. Run `board -C <board> call github.ref --ref <owner>/<repo>#<number>`, then reference the `path` it returns. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment and open issues only after the boundary passes what they send. Use it to name a pull request or issue in a record, and in place of git push and gh for sending. Run `board call github.ref --ref <owner>/<repo>#<number>`, or `board call github.push`, `github.pr-create`, `github.pr-edit`, `github.comment` or `github.issue-create` from the checkout. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "delivery"
   },

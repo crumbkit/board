@@ -5,8 +5,16 @@ import sys
 from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_github.ref import ref
+from board_github.send import comment, issue_create, pr_create, pr_edit, push
 
-CAPABILITIES = {"ref": ref}
+CAPABILITIES = {
+    "ref": ref,
+    "push": push,
+    "pr-create": pr_create,
+    "pr-edit": pr_edit,
+    "comment": comment,
+    "issue-create": issue_create,
+}
 
 
 def call(request: CallRequest) -> dict[str, object]:

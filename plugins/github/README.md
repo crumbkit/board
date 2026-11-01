@@ -1,7 +1,8 @@
 # github
 
 A Board plugin that records GitHub pull requests and issues as typed records,
-so other records can reference them. SKILL.md holds the procedure.
+so other records can reference them, and sends content to GitHub only after
+the boundary plugin passes it. SKILL.md holds the procedure.
 
 ## Records
 
@@ -41,6 +42,80 @@ so other records can reference them. SKILL.md holds the procedure.
   - A record already there that Board marks degraded, such as one with
     capitals in `owner`, is `github::record::degraded`.
 
+### Sending actions
+
+`push`, `pr-create`, `pr-edit`, `comment` and `issue-create` send content
+from the checkout Board was started in, which Board names in
+`BOARD_CALLER_DIR`. Each action works out where the content goes, collects
+it as named parts, and passes them to
+`board --personal call boundary.check` as the action `github.<name>`. It
+sends only when the check passes. Then it records what GitHub returned with
+`boundary.record`, and returns `digest`, `crossing`, `note` and `sent`, the
+result it recorded.
+
+- `push` pushes the branch checked out to origin under the same name, with
+  `git push -u`. It returns `branch`, `commits`, the commits sent, oldest
+  first, and `sent`, git's line for the branch, such as
+  `refs/heads/x:refs/heads/x [new branch]`.
+- `pr-create --title <t> --body <b> [--base <branch>] [--draft true]` pushes
+  as `push` does, then runs `gh pr create`. One check covers the commits,
+  title and body. It writes the `github/pull/v1` record and returns `number`
+  and `path`; `sent` is the pull request's URL.
+- `pr-edit --number <n> [--title <t>] [--body <b>]` changes the title, the
+  body or both through `gh api`. Board refuses a call with neither as
+  `board::plugin::bad_input`.
+- `comment --number <n> --body <b>` comments on a pull request or issue.
+- `issue-create --title <t> --body <b>` opens an issue, writes its
+  `github/issue/v1` record and returns `number` and `path`.
+
+The destination is `github:<owner>/<repo>` in lower case, from the URL
+configured for the checkout's `origin` in the https or ssh form. It is read
+before any `insteadOf` rewrite. The check names `from`, the checkout's mount
+in the personal board, as `board refs .` reports it in the checkout. A
+checkout no board mounts, or one mounted only in another board, is checked
+without `from`, so every boundary on the destination applies. Run
+`board --personal call github.<action>` from a checkout no board mounts.
+
+The parts, which a boundary's `checks` name by glob:
+
+| Part | Actions | Text |
+| --- | --- | --- |
+| `push.branch` | `push`, `pr-create` | The branch's name. |
+| `commit.<sha>.message` | `push`, `pr-create` | The commit's message. |
+| `commit.<sha>.author_email` | `push`, `pr-create` | The author's email. |
+| `commit.<sha>.committer_email` | `push`, `pr-create` | The committer's email. |
+| `commit.<sha>.diff` | `push`, `pr-create` | The commit's patch, against its first parent for a merge. |
+| `pr.title`, `pr.body` | `pr-create`, `pr-edit` | The pull request's title and body. `pr-edit` sends only those given. |
+| `comment.body` | `comment` | The comment. |
+| `issue.title`, `issue.body` | `issue-create` | The issue's title and body. |
+
+`<sha>` is the commit's first 12 hex digits, so `commit.*.message` names
+every commit's message. A push sends the commits that no ref on origin
+reaches, as `git ls-remote origin` lists them, so a new branch sends only
+what the remote lacks.
+
+Refusals:
+
+- The boundary's refusal is `github::boundary::refused`. Board requires a
+  plugin's codes to start with its own name, so `fields.code` holds the
+  boundary's code, such as `boundary::check::failed`. The message and the
+  other fields are the boundary's own, unchanged: `failures`, `digest`,
+  `crossing` and `recovery`, whose `text` starts `Next:`. Nothing is sent.
+- Any other refusal of the check, such as boundary not being enabled in the
+  personal board, is `github::board::refused` with Board's code.
+- `github::checkout::not_found`: Board was not started in a git checkout.
+- `github::remote::not_github`: origin is not a GitHub URL.
+- `github::checkout::detached`: `push` or `pr-create` on no branch.
+- `github::push::failed`: git refused the push, such as a branch that is
+  behind. The crossing passed and keeps no result.
+- `github::gh::failed`: gh failed after the check passed. The message says
+  the content may have been sent.
+- `github::git::failed`: another git command failed.
+
+The sending actions pass gh the same variables as `ref`, and also
+`SSH_AUTH_SOCK` for git and the variables the boundary's judged rules read.
+They may run for 2,400 seconds, since the check alone may take 1,800.
+
 Owner and repository are stored in lower case, in the path and the fields,
 because GitHub matches them without case; `url` keeps GitHub's own case. The
 record keeps the path it was asked under, and `url` is where GitHub answered
@@ -52,10 +127,15 @@ them.
 ## Layout
 
 Each capability is one module in `src/board_github/`, listed in
-`__main__.py`. Every call to GitHub goes through `gh.py`. `objects.py` holds
-the record types and their paths.
+`__main__.py`; the sending actions share `send.py`. Every call to GitHub goes
+through `gh.py`, every git command through `checkout.py`, and every call to the
+boundary through `crossing.py`. `objects.py` holds the record types and their
+paths.
 
 ## Installing
+
+The sending actions need the boundary and controls plugins enabled in the
+personal board.
 
     uv sync --frozen --no-dev
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/github"
@@ -70,6 +150,10 @@ The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 `uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
 the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. They put a stub gh first on PATH, so no test
-reaches GitHub. `plugin.json` and the shipped schemas are generated from
+reaches GitHub. The sending actions' tests run against a temporary personal
+board named in a temporary `XDG_CONFIG_HOME`, with boundary and controls
+enabled from this repository, so their `.venv`s must exist (`bin/lint python`
+makes them). Their checkout's origin names GitHub, and its git config sends
+every fetch and push to a local bare repository instead. `plugin.json` and the shipped schemas are generated from
 `src/board_github/models.py` by `board_github.manifest`, and a test checks that
 the committed files match.

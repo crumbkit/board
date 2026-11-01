@@ -72,3 +72,90 @@ class RefOutput(Strict):
     written: bool
     url: str
     title: str | None
+
+
+def optional(schema: JsonDict) -> None:
+    """A schema hook: an input the caller may leave out has no `null` default."""
+    for field in cast("dict[str, JsonDict]", schema.get("properties", {})).values():
+        field.pop("default", None)
+
+
+def title_or_body(schema: JsonDict) -> None:
+    """A schema hook: as `optional`, and the input must give a title, a body or both."""
+    optional(schema)
+    schema["anyOf"] = [{"required": ["title"]}, {"required": ["body"]}]
+
+
+class PushInput(Strict):
+    """Push the branch checked out to origin, once the boundary passes the commits it would send."""
+
+
+class PrCreateInput(Strict):
+    """Push the branch checked out and open a pull request from it, once the boundary passes both."""
+
+    model_config = ConfigDict(json_schema_extra=optional)
+
+    title: str = Field(min_length=1, description="The pull request's title.")
+    body: str = Field(description="The pull request's body, in Markdown.")
+    base: str | SkipJsonSchema[None] = Field(
+        None, min_length=1, description="The branch to merge into; GitHub's default branch when left out."
+    )
+    draft: bool | SkipJsonSchema[None] = Field(None, description="Whether to open it as a draft.")
+
+
+class PrEditInput(Strict):
+    """Change a pull request's title or body, once the boundary passes the new text."""
+
+    model_config = ConfigDict(json_schema_extra=title_or_body)
+
+    number: int = Field(ge=1, description="The pull request's number in the checkout's repository.")
+    title: str | SkipJsonSchema[None] = Field(None, min_length=1, description="The new title.")
+    body: str | SkipJsonSchema[None] = Field(None, description="The new body, in Markdown.")
+
+
+class CommentInput(Strict):
+    """Comment on a pull request or issue, once the boundary passes the comment."""
+
+    number: int = Field(ge=1, description="The pull request's or issue's number in the checkout's repository.")
+    body: str = Field(min_length=1, description="The comment, in Markdown.")
+
+
+class IssueCreateInput(Strict):
+    """Open an issue in the checkout's repository, once the boundary passes it."""
+
+    title: str = Field(min_length=1, description="The issue's title.")
+    body: str = Field(description="The issue's body, in Markdown.")
+
+
+class SentOutput(Strict):
+    """The crossing the boundary passed, and what GitHub returned for what was sent.
+
+    `note` says why nothing was checked, when no boundary covered the content.
+    `sent` is what GitHub returned, also recorded on the crossing.
+    """
+
+    digest: str
+    crossing: str
+    note: str | None
+    sent: str
+
+
+class PushOutput(SentOutput):
+    """The branch pushed and the commits sent, oldest first; `sent` is git's line for the branch."""
+
+    branch: str
+    commits: list[str]
+
+
+class PrCreateOutput(PushOutput):
+    """The pushed branch and the pull request opened from it; `sent` is its URL and `path` its record."""
+
+    number: int
+    path: str
+
+
+class IssueCreateOutput(SentOutput):
+    """The issue opened; `sent` is its URL and `path` its record."""
+
+    number: int
+    path: str

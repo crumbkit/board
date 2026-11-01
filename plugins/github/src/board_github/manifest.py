@@ -5,11 +5,63 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_github.models import ISSUE_SCHEMA_PATH, PULL_SCHEMA_PATH, IssueRecord, PullRecord, RefInput, RefOutput
+from board_github.models import (
+    ISSUE_SCHEMA_PATH,
+    PULL_SCHEMA_PATH,
+    CommentInput,
+    IssueCreateInput,
+    IssueCreateOutput,
+    IssueRecord,
+    PrCreateInput,
+    PrCreateOutput,
+    PrEditInput,
+    PullRecord,
+    PushInput,
+    PushOutput,
+    RefInput,
+    RefOutput,
+    SentOutput,
+)
 from board_github.objects import ISSUE_TYPE, PULL_TYPE
 
 # The variables gh reads for its account and configuration, which Board passes a capability that runs gh.
 GH_ENV = ["GH_TOKEN", "GITHUB_TOKEN", "GH_CONFIG_DIR"]
+# What a sending action passes on: gh's variables, those the boundary's judged rules read, and the ssh agent git
+# pushes through.
+SEND_ENV = [*GH_ENV, "BOARD_CONTROLS_AGENT", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "SSH_AUTH_SOCK"]
+# How long a sending action may run, in seconds: the boundary's 1,800 for its check, then the push and gh.
+SEND_TIMEOUT = 2400
+# The sending actions: name, description, input and output.
+SENDING: list[tuple[str, str, type[BaseModel], type[BaseModel]]] = [
+    (
+        "push",
+        "Push the branch checked out to origin, once the boundary passes its name and each commit it would send.",
+        PushInput,
+        PushOutput,
+    ),
+    (
+        "pr-create",
+        (
+            "Push the branch checked out and open a pull request from it, once the boundary passes the commits, "
+            "title and body in one check, and write the pull request's record."
+        ),
+        PrCreateInput,
+        PrCreateOutput,
+    ),
+    (
+        "pr-edit",
+        "Change a pull request's title or body, once the boundary passes the new text.",
+        PrEditInput,
+        SentOutput,
+    ),
+    ("comment", "Comment on a pull request or issue, once the boundary passes the comment.", CommentInput, SentOutput),
+    (
+        "issue-create",
+        "Open an issue, once the boundary passes its title and body, and write the issue's record.",
+        IssueCreateInput,
+        IssueCreateOutput,
+    ),
+]
 
 
 def capability(
@@ -34,10 +86,12 @@ def manifest() -> dict[str, JsonValue]:
         "version": "0.1.0",
         # SKILL.md's description, the callout an agent sees first.
         "description": (
-            "Record a GitHub pull request or issue as a typed record that other records can reference. Use it "
-            "when a record should name a pull request or issue. Run `board -C <board> call github.ref --ref "
-            "<owner>/<repo>#<number>`, then reference the `path` it returns. SKILL.md and README.md in the "
-            "plugin's directory say more."
+            "Record a GitHub pull request or issue as a typed record, and push, open or edit pull requests, comment "
+            "and open issues only after the boundary passes what they send. Use it to name a pull request or issue "
+            "in a record, and in place of git push and gh for sending. Run `board call github.ref --ref "
+            "<owner>/<repo>#<number>`, or `board call github.push`, `github.pr-create`, `github.pr-edit`, "
+            "`github.comment` or `github.issue-create` from the checkout. SKILL.md and README.md in the plugin's "
+            "directory say more."
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_github"],
         "metadata": {"area": "delivery"},
@@ -52,6 +106,11 @@ def manifest() -> dict[str, JsonValue]:
                 read_only=False,
             )
             | {"env": list[JsonValue](GH_ENV)},
+            *(
+                capability(name, description, given, output, read_only=False)
+                | {"env": list[JsonValue](SEND_ENV), "timeout": SEND_TIMEOUT}
+                for name, description, given, output in SENDING
+            ),
         ],
     }
 
