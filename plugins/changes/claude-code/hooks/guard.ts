@@ -39,6 +39,20 @@ export function originOf(url: string): string | null {
   return `${host}/${name}`.replace(/^\//, '').toLowerCase()
 }
 
+/**
+ * The directory an origin URL names when it is a local path or a `file://`
+ * URL, or null for a remote URL. A relative path is taken from `repo`, the
+ * repository's own directory.
+ */
+export function localOrigin(url: string, repo: string): string | null {
+  const trimmed = url.trim()
+  const file = trimmed.match(/^file:\/\/[^/]*(\/.*)$/i)
+  if (file !== null) return decodeURIComponent(file[1]!)
+  if (trimmed.startsWith('/')) return trimmed
+  if (trimmed.startsWith('./') || trimmed.startsWith('../')) return `${repo}/${trimmed}`
+  return null
+}
+
 /** Each repository's origin from the ORIGINS script, `<repo>\t<url>` per line, by repository. */
 export function parseOrigins(stdout: string): Map<string, string | null> {
   const origins = new Map<string, string | null>()
