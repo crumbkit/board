@@ -766,8 +766,12 @@
           }
         },
         "additionalProperties": false,
-        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.",
+        "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
         "properties": {
+          "brief_line": {
+            "title": "Brief Line",
+            "type": "string"
+          },
           "controls": {
             "title": "Controls",
             "type": "string"
@@ -816,6 +820,7 @@
           }
         },
         "required": [
+          "brief_line",
           "path",
           "plan",
           "uses",

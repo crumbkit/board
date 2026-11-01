@@ -45,7 +45,7 @@ def test_brief_stays_within_600_words_with_100_uses_and_counts_what_it_left_out(
     assert brief["left_out"] == count - shown
     assert 0 < shown < count
     lines = sum(len(f"{use['ref']} {use['line']}".split()) for use in brief["uses"])
-    rest = " ".join(str(brief[key]) for key in ("path", "plan", "phase", "instruction", "controls"))
+    rest = " ".join(str(brief[key]) for key in ("brief_line", "path", "plan", "phase", "instruction", "controls"))
     assert lines + len(rest.split()) <= BRIEF_WORDS
 
 
@@ -65,3 +65,10 @@ def test_brief_keeps_the_newest_plan_when_a_document_it_uses_is_deleted(board: B
     brief = board.call("brief", {"path": PATH})
     assert brief["plan"] == newest["text"]
     assert brief["uses"] == [{"ref": "/standards/b.md", "line": "unreadable: reaches nothing or is degraded"}]
+
+
+def test_brief_starts_with_the_line_the_write_guard_reads(board: Board) -> None:
+    board.write("changes/t.json", change())
+    brief = board.call("brief", {"path": PATH})
+    assert next(iter(brief)) == "brief_line"
+    assert brief["brief_line"] == f"board-brief: {PATH}"
