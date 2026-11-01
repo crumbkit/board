@@ -252,3 +252,37 @@ fn an_issue_with_a_lowercase_key_a_url_off_atlassian_or_an_empty_title_is_refuse
         ])
     );
 }
+
+#[test]
+fn a_key_or_site_longer_than_a_path_segment_is_refused_with_boards_code_and_its_twin_is_admitted() {
+    let board = board();
+    let key = |digits: usize| format!("AB-{}", "1".repeat(digits));
+    let site = |letters: usize| "a".repeat(letters);
+    for flags in [
+        [
+            "--key".to_owned(),
+            key(253),
+            "--site".to_owned(),
+            "acme".to_owned(),
+        ],
+        [
+            "--key".to_owned(),
+            "ACME-1".to_owned(),
+            "--site".to_owned(),
+            site(256),
+        ],
+    ] {
+        let flags: Vec<&str> = flags.iter().map(String::as_str).collect();
+        let (code, refused) = board.refused(&flags);
+        assert_eq!(
+            (code, &refused["code"]),
+            (1, &json!("jira::board::refused")),
+            "{refused}"
+        );
+        assert_eq!(refused["fields"]["code"], "board::path::malformed");
+    }
+    // A key's file name adds `.json`, so 250 bytes is the longest a file
+    // system holds; a site is a directory, whose name may take 255.
+    let written = board.answer(&["--key", &key(247), "--site", &site(255)]);
+    assert_eq!(written["written"], true);
+}

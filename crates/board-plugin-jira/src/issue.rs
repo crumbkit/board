@@ -4,7 +4,7 @@
 use std::io;
 use std::time::Duration;
 
-use board_model::{Code, LogicalPath};
+use board_model::{Code, Fields, LogicalPath, PathError, Refusal};
 use board_ops::{Host, PluginError, Run};
 use board_plugin::child::{Exited, ProcessError};
 use board_plugin::shape::Record;
@@ -29,8 +29,7 @@ pub(crate) struct Input {
     site: String,
 }
 
-/// The issue's record, whether this call wrote it, and why it has no title
-/// when it has none.
+/// The issue's record, whether this call wrote it, and why it has no title when it has none.
 ///
 /// `title_note` is null when the record has a title or was already there.
 #[derive(Serialize, JsonSchema)]
@@ -74,7 +73,7 @@ pub(crate) fn reference(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     }
     let path = format!("/jira/{site}/{key}");
     if let Some(held) = read(host, &path)? {
-        return Ok(reported(path, &held, false, None));
+        return reported(path, &held, false, None);
     }
     let (title, note) = title_of(&run_acli(host, &key), &site);
     let mut record = json!({
@@ -89,7 +88,7 @@ pub(crate) fn reference(host: &dyn Host, input: &Value) -> Result<Value, PluginE
     let line = json!({"path": path, "expect": "none", "record": record});
     (host.put(&[line]))
         .map_err(|error| PluginError::board_refused("jira", "put --batch", &error.refusal()))?;
-    Ok(reported(path, &record, true, note))
+    reported(path, &record, true, note)
 }
 
 fn refusal(code: &str, message: String, field: &str, value: &str) -> PluginError {
@@ -136,9 +135,12 @@ fn url_of(site: &str, key: &str) -> String {
 
 /// The record at `path`, or none when nothing is there.
 fn read(host: &dyn Host, path: &str) -> Result<Option<Value>, PluginError> {
-    let path: LogicalPath = path
-        .parse()
-        .expect("a valid key and site make a logical path");
+    // A key or site longer than a path segment may be is refused as
+    // `board get` refused it for the Python plugin.
+    let path: LogicalPath = path.parse().map_err(|error: PathError| {
+        let refusal = Refusal::new(error.code(), &error, &Fields::default());
+        PluginError::board_refused("jira", "get", &refusal)
+    })?;
     let answers = (host.get_each(&[path]))
         .map_err(|error| PluginError::board_refused("jira", "get", &error.refusal("get")))?;
     match answers.into_iter().next() {
@@ -151,24 +153,50 @@ fn read(host: &dyn Host, path: &str) -> Result<Option<Value>, PluginError> {
             "get",
             &error.refusal("get"),
         )),
-        None => Ok(None),
+        None => unreachable_answer(),
     }
 }
 
 /// The output: the record's fields, whether this call wrote it, and why it
-/// has no title.
-fn reported(path: String, record: &Value, written: bool, note: Option<String>) -> Value {
-    let text = |name: &str| record[name].as_str().unwrap_or_default().to_owned();
+/// has no title. A held record missing a field Board's schema requires is
+/// refused, since its fields cannot be trusted.
+fn reported(
+    path: String,
+    record: &Value,
+    written: bool,
+    note: Option<String>,
+) -> Result<Value, PluginError> {
+    let text = |name: &str| {
+        (record[name].as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| PluginError {
+                code: "jira::record::unreadable".to_owned(),
+                message: format!(
+                    "the record at {path} has no {name}; run `board check {path}` and fix it"
+                ),
+                fields: Map::from_iter([("path".to_owned(), Value::from(path.as_str()))]),
+            })
+    };
     let output = Output {
-        site: text("site"),
-        key: text("key"),
-        url: text("url"),
+        site: text("site")?,
+        key: text("key")?,
+        url: text("url")?,
         title: record["title"].as_str().map(str::to_owned),
         path,
         written,
         title_note: note,
     };
-    serde_json::to_value(output).expect("the output is plain strings and booleans")
+    Ok(serde_json::to_value(output).expect("the output is plain strings and booleans"))
+}
+
+/// The answer to a `get_each` of one path that gave none, which Board never
+/// does.
+fn unreachable_answer() -> Result<Option<Value>, PluginError> {
+    Err(PluginError {
+        code: "jira::board::refused".to_owned(),
+        message: "board get gave no answer for the issue's path".to_owned(),
+        fields: Map::new(),
+    })
 }
 
 /// Runs `acli jira workitem view <key> --fields summary --json`, found on

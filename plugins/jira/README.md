@@ -5,8 +5,16 @@ reference an issue by its path, such as `/jira/acme/ACME-123`. `ref` writes
 one issue's record. The plugin never creates, edits or comments on a Jira issue, and it
 keeps no Jira state beyond the title.
 
-It is built into Board. Run `board plugin enable jira` in a board to write
-the schema it ships to `.board/types/jira/`.
+## Enabling
+
+Board has the plugin built in, so nothing is installed:
+
+    board plugin enable jira
+
+This writes the schema it ships to `.board/types/jira/`. An older install at
+`${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/jira` makes `call` and
+`plugin enable` fail with `board::plugin::duplicate`. Remove it; it is
+usually a symlink to a checkout, so remove the link, not the checkout.
 
 ## Records
 
@@ -56,6 +64,8 @@ The output holds `path`, `site`, `key`, `url`, `title`, `written` and
   `acme`. A full host such as `acme.atlassian.net` is refused.
 - `jira::board::refused`: Board refused a read or the put. `fields.code`
   holds Board's code.
+- `jira::record::unreadable`: the record already at the path lacks `site`,
+  `key` or `url`. `fields.path` names it.
 - `jira::call::unknown_capability`: the plugin offers only `ref`.
 
 ## Developing

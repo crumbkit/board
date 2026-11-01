@@ -156,7 +156,7 @@ fn the_key_and_site_checks_admit_exactly_what_the_schemas_patterns_admit() {
     };
     let keys = [
         "ACME-123", "AC_ME2-7", "AB-1", "acme-123", "ACME123", "ACME-0", "A-1", "ACME-12a",
-        "1ACME-2", "ACME-1-2", "ACME-", "-1", "ÄB-1",
+        "1ACME-2", "ACME-1-2", "ACME-", "-1", "ÄB-1", "ACME-1\n",
     ];
     for key in keys {
         let admitted = schema.validate(&issue("acme", key)).is_ok();
