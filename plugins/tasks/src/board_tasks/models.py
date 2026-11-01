@@ -29,6 +29,7 @@ REPEAT = (
     r"|annually-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01]))$"
 )
 TaskRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": TASK_TYPE})]
+FileRef = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
 
 
 def shipped(schema: JsonDict) -> None:
@@ -51,7 +52,10 @@ class Task(BaseModel):
     is not kept. `from_hour` is the hour of the person's day it is available
     from. `contexts` tags where it can be done. `reviewed` is the day it was
     last looked at. `owner` names the agent or person who holds it, such as a
-    session id or a handle. Any other field, such as Reflect's `id` and `pinned`, is
+    session id or a handle. `parent` references the task in the same repo that
+    this one is part of, and `kind` says whether it is a `task`, as when it is
+    left out, or a `project`, whose `brief` may reference a brief such as a
+    README.md. Any other field, such as Reflect's `id` and `pinned`, is
     admitted and ignored.
     """
 
@@ -74,6 +78,9 @@ class Task(BaseModel):
     contexts: list[Annotated[str, Field(pattern=r"^[a-z0-9-]+$")]] = Field(default_factory=list[str])
     reviewed: datetime.date | SkipJsonSchema[None] = None
     owner: Annotated[str, Field(min_length=1)] | SkipJsonSchema[None] = None
+    parent: TaskRef | SkipJsonSchema[None] = None
+    kind: Literal["task", "project"] | SkipJsonSchema[None] = None
+    brief: FileRef | SkipJsonSchema[None] = None
 
 
 def unset(schema: JsonDict) -> None:
@@ -125,8 +132,19 @@ class AvailableInput(Strict):
     remote: str | SkipJsonSchema[None] = SCOPE["remote"]
 
 
+class Subtasks(Strict):
+    """How many of a task's descendants are open, and how many it has in every status."""
+
+    open: int
+    total: int
+
+
 class SweptTask(Strict):
-    """An open task: where it is, why it waits, and how many open tasks wait on it."""
+    """An open task: where it is, why it waits, how many open tasks wait on it, and its place in the tree.
+
+    `parent` is the parent's path in the board, or None when it has none, names no task in its repo, or is
+    where a loop was cut. `tree_path` joins the slugs from its root to it.
+    """
 
     repo: str
     path: str
@@ -138,6 +156,9 @@ class SweptTask(Strict):
     owner: str | None
     blocked_by: list[str]
     waiting: int
+    parent: str | None
+    subtasks: Subtasks
+    tree_path: str
 
 
 class Section(Strict):
@@ -159,6 +180,13 @@ class CrossRepo(Strict):
 
     path: str
     after: str
+
+
+class CrossParent(Strict):
+    """A `parent` that names a task in another notes repo than its task's own, which is not followed."""
+
+    path: str
+    parent: str
 
 
 class AvailableOutput(Strict):
@@ -186,8 +214,60 @@ class AvailableOutput(Strict):
     repos: list[str]
     degraded: int
     unsynced: list[Unsynced]
-    cross_repo: list[CrossRepo]
+    cross_repo: list[CrossRepo | CrossParent]
     origin_unread: str | None
+
+
+class TreeInput(Strict):
+    """The tree to list: one task's, or every top-level node's in the repos in scope."""
+
+    path: str | SkipJsonSchema[None] = Field(
+        default=None,
+        json_schema_extra=unset,
+        pattern=r"^/.*\.md$",
+        description="The task whose tree to list, such as /tasks/ship-flows-editor.md.",
+    )
+    root: bool | SkipJsonSchema[None] = Field(
+        default=None,
+        json_schema_extra=unset,
+        description="Whether to list every top-level node of the repos in scope, with its descendants.",
+    )
+    repo: str | SkipJsonSchema[None] = SCOPE["repo"]
+    remote: str | SkipJsonSchema[None] = SCOPE["remote"]
+
+
+class TreeNode(Strict):
+    """A task in a tree, with its children by title.
+
+    `blocked_by` holds its open `after` targets, then its open descendants nearest to it.
+    """
+
+    path: str
+    title: str
+    status: str
+    kind: str
+    brief: str | None
+    owner: str | None
+    blocked_by: list[str]
+    subtasks: Subtasks
+    tree_path: str
+    children: list["TreeNode"]
+
+
+class TreeOutput(Strict):
+    """A tree, or the top-level trees.
+
+    With `--path`, `tree` is that task's tree. With `--root`, `roots` holds at most 100 top-level nodes, open
+    ones first and then by title, and `total` counts them all. `repos` are the repos read, `cycles` the tasks
+    in them where a loop of `parent` links was cut, and `cross_repo` the references in them to another repo.
+    """
+
+    tree: TreeNode | None
+    roots: list[TreeNode]
+    total: int
+    repos: list[str]
+    cycles: list[str]
+    cross_repo: list[CrossRepo | CrossParent]
 
 
 # A string, so that `board call` offers it as a flag: a date or a horizon.
@@ -213,6 +293,18 @@ class DeferInput(TaskPath):
     until: str = Field(pattern=UNTIL, description=UNTIL_HELP)
 
 
+class MoveInput(TaskPath):
+    """The task to move, and its new parent."""
+
+    parent: str = Field(
+        pattern=r"^(none|/.*\.md)$",
+        description=(
+            "The new parent's path in the board, in the task's own repo, such as /tasks/ship-flows-editor.md, "
+            "or none to clear it."
+        ),
+    )
+
+
 class ClaimInput(TaskPath):
     """The task to claim, and who claims it."""
 
@@ -227,7 +319,7 @@ def optional(description: str, **constraints: Any) -> Any:  # noqa: ANN401 - a p
 class AddInput(Strict):
     """A new open task, and the fields it starts with."""
 
-    title: str = Field(min_length=1, description="The task's title, which also names its file.")
+    title: str = Field(min_length=1, description="The task's title, which names its file once and for all.")
     text: str | SkipJsonSchema[None] = optional("The task's prose, written as its body.")
     due: str | SkipJsonSchema[None] = optional(
         "The date, YYYY-MM-DD, the task is due by.", pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
@@ -246,12 +338,31 @@ class AddInput(Strict):
     contexts: list[Annotated[str, Field(pattern=r"^[a-z0-9-]+$")]] | SkipJsonSchema[None] = optional(
         "Tags of where it can be done, such as errands."
     )
+    kind: Literal["task", "project"] | SkipJsonSchema[None] = optional("task, as when left out, or project.")
+    brief: str | SkipJsonSchema[None] = optional(
+        "The path, in the task's own repo, of a project's brief, such as /projects/flows/README.md.", pattern="^/"
+    )
+    parent: str | SkipJsonSchema[None] = optional(
+        "The path, in the task's own repo, of the task it is part of, such as /tasks/ship-flows-editor.md.",
+        pattern=r"^/.*\.md$",
+    )
     repo: str | SkipJsonSchema[None] = optional(
         "The repo to write the task to: / for the board's own tree, or a notes repo's mount path; the caller's git "
         "remote chooses it when left out.",
         pattern="^/",
     )
     remote: str | SkipJsonSchema[None] = SCOPE["remote"]
+
+
+class Moved(Strict):
+    """The task as `move` left it: `parent` as written, or None once cleared. The other fields are as in Written."""
+
+    repo: str
+    path: str
+    parent: str | None
+    commit: str | None
+    unsynced: str | None
+    unpushed: str | None
 
 
 class Written(Strict):

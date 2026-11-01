@@ -56,6 +56,25 @@ such as your session id, in every call.
    other owner's sweep. Hand each one on by changing its `owner` line, as
    Edit below says.
 
+## Keep a project tree
+
+A project is a task with `kind: project`. Each task or project has at most one
+`parent`, so the work forms a tree, and a parent waits on the open tasks under
+it.
+
+1. When agreed work belongs to a larger goal, add it under that goal:
+   `tasks.add --title '<title>' --parent <path in its repo>`. Start a project
+   with `--kind project`, and `--brief <path>` when it has a brief.
+2. A task that needs a project another task holds lists the project in
+   `after`. Never give a task a second parent.
+3. Reshape the tree with `tasks.move --path <task> --parent <task>`, or
+   `--parent none` to make it top-level. The task's path never changes, so
+   no reference breaks. On `tasks::move::cycle`, choose a parent outside the
+   task's tree.
+4. See a project whole with `tasks.tree --path <path>`, or every tree with
+   `tasks.tree --root true`. When `blocked_by` of a parent is empty, every
+   task under it is finished: mark it done.
+
 ## Edit
 
 1. Run `board -C <board> --json get <path>`, which gives the task's `text`

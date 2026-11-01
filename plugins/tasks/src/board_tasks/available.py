@@ -13,6 +13,7 @@ from board_plugin.protocol import CallRequest, PluginError
 
 from board_tasks import models
 from board_tasks.models import FIELDS, TASK_TYPE, TREE_CODES
+from board_tasks.tree import Forest, Node, forest, place, waits_on
 
 HORIZONS = {"not-today": 1, "not-this-week": 6, "soon": 20, "someday": 90}
 DUE_SOON = dt.timedelta(days=7)
@@ -44,7 +45,10 @@ SELECT 'task', *{", NULL" * (WIDTH - len(TASK_COLUMNS))} FROM ({TASKS})
 
 @dataclass(frozen=True)
 class Task:
-    """An open task, with the repo that holds it. `defer` is as the frontmatter wrote it."""
+    """A task, with the repo that holds it. `defer` is as the frontmatter wrote it.
+
+    `waits` and `linked` say whether it has an `after` and a `parent`, which `board refs` resolves.
+    """
 
     repo: str
     path: str
@@ -56,6 +60,19 @@ class Task:
     contexts: list[str]
     waits: bool
     owner: str | None
+    status: str = "open"
+    linked: bool = False
+    kind: str = "task"
+    brief: str | None = None
+
+
+@dataclass(frozen=True)
+class Links:
+    """What `board refs` resolved for tasks: each one's open `after` targets and parent, and the crossings."""
+
+    blocked: dict[str, list[str]]
+    parents: dict[str, str]
+    crossing: list[dict[str, str]]
 
 
 def available(request: CallRequest) -> dict[str, object]:
@@ -77,7 +94,7 @@ def available(request: CallRequest) -> dict[str, object]:
         tasks, degraded = read(rows, roots)
         reports = pool.submit(resolve, board, tasks)
         synced = list(pool.map(sync, [board] * len(mounted), [clone for _, _, clone in mounted]))
-        blocked, crossing = reports.result()
+        links = reports.result()
     unsynced: list[dict[str, str]] = []
     moved = False
     # Each pin writes the board, so the pins move in turn, once the reads that ran beside the syncs are done.
@@ -90,17 +107,22 @@ def available(request: CallRequest) -> dict[str, object]:
             unsynced.append({"repo": at, "code": failed})
     if moved:
         tasks, degraded = read(listing(board)[1], roots)
-        blocked, crossing = resolve(board, tasks)
+        links = resolve(board, tasks)
+    nodes, tree = grown(tasks, links)
+    tasks = [task for task in tasks if task.status == "open"]
+    blocked = {task.path: waited(links, tree, nodes, task.path) for task in tasks}
+    places = {task.path: place(tree, nodes, task.path) for task in tasks}
     context, owner = request.input.get("context"), request.input.get("owner")
     if context is not None:
         tasks = [task for task in tasks if context in task.contexts]
-    sections = sweep(tasks, blocked, dt.datetime.now().astimezone(), day_start(), cast("str | None", owner))
+    now = dt.datetime.now().astimezone()
+    sections = sweep(tasks, blocked, now, day_start(), cast("str | None", owner), places=places)
     return {
         **sections,
         "repos": roots,
         "degraded": degraded,
         "unsynced": unsynced,
-        "cross_repo": crossing,
+        "cross_repo": links.crossing,
         "origin_unread": unread,
     }
 
@@ -113,48 +135,71 @@ def listing(board: Board) -> tuple[list[repos.Listed], list[list[Any]]]:
     return found, [row[1 : 1 + len(TASK_COLUMNS)] for row in rows if row[0] == "task"]
 
 
-def resolve(board: Board, tasks: list[Task]) -> tuple[dict[str, list[str]], list[dict[str, str]]]:
-    """What each task with an `after` waits on, by the task's path, and the `after` entries not followed.
+def resolve(board: Board, tasks: list[Task]) -> Links:
+    """What each task with an `after` waits on and each task's parent, by the task's path, and those not followed.
 
-    One `board refs` answers every task. An `after` that reaches a task in another notes repo than its own,
-    such as a task in the board's own tree naming one in a mount, is listed and never blocks.
+    One `board refs` answers every task with an `after` or a `parent`, in every status. An `after` or a
+    `parent` that reaches a task in another notes repo than its own, such as a task in the board's own tree
+    naming one in a mount, is listed and not followed.
     """
-    waits = [task for task in tasks if task.waits]
-    blocked: dict[str, list[str]] = {}
-    crossing: list[dict[str, str]] = []
-    for task, report in zip(waits, board.refs([task.path for task in waits], fields=FIELDS), strict=True):
-        blocked[task.path], across = blockers(report or {}, task.repo)
-        crossing += [{"path": task.path, "after": target} for target in across]
-    return blocked, crossing
+    asked = [task for task in tasks if task.waits or task.linked]
+    links = Links({}, {}, [])
+    for task, report in zip(asked, board.refs([task.path for task in asked], fields=FIELDS), strict=True):
+        found, parent, across = blockers(report or {}, task.repo)
+        if task.waits:
+            links.blocked[task.path] = found
+        if parent is not None:
+            links.parents[task.path] = parent
+        links.crossing.extend({"path": task.path, field: target} for field, target in across)
+    return links
 
 
-def blockers(report: dict[str, Any], repo: str) -> tuple[list[str], list[str]]:
-    """The tasks a task in `repo` reaches through `after` that are not done, and the targets in another repo.
+def blockers(report: dict[str, Any], repo: str) -> tuple[list[str], str | None, list[tuple[str, str]]]:
+    """The tasks a task in `repo` reaches through `after` that are not done, its parent, and the targets elsewhere.
 
-    Each blocker is listed once, by its path in the board, and an unresolved one as written. A target is done
-    when it is a `tasks/task/v2` record whose status is `done` and which check degrades for nothing but the
-    tree. A target held by another commit than the task, or the board's own tree for a mount, is in another
-    repo. Board displays a target in a mount by its path in that mount, so the repo's root is put in front.
+    Each blocker is listed once, by its path in the board, and an unresolved one as written; so is the
+    parent. A target is done when it is a `tasks/task/v2` record whose status is `done` and which check
+    degrades for nothing but the tree. A target held by another commit than the task, or the board's own
+    tree for a mount, is in another repo, and is listed with its field, `after` or `parent`. Board displays
+    a target in a mount by its path in that mount, so the repo's root is put in front.
     """
     own: dict[str, Any] = report.get("location") or {}
     source = own.get("source")
     found: list[str] = []
-    across: list[str] = []
+    parent: str | None = None
+    across: list[tuple[str, str]] = []
     for outgoing in report.get("from", []):
-        if outgoing.get("link") or not str(outgoing.get("pointer", "")).startswith("/after/"):
+        pointer = str(outgoing.get("pointer", ""))
+        field = "after" if pointer.startswith("/after/") else "parent" if pointer == "/parent" else None
+        if outgoing.get("link") or field is None:
             continue
         location = outgoing["location"]
         if location is not None and location.get("source") != source:
-            across.append(str(outgoing["target"]))
+            across.append((field, str(outgoing["target"])))
             continue
         display = str(outgoing["target"] if location is None else location["display"])
         display = display if repo == "/" else repo + display
+        if field == "parent":
+            parent = display
+            continue
         values = {value["pointer"]: value.get("value") for value in outgoing.get("values", [])}
         code = outgoing.get("target_code")
         done = values.get("/$type") == TASK_TYPE and values.get("/status") == "done" and code in (None, *TREE_CODES)
         if not done and display not in found:
             found.append(display)
-    return found, across
+    return found, parent, across
+
+
+def grown(tasks: list[Task], links: Links) -> tuple[dict[str, Node], Forest]:
+    """The tasks as the tree's nodes, by path, and the forest their parents make."""
+    nodes = {task.path: Node(task.path, task.title, task.status, links.parents.get(task.path)) for task in tasks}
+    return nodes, forest(nodes)
+
+
+def waited(links: Links, tree: Forest, nodes: dict[str, Node], path: str) -> list[str]:
+    """What a task waits on: its open `after` targets, then the open descendants nearest to it."""
+    after = links.blocked.get(path, [])
+    return after + [child for child in waits_on(tree, nodes, path) if child not in after]
 
 
 def sync(board: Board, clone: str) -> tuple[str | None, str | None]:
@@ -185,7 +230,7 @@ def pin(repo: repos.Repo) -> str | None:
 
 
 def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
-    """The open tasks in `roots`, and how many of their task files are degraded or hold a value it cannot read.
+    """The tasks in `roots`, in every status, and how many of their files are degraded or hold a value it cannot read.
 
     A task file is degraded whatever its status when it is no `tasks/task/v2` record, when check degrades it for
     more than the tree, or when the plugin's model refuses a record the board's schema admitted.
@@ -203,9 +248,7 @@ def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
             written: dict[str, Any] = json.loads(body)
             task = models.Task.model_validate(written)
             defer = written.get("defer")
-            if task.status != "open":
-                continue
-            if defer is not None and defer not in HORIZONS:
+            if task.status == "open" and defer is not None and defer not in HORIZONS:
                 until(str(defer))
         except ValueError:
             degraded += 1
@@ -222,18 +265,29 @@ def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
                 list(task.contexts),
                 bool(task.after),
                 task.owner,
+                task.status,
+                task.parent is not None,
+                task.kind or "task",
+                task.brief if task.brief is None or at == "/" else at + task.brief,
             )
         )
     return tasks, degraded
 
 
-def sweep(
-    tasks: list[Task], blocked: dict[str, list[str]], now: dt.datetime, start: dt.timedelta, owner: str | None = None
+def sweep(  # noqa: PLR0913 - the tasks, what they wait on, the clock, the owner and the tree
+    tasks: list[Task],
+    blocked: dict[str, list[str]],
+    now: dt.datetime,
+    start: dt.timedelta,
+    owner: str | None = None,
+    *,
+    places: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """The sections of the sweep at `now`, for a day that starts `start` after midnight. It does no I/O.
+    """The sections of the sweep of open `tasks` at `now`, for a day that starts `start` after midnight.
 
-    With an `owner`, every section keeps the tasks that owner or nobody holds, and `held` lists the ones that
-    owner holds that are not available. `waiting` still counts every task.
+    It does no I/O. With an `owner`, every section keeps the tasks that owner or nobody holds, and `held`
+    lists the ones that owner holds that are not available. `waiting` still counts every task. `places` holds
+    each task's place in the tree; a task without one is a root with no subtasks.
     """
     day = today(now, start)
     waiting: dict[str, int] = {}
@@ -258,6 +312,7 @@ def sweep(
             "owner": task.owner,
             "blocked_by": blocked.get(task.path, []),
             "waiting": waiting.get(task.path, 0),
+            **(places or {}).get(task.path, place(forest({}), {}, task.path)),
         }
         if free:
             shown["available"].append(item)
