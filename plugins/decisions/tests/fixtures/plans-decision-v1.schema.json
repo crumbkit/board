@@ -1,0 +1,90 @@
+{
+  "additionalProperties": false,
+  "description": "`plans/decision/v1`: a decision a session made, and why.\n\nOnly a stub a hook wrote, which names itself in `written_by`, may leave\n`why` empty, for the agent to fill in.",
+  "if": {
+    "not": {
+      "required": [
+        "written_by"
+      ]
+    }
+  },
+  "properties": {
+    "$type": {
+      "const": "plans/decision/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "alternatives": {
+      "default": [],
+      "description": "What was not chosen.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "decided": {
+      "description": "When it was decided.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "decision": {
+      "description": "The decision.",
+      "type": "string"
+    },
+    "refs": {
+      "description": "Entries in the board the decision concerns, such as an answer.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "review": {
+      "description": "`wanted` when the owner should look at the decision.",
+      "enum": [
+        "wanted",
+        "none"
+      ],
+      "type": "string"
+    },
+    "session": {
+      "description": "The session that decided.",
+      "type": "string"
+    },
+    "urls": {
+      "default": [],
+      "description": "Web pages the decision concerns, such as a pull request.",
+      "items": {
+        "pattern": "^https?://",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "why": {
+      "description": "The reason for it.",
+      "type": "string"
+    },
+    "written_by": {
+      "description": "The plugin and hook that wrote this stub without an agent, such as\n`runs/pr-create`; absent when an agent or a person wrote it.",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "decision",
+    "why",
+    "session",
+    "decided"
+  ],
+  "then": {
+    "properties": {
+      "why": {
+        "minLength": 1
+      }
+    }
+  },
+  "title": "DecisionRecord",
+  "type": "object",
+  "x-board-folder": "/projects/{project}/decisions/"
+}

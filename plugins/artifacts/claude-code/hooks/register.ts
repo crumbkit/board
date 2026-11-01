@@ -134,14 +134,26 @@ async function document($: EngineInterface, args: string[]): Promise<unknown> {
  * record; else, or without one, the one open change the session holds.
  */
 async function belongsTo($: EngineInterface, agentId: string | undefined): Promise<string | undefined> {
-  if (agentId !== undefined) {
-    const got = (await document($, ['get', `/agents/${segment(agentId)}`])) as { data?: { record?: { works_on?: string } }[] } | undefined
-    const worksOn = got?.data?.[0]?.record?.works_on
-    if (worksOn !== undefined) return worksOn
+  // A failed lookup leaves out only `for`; the version is still recorded.
+  try {
+    if (agentId !== undefined) {
+      const got = (await document($, ['get', `/agents/${segment(agentId)}`])) as { data?: { record?: { works_on?: string } }[] } | undefined
+      const worksOn = got?.data?.[0]?.record?.works_on
+      if (worksOn !== undefined) return worksOn
+    }
+    const open = (await document($, ['call', 'changes.open', '--holder', await sessionId($)])) as { data?: { output?: { changes: { path: string }[]; total: number } } } | undefined
+    const output = open?.data?.output
+    return output?.total === 1 ? output.changes[0]?.path : undefined
+  } catch (error) {
+    $.ui.log(`board: no change for the version's for: ${String(error)}`, { to: 'debug' })
+    return undefined
   }
-  const open = (await document($, ['call', 'changes.open', '--holder', await $.session.id()])) as { data?: { output?: { changes: { path: string }[]; total: number } } } | undefined
-  const output = open?.data?.output
-  return output?.total === 1 ? output.changes[0]?.path : undefined
+}
+
+/** The session's id: the desktop app's `local_` id when it names one, as claims and questions use, else the transcript's. */
+async function sessionId($: EngineInterface): Promise<string> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  return host?.startsWith('local_') ? host : $.session.id()
 }
 
 /** Writes the artifact record when it is missing, then the version and its page when the version is new. */
@@ -168,7 +180,7 @@ async function record($: EngineInterface, seen: Seen, agentId: string | undefine
       copy: sha === undefined ? 'none' : undefined,
       sha256: sha,
       source: seen.source,
-      session: await $.session.id(),
+      session: await sessionId($),
       at: now,
       for: belongs === undefined ? undefined : [belongs],
     }

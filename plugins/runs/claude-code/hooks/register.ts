@@ -20,13 +20,12 @@ const written = atom({ plugin: 'board-runs', key: 'written' } as const, 0)
 // A put refused with one of these means the board does not take this record
 // at all: no personal board, or no runs plugin. Only the debug log says so.
 const QUIET = ['board::config::not_found', 'board::record::unknown_type']
-const PR_CREATE = /(^|[\s;&|(])gh\s+pr\s+create\b/
 const PR_URL = /https:\/\/[^\s/]+\/[^\s/]+\/([^\s/]+)\/pull\/(\d+)/g
 // The line that ends a brief to a subagent working on a change (plugins/changes/SKILL.md).
 const BOARD_LINE = /^Board:\s*(\/changes\/\S+)$/
-// A leading `cd <dir> &&`, and any other change of directory.
-const LEADING_CD = /^\s*cd\s+('[^']*'|"[^"]*"|\S+)\s*&&/
-const CD = /(^|[\s;&|(])(cd|pushd|popd)(\s|$)/
+// The commands that change directory, and the `gh pr` subcommands that open a pull request.
+const CHANGES_DIRECTORY = ['cd', 'pushd', 'popd']
+const OPENS = ['create', 'new']
 
 type Config = { suite: string }
 type Unit = { kind: 'agent' | 'task'; id: string; by: string; summary: string | undefined; noun: string }
@@ -55,11 +54,79 @@ export function boardLine(prompt: string): string | undefined {
 /** What `gh pr create` in `command` targets: the repository and branch it names, and the directory to read the rest from. */
 export type Target = { repo: string | undefined; head: string | undefined; dir: string | undefined } | { unclear: string }
 
-const unquote = (word: string) => word.replace(/^'(.*)'$|^"(.*)"$/s, (_, one, two) => one ?? two)
+/** One simple command of a shell line: its words, without quotes or leading `VAR=x` assignments, and the operator after it. */
+export type Simple = { words: string[]; then: string }
 
-/** The words of `text`, split at spaces outside quotes, with their quotes removed. */
-function words(text: string): string[] {
-  return [...text.matchAll(/'[^']*'|"[^"]*"|\S+/g)].map(match => unquote(match[0]))
+/**
+ * The simple commands of `command`, split at `&&`, `||`, `;`, `|`, `(`, `)`
+ * and newlines outside quotes. A heredoc's body is skipped, so text in it,
+ * as in quotes, starts no command. This reads shell well enough to find
+ * where commands start; it does not expand anything.
+ */
+export function commands(command: string): Simple[] {
+  const found: Simple[] = []
+  let words: string[] = []
+  let word: string | undefined
+  let heredocs: string[] = []
+  const endWord = () => {
+    if (word !== undefined) words.push(word)
+    word = undefined
+  }
+  const end = (then: string) => {
+    endWord()
+    while (words.length > 0 && /^[A-Za-z_][A-Za-z0-9_]*=/.test(words[0]!)) words.shift()
+    if (words.length > 0) found.push({ words, then })
+    words = []
+  }
+  let at = 0
+  while (at < command.length) {
+    const char = command[at]!
+    if (char === "'" || char === '"') {
+      const close = command.indexOf(char, at + 1)
+      const stop = close === -1 ? command.length : close
+      word = (word ?? '') + command.slice(at + 1, stop)
+      at = stop + 1
+    } else if (char === '<' && command.startsWith('<<', at) && !command.startsWith('<<<', at)) {
+      endWord()
+      const marker = /^<<-?\s*(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>]+))/.exec(command.slice(at))
+      if (marker !== null) heredocs.push(marker[1] ?? marker[2] ?? marker[3]!)
+      at += marker === null ? 2 : marker[0].length
+    } else if (char === '\n') {
+      end('\n')
+      at += 1
+      for (const delimiter of heredocs) {
+        while (at < command.length) {
+          const next = command.indexOf('\n', at)
+          const line = command.slice(at, next === -1 ? command.length : next)
+          at = next === -1 ? command.length : next + 1
+          if (line.trim() === delimiter) break
+        }
+      }
+      heredocs = []
+    } else if (command.startsWith('&&', at) || command.startsWith('||', at)) {
+      end(command.slice(at, at + 2))
+      at += 2
+    } else if (';|()&'.includes(char)) {
+      end(char)
+      at += 1
+    } else if (/\s/.test(char)) {
+      endWord()
+      at += 1
+    } else {
+      word = (word ?? '') + char
+      at += 1
+    }
+  }
+  end('')
+  return found
+}
+
+/** Whether a simple command is `gh pr create` or `gh pr new`. */
+const opens = ({ words }: Simple) => words[0] === 'gh' && words[1] === 'pr' && OPENS.includes(words[2] ?? '')
+
+/** Whether `command` runs `gh pr create` or `gh pr new` as a command of its own. */
+export function opensPullRequest(command: string): boolean {
+  return commands(command).some(opens)
 }
 
 /** The value of the flag `short` or `long` among `args`, as `-R x`, `--repo x` or `--repo=x`. */
@@ -80,18 +147,21 @@ function flag(args: string[], short: string, long: string): string | undefined {
  * of directory before the command makes the directory unknown.
  */
 export function target(command: string): Target {
-  const at = PR_CREATE.exec(command)
-  if (at === null) return { unclear: 'the command runs no gh pr create' }
-  const start = at.index + at[0].indexOf('gh')
-  const args = words(command.slice(start).split(/&&|\|\||[;|\n]/)[0]!).slice(3)
+  const all = commands(command)
+  const index = all.findIndex(opens)
+  if (index === -1) return { unclear: 'the command runs no gh pr create' }
+  const args = all[index]!.words.slice(3)
   const repo = flag(args, '-R', '--repo')
   const head = flag(args, '-H', '--head')?.replace(/^[^:]+:/, '')
   if (repo !== undefined && head !== undefined) return { repo, head, dir: undefined }
-  const before = command.slice(0, start)
-  const leading = LEADING_CD.exec(before)
-  const rest = leading === null ? before : before.slice(leading[0].length)
-  if (CD.test(rest)) return { unclear: 'the command changes directory before gh pr create, so its repository and branch are unknown' }
-  return { repo, head, dir: leading === null ? undefined : unquote(leading[1]!) }
+  const before = all.slice(0, index)
+  const first = before[0]
+  const leading = first !== undefined && first.words[0] === 'cd' && first.words.length === 2 && first.then === '&&'
+  const rest = leading ? before.slice(1) : before
+  if (rest.some(simple => CHANGES_DIRECTORY.includes(simple.words[0]!))) {
+    return { unclear: 'the command changes directory before gh pr create, so its repository and branch are unknown' }
+  }
+  return { repo, head, dir: leading ? first.words[1] : undefined }
 }
 
 /** `-R`'s `HOST/OWNER/REPO` as a URL, so the stored form of its remote is `OWNER/REPO`; any other value as given. */
@@ -145,19 +215,25 @@ function refused($: EngineInterface, what: string, refusal: Refused) {
   $.ui.log(`board: ${what}: ${refusal.code} ${refusal.message}`, { to })
 }
 
+/** The session's id: the desktop app's `local_` id when it names one, as claims and questions use, else the transcript's. */
+export async function sessionId($: EngineInterface): Promise<string> {
+  const host = await $.env.get('CLAUDE_CODE_HOST_SESSION_ID')
+  return host?.startsWith('local_') ? host : $.session.id()
+}
+
 /** The one open change this session holds, or undefined when it holds none or several. */
 async function heldChange($: EngineInterface): Promise<string | undefined> {
-  const open = await call<Open>($, 'changes.open', ['--holder', await $.session.id()])
+  const open = await call<Open>($, 'changes.open', ['--holder', await sessionId($)])
   if (!('output' in open)) return void refused($, 'no held change', open)
   return open.output.total === 1 ? open.output.changes[0]!.path : undefined
 }
 
-/** The prompt with the change's brief before it, so the subagent starts with the plan and the controls command. */
-async function briefed($: EngineInterface, prompt: string, change: string): Promise<string> {
+/** The prompt with the change's brief before it, so the subagent starts with the plan and the controls command; undefined when there is no brief. */
+async function briefed($: EngineInterface, prompt: string, change: string): Promise<string | undefined> {
   const brief = await call<object>($, 'changes.brief', ['--path', change])
   if (!('output' in brief)) {
     refused($, `no brief for ${change}`, brief)
-    return prompt
+    return undefined
   }
   const told = `The runs mod ran \`board --personal call changes.brief --path ${change}\` before you started. It printed:`
   return `${told}\n\n${JSON.stringify(brief.output, null, 2)}\n\n${prompt}`
@@ -241,6 +317,7 @@ async function absolute($: EngineInterface, dir: string | undefined): Promise<st
 }
 
 const RETRY = 'run gh pr create with -R <owner/name> and --head <branch>'
+const GATE_FAILED = 'board: refused: the pull request gate failed, so it could not look for an open change; `claude --debug` logs why. Run gh pr create again.'
 
 /** The open changes `command` opens a pull request for, or the reason the gate refuses it. */
 async function gate($: EngineInterface, command: string): Promise<{ changes: string[] } | { deny: string }> {
@@ -292,8 +369,10 @@ export const register: Register = (on, options) => {
     let worksOn: string | undefined
     let prompt = e.prompt
     try {
-      worksOn = boardLine(e.prompt) ?? (await heldChange($))
-      if (worksOn !== undefined) prompt = await briefed($, e.prompt, worksOn)
+      // A change is worked on only when its brief could be read.
+      const named = boardLine(e.prompt) ?? (await heldChange($))
+      const withBrief = named === undefined ? undefined : await briefed($, e.prompt, named)
+      if (withBrief !== undefined) [worksOn, prompt] = [named, withBrief]
     } catch (error) {
       $.ui.log(`board: no brief for the subagent: ${String(error)}`)
     }
@@ -301,9 +380,11 @@ export const register: Register = (on, options) => {
     const cwd = await absolute($, e.cwd)
     const result = await next(prompt === e.prompt ? e : { ...e, prompt })
     if (result.deny !== undefined || result.agentId === undefined) return result
+    // A teammate or a workflow's agent gets no SubagentStop, so no run would ever close its record.
+    if (e.isTeammate === true || e.workflow !== undefined) return result
     const record = {
       $type: 'runs/agent/v1',
-      session: await $.session.id(),
+      session: await sessionId($),
       cwd,
       started: iso(now),
       ...(worksOn === undefined ? {} : { works_on: worksOn }),
@@ -311,7 +392,7 @@ export const register: Register = (on, options) => {
     }
     await writeAgent($, result.agentId, record, e.prompt)
     return result
-  })
+  }).catch(($, e, next) => next(e))
 
   on('classic.SubagentStart', async ($, e, next) => {
     await begin($, `agent:${e.agent_id}`)
@@ -339,12 +420,13 @@ export const register: Register = (on, options) => {
     return result
   })
 
+  // A gate that fails before the command runs refuses it; one that fails after keeps what the command gave.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
-    if (!PR_CREATE.test(e.command)) return next(e)
+    if (!opensPullRequest(e.command)) return next(e)
     const allowed = await gate($, e.command)
     if ('deny' in allowed) return { deny: allowed.deny }
     const ran = await next(e)
     if (ran.deny === undefined && ran.isError !== true) await opened($, allowed.changes, ran.result.stdout)
     return ran
-  })
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: GATE_FAILED }))
 }

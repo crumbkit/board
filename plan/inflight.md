@@ -24,8 +24,9 @@ plugins/runs/README.md the `runs/agent/v1` record.
 - `works_on` comes from the prompt's `Board: /changes/<name>` line, else
   the session's one held change. Without it the agent is unattached.
 - The gate refuses `gh pr create` for a repository and branch no open
-  change names, and the mod writes the `opened` record. The decision stub,
-  its migration script and `plans/decision/v1` are gone.
+  change names, and the mod writes the `opened` record. The decision stub
+  and `plans/decision/v1` are gone; plugins/decisions/migrate.py stays
+  until the owner has run it.
 - `changes.open` gives each change's `holder` and `worktree` and takes
   `--holder`, `--remote` and `--branch`. `artifacts/version/v1` has `for`,
   and `artifacts.list` takes `--for`.

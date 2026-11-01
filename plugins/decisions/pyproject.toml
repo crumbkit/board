@@ -38,10 +38,14 @@ ignore = [
   "INP001", # tests/ is a plain directory, not a package
   "D103",   # a test's name is the sentence that describes it
 ]
+"migrate.py" = [
+  "INP001", # a script run by path, not a package
+  "T201",   # printing what it rewrites is the script's job
+]
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["tests"]
+include = ["migrate.py", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

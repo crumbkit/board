@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
+MIGRATE = PLUGIN / "migrate.py"
 # The schema the plugin ships, kept in its crate.
 SCHEMAS = REPOSITORY / "crates" / "board-plugin-decisions" / "types" / "decisions"
 
@@ -103,6 +105,16 @@ class Board:
         """The record stored at `path`, relative to the board's root."""
         loaded: dict[str, Any] = json.loads((self.root / path).read_text())
         return loaded
+
+    def migrate(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        """Run the migration script on this board."""
+        return subprocess.run(
+            [sys.executable, str(MIGRATE), *arguments, str(self.root)],
+            env=self.environment(),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
 
 @pytest.fixture

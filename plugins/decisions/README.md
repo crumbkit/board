@@ -81,17 +81,29 @@ as a decision whose `decided` is not a time. Each decision is its `path`, `decis
 `evals.about` and `evals.open` read decisions too: each eval lists in
 `decisions` those not superseded whose `basis` names it.
 
-## The old type
+## The old type and the migration
 
 Decisions used to be `plans/decision/v1`, and the runs mod wrote a stub of
-one on each `gh pr create`. The plans plugin no longer ships that type and
-the runs mod writes an `opened` record of the change instead
-(plugins/changes/README.md). A board that still holds `plans/decision/v1`
-records keeps their schema each time `board plugin enable plans` runs
+one on each `gh pr create`. The runs mod now writes an `opened` record of
+the change instead (plugins/changes/README.md), and the plans plugin no
+longer ships the type. A board that still holds `plans/decision/v1` records
+keeps their schema each time `board plugin enable plans` runs
 (docs/plugins/lifecycle/updating.md), so they stay valid until they are
-rewritten. The script that rewrote them, with the evals that stored a
-status, was `plugins/decisions/migrate.py`; `git log --
-plugins/decisions/migrate.py` finds its last version.
+rewritten. The plans mod's `/yesterday` report reads only
+`decisions/decision/v1`, so run the migration before relying on it.
+
+`migrate.py` moves a board to the new records. Install a `board` built from
+this repository, run `board plugin enable` for `decisions`, `evals`, `plans`
+and `controls` in the board, then, from this repository:
+
+    uv run --project plugins/decisions python plugins/decisions/migrate.py \
+      --session local_<id> --dry-run <board>
+
+Its docstring says what it rewrites. It prints each record it would write
+and each eval whose derived status differs from the status it stored, and
+writes nothing with `--dry-run`. Without it, one `board put --batch` writes
+every record. The script stays in the repository until the owner has run it
+on the personal board; a later change deletes it.
 
 ## Enabling
 
@@ -107,8 +119,8 @@ with schemars. The record schema is committed in its `types/` directory, and
 a test fails when it differs from what the struct generates; run it with
 `SNAPSHOTS=overwrite` to rewrite it.
 
-This directory keeps a uv project that tests the plugin through the real
-binary. The gates, which CI runs:
+This directory keeps a uv project that tests the plugin and the migration
+through the real binary. The gates, which CI runs:
 `uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and
 `uv run pytest`. The tests drive `$BOARD_BIN`, by default the workspace's
 `target/debug/board`, so build it first with `cargo build -p board-cli`.

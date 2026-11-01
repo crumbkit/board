@@ -10,6 +10,9 @@ steps from the records; nothing stores a phase.
 
 Run every command as `board --personal call …`. In a checkout of a
 repository that is itself a board, plain `board` runs as that board.
+`--session` takes the desktop app's `local_` session id when there is one,
+the value of `CLAUDE_CODE_HOST_SESSION_ID`, else the transcript's id; the
+runs mod matches claims by the same id.
 
 ## Steps
 
