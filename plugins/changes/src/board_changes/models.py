@@ -101,7 +101,7 @@ class PlanInput(Strict):
     """A plan for a change, given on stdin because `uses` is an array."""
 
     path: LogicalPath = Field(description="The change's logical path, such as /changes/suite-timeout.")
-    text: str = Field(min_length=1, description=f"The plan in Markdown, at most {PLAN_WORDS:,} words.")
+    text: str = Field(pattern=r"\S", description=f"The plan in Markdown, at most {PLAN_WORDS:,} words.")
     uses: list[LogicalPath] = Field(
         description="The records and documents the plan relies on; the documents hold at most "
         f"{USES_WORDS:,} words in all."

@@ -80,14 +80,17 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
 - `plan` takes `{path, text, uses}` on stdin, since `uses` is an array. It
   writes the plan record and its text and points the change's `plan` at the
   text, in one write, in any phase but `done` and `dropped`
-  (`changes::phase::final`). It refuses a reference that reaches nothing or
-  is degraded (`changes::ref::dangling`, whose `refs` lists them), a text over
-  3,000 words (`changes::plan::too_long`), and Markdown documents in `uses`
-  over 3,000 words in all (`changes::plan::uses_too_long`). Words are counted
-  as `wc -w` counts them. The second limit comes from
+  (`changes::phase::final`). It keeps each reference in `uses` once. It
+  refuses a reference that reaches nothing, or a record Board marks degraded
+  for anything but a broken reference of its own (`changes::ref::dangling`,
+  whose `refs` lists them); a directory (`changes::plan::directory`); a text
+  over 3,000 words (`changes::plan::too_long`); and Markdown documents in
+  `uses` over 3,000 words in all (`changes::plan::uses_too_long`). Words are
+  separated by whitespace. The last limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
 - `brief --path /changes/<name>`: read-only. The newest plan's text path,
+  even once a reference in it breaks,
   one line per record it uses (a control's `summary`, else its
   `requirement`; a decision's `decision`; an eval's question and verdict; a
   document's first heading), `left_out`, the phase and instruction `next`

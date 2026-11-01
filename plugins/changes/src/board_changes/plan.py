@@ -8,7 +8,7 @@ from typing import Any, cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, read, write
+from board_changes.change import FINAL, PLAN_TYPE, PLUGIN, TREE_CODES, read, write
 from board_changes.phases import next_step, referenced
 
 # The most words a plan's text holds, and the most words the documents it uses hold in all.
@@ -23,7 +23,7 @@ HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
 
 
 def words(text: str) -> int:
-    """How many words `text` holds, split on whitespace as `wc -w` splits it."""
+    """How many whitespace-separated words `text` holds."""
     return len(text.split())
 
 
@@ -41,8 +41,8 @@ def plan(request: CallRequest) -> dict[str, object]:
     """Write a plan record and its text under the change, and point the change's `plan` at the text, in one write."""
     asked = request.input
     path, text = str(asked["path"]), str(asked["text"])
-    # Board validated the input, so `uses` is a list of paths.
-    uses = cast("list[str]", asked["uses"])
+    # Board validated the input, so `uses` is a list of paths; each is kept once, in order.
+    uses = list(dict.fromkeys(cast("list[str]", asked["uses"])))
     board = Board(request.board.root, PLUGIN)
     change, blob = read(board, path)
     if change["phase"] in FINAL:
@@ -64,9 +64,17 @@ def plan(request: CallRequest) -> dict[str, object]:
     if dangling:
         raise PluginError(
             "changes::ref::dangling",
-            f"the plan uses {', '.join(dangling)}, which reach nothing or are degraded; "
+            f"these references in the plan reach nothing or are degraded: {', '.join(dangling)}; "
             "check each path with `board ls` or `board check`",
             {"path": path, "refs": dangling},
+        )
+    directories = [ref for ref in uses if records[ref][0] == "directory"]
+    if directories:
+        raise PluginError(
+            "changes::plan::directory",
+            f"the plan uses the directories {', '.join(directories)}, whose words the limit cannot count; "
+            "use the documents in them that apply, choosing from each directory's index.md",
+            {"path": path, "refs": directories},
         )
     used = sum(words(found) for found in documents(board, uses, records).values())
     if used > USES_WORDS:
@@ -114,7 +122,9 @@ def newest(board: Board, path: str) -> tuple[str | None, list[str]]:
     prefix = f"{path}/plans/"
     rows = board.rows(
         f"SELECT body FROM records WHERE type = {literal(PLAN_TYPE)}"  # noqa: S608 - values are quoted by literal()
-        f" AND substr(logical, 1, {len(prefix)}) = {literal(prefix)} AND code IS NULL ORDER BY logical DESC LIMIT 1"
+        f" AND substr(logical, 1, {len(prefix)}) = {literal(prefix)}"
+        f" AND (code IS NULL OR code IN ({', '.join(literal(code) for code in TREE_CODES)}))"
+        " ORDER BY logical DESC LIMIT 1"
     )
     if not rows:
         return None, []

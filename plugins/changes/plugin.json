@@ -643,7 +643,7 @@
           },
           "text": {
             "description": "The plan in Markdown, at most 3,000 words.",
-            "minLength": 1,
+            "pattern": "\\S",
             "title": "Text",
             "type": "string"
           },

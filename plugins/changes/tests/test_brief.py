@@ -17,9 +17,9 @@ def test_brief_gives_one_line_for_each_record_the_newest_plan_uses(board: Board)
     board.write("decisions/d.json", record("plans/decision/v1", decision="Plans are records."))
     board.write("evals/e.json", record("evals/eval/v1", question="Do trees help?", verdict="supported"))
     board.write("standards/errors.md", "Intro.\n\n## Refusal codes\n\nText.\n")
-    board.given("plan", {"path": PATH, "text": PLAN, "uses": []})
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": []}, stdin=True)
     uses = ["/controls/a", "/controls/b", "/decisions/d", "/evals/e", "/standards/errors.md"]
-    newest = board.given("plan", {"path": PATH, "text": PLAN, "uses": uses})
+    newest = board.call("plan", {"path": PATH, "text": PLAN, "uses": uses}, stdin=True)
     brief = board.call("brief", {"path": PATH})
     assert brief["plan"] == newest["text"]
     assert brief["uses"] == [
@@ -39,7 +39,7 @@ def test_brief_stays_within_600_words_with_100_uses_and_counts_what_it_left_out(
     for number in range(count):
         board.write(f"standards/s{number:03}.md", "# " + "word " * 20 + "\n")
     uses = [f"/standards/s{number:03}.md" for number in range(count)]
-    board.given("plan", {"path": PATH, "text": PLAN, "uses": uses})
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": uses}, stdin=True)
     brief = board.call("brief", {"path": PATH})
     shown = len(brief["uses"])
     assert brief["left_out"] == count - shown
@@ -53,3 +53,15 @@ def test_brief_without_a_plan_record_names_no_plan_and_no_uses(board: Board) -> 
     board.write("changes/t.json", change())
     brief = board.call("brief", {"path": PATH})
     assert (brief["plan"], brief["uses"], brief["left_out"]) == (None, [], 0)
+
+
+def test_brief_keeps_the_newest_plan_when_a_document_it_uses_is_deleted(board: Board) -> None:
+    board.write("changes/t.json", change())
+    board.write("standards/a.md", "# A\n")
+    board.write("standards/b.md", "# B\n")
+    board.call("plan", {"path": PATH, "text": PLAN, "uses": ["/standards/a.md"]}, stdin=True)
+    newest = board.call("plan", {"path": PATH, "text": PLAN, "uses": ["/standards/b.md"]}, stdin=True)
+    (board.root / "standards/b.md").unlink()
+    brief = board.call("brief", {"path": PATH})
+    assert brief["plan"] == newest["text"]
+    assert brief["uses"] == [{"ref": "/standards/b.md", "line": "unreadable: reaches nothing or is degraded"}]
