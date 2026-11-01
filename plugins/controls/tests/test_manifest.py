@@ -81,7 +81,13 @@ def input_descriptions() -> dict[tuple[str, str], object]:
 
 def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> None:
     descriptions = input_descriptions()
-    assert set(descriptions) == {("check", "path"), ("check", "files"), ("check", "limit"), ("for-path", "path")}
+    assert set(descriptions) == {
+        ("check", "path"),
+        ("check", "files"),
+        ("check", "limit"),
+        ("check", "measure"),
+        ("for-path", "path"),
+    }
     for key, description in descriptions.items():
         assert isinstance(description, str), key
         assert description.endswith("."), key

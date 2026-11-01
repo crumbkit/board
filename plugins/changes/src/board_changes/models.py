@@ -34,7 +34,11 @@ Actor = Literal["agent", "reviewer", "owner"]
 Kind = Literal["plan", "answer", "check", "review", "landed"]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,64}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
-StepName = Annotated[str, Field(pattern="^[a-z0-9][a-z0-9-]{0,59}$")]
+# A name of lowercase letters, digits and hyphens: a step, a change or a repo record.
+Slug = Annotated[str, Field(pattern="^[a-z0-9][a-z0-9-]{0,59}$")]
+StepName = Slug
+# A handle as CODEOWNERS names people, such as @luke.
+Handle = Annotated[str, Field(pattern=r"^@\S+$")]
 Session = Annotated[str, Field(pattern=r"\S")]
 Reference = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
 # Input properties `board call` takes as flags, relative to the run's prefix.
@@ -192,14 +196,12 @@ class StartInput(Strict):
 
     title: str = Field(pattern="[A-Za-z0-9]", description="What the change does, in a few words.")
     session: Session = Field(description="The session starting the change, which its first claim names.")
-    name: str | SkipJsonSchema[None] = Field(
+    name: Slug | SkipJsonSchema[None] = Field(
         default=None,
-        pattern="^[a-z0-9][a-z0-9-]{0,59}$",
         description="The change's name, so it lives at /changes/<name>; made from the title when left out.",
     )
-    handle: str | SkipJsonSchema[None] = Field(
+    handle: Handle | SkipJsonSchema[None] = Field(
         default=None,
-        pattern=r"^@\S+$",
         description="Whose change this is, as CODEOWNERS names people, such as @luke; sets the route.",
     )
     issue: Url | SkipJsonSchema[None] = Field(default=None, description="The URL of the issue the change answers.")
@@ -209,10 +211,9 @@ class StartInput(Strict):
     workflow: LogicalPath | SkipJsonSchema[None] = Field(
         default=None, description="The workflow, a changes/workflow/v1; chosen by the repository when left out."
     )
-    repo_name: str | SkipJsonSchema[None] = Field(
+    repo_name: Slug | SkipJsonSchema[None] = Field(
         default=None,
         alias="repo-name",
-        pattern="^[a-z0-9][a-z0-9-]{0,59}$",
         description="The name of a new repo record, /repos/<name>; the remote's last segment when left out.",
     )
 
