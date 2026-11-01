@@ -5,9 +5,6 @@ from pydantic import JsonValue
 
 from board_inflight.models import NowInput, NowOutput
 
-# `now` runs `changes.next` once per change it lists, each a plugin of its own, so it gets longer than 30 s.
-TIMEOUT = 120
-
 
 def manifest() -> dict[str, JsonValue]:
     """`board/plugin-manifest/v1` for this plugin."""
@@ -36,7 +33,8 @@ def manifest() -> dict[str, JsonValue]:
                 "outputSchema": NowOutput.model_json_schema(),
                 "annotations": {"readOnlyHint": True},
                 "_meta": {},
-                "timeout": TIMEOUT,
+                # `now` runs `changes.next` once per listed change, each a plugin call, so it gets more than 30 s.
+                "timeout": 120,
             },
         ],
     }
