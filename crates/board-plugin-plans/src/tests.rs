@@ -45,10 +45,7 @@ fn the_manifest_parses_as_board_reads_a_built_in_one_and_names_no_program_to_run
     );
     assert!(manifest.run.is_empty());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
-    assert_eq!(
-        types,
-        ["plans/question/v1", "plans/answer/v1"]
-    );
+    assert_eq!(types, ["plans/question/v1", "plans/answer/v1"]);
     let [open] = &manifest.capabilities[..] else {
         panic!("{:?}", manifest.capabilities)
     };
