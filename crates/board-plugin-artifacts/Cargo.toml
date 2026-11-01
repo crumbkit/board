@@ -1,0 +1,21 @@
+[package]
+name = "board-plugin-artifacts"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+board-model.workspace = true
+board-ops.workspace = true
+board-plugin.workspace = true
+humantime.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+board-validate.workspace = true
+
+[lints]
+workspace = true

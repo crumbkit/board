@@ -594,6 +594,7 @@ fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId)
     fixture.write(path, &mount_of(&repository.path(), commit));
 }
 
+mod artifacts;
 mod boundary;
 mod controls;
 mod evals;

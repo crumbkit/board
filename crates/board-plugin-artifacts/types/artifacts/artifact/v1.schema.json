@@ -1,0 +1,99 @@
+{
+  "additionalProperties": false,
+  "description": "`artifacts/artifact/v1` at `/artifacts/<id>`: one claude.ai artifact.\n\n`<id>` is the last segment of `url`. `first_seen` is the first publish\nor read the mod saw, or for an import the listing row's `updatedAt`, or\nthe import time when the row has none. The version records under\n`<id>/versions/` hold each version the board saw; the newest is the\nartifact's current version. Only `artifacts.agree` sets `state` to\n`agreed`, naming the owner's decision in `agreed_by`.",
+  "if": {
+    "properties": {
+      "state": {
+        "const": "agreed"
+      }
+    },
+    "required": [
+      "state"
+    ]
+  },
+  "properties": {
+    "$type": {
+      "const": "artifacts/artifact/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "account": {
+      "description": "The email address of the claude.ai account that published the artifact.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "agreed_by": {
+      "description": "The owner's decision that moved the artifact to agreed.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "plans/decision/v1"
+    },
+    "area": {
+      "description": "Tags that place the artifact among neighbouring work, such as\ndashboard/flows.",
+      "items": {
+        "pattern": "^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "first_seen": {
+      "description": "When the board first saw the artifact, with a time zone.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "shows": {
+      "description": "One sentence saying what the page is for; left out until an agent\nsets it.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "state": {
+      "description": "Where the owner's review stands: draft until it is shown, shown once\nthe owner has seen it, agreed once the owner's decision accepts it,\nand superseded once a newer artifact replaces it.",
+      "enum": [
+        "draft",
+        "shown",
+        "agreed",
+        "superseded"
+      ],
+      "type": "string"
+    },
+    "subject": {
+      "description": "The task and change the artifact belongs to; left out when it\nbelongs to none yet.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": [
+          "changes/change/v1",
+          "tasks/task/v2"
+        ]
+      },
+      "type": "array"
+    },
+    "superseded_by": {
+      "description": "The artifact that replaces this one, once it is superseded.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "artifacts/artifact/v1"
+    },
+    "url": {
+      "description": "The artifact's claude.ai link, such as https://claude.ai/artifact/AbCdEf0123456789xyzQ.",
+      "format": "uri",
+      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "url",
+    "account",
+    "first_seen",
+    "state"
+  ],
+  "then": {
+    "required": [
+      "agreed_by"
+    ]
+  },
+  "title": "ArtifactRecord",
+  "type": "object"
+}
