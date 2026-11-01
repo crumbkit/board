@@ -44,6 +44,7 @@ impl Plugin for Evals {
                 code: "evals::call::unknown_capability".to_owned(),
                 message: format!("evals offers no capability {other}; it offers about and open"),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

@@ -91,8 +91,6 @@ schemars. The record schemas are committed in its `types/` directory, and a
 test fails when they differ from what the structs generate; run it with
 `SNAPSHOTS=overwrite` to rewrite them.
 
-This directory keeps the mod and a uv project that only tests the plugin
-through the real binary. The gates, which CI runs: `uv run ruff format --check .`,
-`uv run ruff check .`, `uv run pyright` and `uv run pytest`. The tests drive
-`$BOARD_BIN`, by default the workspace's `target/debug/board`, so build it
-first with `cargo build -p board-cli`.
+This directory keeps the mod. The tests of the plugin through the binary are
+in `crates/board-cli/src/tests/built_in/plans.rs`, which runs the same
+commands in process.

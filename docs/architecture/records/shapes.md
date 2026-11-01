@@ -20,8 +20,10 @@ needs to know.
    under any other keyword that applies subschemas, or behind a
    `$dynamicRef`, with `schema::invalid`.
 6. References and URLs never share a field. URLs go in a field named `urls`,
-   whose items match `^https?://`. A field that holds one URL is named for
-   what it is, such as `pull_request`.
+   whose items have the shared shape `Url`: `format: uri` with a pattern
+   that needs a lower-case `http` or `https` scheme and a host. Board's
+   validator is the only check; no Rust code parses a URL. A field that
+   holds one URL is named for what it is, such as `pull_request`.
 7. A field that names a repository is a reference to that repository's repo
    record or mount at `/repos/<name>`, named for what it is, such as `mount`
    or `repos`. A pinned version is a sibling field, such as `commit`. A field
@@ -43,9 +45,24 @@ needs to know.
     `board put --new` with no folder writes there
     (architecture/paths/writes.md). It changes no record's validity.
 
-`xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11 and 12 on every committed
-record schema. It lists the schemas that break a rule today, until their
-plugins are ported.
+14. Every string property is an inline enum or const, a reference, a `Prose`
+    string, or a shared shape from `crates/board-plugin/shapes.json`. A
+    `Prose` string carries `x-board-prose: true` and may add `minLength` and
+    `maxLength`; any other string must equal a shared shape once its
+    `description` and `title` are removed. A property schema with no `type`
+    that admits strings counts as a string. A meaning no shape holds gets a
+    new shape in `board_plugin::shape`, never a local `pattern` or a lone
+    `format`. A field named `urls` holds `Url` items, `mount` and `mounts`
+    are references to `board/mount/v1`, and `remote` is a `Remote`.
+
+`xtask/tests/shapes.rs` checks rules 1, 2, 5, 10, 11, 12 and 14 on every
+committed record schema. It lists the schemas that break rules 1 to 12
+today, until their plugins are ported. For rule 14 it lists each field by
+record type and its pointer in a record (`-` for list items, `{key}` for map
+values), as "until adopted", which the pull request that adopts the named
+shape deletes, or as "local", with why the meaning belongs to one plugin.
+The test fails on a subschema under a keyword it does not read, and on a
+`$ref` to anything but an entry of `$defs`.
 
 ## Writing references
 
@@ -82,6 +99,14 @@ Built-in plugins generate schemas from structs with schemars, through
 - `Tag<Self>` is the `$type` field; `Ref<T>` is a reference to a record type
   `T`, to a marker that lists several types, or to any entry when `T` is left
   out. Both are always inlined.
+- `Prose`, `Date`, `Url`, `Sha256` and `Glob` are shared shapes. A
+  `String` field takes one with `#[schemars(with = "Prose")]`, and a `urls`
+  field with `#[schemars(with = "Vec<Url>")]`. `Sha256` is 64 lowercase hex
+  digits, such as an effect's id. `Glob` is an SQLite GLOB pattern, which a
+  plugin matches with GLOB in a query. `shape::registry()` lists every
+  shared shape by name, and `crates/board-plugin/shapes.json` is its golden.
+- `Tag<R>` writes `R::TYPE` and reads only that string, so a record struct
+  can derive `Serialize` and `Deserialize`.
 - `schema_of` removes null from every optional field and drops an integer's
   `format`.
 - `#[schemars(extend("x-board-folder" = "..."))]` on a record struct

@@ -1,0 +1,24 @@
+{
+  "Date": {
+    "format": "date",
+    "type": "string"
+  },
+  "Glob": {
+    "minLength": 1,
+    "type": "string",
+    "x-board-glob": true
+  },
+  "Prose": {
+    "type": "string",
+    "x-board-prose": true
+  },
+  "Sha256": {
+    "pattern": "^[0-9a-f]{64}$",
+    "type": "string"
+  },
+  "Url": {
+    "format": "uri",
+    "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+    "type": "string"
+  }
+}

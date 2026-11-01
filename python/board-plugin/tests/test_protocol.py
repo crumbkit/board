@@ -11,6 +11,8 @@ def echo(request: CallRequest) -> dict[str, JsonValue]:
     """A capability that returns its input, or refuses an input asking it to."""
     if request.input.get("refuse"):
         raise PluginError("demo::test::refused", "asked to refuse", {"why": "test"})
+    if request.input.get("hint"):
+        raise PluginError("demo::test::refused", "asked to refuse", hint="call again without hint")
     return request.input
 
 
@@ -44,3 +46,19 @@ def test_a_plugin_error_is_reported_with_its_code_and_fields() -> None:
         "message": "asked to refuse",
         "fields": {"why": "test"},
     }
+
+
+def test_a_plugin_errors_hint_is_written_and_an_error_without_one_writes_none() -> None:
+    code, document = serve("demo", echo, call({"hint": True}))
+    assert (code, json.loads(document)) == (
+        1,
+        {
+            "$type": "board/error/v1",
+            "code": "demo::test::refused",
+            "message": "asked to refuse",
+            "fields": {},
+            "hint": "call again without hint",
+        },
+    )
+    code, document = serve("demo", echo, call({"refuse": True}))
+    assert (code, "hint" in json.loads(document)) == (1, False)

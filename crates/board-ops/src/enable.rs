@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, PluginName, RecordType, Source, TYPES_DIRECTORY, canonical_json};
-use board_plugin::{DiscoveryError, ManifestError};
+use board_plugin::{
+    Alias, DiscoveryError, Installed, MANIFEST_FILE, Manifest, ManifestError, Origin,
+};
 use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 
@@ -51,15 +53,18 @@ impl Board {
     /// schema to remove that a record in the working tree still names is
     /// kept, found through the index kept under `cache`, so the record stays
     /// valid until the plugin migrates it. The board is read under the lock
-    /// the write holds.
+    /// the write holds. An alias that is one of `commands`, Board's built-in
+    /// commands, or another enabled plugin's alias is refused.
     pub fn plugin_enable(
         &self,
         plugins: Option<&Path>,
         cache: Option<&Path>,
         name: &PluginName,
+        commands: &[&str],
     ) -> Result<EnableReport, EnableError> {
-        let found = (self.offered(plugins)?.into_iter())
-            .find(|installed| installed.name == name.as_str())
+        let (found, others): (Vec<_>, Vec<_>) = (self.offered(plugins)?.into_iter())
+            .partition(|installed| installed.name == name.as_str());
+        let found = (found.into_iter().next())
             .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
         if let Some(directory) = found.origin.shadows() {
             return Err(EnableError::Duplicate {
@@ -72,6 +77,9 @@ impl Board {
                 name: name.clone(),
                 source,
             });
+        }
+        if let Ok(manifest) = &found.manifest {
+            self.alias_free(name, manifest, &found.origin, commands, others)?;
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -136,6 +144,46 @@ impl Board {
             replaced,
             removed: removed_paths,
             kept,
+        })
+    }
+
+    /// Refuses `manifest`'s alias when it is one of `commands`, Board's
+    /// built-in commands, or the alias of an enabled plugin among `others`.
+    fn alias_free(
+        &self,
+        name: &PluginName,
+        manifest: &Manifest,
+        origin: &Origin,
+        commands: &[&str],
+        others: Vec<Installed>,
+    ) -> Result<(), EnableError> {
+        let Some(alias) = &manifest.alias else {
+            return Ok(());
+        };
+        let other = || {
+            let aliased = self.aliased(others);
+            let other = aliased
+                .into_iter()
+                .find(|other| other.alias.as_ref() == Some(alias))?;
+            Some(format!(
+                "the alias of the {} plugin, which the board enables",
+                other.name
+            ))
+        };
+        let command = commands.iter().find(|command| **command == alias.as_str());
+        let with = command.map(|command| format!("Board's built-in command {command}"));
+        let Some(with) = with.or_else(other) else {
+            return Ok(());
+        };
+        let manifest = match origin {
+            Origin::Directory(directory) => directory.join(MANIFEST_FILE).display().to_string(),
+            Origin::BuiltIn { .. } => "Board's own copy".to_owned(),
+        };
+        Err(EnableError::AliasConflict {
+            name: name.clone(),
+            alias: alias.clone(),
+            manifest,
+            with,
         })
     }
 
@@ -235,6 +283,14 @@ pub enum EnableError {
         "the board changed while the {name} plugin was being enabled, so nothing was written; run the enable again"
     )]
     Changed { name: PluginName },
+    #[error("the {name} plugin's alias {alias}, set in {manifest}, is also {with}")]
+    AliasConflict {
+        name: PluginName,
+        alias: Alias,
+        /// Where the manifest is, as a message names it.
+        manifest: String,
+        with: String,
+    },
     #[error(transparent)]
     Records(#[from] CheckError),
     #[error(transparent)]
@@ -249,6 +305,7 @@ impl EnableError {
             Self::Duplicate { .. } => Code::PluginDuplicate,
             Self::Manifest { source, .. } => source.code(),
             Self::Schema { .. } => Code::PluginBadManifest,
+            Self::AliasConflict { .. } => Code::PluginAliasConflict,
             Self::Changed { .. } => Code::PutStale,
             Self::Records(error) => error.code(),
             Self::Put(error) => error.code(),

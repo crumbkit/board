@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "Rule": {
+      "additionalProperties": false,
+      "description": "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against.",
+      "properties": {
+        "budget": {
+          "enum": [
+            "words",
+            "bytes"
+          ],
+          "title": "Budget",
+          "type": "string"
+        },
+        "judged": {
+          "format": "board-ref",
+          "title": "Judged",
+          "type": "string"
+        },
+        "max": {
+          "minimum": 0,
+          "title": "Max",
+          "type": "integer"
+        },
+        "pattern": {
+          "format": "board-ref",
+          "title": "Pattern",
+          "type": "string"
+        },
+        "per": {
+          "default": "total",
+          "enum": [
+            "total",
+            "file"
+          ],
+          "title": "Per",
+          "type": "string"
+        },
+        "show": {
+          "enum": [
+            "match-only",
+            "pattern"
+          ],
+          "title": "Show",
+          "type": "string"
+        }
+      },
+      "title": "Rule",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "properties": {
+    "$type": {
+      "const": "controls/control/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "applies_to": {
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "title": "Applies To",
+      "type": "array"
+    },
+    "paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Paths",
+      "type": "array"
+    },
+    "purpose": {
+      "title": "Purpose",
+      "type": "string"
+    },
+    "requirement": {
+      "title": "Requirement",
+      "type": "string"
+    },
+    "rule": {
+      "$ref": "#/$defs/Rule",
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "budget",
+            "max"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "judged"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "pattern",
+            "show"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "budget"
+                ]
+              },
+              {
+                "required": [
+                  "max"
+                ]
+              },
+              {
+                "required": [
+                  "per"
+                ]
+              },
+              {
+                "required": [
+                  "pattern"
+                ]
+              },
+              {
+                "required": [
+                  "show"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "judged"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "$type",
+    "requirement",
+    "purpose"
+  ],
+  "title": "ControlRecord",
+  "type": "object"
+}

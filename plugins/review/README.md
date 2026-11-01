@@ -1,5 +1,8 @@
 # review
 
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
+
 A Board plugin for code review. The author of a change writes a brief.
 `review.run` gives the brief and the diff to an agent that has not seen the
 change, and records what it found as a report. A brief can instead name a

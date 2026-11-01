@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "description": "`jira/issue/v1`: one Jira issue, at `/jira/<site>/<key>`.",
+  "properties": {
+    "$type": {
+      "const": "jira/issue/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "key": {
+      "description": "The issue key, such as ACME-123.",
+      "pattern": "^[A-Z][A-Z0-9_]+-[1-9][0-9]*$",
+      "type": "string"
+    },
+    "site": {
+      "description": "The site name before .atlassian.net, such as acme.",
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+      "type": "string"
+    },
+    "title": {
+      "description": "The issue's summary when the record was written; absent when it could not be read.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "url": {
+      "description": "The address of the issue's page, such as https://acme.atlassian.net/browse/ACME-123.",
+      "pattern": "^https://[a-z0-9]([a-z0-9-]*[a-z0-9])?\\.atlassian\\.net/browse/[A-Z][A-Z0-9_]+-[1-9][0-9]*$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "site",
+    "key",
+    "url"
+  ],
+  "type": "object"
+}

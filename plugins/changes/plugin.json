@@ -278,6 +278,16 @@
           },
           {
             "required": [
+              "ticket"
+            ]
+          },
+          {
+            "required": [
+              "pull"
+            ]
+          },
+          {
+            "required": [
               "route"
             ]
           },
@@ -297,7 +307,7 @@
             ]
           }
         ],
-        "description": "Add a record reference to a change, or set its route, head commit, issue or pull request.",
+        "description": "Add a record, ticket or pull reference to a change, or set its route, head commit, issue or pull request.",
         "properties": {
           "head": {
             "description": "The commit under test and review.",
@@ -316,6 +326,13 @@
             "format": "board-path",
             "pattern": "^/",
             "title": "Path",
+            "type": "string"
+          },
+          "pull": {
+            "description": "A pull request of the change, a github/pull/v1 record.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Pull",
             "type": "string"
           },
           "pull_request": {
@@ -339,6 +356,13 @@
               "unowned"
             ],
             "title": "Route",
+            "type": "string"
+          },
+          "ticket": {
+            "description": "A ticket the change works on, a jira/issue/v1 or github/issue/v1 record.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Ticket",
             "type": "string"
           }
         },

@@ -83,10 +83,8 @@ jobs:
       - run: bin/lint python
       - run: bin/test python
       # The budget controls only record lint.toml; bin/lint checks they agree.
-      - name: The repository passes board check with the controls plugin installed
+      - name: The repository passes board check with the built-in controls plugin
         run: |
-          mkdir -p "$RUNNER_TEMP/data/board/plugins"
-          ln -s "$PWD/plugins/controls" "$RUNNER_TEMP/data/board/plugins/controls"
           export PATH="$PWD/target/debug:$PATH" XDG_DATA_HOME="$RUNNER_TEMP/data"
           board check > /dev/null
 
