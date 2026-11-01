@@ -96,6 +96,21 @@ def test_an_invalid_expression_is_refused_by_its_line_without_its_text_and_a_val
     assert ran.returncode == 0, ran.stderr
 
 
+def test_python_s_message_for_an_invalid_expression_never_reaches_the_output_under_match_only(board: Board) -> None:
+    board.write(
+        "controls/names.json", control("No names.", rule={"pattern": "/private/names.txt", "show": "match-only"})
+    )
+    for line in ["(?P=acmename)", "a{99999999999}"]:
+        board.write("private/names.txt", f"{line}\n")
+        ran, document = evaluate(board, ["/controls/names"], {"pr.body": "acme"})
+        assert failure(document)["code"] == "controls::pattern::invalid", line
+        assert "acmename" not in ran.stdout + ran.stderr
+        assert "line 1 of /private/names.txt" in failure(document)["message"]
+    board.write("private/names.txt", "(?P<acmename>acme)\n")
+    ran, _ = evaluate(board, ["/controls/names"], {"pr.body": "acme"})
+    assert ran.returncode == 0, ran.stderr
+
+
 def test_findings_past_twenty_are_counted_and_left_out(board: Board) -> None:
     board.write("private/names.txt", "x\n")
     board.write("controls/names.json", control("No x.", rule={"pattern": "/private/names.txt", "show": "match-only"}))
@@ -118,12 +133,7 @@ def test_a_judged_part_fails_with_the_model_s_findings_and_passes_without_them(b
     ran, document = evaluate(board, ["/controls/plain"], {"pr.body": "We measured it.\nMeasured, not guessed."}, agent)
     assert ran.returncode == 0, ran.stderr
     result = by_part(document)["pr.body"]
-    assert (result["rule"], result["status"], result["findings"], result["cached"]) == (
-        "judged",
-        "failed",
-        [finding],
-        False,
-    )
+    assert (result["rule"], result["status"], result["findings"]) == ("judged", "failed", [finding])
     assert "Write plain declarative sentences." in agent.prompt()
     assert "    2| Measured, not guessed.\n" in agent.prompt()
     agent.answers([])
@@ -138,7 +148,7 @@ def test_a_verdict_is_reused_for_the_same_text_rubric_and_agent_and_judged_again
     parts = {"pr.body": "We measured it."}
     evaluate(board, ["/controls/plain"], parts, agent)
     _, document = evaluate(board, ["/controls/plain"], parts, agent)
-    assert (agent.calls(), by_part(document)["pr.body"]["cached"]) == (1, True)
+    assert (agent.calls(), by_part(document)["pr.body"]["status"]) == (1, "passed")
     evaluate(board, ["/controls/plain"], {"pr.body": "We measured it twice."}, agent)
     assert agent.calls() == 2  # noqa: PLR2004 - the changed text
     board.write("rubrics/plain.md", "Write short sentences.\n")
@@ -157,9 +167,9 @@ def test_a_deleted_cache_is_rebuilt_by_judging_again(board: Board, agent: Agent)
     evaluate(board, ["/controls/plain"], parts, agent)
     shutil.rmtree(board.cache / "board-controls")
     _, document = evaluate(board, ["/controls/plain"], parts, agent)
-    assert (agent.calls(), by_part(document)["pr.body"]["cached"]) == (2, False)
+    assert (agent.calls(), by_part(document)["pr.body"]["status"]) == (2, "passed")
     _, document = evaluate(board, ["/controls/plain"], parts, agent)
-    assert (agent.calls(), by_part(document)["pr.body"]["cached"]) == (2, True)
+    assert (agent.calls(), by_part(document)["pr.body"]["status"]) == (2, "passed")
 
 
 def test_a_judged_rule_skips_a_part_that_failed_a_free_rule_whatever_order_the_controls_come_in(
@@ -181,7 +191,9 @@ def test_a_judged_rule_skips_a_part_that_failed_a_free_rule_whatever_order_the_c
     assert "Short title." in agent.prompt()
 
 
-def test_free_rules_run_without_an_agent_and_a_judged_rule_with_a_part_to_read_needs_one(board: Board) -> None:
+def test_free_rules_run_without_an_agent_and_a_judged_rule_with_a_part_to_read_needs_one(
+    board: Board, agent: Agent
+) -> None:
     judged(board)
     board.write("controls/short.json", control("Short.", rule={"budget": "words", "max": 1}))
     ran, document = evaluate(board, ["/controls/short", "/controls/plain"], {"pr.body": "Too long."})
@@ -190,6 +202,8 @@ def test_free_rules_run_without_an_agent_and_a_judged_rule_with_a_part_to_read_n
     ran, document = evaluate(board, ["/controls/short", "/controls/plain"], {"pr.body": "Short."})
     assert ran.returncode == 1
     assert failure(document)["code"] == "controls::agent::not_set"
+    ran, document = evaluate(board, ["/controls/short", "/controls/plain"], {"pr.body": "Short."}, agent)
+    assert ran.returncode == 0, ran.stderr
 
 
 def test_an_answer_without_findings_is_refused_and_one_with_them_is_admitted(board: Board, agent: Agent) -> None:

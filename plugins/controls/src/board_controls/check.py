@@ -59,7 +59,7 @@ def check(request: CallRequest) -> CheckOutput:
     applying = [
         logical for logical in sorted(controls) if scope == "/" or any(_under(path, scope) for path in files[logical])
     ]
-    budgets = [logical for logical in applying if "budget" in (controls[logical].get("rule") or {})]
+    budgets = [logical for logical in applying if "budget" in controls[logical].get("rule", {})]
     for logical in budgets:
         if logical in unreadable:
             raise _unreadable(logical, *unreadable[logical])
@@ -111,6 +111,7 @@ def _checked(logical: str, record: ControlRecord, files: list[str], reads: dict[
     rule = record.get("rule")
     assert rule is not None  # noqa: S101 - check measures only budget controls
     assert "budget" in rule  # noqa: S101 - as above
+    assert "max" in rule  # noqa: S101 - the schema requires max beside budget
     usage: dict[str, int] = {}
     for path in files:
         read = reads[path]

@@ -31,42 +31,41 @@ class Extra:
 
 # A reference Board resolves and checks: an absolute logical path to any entry.
 BoardRef = Annotated[str, Extra(format="board-ref")]
-# An absolute logical path Board does not check. Board searches no reference under the `anyOf` of `rule`.
-BoardPath = Annotated[str, Extra(pattern="^/")]
 
 
-class Budget(TypedDict):
-    """A limit on the words or bytes of the files the control applies to.
+def _kind(required: list[str], others: list[str]) -> dict[str, object]:
+    """One kind of rule: the fields it requires, and none of the other kinds' fields."""
+    return {"required": required, "not": {"anyOf": [{"required": [field]} for field in others]}}
 
-    With `per` `total`, the default, the files' usage is summed; with `file`,
-    each file on its own must be within `max`. Words are separated by any
-    whitespace.
+
+# The kind of a rule, chosen by which fields it holds. Board searches no reference under `anyOf`, so the
+# kinds share one object whose `pattern` and `judged` are references Board checks.
+KINDS = [
+    _kind(["budget", "max"], ["pattern", "show", "judged"]),
+    _kind(["pattern", "show"], ["budget", "max", "per", "judged"]),
+    _kind(["judged"], ["budget", "max", "per", "pattern", "show"]),
+]
+
+
+class Rule(TypedDict, total=False):
+    """What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.
+
+    A budget, `budget` and `max`, limits the words or bytes of the files or
+    text; with `per` `total`, the default, the files' usage is summed, and
+    with `file` each file on its own must be within `max`. Words are
+    separated by any whitespace. A pattern, `pattern` and `show`, names a file
+    of regular expressions, one per line, that text must not match; with
+    `show` `match-only`, a finding quotes what matched and never the
+    expression. A judged rule, `judged`, names a rubric that a clean-context
+    model reads text against.
     """
 
     budget: Literal["words", "bytes"]
     max: Annotated[int, Extra(minimum=0)]
-    per: NotRequired[Annotated[Literal["total", "file"], Extra(default="total")]]
-
-
-class Pattern(TypedDict):
-    """Regular expressions the text must not match, one per line of the file at `pattern`.
-
-    With `show` `match-only`, a finding quotes what matched and never the
-    expression, so the file can stay private; with `pattern`, it names the
-    expression too. Blank lines are skipped.
-    """
-
-    pattern: BoardPath
+    per: Annotated[Literal["total", "file"], Extra(default="total")]
+    pattern: BoardRef
     show: Literal["match-only", "pattern"]
-
-
-class Judged(TypedDict):
-    """A rubric at `judged` that a clean-context model reads the text against."""
-
-    judged: BoardPath
-
-
-type Rule = Budget | Pattern | Judged
+    judged: BoardRef
 
 
 ControlRecord = TypedDict(
@@ -77,7 +76,7 @@ ControlRecord = TypedDict(
         "purpose": str,
         "applies_to": NotRequired[list[BoardRef]],
         "paths": NotRequired[list[str]],
-        "rule": NotRequired[Annotated[Rule | None, Extra(default=None)]],
+        "rule": NotRequired[Annotated[Rule, Extra(oneOf=KINDS)]],
     },
 )
 ControlRecord.__doc__ = (
@@ -110,7 +109,7 @@ class Applying(TypedDict):
     control: str
     requirement: str
     purpose: str
-    rule: Rule | None
+    rule: NotRequired[Rule]
 
 
 class ForPathOutput(TypedDict):
@@ -219,8 +218,8 @@ class Evaluated(TypedDict):
 
     `status` is `skipped` for a judged rule when the part failed a budget or
     pattern rule, and `stated` for a control without a rule. A budget result
-    carries `used` and `max`; a judged result carries `cached`. `omitted`
-    counts the findings left out past the first 20.
+    carries `used` and `max`. `omitted` counts the findings left out past the
+    first 20.
     """
 
     control: str
@@ -230,7 +229,6 @@ class Evaluated(TypedDict):
     findings: list[Finding]
     used: NotRequired[int]
     max: NotRequired[int]
-    cached: NotRequired[bool]
     omitted: NotRequired[int]
 
 

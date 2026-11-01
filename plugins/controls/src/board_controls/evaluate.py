@@ -5,8 +5,6 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -19,12 +17,10 @@ from board_controls.check import measure
 from board_controls.shapes import (
     AGENT_VARIABLE,
     EVALUATE_TIMEOUT,
-    Budget,
     Evaluated,
     EvaluateOutput,
     Finding,
     Kind,
-    Pattern,
     Rule,
     Status,
 )
@@ -43,25 +39,15 @@ Give one finding for each sentence that breaks the rubric, and an empty list whe
 """
 
 
-@dataclass(frozen=True)
-class Judge:
-    """A model: `model` names it in the cache key; `ask` returns its answer to a prompt within the seconds given."""
-
-    model: str
-    ask: Callable[[str, float], str]
-
-
-def agent_judge() -> Judge:
-    """The agent BOARD_CONTROLS_AGENT names; its whole argv is its model id, so a changed command judges anew."""
-    argv = agent.command("controls", AGENT_VARIABLE)
-    return Judge(json.dumps(argv), lambda prompt, seconds: agent.ask("controls", argv, prompt, seconds))
+# A pattern file's expressions, each with the line it was read from.
+type Expressions = list[tuple[str, re.Pattern[str]]]
 
 
 def evaluate(request: CallRequest) -> EvaluateOutput:
     """Each control's verdict on each part: budget and pattern rules first, then judged rules.
 
     A judged rule skips a part that failed a budget or pattern rule, and a
-    verdict cached for the same text, rubric and model is reused. The agent
+    verdict cached for the same prompt and agent is reused. The agent
     is read from the environment only when a judged rule has a part to read.
     """
     deadline = time.monotonic() + JUDGING
@@ -82,9 +68,10 @@ def evaluate(request: CallRequest) -> EvaluateOutput:
     results: dict[tuple[str, str], Evaluated] = {}
     for control, rule in rules.items():
         if rule is None or "judged" not in rule:
-            results.update({(control, part): _free(control, part, parts[part], rule, sources) for part in parts})
+            expressions = expressions_of(control, rule, sources) if rule is not None and "pattern" in rule else []
+            results.update({(control, part): _free(control, part, parts[part], rule, expressions) for part in parts})
     failed = {part for (_, part), result in results.items() if result["status"] == "failed"}
-    asking: Judge | None = None
+    judging: agent.Agent | None = None
     for control, rule in rules.items():
         if rule is None or "judged" not in rule:
             continue
@@ -92,10 +79,9 @@ def evaluate(request: CallRequest) -> EvaluateOutput:
             if part in failed:
                 results[control, part] = _result(control, part, "judged", [], skipped=True)
                 continue
-            asking = asking or agent_judge()
-            findings, cached = _judged(parts[part], sources[rule["judged"]], asking, deadline)
+            judging = judging or agent.command("controls", AGENT_VARIABLE)
+            findings = _judged(parts[part], sources[rule["judged"]], judging, deadline)
             results[control, part] = _result(control, part, "judged", findings)
-            results[control, part]["cached"] = cached
     ordered = [results[control, part] for control in named for part in sorted(parts)]
     return EvaluateOutput(passed=all(result["status"] != "failed" for result in ordered), results=ordered)
 
@@ -132,40 +118,53 @@ def _result(control: str, part: str, kind: Kind, findings: list[Finding], *, ski
     return result
 
 
-def _free(control: str, part: str, text: str, rule: Budget | Pattern | None, sources: dict[str, bytes]) -> Evaluated:
+def _free(control: str, part: str, text: str, rule: Rule | None, expressions: Expressions) -> Evaluated:
     """The verdict of a budget or pattern rule, or `stated` for a control without a rule."""
     if rule is None:
         return Evaluated(control=control, part=part, rule=None, status="stated", findings=[])
     if "pattern" in rule:
-        return _result(control, part, "pattern", matches(control, rule, sources[rule["pattern"]], text))
-    used = measure(text.encode())[rule["budget"]]
-    over = [Finding(text=f"{used} {rule['budget']}, more than the {rule['max']} allowed")] if used > rule["max"] else []
+        return _result(control, part, "pattern", matches(expressions, rule.get("show") == "pattern", text))
+    # The schema requires `budget` and `max` of a rule without `pattern` or `judged`.
+    budget, limit = rule.get("budget", "words"), rule.get("max", 0)
+    used = measure(text.encode())[budget]
+    over = [Finding(text=f"{used} {budget}, more than the {limit} allowed")] if used > limit else []
     result = _result(control, part, "budget", over)
-    result["used"], result["max"] = used, rule["max"]
+    result["used"], result["max"] = used, limit
     return result
 
 
-def matches(control: str, rule: Pattern, source: bytes, text: str) -> list[Finding]:
-    """Each non-empty match in `text` of each expression in `source`, one per line, with the line it starts on.
+def expressions_of(control: str, rule: Rule, sources: dict[str, bytes]) -> Expressions:
+    """The expressions in a pattern rule's file, one per line, compiled once for every part.
 
-    With `show` `match-only`, neither a finding nor an error names an
-    expression; an invalid one is named by its line in the file.
+    An invalid one is `controls::pattern::invalid`. With `show` `match-only`
+    the error names the line and the column of the fault, and nothing the
+    expression holds, since Python's own message can quote part of it.
     """
-    shown = rule["show"] == "pattern"
-    expressions: list[tuple[str, re.Pattern[str]]] = []
-    for number, line in enumerate(source.decode(errors="replace").splitlines(), 1):
+    path = rule.get("pattern", "")
+    expressions: Expressions = []
+    for number, line in enumerate(sources[path].decode(errors="replace").splitlines(), 1):
         if not line.strip():
             continue
         try:
             expressions.append((line, re.compile(line, re.MULTILINE)))
-        except re.error as error:
-            named = f" ({line!r})" if shown else ""
+        except (re.error, OverflowError, RecursionError) as error:
+            position = error.pos if isinstance(error, re.error) else None
+            if rule.get("show") == "pattern":
+                why = error.msg if isinstance(error, re.error) else type(error).__name__
+                detail = f" ({line!r}): {why}"
+            else:
+                detail = "" if position is None else f" at column {position + 1}"
             raise PluginError(
                 "controls::pattern::invalid",
-                f"line {number}{named} of {rule['pattern']}, which {control} names, is not a valid regular"
-                f" expression: {error.msg}; fix that line",
-                {"control": control, "file": rule["pattern"], "line": number},
+                f"line {number} of {path}, which {control} names, is not a valid regular expression{detail};"
+                " fix that line",
+                {"control": control, "file": path, "line": number},
             ) from None
+    return expressions
+
+
+def matches(expressions: Expressions, shown: bool, text: str) -> list[Finding]:  # noqa: FBT001 - whether to name each expression
+    """Each non-empty match in `text` of each expression, with the line it starts on, and the expression if `shown`."""
     found: list[Finding] = []
     for line, expression in expressions:
         for match in expression.finditer(text):
@@ -177,29 +176,32 @@ def matches(control: str, rule: Pattern, source: bytes, text: str) -> list[Findi
     return sorted(found, key=lambda finding: finding.get("line", 0))
 
 
-def _judged(text: str, rubric: bytes, judge: Judge, deadline: float) -> tuple[list[Finding], bool]:
-    """The model's findings on `text` against `rubric`, and whether they came from the cache."""
+def _judged(text: str, rubric: bytes, judging: agent.Agent, deadline: float) -> list[Finding]:
+    """The model's findings on `text` against `rubric`, from the cache when it holds them for the same prompt and agent.
+
+    The key is the SHA-256 of the whole prompt and the agent's argv, which stands for the model.
+    """
+    numbered = "".join(f"{number:>5}| {line}\n" for number, line in enumerate(text.splitlines(), 1))
+    prompt = (
+        f"{INSTRUCTIONS}\n## Rubric\n\n{rubric.decode(errors='replace')}\n\n"
+        f"## Text\n\nEach line starts with its number and a bar.\n\n{numbered}"
+    )
     key = hashlib.sha256()
-    for field in (INSTRUCTIONS.encode(), rubric, judge.model.encode(), text.encode()):
+    for field in (prompt.encode(), json.dumps(judging.argv).encode()):
         key.update(b"%d:%b" % (len(field), field))
     cache = _cache()
     place = None if cache is None else cache / f"{key.hexdigest()}.json"
     findings = _cached(place)
-    cached = findings is not None
-    if findings is None:
-        numbered = "".join(f"{number:>5}| {line}\n" for number, line in enumerate(text.splitlines(), 1))
-        prompt = (
-            f"{INSTRUCTIONS}\n## Rubric\n\n{rubric.decode(errors='replace')}\n\n"
-            f"## Text\n\nEach line starts with its number and a bar.\n\n{numbered}"
-        )
-        stdout = judge.ask(prompt, max(deadline - time.monotonic(), 1))
-        findings = _findings(agent.envelope(stdout)[0], stdout)
-        if place is not None:
-            place.parent.mkdir(parents=True, exist_ok=True)
-            temporary = place.with_suffix(f".{os.getpid()}.tmp")
-            temporary.write_text(json.dumps(findings))
-            temporary.replace(place)
-    return findings, cached
+    if findings is not None:
+        return findings
+    stdout = agent.ask(judging, prompt, max(deadline - time.monotonic(), 1), "shorten the part or the rubric")
+    findings = _findings(agent.envelope(stdout)[0], stdout)
+    if place is not None:
+        place.parent.mkdir(parents=True, exist_ok=True)
+        temporary = place.with_suffix(f".{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(findings))
+        temporary.replace(place)
+    return findings
 
 
 def _cache() -> Path | None:

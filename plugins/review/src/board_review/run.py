@@ -77,7 +77,7 @@ def run(request: CallRequest) -> RunOutput:
         prompt = _prompt(path, brief, "a change to a git repository", "diff", shown)
         covered = (f"{base}..{head}", [ids[commit] for commit in commits if commit in ids])
     clock = time.monotonic()
-    stdout = agent.ask("review", command, prompt, AGENT_TIMEOUT)
+    stdout = agent.ask(command, prompt, AGENT_TIMEOUT, "narrow the brief's range")
     answer, tokens, models = agent.envelope(stdout)
     verdict, findings = _answer(answer, stdout)
     cost: Cost = {"seconds": round(time.monotonic() - clock, 3)}
@@ -88,7 +88,7 @@ def run(request: CallRequest) -> RunOutput:
         "brief": path,
         "findings": findings,
         "verdict": verdict,
-        "by": ", ".join(models) or Path(command[0]).name,
+        "by": ", ".join(models) or Path(command.argv[0]).name,
         "cost": cost,
     }
     output: RunOutput = {"report": report_path, "verdict": verdict, "findings": len(findings)}

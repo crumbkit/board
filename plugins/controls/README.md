@@ -43,15 +43,17 @@ such as a pull request body, instead of files.
   - A pattern, such as
     `{"pattern": "/private/names.txt", "show": "match-only"}`, names a file
     of Python regular expressions, one per line, that text must not match.
-    Blank lines are skipped. With `show` `match-only`, a finding quotes what
+    Blank lines are skipped, and a match of no characters, such as
+    `(?=acme)` finds, is never a finding. With `show` `match-only`, a finding quotes what
     matched and never the expression, so the file can stay private; with
     `pattern`, it names the expression too.
   - A judged rule, such as `{"judged": "/rubrics/plain-prose.md"}`, names a
     rubric that a clean-context model reads text against.
 
-  A pattern file or rubric is named by its absolute logical path. Board
-  does not check that path, because it searches no reference inside `rule`,
-  so `evaluate` reports a missing file. `check` measures
+  A rule holds the fields of exactly one kind. A pattern file and a rubric
+  are references, so `board check` marks the control `board::ref::dangling`
+  when one is missing, and `controls.check` then fails with
+  `controls::control::degraded`. `check` measures
   budgets over files; it lists a pattern or judged control as stated, and
   only `evaluate` applies those rules.
 
@@ -62,7 +64,7 @@ to `.board/types/controls/control/v1.schema.json`.
 
 - `board call controls.for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
-  its requirement, purpose and rule. A control with a dangling reference
+  its requirement, purpose and rule, which is left out when it has none. A control with a dangling reference
   still applies to the paths it does reach; an invalid control applies to
   nothing. An agent can ask before it edits a file. Patterns match the file
   the path resolves to, through any link or mount. A path with nothing there
@@ -120,15 +122,17 @@ to `.board/types/controls/control/v1.schema.json`.
     `show` `pattern`. A judged finding adds `rewrite`, the model's
     instruction for fixing the sentence. A failed budget has one finding
     without a line.
-  - A budget result adds `used` and `max`. A judged result adds `cached`.
-    A result shows at most 20 findings and counts the rest in `omitted`.
+  - A budget result adds `used` and `max`. A result shows at most 20
+    findings and counts the rest in `omitted`.
 
   A failed part is an answer, so the call still exits 0. It fails with
   `controls::control::not_found` when a named control is not a valid
   control in the board's own tree, `controls::rule::unreadable` when a
   pattern file or rubric cannot be read, and `controls::pattern::invalid`
   when a line of a pattern file is not a valid expression. That error names
-  the line by its number, and quotes it only with `show` `pattern`.
+  the line by its number. With `show` `match-only` it adds only the column
+  of the fault, because Python's own message can quote part of the
+  expression; with `pattern` it quotes the line and Python's message.
 
   A judged rule starts the agent `BOARD_CONTROLS_AGENT` names, a JSON array
   of strings, as `review.run` starts `BOARD_REVIEW_AGENT` (the review
@@ -140,8 +144,8 @@ to `.board/types/controls/control/v1.schema.json`.
   rule has a part to read, so free rules need no agent. Each verdict is
   cached in `$XDG_CACHE_HOME/board-controls/judged/` (else
   `~/.cache/board-controls/judged/`), in a file named by the SHA-256 of the
-  prompt's instructions, the rubric's bytes, the agent's command and the
-  text. A retry judges only text that changed. The command stands for the
+  whole prompt, which holds the rubric and the text, and the agent's
+  command. A retry judges only text that changed. The command stands for the
   model, so name the model in it, such as `--model <id>`, or a new default
   model reuses old verdicts. Deleting the directory costs only new
   judgements. The judged rules share 29 minutes, and Board stops the call

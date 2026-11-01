@@ -39,12 +39,11 @@ def for_path(request: CallRequest) -> list[Applying]:
         )
         matched = {logical for (logical,) in rows}
     applying = (matched | reaching) & controls.keys()
-    return [
-        Applying(
-            control=logical,
-            requirement=controls[logical]["requirement"],
-            purpose=controls[logical]["purpose"],
-            rule=controls[logical].get("rule"),
-        )
-        for logical in sorted(applying)
-    ]
+    found: list[Applying] = []
+    for logical in sorted(applying):
+        record = controls[logical]
+        item = Applying(control=logical, requirement=record["requirement"], purpose=record["purpose"])
+        if "rule" in record:
+            item["rule"] = record["rule"]
+        found.append(item)
+    return found

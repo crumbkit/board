@@ -10,6 +10,7 @@ import os
 import signal
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from typing import Any, cast
 
 from board_plugin.protocol import PluginError
@@ -22,8 +23,17 @@ DRAIN = 5
 STOPPING = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
 
 
-def command(plugin: str, variable: str) -> list[str]:
-    """The agent's argv from `variable`, a JSON array of strings, or `<plugin>::agent::not_set` or `invalid`."""
+@dataclass(frozen=True)
+class Agent:
+    """The agent `variable` names for `plugin`, as its argv."""
+
+    plugin: str
+    variable: str
+    argv: list[str]
+
+
+def command(plugin: str, variable: str) -> Agent:
+    """The agent whose argv `variable` holds as a JSON array of strings, or `<plugin>::agent::not_set` or `invalid`."""
     text = os.environ.get(variable)
     if text is None:
         raise PluginError(
@@ -44,21 +54,24 @@ def command(plugin: str, variable: str) -> list[str]:
             ' set it to one, such as ["claude", "-p"]',
             {"variable": variable},
         )
-    return [str(part) for part in parts]
+    return Agent(plugin, variable, [str(part) for part in parts])
 
 
-def ask(plugin: str, argv: list[str], prompt: str, timeout: float) -> str:
+def ask(agent: Agent, prompt: str, timeout: float, hint: str) -> str:
     """What the agent printed on stdout, given `prompt` on stdin in a new empty directory.
+
+    `hint` is what to try first when the agent runs past `timeout`, such as
+    "narrow the brief's range".
 
     The empty directory holds no project settings or MCP servers. The agent
     leads its own process group. The group is killed when the agent exits,
     after `timeout` seconds, or when the plugin gets one of `STOPPING`, so
     neither the agent nor a process it started outlives the call.
     """
-    with tempfile.TemporaryDirectory(prefix=f"board-{plugin}-") as empty:
+    with tempfile.TemporaryDirectory(prefix=f"board-{agent.plugin}-") as empty:
         try:
-            agent = subprocess.Popen(  # noqa: S603 - the user's own environment names the agent
-                argv,
+            child = subprocess.Popen(  # noqa: S603 - the user's own environment names the agent
+                agent.argv,
                 cwd=empty,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -67,42 +80,44 @@ def ask(plugin: str, argv: list[str], prompt: str, timeout: float) -> str:
             )
         except OSError as error:
             raise PluginError(
-                f"{plugin}::agent::not_started",
-                f"the agent {argv[0]!r} cannot be started: {error}; change the variable that names it",
-                {"command": argv},
+                f"{agent.plugin}::agent::not_started",
+                f"the agent {agent.argv[0]!r} cannot be started: {error}; change {agent.variable}",
+                {"command": agent.argv},
             ) from error
-        return _wait(plugin, agent, argv[0], prompt, timeout)
+        return _wait(agent, child, prompt, timeout, hint)
 
 
-def _wait(plugin: str, agent: "subprocess.Popen[bytes]", program: str, prompt: str, timeout: float) -> str:
+def _wait(agent: Agent, child: "subprocess.Popen[bytes]", prompt: str, timeout: float, hint: str) -> str:
+    plugin, program = agent.plugin, agent.argv[0]
+
     def stop(signum: int, _frame: object) -> None:
-        _kill(agent.pid)
+        _kill(child.pid)
         raise SystemExit(128 + signum)
 
     previous = {signum: signal.signal(signum, stop) for signum in STOPPING}
     try:
-        out, err = agent.communicate(prompt.encode(), timeout=timeout)
+        out, err = child.communicate(prompt.encode(), timeout=timeout)
     except subprocess.TimeoutExpired:
-        _kill(agent.pid)
-        out = _drain(agent)
+        _kill(child.pid)
+        out = _drain(child)
         raise PluginError(
             f"{plugin}::agent::timeout",
-            f"the agent {program!r} ran past {timeout:g} seconds and was stopped; give it less to read,"
-            " or make it answer sooner",
+            f"the agent {program!r} ran past {timeout:g} seconds and was stopped; {hint},"
+            f" or make the agent {agent.variable} names answer sooner",
             {"seconds": timeout, "stdout": out.decode(errors="replace")[-TAIL:]},
         ) from None
     finally:
-        _kill(agent.pid)
+        _kill(child.pid)
         for signum, handler in previous.items():
             signal.signal(signum, handler)
     stdout = out.decode(errors="replace")
-    if agent.returncode != 0:
+    if child.returncode != 0:
         stderr = err.decode(errors="replace")[-TAIL:]
         raise PluginError(
             f"{plugin}::agent::failed",
-            f"the agent {program!r} exited {agent.returncode}; its stdout ends: {stdout.strip()[-200:]}; its"
+            f"the agent {program!r} exited {child.returncode}; its stdout ends: {stdout.strip()[-200:]}; its"
             f" stderr ends: {stderr.strip()[-200:]}",
-            {"exit": agent.returncode, "stderr": stderr, "stdout": stdout[-TAIL:]},
+            {"exit": child.returncode, "stderr": stderr, "stdout": stdout[-TAIL:]},
         )
     return stdout
 

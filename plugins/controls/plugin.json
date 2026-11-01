@@ -45,28 +45,20 @@
                 "type": "string"
               },
               "rule": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Rule"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "$ref": "#/$defs/Rule"
               }
             },
             "required": [
               "control",
               "requirement",
-              "purpose",
-              "rule"
+              "purpose"
             ],
             "title": "Applying",
             "type": "object"
           },
-          "Budget": {
+          "Rule": {
             "additionalProperties": false,
-            "description": "A limit on the words or bytes of the files the control applies to.\n\nWith `per` `total`, the default, the files' usage is summed; with `file`,\neach file on its own must be within `max`. Words are separated by any\nwhitespace.",
+            "description": "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against.",
             "properties": {
               "budget": {
                 "enum": [
@@ -76,10 +68,20 @@
                 "title": "Budget",
                 "type": "string"
               },
+              "judged": {
+                "format": "board-ref",
+                "title": "Judged",
+                "type": "string"
+              },
               "max": {
                 "minimum": 0,
                 "title": "Max",
                 "type": "integer"
+              },
+              "pattern": {
+                "format": "board-ref",
+                "title": "Pattern",
+                "type": "string"
               },
               "per": {
                 "default": "total",
@@ -88,39 +90,6 @@
                   "file"
                 ],
                 "title": "Per",
-                "type": "string"
-              }
-            },
-            "required": [
-              "budget",
-              "max"
-            ],
-            "title": "Budget",
-            "type": "object"
-          },
-          "Judged": {
-            "additionalProperties": false,
-            "description": "A rubric at `judged` that a clean-context model reads the text against.",
-            "properties": {
-              "judged": {
-                "pattern": "^/",
-                "title": "Judged",
-                "type": "string"
-              }
-            },
-            "required": [
-              "judged"
-            ],
-            "title": "Judged",
-            "type": "object"
-          },
-          "Pattern": {
-            "additionalProperties": false,
-            "description": "Regular expressions the text must not match, one per line of the file at `pattern`.\n\nWith `show` `match-only`, a finding quotes what matched and never the\nexpression, so the file can stay private; with `pattern`, it names the\nexpression too. Blank lines are skipped.",
-            "properties": {
-              "pattern": {
-                "pattern": "^/",
-                "title": "Pattern",
                 "type": "string"
               },
               "show": {
@@ -132,25 +101,8 @@
                 "type": "string"
               }
             },
-            "required": [
-              "pattern",
-              "show"
-            ],
-            "title": "Pattern",
+            "title": "Rule",
             "type": "object"
-          },
-          "Rule": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/Budget"
-              },
-              {
-                "$ref": "#/$defs/Pattern"
-              },
-              {
-                "$ref": "#/$defs/Judged"
-              }
-            ]
           }
         },
         "additionalProperties": false,
@@ -397,12 +349,8 @@
         "$defs": {
           "Evaluated": {
             "additionalProperties": false,
-            "description": "One control's verdict on one part.\n\n`status` is `skipped` for a judged rule when the part failed a budget or\npattern rule, and `stated` for a control without a rule. A budget result\ncarries `used` and `max`; a judged result carries `cached`. `omitted`\ncounts the findings left out past the first 20.",
+            "description": "One control's verdict on one part.\n\n`status` is `skipped` for a judged rule when the part failed a budget or\npattern rule, and `stated` for a control without a rule. A budget result\ncarries `used` and `max`. `omitted` counts the findings left out past the\nfirst 20.",
             "properties": {
-              "cached": {
-                "title": "Cached",
-                "type": "boolean"
-              },
               "control": {
                 "title": "Control",
                 "type": "string"
