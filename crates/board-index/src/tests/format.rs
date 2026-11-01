@@ -9,7 +9,7 @@ use board_model::{Role, pointer};
 use super::*;
 
 /// Each sample's name and the bytes of a JSON file.
-const SAMPLES: [(&str, &str); 12] = [
+const SAMPLES: [(&str, &str); 14] = [
     ("link", r#"{"$type": "board/mount/v1", "path": "/x"}"#),
     (
         "relative link",
@@ -28,6 +28,8 @@ const SAMPLES: [(&str, &str); 12] = [
     ("string", r#""board/mount/v1""#),
     ("not json", "not json"),
     ("bom", "\u{feff}{}"),
+    ("commented", "{\"a\": 1, // a\n}"),
+    ("commented record", "{\"$type\": \"lr/task/v1\", // a\n}"),
 ];
 
 /// What the index stores for each sample: the kind and code
@@ -45,6 +47,8 @@ array: json - | none
 string: json - | none
 not json: json board::json::parse | none
 bom: json board::json::parse | none
+commented: json - | none
+commented record: json board::json::parse | none
 ";
 
 #[test]
@@ -65,7 +69,7 @@ fn what_the_index_stores_for_a_json_file_changes_only_with_its_format() {
     }
     assert_eq!(
         (answers.as_str(), INDEX_VERSION),
-        (STORED, 21),
+        (STORED, 22),
         "what classify or pointer() answers changed: an index of the current \
          format may hold the old answers, so bump INDEX_VERSION, then update \
          STORED and the version here"

@@ -81,8 +81,8 @@ pub fn can_hold_pointer(path: &str) -> bool {
 }
 
 /// Whether a file of `role` that [`Role::classify`] gave `kind` and `code`
-/// holds no pointer: it is JSON that parsed strictly, and has no `$type` or
-/// one that is valid and not [`POINTER_TYPE`]. Resolution trusts this in
+/// holds no pointer: it is JSON that parsed, strictly or with comments, and
+/// has no `$type` or one that is valid and not [`POINTER_TYPE`]. Resolution trusts this in
 /// place of reading the file, so [`pointer()`] must answer `Ok(None)` for
 /// every file this calls plain, and the property test checks it. The
 /// index's stored facts and tree-row codes depend on [`pointer()`] and

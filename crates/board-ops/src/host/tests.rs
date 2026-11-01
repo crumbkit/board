@@ -816,3 +816,5 @@ fn a_built_in_resolves_and_reads_paths_as_refs_and_get_do_and_a_missing_path_is_
     assert_eq!(output["missing"], json!("/gone"));
     assert_eq!(output["read"], json!(["a\n", "board::path::not_found"]));
 }
+
+mod put;

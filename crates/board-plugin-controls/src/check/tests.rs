@@ -73,6 +73,13 @@ impl Host for Recording {
         Ok(self.board.get_each(paths)?.collect())
     }
 
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
+    }
+
     fn settings(&self) -> &Settings {
         &self.settings
     }

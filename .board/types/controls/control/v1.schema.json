@@ -2,7 +2,7 @@
   "$defs": {
     "Budget": {
       "additionalProperties": false,
-      "description": "A limit on the words or bytes of every file the control applies to, summed.\n\nWords are separated by any whitespace.",
+      "description": "A limit on the words or bytes of the files the control applies to.\n\nWith `per` `total`, the default, the files' usage is summed; with `file`,\neach file on its own must be within `max`. Words are separated by any\nwhitespace.",
       "properties": {
         "budget": {
           "enum": [
@@ -16,6 +16,15 @@
           "minimum": 0,
           "title": "Max",
           "type": "integer"
+        },
+        "per": {
+          "default": "total",
+          "enum": [
+            "total",
+            "file"
+          ],
+          "title": "Per",
+          "type": "string"
         }
       },
       "required": [

@@ -41,6 +41,13 @@ impl Host for Empty {
         panic!("this plugin reads no files")
     }
 
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
+    }
+
     fn settings(&self) -> &Settings {
         &self.0
     }

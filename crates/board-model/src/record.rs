@@ -12,7 +12,7 @@ use crate::attachment::ATTACHMENT_TYPE;
 use crate::code::Code;
 use crate::effect::EFFECT_TYPES;
 use crate::frontmatter::frontmatter;
-use crate::json::parse_json;
+use crate::json::{JsonError, parse_commented_json, parse_json};
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
 use crate::ui::{BINDING_TYPE, DERIVED_TYPE, VIEW_TYPE};
 
@@ -259,6 +259,18 @@ impl Role {
         }
     }
 
+    /// The value of a plain JSON file that is not strict JSON only because
+    /// it holds comments or trailing commas. A record or a schema stays
+    /// strict, so `None` for those.
+    fn commented(self, bytes: &[u8], error: &JsonError) -> Option<Value> {
+        if self != Self::Json || error.code() != Code::JsonParse {
+            return None;
+        }
+        parse_commented_json(bytes)
+            .ok()
+            .filter(|value| value.get("$type").is_none())
+    }
+
     /// Classifies `bytes` read in this role, or `None` when they are over
     /// the size limit. Board's own types are checked here; other records
     /// wait for their schema. A change to what this answers bumps the
@@ -277,7 +289,12 @@ impl Role {
         };
         let value = match parse_json(bytes) {
             Ok(value) => value,
-            Err(error) => return Classified::unparsed(parsed_kind, error.code()),
+            Err(error) => {
+                return match self.commented(bytes, &error) {
+                    Some(value) => Classified::ok(Content::Json { value }),
+                    None => Classified::unparsed(parsed_kind, error.code()),
+                };
+            }
         };
         if self != Self::Json {
             return Classified {
