@@ -119,7 +119,10 @@ Parsing is strict, and the first failure is the entry's code: over 16 MiB
 (`too_large`), not UTF-8, git conflict markers (`merge_conflict`), not JSON
 (`parse`), a duplicate key at any depth, then a number that a double or a
 64-bit integer cannot hold exactly (`lossy_number`). These rules follow RFC
-7493 (I-JSON), except that an integer may use the full 64-bit range. A
+7493 (I-JSON), except that an integer may use the full 64-bit range.
+A plain JSON file, one with no `$type`, may hold `//` and `/* */` comments
+and trailing commas, as editors' settings files do; a record or a schema may
+not, and `put` refuses them. A
 malformed `$type` is `record::bad_type`; a type with no schema file is
 `record::unknown_type`, and so is one whose schema file git ignores and does
 not track, or whose schema path is spelled in another case on disk. In `check`
@@ -359,7 +362,7 @@ STANDARDS.md 23 to 26 hold the rules.
 | `board-plugin` | manifests, discovery, child processes, signals, schema shapes | board-model, board-validate, schemars, rustix and signal-hook (Unix) |
 | `board-ops` | every operation as a typed function returning its report; opening the board a directory is in, or the known board that mounts it; who asks for an effect; the host of built-in plugins | all of the above |
 | `board-plugins` | the plugins built into the binary, each behind a feature | board-ops, each `board-plugin-<name>` |
-| `board-plugin-<name>` | one built-in plugin: controls, plans, requests or evals ([plugins/built-in.md](plugins/built-in.md)) | board-model, board-ops, board-plugin, schemars |
+| `board-plugin-<name>` | one built-in plugin: controls, plans, requests, evals or runs ([plugins/built-in.md](plugins/built-in.md)) | board-model, board-ops, board-plugin, schemars |
 | `board-serve` | the local web server and the app it embeds ([architecture/ui/serve.md](architecture/ui/serve.md)) | board-index, board-model, board-ops, tiny_http |
 | `board-cli` | the `board` binary: arguments (clap), configuration, the one printer | board-model, board-ops, board-plugin, board-plugins, board-serve, board-tree |
 

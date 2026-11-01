@@ -79,16 +79,55 @@ fn a_parser_message_never_reaches_a_match_only_error_and_a_shown_one_quotes_the_
 
 #[test]
 fn a_match_names_the_line_it_starts_on_and_a_match_of_no_characters_is_no_finding() {
-    let compiled = |line: &str| {
-        (
-            line.to_owned(),
-            RegexBuilder::new(line).multi_line(true).build().unwrap(),
-        )
-    };
     let expressions = vec![compiled("b+"), compiled("^"), compiled("a$")];
-    let found = matches(&expressions, false, "a\nbb\nxa");
+    let (found, total) = matches(&expressions, false, "a\nbb\nxa");
+    assert_eq!(total, 3);
     let quoted: Vec<(&str, Option<usize>)> = (found.iter())
         .map(|finding| (finding.text.as_str(), finding.line))
         .collect();
     assert_eq!(quoted, [("a", Some(1)), ("bb", Some(2)), ("a", Some(3))]);
+}
+
+fn compiled(line: &str) -> (String, regex::Regex) {
+    (
+        line.to_owned(),
+        RegexBuilder::new(line).multi_line(true).build().unwrap(),
+    )
+}
+
+#[test]
+fn numbering_the_lines_of_many_matches_scans_each_byte_once_per_expression_and_keeps_only_the_shown()
+ {
+    // 4,000 lines of 50 `x` give 200,000 matches of `x`.
+    let text = format!("{}\n", "x".repeat(50)).repeat(4_000);
+    let expressions = vec![compiled("x"), compiled("^x")];
+    let (hits, scanned) = hits(&expressions, &text);
+    assert_eq!(hits.len(), 204_000);
+    assert!(
+        scanned <= text.len() * expressions.len(),
+        "scanned {scanned} bytes"
+    );
+    let last = hits.iter().map(|hit| hit.line).max();
+    assert_eq!(last, Some(4_000));
+    let (found, total) = matches(&expressions, false, &text);
+    assert_eq!(total, 204_000);
+    assert_eq!(found.len(), SHOWN);
+    assert!(found.iter().all(|finding| finding.line == Some(1)));
+    // A part with fewer matches than are shown keeps them all.
+    let (found, total) = matches(&expressions, false, "x\ny");
+    assert_eq!((found.len(), total), (2, 2));
+}
+
+#[test]
+fn a_pattern_match_is_numbered_by_the_same_line_breaks_a_judged_part_is_split_at() {
+    let text = "a\r\nb\rc\u{2028}d\n\nx";
+    let expressions = vec![compiled("x"), compiled("d")];
+    let (found, _) = matches(&expressions, false, text);
+    let numbered: Vec<(&str, Option<usize>)> = (found.iter())
+        .map(|finding| (finding.text.as_str(), finding.line))
+        .collect();
+    assert_eq!(numbered, [("d", Some(4)), ("x", Some(6))]);
+    assert_eq!(lines(text), ["a", "b", "c", "d", "", "x"]);
+    assert_eq!(lines("a\n"), ["a"]);
+    assert_eq!(lines(""), Vec::<&str>::new());
 }

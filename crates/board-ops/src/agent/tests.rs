@@ -34,6 +34,10 @@ impl Host for Bare {
         unreachable!("an agent reads nothing")
     }
 
+    fn put(&self, _: &[serde_json::Value]) -> Result<crate::PutReport, crate::PutError> {
+        unreachable!("an agent writes nothing")
+    }
+
     fn settings(&self) -> &Settings {
         &self.0
     }
@@ -83,9 +87,17 @@ fn an_agent_past_its_time_is_refused_with_the_hint_and_one_within_it_answers_its
 }
 
 #[test]
-fn an_agent_that_cannot_start_is_refused_naming_its_variable_and_one_that_can_runs() {
-    let refused = ask(&example(&["/nonexistent/agent"]), "", 5.0).unwrap_err();
+fn an_agent_that_cannot_start_is_refused_naming_its_variable_and_program_and_one_that_can_runs() {
+    let refused = ask(
+        &example(&["/nonexistent/agent", "--key", "secret"]),
+        "",
+        5.0,
+    )
+    .unwrap_err();
     assert_eq!(refused.code, "example::agent::not_started");
+    assert_eq!(refused.fields["program"], json!("/nonexistent/agent"));
+    let shown = format!("{} {:?}", refused.message, refused.fields);
+    assert!(!shown.contains("secret"), "{shown}");
     assert!(
         refused.message.contains("change EXAMPLE_AGENT"),
         "{}",
@@ -130,12 +142,16 @@ fn an_unset_or_malformed_variable_is_refused_and_an_array_naming_a_program_is_re
         )
     };
     assert_eq!(named(None).unwrap_err().code, "example::agent::not_set");
-    for value in ["claude -p", "[]", "[\"\"]", "[\"claude\", 1]"] {
-        assert_eq!(
-            named(Some(value)).unwrap_err().code,
-            "example::agent::invalid",
-            "{value}"
-        );
+    for value in [
+        "claude -p",
+        "[]",
+        "[\"\"]",
+        "[\"claude\", 1]",
+        "[\"x\", \"secret\"",
+    ] {
+        let refused = named(Some(value)).unwrap_err();
+        assert_eq!(refused.code, "example::agent::invalid", "{value}");
+        assert!(!refused.message.contains("secret"), "{}", refused.message);
     }
     let agent = named(Some(r#"["claude", "--tools", ""]"#)).unwrap();
     assert_eq!(agent.argv, ["claude", "--tools", ""]);
@@ -147,10 +163,20 @@ fn the_answer_is_an_envelope_s_result_or_the_whole_stdout_and_the_last_object_wi
     let envelope = json!({"type": "result", "result": "Done.\n{\"findings\": []}"}).to_string();
     assert_eq!(answer(&envelope), "Done.\n{\"findings\": []}");
     assert_eq!(answer("plain {\"a\": 1}"), "plain {\"a\": 1}");
+    let failed = json!({"is_error": true, "result": "{\"findings\": []}"}).to_string();
+    assert_eq!(answer(&failed), failed);
     let text = r#"{"findings": [1]} then {"findings": [2], "x": {"y": 1}} and {"other": 3}"#;
     assert_eq!(
         last_object(text, "findings").unwrap()["findings"],
         json!([2])
     );
     assert_eq!(last_object("no object here", "findings"), None);
+}
+
+#[test]
+fn a_tail_starts_on_a_character_and_a_short_text_is_whole() {
+    assert_eq!(tail("abc", 10), "abc");
+    assert_eq!(tail("abcdef", 2), "ef");
+    // `é` is two bytes, so a cut inside it moves to the next character.
+    assert_eq!(tail("aéb", 2), "b");
 }

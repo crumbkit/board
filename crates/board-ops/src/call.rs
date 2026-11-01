@@ -1,7 +1,7 @@
 //! `call` (docs/plugins.md, Calling a capability).
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use board_plugin::{
@@ -105,9 +105,18 @@ impl Board {
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
                 environment: Variables(board_plugin::passed(chosen, environment)?),
-                cache_home: cache_home(environment),
+                cache_home: plugins.cache.map(Path::to_path_buf),
             },
             cache: plugins.cache,
+            // As `board call` sets `BOARD_PLUGIN` for a child: the plugin
+            // already named, else this one. A put refuses a name that does
+            // not parse, as the child's `board put` would.
+            plugin: match &environment.plugin {
+                Some(text) => {
+                    (text.to_str().and_then(|name| name.parse().ok())).ok_or_else(|| text.clone())
+                }
+                None => Ok(chosen.manifest.name.clone()),
+            },
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;
@@ -142,12 +151,3 @@ impl Board {
 
 #[cfg(test)]
 mod tests;
-
-/// `XDG_CACHE_HOME` when it is absolute, else `$HOME/.cache`, as the XDG
-/// rule reads them; none when neither is known.
-fn cache_home(environment: &board_plugin::Environment) -> Option<PathBuf> {
-    match environment.cache.as_ref().map(PathBuf::from) {
-        Some(cache) if cache.is_absolute() => Some(cache),
-        _ => Some(PathBuf::from(environment.home.as_ref()?).join(".cache")),
-    }
-}

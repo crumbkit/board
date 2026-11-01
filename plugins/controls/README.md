@@ -67,10 +67,9 @@ to `.board/types/controls/control/v1.schema.json`.
 
 - `board call controls.for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
-  its requirement, purpose and rule, which is left out when it has none. A
-  control with a dangling reference
-  still applies to the paths it does reach; an invalid control applies to
-  nothing. An agent can ask before it edits a file. Patterns match the file
+  its requirement, purpose and rule, which is null when it has none. A
+  control with a dangling reference still applies to the paths it does
+  reach; an invalid control applies to nothing. An agent can ask before it edits a file. Patterns match the file
   the path resolves to, through any link or mount. A path with nothing there
   yet is matched where a file there would be, as
   `board refs --missing` reports it, so a control on a link's target applies
@@ -121,13 +120,15 @@ to `.board/types/controls/control/v1.schema.json`.
     `skipped` for a judged rule when the part failed a budget or pattern
     rule. Budget and pattern rules always run first, whatever the order of
     `controls`.
-  - A finding holds `text`, the words at fault, and `line` when it has one.
-    A pattern finding quotes the match, and adds `pattern` only with
-    `show` `pattern`. A judged finding adds `rewrite`, the model's
-    instruction for fixing the sentence. A failed budget has one finding
-    without a line.
-  - A budget result adds `used` and `max`. A result shows at most 20
-    findings and counts the rest in `omitted`.
+  - A finding holds `text`, the words at fault, `line`, `pattern` and
+    `rewrite`. A pattern finding quotes the match and gives its line, and
+    names the expression in `pattern` only with `show` `pattern`. A judged
+    finding gives `rewrite`, the model's instruction for fixing the
+    sentence, and its line when the model named one. A failed budget has one
+    finding with a null `line`. Every key is present, and null means none.
+  - A result holds `used` and `max`, which are null except in a budget
+    result. A result shows at most 20 findings and counts the rest in
+    `omitted`, which is null when none is left out.
 
   A failed part is an answer, so the call still exits 0. It fails with
   `controls::control::not_found` when a named control is not a valid
@@ -154,15 +155,29 @@ to `.board/types/controls/control/v1.schema.json`.
   `controls::agent::not_set`, and with a malformed one
   `controls::agent::invalid`. An agent that cannot start, exits non-zero or
   runs out of time fails the call with `controls::agent::not_started`,
-  `failed` or `timeout`. Each verdict is kept in
-  `$XDG_CACHE_HOME/board-controls/judged/` (else
+  `failed` or `timeout`; the refusal names only the program, never its
+  arguments. Put a credential in the variables the capability's `env`
+  declares, never in the argv.
+
+  When the argv names the model with `--model` and a full model id, each
+  verdict is kept in `$XDG_CACHE_HOME/board-controls/judged/` (else
   `~/.cache/board-controls/judged/`), in a file named by the SHA-256 of the
-  whole prompt, which holds the rubric and the text, and the agent's
-  command. A retry judges only text that changed. The command stands for
-  the model, so name the model in it, such as `--model <id>`, or a new
-  default model reuses old verdicts. Deleting the directory costs only new
-  judgements. The judged rules share 29 minutes, which the plugin enforces
-  itself, since Board puts no deadline on a built-in call.
+  whole prompt, which holds the rubric and the text, and the argv. A retry
+  then judges only text that changed. Pin the model like this:
+
+  ```sh
+  export BOARD_CONTROLS_AGENT='["claude", "-p", "--model", "claude-sonnet-4-5-20250929", "--output-format", "json", "--tools", ""]'
+  ```
+
+  A model alias such as `sonnet`, or a model set in
+  `~/.claude/settings.json`, is not part of the key, so a pinned argv names
+  a full id. Without `--model`, the model can change without the argv
+  showing it, so no verdict is kept and every part is judged on every call.
+  The cache is trusted state with the same standing as the controls: any
+  process running as the same person can write a verdict there. Deleting
+  the directory costs only new judgements. The judged rules share 29
+  minutes from the start of the call, which the plugin enforces itself,
+  since Board puts no deadline on a built-in call.
 
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of the control schema differs from the one the plugin ships;

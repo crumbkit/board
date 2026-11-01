@@ -1,5 +1,5 @@
 //! The plugins built into the binary, run in-process: controls, plans,
-//! requests and evals, beside installed plugins.
+//! requests, evals and runs, beside installed plugins.
 
 use super::plugins::{TASKS, installed};
 use super::*;
@@ -331,4 +331,64 @@ fn call_controls_check_answers_from_a_warm_index_as_from_a_cold_one_after_a_cont
     assert_ne!(warm, before, "the change is seen");
     assert_eq!(warm["measured"][0]["max"], 8);
     assert_eq!(warm, answer(None));
+}
+
+/// A full run of a clean revision of `/suites/a`, started on day `day` of
+/// October 2026, whose `wall_s` is `wall_s`.
+fn suite_run(day: u8, wall_s: f64) -> String {
+    let run = json!({
+        "$type": "runs/run/v1",
+        "suite": "/suites/a",
+        "by": "claude",
+        "started": format!("2026-10-0{day}T09:00:00Z"),
+        "scope": "full",
+        "dirty": false,
+        "results": [],
+        "measures": {"wall_s": wall_s},
+    });
+    run.to_string()
+}
+
+#[test]
+fn call_runs_latest_and_trend_answer_from_a_warm_index_as_from_a_cold_one_after_a_run_lands() {
+    let board = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    let (output, _) = built_in(board.workdir(), None, &["plugin", "enable", "runs"]);
+    assert_eq!(output.code, 0, "{}", text(&output.stderr));
+    let suite = r#"{"$type": "runs/suite/v1", "subjects": ["board"], "method": "Run it."}"#;
+    board
+        .write("suites/a.json", Item::File(suite))
+        .write("suites/a/runs/1.json", Item::File(&suite_run(1, 50.0)));
+    let cache = tempfile::tempdir().unwrap();
+    let answer = |cache: Option<&Path>, arguments: &[&str]| {
+        let (output, ran) = cached(board.workdir(), None, cache, arguments);
+        assert_eq!(output.code, 0, "{}", text(&output.stdout));
+        assert_eq!(ran.trace.work.get("started"), Some(&0));
+        let mut output = json(&output)["data"]["output"].clone();
+        // The age runs with the clock, so a later call may give a larger one.
+        if let Some(run) = output.get_mut("run").and_then(Value::as_object_mut) {
+            run.remove("age_s");
+        }
+        output
+    };
+    let calls: [&[&str]; 2] = [
+        &["--json", "call", "runs.latest", "--suite", "/suites/a"],
+        &[
+            "--json",
+            "call",
+            "runs.trend",
+            "--suite",
+            "/suites/a",
+            "--measure",
+            "wall_s",
+        ],
+    ];
+    let before = calls.map(|arguments| answer(Some(cache.path()), arguments));
+    board.write("suites/a/runs/2.json", Item::File(&suite_run(2, 42.5)));
+    for (arguments, before) in calls.iter().zip(before) {
+        let warm = answer(Some(cache.path()), arguments);
+        assert_ne!(warm, before, "the change is seen");
+        assert_eq!(warm, answer(None, arguments));
+    }
 }

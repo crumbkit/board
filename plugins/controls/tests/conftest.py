@@ -91,8 +91,8 @@ class Agent:
 
     @property
     def argv(self) -> list[str]:
-        """The agent's argv, as BOARD_CONTROLS_AGENT gives it."""
-        return [str(self.directory / "agent")]
+        """The agent's argv, as BOARD_CONTROLS_AGENT gives it, which names its model so verdicts are kept."""
+        return [str(self.directory / "agent"), "--model", "stub-model-1"]
 
     def answers(self, findings: list[dict[str, Any]]) -> None:
         """Make the agent answer with some prose and then `findings`."""

@@ -5,10 +5,10 @@
 use std::ffi::OsString;
 use std::time::Duration;
 
-use board_plugin::child::{Exited, Process, ProcessError};
+use board_plugin::child::{Exited, ProcessError};
 use serde_json::{Map, Value};
 
-use crate::host::{Host, PluginError};
+use crate::host::{Host, PluginError, Run};
 
 /// How much of the agent's stdout or stderr an error carries.
 pub const TAIL: usize = 4096;
@@ -49,18 +49,17 @@ impl Agent {
                 variable: variable.to_owned(),
                 argv,
             }),
-            _ => {
-                let shown: String = text.chars().take(200).collect();
-                Err(refused(
-                    plugin,
-                    "invalid",
-                    format!(
-                        "{variable} is {shown:?}, which is not a JSON array of strings whose first \
-                         names a program; set it to one, such as [\"claude\", \"-p\"]"
-                    ),
-                    [("variable", Value::from(variable))],
-                ))
-            }
+            // The value is not quoted, since a person may have put a
+            // credential in it.
+            _ => Err(refused(
+                plugin,
+                "invalid",
+                format!(
+                    "{variable} is not a JSON array of strings whose first names a program; set it \
+                     to one, such as [\"claude\", \"-p\"]"
+                ),
+                [("variable", Value::from(variable))],
+            )),
         }
     }
 
@@ -81,7 +80,7 @@ impl Agent {
         hint: &str,
     ) -> Result<String, PluginError> {
         let program = &self.argv[0];
-        let process = Process {
+        let run = Run {
             program,
             arguments: &self.argv[1..],
             directory: None,
@@ -92,8 +91,9 @@ impl Agent {
             code,
             stdout,
             stderr,
-        } = match host.run(&process) {
+        } = match host.run(&run) {
             Ok(exited) => exited,
+            // Only the program is named: the arguments may hold a credential.
             Err(ProcessError::NotStarted { source }) => {
                 return Err(refused(
                     &self.plugin,
@@ -102,7 +102,7 @@ impl Agent {
                         "the agent {program:?} cannot be started: {source}; change {}",
                         self.variable
                     ),
-                    [("command", Value::from(self.argv.clone()))],
+                    [("program", Value::from(program.as_str()))],
                 ));
             }
             // Board keeps no stdout of a stopped process, so unlike the
@@ -131,19 +131,15 @@ impl Agent {
                     ),
                     [
                         ("exit", Value::Null),
-                        ("stderr", Value::from(tail(&stderr))),
+                        ("stderr", Value::from(tail_of(&stderr))),
                     ],
                 ));
             }
         };
         let stdout = String::from_utf8_lossy(&stdout).into_owned();
         if code != Some(0) {
-            let stderr = tail(&stderr);
-            let short = |text: &str| -> String {
-                let text = text.trim();
-                let start = text.len().saturating_sub(200);
-                text[floor(text, start)..].to_owned()
-            };
+            let stderr = tail_of(&stderr);
+            let short = |text: &str| tail(text.trim(), 200).to_owned();
             let exit = code.map_or_else(|| "on a signal".to_owned(), |code| code.to_string());
             return Err(refused(
                 &self.plugin,
@@ -156,7 +152,7 @@ impl Agent {
                 [
                     ("exit", Value::from(code)),
                     ("stderr", Value::from(stderr)),
-                    ("stdout", Value::from(tail(stdout.as_bytes()))),
+                    ("stdout", Value::from(tail(&stdout, TAIL))),
                 ],
             ));
         }
@@ -165,13 +161,16 @@ impl Agent {
 }
 
 /// The agent's answer, from `claude -p --output-format json`'s envelope when
-/// stdout is one, else stdout itself.
+/// stdout is one, else stdout itself. An envelope that marks an error gives
+/// stdout itself, which holds no answer the caller accepts.
 pub fn answer(stdout: &str) -> String {
     match serde_json::from_str::<Value>(stdout) {
-        Ok(Value::Object(envelope)) => match envelope.get("result") {
-            Some(Value::String(result)) => result.clone(),
-            _ => stdout.to_owned(),
-        },
+        Ok(Value::Object(envelope)) if envelope.get("is_error") != Some(&Value::Bool(true)) => {
+            match envelope.get("result") {
+                Some(Value::String(result)) => result.clone(),
+                _ => stdout.to_owned(),
+            }
+        }
         _ => stdout.to_owned(),
     }
 }
@@ -188,11 +187,14 @@ pub fn last_object(answer: &str, key: &str) -> Option<Map<String, Value>> {
     })
 }
 
+/// At most the last `length` bytes of `text`, starting on a character.
+pub fn tail(text: &str, length: usize) -> &str {
+    &text[floor(text, text.len().saturating_sub(length))..]
+}
+
 /// The last `TAIL` bytes of `bytes` as text.
-fn tail(bytes: &[u8]) -> String {
-    let text = String::from_utf8_lossy(bytes);
-    let start = text.len().saturating_sub(TAIL);
-    text[floor(&text, start)..].to_owned()
+fn tail_of(bytes: &[u8]) -> String {
+    tail(&String::from_utf8_lossy(bytes), TAIL).to_owned()
 }
 
 /// The first character boundary of `text` at or after `at`.

@@ -78,7 +78,8 @@ fn manifest() -> Value {
             you edit a file a control may govern. Start with `board -C <board> call controls.check --path \
             /<directory>`, which lists the budgets it measures and the written requirements under that \
             path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. \
-            SKILL.md and README.md in the plugin's directory say more.",
+            `board -C <board> call controls.evaluate` checks text, such as a draft, against the rules of \
+            the controls it names before the text is written. SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
         "types": [ControlRecord::TYPE],
         "capabilities": [{

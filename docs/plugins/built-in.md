@@ -1,8 +1,9 @@
 # Built-in plugins
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
-Board is called. `controls`, `plans`, `evals` and
+Board is called. `controls`, `plans`, `evals`, `runs` and
 [`requests`](built-in/requests.md) are built in.
+[built-in/writing.md](built-in/writing.md) says how to write one.
 
 - A built-in plugin is a crate, `board-plugin-<name>`, behind a Cargo feature
   of `board-plugins` that board-cli enables by default. It generates its
@@ -30,6 +31,11 @@ Board is called. `controls`, `plans`, `evals` and
     does. Each resolves every path in one snapshot of the working tree and
     returns one answer per path, in order, so one path's refusal does not
     stop the others. Neither has a byte budget.
+  - `put(lines)` writes the lines of one `board put --batch`, as JSON
+    values, as that command does under `BOARD_PLUGIN`: the same checks,
+    `expect`, refusals and report, one commit or nothing. It is checked as
+    the plugin `BOARD_PLUGIN` names, else the called one, so it is refused
+    what only the owner writes (docs/architecture/writes/effects.md).
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. It also gives
     `environment`, the variables a process plugin offering the capability
@@ -37,13 +43,20 @@ Board is called. `controls`, `plans`, `evals` and
     it is absolute, else `~/.cache`. A built-in plugin reads no environment
     of its own.
   - `run(process)` starts a program, such as git, gh or an agent, through
-    board-plugin's process module, with `environment` and nothing else. It
-    runs in the directory given, or in a new empty temporary directory, and
-    reads the input given on stdin. It leads its own process group, which is
-    killed when it exits, past its deadline, past 16 MiB of stdout, or when
-    Board gets SIGINT, SIGTERM or SIGHUP, so nothing it started outlives
-    it. It returns the exit code, stdout and the end of stderr, or why it
-    did not start or was stopped.
+    board-plugin's process module, with `environment` and nothing else, so
+    the program is identified as the built-in plugin through `BOARD_PLUGIN`
+    and runs one call deeper through `BOARD_CALL_DEPTH`. It runs in the
+    directory given, or in a new empty temporary directory, and reads the
+    input given on stdin. It leads its own process group. Every process
+    still in that group is killed when the program exits, even while one of
+    them holds its output open, past its deadline, past 16 MiB of stdout,
+    or when Board gets SIGINT, SIGTERM or SIGHUP. On such a signal the group
+    gets the signal and then SIGKILL at once, so its own handlers rarely
+    run. A process that leaves the group with `setsid` is not killed; if it
+    holds the output open, Board drains it for up to a second after the
+    program exits. The temporary directory is left behind if a signal ends
+    Board. It returns the exit code, stdout and the
+    end of stderr, or why it did not start or was stopped.
   - `cached(place, digest)` and `cache(place, digest, value)` read and
     write a small value under `place`, plain names under the cache home
     such as `board-controls/judged`, in a file named by the hex of
@@ -70,7 +83,7 @@ and validates input and output the same way for both kinds, with the same
 codes. A built-in plugin runs in Board's process, so it has no time or size
 limit and never gives `not_started`, `failed`, `timeout` or `too_large`.
 Its capability's `timeout` is not enforced; each process it runs has its
-own deadline. It
-must not panic: a panic ends Board's run instead of refusing the call. Its
-refusal carries an empty `stderr`. The `plugin.call` phase of the timing
-log includes the queries it makes, and `started` counts no process.
+own deadline. It must not panic: a panic ends Board's run instead of
+refusing the call. Its refusal carries an empty `stderr`. The `plugin.call`
+phase of the timing log includes the queries it makes and the processes it
+runs, and `started` counts none of those processes.

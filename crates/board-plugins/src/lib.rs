@@ -13,4 +13,6 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_plans::Plans,
     #[cfg(feature = "requests")]
     &board_plugin_requests::Requests,
+    #[cfg(feature = "runs")]
+    &board_plugin_runs::Runs,
 ]);

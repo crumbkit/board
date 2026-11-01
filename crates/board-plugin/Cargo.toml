@@ -12,7 +12,6 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 strsim.workspace = true
-tempfile.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(unix)'.dependencies]
@@ -20,6 +19,7 @@ rustix.workspace = true
 signal-hook.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 board-scenario.workspace = true
 
 [lints]

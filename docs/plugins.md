@@ -4,10 +4,10 @@ This is the v0 design. docs/architecture.md says what is built, and PLAN.md
 says what comes next.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
-or a changelog. It is a separate program that Board starts, talking JSON over
-stdin and stdout. It reads the board through `board query`. A plugin can also
-be compiled into Board; [plugins/built-in.md](plugins/built-in.md) says how
-it is called.
+or a changelog. It is compiled into Board
+([plugins/built-in.md](plugins/built-in.md)), or installed as a separate
+program that Board starts, talking JSON over stdin and stdout and reading
+the board through `board query`. This file gives the contract both meet.
 
 ## Installing and enabling
 
@@ -204,16 +204,13 @@ comes right after the alias; a flag in its place is a usage error.
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 
-## Writing a plugin in Python
+## Writing a plugin
 
-The plugins here are written in Python through the shared library in
-`python/board-plugin/`. There are nine: `tasks`, `runs`, `share`, `notes`,
-`changes`, `review`, `prompts`, `jira` and `github`. `controls`, `plans`, `requests` and
-`evals` are built into Board ([plugins/built-in.md](plugins/built-in.md)). The README in each `plugins/<name>/` describes its records and
-capabilities. [plugins/share.md](plugins/share.md) explains the design of
-`share`, [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
-the controls mod, and [plugins/plans-claude-code.md](plugins/plans-claude-code.md)
-the plans mod.
-[plugins/python.md](plugins/python.md) says what Board validates for a plugin,
-what the plugin still checks, and how plugins are built and tested.
-[plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods.
+A new plugin is a built-in crate, never a Python program
+([plugins/built-in/writing.md](plugins/built-in/writing.md)).
+[plugins/python.md](plugins/python.md) describes the plugins still in
+Python. Each `plugins/<name>/` README describes its records and
+capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
+[plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,
+with [the controls mod](plugins/controls-claude-code.md) and
+[the plans mod](plugins/plans-claude-code.md).

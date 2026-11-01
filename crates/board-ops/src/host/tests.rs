@@ -592,7 +592,8 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
 
 #[cfg(unix)]
 #[test]
-fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_no_others() {
+fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_its_own_name_and_no_others()
+ {
     let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
     let mut board = open(&scenario);
     board.build_in(built(vec![answering(
@@ -600,9 +601,10 @@ fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_no_othe
         Box::new(|host| {
             let arguments = [
                 "-c".to_owned(),
-                "printf '%s' \"$FIXTURE_GIVEN-$FIXTURE_HIDDEN\"".to_owned(),
+                "printf '%s' \"$FIXTURE_GIVEN-$FIXTURE_HIDDEN-$BOARD_PLUGIN-$BOARD_CALL_DEPTH\""
+                    .to_owned(),
             ];
-            let process = board_plugin::child::Process {
+            let process = Run {
                 program: "sh",
                 arguments: &arguments,
                 directory: None,
@@ -625,7 +627,8 @@ fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_no_othe
         ..Plugins::default()
     };
     let output = call_base(&board, &set).unwrap().output;
-    assert_eq!(output, json!({"count": 0, "seen": "yes-"}));
+    // The process is identified as the built-in plugin, one call deeper.
+    assert_eq!(output, json!({"count": 0, "seen": "yes--fixture-1"}));
 }
 
 /// `fixture` answering the query `sql` with how many rows it returned and
@@ -833,3 +836,5 @@ fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
     settings.cache_home = None;
     assert_eq!(cache_place(&settings, "board-controls/judged"), None);
 }
+
+mod put;

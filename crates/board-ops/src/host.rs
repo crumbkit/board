@@ -1,17 +1,20 @@
 //! Plugins built into Board, and what Board offers them
 //! (docs/plugins/built-in.md).
 
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use board_model::{CapabilityName, LogicalPath, RecordType, Refusal};
+use board_model::{CapabilityName, LogicalPath, PluginName, RecordType, Refusal};
 use board_plugin::Manifest;
 use board_plugin::child::{Exited, Process, ProcessError};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::Board;
+use crate::effects::Asker;
+use crate::put::{PutError, PutReport};
 use crate::query::{MAX_LIMIT, QueryError, QueryReport};
 use crate::read::{GetReport, ReadError};
 use crate::refs::{Absent, RefsError, RefsReport};
@@ -49,12 +52,32 @@ pub trait Host {
         &self,
         paths: &[LogicalPath],
     ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError>;
+    /// Writes `lines`, each one line of `board put --batch`, as that
+    /// command does under `BOARD_PLUGIN`: every line checked, the effects
+    /// check run as the plugin, and one commit or nothing.
+    fn put(&self, lines: &[Value]) -> Result<PutReport, PutError>;
     fn settings(&self) -> &Settings;
-    /// Runs `process` through board-plugin's process module with the
-    /// settings' `environment`, as the leader of its own process group,
-    /// killed when it exits, past its deadline or when Board is stopped.
-    fn run(&self, process: &Process<'_>) -> Result<Exited, ProcessError> {
-        board_plugin::child::run(process, &self.settings().environment.0)
+    /// Runs `run` through board-plugin's process module with the settings'
+    /// `environment` and nothing else, as the leader of its own process
+    /// group. Every process still in the group is killed when it exits, past
+    /// its deadline or when Board is stopped.
+    fn run(&self, run: &Run<'_>) -> Result<Exited, ProcessError> {
+        let empty;
+        let directory = if let Some(directory) = run.directory {
+            directory
+        } else {
+            empty = board_index::empty_directory()
+                .map_err(|source| ProcessError::NotStarted { source })?;
+            empty.path()
+        };
+        let process = Process {
+            program: run.program,
+            arguments: run.arguments,
+            directory,
+            input: run.input,
+            deadline: run.deadline,
+        };
+        board_plugin::child::run(&process, &self.settings().environment.0)
     }
     /// The value cached under `digest` in `place`, a directory under the
     /// cache home such as `board-controls/judged`, or none when there is
@@ -79,6 +102,20 @@ fn cache_place(settings: &Settings, place: &str) -> Option<PathBuf> {
     let plain = !place.is_empty()
         && (place.split('/')).all(|name| !name.is_empty() && name != "." && name != "..");
     plain.then(|| settings.cache_home.as_ref().map(|home| home.join(place)))?
+}
+
+/// A process a built-in plugin runs through [`Host::run`]: its program,
+/// found on the environment's `PATH`, its arguments, the directory it runs
+/// in, what it reads on stdin, and how long it may run.
+#[derive(Clone, Copy, Debug)]
+pub struct Run<'a> {
+    pub program: &'a str,
+    pub arguments: &'a [String],
+    /// The directory it runs in; none runs it in a new empty temporary
+    /// directory, removed when it exits.
+    pub directory: Option<&'a Path>,
+    pub input: &'a [u8],
+    pub deadline: std::time::Duration,
 }
 
 /// What a built-in plugin reads in place of a process plugin's environment.
@@ -190,6 +227,9 @@ pub(crate) struct Hosted<'a> {
     pub(crate) settings: Settings,
     /// Where the caller keeps the index.
     pub(crate) cache: Option<&'a Path>,
+    /// The plugin a put is checked as, or the `BOARD_PLUGIN` that names
+    /// none.
+    pub(crate) plugin: Result<PluginName, OsString>,
 }
 
 impl Host for Hosted<'_> {
@@ -213,6 +253,27 @@ impl Host for Hosted<'_> {
         paths: &[LogicalPath],
     ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
         Ok(self.board.get_each(paths)?.collect())
+    }
+
+    /// Opens the board again as the plugin, as a put through a mount opens
+    /// the mounted board, so every check reads the plugin where it already
+    /// does.
+    /// Its timings stay in the board it opens, outside the call's trace.
+    fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
+        let plugin = (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })?;
+        let home = self.board.repositories().home().map(Into::into);
+        let mut board = Board::open(self.board.repository().path(), home)
+            .map_err(|error| PutError::Open(Box::new(error)))?;
+        board.ask_as(Asker {
+            plugin: Some(plugin),
+            ..Asker::default()
+        });
+        let text = lines
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        board.put_batch(&mut text.as_bytes())
     }
 
     fn settings(&self) -> &Settings {

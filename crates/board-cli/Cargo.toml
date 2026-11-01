@@ -10,11 +10,12 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["controls", "evals", "plans", "requests"]
+default = ["controls", "evals", "plans", "requests", "runs"]
 controls = ["board-plugins/controls"]
 evals = ["board-plugins/evals"]
 plans = ["board-plugins/plans"]
 requests = ["board-plugins/requests"]
+runs = ["board-plugins/runs"]
 
 [dependencies]
 board-model.workspace = true
