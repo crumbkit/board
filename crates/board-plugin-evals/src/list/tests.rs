@@ -316,7 +316,7 @@ fn evals_board(evals: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Evals]);
     board
-        .plugin_enable(None, None, &"evals".parse().unwrap())
+        .plugin_enable(None, None, &"evals".parse().unwrap(), &[])
         .unwrap();
     let schema = std::fs::read_to_string(
         scenario

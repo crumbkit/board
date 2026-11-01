@@ -81,7 +81,8 @@ in its directory. Each type's namespace is the plugin's name, never
 `board`. The manifest refuses
 unknown fields. An installed plugin's `name` equals its directory's name, and
 ships each type's schema; `check` and `put` check only the content.
-`version` is `MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted
+`version` is `MAJOR.MINOR.PATCH` in digits. The optional `alias` is one
+word of lowercase ASCII letters, described under Aliases. The schemas compile under a mounted
 board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
@@ -175,10 +176,25 @@ at `board.root`. It never opens Board's index. Board increments `BOARD_CALL_DEPT
 0) and refuses a call arriving at 8, or at a value that is not a whole number,
 with `board::plugin::too_deep`.
 
+## Aliases
+
+A plugin whose manifest sets `"alias": "gh"` can be run as
+`board gh <capability> [flags]`, which runs exactly what
+`board call <plugin>.<capability> [flags]` runs. Only the plugins that the
+board Board runs as enables provide aliases; a mounted board's plugins provide
+none. `board -h` lists each alias beside its plugin, and `board gh -h` lists
+the plugin's capabilities.
+
+`board plugin enable` refuses an alias that is a built-in command, or the
+alias of another enabled plugin, with `board::plugin::alias_conflict`; the
+message names the command or the plugin. A built-in command always runs in
+place of an alias of the same word. When two enabled plugins share an alias,
+running it is refused with the same code. `board call` runs either plugin.
+
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
-`schema_missing`, `schema_differs`, `ambiguous`, `duplicate`,
+`schema_missing`, `schema_differs`, `ambiguous`, `duplicate`, `alias_conflict`,
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 

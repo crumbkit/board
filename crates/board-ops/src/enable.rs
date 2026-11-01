@@ -10,6 +10,7 @@ use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 
 use crate::Board;
+use crate::alias::{AliasConflict, collision};
 use crate::board::config_file;
 use crate::check::CheckError;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
@@ -51,15 +52,18 @@ impl Board {
     /// schema to remove that a record in the working tree still names is
     /// kept, found through the index kept under `cache`, so the record stays
     /// valid until the plugin migrates it. The board is read under the lock
-    /// the write holds.
+    /// the write holds. An alias that is one of `commands`, Board's built-in
+    /// commands, or another enabled plugin's alias is refused.
     pub fn plugin_enable(
         &self,
         plugins: Option<&Path>,
         cache: Option<&Path>,
         name: &PluginName,
+        commands: &[&str],
     ) -> Result<EnableReport, EnableError> {
-        let found = (self.offered(plugins)?.into_iter())
-            .find(|installed| installed.name == name.as_str())
+        let (found, others): (Vec<_>, Vec<_>) = (self.offered(plugins)?.into_iter())
+            .partition(|installed| installed.name == name.as_str());
+        let found = (found.into_iter().next())
             .ok_or_else(|| EnableError::NotInstalled { name: name.clone() })?;
         if let Some(directory) = found.origin.shadows() {
             return Err(EnableError::Duplicate {
@@ -72,6 +76,11 @@ impl Board {
                 name: name.clone(),
                 source,
             });
+        }
+        if let Ok(manifest) = &found.manifest
+            && let Some(conflict) = collision(manifest, commands, &self.aliased(others))
+        {
+            return Err(conflict.into());
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -236,6 +245,8 @@ pub enum EnableError {
     )]
     Changed { name: PluginName },
     #[error(transparent)]
+    AliasConflict(#[from] AliasConflict),
+    #[error(transparent)]
     Records(#[from] CheckError),
     #[error(transparent)]
     Put(#[from] PutError),
@@ -249,6 +260,7 @@ impl EnableError {
             Self::Duplicate { .. } => Code::PluginDuplicate,
             Self::Manifest { source, .. } => source.code(),
             Self::Schema { .. } => Code::PluginBadManifest,
+            Self::AliasConflict(_) => Code::PluginAliasConflict,
             Self::Changed { .. } => Code::PutStale,
             Self::Records(error) => error.code(),
             Self::Put(error) => error.code(),

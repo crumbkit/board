@@ -648,6 +648,32 @@ fn installed_again(starts: &mut Starts) {
     starts.pair(&place, Code::PluginDuplicate, line, "call tasks.due");
 }
 
+/// An alias two enabled plugins share, beside one only a third declares.
+fn aliasing(starts: &mut Starts) {
+    let xdg = Scenario::new();
+    let plugins = "xdg/data/board/plugins";
+    for (name, alias) in [("tasks", "tk"), ("todo", "tk"), ("notes", "nt")] {
+        let manifest = TASKS
+            .replace(r#""tasks""#, &format!("{name:?}"))
+            .replace(r#""run":"#, &format!(r#""alias": "{alias}", "run":"#));
+        xdg.write(
+            &format!("{plugins}/{name}/plugin.json"),
+            Item::File(&manifest),
+        )
+        .write(
+            &format!("{plugins}/{name}/run"),
+            Item::Executable(&answering(RESULT, 0)),
+        );
+    }
+    let place = starts
+        .share(enabling(r#""tasks", "todo", "notes""#))
+        .stdin("{}")
+        .xdg(xdg.workdir().join("xdg"));
+    starts.kept.push(Box::new(xdg));
+    starts.add(&place, Code::PluginAliasConflict, "tk due");
+    starts.pair(&place, Code::PluginAliasConflict, "tk due", "nt due");
+}
+
 /// A call to a plugin whose schema the board holds otherwise, and `plugin
 /// list` on a board lacking an enabled plugin's schema.
 fn enabling_plugins(starts: &mut Starts) {
@@ -963,6 +989,7 @@ fn starts(twins: bool) -> Starts {
     unopened(&mut starts);
     calling_plugins(&mut starts);
     installed_again(&mut starts);
+    aliasing(&mut starts);
     enabling_plugins(&mut starts);
     apart(&mut starts);
     through_mounts(&mut starts);

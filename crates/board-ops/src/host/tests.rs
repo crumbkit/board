@@ -461,7 +461,7 @@ fn a_plugin_both_built_in_and_installed_is_refused_and_one_installed_under_anoth
             );
         }
         let name: PluginName = "fixture".parse().unwrap();
-        let enabled = board.plugin_enable(Some(&directory), None, &name);
+        let enabled = board.plugin_enable(Some(&directory), None, &name, &[]);
         assert_eq!(enabled.err().map(|error| error.code()), code, "{installed}");
         let listed = board.plugin_list(Some(&directory)).unwrap();
         let entry = (listed.plugins.iter())
@@ -498,7 +498,7 @@ fn a_built_in_plugin_is_listed_found_and_enabled_as_an_installed_one_is() {
         RefusalCode::Board(Code::PluginNotEnabled)
     );
 
-    let report = (board.plugin_enable(None, None, &"fixture".parse().unwrap())).unwrap();
+    let report = (board.plugin_enable(None, None, &"fixture".parse().unwrap(), &[])).unwrap();
     assert_eq!(
         report.put.writes.len(),
         2,

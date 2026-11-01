@@ -305,7 +305,8 @@ Examples:
         after_help = "\
 Board reads stdin only when no flag is given and the capability admits an
 input property that is not a flag; `-h` on the capability says which. With
---capability, the input goes on stdin.
+--capability, the input goes on stdin. A plugin's alias runs a capability
+too: with the alias gh, `board gh pr-create` is `board call github.pr-create`.
 
 Examples:
   board call tasks.available
@@ -409,12 +410,17 @@ pub(crate) fn run(
         return completed;
     }
     let parsing = Instant::now();
+    let crate::alias::Aliased {
+        arguments,
+        commands,
+        conflict,
+    } = crate::alias::read(arguments, context);
     let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
         sink,
-        graft::command(found.as_ref()),
+        graft::command(found.as_ref()).subcommands(commands),
         &graft::guide(found.as_ref()),
         arguments.clone(),
     );
@@ -440,6 +446,9 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     let printer = Printer { view };
+    if let Some(conflict) = conflict {
+        return render::refused(printer, conflict.refusal());
+    }
     if cli.command.owner_only()
         && let Some(refusal) = effects::from_plugin(context, ran)
     {
@@ -735,7 +744,10 @@ fn refs(
 /// The board holding `start`, or else the one known board with a mount
 /// whose repository holds `start`, and `start`'s logical path in that board,
 /// opened as this build.
-fn open(context: &Context, start: &Path) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
+pub(crate) fn open(
+    context: &Context,
+    start: &Path,
+) -> Result<(Board, Option<Prefix>), Box<Refusal>> {
     let (home, cache) = (context.home.as_deref(), context.cache.as_deref());
     let (mut board, prefix) = board_ops::open(start, home, cache, || context.known())?;
     board.built_by(crate::timing::DECIDER);

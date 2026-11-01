@@ -1,7 +1,7 @@
 //! `board plugin list`, `find` and `enable`.
 
 use board_model::{CapabilityName, PluginName};
-use board_ops::Board;
+use board_ops::{Board, EnableError};
 use board_plugin::MetaFilter;
 use clap::Subcommand;
 
@@ -59,8 +59,14 @@ pub(crate) fn plugin(
 ) -> Output {
     match command {
         PluginCommand::Enable { name } => {
-            match board.plugin_enable(context.plugins.as_deref(), context.cache.as_deref(), &name) {
+            let commands = crate::alias::commands();
+            let commands: Vec<&str> = commands.iter().map(String::as_str).collect();
+            let (plugins, cache) = (context.plugins.as_deref(), context.cache.as_deref());
+            match board.plugin_enable(plugins, cache, &name, &commands) {
                 Ok(report) => render::plugin_enable(printer, &report),
+                Err(EnableError::AliasConflict(conflict)) => {
+                    render::refused(printer, conflict.refusal())
+                }
                 Err(error) => render::refused(printer, plain(error.code(), &error)),
             }
         }
