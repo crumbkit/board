@@ -126,7 +126,7 @@ fn each_committed_schema_file_is_what_its_record_struct_generates() {
     let shipped = Plans.schemas();
     let types = Path::new(env!("CARGO_MANIFEST_DIR")).join("types");
     let overwrite = std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite");
-    assert_eq!(shipped.len(), 3);
+    assert_eq!(shipped.len(), 2);
     for (record_type, schema) in shipped {
         let file = types.join(format!("{}.schema.json", record_type.as_str()));
         let generated = canonical_json(&schema);

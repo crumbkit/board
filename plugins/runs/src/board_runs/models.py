@@ -227,7 +227,7 @@ class AgentRecord(Record):
 
     model_config = ConfigDict(json_schema_extra=shipped())
 
-    tag: Literal["runs/agent/v1"] = Field(alias="$type")
+    tag: Literal["runs/agent/v1"] = Field(alias="$type", description="The record's type.")
     session: str = Field(min_length=1, description="The session that started the subagent.")
     cwd: str = Field(pattern="^/", description="The directory the subagent runs in, absolute.")
     started: AwareDatetime = Field(description="When the subagent started, with a time zone.")

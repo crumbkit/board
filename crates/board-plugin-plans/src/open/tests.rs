@@ -399,5 +399,5 @@ fn board_calls_plans_open_in_its_own_process_over_the_boards_records() {
     assert_eq!(trace.work.get("started"), Some(&0));
     let phases: Vec<&str> = trace.phases.iter().map(|phase| phase.name).collect();
     assert!(!phases.contains(&"plugin.reply"), "{phases:?}");
-    assert_eq!(Plans.schemas().len(), 3);
+    assert_eq!(Plans.schemas().len(), 2);
 }
