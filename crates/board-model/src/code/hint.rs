@@ -535,7 +535,7 @@ fn generic(code: Code) -> &'static str {
             "remove the installed copy, the directory of that name in `$XDG_DATA_HOME/board/plugins/`; this Board has the plugin built in"
         }
         Code::PluginAliasConflict => {
-            "change or remove `alias` in the plugin.json the message names; board call <plugin>.<capability> runs the plugin's capabilities without an alias"
+            "change or remove `alias` in the plugin.json the message names; board call with the plugin and capability runs it without the alias"
         }
         Code::PluginBadInput => {
             "give the input as the flags that `board call <plugin>.<capability> -h` lists, or as JSON on stdin that matches the capability's `inputSchema`; `board plugin find --capability <name> --json` shows the schema"

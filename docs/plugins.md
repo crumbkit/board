@@ -187,9 +187,12 @@ the plugin's capabilities.
 
 `board plugin enable` refuses an alias that is a built-in command, or the
 alias of another enabled plugin, with `board::plugin::alias_conflict`; the
-message names the command or the plugin. A built-in command always runs in
-place of an alias of the same word. When two enabled plugins share an alias,
-running it is refused with the same code. `board call` runs either plugin.
+message names the manifest and the command or plugin. A built-in command
+always runs in place of an alias of the same word, and never reads an alias:
+Board reads the aliases only after clap refuses the first word, or for help.
+When two enabled plugins share an alias, running it is refused with the same
+code, and the hint names the `board call` line to run instead. The capability
+comes right after the alias; a flag in its place is a usage error.
 
 ## Codes
 

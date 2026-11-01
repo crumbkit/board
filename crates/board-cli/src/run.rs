@@ -405,19 +405,18 @@ pub(crate) fn run(
     stdin: &mut dyn Read,
     ran: &mut Ran,
 ) -> Output {
-    let arguments: Vec<OsString> = arguments.into_iter().collect();
+    let mut arguments: Vec<OsString> = arguments.into_iter().collect();
     if let Some(completed) = crate::complete::complete(&arguments, context) {
         return completed;
     }
     let parsing = Instant::now();
-    let aliased = crate::alias::read(arguments, context);
-    let arguments = aliased.arguments;
+    let aliases = crate::alias::before(&mut arguments, context);
     let found = graft::find(&arguments, context.built_in, context.plugins.as_deref());
     let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
     let sink = &mut Sink::new(&mut stdout, &mut stderr);
     let parsed = crumbkit::try_parse_to::<graft::Parsed, _, _, _, _>(
         sink,
-        graft::command(found.as_ref()).subcommands(aliased.commands),
+        graft::command(found.as_ref()).subcommands(aliases),
         &graft::guide(found.as_ref()),
         arguments.clone(),
     );
@@ -426,7 +425,7 @@ pub(crate) fn run(
         Ok(parsed) => parsed,
         Err(unparsed) => {
             if let Unparsed::Refused(refused) = &unparsed
-                && let Some(output) = render::too_many_paths(refused)
+                && let Some(output) = reread(&arguments, context, stdin, ran, refused)
             {
                 return output;
             }
@@ -443,9 +442,6 @@ pub(crate) fn run(
     let words = arguments.get(1..).unwrap_or_default();
     ran.command = Some(crumbkit::command_path(&Cli::command(), &GUIDE, words).join(" "));
     let printer = Printer { view };
-    if let Some(conflict) = aliased.conflict {
-        return render::refused(printer, conflict.refusal());
-    }
     if cli.command.owner_only()
         && let Some(refusal) = effects::from_plugin(context, ran)
     {
@@ -502,6 +498,29 @@ pub(crate) fn run(
     };
     ran.trace.extend(board.take_trace());
     output
+}
+
+/// The output of a refused command line that Board reads again: one that
+/// gives more paths than a run answers, or whose first word is an alias.
+fn reread(
+    arguments: &[OsString],
+    context: &Context,
+    stdin: &mut dyn Read,
+    ran: &mut Ran,
+    refused: &crumbkit::Refused,
+) -> Option<Output> {
+    if let Some(output) = render::too_many_paths(refused) {
+        return Some(output);
+    }
+    Some(match crate::alias::after(arguments, context, refused)? {
+        crate::alias::Resolved::Call(called) => run(called, context, stdin, ran),
+        crate::alias::Resolved::Refused(refusal) => {
+            let printer = Printer {
+                view: refused.output().clone(),
+            };
+            render::refused(printer, *refusal)
+        }
+    })
 }
 
 /// Lets `board` ask the owner to admit what `command` writes. Only a

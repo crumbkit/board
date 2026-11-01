@@ -1,29 +1,23 @@
 //! `board <alias> <capability>`: an enabled plugin's alias runs its
 //! capabilities as `board call <plugin>.<capability>` runs them
 //! (docs/plugins.md, Aliases).
+//!
+//! A built-in command never reads an alias. Board reads them only after
+//! clap refuses the first word as no command of its own, and before the
+//! parse only when the words ask for help, so that `board -h` lists them.
 
 use std::ffi::OsString;
 
-use board_ops::{AliasConflict, Collision};
+use board_model::{Code, Fields, Refusal};
 use board_plugin::Manifest;
-use clap::{Arg, Command, CommandFactory as _};
+use clap::error::ErrorKind;
+use clap::{Command, CommandFactory as _};
 
 use crate::config::Context;
 use crate::run::{Cli, entered, open};
 
 /// The word crumbkit answers with help, which no alias may take.
 const HELP: &str = "help";
-
-/// A command line once its alias is read.
-pub(crate) struct Aliased {
-    /// The words, with `<alias> <capability>` read as
-    /// `call <plugin>.<capability>`.
-    pub(crate) arguments: Vec<OsString>,
-    /// A command for each alias, which Board's tree gains for help.
-    pub(crate) commands: Vec<Command>,
-    /// Why the alias the words name refuses to run.
-    pub(crate) conflict: Option<AliasConflict>,
-}
 
 /// Board's built-in commands, which an alias may not be.
 pub(crate) fn commands() -> Vec<String> {
@@ -34,120 +28,150 @@ pub(crate) fn commands() -> Vec<String> {
     names.chain([HELP.to_owned()]).collect()
 }
 
-/// `arguments` with an alias of a plugin that the board Board runs as
-/// enables read as `board call`. Only a command line whose first word is
-/// no built-in command reads the board's aliases: `board -h`, `board help`
-/// and `board <alias>`.
-pub(crate) fn read(arguments: Vec<OsString>, context: &Context) -> Aliased {
-    let root = Cli::command();
-    let scan = scan(&root, &arguments);
-    let word = scan
-        .word
-        .and_then(|at| Some(arguments.get(at)?.to_str()?.to_owned()));
-    let built_in =
-        (word.as_deref()).is_some_and(|word| word != HELP && root.find_subcommand(word).is_some());
-    let manifests = if built_in {
-        Vec::new()
-    } else {
-        aliases(context, &scan)
-    };
-    let mut aliased = Aliased {
-        commands: help(&manifests),
-        arguments,
-        conflict: None,
-    };
-    let (Some(at), Some(word)) = (scan.word, word) else {
-        return aliased;
-    };
-    let mut named = (manifests.iter())
-        .filter_map(|manifest| Some((manifest, manifest.alias.as_ref()?)))
-        .filter(|(_, alias)| alias.as_str() == word);
-    let Some((manifest, alias)) = named.next() else {
-        return aliased;
-    };
-    aliased.conflict = named.next().map(|(other, _)| AliasConflict {
-        plugin: manifest.name.clone(),
-        alias: alias.clone(),
-        with: Collision::Plugin(other.name.clone()),
-    });
-    let capability = aliased.arguments.get(at + 1).and_then(|word| word.to_str());
-    if let Some(capability) = capability.filter(|word| !word.starts_with('-')) {
-        let target = format!("{}.{capability}", manifest.name);
-        aliased
-            .arguments
-            .splice(at..at + 2, ["call".into(), target.into()]);
+/// What an alias makes of a command line.
+pub(crate) enum Resolved {
+    /// The words with `<alias> <capability>` read as
+    /// `call <plugin>.<capability>`.
+    Call(Vec<OsString>),
+    Refused(Box<Refusal>),
+}
+
+/// For words that ask for help: a command for each alias, which Board's
+/// tree gains so that help lists it, and the words with an alias and its
+/// capability read as `board call`, whose help lists the flags.
+pub(crate) fn before(arguments: &mut Vec<OsString>, context: &Context) -> Vec<Command> {
+    let helps = |word: &OsString| ["-h", "--help", HELP].map(OsString::from).contains(word);
+    if !arguments.iter().skip(1).any(helps) {
+        return Vec::new();
     }
-    aliased
+    let (external, manifests) = read(arguments, context);
+    if let Some(external) = &external
+        && let Some(Resolved::Call(called)) = resolve(arguments, external, &manifests)
+    {
+        *arguments = called;
+    }
+    help(&manifests)
 }
 
-/// Where a command line names its first word, and how it moves the run's
-/// start: `-C` and `--personal`.
-struct Scan {
-    word: Option<usize>,
-    directories: Vec<OsString>,
-    personal: bool,
+/// After clap refused `refused` for a first word that is no command of
+/// Board's own: the call an alias of that word makes, or why it refuses.
+/// `None` when no enabled plugin has the alias, so clap's refusal stands.
+pub(crate) fn after(
+    arguments: &[OsString],
+    context: &Context,
+    refused: &crumbkit::Refused,
+) -> Option<Resolved> {
+    let unknown = refused.error()?.kind() == ErrorKind::InvalidSubcommand;
+    if !unknown || !refused.path().is_empty() {
+        return None;
+    }
+    let (external, manifests) = read(arguments, context);
+    resolve(arguments, &external?, &manifests)
 }
 
-/// The first word of `arguments` after the program that is neither one of
-/// `root`'s own flags nor a flag's value.
-fn scan(root: &Command, arguments: &[OsString]) -> Scan {
-    let mut scan = Scan {
-        word: None,
-        directories: Vec::new(),
-        personal: false,
+/// The first word that is no built-in command, where it is, and the words
+/// after it.
+struct External {
+    at: usize,
+    alias: String,
+    rest: Vec<OsString>,
+}
+
+/// The first word of `arguments` that is no built-in command, read by clap
+/// with every other root flag, and the manifest of each plugin with an
+/// alias that the board those flags lead to enables.
+fn read(arguments: &[OsString], context: &Context) -> (Option<External>, Vec<Manifest>) {
+    let root = Cli::command()
+        .allow_external_subcommands(true)
+        .disable_help_flag(true)
+        .disable_help_subcommand(true)
+        .ignore_errors(true);
+    let Ok(matches) = root.try_get_matches_from(arguments) else {
+        return (None, Vec::new());
     };
-    let mut at = 1;
-    while let Some(word) = arguments.get(at) {
-        let text = word.to_string_lossy();
-        let flag: Option<(&Arg, Option<&str>)> = if let Some(long) = text.strip_prefix("--") {
-            let (name, value) = long
-                .split_once('=')
-                .map_or((long, None), |(n, v)| (n, Some(v)));
-            (root.get_arguments())
-                .find(|arg| arg.get_long() == Some(name))
-                .map(|arg| (arg, value))
-        } else if let Some(short) = text.strip_prefix('-').filter(|short| !short.is_empty()) {
-            let mut chars = short.chars();
-            let letter = chars.next();
-            let rest = chars.as_str().trim_start_matches('=');
-            (root.get_arguments())
-                .find(|arg| arg.get_short() == letter)
-                .map(|arg| (arg, (!rest.is_empty()).then_some(rest)))
-        } else {
-            scan.word = Some(at);
-            return scan;
+    let directories: Vec<OsString> = (matches
+        .try_get_many::<OsString>("directories")
+        .ok()
+        .flatten())
+    .map(|values| values.cloned().collect())
+    .unwrap_or_default();
+    let personal = matches.get_flag("personal");
+    let external = matches.subcommand().and_then(|(alias, words)| {
+        let rest: Vec<OsString> = (words.try_get_many::<OsString>("").ok().flatten())
+            .map(|values| values.cloned().collect())
+            .unwrap_or_default();
+        let at = arguments.len().checked_sub(rest.len() + 1)?;
+        let alias = alias.to_owned();
+        Some(External { at, alias, rest })
+    });
+    (external, aliases(context, &directories, personal))
+}
+
+/// The call that `external`'s alias makes among `manifests`, or why it
+/// refuses. `None` when no plugin has the alias, or when help follows the
+/// alias, which its command in the tree answers.
+fn resolve(
+    arguments: &[OsString],
+    external: &External,
+    manifests: &[Manifest],
+) -> Option<Resolved> {
+    let alias = external.alias.as_str();
+    let mut named = (manifests.iter()).filter(|manifest| manifest_alias(manifest) == Some(alias));
+    let manifest = named.next()?;
+    let plugin = &manifest.name;
+    let capability = external.rest.first().and_then(|word| word.to_str());
+    if let Some(other) = named.next() {
+        let message = format!(
+            "the alias {alias} is declared by both the {plugin} and {} plugins, which the board enables",
+            other.name
+        );
+        let next = capability
+            .filter(|word| !word.starts_with('-'))
+            .map_or_else(
+                || "`board plugin list` lists the plugins".to_owned(),
+                |capability| format!("run `board call {plugin}.{capability}`"),
+            );
+        let hint = format!("{next}; change or remove `alias` in one plugin's plugin.json");
+        let fields = Fields {
+            plugin: Some(plugin.clone()),
+            ..Fields::default()
         };
-        at += 1;
-        let Some((arg, value)) = flag else {
-            continue;
-        };
-        let takes = arg.get_action().takes_values();
-        let value = match value {
-            Some(value) => Some(OsString::from(value)),
-            None if takes => {
-                at += 1;
-                arguments.get(at - 1).cloned()
-            }
-            None => None,
-        };
-        match arg.get_id().as_str() {
-            "directories" => scan.directories.extend(value),
-            "personal" => scan.personal = true,
-            _ => {}
+        let refusal = Refusal::new(Code::PluginAliasConflict, message, &fields).with_hint(hint);
+        return Some(Resolved::Refused(Box::new(refusal)));
+    }
+    match capability {
+        Some("-h" | "--help") => None,
+        Some(capability) if !capability.starts_with('-') => {
+            let mut called = arguments.to_vec();
+            let target = format!("{plugin}.{capability}");
+            called.splice(external.at..external.at + 2, ["call".into(), target.into()]);
+            Some(Resolved::Call(called))
+        }
+        given => {
+            let given = given.map_or_else(
+                || "no capability".to_owned(),
+                |flag| format!("{flag} in its place"),
+            );
+            let message = format!(
+                "board {alias} takes the capability right after the alias, as in board {alias} <capability> [flags], and was given {given}"
+            );
+            let hint = format!("`board {alias} -h` lists the {plugin} plugin's capabilities");
+            let refusal = Refusal::new(Code::CliUsage, message, &Fields::default()).with_hint(hint);
+            Some(Resolved::Refused(Box::new(refusal)))
         }
     }
-    scan
 }
 
-/// The manifest of each plugin the board Board runs as enables that has
-/// an alias, or none when no board can be opened there.
-fn aliases(context: &Context, scan: &Scan) -> Vec<Manifest> {
-    let base = if scan.personal {
+/// The manifest of each plugin that the board Board runs as from
+/// `directories` and `personal` enables and that has an alias no built-in
+/// command takes, or none when no board can be opened there.
+fn aliases(context: &Context, directories: &[OsString], personal: bool) -> Vec<Manifest> {
+    let base = if personal {
         context.personal().ok()
     } else {
         Some(context.start.clone())
     };
-    let start = base.and_then(|base| entered(&base, &scan.directories).ok());
+    let start = base.and_then(|base| entered(&base, directories).ok());
     let Some((mut board, _)) = start.and_then(|start| open(context, &start).ok()) else {
         return Vec::new();
     };
@@ -158,26 +182,27 @@ fn aliases(context: &Context, scan: &Scan) -> Vec<Manifest> {
     // A built-in command always wins, so its alias names nothing.
     let commands = commands();
     manifests.retain(|manifest| {
-        alias(manifest).is_some_and(|alias| !commands.iter().any(|c| c == alias))
+        manifest_alias(manifest).is_some_and(|alias| !commands.iter().any(|c| c == alias))
     });
     manifests
 }
 
-fn alias(manifest: &Manifest) -> Option<&str> {
+fn manifest_alias(manifest: &Manifest) -> Option<&str> {
     manifest.alias.as_ref().map(board_plugin::Alias::as_str)
 }
 
-/// A command for each alias among `manifests`, the first plugin's where
-/// two share one, listing that plugin's capabilities.
+/// A command for each alias only one of `manifests` has, listing that
+/// plugin's capabilities. An alias two plugins share has none, so running
+/// it reaches its refusal.
 fn help(manifests: &[Manifest]) -> Vec<Command> {
-    let mut commands: Vec<Command> = Vec::new();
-    for manifest in manifests {
-        let Some(alias) = alias(manifest) else {
-            continue;
-        };
-        if commands.iter().any(|command| command.get_name() == alias) {
-            continue;
-        }
+    let shared = |alias: &str| {
+        (manifests.iter())
+            .filter(|manifest| manifest_alias(manifest) == Some(alias))
+            .count()
+            > 1
+    };
+    let commands = manifests.iter().filter_map(|manifest| {
+        let alias = manifest_alias(manifest).filter(|alias| !shared(alias))?;
         let plugin = &manifest.name;
         let about = format!(
             "Run a capability of the {plugin} plugin: `board {alias} <capability>` is `board call {plugin}.<capability>`."
@@ -185,12 +210,12 @@ fn help(manifests: &[Manifest]) -> Vec<Command> {
         let capabilities = (manifest.capabilities.iter()).map(|capability| {
             Command::new(capability.name.as_str().to_owned()).about(capability.description.clone())
         });
-        commands.push(
+        Some(
             Command::new(alias.to_owned())
                 .about(about)
                 .subcommand_required(true)
                 .subcommands(capabilities),
-        );
-    }
-    commands
+        )
+    });
+    commands.collect()
 }

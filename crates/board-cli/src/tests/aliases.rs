@@ -1,6 +1,12 @@
 //! `board <alias> <capability>` runs what `board call <plugin>.<capability>`
 //! runs (docs/plugins.md, Aliases).
 
+use std::ffi::OsString;
+use std::path::Path;
+
+use board_model::BINARY_NAME;
+use board_scenario::seed::mount_of;
+
 use super::plugins::RESULT;
 use super::*;
 
@@ -137,19 +143,123 @@ fn a_built_in_command_wins_over_an_alias_of_the_same_word() {
 }
 
 #[test]
-fn an_alias_two_enabled_plugins_share_is_refused_and_board_call_still_runs() {
-    let (board, data) = aliased(&["tasks", "todo"], "tk");
-    install(&data, "todo", "tk");
-    let output = run_in(&board, &data, &["--json", "tk", "due"]);
-    assert_eq!(output.code, 1);
-    assert_eq!(code(&output), "board::plugin::alias_conflict");
-    assert_eq!(
-        json(&output)["message"],
-        "the tasks plugin's alias tk is also the alias of the todo plugin, which the board enables"
+fn an_alias_two_enabled_plugins_share_is_refused_and_one_alone_runs() {
+    for (enabled, shared) in [(&["tasks", "todo"][..], true), (&["tasks"][..], false)] {
+        let (board, data) = aliased(enabled, "tk");
+        install(&data, "todo", "tk");
+        let output = run_in(&board, &data, &["--json", "tk", "due"]);
+        if !shared {
+            assert_eq!(output.code, 0, "{}", text(&output.stderr));
+            continue;
+        }
+        assert_eq!(output.code, 1);
+        assert_eq!(code(&output), "board::plugin::alias_conflict");
+        assert_eq!(
+            json(&output)["message"],
+            "the alias tk is declared by both the tasks and todo plugins, which the board enables"
+        );
+        let hint = json(&output)["recovery"]["text"].clone();
+        let hint = hint
+            .as_str()
+            .map_or_else(|| json(&output)["hint"].to_string(), str::to_owned);
+        assert!(hint.contains("run `board call tasks.due`"), "{hint}");
+        assert_eq!(taken(&data), None);
+        let call = run_in(&board, &data, &["--json", "call", "tasks.due"]);
+        assert_eq!(
+            call.code,
+            0,
+            "board call still runs: {}",
+            text(&call.stderr)
+        );
+    }
+}
+
+#[test]
+fn a_flag_before_the_capability_is_refused_saying_where_the_capability_goes_and_after_it_runs() {
+    let (board, data) = aliased(&["tasks"], "tk");
+    let output = run_in(&board, &data, &["tk", "--json", "due"]);
+    assert_eq!(output.code, 2);
+    assert!(
+        text(&output.stderr).contains(
+            "board tk takes the capability right after the alias, as in board tk <capability> [flags], and was given --json in its place"
+        ),
+        "{}",
+        text(&output.stderr)
     );
     assert_eq!(taken(&data), None);
-    let twin = run_in(&board, &data, &["--json", "call", "tasks.due"]);
+    let twin = run_in(&board, &data, &["tk", "due", "--json"]);
     assert_eq!(twin.code, 0, "{}", text(&twin.stderr));
+    let bare = run_in(&board, &data, &["--json", "tk"]);
+    assert_eq!(bare.code, 2);
+    assert_eq!(code(&bare), "board::cli::usage");
+}
+
+#[test]
+fn a_mounted_boards_plugins_provide_no_alias_and_the_board_board_runs_as_does() {
+    for (enabled, runs) in [(&[][..], false), (&["tasks"][..], true)] {
+        let (mounted, data) = aliased(&["tasks"], "tk");
+        let pinned = mounted.commit(&[("x.json", "{}")]);
+        let (board, _) = aliased(enabled, "tk");
+        let repo = mounted.workdir().to_str().unwrap();
+        board.write("vendor/m.json", Item::File(&mount_of(repo, pinned)));
+        let output = run_in(&board, &data, &["--json", "tk", "due"]);
+        assert_eq!(output.code, if runs { 0 } else { 2 }, "{enabled:?}");
+        assert_eq!(taken(&data).is_some(), runs, "{enabled:?}");
+    }
+}
+
+/// Runs `board` in `start` with plugins from `data` and `xdg`'s known
+/// boards file.
+fn run_known(start: &Path, data: &Scenario, xdg: &Scenario, arguments: &[&str]) -> Output {
+    let context = Context {
+        start: start.to_path_buf(),
+        home: None,
+        cache: None,
+        plugins: Some(data.workdir().join("plugins")),
+        boards: Some(xdg.workdir().join("board/config.json")),
+        signer: None,
+        allowed_signers: None,
+        environment: board_plugin::Environment {
+            path: Some("/usr/bin:/bin".into()),
+            ..board_plugin::Environment::default()
+        },
+        complete: None,
+        terminal: false,
+        browser: None,
+        binary: None,
+        cursor: None,
+        built_in: board_ops::BuiltIn::default(),
+    };
+    let arguments = std::iter::once(BINARY_NAME)
+        .chain(arguments.iter().copied())
+        .map(OsString::from);
+    run(arguments, &context, &mut &b""[..], &mut Ran::default())
+}
+
+#[test]
+fn dash_c_and_personal_lead_an_alias_to_the_board_that_enables_it() {
+    let (board, data) = aliased(&["tasks"], "tk");
+    let xdg = Scenario::new();
+    let known = json!({"personal": board.path()}).to_string();
+    xdg.write("board/config.json", Item::File(&known));
+    let outside = tempfile::tempdir().unwrap();
+    let path = board.path();
+    let lines: [&[&str]; 3] = [
+        &["-C", &path, "tk", "due"],
+        &["--personal", "tk", "due"],
+        &["tk", "due"],
+    ];
+    for line in lines {
+        let output = run_known(outside.path(), &data, &xdg, line);
+        let led = line.len() > 2;
+        assert_eq!(
+            output.code,
+            if led { 0 } else { 2 },
+            "{line:?}: {}",
+            text(&output.stderr)
+        );
+        assert_eq!(taken(&data).is_some(), led, "{line:?}");
+    }
 }
 
 #[test]
@@ -183,9 +293,14 @@ fn enable_refuses_an_alias_that_is_a_built_in_command_and_admits_another_word() 
         if refused {
             assert_eq!(output.code, 1);
             assert_eq!(code(&output), "board::plugin::alias_conflict");
-            assert_eq!(
-                json(&output)["message"],
-                "the tasks plugin's alias get is also Board's built-in command get"
+            let message = json(&output)["message"].to_string();
+            assert!(
+                message.starts_with("\"the tasks plugin's alias get, set in "),
+                "{message}"
+            );
+            assert!(
+                message.ends_with(", is also Board's built-in command get\""),
+                "{message}"
             );
         } else {
             assert_eq!(output.code, 0, "{}", text(&output.stdout));

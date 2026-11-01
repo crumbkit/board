@@ -5,12 +5,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, PluginName, RecordType, Source, TYPES_DIRECTORY, canonical_json};
-use board_plugin::{DiscoveryError, ManifestError};
+use board_plugin::{Alias, DiscoveryError, MANIFEST_FILE, ManifestError, Origin};
 use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 
 use crate::Board;
-use crate::alias::{AliasConflict, collision};
 use crate::board::config_file;
 use crate::check::CheckError;
 use crate::put::{Expect, Failure, PutError, PutReport, Removal, Schemas};
@@ -78,9 +77,33 @@ impl Board {
             });
         }
         if let Ok(manifest) = &found.manifest
-            && let Some(conflict) = collision(manifest, commands, &self.aliased(others))
+            && let Some(alias) = &manifest.alias
         {
-            return Err(conflict.into());
+            let other = || {
+                let aliased = self.aliased(others);
+                let other = aliased
+                    .into_iter()
+                    .find(|other| other.alias.as_ref() == Some(alias))?;
+                Some(format!(
+                    "the alias of the {} plugin, which the board enables",
+                    other.name
+                ))
+            };
+            let command = commands.iter().find(|command| **command == alias.as_str());
+            let with = command.map(|command| format!("Board's built-in command {command}"));
+            if let Some(with) = with.or_else(other) {
+                return Err(EnableError::AliasConflict {
+                    name: name.clone(),
+                    alias: alias.clone(),
+                    manifest: match &found.origin {
+                        Origin::Directory(directory) => {
+                            directory.join(MANIFEST_FILE).display().to_string()
+                        }
+                        Origin::BuiltIn { .. } => "Board's own copy".to_owned(),
+                    },
+                    with,
+                });
+            }
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -244,8 +267,14 @@ pub enum EnableError {
         "the board changed while the {name} plugin was being enabled, so nothing was written; run the enable again"
     )]
     Changed { name: PluginName },
-    #[error(transparent)]
-    AliasConflict(#[from] AliasConflict),
+    #[error("the {name} plugin's alias {alias}, set in {manifest}, is also {with}")]
+    AliasConflict {
+        name: PluginName,
+        alias: Alias,
+        /// Where the manifest is, as a message names it.
+        manifest: String,
+        with: String,
+    },
     #[error(transparent)]
     Records(#[from] CheckError),
     #[error(transparent)]
@@ -260,7 +289,7 @@ impl EnableError {
             Self::Duplicate { .. } => Code::PluginDuplicate,
             Self::Manifest { source, .. } => source.code(),
             Self::Schema { .. } => Code::PluginBadManifest,
-            Self::AliasConflict(_) => Code::PluginAliasConflict,
+            Self::AliasConflict { .. } => Code::PluginAliasConflict,
             Self::Changed { .. } => Code::PutStale,
             Self::Records(error) => error.code(),
             Self::Put(error) => error.code(),

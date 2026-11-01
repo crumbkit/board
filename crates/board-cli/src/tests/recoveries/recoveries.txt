@@ -751,7 +751,8 @@ board call plans.open
 
 board tk due
   fails with board::plugin::alias_conflict
-  hint
+  run board call tasks.due
+    exits 0
 
 board call notes.due
   fails with board::plugin::schema_differs

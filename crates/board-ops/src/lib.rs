@@ -28,7 +28,6 @@ mod verdict;
 
 pub use board_index::{Budget, Fallback, append_timing, source_name};
 
-pub use crate::alias::{AliasConflict, Collision, collision};
 pub use crate::attachment::{FetchError, MAX_INLINE_BYTES};
 pub use crate::board::{Backend, Board, Config, OpenError, Store};
 pub use crate::check::{CheckError, CheckReport, Checked, Detail};

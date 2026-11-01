@@ -492,9 +492,13 @@ fn an_alias_that_is_a_built_in_command_is_refused_and_another_word_is_admitted()
         if refused {
             let error = enabled.unwrap_err();
             assert_eq!(error.code(), Code::PluginAliasConflict);
+            let manifest = plugins.join("notes/plugin.json");
             assert_eq!(
                 error.to_string(),
-                "the notes plugin's alias get is also Board's built-in command get"
+                format!(
+                    "the notes plugin's alias get, set in {}, is also Board's built-in command get",
+                    manifest.display()
+                )
             );
             assert!(
                 open(&board).config().plugins.is_empty(),
@@ -528,9 +532,11 @@ fn an_alias_another_enabled_plugin_has_is_refused_and_admitted_while_that_plugin
         if refused {
             let error = enabled.unwrap_err();
             assert_eq!(error.code(), Code::PluginAliasConflict);
-            assert_eq!(
-                error.to_string(),
-                "the notes plugin's alias nt is also the alias of the other plugin, which the board enables"
+            assert!(
+                error
+                    .to_string()
+                    .ends_with("is also the alias of the other plugin, which the board enables"),
+                "{error}"
             );
         } else {
             enabled.unwrap();
