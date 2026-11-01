@@ -22,23 +22,15 @@ def check(request: CallRequest) -> CheckOutput:
     Without a path, the caller's repository is checked (caller.py); when it
     is none the board knows, nothing is. Under its board's root, every
     control of that board applies, even one that reaches no file. Under
-    another path, only those reaching a file there do. With `files`, only
-    those matching one of the named files do. A path in a mounted board also
-    reads that board's own controls, whose patterns are anchored at the
-    mount. A control with a rule is measured over all its files, wherever
-    they are, and must be within its budget; one without a rule is stated,
-    with its patterns and the number of its files under the path. A path that
-    names a link or mount is checked where it leads. A control Board marks
-    degraded, such as one whose reference dangles, is
-    `controls::control::degraded`, under any path, since what it applies to
-    is unknown; a measured control over its budget is
-    `controls::budget::exceeded`. Each error names every control it applies
-    to. A file reached by a reference and a pattern, or through a link,
-    counts once. Each file is read once, however many controls reach it,
-    with `board get` runs of up to 10,000 paths, and another run for paths
-    left over a run's 64 MiB output budget. The files each control's
-    patterns match come from `board query` pages of up to 10,000 rows. Each
-    list is cut at `limit`, after every budget is checked.
+    another path, only those reaching a file there do; with `files`, only
+    those matching a named file. A path in a mounted board also reads that
+    board's own controls, anchored at the mount. A control with a rule is
+    measured over all its files, wherever they are; one without is stated.
+    A degraded control is `controls::control::degraded` under any path, and
+    a budget overrun is `controls::budget::exceeded`, each naming every
+    control it applies to. A file counts once, and is read once, in batched
+    `board get` runs; matches come from `board query` pages of up to 10,000
+    rows. Each list is cut at `limit` after every budget is checked.
     """
     reading = Board(request.board.root, "controls")
     given = request.input
@@ -57,20 +49,15 @@ def check(request: CallRequest) -> CheckOutput:
     controls = board.controls(reading, own)
     files, unreadable = _files(reading, controls, own)
     named = given.get("files")
+    listed: set[str] = set()
     if named is None:
         reached = {logical: {file for file in files[logical] if _under(file, scope)} for logical in controls}
-        # A repo record without a checkout holds no files, so a control on it applies when it names it.
-        applying_by_name = {logical for logical, control in controls.items() if scope in _repos(control)}
+        # Under its board's root every control is listed, even one reaching no file, and a repo record
+        # without a checkout holds no files, so a control on it is listed when it names it.
+        listed = {logical for logical, control in controls.items() if scope in (control.board, *_repos(control))}
     else:
-        applying_by_name: set[str] = set()
         reached = _named(reading, files, scope, own, cast("list[str]", named))
-    # Under its board's root every control is listed, so one whose pattern reaches nothing shows with no files.
-    everything = named is None
-    applying = [
-        logical
-        for logical in sorted(controls)
-        if reached[logical] or logical in applying_by_name or (everything and scope == controls[logical].board)
-    ]
+    applying = [logical for logical in sorted(controls) if reached[logical] or logical in listed]
     budgets = [logical for logical in applying if controls[logical].record.get("rule") is not None]
     for logical in budgets:
         if logical in unreadable:
