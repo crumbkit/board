@@ -38,6 +38,15 @@ fn place(mount: &str, within: &str) -> Place {
     Place {
         mount: path(mount),
         within: path(within),
+        matched: crate::Matched::Mount,
+    }
+}
+
+/// The place of a repo record found by its remote.
+fn by_remote(record: &str) -> Place {
+    Place {
+        matched: crate::Matched::Remote,
+        ..place(record, "/")
     }
 }
 
@@ -198,9 +207,9 @@ fn an_unmounted_clone_is_placed_at_the_repo_record_its_origin_names_and_one_name
     clone.write("docs/a.md", Item::File("a"));
     let board = Scenario::new();
     board.write("repos/lib.json", Item::File(&repo("example-org/lib")));
-    assert_eq!(places(&board, clone.workdir()), [place("/repos/lib", "/")]);
+    assert_eq!(places(&board, clone.workdir()), [by_remote("/repos/lib")]);
     let docs = places(&board, &clone.workdir().join("docs"));
-    assert_eq!(docs, [place("/repos/lib", "/")]);
+    assert_eq!(docs, [by_remote("/repos/lib")]);
     assert_eq!(places(&board, other.workdir()), []);
 }
 
@@ -213,7 +222,7 @@ fn a_clone_with_no_origin_is_placed_nowhere_and_its_twin_with_one_at_its_record(
     assert_eq!(places(&board, bare.workdir()), []);
     assert_eq!(
         places(&board, originated.workdir()),
-        [place("/repos/lib", "/")]
+        [by_remote("/repos/lib")]
     );
 }
 
@@ -231,7 +240,7 @@ fn a_second_clone_of_a_mounted_repository_is_placed_at_its_repo_record_by_its_or
     let deep = mounted.workdir().join("docs");
     mounted.write("docs/a.md", Item::File("a"));
     assert_eq!(places(&board, &deep), [place("/repos/lib", "/docs")]);
-    assert_eq!(places(&board, clone.workdir()), [place("/repos/lib", "/")]);
+    assert_eq!(places(&board, clone.workdir()), [by_remote("/repos/lib")]);
 }
 
 #[test]
@@ -245,5 +254,5 @@ fn only_entries_the_cache_calls_repo_records_are_read_for_their_remote() {
     let (no, lib) = (|_: &str| false, |path: &str| path == "repos/lib.json");
     assert_eq!(repositories.places(&entries, &no, &no, clone.workdir()), []);
     let only = repositories.places(&entries, &no, &lib, clone.workdir());
-    assert_eq!(only, [place("/repos/lib", "/")]);
+    assert_eq!(only, [by_remote("/repos/lib")]);
 }

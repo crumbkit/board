@@ -1,7 +1,6 @@
 # Work records
 
-Every change to a repository is recorded in the board as small records that
-are written once. The `changes` plugin stops storing a change's phase and
+Every change to a repository is recorded as small records written once. The `changes` plugin stops storing a change's phase and
 editing it. A change's state, its next step and its holder are derived from
 which records exist, so no field goes stale when a session stops partway.
 
@@ -43,17 +42,16 @@ after the suite runs. `done_by` is one of five kinds, each with one rule:
 
 A new check names a new head, so the review step is not done again until a
 review covers it. A commit pushed with no new run leaves the steps done
-until the next run. An answer with any other choice leaves the change
-at approve, and the agent writes a new plan and asks again, or drops
-the change.
+until the next run. Any other choice leaves the change at approve;
+the agent plans and asks again, or drops it.
 
 `board call changes.seed` writes `/workflows/personal` (plan, build, review,
 land) and `/workflows/work` (approve added after plan) when they are
 missing. `start` picks a change's workflow from a link (`board/mount/v1`
 with `path`): `/workflows/repos/<name>` for one repository, else
 `/workflows/owners/<owner>` for the remote's owner, such as its GitHub
-organisation. With neither link, `start` refuses with
-`changes::workflow::unchosen`, naming both paths. `--workflow` overrides
+organisation. With neither, `start` refuses with
+`changes::workflow::unchosen`, naming both. `--workflow` overrides
 both.
 
 A step that a control adds (plan/control-scope.md), such as
@@ -81,8 +79,8 @@ All live under `/changes/<name>/`, except the change itself at
 A review brief stays at `/reviews/<id>/brief`, where `review.run` takes it,
 and gains `for` (the change), `step` and `repo`. With `repo`, `review.run`
 reads the range in the caller's clone, after checking that
-`shown_remote(caller_remote())` is that repo record's `remote`; it reads the board's own
-repository as today when `repo` is absent.
+`shown_remote(caller_remote())` is that repo record's `remote`; without
+`repo` it reads the board's own repository.
 
 A question that blocks a change names it in `for`, which plan/decisions.md
 adds; the question's stored `status`, including `withdrawn`, is unchanged.
@@ -111,8 +109,8 @@ Each takes the change as `--path /changes/<name>`, as today. A plugin's
 environment holds no session id, so the caller passes `--session`. `start` reads the branch from the caller's
 clone, as `caller_remote()` reads its origin, and refuses the default branch
 with `changes::branch::default`, so a change always names its work branch.
-Every command here runs as `board --personal call`
-(docs/architecture/paths/repos.md says why).
+Every call these plans add runs as `board --personal call`, because in a checkout of a repository that is itself a
+board, Board finds its `.board/board.json` first and runs as that board.
 
 - `start --title '<title>' --session <s> [--name <n>] [--handle @<you>] [--issue <url>] [--suite <s>] [--workflow <w>] [--repo-name <r>]`
   creates the caller's repo record at `/repos/<name>`, the remote's last
@@ -135,7 +133,7 @@ Every command here runs as `board --personal call`
   and the exact `controls.check` command for the change's repository. It
   holds at most 600 words and says what it left out.
 - `landed --commit <sha>` and `drop --why '<text>'` end the change.
-- `open [--limit <n>]`: read-only. Changes without `landed` or `dropped`.
+- `open [--limit <n>]`: read-only. Unended changes.
 - `pr` still drafts the pull request body; `pr.md` stays a draft file.
 
 `attach`, `advance` and the build gate on attached `tasks/task/v2` records
