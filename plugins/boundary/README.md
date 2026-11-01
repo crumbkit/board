@@ -62,6 +62,9 @@ free one. A refusal from `controls.evaluate`, such as
 `controls::control::not_found`, is `boundary::board::refused` carrying that
 code. Until Board can ask a model, a judged rule with a part to read is
 refused that way with `controls::judged::unavailable`.
+Results that the plugin cannot read, which happens only when the boundary
+and controls plugins come from different Board builds, refuse the check
+with `boundary::evaluate::unreadable`.
 
 Any entry under `/boundaries/` that is not a valid boundary, because it does
 not parse, has another type or fails its schema, a boundary elsewhere that

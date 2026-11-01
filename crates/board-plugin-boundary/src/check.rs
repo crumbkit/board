@@ -215,8 +215,16 @@ fn evaluate(
     for (controls, texts) in groups {
         let input = json!({"controls": controls, "parts": texts});
         let report = (host.call(&target, &input)).map_err(|refusal| refused("call", &refusal))?;
-        let results = Vec::<Verdict>::deserialize(&report.output["results"])
-            .expect("controls.evaluate's output schema admits only results a Verdict reads");
+        // `Verdict` repeats controls' result type, so a field added there
+        // refuses the check instead of letting the content through.
+        let results = Vec::<Verdict>::deserialize(&report.output["results"]).map_err(|error| {
+            PluginError {
+                code: "boundary::evaluate::unreadable".to_owned(),
+                message: format!("controls.evaluate gave results this plugin cannot read: {error}"),
+                fields: Map::new(),
+                hint: Some("update Board so its boundary and controls plugins agree".to_owned()),
+            }
+        })?;
         verdicts.extend(results);
     }
     verdicts.sort_by(|a, b| (&a.control, &a.part).cmp(&(&b.control, &b.part)));
