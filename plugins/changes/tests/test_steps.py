@@ -1,5 +1,6 @@
 """`next`: a change's steps, each derived from which records exist, with a twin record set for each rule."""
 
+import json
 from typing import Any
 
 from conftest import BASE, HEAD, PATH, PLAN, Board, change, clone, mount, record, report, run, setup
@@ -244,3 +245,22 @@ def test_a_change_goes_from_start_to_landed_with_next_reporting_each_step(board:
     assert following() == ("land", "owner")
     board.call("landed", {"path": "/changes/t", "commit": HEAD})
     assert following() == (None, None)
+
+
+def test_a_budget_over_its_max_never_stops_next_though_controls_check_refuses(board: Board) -> None:
+    setup(board)
+    (board.root / "repos/app.json").unlink()
+    mount(board, clone(board, {"README.md": "one two three\n"}))
+    budget = {
+        "requirement": "The README stays short.",
+        "purpose": "Agents read it whole.",
+        "repos": ["/repos/app"],
+        "paths": ["README.md"],
+        "rule": {"budget": "words", "max": 1},
+        "adds_step": "docs-review",
+    }
+    board.write("controls/readme.json", record("controls/control/v1", **budget))
+    ran = board.run("--json", "call", "controls.check", "--path", "/repos/app")
+    assert json.loads(ran.stdout)["code"] == "controls::budget::exceeded"
+    assert steps(board)["docs-review"]["if_touched"] is True
+    assert board.call("next", {"path": PATH})["next"] == "plan"

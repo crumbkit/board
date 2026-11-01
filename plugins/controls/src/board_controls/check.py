@@ -38,7 +38,9 @@ def check(request: CallRequest) -> CheckOutput:
     with `board get` runs of up to 10,000 paths, and another run for paths
     left over a run's 64 MiB output budget. The files each control's
     patterns match come from `board query` pages of up to 10,000 rows. Each
-    list is cut at `limit`, after every budget is checked.
+    list is cut at `limit`, after every budget is checked. With `measure`
+    false, budgets are listed among `stated` without being measured, so no
+    budget refuses the check.
     """
     reading = Board(request.board.root, "controls")
     given = request.input
@@ -71,7 +73,9 @@ def check(request: CallRequest) -> CheckOutput:
         for logical in sorted(controls)
         if reached[logical] or logical in applying_by_name or (everything and scope == controls[logical].board)
     ]
-    budgets = [logical for logical in applying if controls[logical].record.get("rule") is not None]
+    # Without measuring, a budget is listed as a stated control and never refuses the check.
+    measuring = bool(given.get("measure", True))
+    budgets = [logical for logical in applying if measuring and controls[logical].record.get("rule") is not None]
     for logical in budgets:
         if logical in unreadable:
             raise _unreadable(logical, *unreadable[logical])

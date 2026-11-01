@@ -212,7 +212,7 @@ class StartInput(Strict):
     repo_name: str | SkipJsonSchema[None] = Field(
         default=None,
         alias="repo-name",
-        pattern="^[A-Za-z0-9._-]+$",
+        pattern="^[a-z0-9][a-z0-9-]{0,59}$",
         description="The name of a new repo record, /repos/<name>; the remote's last segment when left out.",
     )
 
@@ -429,6 +429,9 @@ class Given(Strict):
     branch: str | SkipJsonSchema[None] = Field(default=None, description="The change's branch.")
     suite: Reference | SkipJsonSchema[None] = Field(
         default=None, description="The change's check suite, a runs/suite/v1."
+    )
+    commit: Commit | SkipJsonSchema[None] = Field(
+        default=None, description="The merge commit of a change whose v1 phase is done."
     )
 
 

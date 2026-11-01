@@ -132,6 +132,16 @@ class CheckInput(TypedDict):
             ),
         ]
     ]
+    measure: NotRequired[
+        Annotated[
+            bool,
+            Extra(
+                default=True,
+                description="Whether to measure each budget, refusing the check when one is over; when false,"
+                " budgets are listed among `stated` unmeasured. True when left out.",
+            ),
+        ]
+    ]
     limit: NotRequired[
         Annotated[
             int,

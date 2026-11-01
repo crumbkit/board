@@ -72,6 +72,14 @@ def test_a_control_over_its_budget_fails_the_check_and_one_at_it_passes(board: B
     assert admitted["data"]["output"]["measured"][0]["used"] == WORDS
 
 
+def test_without_measuring_a_budget_over_its_max_is_listed_unmeasured_and_measuring_refuses(board: Board) -> None:
+    over(board, 2)
+    listed = board.call_json("check", {"measure": False})["data"]["output"]
+    assert listed["measured"] == []
+    assert [item["control"] for item in listed["stated"]] == ["/controls/context"]
+    assert board.call_json("check", {"measure": True})["code"] == "controls::budget::exceeded"
+
+
 def test_a_control_whose_file_is_missing_fails_the_check_and_one_whose_file_exists_passes(board: Board) -> None:
     board.write(
         "controls/context.json", control("Short.", applies_to=["/AGENTS.md"], rule={"budget": "bytes", "max": 9})

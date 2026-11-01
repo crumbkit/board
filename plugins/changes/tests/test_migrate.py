@@ -97,3 +97,33 @@ def test_an_unmounted_repository_owes_a_branch_and_suite_and_both_given_migrate_
     given = {"/changes/t": {"branch": "work", "suite": "/suites/checks"}}
     assert migrate(board, apply=True, changes=given)["owed"] == []
     assert board.read("changes/t.json")["suite"] == "/suites/checks"
+
+
+def test_a_dropped_v1_change_gets_a_dropped_record_and_ends(board: Board) -> None:
+    head = mounted_app(board)
+    old(board, head=head, phase="dropped")
+    migrate(board, apply=True)
+    assert board.read("changes/t/dropped.json")["$type"] == "changes/dropped/v1"
+    assert board.call("next", {"path": "/changes/t"})["ended"] == "dropped"
+
+
+def test_a_done_v1_change_owes_its_merge_commit_and_one_given_it_lands(board: Board) -> None:
+    head = mounted_app(board)
+    old(board, head=head, phase="done")
+    owed = migrate(board, apply=True)["owed"]
+    assert len(owed) == 1
+    assert "/changes/t has no commit" in owed[0]
+    assert board.read("changes/t.json")["$type"] == "changes/change/v1"
+    migrate(board, apply=True, changes={"/changes/t": {"commit": head}})
+    assert board.read("changes/t/landed.json") == {"$type": "changes/landed/v1", "commit": head}
+    assert board.call("next", {"path": "/changes/t"})["ended"] == "landed"
+
+
+def test_a_branch_git_cannot_read_is_owed_and_a_given_one_is_admitted(board: Board) -> None:
+    head = mounted_app(board)
+    old(board, head=head)
+    clone_dir = board.root.parent / "app-clone"
+    (clone_dir / ".git").rename(clone_dir / "git-moved")
+    assert "/changes/t has no branch" in migrate(board)["owed"][0]
+    (clone_dir / "git-moved").rename(clone_dir / ".git")
+    assert migrate(board)["owed"] == []

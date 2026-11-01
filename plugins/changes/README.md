@@ -71,16 +71,17 @@ step undone.
 
 - **Steps**: the workflow's steps; then `approve` (owner, `answer`), after
   the first `plan` step, when the route is `ask-first`, or `unread` with any
-  workflow but `/workflows/personal`, unless a step is already done by an
-  answer; then each step a control adds.
+  workflow but `/workflows/personal`, unless the workflow already has a step
+  of kind `answer`; then each step a control adds.
 - A control adds the step its `adds_step` names (plugins/controls/README.md)
   when it matches a file in the files record at the head. `next` asks
   `controls.check` for the repository with those files. An added step has
   actor `reviewer` and kind `review`, and comes after the last reviewer step.
-  Without a files record at the head, the steps every control reaching the
-  repository's mounted files could add are listed with `if_touched: true`.
-  An unmounted repository has no files in the board, so it lists none
-  until the files are recorded.
+  Without a files record at the head, the steps every control on the
+  repository could add are listed with `if_touched: true`: those reaching
+  its mounted files, and those whose `repos` names it, mounted or not.
+  `next` asks without measuring budgets, so a file over a budget never
+  stops it.
 - **Next step**: the first step that is not done, and its actor.
 - **Ended**: `landed` or `dropped` exists. An ended change has no next step
   and takes no new record.
@@ -226,11 +227,13 @@ Enabling this version keeps the v1 schema while such records exist
 - `plan`, the Markdown path, becomes a `changes/plan/v1` whose `text`
   references it and whose `uses` is empty. The Markdown stays where it is.
 - `pull_request` becomes an `opened` record.
+- A change at phase `dropped` gets a `dropped` record. One at phase `done`
+  gets a `landed` record, whose merge commit must be given as `commit`.
 - `phase`, `head` and `records` are dropped. The steps are derived, the head
   comes from checks, and the files `records` listed stay in the change's
   directory.
 
-A change whose branch or suite cannot be found is left as v1, and `owed`
+A change whose branch, suite or merge commit cannot be found is left as v1, and `owed`
 says what to give for it. Give it on stdin:
 
     board --personal call changes.migrate <<'JSON'
