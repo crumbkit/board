@@ -1,14 +1,14 @@
 //! Deciding each entry of one source: its path, then parsing, then its
 //! schema, validation and references, or for a pointer its target.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::convert::Infallible;
 
 use board_index::{IndexError, Resolved, ValidationFact, Writer};
 use board_model::{
-    BINDING_TYPE, Change, Classified, Code, Content, Kind, Location, LogicalPath, Object, ObjectId,
-    POINTER_TYPE, RecordType, Role, Source, classify,
+    BINDING_TYPE, Board, Change, Classified, Code, Content, Kind, Location, LogicalPath, Object,
+    ObjectId, REPO_TYPE, RecordType, Repo, Role, Source, classify, parse_json,
 };
 use board_tree::{
     Contents, Entry, GitError, Mounted, Reader, Refused, Repositories, ResolveError, Status, latest,
@@ -198,6 +198,9 @@ pub(super) struct Decide<'a> {
     /// Whether a read or resolution failed for a reason that may pass, so
     /// that what was decided must not be kept.
     pub(super) failed: Cell<bool>,
+    /// The `remote` of each valid repo record of the source, by physical
+    /// path, with its path from the root; read once, when first needed.
+    pub(super) remotes: OnceCell<HashMap<String, (String, String)>>,
 }
 
 impl Decide<'_> {
@@ -231,6 +234,9 @@ impl Decide<'_> {
             });
             return Ok(Ok(Some((code, detail))));
         }
+        if let Some(failure) = self.duplicate(entry, fact) {
+            return Ok(Ok(Some(failure)));
+        }
         match fact.fact.kind {
             Kind::Pointer => Ok(Ok(entry
                 .logical
@@ -260,6 +266,65 @@ impl Decide<'_> {
             Kind::File => Ok(Ok(self.links(entry, &fact.fact.links, reached))),
             Kind::Schema | Kind::Json => Ok(Ok(None)),
         }
+    }
+
+    /// The failure of a repo record whose `remote` another repo record of
+    /// the source holds too.
+    fn duplicate(&self, entry: &Entry, fact: &Indexed) -> Option<Failure> {
+        (fact.fact.record_type.as_ref()?.as_str() == REPO_TYPE).then_some(())?;
+        let remotes = self.remotes.get_or_init(|| self.read_remotes());
+        let (remote, _) = remotes.get(&entry.path)?;
+        let mut others: Vec<&str> = (remotes.iter())
+            .filter(|(path, (other, _))| other == remote && **path != entry.path)
+            .map(|(_, (_, shown))| shown.as_str())
+            .collect();
+        if others.is_empty() {
+            return None;
+        }
+        others.sort_unstable();
+        let detail = Detail {
+            reason: format!(
+                "names the repository {remote}, which {} also names",
+                others.join(", ")
+            ),
+            failures: 1,
+            ..Detail::default()
+        };
+        Some((Code::RepoDuplicateRemote, Some(detail)))
+    }
+
+    /// The `remote` of each valid repo record the walk listed, by physical
+    /// path, with its path from the root.
+    fn read_remotes(&self) -> HashMap<String, (String, String)> {
+        let board = match self.mounted {
+            Some(mounted) => Board {
+                repository: mounted.repository.path().to_path_buf(),
+                source: Source::Commit(mounted.commit),
+            },
+            None => Board {
+                repository: self.repositories.root().path().to_path_buf(),
+                source: Source::WorkingTree,
+            },
+        };
+        let repo = |entry: &Entry| {
+            let indexed = self.facts.get(&entry.path)?;
+            let fact = &indexed.fact;
+            let is_repo = fact.record_type.as_ref().map(RecordType::as_str) == Some(REPO_TYPE);
+            (is_repo && fact.code.is_none() && entry.status == Status::Ok).then_some(())?;
+            let location = Location {
+                board: board.clone(),
+                path: entry.path.clone(),
+                object: Object::Blob(indexed.blob),
+                pointers: Vec::new(),
+            };
+            let contents = self.read(&location, indexed.blob).ok()??;
+            let remote = Repo::from_value(&parse_json(&contents.bytes).ok()?)
+                .ok()?
+                .remote;
+            let shown = self.display(entry.logical.as_ref()?)?.to_string();
+            Some((entry.path.clone(), (remote, shown)))
+        };
+        self.listed.iter().filter_map(repo).collect()
     }
 
     /// Follows the links of a Markdown file, each from the file's own path,
@@ -465,10 +530,9 @@ impl Decide<'_> {
                 None => return Ok(self.read_type(location, blob)),
             },
         };
-        Ok(match (fact.code, fact.kind) {
-            (Some(_), _) => None,
-            (None, Kind::Pointer) => POINTER_TYPE.parse().ok(),
-            (None, _) => fact.record_type,
+        Ok(match fact.code {
+            Some(_) => None,
+            None => fact.record_type,
         })
     }
 
@@ -503,13 +567,9 @@ pub(crate) fn read_type(
 fn type_of(path: &str, contents: &Contents) -> Option<RecordType> {
     match classify(path, Some(&contents.bytes)) {
         Classified {
-            content: Content::Record { record_type, .. },
+            content: Content::Record { record_type, .. } | Content::Pointer { record_type, .. },
             code: None,
         } => Some(record_type),
-        Classified {
-            content: Content::Pointer { .. },
-            code: None,
-        } => POINTER_TYPE.parse().ok(),
         _ => None,
     }
 }

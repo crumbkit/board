@@ -577,6 +577,7 @@ fn a_pointer_the_index_does_not_hold_is_read_as_the_pointer_type_and_a_record_as
         })),
         reader: std::cell::RefCell::new(board.repository().reader()),
         failed: std::cell::Cell::new(false),
+        remotes: std::cell::OnceCell::new(),
     };
     let at = |path: &str, text: &str| {
         let location = Location {
@@ -612,6 +613,7 @@ fn a_record_whose_validation_the_index_lacks_cannot_be_checked_and_one_it_holds_
         })),
         reader: std::cell::RefCell::new(board.repository().reader()),
         failed: std::cell::Cell::new(false),
+        remotes: std::cell::OnceCell::new(),
     };
     let blob = ObjectId::from_hex("0123456789abcdef0123456789abcdef01234567").unwrap();
     let record = |validation| Indexed {

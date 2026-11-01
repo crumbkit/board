@@ -252,7 +252,7 @@ const TASK_SCHEMA: &str = r#"{
 
 /// Exhibits in the root board that are text: path, text and code.
 #[rustfmt::skip]
-const TEXT: [(&str, &str, Option<Code>); 32] = [
+const TEXT: [(&str, &str, Option<Code>); 35] = [
     ("json/parse.json", "{", Some(Code::JsonParse)),
     ("json/conflict.json", "{\n<<<<<<< HEAD\n}\n", Some(Code::JsonMergeConflict)),
     ("json/duplicate.json", r#"{"a": 1, "a": 2}"#, Some(Code::JsonDuplicateKey)),
@@ -285,6 +285,10 @@ const TEXT: [(&str, &str, Option<Code>); 32] = [
         r#"{"$type": "board/mount/v1", "repo": "https://example.com/b.git", "follow": "main", "commit": "0101010101010101010101010101010101010101"}"#,
         Some(Code::MountRemoteUnsupported),
     ),
+    // Two repo records of one repository, and one of another.
+    ("repos/a.json", r#"{"$type": "board/repo/v1", "remote": "example-org/a"}"#, Some(Code::RepoDuplicateRemote)),
+    ("repos/again.json", r#"{"$type": "board/repo/v1", "remote": "example-org/a"}"#, Some(Code::RepoDuplicateRemote)),
+    ("repos/b.json", r#"{"$type": "board/repo/v1", "remote": "example-org/b"}"#, None),
     // Only `.board/board.json` configures the board, but any file of its type must read as one.
     ("config/stray.json", r#"{"$type": "board/config/v1", "colour": "red"}"#, Some(Code::ConfigInvalid)),
     ("plugins/broken/plugin.json", r#"{"$type": "board/plugin-manifest/v1"}"#, Some(Code::PluginBadManifest)),

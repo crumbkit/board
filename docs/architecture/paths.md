@@ -59,7 +59,9 @@ symlink's own path; architecture/paths/symlinks.md says how Board follows it.
 
 ## Pointers: links and mounts
 
-A pointer is a record of type `board/mount/v1` holding exactly one target:
+A pointer is a record of type `board/mount/v1` holding exactly one target,
+or a repo record, of type `board/repo/v1`, with a `checkout`, which is a
+mount; architecture/paths/repos.md describes repo records.
 
 ```json
 { "$type": "board/mount/v1", "path": "/work/company-name/projects/x" }

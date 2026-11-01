@@ -31,7 +31,8 @@ directory of each other board whose recorded root it can see is gone.
 The `entries` view joins these across the root and its mounts, one row per
 entry: `source`, `path`, `logical` (the display path), `blob`, `size`, `kind`,
 `type`, `status`, `code`, `change`, `role` and `schema` (the schema blob a
-record was checked against). The `records` view is its rows of kind `record`,
+record was checked against). A pointer's `type` is `board/mount/v1` or
+`board/repo/v1`. The `records` view is its rows of kind `record`,
 with `source`, `path`, `logical`, `blob`, `type`, `status`, `code` and `body`;
 `body` is NULL when the record does not parse. A `code` of `board::ref::dangling` or
 `board::ref::wrong_type` marks a broken reference in a record its schema

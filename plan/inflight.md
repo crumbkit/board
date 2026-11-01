@@ -9,7 +9,7 @@ when it starts as well as when it stops.
 ## Recording subagents
 
 The runs mod writes two records per subagent, each once. It runs Board as
-`board --personal`, as every call these plans add does (plan/repos.md), so
+`board --personal`, as every call these plans add does (docs/architecture/paths/repos.md), so
 its records, its gate and its brief come from the personal board whatever
 the session's directory.
 

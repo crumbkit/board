@@ -148,8 +148,9 @@ pub fn asker(
 }
 
 /// The board holding `start`, or else the one known board with a mount
-/// whose repository holds `start`, and `start`'s logical path in that
-/// board, if it has one. `known` reads the known boards, only when no board
+/// whose repository holds `start`, or with a repo record whose `remote` is
+/// that repository's origin, and `start`'s logical path in that board, if
+/// it has one. `known` reads the known boards, only when no board
 /// holds `start` and `start` is in a git repository, since outside one no
 /// mount can hold it.
 pub fn open(
@@ -200,8 +201,8 @@ fn shown(file: Option<&Path>) -> String {
     })
 }
 
-/// The one known board with a mount whose repository holds `start`, and
-/// `start`'s logical path in it. Otherwise `lost`, the refusal when no board
+/// The one known board with a mount whose repository holds `start`, or
+/// else a repo record for it, and `start`'s logical path in it. Otherwise `lost`, the refusal when no board
 /// holds `start`, says which known boards were read and which were passed
 /// over because they could not be opened or refreshed. A board listed under
 /// several spellings counts once.
@@ -267,11 +268,11 @@ fn unmounted(lost: Refusal, shown: &str, none: bool, skipped: &[String]) -> Refu
         ),
     };
     let message = format!(
-        "{}; the known boards in `{shown}` were read and none mounts this repository{passed}",
+        "{}; the known boards in `{shown}` were read and none has a mount or repo record for this repository{passed}",
         lost.message
     );
     Refusal { message, ..lost }.with_hint(format!(
-        "put a `board/mount/v1` record whose `repo` is this repository into one of the known boards with `board -C <board> put <path>`, or list in `{shown}` the board that mounts it"
+        "put a `board/repo/v1` record whose `remote` is this repository's origin, as `owner/name` for GitHub, into one of the known boards with `board -C <board> put /repos/<name>`, or list in `{shown}` the board that has one"
     ))
 }
 

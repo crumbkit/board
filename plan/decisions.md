@@ -74,7 +74,7 @@ Nothing on the record changes after it is written. Its state is derived:
 The eval record stops storing what can be derived. `status` goes, and
 `abandoned` (a reason) comes in. `decision` is renamed `informs`, since it
 holds the question the eval informs, written before any decision exists.
-`mounts` becomes `repos`, holding repo record references (plan/repos.md).
+`mounts` becomes `repos`, holding repo record references (docs/architecture/paths/repos.md).
 
 - **Planned**: no `runs`.
 - **Running**: `runs` and no `verdict`.

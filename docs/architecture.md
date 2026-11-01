@@ -34,10 +34,13 @@ directory's repository, so a linked worktree matches too. With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
 is the mount's path joined with the directory's path beneath the
 repository's root, such as `/repos/crumbkit/docs`, and the timing log
-records it. A directory inside the git directory has no prefix and
+records it. In a known board with no such mount, a repo record whose
+`remote` is the repository's origin matches instead, with its own path as
+the prefix (architecture/paths/repos.md). A directory inside the git directory has no prefix and
 matches nothing. No match is `board::config::not_found`. When the file lists
-boards, the message says they were read and none mounts the repository, and
-the hint says to add a mount; otherwise the hint says to list a board. More
+boards, the message says they were read and none has a mount or repo record
+for the repository, and the hint says to add a repo record; otherwise the
+hint says to list a board. More
 than one match, counting every mount of every known board, is
 `board::config::ambiguous`; `-C` then picks a board. A known board that
 cannot be opened or refreshed is passed over, and a `not_found` message
@@ -75,7 +78,7 @@ kind and a status.
 | Kind | What it is |
 | --- | --- |
 | record | a `.json` file whose top-level object has a `$type` string, or [typed Markdown](architecture/records/frontmatter.md); `.board/board.json` is one |
-| pointer | a record of type `board/mount/v1` (a link or a mount) |
+| pointer | a record of type `board/mount/v1` (a link or a mount), or a `board/repo/v1` record with a `checkout` (a mount) |
 | schema | a file under `.board/types/` ending `.schema.json` |
 | json | any other `.json` file |
 | file | anything else: Markdown, images, code |
@@ -131,7 +134,7 @@ and so is each record of its type. `record::invalid` names the first failing
 instance pointer in sorted order.
 
 Board's own documents (`board/*`) refuse unknown fields. User records follow
-their schema. Board knows `board/config/v1`, `board/mount/v1`,
+their schema. Board knows `board/config/v1`, `board/mount/v1`, `board/repo/v1`,
 `board/plugin-manifest/v1`, `board/attachment/v1`, and the effects types
 `board/effect/v1` and `board/seen/v1` wherever they are stored. A manifest is checked by its content alone; a
 broken one is `plugin::bad_manifest`. Any other `board/*` type is
@@ -230,7 +233,7 @@ tables and views, how a refresh decides what to redo, and `board query` and
 2. checks it with the codes `check` uses: size and strict parse, `$type`,
    schema, validity, and that references parse. A reference need not resolve.
    Input that is not one JSON object with a `$type` is `board::put::invalid`.
-   `board/mount/v1`, `board/config/v1` and `board/attachment/v1` are checked
+   `board/mount/v1`, `board/repo/v1`, `board/config/v1` and `board/attachment/v1` are checked
    as their own types;
 3. resolves and checks the path, as architecture/paths.md says under Writes;
 4. with `--expect <blob>`, or `--expect none` for a new file, refuses with

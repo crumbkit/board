@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use board_model::{Content, LogicalPath, POINTER_TYPE, RecordType};
+use board_model::{Content, LogicalPath, RecordType};
 
 use super::new::{drawn, folder_text};
 use super::{PutError, PutReport, Schemas, checked};
@@ -48,12 +48,15 @@ impl Board {
         let unplaced = |refused| PutError::Unplaced { refused };
         let classified = checked(bytes).map_err(unplaced)?;
         let record_type = match &classified.content {
-            Content::Record { record_type, .. } => record_type.clone(),
-            // `admit` refuses every other content but a mount record.
-            _ => (POINTER_TYPE.parse()).expect("POINTER_TYPE is a record type; a test parses it"),
+            Content::Record { record_type, .. } | Content::Pointer { record_type, .. } => {
+                Some(record_type.clone())
+            }
+            _ => None,
         };
         let mut schemas = Schemas::default();
         (self.admit(&mut schemas, classified)).map_err(|fault| unplaced(fault.into()))?;
+        let record_type =
+            record_type.expect("`admit` refuses every content but a record or a pointer");
         let declared = (schemas.held.get(&record_type))
             .and_then(|schema| schema.as_ref().ok())
             .and_then(|schema| schema.document().get("x-board-folder")?.as_str());

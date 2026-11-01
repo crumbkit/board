@@ -111,11 +111,14 @@ Each takes the change as `--path /changes/<name>`, as today. A plugin's
 environment holds no session id, so the caller passes `--session`. `start` reads the branch from the caller's
 clone, as `caller_remote()` reads its origin, and refuses the default branch
 with `changes::branch::default`, so a change always names its work branch.
-Every command here runs as `board --personal call` (plan/repos.md).
+Every command here runs as `board --personal call`
+(docs/architecture/paths/repos.md says why).
 
 - `start --title '<title>' --session <s> [--name <n>] [--handle @<you>] [--issue <url>] [--suite <s>] [--workflow <w>] [--repo-name <r>]`
-  creates the repo record if needed, then the change and a claim, for the
-  caller's repository.
+  creates the caller's repo record at `/repos/<name>`, the remote's last
+  path segment, unless one has its remote, then the change and a claim.
+  Another remote's record there is `changes::repo::name_taken`, suggesting
+  `--repo-name`.
 - `plan` writes a plan from `{path, file, uses}` on stdin, since `uses` is
   an array. It refuses a reference that reaches nothing
   (`changes::ref::dangling`) and a file over 3,000 words
@@ -133,8 +136,7 @@ Every command here runs as `board --personal call` (plan/repos.md).
   holds at most 600 words and says what it left out.
 - `landed --commit <sha>` and `drop --why '<text>'` end the change.
 - `open [--limit <n>]`: read-only. Changes without `landed` or `dropped`.
-- `pr` still drafts the pull request body, with its `Closes` line. `pr.md`
-  stays a draft file, not a record.
+- `pr` still drafts the pull request body; `pr.md` stays a draft file.
 
 `attach`, `advance` and the build gate on attached `tasks/task/v2` records
 go.
@@ -150,8 +152,7 @@ Work across two repositories is two changes, each plan naming the other in
 
 ## Build
 
-One pull request in the changes, review and runs plugins. It includes
-`start`'s creation of repo records (plan/repos.md). The tests:
+One pull request in the changes, review and runs plugins. The tests:
 
 - Each kind's rule, with a twin record set that does not satisfy it.
 - A new head undoes the review step.

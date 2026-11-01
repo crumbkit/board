@@ -14,6 +14,7 @@ use crate::effect::EFFECT_TYPES;
 use crate::frontmatter::frontmatter;
 use crate::json::parse_json;
 use crate::pointer::{POINTER_TYPE, Pointer, pointer_from_value};
+use crate::repo::REPO_TYPE;
 use crate::ui::{BINDING_TYPE, DERIVED_TYPE, VIEW_TYPE};
 
 /// The `$type` of `.board/board.json`.
@@ -56,7 +57,13 @@ impl RecordType {
     pub fn is_known(&self) -> bool {
         matches!(
             self.0.as_str(),
-            CONFIG_TYPE | MANIFEST_TYPE | ATTACHMENT_TYPE | VIEW_TYPE | BINDING_TYPE | DERIVED_TYPE
+            CONFIG_TYPE
+                | MANIFEST_TYPE
+                | ATTACHMENT_TYPE
+                | VIEW_TYPE
+                | BINDING_TYPE
+                | DERIVED_TYPE
+                | REPO_TYPE
         ) || EFFECT_TYPES.contains(&self.0.as_str())
     }
 
@@ -159,6 +166,8 @@ pub enum Content {
         value: Value,
     },
     Pointer {
+        /// [`POINTER_TYPE`] or [`REPO_TYPE`].
+        record_type: RecordType,
         pointer: Pointer,
         value: Value,
     },
@@ -292,8 +301,13 @@ impl Role {
             return Classified::unparsed(Kind::Record, Code::RecordBadType);
         };
         match record_type.as_str() {
-            POINTER_TYPE => match pointer_from_value(&value) {
-                Ok(pointer) => Classified::ok(Content::Pointer { pointer, value }),
+            POINTER_TYPE | REPO_TYPE => match pointer_from_value(&value) {
+                Ok(Some(pointer)) => Classified::ok(Content::Pointer {
+                    record_type,
+                    pointer,
+                    value,
+                }),
+                Ok(None) => Classified::ok(Content::Record { record_type, value }),
                 Err(error) => Classified::unparsed(Kind::Pointer, error.code()),
             },
             _ => Classified {

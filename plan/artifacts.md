@@ -53,7 +53,7 @@ record never changes.
 ## Keeping the records current
 
 An `artifacts` mod for Claude Code writes the records. It runs Board as
-`board --personal`, as every call these plans add does (plan/repos.md), so
+`board --personal`, as every call these plans add does (docs/architecture/paths/repos.md), so
 the records land in the personal board whatever the session's directory.
 
 - After every successful publish, it writes the artifact record if it is
