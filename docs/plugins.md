@@ -178,11 +178,11 @@ with `board::plugin::too_deep`.
 
 ## Aliases
 
-A plugin whose manifest sets `"alias": "gh"` can be run as
-`board gh <capability> [flags]`, which runs exactly what
+A plugin whose manifest sets `"alias": "gh"` can be run as board gh
+followed by a capability and its flags, which runs exactly what
 `board call <plugin>.<capability> [flags]` runs. Only the plugins that the
 board Board runs as enables provide aliases; a mounted board's plugins provide
-none. `board -h` lists each alias beside its plugin, and `board gh -h` lists
+none. `board -h` lists each alias beside its plugin, and board gh -h lists
 the plugin's capabilities.
 
 `board plugin enable` refuses an alias that is a built-in command, or the

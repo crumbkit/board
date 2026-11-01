@@ -671,7 +671,7 @@ fn aliasing(starts: &mut Starts) {
         .xdg(xdg.workdir().join("xdg"));
     starts.kept.push(Box::new(xdg));
     starts.add(&place, Code::PluginAliasConflict, "tk due");
-    starts.pair(&place, Code::PluginAliasConflict, "tk due", "nt due");
+    starts.untwinned(&place, Code::PluginAliasConflict, "tk due", ALIAS_CONFLICT);
 }
 
 /// A call to a plugin whose schema the board holds otherwise, and `plugin
@@ -1019,6 +1019,7 @@ const ALLOW: &[Allow] = &[
 ];
 
 /// Why each code without a twin has none.
+const ALIAS_CONFLICT: &str = "an alias is no command of Board's own tree, so the refused line runs no command and a twin one word apart runs none either; an_alias_two_enabled_plugins_share_is_refused_and_board_call_still_runs in board-cli/src/tests/aliases.rs pairs the code";
 const NOT_A_BINDING: &str = "the admitted twin would start a server and a browser; a_page_for_a_record_that_is_not_a_binding_is_refused_and_one_for_a_binding_is_drawn in board-ops/src/ui/tests.rs pairs the code";
 const PUT_FAILED: &str = "init fails because a directory stands where board.json goes, and no word of the line names that; init_refuses_a_directory_where_board_json_goes_and_admits_a_file in board-ops/src/init/tests.rs pairs the code";
 const PUT_INVALID: &str = "the record on stdin has no $type, and no word of the line names the record; input_that_is_not_one_object_with_a_type_is_refused_and_its_twin_is_admitted in board-ops/src/put/tests.rs pairs the code";
