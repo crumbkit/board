@@ -130,6 +130,8 @@ def test_after_the_migration_open_lists_each_waiting_decision_under_one_question
     assert waiting["/projects/lib/decisions/filled"][0].startswith("/projects/lib/questions/")
     questions = board.call("plans.open", {})["questions"]
     assert {question["session"] for question in questions} == {SESSION}
+    texts = sorted(question["question"].split("?")[0] for question in questions)
+    assert texts == ["Do you accept the 1 decision listed in `for`", "Do you accept the 2 decisions listed in `for`"]
 
 
 def test_the_plans_report_finds_a_stub_the_runs_mod_writes_after_the_migration_and_not_a_migrated_one(

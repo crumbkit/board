@@ -14,6 +14,8 @@ const INLINE = /raw (HTML|Markdown) follows\]$/
 const COWRITTEN = /<(cowritten-artifact-[a-z]+)>\n([\s\S]*)\n<\/\1>/
 // A put refused with this found the file already there: the version is recorded.
 const STALE = 'board::put::stale'
+// The `limit` the skill's artifacts sync step lists with, the most the Artifact tool lists.
+const SYNC_LIMIT = 200
 // A refusal with one of these means the personal board does not take these
 // records at all: no personal board, or no artifacts plugin. Only the debug log says so.
 const QUIET = ['board::config::not_found', 'board::record::unknown_type', 'board::plugin::not_enabled', 'board::plugin::not_installed']
@@ -27,15 +29,26 @@ type Ran = { exitCode: number; stdout: string; stderr: string }
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
 
-/** The page a read result's text holds or names, or undefined when it holds only part of one. */
+/** The page a read result's text holds or names, or undefined when it holds only part of one.
+ *
+ * The header is the first line that starts with `[Artifact `; a notice, such
+ * as one saying the read is of a newer version, may come before it. Bracketed
+ * notes, such as how many files the version has and what is stored for it,
+ * may follow it before an inline page, and are not part of the page.
+ */
 export function readPage(text: string): Page | undefined {
-  const [header = '', ...rest] = text.split('\n')
+  const lines = text.split('\n')
+  const at = lines.findIndex(line => line.startsWith('[Artifact '))
+  if (at === -1) return undefined
+  const header = lines[at]!
   const saved = SAVED.exec(header)
   if (saved !== null) return { file: saved[1]!, ext: saved[2] as 'html' | 'md' }
   const inline = INLINE.exec(header)
   if (inline === null) return undefined
   const ext = inline[1] === 'HTML' ? 'html' : 'md'
-  const body = (rest[0]?.startsWith('[Stored ') ? rest.slice(1) : rest).join('\n')
+  let start = at + 1
+  while (start < lines.length && /^\[.*\]$/.test(lines[start]!)) start += 1
+  const body = lines.slice(start).join('\n')
   const tagged = COWRITTEN.exec(body)
   return { text: tagged === null ? body : tagged[2]!, ext }
 }
@@ -143,7 +156,7 @@ type Listing = { artifacts: { url: string }[]; scope?: string }
 type Imported = { written: string[]; known: number; truncated: { message: string } | null }
 
 /** Passes the listing to artifacts.import; resolves what the agent should be told, if anything. */
-async function imported($: EngineInterface, listing: Listing): Promise<string | undefined> {
+async function imported($: EngineInterface, listing: Listing, sync: boolean): Promise<string | undefined> {
   try {
     const email = await account($)
     if (email === undefined) {
@@ -160,14 +173,18 @@ async function imported($: EngineInterface, listing: Listing): Promise<string | 
       'Read each with the Artifact tool\'s read action so the mod records its current version:',
       ...urls.map(url => `- ${url}`),
     ]
-    return [...lines, ...(output.truncated === null ? [] : [`The listing was truncated: ${output.truncated.message}.`])].join('\n')
+    // Only the sync step, which lists 200, asks the agent to act. A listing of 200 rows
+    // that says it is truncated is all the tool will list; a shorter one was cut by its limit.
+    if (!sync) return undefined
+    const final = output.truncated !== null && listing.artifacts.length === SYNC_LIMIT
+    return [...lines, ...(final ? [`The listing was truncated: ${output.truncated!.message}.`] : [])].join('\n')
   } catch (error) {
     refused($, 'the listing was not imported', error)
     return undefined
   }
 }
 
-type Published = { url?: string; version?: string; title?: string; path?: string }
+type Published = { url?: string; version?: string; title?: string; path?: string; owned?: boolean }
 type Read = { read?: { url: string; code: number; title?: string }; owned?: boolean; artifactRead?: { ver?: string } }
 
 export const register: Register = on => {
@@ -179,7 +196,8 @@ export const register: Register = on => {
       const result = ran.result as Published
       // A publish that names no local page, such as one through an Artifact type, has no copy.
       const source = e.file_path === undefined ? undefined : (result.path ?? e.file_path)
-      if (result.url !== undefined) {
+      // A publish to another person's artifact, which the owner may edit, is not the owner's artifact.
+      if (result.url !== undefined && result.owned !== false) {
         const page = sentPage(source)
         await record($, {
           url: result.url,
@@ -208,7 +226,7 @@ export const register: Register = on => {
     } else if (action === 'list' && (e.scope ?? 'mine') === 'mine' && e.type === undefined && e.type_url === undefined && e.url === undefined) {
       const listing = ran.result as Listing
       if (!Array.isArray(listing.artifacts) || listing.scope !== undefined) return ran
-      const told = await imported($, listing)
+      const told = await imported($, listing, e.limit === SYNC_LIMIT)
       if (told !== undefined) return { ...ran, context: [...(ran.context ?? []), told] }
     }
     return ran

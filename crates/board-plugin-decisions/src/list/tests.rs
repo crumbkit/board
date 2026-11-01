@@ -262,9 +262,43 @@ fn a_decision_board_marks_degraded_or_without_a_time_is_left_out_and_a_dangling_
         json!("board::ref::dangling"),
         json!(written.decisions[0][2].clone()),
     ]);
-    let paths: Vec<_> = about_eval(written)
-        .into_iter()
-        .map(|(path, ..)| path)
-        .collect();
+    let output = written.call(about, &json!({"ref": "/evals/e"}));
+    let paths: Vec<_> = states(&output).into_iter().map(|(path, ..)| path).collect();
     assert_eq!(paths, [A, "/projects/p/decisions/d"]);
+    assert_eq!(output["unreadable"], 2, "B has no time and c is invalid");
+    assert_eq!(
+        on_eval().call(about, &json!({"ref": "/evals/e"}))["unreadable"],
+        0
+    );
+}
+
+#[test]
+fn a_question_board_marks_degraded_or_without_a_status_is_counted_unreadable_and_a_dangling_one_is_read()
+ {
+    let mut written = on_eval().question("/projects/p/questions/q", "open", &[A]);
+    let body = written.questions[0][2].clone();
+    written.questions.push(vec![
+        json!("/projects/p/questions/invalid"),
+        json!("board::record::invalid"),
+        body.clone(),
+    ]);
+    written.questions.push(vec![
+        json!("/projects/p/questions/dangling"),
+        json!("board::ref::dangling"),
+        body,
+    ]);
+    written = written.question("/projects/p/questions/odd", "someday", &[A]);
+    let output = written.call(open, &json!({}));
+    assert_eq!(
+        output["unreadable"], 2,
+        "the invalid question and the one whose status is unknown"
+    );
+    assert_eq!(
+        output["decisions"][0]["questions"],
+        json!(["/projects/p/questions/dangling", "/projects/p/questions/q"])
+    );
+    let clean = on_eval()
+        .question("/projects/p/questions/q", "open", &[A])
+        .call(open, &json!({}));
+    assert_eq!(clean["unreadable"], 0);
 }

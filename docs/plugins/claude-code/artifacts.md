@@ -42,15 +42,25 @@ SHA-256 when the result has none.
   input's, when it passed one. A publish with no `file_path`, such as one
   that creates an artifact from an Artifact type, or whose file is a data
   file, records the version with `copy: "none"`. An upload of assets
-  (`asset: true`) records nothing.
+  (`asset: true`) records nothing. A publish whose result says
+  `owned: false`, to another person's artifact the owner may edit, records
+  nothing, so only the owner's own artifacts are recorded.
 - **A read** of an artifact's page records the version the result names in
   `artifactRead.ver`, with the page that came back. This catches edits made
   in the web app, by a page that saves itself, or from another conversation.
   The structured result holds no page, so the mod reads the text the model
-  reads. A large page is in the file the header names after `saved to`,
-  which the mod copies. A smaller one follows the header inline, inside a
+  reads. The header is the first line that starts with `[Artifact `, since
+  a notice, such as one saying the read is of a newer version, may come
+  first. A large page is in the file the header names after `saved to`,
+  which the mod copies. A smaller one follows the header inline, after any
+  bracketed notes such as the version's file count and what is stored for
+  it, which the mod leaves out. The page is inside a
   `<cowritten-artifact-html>` tag when another session may have written it,
-  and the mod writes that text. A read of a file inside an artifact (`path`
+  and the mod writes that text. A version recorded from a read holds the
+  page as claude.ai serves it, wrapped in the skeleton a publish adds, so its
+  bytes and hash differ from the source file a publish of the same content
+  sent. The Markdown form of the header, `raw Markdown follows`, is assumed;
+  no real transcript has shown it yet. A read of a file inside an artifact (`path`
   or `paths`), of an artifact the owner does not own, or whose text holds
   only part of the page, records nothing.
 
@@ -61,8 +71,11 @@ After the `list` action with no `scope` (or `mine`), no `type`, no
 `board --personal call artifacts.import` with the account. It then adds a
 row the person does not see after the tool's result, naming each new
 artifact and asking the agent to read it, so that the read records its
-version, and passing on a truncated listing's message. The plugin's skill
-calls this `artifacts sync`.
+version, and passing on a truncated listing's message. It adds that row
+only when the call's `limit` was 200, which is the plugin's skill's
+`artifacts sync` step; any other listing is imported without asking the
+agent anything. It calls a listing truncated only when it holds 200 rows,
+since a shorter one that says it is truncated was cut by its own limit.
 
 ## What the transcript shows
 

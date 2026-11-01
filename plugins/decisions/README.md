@@ -70,11 +70,13 @@ not superseded whose `basis` names the path or an entry under it, newest
 first, so an agent can ask what was decided about an eval, a plan or a file.
 Both read this board and its mounted boards, take a `limit` of 1 to 10,000
 (100 by default), and return `{"decisions": [...], "total": n,
-"truncated": bool}`. Each decision is its `path`, `decision`, `why`,
+"truncated": bool, "unreadable": n}`. `unreadable` counts the decisions, and
+the questions with a `for`, that were left out because Board marks them
+degraded for anything but a reference or this plugin cannot read them, such
+as a decision whose `decided` is not a time. Each decision is its `path`, `decision`, `why`,
 `decided`, `basis`, `urls`, `review` (`awaiting`, `reviewed` or
 `unreviewed`), `questions` (the open questions whose `for` names it) and
-`superseded`. A decision Board marks degraded for anything but a reference
-is left out, as is one whose `decided` is not a time.
+`superseded`.
 
 `evals.about` and `evals.open` read decisions too: each eval lists in
 `decisions` those not superseded whose `basis` names it.

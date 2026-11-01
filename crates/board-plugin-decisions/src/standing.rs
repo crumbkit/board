@@ -28,6 +28,14 @@ pub struct Decision {
     pub superseded: bool,
 }
 
+/// Every readable decision, and how many decisions were left out because
+/// Board marks them degraded or this plugin cannot read them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Read {
+    pub decisions: Vec<Decision>,
+    pub unreadable: usize,
+}
+
 /// A decision as a mounted board's own, possibly looser, schema may admit
 /// it. An unknown field is ignored.
 #[derive(Deserialize)]
@@ -45,7 +53,7 @@ struct Stored {
     supersedes: Vec<String>,
 }
 
-/// Every readable decision, in no order. A decision Board marks degraded
+/// Every readable decision, in no order, and the count of those left out. A decision Board marks degraded
 /// for anything but the tree is left out, as is one this plugin cannot
 /// read. `plugin` names the caller in the code of a refused query.
 ///
@@ -53,17 +61,19 @@ struct Stored {
 /// `supersedes`. Paths are compared as written, so a reference through a
 /// link, or one a mounted board's decision makes to its own board, matches
 /// nothing; decisions live in the owner's board, where neither happens.
-pub fn decisions(host: &dyn Host, plugin: &str) -> Result<Vec<Decision>, PluginError> {
+pub fn decisions(host: &dyn Host, plugin: &str) -> Result<Read, PluginError> {
     let report = (host.query(DECISIONS, Limit::ALL))
         .map_err(|error| PluginError::board_refused(plugin, "query", &error.refusal()))?;
     let mut found = Vec::new();
     let mut superseded = HashSet::new();
+    let mut unreadable = 0;
     for row in &report.rows {
         let [Value::String(path), code, body] = &row[..] else {
             continue;
         };
         let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
         let Some((stored, when)) = tree.then(|| readable(body)).flatten() else {
+            unreadable += 1;
             continue;
         };
         superseded.extend(stored.supersedes);
@@ -81,7 +91,10 @@ pub fn decisions(host: &dyn Host, plugin: &str) -> Result<Vec<Decision>, PluginE
     for decision in &mut found {
         decision.superseded = superseded.contains(&decision.path);
     }
-    Ok(found)
+    Ok(Read {
+        decisions: found,
+        unreadable,
+    })
 }
 
 /// `None` when `body` is not a decision this plugin reads: one whose
