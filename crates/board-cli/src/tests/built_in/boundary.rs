@@ -17,11 +17,13 @@ const PRIVATE: &str = r"acme-\d{3}";
 
 /// The owner's personal board, which enables controls and boundary and does
 /// not commit, named in a known boards file, with the test signer, whose key
-/// the allowed signers file holds.
+/// the allowed signers file holds, and an index cache.
 struct Personal {
     board: Scenario,
     xdg: Scenario,
     signer: Signer,
+    /// The index cache, where the signer also keeps its statements.
+    cache: tempfile::TempDir,
 }
 
 impl Personal {
@@ -30,6 +32,7 @@ impl Personal {
             board: uncommitted(),
             xdg: Scenario::new(),
             signer: Signer::new(),
+            cache: tempfile::tempdir().unwrap(),
         };
         let known = json!({"personal": personal.board.path()}).to_string();
         personal.xdg.write("board/config.json", Item::File(&known));
@@ -51,7 +54,7 @@ impl Personal {
         let context = Context {
             start: directory.to_path_buf(),
             home: None,
-            cache: None,
+            cache: Some(self.cache.path().to_path_buf()),
             plugins: None,
             boards: Some(self.xdg.workdir().join("board/config.json")),
             signer: Some(self.signer.program().into_os_string()),
