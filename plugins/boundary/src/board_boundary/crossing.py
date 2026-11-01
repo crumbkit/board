@@ -35,6 +35,11 @@ NO_RULE = "this control has no rule, so it cannot check content; give it a rule,
 NAMED = 20
 # A valid record: one Board marks ok, or degraded only for a reference that dangles or reaches the wrong type.
 VALID = f"(status = 'ok' OR code IN ({', '.join(map(literal, TREE_CODES))}))"
+# The op the owner approves to let one failed crossing through, and how Board refuses a decide it has not admitted.
+OVERRIDE = "boundary.override"
+ASKED = "board::settings::asked"
+REFUSED = "board::settings::refused"
+ADMITTED = "admitted"
 
 
 def personal(request: CallRequest) -> Board:
@@ -62,6 +67,58 @@ def check(request: CallRequest) -> CheckOutput:
     origin = cast("str | None", request.input.get("from"))
     parts = cast("dict[str, str]", request.input["parts"])
     matched = {path: record for path, record in _boundaries(board).items() if _matches(record, action, to, origin)}
+    verdicts, unchecked = _evaluate(board, matched, parts)
+    failed = [verdict for verdict in verdicts if verdict["status"] in {"failed", "stated"}]
+    key = digest(action, to, parts)
+    path = CROSSINGS + key
+    # Only a failure asks the owner, so a passing crossing writes no effect.
+    answer, effect = _override(board, path, action, to, parts) if failed else (None, None)
+    approved = answer == ADMITTED
+    passed = not failed or approved
+    crossing = CrossingRecord(
+        {
+            "$type": CROSSING_TYPE,
+            "digest": key,
+            "action": action,
+            "to": to,
+            "passed": passed,
+            "boundaries": sorted(matched),
+            "verdicts": verdicts,
+        }
+    )
+    if origin is not None:
+        crossing["from"] = origin
+    if approved:
+        crossing["override"] = cast("str", effect)
+    line: dict[str, object] = {"path": path, "record": crossing}
+    prior = _crossing(board, key)
+    if prior is not None:
+        line["expect"] = prior[1]
+        if passed and "result" in prior[0]:
+            crossing["result"] = prior[0]["result"]
+    board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
+    if not passed:
+        raise _overridable(_refusal(action, key, path, failed), cast("str", effect), refused=answer == REFUSED)
+    note = None
+    if not matched:
+        note = f"no boundary matches {action} to {to}" + (f" from {origin}" if origin else "") + "; nothing was checked"
+    elif not verdicts:
+        note = "the boundaries that match name no control for these parts; nothing was checked"
+    return CheckOutput(
+        digest=key,
+        crossing=path,
+        boundaries=sorted(matched),
+        verdicts=verdicts,
+        unchecked=unchecked,
+        note=note,
+        override=effect if approved else None,
+    )
+
+
+def _evaluate(
+    board: Board, matched: dict[str, BoundaryRecord], parts: dict[str, str]
+) -> tuple[list[Verdict], list[str]]:
+    """Every verdict of the matched boundaries' controls on the parts, and the parts no check names."""
     groups: dict[tuple[str, ...], dict[str, str]] = {}
     unchecked: list[str] = []
     for name, text in sorted(parts.items()):
@@ -83,39 +140,31 @@ def check(request: CallRequest) -> CheckOutput:
         report = board.document("call", "controls.evaluate", stdin=stdin)
         verdicts += cast("list[Verdict]", report["data"]["output"]["results"])
     verdicts.sort(key=lambda verdict: (verdict["control"], verdict["part"]))
-    failed = [verdict for verdict in verdicts if verdict["status"] in {"failed", "stated"}]
-    key = digest(action, to, parts)
-    crossing = CrossingRecord(
-        {
-            "$type": CROSSING_TYPE,
-            "digest": key,
-            "action": action,
-            "to": to,
-            "passed": not failed,
-            "boundaries": sorted(matched),
-            "verdicts": verdicts,
-        }
-    )
-    if origin is not None:
-        crossing["from"] = origin
-    path = CROSSINGS + key
-    line: dict[str, object] = {"path": path, "record": crossing}
-    prior = _crossing(board, key)
-    if prior is not None:
-        line["expect"] = prior[1]
-        if not failed and "result" in prior[0]:
-            crossing["result"] = prior[0]["result"]
-    board.document("put", "--batch", stdin=(json.dumps(line) + "\n").encode())
-    if failed:
-        raise _refusal(action, key, path, failed)
-    note = None
-    if not matched:
-        note = f"no boundary matches {action} to {to}" + (f" from {origin}" if origin else "") + "; nothing was checked"
-    elif not verdicts:
-        note = "the boundaries that match name no control for these parts; nothing was checked"
-    return CheckOutput(
-        digest=key, crossing=path, boundaries=sorted(matched), verdicts=verdicts, unchecked=unchecked, note=note
-    )
+    return verdicts, unchecked
+
+
+def _override(board: Board, path: str, action: str, to: str, parts: dict[str, str]) -> tuple[str, str | None]:
+    """How the owner answered letting the failed crossing at `path` through, and the effect that asks or approved it.
+
+    The answer is ADMITTED, ASKED or REFUSED.
+
+    `board decide` shows the owner the content, so the signed approval names
+    what it lets through, and the path's digest binds the approval to that
+    content. Board refuses content over 1 MiB with `board::json::too_large`,
+    which reaches the caller as `boundary::board::refused`, so such content
+    cannot be overridden (a soft limit; showing only the parts the checks
+    failed on would raise it). Under `board call` Board always
+    names the plugin, so an admitted decide names the effect that approved it.
+    """
+    text = f"{action} to {to}\n" + "".join(f"\n{name}:\n{body}\n" for name, body in sorted(parts.items()))
+    try:
+        report = board.document("decide", "--op", OVERRIDE, "--path", path, "--text", "-", stdin=text.encode())
+    except PluginError as error:
+        code = error.fields.get("code")
+        if code in {ASKED, REFUSED}:
+            return str(code), str(error.fields["effect"])
+        raise
+    return ADMITTED, cast("str | None", report["data"]["effect"])
 
 
 def _boundaries(board: Board) -> dict[str, BoundaryRecord]:
@@ -181,6 +230,19 @@ def _matches(record: BoundaryRecord, action: str, to: str, origin: str | None) -
     if "from" not in record or origin is None:
         return True
     return any(origin == path or origin.startswith(path.rstrip("/") + "/") for path in record["from"])
+
+
+def _overridable(refusal: PluginError, effect: str, *, refused: bool) -> PluginError:
+    """`refusal`, ending with what the owner may do about the override `effect`, or that they refused it."""
+    if refused:
+        owner = f" The owner refused to let this exact content through ({effect})."
+    else:
+        owner = (
+            f" The owner may approve this exact content instead with `board answer {effect} approve`; then check again."
+        )
+    recovery = cast("dict[str, str]", refusal.fields["recovery"])
+    fields = refusal.fields | {"effect": effect, "recovery": recovery | {"text": recovery["text"] + owner}}
+    return PluginError(refusal.code, refusal.message + owner, fields)
 
 
 def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginError:

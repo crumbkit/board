@@ -132,8 +132,13 @@
       "format": "board-ref",
       "type": "string"
     },
+    "override": {
+      "description": "The id of the owner's approved effect that let this content through its failed checks.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
     "passed": {
-      "description": "Whether every check passed.",
+      "description": "Whether every check passed, or the owner approved an override.",
       "type": "boolean"
     },
     "result": {

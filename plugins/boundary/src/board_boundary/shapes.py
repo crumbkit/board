@@ -54,6 +54,13 @@ FROM = "The checkout's path in the personal board, such as /repos/board; left ou
 # A capability input marks a path as a board-path; the crossing keeps it as a reference.
 FromInput = Annotated[str, described(FROM, pattern="^/", format="board-path")]
 From = Annotated[str, described(FROM, format="board-ref")]
+Override = Annotated[
+    str,
+    described(
+        "The id of the owner's approved effect that let this content through its failed checks.",
+        pattern="^[0-9a-f]{64}$",
+    ),
+]
 Boundaries = Annotated[
     list[Annotated[str, Extra(format="board-ref", **{"x-board-type": "boundary/boundary/v1"})]],
     described("The boundaries that matched, by their paths."),
@@ -152,10 +159,11 @@ CrossingRecord = TypedDict(
         "action": Action,
         "to": Destination,
         "from": NotRequired[From],
-        "passed": Annotated[bool, described("Whether every check passed.")],
+        "passed": Annotated[bool, described("Whether every check passed, or the owner approved an override.")],
         "boundaries": Boundaries,
         "verdicts": Annotated[list[Verdict], described("Each check's verdict on each part it applies to.")],
         "result": NotRequired[Annotated[str, described("What the destination returned, such as a URL.")]],
+        "override": NotRequired[Override],
     },
 )
 CrossingRecord.__doc__ = (
@@ -171,7 +179,7 @@ CheckInput.__doc__ = "Check the parts against every boundary that matches the ac
 
 
 class CheckOutput(TypedDict):
-    """The crossing written, the boundaries that matched, and every verdict; each check passed."""
+    """The crossing written, the boundaries that matched, and every verdict; each check passed or was overridden."""
 
     digest: Digest
     crossing: Annotated[str, described("The crossing's path in the personal board.")]
@@ -179,6 +187,10 @@ class CheckOutput(TypedDict):
     verdicts: Annotated[list[Verdict], described("Each check's verdict on each part it applies to.")]
     unchecked: Annotated[list[str], described("The parts no check of a matching boundary names, by name.")]
     note: Annotated[str | None, described("Why nothing was checked, or null.")]
+    override: Annotated[
+        str | None,
+        described("The id of the owner's approved effect that let this content through its failed checks, or null."),
+    ]
 
 
 class VerifyInput(TypedDict):

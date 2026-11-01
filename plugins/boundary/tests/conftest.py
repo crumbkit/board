@@ -1,7 +1,9 @@
 """A temporary personal board with boundary and controls enabled, run through the real `board` binary.
 
 Each test names its own personal board in a temporary `XDG_CONFIG_HOME`, so no
-test reads or writes the user's own. A stub agent stands in for a model.
+test reads or writes the user's own. A stub agent stands in for a model, and a
+`board` shim on the front of the plugin's PATH stands in for the owner's signed
+approval of an override, which needs Touch ID.
 """
 
 import json
@@ -18,6 +20,27 @@ PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
 # An expression whose text differs from anything it matches, so a quote of a match never reveals it.
 PRIVATE = r"acme-\d{3}"
+
+
+# The `board` the plugin runs. An approval needs the owner's Touch ID, so for a decide at a path that a line
+# of `approved` names, with the effect id after it, the shim runs decide as the owner, whom Board admits, and
+# names that effect in the report, as Board's report of a signed approval does. Every other run is the binary's.
+SHIM = """#!/bin/sh
+here="$(dirname "$0")"
+at=""; previous=""; deciding=""
+for argument in "$@"; do
+  [ "$argument" = decide ] && deciding=1
+  [ "$previous" = --path ] && at="$argument"
+  previous="$argument"
+done
+effect="$(awk -v at="$at" '$1 == at {{ print $2 }}' "$here/approved" 2>/dev/null)"
+if [ -n "$deciding" ] && [ -n "$effect" ]; then
+  unset BOARD_PLUGIN
+  "{board}" "$@" | sed "s/\\"effect\\": *null/\\"effect\\":\\"$effect\\"/"
+  exit 0
+fi
+exec "{board}" "$@"
+"""
 
 
 def board_binary() -> Path:
@@ -45,7 +68,8 @@ class Board:
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
         path = os.pathsep.join(
-            str(directory) for directory in [board_binary().parent, Path(uv).parent, "/usr/bin", "/bin"]
+            str(directory)
+            for directory in [self.home / "bin", board_binary().parent, Path(uv).parent, "/usr/bin", "/bin"]
         )
         environment = {
             "PATH": path,
@@ -73,6 +97,11 @@ class Board:
         ran = self.run("--json", "call", f"boundary.{capability}", stdin=json.dumps(given), extra=extra)
         document: dict[str, Any] = json.loads(ran.stdout)
         return ran, document
+
+    def approve(self, path: str, effect: str) -> None:
+        """Make the `board` shim admit the plugin's decide at `path` as the owner's approval of `effect` would."""
+        with (self.home / "bin" / "approved").open("a") as approved:
+            approved.write(f"{path} {effect}\n")
 
     def record(self, path: str) -> dict[str, Any] | None:
         """The record at `path`, read from the working tree, or None."""
@@ -103,6 +132,10 @@ def personal(tmp_path: Path) -> Board:
     config = home / "config" / "board"
     config.mkdir(parents=True)
     (config / "config.json").write_text(json.dumps({"personal": str(tmp_path / "personal")}))
+    shim = home / "bin" / "board"
+    shim.parent.mkdir()
+    shim.write_text(SHIM.format(board=board_binary()))
+    shim.chmod(0o755)
     return make_board(tmp_path / "personal", home, ["controls", "boundary"])
 
 

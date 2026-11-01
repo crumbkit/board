@@ -81,6 +81,35 @@ without a rule a rule, and names `board call <action>` and
 `board --personal call boundary.check` to run again. A pattern control shown `match-only` never reveals its
 expression here either.
 
+## Overrides
+
+The owner can let one exact content through a failed check without
+changing a rule. Only a failed check asks; a passing check writes no effect.
+
+- A failed check runs `board decide --op boundary.override --path
+  /crossings/<digest> --text -` as plugin `boundary`. The text shows the
+  owner the action, destination and each part. Board writes a pending
+  effect in the personal board, and the refusal's `effect` field holds its
+  id. After the `Next:` step, the message and `recovery` text say the owner
+  may approve the content with `board answer <effect> approve`, which
+  Board signs with Touch ID. Checking the same content again asks nothing
+  new.
+- Once the owner approves, the same check passes. The crossing records
+  `passed: true`, every verdict as it was, and `override`, the approved
+  effect's id. The output's `override` holds the same id; it is null for a
+  check that passed on its own. `boundary.verify` reports the crossing as
+  passed, and `boundary.record` accepts it.
+- The digest covers the action, destination and every part, so an approval
+  admits exactly that content. Any other content has another crossing path
+  and asks again.
+- When the owner refused the effect, the check still fails, and the
+  message says the owner refused this content and names the effect.
+- Content over 1 MiB as shown cannot be asked: Board refuses the decide
+  with `board::json::too_large`, which reaches the caller as
+  `boundary::board::refused`.
+- An approval does not expire and covers one crossing. The owner withdraws
+  one by deleting its seen record from `/effects/seen/`.
+
 `boundary.verify` takes `--digest`, or `action`, `to` and `parts` on stdin,
 and returns `digest`, `crossing` (null when there is none), `passed` and
 `result`. `passed` is true only while the boundaries that match the
@@ -103,7 +132,8 @@ and characters unescaped, as Python's
 `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
 writes it. The record holds the `digest`, `action`, `to`, `from` when
 given, `passed`, the matching `boundaries`, each verdict in `verdicts` as
-`controls.evaluate` gave it, and `result` once recorded. It holds no part's
+`controls.evaluate` gave it, `override` when the owner's approval let it
+through, and `result` once recorded. It holds no part's
 text, but it keeps each finding's quoted text. `from`, `boundaries` and
 each verdict's `control` are references, so deleting a boundary or control
 leaves an old crossing degraded but still read. Checking the same content
@@ -117,6 +147,7 @@ which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
 `uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by
 default the workspace's `target/debug/board`, against a temporary personal
 board named in a temporary `XDG_CONFIG_HOME`, and start a stub agent script,
-never a model. `plugin.json` and the shipped schemas are generated from
+never a model. An approval needs Touch ID, so a `board` shim on the plugin's
+PATH runs an approved decide as the owner and names the effect in its report. `plugin.json` and the shipped schemas are generated from
 `src/board_boundary/shapes.py` by `board_boundary.manifest`, and a test
 checks that the committed files match.

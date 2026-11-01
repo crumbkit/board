@@ -152,7 +152,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "The crossing written, the boundaries that matched, and every verdict; each check passed.",
+        "description": "The crossing written, the boundaries that matched, and every verdict; each check passed or was overridden.",
         "properties": {
           "boundaries": {
             "description": "The boundaries that matched, by their paths.",
@@ -183,6 +183,17 @@
             ],
             "description": "Why nothing was checked, or null."
           },
+          "override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of the owner's approved effect that let this content through its failed checks, or null."
+          },
           "unchecked": {
             "description": "The parts no check of a matching boundary names, by name.",
             "items": {
@@ -204,7 +215,8 @@
           "boundaries",
           "verdicts",
           "unchecked",
-          "note"
+          "note",
+          "override"
         ],
         "title": "CheckOutput",
         "type": "object"
