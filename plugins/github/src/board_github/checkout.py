@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+from collections.abc import Callable
 
 from board_plugin.board import Board
 from board_plugin.protocol import PluginError
@@ -11,11 +12,16 @@ from board_plugin.protocol import PluginError
 TIMEOUT = 300
 # How much of git's stderr a failure's message carries.
 TAIL = 2000
-# A GitHub remote in the https or ssh forms, with `github.com-<alias>` ssh hosts, as owner and repository.
-GITHUB = re.compile(
-    r"(?:https://(?:[^@/]+@)?github\.com/|ssh://(?:[^@/]+@)?github\.com(?:-[\w.-]+)?/|[^@/:]+@github\.com(?:-[\w.-]+)?:)"
-    r"([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?/?"
-)
+# The hosts that serve GitHub's git, and the `github.com-<alias>` ssh hosts kept for several accounts.
+GITHUB_HOSTS = re.compile(r"(?:www\.|ssh\.)?github\.com|github\.com-[\w.-]+")
+# A URL with a scheme, as host and path, any user and port left out.
+SCHEMED = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*)://(?:[^@/]*@)?(\[[^\]/]*\]|[^:/]*)(?::\d*)?(/.*)?")
+# Git's scp-like ssh form, `[user@]host:path`, whose host holds no slash.
+SCP = re.compile(r"(?:[^@/:]*@)?([^@/:]+):(.*)")
+# A GitHub repository's path: owner and repository, with an optional `.git` and trailing slash.
+REPOSITORY = re.compile(r"/?([A-Za-z0-9-]+)/([A-Za-z0-9._-]+?)(?:\.git)?/?")
+# The schemes git reaches a host over ssh by.
+SSH = {"ssh", "git+ssh", "ssh+git"}
 # The user and password of a URL with a scheme, which a message never quotes.
 USERINFO = re.compile(r"://[^/@\s]+@")
 # The short SHA that names a commit's parts, at a fixed length so a commit's part names never change.
@@ -78,6 +84,61 @@ def top() -> str:
     return ran.stdout.strip()
 
 
+def ssh_hostname(host: str) -> str | None:
+    """The host ssh connects to for `host`, from `ssh -G`, which reads ssh's config and connects to nothing."""
+    try:
+        ran = subprocess.run(  # noqa: S603 - the host is passed after `--`
+            ["ssh", "-G", "--", host],  # noqa: S607 - ssh is found on PATH
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=without_model_keys(),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    names = [line.split(None, 1)[1] for line in ran.stdout.splitlines() if line.startswith("hostname ")]
+    return names[0].strip().lower() if ran.returncode == 0 and names else None
+
+
+def github_repository(url: str, resolve: Callable[[str], str | None] = ssh_hostname) -> tuple[str, str] | None:
+    """The owner and repository, in lower case, of the GitHub repository `url` reaches, or None for another place.
+
+    Every sending action and the pre-push hook read a URL by this one rule.
+    A local path, a `file://` URL and a host other than GitHub's are None. An
+    ssh host that is not GitHub's by name is resolved through ssh's config, so
+    a `Host` alias of github.com counts. A URL that could reach GitHub but
+    names no repository this rule reads, such as an alias ssh cannot resolve
+    or a `<transport>::<address>` remote helper, is `github::remote::unknown`.
+    """
+    schemed = SCHEMED.fullmatch(url)
+    scp = None if schemed or "::" in url or url.startswith(("/", ".", "~")) else SCP.fullmatch(url)
+    found: tuple[str, str, str] | None = None
+    if schemed is not None:
+        found = (schemed[1].lower(), schemed[2].lower(), schemed[3] or "")
+    elif scp is not None:
+        found = ("ssh", scp[1].lower(), scp[2])
+    elif "::" not in url:
+        return None
+    if found is not None and found[0] == "file":
+        return None
+    if found is not None and found[0] in SSH and not GITHUB_HOSTS.fullmatch(found[1]):
+        resolved = None if found[1].startswith("-") else resolve(found[1])
+        found = None if resolved is None else (found[0], resolved, found[2])
+    if found is not None and not GITHUB_HOSTS.fullmatch(found[1]):
+        return None
+    matched = None if found is None else REPOSITORY.fullmatch(found[2])
+    if matched is None:
+        raise PluginError(
+            "github::remote::unknown",
+            f"{shown(url)} could reach GitHub, but it names no repository the plugin can read, so what it sends"
+            " cannot be checked; use a URL of the form https://github.com/<owner>/<repo>.git or"
+            " git@github.com:<owner>/<repo>.git",
+            {"url": shown(url)},
+        )
+    return matched[1].lower(), matched[2].lower()
+
+
 def repository(at: str) -> tuple[str, str]:
     """The owner and repository, in lower case, of the GitHub repository the checkout's origin names.
 
@@ -88,7 +149,7 @@ def repository(at: str) -> tuple[str, str]:
     that differs from the fetch URL is `github::remote::split`.
     """
     url = run(at, "config", "--get", "remote.origin.url").stdout.strip()
-    matched = GITHUB.fullmatch(url)
+    matched = github_repository(url)
     if matched is None:
         raise PluginError(
             "github::remote::not_github",
@@ -106,24 +167,24 @@ def repository(at: str) -> tuple[str, str]:
             " such as after `git config --unset-all remote.origin.pushurl`",
             {"fetch": shown(fetch), "push": [shown(each) for each in pushes]},
         )
-    return matched[1].lower(), matched[2].lower()
+    return matched
 
 
 def destinations(at: str, remote: str, url: str) -> list[str]:
     """The GitHub destinations, `github:<owner>/<repo>` in lower case, of a push git makes to `remote` at `url`.
 
     Git names the remote, or the URL it was given in its place, and the URL it
-    pushes to, after any rewrite. When neither is GitHub's, as when `insteadOf`
-    sends the push elsewhere, the remote's push URLs as configured are read,
-    as `repository` reads origin. None of them naming GitHub means no boundary
-    on GitHub covers the push.
+    pushes to, after any rewrite. Each of them is read, and so are the
+    remote's push URLs as configured, else its URLs, as `repository` reads
+    origin's. A URL that could reach GitHub but cannot be read is
+    `github::remote::unknown`, so the hook fails closed. None naming GitHub
+    means no boundary on GitHub covers the push.
     """
-    named = [each for each in (url, remote) if GITHUB.fullmatch(each)]
-    if not named:
-        configured = run(at, "config", "--get-all", f"remote.{remote}.pushurl").stdout.split()
-        named = configured or run(at, "config", "--get-all", f"remote.{remote}.url").stdout.split()
-    found = (GITHUB.fullmatch(each) for each in named)
-    return sorted({f"github:{each[1].lower()}/{each[2].lower()}" for each in found if each is not None})
+    configured = run(at, "config", "--get-all", f"remote.{remote}.pushurl").stdout.split()
+    configured = configured or run(at, "config", "--get-all", f"remote.{remote}.url").stdout.split()
+    named = [url, *configured] if configured else [url, remote]
+    found = (github_repository(each) for each in named if each)
+    return sorted({f"github:{owner}/{repo}" for owner, repo in (each for each in found if each is not None)})
 
 
 def mount(at: str, root: str) -> str | None:
@@ -179,6 +240,38 @@ def push_parts(at: str, branch: str, head: str, remote: str = "origin") -> tuple
     """
     commits = outgoing(at, head, remote)
     return commits, {"push.branch": branch} | commit_parts(at, commits)
+
+
+# A tag object's tagger line: name, email, then the time and zone.
+TAGGER = re.compile(r"tagger (.*) <([^>]*)> \d+ [+-]\d{4}")
+
+
+def ref_parts(at: str, name: str, sha: str, remote: str) -> dict[str, str]:
+    """The parts of a push of object `sha` to the ref `name` on `remote`: the tags it peels through, then the commits.
+
+    An annotated tag's message, tagger name and tagger email are parts named
+    `tag.<short sha>.<field>`, for each tag down to the commit. A ref whose
+    object is a tree or a blob is `github::push::not_commit`.
+    """
+    parts: dict[str, str] = {}
+    kind = git(at, "cat-file", "-t", sha).strip()
+    while kind == "tag":
+        headers, _, message = git(at, "cat-file", "tag", sha).partition("\n\n")
+        lines = headers.splitlines()
+        tagger = next((found for line in lines if (found := TAGGER.fullmatch(line))), None)
+        prefix = f"tag.{sha[:SHORT]}."
+        parts[prefix + "message"] = message.removesuffix("\n")
+        parts[prefix + "tagger_name"] = tagger[1] if tagger else ""
+        parts[prefix + "tagger_email"] = tagger[2] if tagger else ""
+        sha = next(line.split()[1] for line in lines if line.startswith("object "))
+        kind = git(at, "cat-file", "-t", sha).strip()
+    if kind != "commit":
+        raise PluginError(
+            "github::push::not_commit",
+            f"{name} names a {kind}, which the boundary cannot check as commits; push a branch or a tag of a commit",
+            {"ref": name, "object": sha},
+        )
+    return push_parts(at, name.removeprefix("refs/heads/"), sha, remote)[1] | parts
 
 
 def commit_parts(at: str, shas: list[str]) -> dict[str, str]:

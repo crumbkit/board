@@ -9,6 +9,8 @@ from board_github.models import (
     ISSUE_SCHEMA_PATH,
     PULL_SCHEMA_PATH,
     CommentInput,
+    CoversInput,
+    CoversOutput,
     InstallHookInput,
     InstallHookOutput,
     IssueCreateInput,
@@ -131,7 +133,15 @@ def manifest() -> dict[str, JsonValue]:
                 PrePushOutput,
                 read_only=False,
             )
-            | {"env": list[JsonValue](SEND_ENV), "timeout": SEND_TIMEOUT},
+            | {"env": list[JsonValue]([*SEND_ENV, "BOARD_GITHUB_PUSH_URL"]), "timeout": SEND_TIMEOUT},
+            capability(
+                "covers",
+                "Name the boundaries that cover a git push or gh write from the checkout, and where it goes, "
+                "checking nothing and writing nothing.",
+                CoversInput,
+                CoversOutput,
+                read_only=True,
+            ),
         ],
     }
 

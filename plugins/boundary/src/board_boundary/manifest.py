@@ -13,6 +13,8 @@ from board_boundary.shapes import (
     BoundaryRecord,
     CheckInput,
     CheckOutput,
+    CoversInput,
+    CoversOutput,
     CrossingRecord,
     RecordInput,
     RecordOutput,
@@ -66,6 +68,15 @@ def manifest() -> dict[str, JsonValue]:
                 "_meta": {},
                 "timeout": CHECK_TIMEOUT,
                 "env": env,
+            },
+            {
+                "name": "covers",
+                "description": "Name the boundaries that cover an action to a destination from a checkout, checking"
+                " nothing and writing nothing.",
+                "inputSchema": _schema(CoversInput),
+                "outputSchema": _schema(CoversOutput),
+                "annotations": {"readOnlyHint": True},
+                "_meta": {},
             },
             {
                 "name": "verify",

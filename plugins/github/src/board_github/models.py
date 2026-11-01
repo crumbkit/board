@@ -173,10 +173,9 @@ class InstallHookOutput(Strict):
 
 
 class PrePushInput(Strict):
-    """What git gives its pre-push hook: the remote, the URL it pushes to, and the refs it pushes."""
+    """What git gives its pre-push hook: the remote and the refs it pushes. The URL is in BOARD_GITHUB_PUSH_URL."""
 
     remote: str = Field(description="The remote's name, or the URL git was given in its place.")
-    url: str = Field(description="The URL git pushes to.")
     refs: str = Field(
         description=(
             "What git writes on the hook's stdin: one `<local ref> <local sha> <remote ref> <remote sha>` per line."
@@ -197,3 +196,32 @@ class PrePushOutput(Strict):
     """Each ref checked against each GitHub destination; empty when the push goes nowhere on GitHub or sends nothing."""
 
     checked: list[Checked]
+
+
+class CoversInput(Strict):
+    """Name the boundaries that cover a write from the checkout, checking nothing."""
+
+    model_config = ConfigDict(json_schema_extra=optional)
+
+    action: str = Field(
+        pattern="^[a-z-]+$", description="The github action that sends the write, such as push or pr-create."
+    )
+    remote: str | SkipJsonSchema[None] = Field(
+        None, min_length=1, description="The remote a push names; the branch's push remote, else origin, when left out."
+    )
+    repo: str | SkipJsonSchema[None] = Field(
+        None, pattern="^[^/]+/[^/]+$", description="The owner/repo the write names, in place of the remote."
+    )
+
+
+class Covered(Strict):
+    """One destination a boundary covers, and the boundaries."""
+
+    to: str
+    boundaries: list[str]
+
+
+class CoversOutput(Strict):
+    """Each destination of the write that a boundary covers; empty when none is."""
+
+    covered: list[Covered]

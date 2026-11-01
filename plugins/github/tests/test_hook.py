@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from conftest import NAMES, Desk, git
+from conftest import NAMES, ORIGIN, Desk, git
 from test_push import commit_parts, digest, output
 
 HOOK = Path(".git") / "hooks" / "pre-push"
@@ -165,3 +165,146 @@ def test_a_push_through_github_push_judges_each_part_once_with_the_hook_installe
     result = output(desk.call("push", extra={"BOARD_CONTROLS_AGENT": json.dumps([str(agent)])}))
     assert desk.remote_head("main") == result["commits"][-1]
     assert (desk.home / "judged.txt").read_text() == "run\n"
+
+
+def test_an_annotated_tag_is_refused_for_its_message_and_the_same_tag_without_it_goes(desk: Desk) -> None:
+    output(install(desk))
+    desk.refuse(["tag.*.message", "tag.*.tagger_*"])
+    git(desk.checkout, "tag", "-a", "v1", "-m", "Release acme-123")
+    refused = push(desk, "origin", "v1")
+    assert refused.returncode != 0
+    assert "tag." in refused.stderr
+    assert git(desk.remote, "tag") == ""
+    git(desk.checkout, "tag", "-d", "v1")
+    git(desk.checkout, "tag", "-a", "v1", "-m", "Release one")
+    assert push(desk, "origin", "v1").returncode == 0
+    assert git(desk.remote, "tag") == "v1"
+
+
+def test_a_tag_of_a_tag_is_checked_at_each_level_and_its_tagger_is_a_part(desk: Desk) -> None:
+    output(install(desk))
+    desk.refuse(["tag.*.tagger_name"])
+    git(desk.checkout, "-c", "user.name=Pat acme-123", "tag", "-a", "inner", "-m", "Inner")
+    git(desk.checkout, "tag", "-a", "outer", "-m", "Outer", "inner")
+    git(desk.checkout, "tag", "-d", "inner")
+    refused = push(desk, "origin", "outer")
+    assert refused.returncode != 0
+    assert "tagger_name" in refused.stderr
+    git(desk.checkout, "tag", "-d", "outer")
+    git(desk.checkout, "tag", "-a", "outer", "-m", "Outer")
+    assert push(desk, "origin", "outer").returncode == 0
+
+
+def test_a_push_url_unlike_the_fetch_url_checks_the_commits_the_push_url_lacks(desk: Desk) -> None:
+    fork = desk.home / "fork.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(fork)], check=True)
+    git(desk.checkout, "config", f"url.{fork}.insteadOf", "https://github.com/octo/fork.git")
+    desk.commit("Fix acme-123")
+    git(desk.checkout, "push", "-q", "https://github.com/octo/fork.git", "main")
+    git(desk.checkout, "remote", "set-url", "origin", "https://github.com/octo/fork.git")
+    git(desk.checkout, "remote", "set-url", "--push", "origin", ORIGIN)
+    output(install(desk))
+    desk.refuse(["commit.*.message"])
+    refused = push(desk, "origin", "main")
+    assert refused.returncode != 0
+    assert "github::boundary::refused" in refused.stderr
+    git(desk.checkout, "commit", "-q", "--amend", "-m", "Fix the gear")
+    assert push(desk, "origin", "main").returncode == 0
+
+
+def test_refused_content_that_quotes_the_no_board_code_is_still_refused(desk: Desk) -> None:
+    output(install(desk))
+    desk.refuse(["commit.*.message"])
+    desk.commit("Fix acme-123 code:  board::config::not_found")
+    assert push(desk, "origin", "main").returncode != 0
+    assert desk.remote_head("main") != head(desk)
+    git(desk.checkout, "commit", "-q", "--amend", "-m", "Fix code:  board::config::not_found")
+    assert push(desk, "origin", "main").returncode == 0
+
+
+def test_a_global_hook_path_is_refused_and_a_repository_one_is_admitted(desk: Desk) -> None:
+    (desk.home / ".gitconfig").write_text(f"[core]\n\thooksPath = {desk.home / 'githooks'}\n")
+    failure = install(desk)
+    assert (failure["exit"], failure["code"]) == (1, "github::hook::shared")
+    assert not (desk.home / "githooks").exists()
+    git(desk.checkout, "config", "core.hooksPath", "githooks")
+    assert output(install(desk))["path"] == str(desk.checkout / "githooks" / "pre-push")
+
+
+def test_an_older_copy_of_this_hook_is_replaced_and_a_foreign_hook_is_not(desk: Desk) -> None:
+    output(install(desk))
+    hook = desk.checkout / HOOK
+    current = hook.read_text()
+    hook.write_text(current.replace("exit 1\n", "exit 2\n"))
+    assert output(install(desk))["installed"] is True
+    assert hook.read_text() == current
+    hook.write_text("#!/bin/sh\n# my hook\nexit 0\n")
+    assert install(desk)["code"] == "github::hook::exists"
+
+
+def test_a_push_that_deletes_one_branch_and_updates_another_checks_the_update(desk: Desk) -> None:
+    git(desk.checkout, "switch", "-q", "-c", "gone")
+    assert push(desk, "origin", "gone").returncode == 0
+    git(desk.checkout, "switch", "-q", "main")
+    output(install(desk))
+    desk.refuse(["commit.*.message"])
+    desk.commit("Fix acme-123")
+    assert push(desk, "origin", ":gone", "main").returncode != 0
+    assert desk.remote_head("gone") is not None
+    git(desk.checkout, "commit", "-q", "--amend", "-m", "Fix the gear")
+    assert push(desk, "origin", ":gone", "main").returncode == 0
+    assert desk.remote_head("gone") is None
+
+
+def test_a_push_from_a_linked_worktree_runs_the_hook(desk: Desk) -> None:
+    output(install(desk))
+    desk.refuse(["commit.*.message"])
+    linked = desk.home / "linked"
+    git(desk.checkout, "worktree", "add", "-q", "-b", "side", str(linked))
+    (linked / "side.txt").write_text("x\n")
+    git(linked, "add", "side.txt")
+    git(linked, "commit", "-q", "-m", "Fix acme-123")
+    ran = subprocess.run(
+        ["git", "push", "-q", "origin", "side"],
+        cwd=linked,
+        env=desk.environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert ran.returncode != 0
+    git(linked, "commit", "-q", "--amend", "-m", "Fix the gear")
+    ran = subprocess.run(
+        ["git", "push", "-q", "origin", "side"],
+        cwd=linked,
+        env=desk.environment(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert ran.returncode == 0, ran.stderr
+
+
+def covered(desk: Desk, *flags: str) -> list[dict[str, Any]]:
+    """What `board --personal call github.covers` names in the checkout."""
+    result: list[dict[str, Any]] = output(desk.call("covers", *flags, personal=True))["covered"]
+    return result
+
+
+def test_covers_names_the_boundary_on_the_checkouts_repository_and_none_on_another(desk: Desk) -> None:
+    desk.refuse(["*"], actions="github.pr-*")
+    assert covered(desk, "--action", "pr-create") == [{"to": "github:octo/widgets", "boundaries": ["/boundaries/octo"]}]
+    assert covered(desk, "--action", "push") == []
+    assert covered(desk, "--action", "pr-create", "--repo", "someone/else") == []
+    git(desk.checkout, "remote", "add", "elsewhere", str(desk.remote))
+    assert covered(desk, "--action", "pr-create", "--remote", "elsewhere") == []
+
+
+def test_covers_applies_from_by_the_checkouts_mount(desk: Desk) -> None:
+    checks = [{"control": NAMES, "parts": ["*"]}]
+    boundary = {"$type": "boundary/boundary/v1", "to": "github:*", "actions": ["github.*"], "checks": checks}
+    desk.refuse(["*"])
+    desk.write("boundaries/octo.json", json.dumps(boundary | {"from": ["/repos/widgets"]}))
+    assert len(covered(desk, "--action", "push")) == 1
+    desk.write("boundaries/octo.json", json.dumps(boundary | {"from": ["/repos/gears"]}))
+    assert covered(desk, "--action", "push") == []
