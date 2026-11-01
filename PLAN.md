@@ -63,7 +63,7 @@ plan arrives in its own pull request. Build them in this order.
 
 4. [Control scope](plan/control-scope.md).
 
-5. Work records, then inflight.
+5. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
 
 ## Out of scope
 
