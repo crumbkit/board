@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use board_model::{Code, PluginName, RecordType, Source, TYPES_DIRECTORY, canonical_json};
-use board_plugin::{Alias, DiscoveryError, MANIFEST_FILE, ManifestError, Origin};
+use board_plugin::{
+    Alias, DiscoveryError, Installed, MANIFEST_FILE, Manifest, ManifestError, Origin,
+};
 use board_tree::{LOCK_WAIT, WriteError};
 use serde_json::Value;
 
@@ -76,34 +78,8 @@ impl Board {
                 source,
             });
         }
-        if let Ok(manifest) = &found.manifest
-            && let Some(alias) = &manifest.alias
-        {
-            let other = || {
-                let aliased = self.aliased(others);
-                let other = aliased
-                    .into_iter()
-                    .find(|other| other.alias.as_ref() == Some(alias))?;
-                Some(format!(
-                    "the alias of the {} plugin, which the board enables",
-                    other.name
-                ))
-            };
-            let command = commands.iter().find(|command| **command == alias.as_str());
-            let with = command.map(|command| format!("Board's built-in command {command}"));
-            if let Some(with) = with.or_else(other) {
-                return Err(EnableError::AliasConflict {
-                    name: name.clone(),
-                    alias: alias.clone(),
-                    manifest: match &found.origin {
-                        Origin::Directory(directory) => {
-                            directory.join(MANIFEST_FILE).display().to_string()
-                        }
-                        Origin::BuiltIn { .. } => "Board's own copy".to_owned(),
-                    },
-                    with,
-                });
-            }
+        if let Ok(manifest) = &found.manifest {
+            self.alias_free(name, manifest, &found.origin, commands, others)?;
         }
         let lock = self.repository().lock(LOCK_WAIT)?;
         let mut view = self.repositories().snapshot().map_err(WriteError::from)?;
@@ -168,6 +144,46 @@ impl Board {
             replaced,
             removed: removed_paths,
             kept,
+        })
+    }
+
+    /// Refuses `manifest`'s alias when it is one of `commands`, Board's
+    /// built-in commands, or the alias of an enabled plugin among `others`.
+    fn alias_free(
+        &self,
+        name: &PluginName,
+        manifest: &Manifest,
+        origin: &Origin,
+        commands: &[&str],
+        others: Vec<Installed>,
+    ) -> Result<(), EnableError> {
+        let Some(alias) = &manifest.alias else {
+            return Ok(());
+        };
+        let other = || {
+            let aliased = self.aliased(others);
+            let other = aliased
+                .into_iter()
+                .find(|other| other.alias.as_ref() == Some(alias))?;
+            Some(format!(
+                "the alias of the {} plugin, which the board enables",
+                other.name
+            ))
+        };
+        let command = commands.iter().find(|command| **command == alias.as_str());
+        let with = command.map(|command| format!("Board's built-in command {command}"));
+        let Some(with) = with.or_else(other) else {
+            return Ok(());
+        };
+        let manifest = match origin {
+            Origin::Directory(directory) => directory.join(MANIFEST_FILE).display().to_string(),
+            Origin::BuiltIn { .. } => "Board's own copy".to_owned(),
+        };
+        Err(EnableError::AliasConflict {
+            name: name.clone(),
+            alias: alias.clone(),
+            manifest,
+            with,
         })
     }
 

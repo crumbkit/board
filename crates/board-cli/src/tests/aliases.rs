@@ -179,12 +179,9 @@ fn a_flag_before_the_capability_is_refused_saying_where_the_capability_goes_and_
     let (board, data) = aliased(&["tasks"], "tk");
     let output = run_in(&board, &data, &["tk", "--json", "due"]);
     assert_eq!(output.code, 2);
-    assert!(
-        text(&output.stderr).contains(
-            "board tk takes the capability right after the alias, as in board tk <capability> [flags], and was given --json in its place"
-        ),
-        "{}",
-        text(&output.stderr)
+    assert_eq!(
+        json(&output)["message"],
+        "board tk takes the capability right after the alias, as in board tk <capability> [flags], and was given --json in its place"
     );
     assert_eq!(taken(&data), None);
     let twin = run_in(&board, &data, &["tk", "due", "--json"]);
