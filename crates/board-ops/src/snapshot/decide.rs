@@ -307,10 +307,8 @@ impl Decide<'_> {
             },
         };
         let repo = |entry: &Entry| {
+            (entry.status == Status::Ok && super::is_repo(self.facts, &entry.path)).then_some(())?;
             let indexed = self.facts.get(&entry.path)?;
-            let fact = &indexed.fact;
-            let is_repo = fact.record_type.as_ref().map(RecordType::as_str) == Some(REPO_TYPE);
-            (is_repo && fact.code.is_none() && entry.status == Status::Ok).then_some(())?;
             let location = Location {
                 board: board.clone(),
                 path: entry.path.clone(),

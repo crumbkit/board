@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from board_plugin.board import Board
-from board_plugin.migrate import Line, Old, migrate, olds, put
+from board_plugin.migrate import Line, migrate, olds, put
 from board_plugin.protocol import PluginError
 
 OLD_DECISION = "plans/decision/v1"
@@ -116,20 +116,15 @@ def plan(board: Board, session: str, now: datetime) -> tuple[list[Line], list[st
         lines.append({"path": path, "expect": "none", "record": record})
         said.append(f"ask {path} to review {counted(len(paths))}")
     for old in olds(board, [EVAL]):
-        lines.extend(evals(old, said))
+        new = evaluation(old.record)
+        if new == old.record:
+            continue
+        lines.append(put(old, new))
+        said.append(f"rewrite eval {old.path}")
+        stored, derived = old.record.get("status"), status(new)
+        if stored != derived:
+            said.append(f"eval {old.path} stored status {stored} and now derives {derived}")
     return lines, said
-
-
-def evals(old: Old, said: list[str]) -> list[Line]:
-    """The line that rewrites one eval, if it changes, and what to say about it."""
-    new = evaluation(old.record)
-    if new == old.record:
-        return []
-    said.append(f"rewrite eval {old.path}")
-    stored, derived = old.record.get("status"), status(new)
-    if stored != derived:
-        said.append(f"eval {old.path} stored status {stored} and now derives {derived}")
-    return [put(old, new)]
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
