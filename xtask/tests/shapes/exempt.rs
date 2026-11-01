@@ -1,0 +1,110 @@
+//! The string fields that break shapes rule 14 today, by record type and
+//! the field's pointer in a record (`-` for each item of a list, `{key}` for
+//! each value of a map). Each entry must still be broken, so a fix removes
+//! its entry. The audit rows are those of the missing-types audit of
+//! 2026-11-01.
+
+/// Why a field may break the rule.
+#[derive(Debug)]
+pub(super) enum Kind {
+    /// A shared shape will own the meaning. The pull request that adopts it
+    /// deletes the entry. The reason names the shape.
+    UntilAdopted,
+    /// The meaning belongs to one plugin and stays. The reason says why.
+    Local,
+}
+
+use Kind::{Local, UntilAdopted};
+
+#[rustfmt::skip]
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 87] = [
+    // This repository's board's copy of the controls schema.
+    (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
+    (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
+    (".board/controls/control/v1", "/requirement", UntilAdopted, "Prose"),
+    // The schemas the plugins ship.
+    ("changes/change/v1", "/head", UntilAdopted, "ObjectId (audit row 2)"),
+    ("changes/change/v1", "/issue", UntilAdopted, "Url (audit row 11)"),
+    ("changes/change/v1", "/mount", UntilAdopted, "Ref<Mount> (audit row 27)"),
+    ("changes/change/v1", "/pull_request", UntilAdopted, "PullRequestUrl (audit row 12)"),
+    ("changes/change/v1", "/title", UntilAdopted, "Prose"),
+    ("controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
+    ("controls/control/v1", "/purpose", UntilAdopted, "Prose"),
+    ("controls/control/v1", "/requirement", UntilAdopted, "Prose"),
+    ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
+    ("evals/eval/v1", "/decision", UntilAdopted, "Prose"),
+    ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),
+    ("evals/eval/v1", "/question", UntilAdopted, "Prose"),
+    ("evals/eval/v1", "/subjects/-", UntilAdopted, "Subject (audit row 23)"),
+    ("evals/eval/v1", "/written_by", UntilAdopted, "HookName (audit row 46)"),
+    ("notes/repo/v1", "/covers/-", UntilAdopted, "RemotePattern (audit row 43)"),
+    ("plans/answer/v1", "/answered", UntilAdopted, "Timestamp (audit row 38)"),
+    ("plans/answer/v1", "/by", UntilAdopted, "SessionId (audit row 15)"),
+    ("plans/answer/v1", "/choice", UntilAdopted, "Slug, with none reserved (audit row 34)"),
+    ("plans/answer/v1", "/evidence/entry", UntilAdopted, "Uuid (audit row 17)"),
+    ("plans/answer/v1", "/evidence/quote", UntilAdopted, "Prose"),
+    ("plans/answer/v1", "/evidence/session", UntilAdopted, "Uuid (audit row 16)"),
+    ("plans/answer/v1", "/words", UntilAdopted, "Prose"),
+    ("plans/answer/v1", "/written_by", UntilAdopted, "HookName (audit row 47)"),
+    ("plans/decision/v1", "/alternatives/-", UntilAdopted, "Prose"),
+    ("plans/decision/v1", "/decided", UntilAdopted, "Timestamp (audit row 39)"),
+    ("plans/decision/v1", "/decision", UntilAdopted, "Prose"),
+    ("plans/decision/v1", "/session", UntilAdopted, "SessionId (audit row 14)"),
+    ("plans/decision/v1", "/urls/-", UntilAdopted, "Url (audit row 10)"),
+    ("plans/decision/v1", "/why", UntilAdopted, "Prose"),
+    ("plans/decision/v1", "/written_by", UntilAdopted, "HookName (audit row 48)"),
+    ("plans/question/v1", "/asked", UntilAdopted, "Timestamp (audit row 37)"),
+    ("plans/question/v1", "/blocks", UntilAdopted, "Prose"),
+    ("plans/question/v1", "/mount", UntilAdopted, "Ref<Mount> (audit row 26)"),
+    ("plans/question/v1", "/note", UntilAdopted, "Prose"),
+    ("plans/question/v1", "/options/-/id", UntilAdopted, "Slug, as the audit's Slug section says"),
+    ("plans/question/v1", "/options/-/text", UntilAdopted, "Prose"),
+    ("plans/question/v1", "/question", UntilAdopted, "Prose"),
+    ("plans/question/v1", "/recommendation", UntilAdopted, "Slug (audit row 33)"),
+    ("plans/question/v1", "/session", UntilAdopted, "SessionId (audit row 36)"),
+    ("plans/question/v1", "/why", UntilAdopted, "Prose"),
+    ("prompts/prompt/v1", "/inputs/{key}", UntilAdopted, "Prose: an input's default text"),
+    ("prompts/prompt/v1", "/purpose", UntilAdopted, "Prose"),
+    ("prompts/prompt/v1", "/runs_in/directory", Local, "only prompts starts work in a directory given as an absolute, home or input path"),
+    ("prompts/prompt/v1", "/runs_in/remote", UntilAdopted, "Remote, or an input placeholder (audit row 22)"),
+    ("prompts/prompt/v1", "/title", UntilAdopted, "Prose"),
+    ("prompts/repos/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 28)"),
+    ("requests/reply/v1", "/effect", UntilAdopted, "EffectId (audit row 42)"),
+    ("requests/reply/v1", "/text", UntilAdopted, "Prose"),
+    ("review/brief/v1", "/focus", UntilAdopted, "Prose"),
+    ("review/brief/v1", "/questions/-", UntilAdopted, "Prose"),
+    ("review/brief/v1", "/range", UntilAdopted, "CommitRange (audit row 4)"),
+    ("review/brief/v1", "/subject/blob", UntilAdopted, "ObjectId (audit row 7)"),
+    ("review/report/v1", "/by", UntilAdopted, "a model, program or person; no shape yet (audit row 58)"),
+    ("review/report/v1", "/findings/-/file", UntilAdopted, "RepoPath (audit row 35)"),
+    ("review/report/v1", "/findings/-/text", UntilAdopted, "Prose"),
+    ("review/report/v1", "/patch_ids/-", UntilAdopted, "ObjectId (audit row 6)"),
+    ("review/report/v1", "/range", UntilAdopted, "CommitRange (audit row 5)"),
+    ("review/report/v1", "/source", UntilAdopted, "Url (audit row 13)"),
+    ("review/report/v1", "/subject/blob", UntilAdopted, "ObjectId (audit row 8)"),
+    ("runs/run/v1", "/by", UntilAdopted, "Actor (audit row 19)"),
+    ("runs/run/v1", "/finished", UntilAdopted, "Timestamp (audit row 41)"),
+    ("runs/run/v1", "/host/arch", UntilAdopted, "an inline enum (audit row 54)"),
+    ("runs/run/v1", "/host/os", UntilAdopted, "an inline enum (audit row 53)"),
+    ("runs/run/v1", "/measures/{key}", UntilAdopted, "Prose: a measure's value as a label"),
+    ("runs/run/v1", "/results/-/case", UntilAdopted, "the shape of a suite's case id, with a put check (audit row 55)"),
+    ("runs/run/v1", "/results/-/measures/{key}", UntilAdopted, "Prose: a measure's value as a label"),
+    ("runs/run/v1", "/results/-/note", UntilAdopted, "Prose"),
+    ("runs/run/v1", "/setup", UntilAdopted, "Prose"),
+    ("runs/run/v1", "/started", UntilAdopted, "Timestamp (audit row 40)"),
+    ("runs/run/v1", "/summary", UntilAdopted, "Prose"),
+    ("runs/run/v1", "/versions/{key}", UntilAdopted, "Prose, once the run has its own ObjectId commit (audit row 1)"),
+    ("runs/run/v1", "/written_by", UntilAdopted, "HookName (audit row 49)"),
+    ("runs/suite/v1", "/cases/-/id", UntilAdopted, "Slug, an identifier the audit did not list"),
+    ("runs/suite/v1", "/command", UntilAdopted, "Prose"),
+    ("runs/suite/v1", "/measures/-/description", UntilAdopted, "Prose"),
+    ("runs/suite/v1", "/measures/-/name", UntilAdopted, "Slug, an identifier the audit did not list"),
+    ("runs/suite/v1", "/measures/-/unit", UntilAdopted, "an inline enum of units (audit row 52)"),
+    ("runs/suite/v1", "/method", UntilAdopted, "Prose"),
+    ("runs/suite/v1", "/subjects/-", UntilAdopted, "Subject (audit row 24)"),
+    ("tasks/task/v2", "/contexts/-", UntilAdopted, "Slug (audit row 57)"),
+    ("tasks/task/v2", "/defer", Local, "another tool co-writes tasks, and its date-time may carry an offset, which Timestamp refuses"),
+    ("tasks/task/v2", "/owner", UntilAdopted, "Actor (audit row 18)"),
+    ("tasks/task/v2", "/repeat", Local, "the repeat grammar is the tasks plugin's own"),
+    ("tasks/task/v2", "/title", UntilAdopted, "Prose"),
+];
