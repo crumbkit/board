@@ -30,7 +30,7 @@ def test_ref_writes_the_issue_with_the_title_acli_reads(board: Board) -> None:
         "title_note": None,
     }
     assert board.read("jira/acme/ACME-123.json") == ISSUE | {"title": "Fix the login redirect"}
-    assert board.acli_calls() == ["jira workitem view ACME-123 --json"]
+    assert board.acli_calls() == ["jira workitem view ACME-123 --fields summary --json"]
 
 
 def test_a_second_ref_writes_nothing_runs_no_acli_and_reports_the_record(board: Board) -> None:
@@ -59,16 +59,6 @@ def test_when_acli_fails_ref_writes_the_issue_without_a_title_and_gives_acli_s_e
     assert output["title"] is None
     assert output["title_note"] == "acli exited 1: unauthorized: run acli jira auth login"
     assert board.read("jira/acme/ACME-123.json") == ISSUE
-
-
-def test_without_site_ref_is_refused_until_a_config_record_names_a_default_site(board: Board) -> None:
-    code, refused = board.ref("--key", "ACME-123")
-    assert (code, refused["code"]) == (1, "jira::site::missing"), refused
-    assert "--site" in refused["message"]
-    assert not (board.root / "jira").exists()
-    board.write("jira/config.json", json.dumps({"$type": "jira/config/v1", "site": "acme"}))
-    code, output = board.ref("--key", "ACME-123")
-    assert (code, output["path"]) == (0, "/jira/acme/ACME-123"), output
 
 
 @pytest.mark.parametrize("key", ["acme-123", "ACME123", "ACME-0", "A-1", "ACME-12a", "1ACME-2"])

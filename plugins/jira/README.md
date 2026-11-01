@@ -1,9 +1,8 @@
 # jira
 
-A Board plugin that records Jira issues as typed records. A record of a change
-or a task can then reference the issue by path, and Board checks that the
-reference resolves to a `jira/issue/v1` record. `ref` writes one issue's
-record. The plugin never creates, edits or comments on a Jira issue, and it
+A Board plugin that records Jira issues as typed records. Other records can
+reference an issue by its path, such as `/jira/acme/ACME-123`. `ref` writes
+one issue's record. The plugin never creates, edits or comments on a Jira issue, and it
 keeps no Jira state beyond the title.
 
 Install it from this checkout:
@@ -11,7 +10,7 @@ Install it from this checkout:
     uv sync --frozen --no-dev
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/jira"
 
-Then run `board plugin enable jira` in a board. This writes the schemas the
+Then run `board plugin enable jira` in a board. This writes the schema the
 plugin ships under `types/jira/` to `.board/types/jira/`.
 
 ## Records
@@ -36,19 +35,11 @@ plugin ships under `types/jira/` to `.board/types/jira/`.
 - `title` is the issue's summary when the record was written. It is absent
   when the plugin could not read it.
 
-`jira/config/v1` at `/jira/config` names the default site, so `ref` needs no
-`--site`. The owner writes it once:
-
-```bash
-echo '{"$type": "jira/config/v1", "site": "acme"}' | board put /jira/config
-```
-
 ## Capabilities
 
 `board call jira.ref --key ACME-123 --site acme` writes the issue's record
-with a put that expects no file there. Without `--site` it uses the config
-record's site. Before it writes, it runs `acli jira workitem view <key> --json`
-once, with 10 seconds to answer, and keeps the work item's summary as the
+with a put that expects no file there. Both flags are required. Before it
+writes, it runs `acli jira workitem view <key> --fields summary --json` once, with 10 seconds to answer, and keeps the work item's summary as the
 title. When `acli` is not on PATH, fails, prints no summary, or reads the work
 item from another site, `ref` writes the record without a title and says why
 in `title_note`.
@@ -66,8 +57,6 @@ The output holds `path`, `site`, `key`, `url`, `title`, `written` and
   such as `ACME-123`. `fields.key` holds the value given.
 - `jira::site::invalid`: the site is not a lowercase site name, such as
   `acme`. A full host such as `acme.atlassian.net` is refused.
-- `jira::site::missing`: no `--site` was given and the board has no config
-  record. Pass `--site`.
 - `jira::board::refused` and `jira::board::failed`: `board` refused a read or
   the put, or failed.
 - `jira::call::unknown_capability`: the plugin offers only `ref`.

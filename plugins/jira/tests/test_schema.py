@@ -1,4 +1,4 @@
-"""The schemas the plugin ships: what `board check` admits and refuses in an issue and in the config."""
+"""The schemas the plugin ships: what `board check` admits and refuses in an issue."""
 
 import json
 
@@ -29,18 +29,16 @@ def test_an_issue_with_or_without_a_title_is_admitted_and_one_with_another_field
     }
 
 
-def test_an_issue_with_a_lowercase_key_or_a_url_off_atlassian_is_refused(board: Board) -> None:
+def test_an_issue_with_a_lowercase_key_a_url_off_atlassian_or_an_empty_title_is_refused_and_its_twin_admitted(
+    board: Board,
+) -> None:
+    board.write("jira/acme/twin.json", json.dumps(ISSUE | {"title": "Fix it"}))
     board.write("jira/acme/a.json", json.dumps(ISSUE | {"key": "acme-123"}))
     board.write("jira/acme/b.json", json.dumps(ISSUE | {"url": "https://example.com/browse/ACME-123"}))
     board.write("jira/acme/c.json", json.dumps(ISSUE | {"title": ""}))
     assert checked(board) == {
+        "/jira/acme/twin": None,
         "/jira/acme/a": "board::record::invalid",
         "/jira/acme/b": "board::record::invalid",
         "/jira/acme/c": "board::record::invalid",
     }
-
-
-def test_the_config_holds_a_site_name_and_refuses_a_host(board: Board) -> None:
-    board.write("jira/config.json", json.dumps({"$type": "jira/config/v1", "site": "acme"}))
-    board.write("jira/other.json", json.dumps({"$type": "jira/config/v1", "site": "acme.atlassian.net"}))
-    assert checked(board) == {"/jira/config": None, "/jira/other": "board::record::invalid"}

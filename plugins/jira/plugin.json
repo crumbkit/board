@@ -17,13 +17,14 @@
             "type": "string"
           },
           "site": {
-            "description": "The site name before .atlassian.net, such as acme; the config record's site when left out.",
+            "description": "The site name before .atlassian.net, such as acme.",
             "title": "Site",
             "type": "string"
           }
         },
         "required": [
-          "key"
+          "key",
+          "site"
         ],
         "title": "RefInput",
         "type": "object"
@@ -90,7 +91,7 @@
       }
     }
   ],
-  "description": "Record a Jira issue as a typed jira/issue/v1 record that other records can reference. Use it when work names a Jira ticket. Start with `board -C <board> call jira.ref --key ACME-123 --site acme`, which writes /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "Record a Jira issue as a typed jira/issue/v1 record that other records can reference by path. Use it when work names a Jira ticket. Start with `board -C <board> call jira.ref --key ACME-123 --site acme`, which writes /jira/acme/ACME-123 once with its title. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "planning"
   },
@@ -105,8 +106,7 @@
     "board_jira"
   ],
   "types": [
-    "jira/issue/v1",
-    "jira/config/v1"
+    "jira/issue/v1"
   ],
   "version": "0.1.0"
 }

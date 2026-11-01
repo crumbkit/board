@@ -10,9 +10,6 @@ from board_plugin.protocol import CallRequest, PluginError
 
 PLUGIN = "jira"
 ISSUE_TYPE = "jira/issue/v1"
-CONFIG_TYPE = "jira/config/v1"
-# The record that holds the default site, when the board has one.
-CONFIG = "/jira/config"
 # A project key, a hyphen and an issue number, as Jira writes keys. The schema's pattern matches the same keys.
 KEY = r"[A-Z][A-Z0-9_]+-[1-9][0-9]*"
 # The name before .atlassian.net in a Jira Cloud site's address.
@@ -37,8 +34,7 @@ def ref(request: CallRequest) -> dict[str, object]:
             "pass a key such as ACME-123"
         )
         raise PluginError("jira::key::invalid", why, {"key": key})
-    given = request.input.get("site")
-    site = default_site(board) if given is None else str(given)
+    site = str(request.input["site"])
     if not re.fullmatch(SITE, site):
         why = (
             f"{site!r} is not a Jira site name, the lowercase name before .atlassian.net; "
@@ -69,18 +65,6 @@ def read(board: Board, path: str) -> dict[str, Any] | None:
     return record
 
 
-def default_site(board: Board) -> str:
-    """The site the config record names, or `jira::site::missing` when the board has none."""
-    config = read(board, CONFIG)
-    if config is None:
-        why = (
-            f"no --site was given and the board has no {CONFIG_TYPE} record at {CONFIG} to name a default; "
-            "pass --site, such as --site acme for acme.atlassian.net"
-        )
-        raise PluginError("jira::site::missing", why, {"config": CONFIG})
-    return str(config.get("site"))
-
-
 def reported(path: str, record: dict[str, Any], *, written: bool, note: str | None) -> dict[str, object]:
     """The output: the record's fields, whether this call wrote it, and why it has no title."""
     return {
@@ -102,7 +86,7 @@ def acli_title(site: str, key: str) -> tuple[str | None, str | None]:
     """
     try:
         ran = subprocess.run(  # noqa: S603 - acli only reads the work item
-            ["acli", "jira", "workitem", "view", key, "--json"],  # noqa: S607 - acli is found on PATH
+            ["acli", "jira", "workitem", "view", key, "--fields", "summary", "--json"],  # noqa: S607 - acli is found on PATH
             capture_output=True,
             text=True,
             timeout=ACLI_SECONDS,

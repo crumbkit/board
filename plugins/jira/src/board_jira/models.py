@@ -41,26 +41,11 @@ class IssueRecord(Strict):
     )
 
 
-class ConfigRecord(Strict):
-    """`jira/config/v1`: the default site, at `/jira/config`."""
-
-    model_config = ConfigDict(json_schema_extra=untitled)
-
-    tag: Literal["jira/config/v1"] = Field(alias="$type", description="The record's type.")
-    site: str = Field(
-        pattern=f"^{SITE}$", description="The site `jira.ref` uses when no --site is given, such as acme."
-    )
-
-
 class RefInput(Strict):
     """The issue to record."""
 
     key: str = Field(description="The issue key, such as ACME-123.")
-    site: str | SkipJsonSchema[None] = Field(
-        default=None,
-        json_schema_extra=unset,
-        description="The site name before .atlassian.net, such as acme; the config record's site when left out.",
-    )
+    site: str = Field(description="The site name before .atlassian.net, such as acme.")
 
 
 class RefOutput(Strict):
