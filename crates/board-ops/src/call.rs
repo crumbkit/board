@@ -123,7 +123,8 @@ impl Board {
             }) => {
                 return Err(CallError::Plugin {
                     plugin: plugin.clone(),
-                    failure: PluginFailure::parse(plugin, code, message, fields).map_err(bad)?,
+                    failure: PluginFailure::parse(plugin, code, message, fields, None)
+                        .map_err(bad)?,
                     stderr: Vec::new(),
                 });
             }

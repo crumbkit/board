@@ -634,6 +634,32 @@ fn a_plugins_own_refusal_keeps_its_code_and_fields_with_its_stderr_and_no_hint_f
 }
 
 #[test]
+fn a_plugins_own_hint_is_its_refusals_hint_and_a_refusal_without_one_has_none() {
+    let tasks: PluginName = "tasks".parse().unwrap();
+    let own = |error: &[u8]| {
+        let Ok(Reply::Error(failure)) = protocol::reply::<Value>(&tasks, error, CALL_RESULT_TYPE)
+        else {
+            panic!("the fixture is a plugin's error document");
+        };
+        let refusal = CallError::Plugin {
+            plugin: tasks.clone(),
+            failure,
+            stderr: Vec::new(),
+        }
+        .refusal();
+        (refusal.code.as_str().to_owned(), refusal.hint)
+    };
+    assert_eq!(
+        own(br#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date", "hint": "give the date as YYYY-MM-DD"}"#),
+        ("tasks::date::bad".to_owned(), Some("give the date as YYYY-MM-DD".to_owned()))
+    );
+    assert_eq!(
+        own(br#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date"}"#),
+        ("tasks::date::bad".to_owned(), None)
+    );
+}
+
+#[test]
 fn every_variable_board_passes_a_plugin_is_one_a_capability_s_env_may_not_name() {
     let set = Some(OsString::from("x"));
     let full = Environment {
