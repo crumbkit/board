@@ -6,10 +6,20 @@ from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_changes.open import open_changes
 from board_changes.phases import advance, attach, next_step
+from board_changes.plan import brief, plan
 from board_changes.pr import pr
 from board_changes.start import start
 
-CAPABILITIES = {"start": start, "next": next_step, "attach": attach, "advance": advance, "open": open_changes, "pr": pr}
+CAPABILITIES = {
+    "start": start,
+    "next": next_step,
+    "attach": attach,
+    "advance": advance,
+    "open": open_changes,
+    "pr": pr,
+    "plan": plan,
+    "brief": brief,
+}
 
 
 def call(request: CallRequest) -> dict[str, object]:
