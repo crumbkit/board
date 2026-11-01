@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use board_ops::{Board, Plugins, QueryReport, Settings};
+use board_ops::{Board, Limit, Plugins, QueryReport, Settings};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use proptest::prelude::*;
