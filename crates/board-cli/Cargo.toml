@@ -10,10 +10,11 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["boundary", "controls", "evals", "plans", "requests", "runs"]
+default = ["boundary", "controls", "evals", "jira", "plans", "requests", "runs"]
 boundary = ["board-plugins/boundary"]
 controls = ["board-plugins/controls"]
 evals = ["board-plugins/evals"]
+jira = ["board-plugins/jira"]
 plans = ["board-plugins/plans"]
 requests = ["board-plugins/requests"]
 runs = ["board-plugins/runs"]

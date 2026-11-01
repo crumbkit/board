@@ -1,6 +1,7 @@
 ok boundary 0.1.0 disabled offers check, verify, record
 ok controls 0.1.0 disabled offers for-path, check, evaluate
 ok evals 0.1.0 disabled offers about, open
+ok jira 0.1.0 disabled offers ref
 ok plans 0.1.0 disabled offers open
 ok requests 0.1.0 disabled offers thread
 ok runs 0.1.0 disabled offers latest, trend
