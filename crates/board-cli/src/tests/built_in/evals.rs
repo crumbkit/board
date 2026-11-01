@@ -14,16 +14,15 @@ fn board() -> Fixture {
 /// An `evals/eval/v1` record asking `question` about gix, planned, with
 /// `fields` added or replacing its own.
 fn eval(question: &str, fields: &Value) -> String {
-    let mut record = json!({
-        "$type": "evals/eval/v1",
-        "question": question,
-        "subjects": ["gix"],
-        "status": "planned",
-    });
-    for (name, value) in fields.as_object().unwrap() {
-        record[name] = value.clone();
-    }
-    record.to_string()
+    record(
+        json!({
+            "$type": "evals/eval/v1",
+            "question": question,
+            "subjects": ["gix"],
+            "status": "planned",
+        }),
+        fields,
+    )
 }
 
 fn suite() -> String {
@@ -174,8 +173,7 @@ fn board_refuses_the_call_when_its_eval_schema_is_looser_and_answers_with_the_sh
         ["/evals/ruled"]
     );
     let path = ".board/types/evals/eval/v1.schema.json";
-    let mut loosened: Value =
-        serde_json::from_slice(&std::fs::read(board.board.workdir().join(path)).unwrap()).unwrap();
+    let mut loosened: Value = serde_json::from_str(&board.read(path)).unwrap();
     let schema = loosened.as_object_mut().unwrap();
     schema.remove("if");
     schema.remove("then");
@@ -234,6 +232,8 @@ fn about_and_open_answer_the_same_from_a_cold_cache() {
 #[test]
 fn about_and_open_show_at_most_their_limit_and_say_how_many_they_left_out() {
     let board = board();
+    // Each eval names gix and the mount /repos/x, so all three cases list the
+    // same three evals; the mount matters only to the `--mount` case.
     for name in ["a", "b", "c"] {
         board.write(
             &format!("evals/{name}.json"),
@@ -274,7 +274,9 @@ fn about_and_open_show_at_most_their_limit_and_say_how_many_they_left_out() {
 fn a_limit_outside_one_to_a_hundred_or_an_empty_subject_is_refused_by_board_before_the_plugin_runs()
 {
     let board = board();
-    board.write("evals/a.json", &eval("A?", &json!({})));
+    for name in ["a", "b", "c"] {
+        board.write(&format!("evals/{name}.json"), &eval("A?", &json!({})));
+    }
     for (target, flags) in [
         ("evals.about", &["--subject", "gix"][..]),
         ("evals.open", &[]),
@@ -286,7 +288,7 @@ fn a_limit_outside_one_to_a_hundred_or_an_empty_subject_is_refused_by_board_befo
         }
         for limit in ["1", "100"] {
             let flags: Vec<&str> = flags.iter().copied().chain(["--limit", limit]).collect();
-            assert_eq!(board.call(target, &flags)["total"], 1);
+            assert_eq!(board.call(target, &flags)["total"], 3, "{target} {limit}");
         }
     }
     let refused = board.refusal("evals.about", &["--subject", ""]);
@@ -622,11 +624,7 @@ fn board_lists_evals_as_enabled_and_enabling_wrote_the_schema_it_ships() {
     let shipped = shipped("evals");
     assert_eq!(shipped.len(), 1);
     for (path, text) in shipped {
-        assert_eq!(
-            std::fs::read_to_string(board.board.workdir().join(&path)).unwrap(),
-            text,
-            "{path}"
-        );
+        assert_eq!(board.read(&path), text, "{path}");
     }
 }
 

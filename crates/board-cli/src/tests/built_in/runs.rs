@@ -11,29 +11,27 @@ fn board() -> Fixture {
 }
 
 fn suite(fields: &Value) -> String {
-    let mut record = json!({"$type": "runs/suite/v1", "subjects": ["board"], "method": "Run it."});
-    for (name, value) in fields.as_object().unwrap() {
-        record[name] = value.clone();
-    }
-    record.to_string()
+    record(
+        json!({"$type": "runs/suite/v1", "subjects": ["board"], "method": "Run it."}),
+        fields,
+    )
 }
 
 /// A full run of a clean revision of `suite` that started at `started` and
 /// passed, with `fields` added or replacing its own.
 fn run(suite: &str, started: &str, fields: &Value) -> String {
-    let mut record = json!({
-        "$type": "runs/run/v1",
-        "suite": suite,
-        "by": "claude",
-        "started": started,
-        "scope": "full",
-        "dirty": false,
-        "results": [],
-    });
-    for (name, value) in fields.as_object().unwrap() {
-        record[name] = value.clone();
-    }
-    record.to_string()
+    record(
+        json!({
+            "$type": "runs/run/v1",
+            "suite": suite,
+            "by": "claude",
+            "started": started,
+            "scope": "full",
+            "dirty": false,
+            "results": [],
+        }),
+        fields,
+    )
 }
 
 /// A run of `/suites/a` on day `day` of October 2026, with `fields`.
@@ -277,18 +275,13 @@ fn latest_and_trend_answer_the_same_from_a_cold_cache() {
         )
         .write(
             "suites/a/runs/2.json",
-            &day(2, &json!({"measures": {"s": 2}})),
+            &day(2, &json!({"results": [failed()], "measures": {"s": 2}})),
         )
         .write("suites/a/runs/3.json", &day(3, &json!({"dirty": true})));
-    for flags in [
-        &["--suite", "/suites/a"][..],
-        &["--suite", "/suites/a", "--measure", "s"],
+    for (target, flags) in [
+        ("runs.latest", &["--suite", "/suites/a"][..]),
+        ("runs.trend", &["--suite", "/suites/a", "--measure", "s"]),
     ] {
-        let target = if flags.len() == 2 {
-            "runs.latest"
-        } else {
-            "runs.trend"
-        };
         let warm = ageless(board.call(target, flags));
         assert_eq!(ageless(board.answer(target, flags, true)), warm, "{target}");
     }
@@ -439,18 +432,16 @@ fn board_lists_runs_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
     let shipped = shipped("runs");
     assert_eq!(shipped.len(), 2, "suite and run");
     for (path, text) in shipped {
-        assert_eq!(
-            std::fs::read_to_string(board.board.workdir().join(&path)).unwrap(),
-            text,
-            "{path}"
-        );
+        assert_eq!(board.read(&path), text, "{path}");
     }
 }
 
 #[test]
 fn call_help_prints_each_flag_of_trend_with_its_sentence() {
     let board = board();
-    let help = text(&board.run(&["call", "runs.trend", "-h"]).stdout);
+    let help = board.run(&["call", "runs.trend", "-h"]);
+    assert_eq!(help.code, 0, "{}", text(&help.stderr));
+    let help = text(&help.stdout);
     for flag in [
         "--suite <suite>",
         "--measure <measure>",
@@ -599,10 +590,7 @@ fn a_result_numbers_its_trial_from_one_and_its_evidence_must_exist() {
     let board = board();
     let first = json!({"case": "a", "outcome": "pass", "trial": 1, "evidence": ["/suites/a/evidence/log.txt"]});
     let with = |fields: Value| {
-        let mut result = first.clone();
-        for (name, value) in fields.as_object().unwrap() {
-            result[name] = value.clone();
-        }
+        let result: Value = serde_json::from_str(&record(first.clone(), &fields)).unwrap();
         json!([result])
     };
     board

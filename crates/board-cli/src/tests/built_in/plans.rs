@@ -12,17 +12,16 @@ fn board() -> Fixture {
 /// A `plans/question/v1` record in `status`, asked at `asked`, with
 /// `fields` added or replacing its own.
 fn question(status: &str, asked: &str, fields: &Value) -> String {
-    let mut record = json!({
-        "$type": "plans/question/v1",
-        "question": "Which way?",
-        "session": "local_0a1b",
-        "asked": asked,
-        "status": status,
-    });
-    for (name, value) in fields.as_object().unwrap() {
-        record[name] = value.clone();
-    }
-    record.to_string()
+    record(
+        json!({
+            "$type": "plans/question/v1",
+            "question": "Which way?",
+            "session": "local_0a1b",
+            "asked": asked,
+            "status": status,
+        }),
+        fields,
+    )
 }
 
 /// An open question asked on 2026-10-01 with `fields`.
@@ -32,17 +31,16 @@ fn open(fields: &Value) -> String {
 
 /// A `plans/decision/v1` record with a reason, and `fields`.
 fn decision(fields: &Value) -> String {
-    let mut record = json!({
-        "$type": "plans/decision/v1",
-        "decision": "Do it.",
-        "why": "It is needed.",
-        "session": "local_0a1b",
-        "decided": "2026-10-01T09:00:00Z",
-    });
-    for (name, value) in fields.as_object().unwrap() {
-        record[name] = value.clone();
-    }
-    record.to_string()
+    record(
+        json!({
+            "$type": "plans/decision/v1",
+            "decision": "Do it.",
+            "why": "It is needed.",
+            "session": "local_0a1b",
+            "decided": "2026-10-01T09:00:00Z",
+        }),
+        fields,
+    )
 }
 
 /// The paths of the questions `plans.open` lists with `flags`, and its output.
@@ -183,35 +181,38 @@ fn a_mounted_question_of_another_shape_is_unreadable_and_a_mounted_question_of_t
  {
     let board = board();
     let misshapen = [
-        ("naive", question("open", "2026-10-01T09:00:00", &json!({}))),
-        ("dated", question("open", "2026-10-01", &json!({}))),
         (
-            "offset",
+            "projects/m/questions/naive.json",
+            question("open", "2026-10-01T09:00:00", &json!({})),
+        ),
+        (
+            "projects/m/questions/dated.json",
+            question("open", "2026-10-01", &json!({})),
+        ),
+        (
+            "projects/m/questions/offset.json",
             question("open", "2026-10-01T09:00:00+0000", &json!({})),
         ),
-        ("strings", open(&json!({"options": ["a", "b"]}))),
-        ("number", open(&json!({"question": 5}))),
+        (
+            "projects/m/questions/strings.json",
+            open(&json!({"options": ["a", "b"]})),
+        ),
+        (
+            "projects/m/questions/number.json",
+            open(&json!({"question": 5})),
+        ),
     ];
     // The mounted board's question schema admits any object.
-    let mut files = vec![
+    let files: Vec<(&str, String)> = [
         (
-            ".board/types/plans/question/v1.schema.json".to_owned(),
+            ".board/types/plans/question/v1.schema.json",
             r#"{"type": "object"}"#.to_owned(),
         ),
-        (
-            "projects/m/questions/fits.json".to_owned(),
-            open(&json!({})),
-        ),
-    ];
-    files.extend(
-        misshapen
-            .iter()
-            .map(|(name, text)| (format!("projects/m/questions/{name}.json"), text.clone())),
-    );
-    let files: Vec<(&str, String)> = files
-        .iter()
-        .map(|(path, text)| (path.as_str(), text.clone()))
-        .collect();
+        ("projects/m/questions/fits.json", open(&json!({}))),
+    ]
+    .into_iter()
+    .chain(misshapen.iter().cloned())
+    .collect();
     let (library, commit) = repository(&[], &files);
     mount(&board, "lib.json", &library, commit);
     let (paths, output) = listed(&board, &[]);
@@ -233,11 +234,7 @@ fn board_lists_plans_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
     let shipped = shipped("plans");
     assert_eq!(shipped.len(), 3, "question, answer and decision");
     for (path, text) in shipped {
-        assert_eq!(
-            std::fs::read_to_string(board.board.workdir().join(&path)).unwrap(),
-            text,
-            "{path}"
-        );
+        assert_eq!(board.read(&path), text, "{path}");
     }
 }
 
@@ -386,17 +383,16 @@ fn a_question_has_one_of_three_statuses_and_an_asking_session() {
 
 /// A `plans/answer/v1` record of the question at `question`, with `fields`.
 fn answer(question: &str, fields: &Value) -> String {
-    let mut record = json!({
-        "$type": "plans/answer/v1",
-        "question": question,
-        "choice": "none",
-        "words": "Neither.",
-        "answered": "2026-10-02T09:00:00Z",
-    });
-    for (name, value) in fields.as_object().unwrap() {
-        record[name] = value.clone();
-    }
-    record.to_string()
+    record(
+        json!({
+            "$type": "plans/answer/v1",
+            "question": question,
+            "choice": "none",
+            "words": "Neither.",
+            "answered": "2026-10-02T09:00:00Z",
+        }),
+        fields,
+    )
 }
 
 #[test]

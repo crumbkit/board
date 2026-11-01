@@ -429,6 +429,11 @@ impl Fixture {
         self.board.write(path, Item::Deleted);
     }
 
+    /// The text of the file at `path` from the board's root.
+    fn read(&self, path: &str) -> String {
+        std::fs::read_to_string(self.board.workdir().join(path)).unwrap()
+    }
+
     /// Runs `board` in the board's root with its cache.
     fn run(&self, arguments: &[&str]) -> Output {
         cached(
@@ -499,6 +504,14 @@ impl Fixture {
             })
             .collect()
     }
+}
+
+/// `base` with each of `fields` added or replacing its own, as JSON text.
+fn record(mut base: Value, fields: &Value) -> String {
+    for (name, value) in fields.as_object().unwrap() {
+        base[name] = value.clone();
+    }
+    base.to_string()
 }
 
 /// `entries` by path, each with `code`, as [`Fixture::checked`] gives them.
