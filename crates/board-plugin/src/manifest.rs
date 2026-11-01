@@ -157,6 +157,49 @@ pub struct VersionError {
     text: String,
 }
 
+/// The word that runs a plugin's capabilities as a command of their own,
+/// such as `gh` in `board gh pr-create`: lowercase ASCII letters.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Alias(String);
+
+impl Alias {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for Alias {
+    type Error = AliasError;
+
+    fn try_from(text: String) -> Result<Self, AliasError> {
+        if !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_lowercase()) {
+            Ok(Self(text))
+        } else {
+            Err(AliasError { text })
+        }
+    }
+}
+
+impl From<Alias> for String {
+    fn from(alias: Alias) -> Self {
+        alias.0
+    }
+}
+
+impl fmt::Display for Alias {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Text that is not an alias.
+#[derive(Debug, thiserror::Error)]
+#[error("{text:?} is not an alias: use one word of lowercase ASCII letters, such as gh")]
+pub struct AliasError {
+    text: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawManifest {
@@ -165,6 +208,8 @@ struct RawManifest {
     name: PluginName,
     version: Version,
     description: String,
+    #[serde(default)]
+    alias: Option<Alias>,
     #[serde(default)]
     run: Vec<String>,
     #[serde(default)]
@@ -218,6 +263,8 @@ pub struct Manifest {
     pub name: PluginName,
     pub version: Version,
     pub description: String,
+    /// The word that runs its capabilities, as `board <alias> <capability>`.
+    pub alias: Option<Alias>,
     /// The program and its arguments; empty only for a built-in plugin.
     pub run: Vec<String>,
     pub metadata: Map<String, Value>,
@@ -327,6 +374,7 @@ impl Manifest {
             name: raw.name,
             version: raw.version,
             description: raw.description,
+            alias: raw.alias,
             run: raw.run,
             metadata: raw.metadata,
             types: raw.types,

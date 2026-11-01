@@ -194,6 +194,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-controls"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-scenario",
+ "board-validate",
+ "regex",
+ "regex-syntax",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-evals"
 version = "0.0.0"
 dependencies = [
@@ -239,13 +255,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-runs"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-scenario",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugins"
 version = "0.0.0"
 dependencies = [
  "board-ops",
+ "board-plugin-controls",
  "board-plugin-evals",
  "board-plugin-plans",
  "board-plugin-requests",
+ "board-plugin-runs",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 # runs
 
-A Board plugin for recording what test suites, benchmarks and evals gave each
+A plugin built into Board for recording what test suites, benchmarks and evals gave each
 time they ran. A suite says what gets run. Each run of it is a separate
 record holding curated results. Raw output, such as `junit.xml`, stays outside
 the board.
@@ -115,10 +115,10 @@ have no capability: query the `records` view with `json_each` over
 session delegates as a run, and each pull request it opens as a decision
 stub. docs/plugins/claude-code.md says what it writes and how to load it.
 
-## Installing
+## Enabling
 
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/runs"
+Board has the plugin built in, so nothing is installed:
+
     board plugin enable runs
 
 `board plugin enable runs` writes the two schemas to `.board/types/runs/` and
@@ -126,11 +126,26 @@ names the plugin in `.board/board.json`. The types stay at v1 and change in
 place while the plugin has one user; after such a change, run
 `board plugin enable runs` again.
 
+An older install at `${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/runs`
+makes `call` and `plugin enable` fail with `board::plugin::duplicate`.
+Remove it; it is usually a symlink to a checkout, so remove the link, not the
+checkout.
+
 ## Developing
 
-The gates, which CI runs: `uv run ruff format --check .`, `uv run ruff check .`,
-`uv run pyright` and `uv run pytest`. The tests drive `$BOARD_BIN`, by default
-the workspace's `target/debug/board`, so build it first with
-`cargo build -p board-cli`. `plugin.json` and the shipped schemas are
-generated from the models in `src/board_runs/models.py` by
-`board_runs.manifest`, and a test checks that the committed files match.
+The plugin is the crate `crates/board-plugin-runs`. It generates the
+manifest's input and output schemas from Rust structs with schemars, and the
+two record schemas from the structs in `src/records.rs`. Its `types/`
+directory holds those schemas as committed goldens, which a test compares
+with what the structs generate. The schemas keep the bytes the former Python
+plugin generated, so their properties carry titles. The plugin reads a run
+as the Python plugin's pydantic model did, except that it reads a flag, a
+whole number and a time only as JSON writes them. Pydantic also read
+`"false"` or `0` as a flag, `"2"` or `true` as a number, and a number as a
+time, which only a board's own looser schema could admit.
+
+This directory keeps the mod and a uv project that only tests the plugin
+through the real binary. The gates, which CI runs:
+`uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and
+`uv run pytest`. The tests drive `$BOARD_BIN`, by default the workspace's
+`target/debug/board`, so build it first with `cargo build -p board-cli`.

@@ -47,12 +47,15 @@ def parse(stdin: bytes) -> CallRequest:
 class PluginError(Exception):
     """A refusal Board reports with the plugin's code."""
 
-    def __init__(self, code: str, message: str, fields: dict[str, object] | None = None) -> None:
-        """Hold the code, the message and its typed fields."""
+    def __init__(
+        self, code: str, message: str, fields: dict[str, object] | None = None, hint: str | None = None
+    ) -> None:
+        """Hold the code, the message, its typed fields and an optional hint, the next thing to try."""
         super().__init__(message)
         self.code = code
         self.message = message
         self.fields: dict[str, object] = fields or {}
+        self.hint = hint
 
 
 # Board validates the output against the capability's outputSchema, whose root is an object.
@@ -72,9 +75,10 @@ def serve(plugin: str, call: Call, stdin: bytes) -> tuple[int, str]:
 
 
 def _error(failure: PluginError) -> str:
-    return json.dumps(
-        {"$type": "board/error/v1", "code": failure.code, "message": failure.message, "fields": failure.fields},
-    )
+    document = {"$type": "board/error/v1", "code": failure.code, "message": failure.message, "fields": failure.fields}
+    if failure.hint is not None:
+        document["hint"] = failure.hint
+    return json.dumps(document)
 
 
 def main(plugin: str, call: Call) -> int:

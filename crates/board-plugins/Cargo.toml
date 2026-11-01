@@ -6,15 +6,19 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
+controls = ["dep:board-plugin-controls"]
 evals = ["dep:board-plugin-evals"]
 plans = ["dep:board-plugin-plans"]
 requests = ["dep:board-plugin-requests"]
+runs = ["dep:board-plugin-runs"]
 
 [dependencies]
 board-ops.workspace = true
+board-plugin-controls = { workspace = true, optional = true }
 board-plugin-evals = { workspace = true, optional = true }
 board-plugin-plans = { workspace = true, optional = true }
 board-plugin-requests = { workspace = true, optional = true }
+board-plugin-runs = { workspace = true, optional = true }
 
 [lints]
 workspace = true

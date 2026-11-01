@@ -1,17 +1,22 @@
 //! Plugins built into Board, and what Board offers them
 //! (docs/plugins/built-in.md).
 
+use std::ffi::OsString;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use board_model::{CapabilityName, RecordType, Refusal};
+use board_model::{CapabilityName, LogicalPath, PluginName, RecordType, Refusal};
 use board_plugin::Manifest;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::Board;
+use crate::effects::Asker;
+use crate::put::{PutError, PutReport};
 use crate::query::{MAX_LIMIT, QueryError, QueryReport};
+use crate::read::{GetReport, ReadError};
+use crate::refs::{Absent, RefsError, RefsReport};
 
 /// A plugin compiled into Board, which runs in Board's own process.
 pub trait Plugin: Sync {
@@ -33,6 +38,23 @@ pub trait Plugin: Sync {
 pub trait Host {
     /// Runs `sql` as `board query` does, returning at most `limit` rows.
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError>;
+    /// Answers `paths` as `board refs` does, each in order, through one
+    /// snapshot.
+    fn refs(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError>;
+    /// Reads `paths` as `board get` does, each in order, through one
+    /// snapshot.
+    fn get_each(
+        &self,
+        paths: &[LogicalPath],
+    ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError>;
+    /// Writes `lines`, each one line of `board put --batch`, as that
+    /// command does under `BOARD_PLUGIN`: every line checked, the effects
+    /// check run as the plugin, and one commit or nothing.
+    fn put(&self, lines: &[Value]) -> Result<PutReport, PutError>;
     fn settings(&self) -> &Settings;
 }
 
@@ -126,11 +148,53 @@ pub(crate) struct Hosted<'a> {
     pub(crate) settings: Settings,
     /// Where the caller keeps the index.
     pub(crate) cache: Option<&'a Path>,
+    /// The plugin a put is checked as, or the `BOARD_PLUGIN` that names
+    /// none.
+    pub(crate) plugin: Result<PluginName, OsString>,
 }
 
 impl Host for Hosted<'_> {
     fn query(&self, sql: &str, limit: Limit) -> Result<QueryReport, QueryError> {
         self.board.query(sql, limit.0, None, self.cache)
+    }
+
+    fn refs(
+        &self,
+        paths: &[LogicalPath],
+        absent: Absent,
+    ) -> Result<Vec<Result<RefsReport, RefsError>>, RefsError> {
+        Ok(self
+            .board
+            .refs(paths, absent, &[], None, self.cache)?
+            .collect())
+    }
+
+    fn get_each(
+        &self,
+        paths: &[LogicalPath],
+    ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError> {
+        Ok(self.board.get_each(paths)?.collect())
+    }
+
+    /// Opens the board again as the plugin, as a put through a mount opens
+    /// the mounted board, so every check reads the plugin where it already
+    /// does.
+    /// Its timings stay in the board it opens, outside the call's trace.
+    fn put(&self, lines: &[Value]) -> Result<PutReport, PutError> {
+        let plugin = (self.plugin.clone()).map_err(|text| PutError::BadPlugin { text })?;
+        let home = self.board.repositories().home().map(Into::into);
+        let mut board = Board::open(self.board.repository().path(), home)
+            .map_err(|error| PutError::Open(Box::new(error)))?;
+        board.ask_as(Asker {
+            plugin: Some(plugin),
+            ..Asker::default()
+        });
+        let text = lines
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        board.put_batch(&mut text.as_bytes())
     }
 
     fn settings(&self) -> &Settings {

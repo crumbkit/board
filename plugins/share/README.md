@@ -1,5 +1,8 @@
 # share
 
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
+
 A Board plugin that copies a record from a board into a board it mounts, such
 as a team's, with everything a reader there needs to open it. The source keeps
 its record. [docs/plugins/share.md](../../docs/plugins/share.md) holds the

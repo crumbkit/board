@@ -1,7 +1,7 @@
 //! Record and reference shapes for schemars
 //! (docs/architecture/records/shapes.md): a record's `$type`, a typed
-//! reference, and the settings every schema a built-in plugin ships is made
-//! with; and what its readers share.
+//! reference, the shared shapes a string field uses, and the settings every
+//! schema a built-in plugin ships is made with; and what its readers share.
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -10,7 +10,7 @@ use schemars::generate::SchemaSettings;
 use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 /// Codes that depend on the tree rather than the record. A record holding
 /// one is still a record to read.
@@ -94,6 +94,91 @@ impl<T: Accepts> JsonSchema for Ref<T> {
         }
         schema
     }
+}
+
+/// Free text that a person reads and no program parses. A `String` field
+/// takes it with `#[schemars(with = "Prose")]`.
+#[derive(Debug)]
+pub enum Prose {}
+
+impl JsonSchema for Prose {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Prose".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "x-board-prose": true})
+    }
+}
+
+/// A calendar date, such as `2026-11-01`. A `String` field takes it with
+/// `#[schemars(with = "Date")]`.
+#[derive(Debug)]
+pub enum Date {}
+
+impl JsonSchema for Date {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Date".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "date"})
+    }
+}
+
+/// A web address: an absolute `http` or `https` URI with a host, such as
+/// `https://example.com/pull/1`. A `urls` field takes it with
+/// `#[schemars(with = "Vec<Url>")]`. Board's validator is the only check.
+#[derive(Debug)]
+pub enum Url {}
+
+/// `format: uri` admits `https://`, `https://:80` and `https://u@`, which
+/// have no host. After any user information the pattern needs a host
+/// character, and its tail is anchored at the next `/`, `?`, `#` or the end,
+/// so that the optional user-information group must take an `@` rather than
+/// let the regex read the user as the host. JSON Schema patterns are
+/// case-sensitive, so `HTTPS://` is refused.
+const URL_PATTERN: &str = "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)";
+
+impl JsonSchema for Url {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Url".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "uri", "pattern": URL_PATTERN})
+    }
+}
+
+/// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
+/// is this map, committed, and the shapes lint admits a string field whose
+/// schema is one of its entries.
+pub fn registry() -> Map<String, Value> {
+    let mut generator = SchemaGenerator::default();
+    Map::from_iter([
+        entry::<Date>(&mut generator),
+        entry::<Prose>(&mut generator),
+        entry::<Url>(&mut generator),
+    ])
+}
+
+fn entry<T: JsonSchema>(generator: &mut SchemaGenerator) -> (String, Value) {
+    (
+        T::schema_name().into_owned(),
+        T::json_schema(generator).into(),
+    )
 }
 
 /// `T`'s JSON Schema, draft 2020-12 without `$schema`. A field a writer may

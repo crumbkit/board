@@ -4,10 +4,10 @@ This is the v0 design. docs/architecture.md says what is built, and PLAN.md
 says what comes next.
 
 A plugin teaches Board a higher-level construct, such as tasks, a reading list
-or a changelog. It is a separate program that Board starts, talking JSON over
-stdin and stdout. It reads the board through `board query`. A plugin can also
-be compiled into Board; [plugins/built-in.md](plugins/built-in.md) says how
-it is called.
+or a changelog. It is compiled into Board
+([plugins/built-in.md](plugins/built-in.md)), or installed as a separate
+program that Board starts, talking JSON over stdin and stdout and reading
+the board through `board query`. This file gives the contract both meet.
 
 ## Installing and enabling
 
@@ -81,7 +81,8 @@ in its directory. Each type's namespace is the plugin's name, never
 `board`. The manifest refuses
 unknown fields. An installed plugin's `name` equals its directory's name, and
 ships each type's schema; `check` and `put` check only the content.
-`version` is `MAJOR.MINOR.PATCH` in digits. The schemas compile under a mounted
+`version` is `MAJOR.MINOR.PATCH` in digits. The optional `alias` is one
+word of lowercase ASCII letters, described under Aliases. The schemas compile under a mounted
 board's rules. Breaking any of these is `board::plugin::bad_manifest`.
 
 ## Finding plugins
@@ -151,8 +152,8 @@ Then Board:
    ```
 
 5. reads exactly one document from the plugin's stdout: `board/call-result/v1`
-   holding `output`, or `board/error/v1` holding `code`, `message` and typed
-   `fields`;
+   holding `output`, or `board/error/v1` holding `code`, `message`, typed
+   `fields` and an optional `hint`;
 6. validates `output` against `outputSchema` and prints it: as JSON in text
    mode, and with `--json` as `data` `{plugin, capability, output}` of a
    `board/call-report/v2`.
@@ -160,14 +161,17 @@ Then Board:
 A plugin exits 0 with a result, or 1 with an error whose code is
 `<plugin>::<area>::<reason>`, starting with its own name. Board reports that
 code as its own, with the plugin's fields plus `plugin` and `stderr`, the end
-of the plugin's stderr; Board adds no other key. Any other answer
-on stdout is `board::plugin::bad_output`; a non-zero exit without an error
-document, or a signal, is `board::plugin::failed`. A `run` program that
-cannot be started is `board::plugin::not_started`. Stderr is for logs; Board
-shows its last 64 KiB when the call fails. A call has 30 seconds, or its capability's `timeout`, and 16 MiB of
-stdout; past either, Board stops the plugin with `board::plugin::timeout` or
-`board::plugin::too_large`. A `run` command must `exec` its final program or
-forward SIGTERM. [plugins/processes.md](plugins/processes.md) has the detail.
+of the plugin's stderr; Board adds no other key. The plugin's `hint`, a
+sentence saying what to try next, becomes the failure's `hint` recovery; an
+empty hint counts as none. Python's `PluginError` takes it as `hint`. Any
+other answer on stdout is `board::plugin::bad_output`; a non-zero exit without
+an error document, or a signal, is `board::plugin::failed`. A `run` program
+that cannot be started is `board::plugin::not_started`. Stderr is for logs;
+Board shows its last 64 KiB when the call fails. A call has 30 seconds, or its
+capability's `timeout`, and 16 MiB of stdout; past either, Board stops the
+plugin with `board::plugin::timeout` or `board::plugin::too_large`. A `run`
+command must `exec` its final program or forward SIGTERM.
+[plugins/processes.md](plugins/processes.md) has the detail.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory
@@ -175,23 +179,38 @@ at `board.root`. It never opens Board's index. Board increments `BOARD_CALL_DEPT
 0) and refuses a call arriving at 8, or at a value that is not a whole number,
 with `board::plugin::too_deep`.
 
+## Aliases
+
+A plugin whose manifest sets `"alias": "gh"` can be run as board gh
+followed by a capability and its flags, which runs exactly what
+`board call <plugin>.<capability> [flags]` runs. Only the plugins that the
+board Board runs as enables provide aliases; a mounted board's plugins provide
+none. `board -h` lists each alias beside its plugin, and board gh -h lists
+the plugin's capabilities.
+
+`board plugin enable` refuses an alias that is a built-in command, or the
+alias of another enabled plugin, with `board::plugin::alias_conflict`; the
+message names the manifest and the command or plugin. A built-in command
+always runs in place of an alias of the same word, and never reads an alias:
+Board reads the aliases only after clap refuses the first word, or for help.
+When two enabled plugins share an alias, running it is refused with the same
+code, and the hint names the `board call` line to run instead. The capability
+comes right after the alias; a flag in its place is a usage error.
+
 ## Codes
 
 `board::plugin::` `not_installed`, `not_enabled`, `bad_manifest`,
-`schema_missing`, `schema_differs`, `ambiguous`, `duplicate`,
+`schema_missing`, `schema_differs`, `ambiguous`, `duplicate`, `alias_conflict`,
 `bad_input`, `bad_output`, `failed`, `not_started`, `timeout`,
 `too_large`, `too_deep`.
 
-## Writing a plugin in Python
+## Writing a plugin
 
-The plugins here are written in Python through the shared library in
-`python/board-plugin/`. There are eight: `controls`, `tasks`, `runs`,
-`share`, `notes`, `changes`, `review` and `prompts`. `plans`, `requests` and
-`evals` are built into Board ([plugins/built-in.md](plugins/built-in.md)). The README in each `plugins/<name>/` describes its records and
-capabilities. [plugins/share.md](plugins/share.md) explains the design of
-`share`, [plugins/controls-claude-code.md](plugins/controls-claude-code.md)
-the controls mod, and [plugins/plans-claude-code.md](plugins/plans-claude-code.md)
-the plans mod.
-[plugins/python.md](plugins/python.md) says what Board validates for a plugin,
-what the plugin still checks, and how plugins are built and tested.
-[plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods.
+A new plugin is a built-in crate, never a Python program
+([plugins/built-in/writing.md](plugins/built-in/writing.md)).
+[plugins/python.md](plugins/python.md) describes the plugins still in
+Python. Each `plugins/<name>/` README describes its records and
+capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
+[plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,
+with [the controls mod](plugins/controls-claude-code.md) and
+[the plans mod](plugins/plans-claude-code.md).

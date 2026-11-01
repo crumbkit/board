@@ -1,13 +1,10 @@
 """`check`, through the real `board`."""
 
 import json
-import shlex
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-import pytest
-from conftest import Board, board_binary, control, library
+from conftest import Board, control, library
 
 
 def test_check_measures_each_budget_control_over_its_files(board: Board) -> None:
@@ -156,93 +153,13 @@ def test_a_reference_to_a_directory_fails_the_check_and_one_to_a_file_passes(boa
     assert board.call("check", {})["data"]["output"]["measured"][0]["used"] == 1
 
 
-def counted(board: Board, tmp_path: Path, crash: str = "") -> tuple[Board, Path]:
-    """`board`, with every `board` the plugin runs written as one line of its arguments to the returned log.
-
-    A `board get` that names `crash` exits 1 printing nothing, as a `board` that crashed would.
-    """
-    log = tmp_path / "calls.log"
-    wrapper = tmp_path / "wrapper"
-    wrapper.mkdir()
-    script = wrapper / "board"
-    script.write_text(
-        f'#!/bin/sh\necho "$*" >> {shlex.quote(str(log))}\n'
-        f'case "$*" in *" get -- "*) case " $* " in *{shlex.quote(f" {crash} ")}*)\n'
-        f"  [ -n {shlex.quote(crash)} ] && exit 1;; esac;; esac\n"
-        f'exec {shlex.quote(str(board_binary()))} "$@"\n'
-    )
-    script.chmod(0o755)
-    return replace(board, first=wrapper), log
-
-
-def test_check_reads_each_file_once_and_each_controls_references_in_one_call(board: Board, tmp_path: Path) -> None:
-    for name in ["a", "b", "c"]:
-        board.write(f"docs/{name}.md", "one two")
-    board.write("alias.json", '{"$type": "board/mount/v1", "path": "/docs"}')
-    board.write(
-        "controls/words.json",
-        control(
-            "Short.",
-            applies_to=["/alias/a.md", "/docs/b.md"],
-            paths=["docs/*"],
-            rule={"budget": "words", "max": 6},
-        ),
-    )
-    board.write(
-        "controls/bytes.json",
-        control("Small.", applies_to=["/docs/a.md", "/docs/c.md"], rule={"budget": "bytes", "max": 14}),
-    )
-    watched, log = counted(board, tmp_path)
-    report = watched.call("check", {})
-    assert [item["used"] for item in report["data"]["output"]["measured"]] == [14, 6], report
-    calls = log.read_text().splitlines()
-    assert [call for call in calls if " get " in call] == ["--json get -- /docs/a.md /docs/b.md /docs/c.md"]
-    assert [call for call in calls if " refs " in call] == ["--json refs --all -- /controls/bytes /controls/words"]
-
-
-@pytest.mark.parametrize("count", [1, 3])
-def test_check_resolves_every_controls_references_in_one_refs_run(board: Board, tmp_path: Path, count: int) -> None:
-    board.write("docs/a.md", "one two")
-    names = [f"c{index}" for index in range(count)]
-    for name in names:
-        board.write(
-            f"controls/{name}.json", control("Short.", applies_to=["/docs/a.md"], rule={"budget": "words", "max": 2})
-        )
-    board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 2}))
-    watched, log = counted(board, tmp_path)
-    report = watched.call("check", {})
-    assert [item["used"] for item in report["data"]["output"]["measured"]] == [2] * (count + 1), report
-    paths = " ".join(f"/controls/{name}" for name in names)
-    assert [call for call in log.read_text().splitlines() if " refs " in call] == [f"--json refs --all -- {paths}"]
-
-
-def test_check_starts_no_refs_run_when_no_control_has_references_and_one_when_a_control_has(
-    board: Board, tmp_path: Path
-) -> None:
-    board.write("docs/a.md", "one two")
-    board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 2}))
-    watched, log = counted(board, tmp_path)
-    assert watched.call("check", {})["data"]["output"]["measured"][0]["used"] == len(["one", "two"])
-    assert [call for call in log.read_text().splitlines() if " refs " in call] == []
-    board.write("controls/named.json", control("Short.", applies_to=["/docs/a.md"], rule={"budget": "words", "max": 2}))
-    log.unlink()
-    assert [item["used"] for item in watched.call("check", {})["data"]["output"]["measured"]] == [2, 2]
-    assert [call for call in log.read_text().splitlines() if " refs " in call] == [
-        "--json refs --all -- /controls/named"
-    ]
-
-
-def test_a_crashed_read_fails_the_check_and_without_the_crash_a_controls_unreadable_file_is_named(
-    board: Board, tmp_path: Path
+def test_a_control_naming_a_directory_fails_naming_it_and_boards_code_and_one_naming_a_file_passes(
+    board: Board,
 ) -> None:
     board.write("adir/a.md", "one")
     board.write("zdir/z.md", "one")
     board.write("controls/a.json", control("Small.", applies_to=["/zdir"], rule={"budget": "words", "max": WORDS}))
     board.write("controls/b.json", control("Small.", applies_to=["/adir/a.md"], rule={"budget": "words", "max": WORDS}))
-    crashing, log = counted(board, tmp_path, crash="/adir/a.md")
-    failed = crashing.call("check", {})
-    assert failed["code"] == "controls::board::failed", failed
-    assert [call for call in log.read_text().splitlines() if " get " in call] == ["--json get -- /adir/a.md /zdir"]
     refused = board.call("check", {})
     assert refused["code"] == "controls::file::unreadable", refused
     assert (refused["fields"]["control"], refused["fields"]["file"], refused["fields"]["code"]) == (
@@ -250,18 +167,8 @@ def test_a_crashed_read_fails_the_check_and_without_the_crash_a_controls_unreada
         "/zdir",
         "board::record::not_a_record",
     )
-
-
-@pytest.mark.parametrize("count", [1, 3])
-def test_check_reads_every_file_in_one_get_run(board: Board, tmp_path: Path, count: int) -> None:
-    names = [f"docs/f{index}.md" for index in range(count)]
-    for name in names:
-        board.write(name, "one two")
-    board.write("controls/pattern.json", control("Short.", paths=["docs/*"], rule={"budget": "words", "max": 99}))
-    watched, log = counted(board, tmp_path)
-    assert watched.call("check", {})["data"]["output"]["measured"][0]["used"] == len(names) * len(["one", "two"])
-    paths = " ".join(f"/{name}" for name in names)
-    assert [call for call in log.read_text().splitlines() if " get " in call] == [f"--json get -- {paths}"]
+    board.write("controls/a.json", control("Small.", applies_to=["/zdir/z.md"], rule={"budget": "words", "max": WORDS}))
+    assert [item["used"] for item in board.call("check", {})["data"]["output"]["measured"]] == [1, 1]
 
 
 def scoped(board: Board, tmp_path: Path) -> None:
@@ -496,3 +403,31 @@ def test_a_per_file_control_with_no_files_measures_nothing_as_its_largest(board:
     )
     [measured] = board.call("check", {})["data"]["output"]["measured"]
     assert (measured["used"], measured["largest"], measured["over"]) == (0, None, [])
+
+
+def test_a_control_at_a_malformed_path_fails_the_check_naming_its_file_and_its_twin_at_a_well_formed_path_passes(
+    board: Board,
+) -> None:
+    malformed = "controls/bad\u200bname.json"
+    board.write("a.md", "one two three")
+    board.write(malformed, control("Short.", paths=["*.md"], rule={"budget": "words", "max": WORDS}))
+    refused = board.call("check", {})
+    assert refused["code"] == "controls::control::degraded", refused
+    assert refused["fields"]["controls"] == [{"control": malformed, "code": "board::path::malformed"}]
+    (board.root / malformed).rename(board.root / "controls/name.json")
+    assert board.call("check", {})["data"]["output"]["measured"][0]["used"] == WORDS
+
+
+def test_a_pattern_or_judged_control_is_stated_and_a_budget_beside_it_is_measured(board: Board) -> None:
+    board.write("docs/a.md", "one two")
+    board.write("private/names.txt", "acme\n")
+    board.write("rubrics/plain.md", "Write plainly.\n")
+    board.write(
+        "controls/names.json",
+        control("No names.", paths=["docs/*.md"], rule={"pattern": "/private/names.txt", "show": "match-only"}),
+    )
+    board.write("controls/plain.json", control("Plain.", paths=["docs/*.md"], rule={"judged": "/rubrics/plain.md"}))
+    board.write("controls/short.json", control("Short.", paths=["docs/*.md"], rule={"budget": "words", "max": 2}))
+    output = board.call("check", {})["data"]["output"]
+    assert [item["control"] for item in output["measured"]] == ["/controls/short"]
+    assert [item["control"] for item in output["stated"]] == ["/controls/names", "/controls/plain"]

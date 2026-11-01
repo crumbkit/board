@@ -1,8 +1,7 @@
-"""Fixture boards that run the real `board` binary with this plugin installed and enabled."""
+"""Fixture boards that run the real `board` binary, which has this plugin built in."""
 
 import json
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,8 @@ import pytest
 
 PLUGIN = Path(__file__).resolve().parents[1]
 REPOSITORY = PLUGIN.parents[1]
+# The schema the plugin ships, kept in its crate.
+SCHEMAS = REPOSITORY / "crates" / "board-plugin-controls" / "types" / "controls"
 
 
 def board_binary() -> Path:
@@ -32,13 +33,11 @@ def flags(given: dict[str, Any]) -> list[str]:
 
 @dataclass(frozen=True)
 class Board:
-    """A git repository holding a board, with this plugin installed for it alone."""
+    """A git repository holding a board, run with a data directory of its own."""
 
     root: Path
     data: Path
     cache: Path
-    # A directory searched before Board's own on the PATH the plugin sees, such as one holding a wrapper.
-    first: Path | None = None
 
     def write(self, path: str, text: str) -> None:
         """Write a fixture file at `path`, relative to the board's root."""
@@ -48,12 +47,7 @@ class Board:
 
     def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         """Run `board` in the board's root, with only the variables a user's shell would pass it."""
-        uv = shutil.which("uv")
-        assert uv is not None, "uv is on PATH"
-        directories = [board_binary().parent, Path(uv).parent, Path("/usr/bin"), Path("/bin")]
-        if self.first is not None:
-            directories.insert(0, self.first)
-        path = os.pathsep.join(str(directory) for directory in directories)
+        path = os.pathsep.join([str(board_binary().parent), "/usr/bin", "/bin"])
         environment = {
             "PATH": path,
             "HOME": os.environ.get("HOME", str(self.root)),
@@ -80,14 +74,11 @@ class Board:
 
 @pytest.fixture
 def board(tmp_path: Path) -> Board:
-    """A board that does not commit, with controls installed and enabled through `board plugin enable`."""
+    """A board that does not commit, with controls enabled through `board plugin enable`."""
     fixture = Board(root=tmp_path / "board", data=tmp_path / "data", cache=tmp_path / "cache")
     fixture.root.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=fixture.root, check=True)
     fixture.write(".board/board.json", json.dumps({"$type": "board/config/v1", "commit_on_put": False}))
-    plugins = fixture.data / "board" / "plugins"
-    plugins.mkdir(parents=True)
-    (plugins / "controls").symlink_to(PLUGIN)
     enabled = fixture.run("plugin", "enable", "controls")
     assert enabled.returncode == 0, enabled.stderr
     return fixture

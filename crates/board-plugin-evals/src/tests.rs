@@ -24,6 +24,29 @@ impl Host for Empty {
         })
     }
 
+    fn refs(
+        &self,
+        _paths: &[board_model::LogicalPath],
+        _absent: board_ops::Absent,
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        panic!("this plugin resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        panic!("this plugin reads no files")
+    }
+
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
+    }
+
     fn settings(&self) -> &Settings {
         &self.0
     }

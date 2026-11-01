@@ -5,6 +5,8 @@ use std::path::Path;
 
 use board_model::canonical_json;
 use board_ops::{Limit, QueryError, QueryReport, Settings};
+use board_plugin::shape::{Url, schema_of};
+use schemars::generate::SchemaSettings;
 use serde_json::json;
 
 use super::*;
@@ -21,6 +23,29 @@ impl Host for Empty {
             over_budget: false,
             memory: None,
         })
+    }
+
+    fn refs(
+        &self,
+        _paths: &[board_model::LogicalPath],
+        _absent: board_ops::Absent,
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        panic!("this plugin resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        panic!("this plugin reads no files")
+    }
+
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
     }
 
     fn settings(&self) -> &Settings {
@@ -249,6 +274,22 @@ fn a_decision_keeps_board_paths_in_refs_and_web_addresses_in_urls() {
     let refused = schema.validate(&decision("urls", path)).unwrap_err();
     assert_eq!(refused.code(), board_model::Code::RecordInvalid);
     assert!(schema.validate(&decision("refs", path)).is_ok());
+    // A URL with no host is refused; its twin with one is admitted.
+    let refused = schema.validate(&decision("urls", "https://")).unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RecordInvalid);
+    assert!(schema.validate(&decision("urls", "https://a")).is_ok());
+}
+
+/// Each `urls` item is a `board_plugin::shape::Url`: a URI string whose
+/// pattern needs a host, the schema `Url` generates.
+#[test]
+fn a_decision_states_each_url_with_the_shared_url_schema() {
+    let schema = Plans.schemas()[2].1.clone();
+    let url = schema_of::<Url>(SchemaSettings::draft2020_12());
+    let mut items = schema["properties"]["urls"]["items"].clone();
+    items["title"] = url["title"].clone();
+    assert_eq!(items, url);
+    assert_eq!(url["format"], "uri");
 }
 
 /// A question names its repository by a reference to the repository's

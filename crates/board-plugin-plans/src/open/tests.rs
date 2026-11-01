@@ -36,6 +36,29 @@ impl Host for Answering {
         })
     }
 
+    fn refs(
+        &self,
+        _paths: &[board_model::LogicalPath],
+        _absent: board_ops::Absent,
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        panic!("this plugin resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        panic!("this plugin reads no files")
+    }
+
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
+    }
+
     fn settings(&self) -> &Settings {
         &self.settings
     }
@@ -340,7 +363,7 @@ fn plans_board(questions: &[(&str, Value)]) -> (Scenario, Board) {
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Plans]);
     board
-        .plugin_enable(None, None, &"plans".parse().unwrap())
+        .plugin_enable(None, None, &"plans".parse().unwrap(), &[])
         .unwrap();
     for (path, body) in questions {
         scenario.write(&format!("{path}.json"), Item::File(body.as_str().unwrap()));

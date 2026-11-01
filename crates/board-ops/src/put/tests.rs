@@ -204,6 +204,20 @@ fn input_that_is_not_one_object_with_a_type_is_refused_and_its_twin_is_admitted(
     );
 }
 
+/// Check admits a plain JSON file with comments; put keeps records strict.
+#[test]
+fn a_record_with_a_comment_is_refused_and_its_twin_is_admitted() {
+    let scenario = board();
+    let record = task("");
+    let commented = record.replacen('{', "{ // a task\n", 1);
+    assert_eq!(
+        put(&scenario, "/tasks/a", Expect::Any, &commented).unwrap_err(),
+        Code::JsonParse
+    );
+    assert!(file(&scenario, "tasks/a.json").is_none());
+    assert!(put(&scenario, "/tasks/a", Expect::Any, &record).is_ok());
+}
+
 #[test]
 fn a_refusal_names_what_is_wrong_with_the_record_and_its_twin_is_admitted() {
     let scenario = board();

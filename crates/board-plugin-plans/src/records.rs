@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use board_plugin::shape::{Record, Ref, Tag};
+use board_plugin::shape::{Record, Ref, Tag, Url};
 
 /// `plans/question/v1`: a question an agent session needs the owner to answer.
 ///
@@ -163,7 +163,7 @@ pub struct DecisionRecord {
     pub refs: Vec<Ref>,
     /// Web pages the decision concerns, such as a pull request.
     #[serde(default)]
-    #[schemars(inner(regex(pattern = r"^https?://")))]
+    #[schemars(with = "Vec<Url>")]
     pub urls: Vec<String>,
     /// `wanted` when the owner should look at the decision.
     pub review: Option<Review>,

@@ -135,6 +135,24 @@ fn a_version_is_three_parts_of_digits() {
 }
 
 #[test]
+fn an_alias_is_one_lowercase_ascii_word() {
+    assert_eq!(parse(&manifest()).unwrap().alias, None);
+    let mut value = manifest();
+    value["alias"] = json!("tk");
+    let alias = parse(&value).unwrap().alias.unwrap();
+    assert_eq!(alias.as_str(), "tk");
+    for bad in ["Tk", "t-k", "tk2", "t k", ""] {
+        value["alias"] = json!(bad);
+        let refusal = refused(&value);
+        assert!(matches!(refusal, ManifestError::Shape { .. }), "{bad}");
+        assert!(
+            refusal.to_string().contains("lowercase ASCII letters"),
+            "{refusal}"
+        );
+    }
+}
+
+#[test]
 fn an_empty_run_is_refused() {
     assert!(matches!(
         refused(&with("/run", json!([]))),

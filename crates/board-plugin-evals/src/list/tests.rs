@@ -37,6 +37,29 @@ impl Host for Answering {
         })
     }
 
+    fn refs(
+        &self,
+        _paths: &[board_model::LogicalPath],
+        _absent: board_ops::Absent,
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        panic!("this plugin resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        panic!("this plugin reads no files")
+    }
+
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
+    }
+
     fn settings(&self) -> &Settings {
         &self.settings
     }
@@ -300,7 +323,7 @@ fn evals_board(evals: &[(&str, Value)]) -> (Scenario, Scenario, Board) {
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Evals]);
     board
-        .plugin_enable(None, None, &"evals".parse().unwrap())
+        .plugin_enable(None, None, &"evals".parse().unwrap(), &[])
         .unwrap();
     let schema = std::fs::read_to_string(
         scenario

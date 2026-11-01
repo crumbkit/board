@@ -59,7 +59,10 @@ pub(crate) fn plugin(
 ) -> Output {
     match command {
         PluginCommand::Enable { name } => {
-            match board.plugin_enable(context.plugins.as_deref(), context.cache.as_deref(), &name) {
+            let commands = crate::alias::commands();
+            let commands: Vec<&str> = commands.iter().map(String::as_str).collect();
+            let (plugins, cache) = (context.plugins.as_deref(), context.cache.as_deref());
+            match board.plugin_enable(plugins, cache, &name, &commands) {
                 Ok(report) => render::plugin_enable(printer, &report),
                 Err(error) => render::refused(printer, plain(error.code(), &error)),
             }

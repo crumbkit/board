@@ -1,7 +1,12 @@
+controls.for-path disabled The controls that apply to a path.
+controls.check disabled Check the controls under a path, `/` when left out. Fails naming each control over budget or degraded.
+controls.evaluate disabled Check named parts of text against controls' budget, pattern and judged rules, and return each control's verdict on each part with its findings.
 evals.about disabled The evals that name a subject, or that name a repository's mount or live in it, whatever their status, here and in mounted boards.
 evals.open disabled The evals still planned or running, here and in mounted boards.
 plans.open disabled The questions under a path whose status is open, oldest first.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
+runs.latest disabled The latest full run of a clean revision of a suite, with its outcome, measures, failed cases and age, or null when no run qualifies.
+runs.trend disabled One measure of a suite, or of one of its cases, over its full runs of clean revisions, newest first.
 tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.

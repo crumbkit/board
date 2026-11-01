@@ -24,12 +24,13 @@ def test_a_control_applies_to_what_it_references_and_to_what_its_patterns_match(
     assert applying(board, "/docs/b.txt") == []
 
 
-def test_the_output_carries_the_requirement_purpose_and_rule(board: Board) -> None:
+def test_the_output_carries_the_requirement_purpose_and_rule_and_null_for_a_missing_rule(board: Board) -> None:
     board.write("AGENTS.md", "Rules.\n")
     board.write(
         "controls/agents.json",
         control("Stay short.", applies_to=["/AGENTS.md"], rule={"budget": "words", "max": 10}),
     )
+    board.write("controls/kind.json", control("Be kind.", applies_to=["/AGENTS.md"]))
     report = board.call("for-path", {"path": "/AGENTS.md"})
     assert report["data"]["output"]["controls"] == [
         {
@@ -38,6 +39,7 @@ def test_the_output_carries_the_requirement_purpose_and_rule(board: Board) -> No
             "purpose": "A test.",
             "rule": {"budget": "words", "max": 10},
         },
+        {"control": "/controls/kind", "requirement": "Be kind.", "purpose": "A test.", "rule": None},
     ]
 
 

@@ -1,0 +1,100 @@
+{
+  "$type": "board/plugin-manifest/v1",
+  "capabilities": [
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Write the record of a pull request or issue, asking gh which it is and its title, or report the record already there without asking.",
+      "env": [
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_CONFIG_DIR"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Record one pull request or issue.",
+        "properties": {
+          "ref": {
+            "description": "The pull request or issue as owner/repo#number, such as octo/widgets#12.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*/(\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*)#[1-9][0-9]{0,9}$",
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "RefInput",
+        "type": "object"
+      },
+      "name": "ref",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The record for the reference, and whether this call wrote it.\n\n`written` is false when the record was already there; nothing was asked of\nGitHub and nothing was written. `title` is null when the record holds none.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "type": {
+            "enum": [
+              "github/pull/v1",
+              "github/issue/v1"
+            ],
+            "title": "Type",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "written": {
+            "title": "Written",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "type",
+          "written",
+          "url",
+          "title"
+        ],
+        "title": "RefOutput",
+        "type": "object"
+      }
+    }
+  ],
+  "description": "Record a GitHub pull request or issue as a typed record that other records can reference. Use it when a record should name a pull request or issue. Run `board -C <board> call github.ref --ref <owner>/<repo>#<number>`, then reference the `path` it returns. SKILL.md and README.md in the plugin's directory say more.",
+  "metadata": {
+    "area": "delivery"
+  },
+  "name": "github",
+  "run": [
+    "uv",
+    "run",
+    "--frozen",
+    "--no-dev",
+    "python",
+    "-m",
+    "board_github"
+  ],
+  "types": [
+    "github/pull/v1",
+    "github/issue/v1"
+  ],
+  "version": "0.1.0"
+}
