@@ -194,11 +194,23 @@ fn a_flag_before_the_capability_is_refused_saying_where_the_capability_goes_and_
 #[test]
 fn a_mounted_boards_plugins_provide_no_alias_and_the_board_board_runs_as_does() {
     for (enabled, runs) in [(&[][..], false), (&["tasks"][..], true)] {
-        let (mounted, data) = aliased(&["tasks"], "tk");
-        let pinned = mounted.commit(&[("x.json", "{}")]);
-        let (board, _) = aliased(enabled, "tk");
+        let mounted = Scenario::new();
+        let config = json!({"$type": "board/config/v1", "plugins": ["tasks"]}).to_string();
+        let pinned = mounted.commit(&[(".board/board.json", config.as_str())]);
+        let (board, data) = aliased(enabled, "tk");
         let repo = mounted.workdir().to_str().unwrap();
         board.write("vendor/m.json", Item::File(&mount_of(repo, pinned)));
+        let mounted_config = board_full(
+            board.workdir(),
+            None,
+            None,
+            &["get", "/vendor/m/.board/board"],
+            b"",
+        );
+        assert!(
+            text(&mounted_config.stdout).contains("tasks"),
+            "the mount holds a board enabling tasks"
+        );
         let output = run_in(&board, &data, &["--json", "tk", "due"]);
         assert_eq!(output.code, if runs { 0 } else { 2 }, "{enabled:?}");
         assert_eq!(taken(&data).is_some(), runs, "{enabled:?}");
@@ -267,6 +279,13 @@ fn help_lists_an_enabled_plugins_alias_and_the_aliases_help_lists_its_capabiliti
         let output = run_in(&board, &data, &["-h"]);
         assert_eq!(output.code, 0);
         assert_eq!(text(&output.stdout).contains(line), listed, "{enabled:?}");
+        let bare = run_in(&board, &data, &[]);
+        let printed = format!("{}{}", text(&bare.stdout), text(&bare.stderr));
+        assert_eq!(
+            printed.contains(line),
+            listed,
+            "bare board, {enabled:?}: {printed}"
+        );
     }
     let (board, data) = aliased(&["tasks"], "tk");
     let output = run_in(&board, &data, &["tk", "-h"]);

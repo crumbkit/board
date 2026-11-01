@@ -513,8 +513,8 @@ fn reread(
         return Some(output);
     }
     Some(match crate::alias::after(arguments, context, refused)? {
-        crate::alias::Resolved::Call(called) => run(called, context, stdin, ran),
-        crate::alias::Resolved::Refused(refusal) => {
+        Ok(called) => run(called, context, stdin, ran),
+        Err(refusal) => {
             let printer = Printer {
                 view: refused.output().clone(),
             };
