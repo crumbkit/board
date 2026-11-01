@@ -12,7 +12,7 @@ from board_plugin import board as plugin_board
 from board_plugin.protocol import PluginError
 from conftest import Board, board_binary, control, library
 
-from board_controls.board import controls, matched, matching, referenced
+from board_controls.board import Control, matched, matching, referenced
 
 
 def logged(board: Board, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -38,7 +38,10 @@ def test_referenced_resolves_more_controls_than_one_refs_run_answers_over_two_ru
     for name in names:
         board.write(f"docs/{name}.md", name)
         board.write(f"controls/{name}.json", control("Small.", applies_to=[f"/docs/{name}.md"]))
-    found = controls(plugin_board.Board(str(board.root), "controls"))
+    found = {
+        f"/controls/{name}": Control(json.loads(control("Small.", applies_to=[f"/docs/{name}.md"])), "/", "worktree")
+        for name in names
+    }
     log = logged(board, monkeypatch)
 
     def runs() -> list[str]:
