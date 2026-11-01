@@ -3,9 +3,9 @@
 
 use std::collections::HashMap;
 
-use board_model::parse_json;
-use board_ops::{Host, Limit, PluginError};
-use board_plugin::shape::{TREE_CODES, whole};
+use board_ops::{Host, PluginError};
+use board_plugin::shape::whole;
+use board_plugin_decisions::standing;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -160,14 +160,13 @@ fn listed(
     limit: u16,
     keep: impl Fn(&str, &Stored) -> bool,
 ) -> Result<Value, PluginError> {
-    let report = (host.query(EVALS, Limit::ALL))
-        .map_err(|error| PluginError::board_refused("evals", "query", &error.refusal()))?;
+    let (evals, _) = standing::rows(host, EVALS, "evals", readable)?;
     let mut resting: HashMap<String, Vec<String>> = HashMap::new();
-    let standing = (board_plugin_decisions::standing::decisions(host, "evals")?
-        .decisions
-        .into_iter())
-    .filter(|decision| !decision.superseded);
-    for decision in standing {
+    let decisions = standing::decisions(host, "evals")?.decisions;
+    for decision in decisions
+        .into_iter()
+        .filter(|decision| !decision.superseded)
+    {
         for named in decision.basis {
             resting
                 .entry(named)
@@ -176,32 +175,19 @@ fn listed(
         }
     }
     let mut found = Vec::new();
-    for row in &report.rows {
-        let [Value::String(path), code, body] = &row[..] else {
-            continue;
-        };
-        let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
-        if !tree {
-            continue;
-        }
-        let Some(eval) = readable(body) else {
-            continue;
-        };
-        if keep(path, &eval) {
-            let mut decisions = resting.remove(path).unwrap_or_default();
-            decisions.sort();
-            decisions.dedup();
-            let status = eval.status();
-            found.push(Listed {
-                path: path.clone(),
-                question: eval.question,
-                subjects: eval.subjects,
-                status,
-                verdict: eval.verdict,
-                informs: eval.informs,
-                decisions,
-            });
-        }
+    for (path, eval) in evals.into_iter().filter(|(path, eval)| keep(path, eval)) {
+        let mut decisions = resting.remove(&path).unwrap_or_default();
+        decisions.sort();
+        decisions.dedup();
+        found.push(Listed {
+            status: eval.status(),
+            path,
+            question: eval.question,
+            subjects: eval.subjects,
+            verdict: eval.verdict,
+            informs: eval.informs,
+            decisions,
+        });
     }
     let (total, limit) = (found.len(), usize::from(limit));
     found.truncate(limit);
@@ -213,11 +199,10 @@ fn listed(
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and bools"))
 }
 
-/// `None` when `body` is not an eval this plugin reads: one with no
+/// `None` when `record` is not an eval this plugin reads: one with no
 /// subject, or one whose `written_by` is not a plugin and hook.
-fn readable(body: &Value) -> Option<Stored> {
-    let record = parse_json(body.as_str()?.as_bytes()).ok()?;
-    let eval = Stored::deserialize(&record).ok()?;
+fn readable(record: &Value) -> Option<Stored> {
+    let eval = Stored::deserialize(record).ok()?;
     let hook = |name: &str| {
         !name.is_empty()
             && (name.bytes()).all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-'))
