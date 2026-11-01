@@ -1,5 +1,6 @@
 use super::*;
 use crate::code::Code;
+use crate::location::ObjectId;
 use crate::pointer::{Pointer, pointer, repinned};
 use crate::record::{Content, Kind, Role};
 
