@@ -657,6 +657,11 @@ fn a_plugins_own_hint_is_its_refusals_hint_and_a_refusal_without_one_has_none() 
         own(br#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date"}"#),
         ("tasks::date::bad".to_owned(), None)
     );
+    // An empty hint is no hint, so Board still says the plugin gave none.
+    assert_eq!(
+        own(br#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date", "hint": " "}"#),
+        ("tasks::date::bad".to_owned(), None)
+    );
 }
 
 #[test]

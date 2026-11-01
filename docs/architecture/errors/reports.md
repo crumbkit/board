@@ -19,12 +19,11 @@ for `board::cli::usage`.
 `recovery` says what to try next. Its `kind` is `run`, with `call`, a command
 line that runs as written; `hint`, with `text`, a sentence for a reader, used
 when the next step needs a value only the reader has; or `none`, with
-`reason`, such as `the plugin gave no hint` for a plugin's own code
-that has none. A path
-refused only for its form, such as one without its leading `/`, gets a `run`
-recovery holding the corrected line, with any word quoted that a shell would
-split, and an `alternatives` array holding one `{kind: run, call}` for
-`board <command> -h`. This holds for an optional path, such as `check`'s, too.
+`reason`, such as `the plugin gave no hint` for a plugin's own code that has
+none. A path refused only for its form, such as one without its leading `/`,
+gets a `run` recovery holding the corrected line, with any word quoted that a
+shell would split, and an `alternatives` array holding one `{kind: run, call}`
+for `board <command> -h`. This holds for an optional path, such as `check`'s, too.
 A path whose corrected line still does not parse, and a refused `--field`
 pointer, get the recovery `board <command> -h` and no `alternatives`.
 

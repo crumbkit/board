@@ -162,15 +162,16 @@ A plugin exits 0 with a result, or 1 with an error whose code is
 `<plugin>::<area>::<reason>`, starting with its own name. Board reports that
 code as its own, with the plugin's fields plus `plugin` and `stderr`, the end
 of the plugin's stderr; Board adds no other key. The plugin's `hint`, a
-sentence saying what to try next, becomes the failure's `hint` recovery.
-Python's `PluginError` takes it as `hint`. Any other answer
-on stdout is `board::plugin::bad_output`; a non-zero exit without an error
-document, or a signal, is `board::plugin::failed`. A `run` program that
-cannot be started is `board::plugin::not_started`. Stderr is for logs; Board
-shows its last 64 KiB when the call fails. A call has 30 seconds, or its capability's `timeout`, and 16 MiB of
-stdout; past either, Board stops the plugin with `board::plugin::timeout` or
-`board::plugin::too_large`. A `run` command must `exec` its final program or
-forward SIGTERM. [plugins/processes.md](plugins/processes.md) has the detail.
+sentence saying what to try next, becomes the failure's `hint` recovery; an
+empty hint counts as none. Python's `PluginError` takes it as `hint`. Any
+other answer on stdout is `board::plugin::bad_output`; a non-zero exit without
+an error document, or a signal, is `board::plugin::failed`. A `run` program
+that cannot be started is `board::plugin::not_started`. Stderr is for logs;
+Board shows its last 64 KiB when the call fails. A call has 30 seconds, or its
+capability's `timeout`, and 16 MiB of stdout; past either, Board stops the
+plugin with `board::plugin::timeout` or `board::plugin::too_large`. A `run`
+command must `exec` its final program or forward SIGTERM.
+[plugins/processes.md](plugins/processes.md) has the detail.
 
 A plugin calls another plugin only through `board call`, and reads Board's
 `entries` only through `board query`, run as a child with its working directory

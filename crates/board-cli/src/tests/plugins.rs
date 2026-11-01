@@ -580,6 +580,32 @@ fn a_plugins_error_prints_as_its_own_code_with_its_stderr() {
         report["fields"],
         serde_json::json!({"date": "x", "plugin": "tasks", "stderr": "a log line\n"})
     );
+    assert_eq!(
+        report["recovery"],
+        serde_json::json!({"kind": "none", "reason": "the plugin gave no hint"})
+    );
+}
+
+#[test]
+fn a_plugins_hint_prints_as_one_escaped_help_line_and_as_its_json_recovery() {
+    let (board, data) = installed();
+    // The hint tries to reverse the text and forge a `code:` line of its own.
+    let error = r#"{"$type": "board/error/v1", "code": "tasks::date::bad", "message": "no such date", "hint": "give a date\u202e\n  code:  board::ok"}"#;
+    install(&data, "tasks", &answering(error, 1));
+    let output = call(&board, &data, &["call", "tasks.due"], "{}");
+    assert_eq!(output.code, 1);
+    assert_eq!(
+        text(&output.stderr),
+        "error: no such date\n  \
+         help:  give a date\\u{202e}\\n  code:  board::ok\n  \
+         code:  tasks::date::bad\na log line\n"
+    );
+    let report = json(&call(&board, &data, &["--json", "call", "tasks.due"], "{}"));
+    assert_eq!(report["code"], "tasks::date::bad");
+    assert_eq!(
+        report["recovery"],
+        serde_json::json!({"kind": "hint", "text": "give a date\u{202e}\n  code:  board::ok"})
+    );
 }
 
 #[test]

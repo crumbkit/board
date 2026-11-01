@@ -50,7 +50,7 @@ impl PluginFailure {
                 .map_err(|PluginCodeError { code }| BadOutput::Code { code })?,
             message,
             fields,
-            hint,
+            hint: hint.filter(|hint| !hint.trim().is_empty()),
         })
     }
 }

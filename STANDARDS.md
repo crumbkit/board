@@ -131,8 +131,9 @@ make it concrete. Rule 17 already fixes the report, the exit codes and `--json`.
     command one word apart, or without one variable, that succeeds. A code
     that no word or variable causes is listed with its reason and the test
     that pairs it. A listing's entries, such as `plugin list`'s, report each
-    one's problem as its status and carry no hint. A plugin's own codes carry the plugin's message and the
-    plugin's own hint when it gives one, never a hint from Board.
+    one's problem as its status and carry no hint. A plugin's own codes carry
+    the plugin's message and the plugin's own hint when it gives one, never a
+    hint from Board.
 26. **Output does not depend on the terminal.** Board prints the same bytes to a
     terminal as to a pipe. It does not use colour, wrap lines or detect a
     terminal on stdout or stderr. `board call` takes a terminal on stdin as no
