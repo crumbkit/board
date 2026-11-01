@@ -349,7 +349,7 @@ impl Repositories {
         };
         let remote = board_model::shown_remote(&origin);
         let reader = &mut root.reader();
-        let mut named = |entry: &Entry| {
+        let named = |entry: &Entry| {
             let blob = entry
                 .blob
                 .filter(|_| entry.status == Status::Ok && is_repo(&entry.path))?;
