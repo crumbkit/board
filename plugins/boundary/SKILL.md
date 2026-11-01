@@ -28,6 +28,9 @@ Then follow that action's refusal the same way.
    Each failure names a control, a part, a line and the text at fault.
    Remove or reword quoted matches, shorten parts over budget, and follow
    each `rewrite`. Then check again. `fields.recovery.text` says the same.
+   On `boundary::boundary::invalid`, an entry under `/boundaries/` in the
+   personal board is broken. Run `board --personal check <path>` and fix it;
+   a boundary is a record the owner keeps, so ask before you change one.
 3. Send only content that passed. After sending, record what the
    destination returned:
 

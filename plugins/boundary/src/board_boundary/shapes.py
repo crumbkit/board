@@ -12,6 +12,8 @@ BOUNDARY_TYPE = "boundary/boundary/v1"
 CROSSING_TYPE = "boundary/crossing/v1"
 # Where crossings live in the personal board, each named by its digest.
 CROSSINGS = "/crossings/"
+# Where boundaries live in the personal board; every entry there must be a valid boundary.
+BOUNDARIES = "boundaries/"
 # How long `check` may take, in seconds: as long as `controls.evaluate`, whose judged rules wait on a model.
 CHECK_TIMEOUT = 1800
 # The variables `controls.evaluate` reads for a judged rule, passed through to it.

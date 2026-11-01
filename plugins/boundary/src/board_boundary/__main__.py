@@ -2,7 +2,7 @@
 
 import sys
 
-from board_plugin.protocol import CallRequest, PluginError, main
+from board_plugin.protocol import CallRequest, main
 
 from board_boundary.crossing import check, record, verify
 from board_boundary.shapes import CheckOutput, RecordOutput, VerifyOutput
@@ -14,12 +14,8 @@ def call(request: CallRequest) -> CheckOutput | VerifyOutput | RecordOutput:
         return check(request)
     if request.capability == "verify":
         return verify(request)
-    if request.capability == "record":
-        return record(request)
-    raise PluginError(
-        "boundary::call::unknown_capability",
-        f"boundary offers no capability {request.capability}; it offers check, verify and record",
-    )
+    # Board refuses a capability the manifest does not offer before it starts the plugin.
+    return record(request)
 
 
 sys.exit(main("boundary", call))

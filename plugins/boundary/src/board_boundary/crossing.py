@@ -9,6 +9,7 @@ from board_plugin.board import TREE_CODES, Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
 from board_boundary.shapes import (
+    BOUNDARIES,
     BOUNDARY_TYPE,
     CROSSING_TYPE,
     CROSSINGS,
@@ -22,6 +23,9 @@ from board_boundary.shapes import (
     VerifyOutput,
 )
 
+# The finding of a control without a rule, which cannot check content, so its verdict fails the crossing.
+GIVE_RULE = "give each control without a rule a rule, or remove it from the boundary"
+NO_RULE = "this control has no rule, so it cannot check content; give it a rule, or remove it from the boundary"
 # The failures a refusal's message names; its `failures` field holds them all.
 NAMED = 20
 # A valid record: one Board marks ok, or degraded only for a reference that dangles or reaches the wrong type.
@@ -71,7 +75,7 @@ def check(request: CallRequest) -> CheckOutput:
         report = board.document("call", "controls.evaluate", stdin=stdin)
         verdicts += cast("list[Verdict]", report["data"]["output"]["results"])
     verdicts.sort(key=lambda verdict: (verdict["control"], verdict["part"]))
-    failed = [verdict for verdict in verdicts if verdict["status"] == "failed"]
+    failed = [verdict for verdict in verdicts if verdict["status"] in {"failed", "stated"}]
     key = digest(action, to, parts)
     crossing = CrossingRecord(
         {
@@ -105,26 +109,32 @@ def check(request: CallRequest) -> CheckOutput:
 
 
 def _boundaries(board: Board) -> dict[str, BoundaryRecord]:
-    """Every boundary in the personal board's own tree, by its path, or `boundary::boundary::invalid`.
+    """Every boundary under /boundaries/ in the personal board, by its path, or `boundary::boundary::invalid`.
 
-    A boundary that fails its schema refuses every check, so a broken rule
-    stops content instead of letting it pass unchecked.
+    Any entry there that is not a valid boundary, whether it does not parse,
+    has another type or fails its schema, refuses every check, so a broken
+    rule stops content instead of letting it pass unchecked.
     """
     rows = board.rows(
-        f"SELECT logical, body, {VALID}, code FROM records"  # noqa: S608 - the values are constants
-        f" WHERE type = {literal(BOUNDARY_TYPE)} AND source = 'worktree' ORDER BY logical"
+        f"SELECT COALESCE(logical, '/' || path), type, {VALID}, code,"  # noqa: S608 - values are quoted by literal()
+        " (SELECT body FROM records r WHERE r.source = e.source AND r.path = e.path)"
+        f" FROM entries e WHERE source = 'worktree' AND path GLOB {literal(BOUNDARIES + '*')} ORDER BY path"
     )
-    invalid = {logical: code for logical, _, valid, code in rows if not valid}
+    invalid = {
+        logical: code or "not a boundary"
+        for logical, kind, valid, code, _ in rows
+        if kind != BOUNDARY_TYPE or not valid
+    }
     if invalid:
         named = ", ".join(f"{logical} ({code})" for logical, code in invalid.items())
         first = next(iter(invalid))
         raise PluginError(
             "boundary::boundary::invalid",
-            f"the personal board holds boundaries that are not valid, so nothing can be checked: {named};"
-            f" run `board --personal check {first}`, fix each record, and check again",
+            f"the personal board holds entries under /{BOUNDARIES} that are not valid boundaries, so nothing can be"
+            f" checked: {named}; run `board --personal check {first}`, fix each one, and check again",
             {"boundaries": invalid},
         )
-    return {logical: json.loads(body) for logical, body, _, _ in rows}
+    return {logical: json.loads(body) for logical, _, _, _, body in rows}
 
 
 def _matches(record: BoundaryRecord, action: str, to: str, origin: str | None) -> bool:
@@ -147,7 +157,7 @@ def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginE
     """`boundary::check::failed`, naming each failing control, part and line, with the next step."""
     failures: list[Failure] = []
     for verdict in failed:
-        for finding in verdict["findings"] or [Finding(text="failed")]:
+        for finding in verdict["findings"] or [Finding(text=NO_RULE)]:
             failure = Failure(control=verdict["control"], part=verdict["part"], text=finding["text"])
             if "line" in finding:
                 failure["line"] = finding["line"]
@@ -156,10 +166,17 @@ def _refusal(action: str, key: str, path: str, failed: list[Verdict]) -> PluginE
             failures.append(failure)
     named = "; ".join(_named(failure) for failure in failures[:NAMED])
     more = f"; and {len(failures) - NAMED} more" if len(failures) > NAMED else ""
-    parts = ", ".join(sorted({verdict["part"] for verdict in failed}))
+    parts = ", ".join(sorted({verdict["part"] for verdict in failed if verdict["status"] == "failed"}))
+    steps: list[str] = []
+    if any(verdict["status"] == "stated" for verdict in failed):
+        steps.append(GIVE_RULE)
+    if parts:
+        steps.append(
+            f"change {parts}: remove or reword each quoted match, shorten each part over its budget,"
+            " and follow each rewrite"
+        )
     recovery = (
-        f"Next: change {parts}: remove or reword each quoted match, shorten each part over its budget,"
-        f" and follow each rewrite. Then run `board call {action}` again, or"
+        f"Next: {'; '.join(steps)}. Then run `board call {action}` again, or"
         " `board --personal call boundary.check` with the changed parts on stdin."
     )
     return PluginError(

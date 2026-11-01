@@ -28,8 +28,8 @@ calls it. Enable `controls` and `boundary` in the personal board, and
 }
 ```
 
-- `to`, `actions` and `checks` are required. A boundary can live at any
-  path in the personal board's own tree, such as `/boundaries/octo`.
+- `to`, `actions` and `checks` are required. Boundaries live under
+  `/boundaries/` in the personal board, such as `/boundaries/octo`.
 - `to` is a glob of destinations, and `actions` holds globs of action
   names, such as `github.pr-create`. Globs are shell-style and match case:
   `*` matches any characters, `/` and `.` included.
@@ -39,7 +39,11 @@ calls it. Enable `controls` and `boundary` in the personal board, and
   any checkout, including one no board mounts.
 - Each check names a control in the personal board and globs of the part
   names it applies to. Board checks the reference, so a deleted control
-  makes the boundary `board::ref::dangling`.
+  makes the boundary `board::ref::dangling`. Each control must have a rule.
+  A control without one cannot check content, so its verdict, `stated`,
+  fails the check.
+- A part whose name no check's globs match is not checked. Write `*` to
+  check every part.
 
 ## Capabilities
 
@@ -51,10 +55,11 @@ run before its judged rules, and a judged rule skips a part that failed a
 free one. The groups run one after another within the capability's 1,800
 seconds. A refusal from `controls.evaluate`, such as
 `controls::control::not_found`, is `boundary::board::refused` carrying that
-code. A boundary in the personal board that fails its schema refuses every
-check with `boundary::boundary::invalid`, naming each such boundary and its
-code, so a broken rule stops content. The check passes `BOARD_CONTROLS_AGENT`, `ANTHROPIC_API_KEY` and
-`CLAUDE_CODE_OAUTH_TOKEN` on, for judged rules.
+code. Any entry under `/boundaries/` that is not a valid boundary, because
+it does not parse, has another type or fails its schema, refuses every
+check with `boundary::boundary::invalid`, naming each entry and its code, so
+a broken rule stops content. The check passes `BOARD_CONTROLS_AGENT`,
+`ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN` on, for judged rules.
 
 Then it writes the crossing and returns `digest`, `crossing`, `boundaries`,
 `verdicts` and `note`. `note` says why nothing was checked when no boundary
@@ -64,7 +69,8 @@ each failing control, part and line with the quoted text and any rewrite,
 the first 20 of them, and ends with the next step. Its fields hold `digest`,
 `crossing`, every failure in `failures` (`control`, `part`, `text`, `line`
 and `rewrite` when known), and `recovery`, `{kind: hint, text}`, whose text
-starts `Next:` and names `board call <action>` and
+starts `Next:`. It says what to change, including giving a control
+without a rule a rule, and names `board call <action>` and
 `board --personal call boundary.check` to run again. A pattern control shown `match-only` never reveals its
 expression here either.
 

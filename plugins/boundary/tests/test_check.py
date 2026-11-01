@@ -184,6 +184,40 @@ def test_an_invalid_boundary_refuses_every_check_naming_it_and_the_same_boundary
     assert output(document)["boundaries"] == ["/boundaries/broken", "/boundaries/octo"]
 
 
+def test_a_boundary_file_that_does_not_parse_or_has_another_type_refuses_and_made_valid_is_used(
+    personal: Board,
+) -> None:
+    private_names(personal)
+    names_boundary(personal)
+    for text in ("{", json.dumps({"$type": "boundary/boundry/v1"})):
+        personal.write("boundaries/broken.json", text)
+        ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+        assert ran.returncode == 1, text
+        assert document["code"] == "boundary::boundary::invalid", text
+        assert list(document["fields"]["boundaries"]) == ["/boundaries/broken"], text
+    checks = [{"control": "/controls/names", "parts": ["*"]}]
+    personal.write("boundaries/broken.json", boundary(to="github:*", actions=["github.*"], checks=checks))
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 0, ran.stderr
+    assert output(document)["boundaries"] == ["/boundaries/broken", "/boundaries/octo"]
+
+
+def test_a_control_without_a_rule_fails_the_crossing_and_the_same_control_with_a_rule_passes(personal: Board) -> None:
+    written = {"$type": "controls/control/v1", "requirement": "Names.", "purpose": "A test."}
+    personal.write("controls/names.json", json.dumps(written))
+    names_boundary(personal)
+    ran, document = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 1
+    assert document["code"] == "boundary::check::failed"
+    [failure] = document["fields"]["failures"]
+    assert failure["control"] == "/controls/names"
+    assert failure["text"].startswith("this control has no rule, so it cannot check content")
+    assert document["fields"]["recovery"]["text"].startswith("Next: give each control without a rule a rule")
+    private_names(personal)
+    ran, _ = personal.call("check", PR | {"parts": {"pr.body": "Fine."}})
+    assert ran.returncode == 0, ran.stderr
+
+
 def test_a_boundary_naming_a_missing_control_refuses_with_the_controls_code(personal: Board) -> None:
     private_names(personal)
     names_boundary(personal, checks=[{"control": "/controls/gone", "parts": ["*"]}])

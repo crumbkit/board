@@ -232,13 +232,17 @@ class Board:
             raise PluginError(f"{self.plugin}::board::timed_out", why, {"seconds": timeout}) from None
         return subprocess.CompletedProcess(command, child.returncode, stdout, stderr)
 
+    def _named(self, arguments: tuple[str, ...]) -> str:
+        """The command a message names: `board`, its flags and the subcommand."""
+        return " ".join(("board", *self.flags, arguments[0]))
+
     def _failed(
         self, arguments: tuple[str, ...], ran: subprocess.CompletedProcess[bytes] | None, why: str
     ) -> PluginError:
         stderr = ran.stderr.decode(errors="replace")[-4096:] if ran is not None else ""
         return PluginError(
             f"{self.plugin}::board::failed",
-            f"`board {arguments[0]}` {why}; check that the `board` first on PATH is this Board",
+            f"`{self._named(arguments)}` {why}; check that the `board` first on PATH is this Board",
             {"stderr": stderr},
         )
 
@@ -251,7 +255,7 @@ class Board:
         carried = cast("dict[str, Any]", fields) if isinstance(fields, dict) else {}
         return PluginError(
             f"{self.plugin}::board::refused",
-            f"`board {arguments[0]}` refused with {code}: {message}{then}",
+            f"`{self._named(arguments)}` refused with {code}: {message}{then}",
             {**carried, "code": code},
         )
 

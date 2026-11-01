@@ -389,6 +389,12 @@ def test_a_boards_flags_start_every_run_and_a_board_without_flags_runs_its_argum
     monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
     assert Board(str(tmp_path), "demo", flags=("--personal",)).document("ls") == {"argv": "--personal --json ls"}
     assert Board(str(tmp_path), "demo").document("ls") == {"argv": "--json ls"}
+    fake.write_text(
+        '#!/bin/sh\necho \'{"schema": "board/failure/v1", "code": "board::x::y", "message": "no"}\'\nexit 1\n'
+    )
+    with pytest.raises(PluginError) as refused:
+        Board(str(tmp_path), "demo", flags=("--personal",)).document("ls")
+    assert refused.value.message.startswith("`board --personal ls` refused with board::x::y")
 
 
 def test_a_literal_doubles_its_quotes() -> None:
