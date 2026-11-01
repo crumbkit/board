@@ -21,6 +21,12 @@ def untitled(schema: JsonDict) -> None:
         field.pop("title", None)
 
 
+def prose(schema: JsonDict) -> None:
+    """Mark a free-text value that may be left out as the shared Prose shape (shapes rule 14)."""
+    unset(schema)
+    schema["x-board-prose"] = True
+
+
 class IssueRecord(Strict):
     """`jira/issue/v1`: one Jira issue, at `/jira/<site>/<key>`."""
 
@@ -35,7 +41,7 @@ class IssueRecord(Strict):
     )
     title: str | SkipJsonSchema[None] = Field(
         default=None,
-        json_schema_extra=unset,
+        json_schema_extra=prose,
         min_length=1,
         description="The issue's summary when the record was written; absent when it could not be read.",
     )

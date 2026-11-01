@@ -20,7 +20,8 @@
     "title": {
       "description": "The issue's summary when the record was written; absent when it could not be read.",
       "minLength": 1,
-      "type": "string"
+      "type": "string",
+      "x-board-prose": true
     },
     "url": {
       "description": "The address of the issue's page, such as https://acme.atlassian.net/browse/ACME-123.",
