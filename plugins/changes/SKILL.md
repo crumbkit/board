@@ -53,6 +53,9 @@ The gate is the contract. `next` says what the current phase still lacks;
 - `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
 - `changes::ref::dangling`: nothing is at the path. Write the record
   first.
+- `changes::ref::wrong_type`: the ticket or pull is not a record of a type
+  its list accepts. Point it at a `jira/issue/v1`, `github/issue/v1` or
+  `github/pull/v1` record.
 - `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
 - `changes::mount::not_found`: run `board ls /repos` to find the mount.

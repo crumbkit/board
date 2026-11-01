@@ -18,8 +18,8 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   "route": "owner",
   "plan": "/changes/suite-timeout/plan.md",
   "head": "a3f9c0d",
-  "tickets": ["/repos/board/tickets/ACME-123"],
-  "pulls": ["/repos/board/pulls/octo-widgets-7"],
+  "tickets": ["/jira/acme/ACME-123"],
+  "pulls": ["/gh/octo/widgets/pulls/7"],
   "records": ["/tasks/suite-timeout-schema", "/suites/board-tests/runs/20261025T101500Z-a3f9"]
 }
 ```

@@ -187,3 +187,14 @@ def test_attach_refuses_a_ticket_or_pull_of_another_type_and_adds_each_type_it_a
     written = board.read("changes/t.json")
     assert written["tickets"] == ["/tickets/ACME-123", "/issues/octo-widgets-6"]
     assert written["pulls"] == ["/pulls/octo-widgets-7"]
+
+
+def test_attach_refuses_a_ticket_that_is_a_markdown_file_and_adds_a_ticket_record(board: Board) -> None:
+    board.write("changes/t.json", change())
+    board.write("tickets/ACME-123.md", "# ACME-123\n")
+    board.write("tickets/ACME-123.json", record("jira/issue/v1"))
+    refused = board.refusal("attach", {"path": PATH, "ticket": "/tickets/ACME-123.md"})
+    assert (refused["code"], refused["fields"]["type"]) == ("changes::ref::wrong_type", None)
+    assert "is not a record" in refused["message"]
+    board.call("attach", {"path": PATH, "ticket": "/tickets/ACME-123"})
+    assert board.read("changes/t.json")["tickets"] == ["/tickets/ACME-123"]
