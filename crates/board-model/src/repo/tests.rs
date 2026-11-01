@@ -87,6 +87,20 @@ fn a_remote_not_in_its_stored_form_is_refused_and_its_stored_form_is_admitted() 
 }
 
 #[test]
+fn a_refused_remote_is_named_by_its_stored_form_and_never_by_its_user_or_password() {
+    let record = r#"{"$type": "board/repo/v1", "remote": "https://bot:s3cret@gitlab.com/example-org/app.git"}"#;
+    let message = pointer(record.as_bytes()).unwrap_err().to_string();
+    assert!(
+        !message.contains("s3cret") && !message.contains("bot"),
+        "{message}"
+    );
+    assert!(
+        message.contains("https://gitlab.com/example-org/app.git"),
+        "{message}"
+    );
+}
+
+#[test]
 fn a_checkout_of_a_remote_repository_is_refused_as_a_mount_of_one_is() {
     assert!(pointer(repo(&checkout("/srv/board")).as_bytes()).is_ok());
     let error = pointer(repo(&checkout("https://example.com/board.git")).as_bytes()).unwrap_err();
@@ -126,5 +140,13 @@ proptest::proptest! {
         remote in "(\\PC|[@:/.-]|github\\.com){0,24}"
     ) {
         proptest::prop_assert!(shown_remote(&remote).len() <= remote.len(), "{}", remote);
+    }
+
+    #[test]
+    fn the_stored_form_of_a_stored_form_is_itself(
+        remote in "(\\PC|[@:/.-]|github\\.com|\\.git){0,24}"
+    ) {
+        let shown = shown_remote(&remote);
+        proptest::prop_assert_eq!(shown_remote(&shown), shown, "{}", remote);
     }
 }

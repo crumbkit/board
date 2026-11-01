@@ -1,7 +1,7 @@
 [
   {"remote": "crumbkit/board", "stored": "crumbkit/board"},
   {"remote": "crumbkit/board.git", "stored": "crumbkit/board"},
-  {"remote": "Example-Org/Home", "stored": "Example-Org/Home"},
+  {"remote": "Example-Org/App", "stored": "Example-Org/App"},
   {"remote": "https://github.com/example-org/app.git", "stored": "example-org/app"},
   {"remote": "https://github.com/example-org/app", "stored": "example-org/app"},
   {"remote": "https://github.com/example-org/app/", "stored": "example-org/app"},
@@ -16,7 +16,8 @@
   {"remote": "ssh://github.com/example-org/app.git", "stored": "example-org/app"},
   {"remote": "git://github.com/example-org/app.git", "stored": "example-org/app"},
   {"remote": "ssh://git@github.com.evil.io/example-org/app.git", "stored": "ssh://github.com.evil.io/example-org/app.git"},
-  {"remote": "example-org/app.git.git", "stored": "example-org/app.git"},
+  {"remote": "example-org/app.git.git", "stored": "example-org/app"},
+  {"remote": "user@example-org/app.git", "stored": "example-org/app"},
   {"remote": "example-org/.git", "stored": "example-org/.git"},
   {"remote": "https://user:SECRET@gitlab.com/example-org/app.git", "stored": "https://gitlab.com/example-org/app.git"},
   {"remote": "https://user:p@ss@gitlab.com/example-org/app.git", "stored": "https://gitlab.com/example-org/app.git"},

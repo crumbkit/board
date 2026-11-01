@@ -43,10 +43,7 @@ impl Repo {
         let raw = RawRepo::deserialize(value).map_err(|source| PointerError::Invalid { source })?;
         let shown = shown_remote(&raw.remote);
         if raw.remote.is_empty() || shown != raw.remote {
-            return Err(PointerError::Unshown {
-                remote: raw.remote,
-                shown,
-            });
+            return Err(PointerError::Unshown { shown });
         }
         let checkout = raw.checkout.map(mount).transpose()?;
         Ok(Self {
@@ -82,10 +79,21 @@ fn mount(checkout: RawCheckout) -> Result<Mount, PointerError> {
 /// clones of one repository give the same value. A port of
 /// `board_plugin.repos.shown_remote`; both read the table in
 /// python/board-plugin/tests/remotes.json in their tests.
+///
+/// The form is reapplied until it holds still, so the stored form of a
+/// stored form is itself: `owner/name.git.git` and `user@owner/name.git`
+/// are both `owner/name`. Each change shortens the text, so this ends.
 pub fn shown_remote(remote: &str) -> String {
-    match github(remote) {
-        Some((owner, name)) => format!("{owner}/{name}"),
-        None => without_userinfo(remote),
+    let mut shown = remote.to_owned();
+    loop {
+        let next = match github(&shown) {
+            Some((owner, name)) => format!("{owner}/{name}"),
+            None => without_userinfo(&shown),
+        };
+        if next == shown {
+            return shown;
+        }
+        shown = next;
     }
 }
 

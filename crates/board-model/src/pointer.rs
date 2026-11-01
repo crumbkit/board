@@ -173,8 +173,9 @@ pub enum PointerError {
     Commit { commit: String },
     #[error("pointer repo {repo:?} is remote, and only local repositories mount")]
     Remote { repo: String },
-    #[error("repo record remote {remote:?} is not in its stored form {shown:?}")]
-    Unshown { remote: String, shown: String },
+    /// Only the stored form is kept, because the remote may hold a token.
+    #[error("repo record remote is not in its stored form; write {shown:?}")]
+    Unshown { shown: String },
 }
 
 impl PointerError {

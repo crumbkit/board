@@ -288,6 +288,15 @@ impl Repositories {
 pub struct Place {
     pub mount: LogicalPath,
     pub within: LogicalPath,
+    pub matched: Matched,
+}
+
+/// How a place was found: a mount of the directory's repository, or a repo
+/// record whose `remote` is that repository's origin.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Matched {
+    Mount,
+    Remote,
 }
 
 impl Place {
@@ -329,6 +338,7 @@ impl Repositories {
             .map(|(mount, _, _)| Place {
                 mount,
                 within: within.clone(),
+                matched: Matched::Mount,
             })
             .collect();
         if !mounted.is_empty() {
@@ -355,6 +365,7 @@ impl Repositories {
                 Some(Place {
                     mount: entry.logical.clone()?,
                     within: LogicalPath::root(),
+                    matched: Matched::Remote,
                 })
             })
             .collect()

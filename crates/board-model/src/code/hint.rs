@@ -366,7 +366,7 @@ fn generic(code: Code) -> &'static str {
             "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
         }
         Code::ConfigAmbiguous => {
-            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"
+            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"
         }
         Code::SchemaInvalid => {
             "fix the schema so it compiles as JSON Schema 2020-12; the message says what failed"
