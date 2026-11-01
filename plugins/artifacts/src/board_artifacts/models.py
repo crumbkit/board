@@ -6,12 +6,12 @@ generated from these models.
 
 import datetime
 from collections.abc import Callable
-from typing import Annotated, Any, Literal, cast, override
+from typing import Annotated, Any, Literal, cast
 
-from board_plugin.model import Strict
+from board_plugin.model import Strict, Untitled
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
-from pydantic.json_schema import GenerateJsonSchema, SkipJsonSchema
+from pydantic.json_schema import SkipJsonSchema
 
 ARTIFACT_TYPE = "artifacts/artifact/v1"
 VERSION_TYPE = "artifacts/version/v1"
@@ -41,17 +41,9 @@ def artifact_id(url: str) -> str:
     return url.rsplit("/", 1)[-1]
 
 
-class _Untitled(GenerateJsonSchema):
-    """Schemas without property titles, as Board's shape rules want (docs/architecture/records/shapes.md 11)."""
-
-    @override
-    def field_title_should_be_set(self, schema: Any) -> bool:
-        return False
-
-
 def schema_of(model: type[BaseModel]) -> dict[str, Any]:
     """`model`'s JSON schema, by alias and without property titles."""
-    return model.model_json_schema(by_alias=True, schema_generator=_Untitled)
+    return model.model_json_schema(by_alias=True, schema_generator=Untitled)
 
 
 def shipped(extra: JsonDict | None = None) -> Callable[[JsonDict], None]:

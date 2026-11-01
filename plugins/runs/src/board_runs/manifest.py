@@ -1,10 +1,8 @@
 """The plugin's manifest and the schemas it ships, generated from its models (STANDARDS.md P3)."""
 
-from typing import Any, override
-
+from board_plugin.model import Untitled
 from board_plugin.protocol import dumped
 from pydantic import JsonValue
-from pydantic.json_schema import GenerateJsonSchema
 
 from board_runs.models import (
     AGENT_TYPE,
@@ -72,17 +70,9 @@ def run_schema() -> dict[str, JsonValue]:
     return RunRecord.model_json_schema(by_alias=True)
 
 
-class _Untitled(GenerateJsonSchema):
-    """Schemas without property titles, as Board's shape rules want (docs/architecture/records/shapes.md 11)."""
-
-    @override
-    def field_title_should_be_set(self, schema: Any) -> bool:
-        return False
-
-
 def agent_schema() -> dict[str, JsonValue]:
     """The schema of `runs/agent/v1`, as the plugin ships it, keeping Board's shape rules."""
-    return AgentRecord.model_json_schema(by_alias=True, schema_generator=_Untitled)
+    return AgentRecord.model_json_schema(by_alias=True, schema_generator=Untitled)
 
 
 if __name__ == "__main__":
