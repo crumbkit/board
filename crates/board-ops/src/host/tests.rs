@@ -813,3 +813,23 @@ fn a_built_in_resolves_and_reads_paths_as_refs_and_get_do_and_a_missing_path_is_
     assert_eq!(output["missing"], json!("/gone"));
     assert_eq!(output["read"], json!(["a\n", "board::path::not_found"]));
 }
+
+#[test]
+fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
+    let mut settings = Settings {
+        now: UNIX_EPOCH,
+        day_start: None,
+        caller: None,
+        environment: Variables::default(),
+        cache_home: Some(std::path::PathBuf::from("/cache")),
+    };
+    assert_eq!(
+        cache_place(&settings, "board-controls/judged"),
+        Some(std::path::PathBuf::from("/cache/board-controls/judged"))
+    );
+    for place in ["", "/abs", "a/../b", "a//b", "./a", "a/"] {
+        assert_eq!(cache_place(&settings, place), None, "{place}");
+    }
+    settings.cache_home = None;
+    assert_eq!(cache_place(&settings, "board-controls/judged"), None);
+}

@@ -51,8 +51,7 @@ such as a pull request body, instead of files.
     what matched and never the expression, so the file can stay private;
     with `pattern`, it names the expression too.
   - A judged rule, such as `{"judged": "/rubrics/plain.md"}`, names a
-    rubric that a clean-context model reads text against. Board does not
-    apply judged rules yet; see `controls.evaluate` below.
+    rubric that a clean-context model reads text against.
 
   A rule holds the fields of exactly one kind, and is never null. A pattern
   file and a rubric are references, so `board check` marks the control
@@ -124,7 +123,9 @@ to `.board/types/controls/control/v1.schema.json`.
     `controls`.
   - A finding holds `text`, the words at fault, and `line` when it has one.
     A pattern finding quotes the match, and adds `pattern` only with
-    `show` `pattern`. A failed budget has one finding without a line.
+    `show` `pattern`. A judged finding adds `rewrite`, the model's
+    instruction for fixing the sentence. A failed budget has one finding
+    without a line.
   - A budget result adds `used` and `max`. A result shows at most 20
     findings and counts the rest in `omitted`.
 
@@ -136,11 +137,32 @@ to `.board/types/controls/control/v1.schema.json`.
   the line by its number. With `show` `match-only` it adds only the column
   of a syntax error, because the parser's own message can quote part of the
   expression; with `pattern` it quotes the line and the parser's message.
-  A judged rule that has a part to read fails the call with
-  `controls::judged::unavailable`: the agent that judges text lands in a
-  follow-up change, so leave judged controls out of `controls` until then.
   The call reads every pattern file and rubric once, and compiles each
   pattern file once per control.
+
+  A judged rule starts the agent `BOARD_CONTROLS_AGENT` names, a JSON array
+  of strings, as `review.run` starts `BOARD_REVIEW_AGENT` (the review
+  plugin's README explains the variable and how to run the agent without
+  tools). The agent runs in a new empty directory, leads its own process
+  group, and gets the rubric and the part's numbered lines on stdin. Its
+  answer, or the `result` of `claude -p --output-format json`'s envelope,
+  must end with a JSON object holding `findings`; otherwise the call fails
+  with `controls::agent::bad_output`. The part's text is untrusted, and a
+  verdict is no stronger than the agent's resistance to instructions in it.
+  The variable is read only when a judged rule has a part to read, so free
+  rules need no agent; without it the call fails with
+  `controls::agent::not_set`, and with a malformed one
+  `controls::agent::invalid`. An agent that cannot start, exits non-zero or
+  runs out of time fails the call with `controls::agent::not_started`,
+  `failed` or `timeout`. Each verdict is kept in
+  `$XDG_CACHE_HOME/board-controls/judged/` (else
+  `~/.cache/board-controls/judged/`), in a file named by the SHA-256 of the
+  whole prompt, which holds the rubric and the text, and the agent's
+  command. A retry judges only text that changed. The command stands for
+  the model, so name the model in it, such as `--model <id>`, or a new
+  default model reuses old verdicts. Deleting the directory costs only new
+  judgements. The judged rules share 29 minutes, which the plugin enforces
+  itself, since Board puts no deadline on a built-in call.
 
 Board refuses every call with `board::plugin::schema_differs` when the board's
 copy of the control schema differs from the one the plugin ships;
@@ -198,4 +220,5 @@ the plugin through the real binary. The gates, which CI runs:
 `uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and
 `uv run pytest`. The tests drive `$BOARD_BIN`, by default the workspace's
 `target/debug/board`, so build it first with `cargo build -p board-cli`.
+The tests start a stub agent script, never a model.
 `claude plugin test claude-code` runs the mod's tests.

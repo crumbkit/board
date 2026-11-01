@@ -4,6 +4,7 @@ mod check;
 mod evaluate;
 mod for_path;
 mod index;
+mod judged;
 pub mod records;
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal};
@@ -103,6 +104,8 @@ fn manifest() -> Value {
             "outputSchema": schema_of::<evaluate::Output>(settings()),
             "annotations": {"readOnlyHint": true},
             "_meta": {},
+            "timeout": judged::EVALUATE_TIMEOUT,
+            "env": [judged::AGENT_VARIABLE, "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
         }],
     })
 }
