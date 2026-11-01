@@ -134,13 +134,15 @@ Refusals:
 - `github::gh::failed`: gh failed after the check passed. The message says
   the content may have been sent.
 - `github::git::failed`: another git command failed.
+- `github::hook::exists`: `install-hook` found a different `pre-push` hook.
 
 The sending actions receive gh's variables, `SSH_AUTH_SOCK` for git and the
 variables the boundary's judged rules read. They pass the model credentials,
 `ANTHROPIC_API_KEY` and `CLAUDE_CODE_OAUTH_TOKEN`, only to `board`, never to
 git, its hooks or gh.
 Git runs the checkout's `pre-push` hook during the push, as it does for any
-push. The plugin does not check what a hook sends.
+push. The plugin does not check what a hook sends. When the hook is this
+plugin's own, it checks the same parts again, as below.
 
 The sending actions may run for 2,400 seconds, since the check alone may take 1,800.
 
@@ -152,10 +154,101 @@ from, which differs after a repository is renamed or an issue transferred.
 `ref` passes gh `GH_TOKEN`, `GITHUB_TOKEN` and `GH_CONFIG_DIR` when Board has
 them.
 
+## Pushes and writes made without Board
+
+The sending actions check only what goes through them. Two layers catch a
+push or write made another way. GitHub's own controls, such as branch
+protection and push rules, stay in place behind both, as the last layer.
+
+### The git pre-push hook
+
+`install-hook` writes a `pre-push` hook in the checkout Board was started in,
+in the directory `git rev-parse --git-path hooks` names, so it honours
+`core.hooksPath` and serves every worktree of the repository. It returns
+`path` and `installed`, which is false when the same hook was already there.
+A different hook already at that path is `github::hook::exists`, and the
+file is left as it was. Move it aside and install again.
+
+Before each push, git runs the hook, and the hook runs
+`board --personal call github.pre-push` with the remote, the URL and the
+refs git gives it. For each ref, `pre-push` builds the parts `push` builds:
+`push.branch` is the remote ref without `refs/heads/`, and the commits are
+those no ref on the remote reaches. It runs `boundary.check` on them as the
+action `github.push`. It never relies on `boundary.verify`, which misses an
+edit to a boundary's checks. A push made by `push` or `pr-create` gives the
+hook the same content, so judged verdicts come from the controls plugin's
+cache and cost no second model call. It returns `checked`, each ref's
+`ref`, `to`, `digest` and `note`.
+
+The destination is the URL git pushes to when it is GitHub's. When a rewrite
+sends it elsewhere, as in the tests, the remote's configured push URLs, else
+its URLs, are read instead. A push to no GitHub repository is not checked. A
+ref git deletes sends nothing and is not checked.
+
+The hook refuses the push whenever the check fails or cannot run, with
+Board's message, which ends with the boundary's `Next:` step. It refuses
+when board is not on PATH, and when the boundary plugin is not enabled,
+because it cannot then tell whether a boundary covers the push. It lets the
+push go when no config names a personal board (`board::config::not_found`),
+since there is then no boundary at all. A push no boundary covers passes the
+check with a `note` and goes. `git push --no-verify` skips the hook, which is
+why GitHub's controls stay.
+
+### The Claude Code mod
+
+The mod in `claude-code/`, `board-github`, adds a hook on Bash calls. It
+refuses `git push`, `gh pr create`, `gh pr edit`, `gh pr comment`,
+`gh issue create`, `gh issue comment` and `gh api` calls that write to a
+repository, when a boundary in the personal board covers the destination.
+The refusal names the github action that sends the same content, with the
+title, body, base and number the command gave, such as
+`Next: run \`board call github.pr-create --title "Add a gear" --body "..."\``.
+The command name is the constant `BOARD_COMMAND` in `claude-code/hooks/command.ts`.
+
+The mod refuses only when it is sure. It must be sure the command writes to
+GitHub, and sure a boundary covers that destination for that action.
+Whenever it cannot tell, the call runs and the mod says nothing. It cannot
+tell when board is missing or fails, when the personal board cannot be read,
+when the command does not parse, such as an unclosed quote, or when a
+directory or remote the command names is expanded by the shell, such as
+`cd "$DIR"`. A wrong refusal costs the agent a working command and teaches
+it to route around the mod, while a missed one still meets the pre-push hook
+and GitHub's controls, so the mod leans towards letting a call run.
+
+How it reads a command:
+
+- It reads only the text. A command that names neither `git` nor `gh` runs
+  with nothing read. A read, such as `gh pr view` or a `gh api` call with no
+  method and no fields, runs with nothing read either.
+- It splits the text at `;`, `&&`, `||`, `|`, `&`, parentheses and line ends,
+  skips here-document bodies, and drops redirections, leading variable
+  assignments and `env`, `command`, `exec`, `time` and `nohup`. `cd` and
+  `git -C` move the commands after them, and the refusal names the same
+  directory. A command inside `$(...)` is not read.
+- The destination is the repository `--repo` or a `gh api` path names.
+  Otherwise it is the checkout's remote URL as configured: the remote a
+  `git push` names, else the branch's push remote, else origin; origin for
+  `gh`. gh may pick another repository, such as a fork's parent, and the
+  mod does not follow it.
+- `gh api graphql` is not refused, because a mutation names its repository
+  by node id, which the text does not show.
+- A boundary limited by `from` counts when `board refs .` puts the checkout
+  under one of its paths, or when no board holds the checkout, since the
+  action then names no `from`. A mount the mod cannot read leaves such a
+  boundary out. A mount in a board other than the personal one is compared
+  as it is, so such a boundary is left out too, though the action would
+  apply it.
+- Each board or git run stops after 5 seconds, and the call then runs.
+
+Install it with `claude plugin install board-github@board`, after
+`claude plugin marketplace add crumbkit/board`. `claude plugin test
+plugins/github/claude-code` runs its tests, which stand in for board and git.
+
 ## Layout
 
 Each capability is one module in `src/board_github/`, listed in
-`__main__.py`; the sending actions share `send.py`. Every call to GitHub goes
+`__main__.py`; the sending actions share `send.py`, and `hook.py` holds `install-hook`
+and `pre-push`. Every call to GitHub goes
 through `gh.py`, every git command through `checkout.py`, and every call to the
 boundary through `crossing.py`. `objects.py` holds the record types and their
 paths.

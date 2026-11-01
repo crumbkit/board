@@ -1,0 +1,8 @@
+{
+  "name": "board-github",
+  "version": "0.1.0",
+  "description": "Refuses a raw git push or gh write to a GitHub repository a boundary covers, and names the board command that checks the content first.",
+  "author": {
+    "name": "Luke Randall"
+  }
+}

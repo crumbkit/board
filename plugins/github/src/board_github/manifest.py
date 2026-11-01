@@ -9,12 +9,16 @@ from board_github.models import (
     ISSUE_SCHEMA_PATH,
     PULL_SCHEMA_PATH,
     CommentInput,
+    InstallHookInput,
+    InstallHookOutput,
     IssueCreateInput,
     IssueCreateOutput,
     IssueRecord,
     PrCreateInput,
     PrCreateOutput,
     PrEditInput,
+    PrePushInput,
+    PrePushOutput,
     PullRecord,
     PushInput,
     PushOutput,
@@ -111,6 +115,23 @@ def manifest() -> dict[str, JsonValue]:
                 | {"env": list[JsonValue](SEND_ENV), "timeout": SEND_TIMEOUT}
                 for name, description, given, output in SENDING
             ),
+            capability(
+                "install-hook",
+                "Install a git pre-push hook in the checkout that has the boundary check what each push sends, "
+                "refusing to replace a different pre-push hook.",
+                InstallHookInput,
+                InstallHookOutput,
+                read_only=False,
+            ),
+            capability(
+                "pre-push",
+                "Run by the pre-push hook: check the refs git pushes as github.push checks a push, and refuse "
+                "when the boundary refuses or the check cannot run.",
+                PrePushInput,
+                PrePushOutput,
+                read_only=False,
+            )
+            | {"env": list[JsonValue](SEND_ENV), "timeout": SEND_TIMEOUT},
         ],
     }
 

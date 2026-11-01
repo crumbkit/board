@@ -109,6 +109,23 @@ def repository(at: str) -> tuple[str, str]:
     return matched[1].lower(), matched[2].lower()
 
 
+def destinations(at: str, remote: str, url: str) -> list[str]:
+    """The GitHub destinations, `github:<owner>/<repo>` in lower case, of a push git makes to `remote` at `url`.
+
+    Git names the remote, or the URL it was given in its place, and the URL it
+    pushes to, after any rewrite. When neither is GitHub's, as when `insteadOf`
+    sends the push elsewhere, the remote's push URLs as configured are read,
+    as `repository` reads origin. None of them naming GitHub means no boundary
+    on GitHub covers the push.
+    """
+    named = [each for each in (url, remote) if GITHUB.fullmatch(each)]
+    if not named:
+        configured = run(at, "config", "--get-all", f"remote.{remote}.pushurl").stdout.split()
+        named = configured or run(at, "config", "--get-all", f"remote.{remote}.url").stdout.split()
+    found = (GITHUB.fullmatch(each) for each in named)
+    return sorted({f"github:{each[1].lower()}/{each[2].lower()}" for each in found if each is not None})
+
+
 def mount(at: str, root: str) -> str | None:
     """The checkout's path in the personal board, as Board maps it, or None when the personal board does not mount it.
 
@@ -143,15 +160,25 @@ def branch(at: str) -> tuple[str, str]:
     return name, git(at, "rev-parse", "--verify", "HEAD^{commit}").strip()
 
 
-def outgoing(at: str, head: str) -> list[str]:
-    """The commits a push of `head` would send, oldest first: those no ref on origin reaches.
+def outgoing(at: str, head: str, remote: str = "origin") -> list[str]:
+    """The commits a push of `head` to `remote` would send, oldest first: those no ref on the remote reaches.
 
     A ref on origin that names a commit the checkout lacks cannot reach `head`,
     so `--ignore-missing` leaves it out.
     """
-    advertised = git(at, "ls-remote", "origin").split()
+    advertised = git(at, "ls-remote", remote).split()
     have = "".join(f"^{sha}\n" for sha in advertised[::2])
     return git(at, "rev-list", "--reverse", "--ignore-missing", "--stdin", head, stdin=have).split()
+
+
+def push_parts(at: str, branch: str, head: str, remote: str = "origin") -> tuple[list[str], dict[str, str]]:
+    """The commits a push of `head` to `branch` on `remote` sends, and the parts that name the branch and each commit.
+
+    `github.push` and the pre-push hook both build their parts here, so a push
+    the action makes gives the hook the same content to check.
+    """
+    commits = outgoing(at, head, remote)
+    return commits, {"push.branch": branch} | commit_parts(at, commits)
 
 
 def commit_parts(at: str, shas: list[str]) -> dict[str, str]:

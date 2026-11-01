@@ -159,3 +159,41 @@ class IssueCreateOutput(SentOutput):
 
     number: int
     path: str
+
+
+class InstallHookInput(Strict):
+    """Install the git pre-push hook in the checkout Board was started in."""
+
+
+class InstallHookOutput(Strict):
+    """Where the hook is, and whether this call wrote it; false when the same hook was already there."""
+
+    path: str
+    installed: bool
+
+
+class PrePushInput(Strict):
+    """What git gives its pre-push hook: the remote, the URL it pushes to, and the refs it pushes."""
+
+    remote: str = Field(description="The remote's name, or the URL git was given in its place.")
+    url: str = Field(description="The URL git pushes to.")
+    refs: str = Field(
+        description=(
+            "What git writes on the hook's stdin: one `<local ref> <local sha> <remote ref> <remote sha>` per line."
+        )
+    )
+
+
+class Checked(Strict):
+    """One ref's check against one destination."""
+
+    ref: str
+    to: str
+    digest: str
+    note: str | None
+
+
+class PrePushOutput(Strict):
+    """Each ref checked against each GitHub destination; empty when the push goes nowhere on GitHub or sends nothing."""
+
+    checked: list[Checked]
