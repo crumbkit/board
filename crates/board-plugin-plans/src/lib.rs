@@ -3,6 +3,8 @@
 mod open;
 pub mod records;
 
+pub use open::asked::{Instant, instant};
+
 use board_model::{CapabilityName, RecordType};
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;

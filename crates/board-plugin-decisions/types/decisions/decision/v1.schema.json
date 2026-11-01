@@ -1,0 +1,76 @@
+{
+  "additionalProperties": false,
+  "description": "`decisions/decision/v1`: a choice and why it was made, written once.\n\nNothing on it changes after it is written. Whether it awaits review, was\nreviewed or is superseded is derived from the questions whose `for`\nnames it and the decisions whose `supersedes` names it.",
+  "properties": {
+    "$type": {
+      "const": "decisions/decision/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "alternatives": {
+      "default": [],
+      "description": "What was not chosen.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "basis": {
+      "description": "The records the decision rests on, such as an eval, an owner's\nanswer, a review report, an earlier decision or a file in a mounted\nrepository.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "decided": {
+      "description": "When it was decided.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "decision": {
+      "description": "The choice, in one sentence.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "session": {
+      "description": "The session that decided.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "supersedes": {
+      "description": "The decisions this one replaces.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": "decisions/decision/v1"
+      },
+      "type": "array"
+    },
+    "urls": {
+      "default": [],
+      "description": "Web pages the decision concerns, such as a pull request.",
+      "items": {
+        "format": "uri",
+        "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "why": {
+      "description": "Why it was made.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "decision",
+    "why",
+    "decided",
+    "session"
+  ],
+  "title": "DecisionRecord",
+  "type": "object",
+  "x-board-folder": "/projects/{project}/decisions/"
+}

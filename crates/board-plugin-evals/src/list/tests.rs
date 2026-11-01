@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use board_ops::{Board, Plugins, QueryReport, Settings};
+use board_ops::{Board, Limit, Plugins, QueryReport, Settings};
 use board_plugin::Target;
 use board_scenario::{Item, Scenario};
 use proptest::prelude::*;
@@ -11,12 +11,14 @@ use serde_json::json;
 
 use super::*;
 use crate::Evals;
+use board_plugin_decisions::standing::DECISIONS;
 
 /// A host that answers every query with `rows` and records what it was
 /// asked, or answers with `failing`'s refusal of a query that names no
 /// table.
 struct Answering {
     rows: Vec<Vec<Value>>,
+    decisions: Vec<Vec<Value>>,
     asked: RefCell<Vec<(String, Limit)>>,
     failing: Option<Board>,
     settings: Settings,
@@ -28,9 +30,14 @@ impl Host for Answering {
         if let Some(board) = &self.failing {
             board.query("SELECT logical FROM nowhere", 1, None, None)?;
         }
+        let rows = if sql == DECISIONS {
+            self.decisions.clone()
+        } else {
+            self.rows.clone()
+        };
         Ok(QueryReport {
             columns: vec!["logical".into(), "code".into(), "body".into()],
-            rows: self.rows.clone(),
+            rows,
             truncated: false,
             over_budget: false,
             memory: None,
@@ -92,6 +99,7 @@ impl Host for Answering {
 fn host(rows: Vec<Vec<Value>>) -> Answering {
     Answering {
         rows,
+        decisions: Vec::new(),
         asked: RefCell::default(),
         failing: None,
         settings: Settings {
@@ -110,7 +118,6 @@ fn record(fields: &Value) -> Value {
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
         "subjects": ["gix"],
-        "status": "planned",
     });
     for (name, value) in fields.as_object().unwrap() {
         record[name] = value.clone();
@@ -136,32 +143,30 @@ fn listed(
 }
 
 #[test]
-fn each_capability_asks_for_every_eval_once_with_no_row_limit() {
-    for capability in [about, open] {
-        let host = host(Vec::new());
-        capability(&host, &json!({"subject": "gix"})).unwrap_or_default();
-        capability(&host, &json!({})).unwrap_or_default();
-        let asked = host.asked.take();
-        assert!(!asked.is_empty());
-        assert!(
-            asked
-                .iter()
-                .all(|asked| *asked == (EVALS.to_owned(), Limit::ALL))
-        );
-    }
+fn each_capability_asks_for_every_eval_and_every_decision_once_with_no_row_limit() {
+    let both = [
+        (EVALS.to_owned(), Limit::ALL),
+        (DECISIONS.to_owned(), Limit::ALL),
+    ];
+    let about_host = host(Vec::new());
+    about(&about_host, &json!({"subject": "gix"})).unwrap();
+    assert_eq!(about_host.asked.take(), both);
+    let open_host = host(Vec::new());
+    open(&open_host, &json!({})).unwrap();
+    assert_eq!(open_host.asked.take(), both);
 }
 
 #[test]
 fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_ones() {
     let rows = vec![
-        row("/evals/a", None, &json!({"status": "planned"})),
+        row("/evals/a", None, &json!({})),
+        row("/evals/b", None, &json!({"verdict": "refuted"})),
+        row("/evals/c", None, &json!({"runs": ["/suites/s/runs/1"]})),
         row(
-            "/evals/b",
+            "/evals/d",
             None,
-            &json!({"status": "concluded", "verdict": "refuted"}),
+            &json!({"abandoned": "The library was withdrawn."}),
         ),
-        row("/evals/c", None, &json!({"status": "running"})),
-        row("/evals/d", None, &json!({"status": "abandoned"})),
     ];
     let (paths, output) = listed(open, rows, &json!({}));
     assert_eq!(paths, ["/evals/a", "/evals/c"]);
@@ -173,7 +178,8 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
             "subjects": ["gix"],
             "status": "planned",
             "verdict": null,
-            "decision": null,
+            "informs": null,
+            "decisions": [],
         })
     );
 }
@@ -202,23 +208,23 @@ fn a_subject_matches_ignoring_ascii_case_only_and_percent_and_underscore_match_o
 }
 
 #[test]
-fn a_mount_matches_an_eval_naming_it_exactly_or_living_below_it_and_no_other() {
+fn a_repo_matches_an_eval_naming_it_exactly_or_living_below_it_and_no_other() {
     let rows = vec![
-        row("/evals/names", None, &json!({"mounts": ["/repos/a"]})),
-        row("/evals/names-ab", None, &json!({"mounts": ["/repos/ab"]})),
+        row("/evals/names", None, &json!({"repos": ["/repos/a"]})),
+        row("/evals/names-ab", None, &json!({"repos": ["/repos/ab"]})),
         row("/repos/a/evals/x", None, &json!({})),
         row("/repos/ab/evals/x", None, &json!({})),
     ];
-    for (mount, expected) in [
+    for (repo, expected) in [
         ("/repos/a", &["/evals/names", "/repos/a/evals/x"][..]),
         ("/repos/ab", &["/evals/names-ab", "/repos/ab/evals/x"]),
         ("/repos/a/", &[]),
         ("/repos/%", &[]),
     ] {
-        let (paths, _) = listed(about, rows.clone(), &json!({"mount": mount}));
-        assert_eq!(paths, expected, "{mount}");
+        let (paths, _) = listed(about, rows.clone(), &json!({"repo": repo}));
+        assert_eq!(paths, expected, "{repo}");
     }
-    let both = json!({"mount": "/repos/ab", "subject": "gix"});
+    let both = json!({"repo": "/repos/ab", "subject": "gix"});
     assert_eq!(
         listed(about, rows, &both).0,
         ["/evals/names-ab", "/repos/ab/evals/x"]
@@ -265,18 +271,11 @@ fn twins() -> Vec<(Value, Value)> {
             json!({"subjects": ["gix", "5"]}),
         ),
         (json!({"subjects": "gix"}), json!({"subjects": ["gix"]})),
-        (json!({"status": "someday"}), json!({"status": "running"})),
         (json!({"verdict": "maybe"}), json!({"verdict": "refuted"})),
-        (
-            json!({"status": "concluded"}),
-            json!({"status": "concluded", "verdict": "supported"}),
-        ),
-        (json!({"decision": 5}), json!({"decision": "Pick."})),
+        (json!({"abandoned": true}), json!({"abandoned": "Dropped."})),
+        (json!({"informs": 5}), json!({"informs": "Pick."})),
         (json!({"conclusion": true}), json!({"conclusion": "Yes."})),
-        (
-            json!({"mounts": "/repos/a"}),
-            json!({"mounts": ["/repos/a"]}),
-        ),
+        (json!({"repos": "/repos/a"}), json!({"repos": ["/repos/a"]})),
         (json!({"suites": [1]}), json!({"suites": ["/suites/s"]})),
         (json!({"runs": {}}), json!({"runs": []})),
         (
@@ -322,12 +321,12 @@ fn an_unknown_field_and_a_null_optional_field_are_listed_and_a_missing_question_
         row(
             "/evals/null",
             None,
-            &json!({"decision": null, "mounts": null, "written_by": null}),
+            &json!({"informs": null, "repos": null, "abandoned": null, "written_by": null}),
         ),
         vec![
             json!("/evals/bare"),
             Value::Null,
-            json!(r#"{"subjects": ["gix"], "status": "planned"}"#),
+            json!(r#"{"subjects": ["gix"]}"#),
         ],
         vec![json!("/evals/torn"), Value::Null, json!(r#"{"question": "#)],
     ];
@@ -335,6 +334,67 @@ fn an_unknown_field_and_a_null_optional_field_are_listed_and_a_missing_question_
         listed(open, rows, &json!({})).0,
         ["/evals/extra", "/evals/null"]
     );
+}
+
+/// The status each eval's fields derive, from fields written in order: each
+/// step reaches its status, and the step before does not.
+#[test]
+fn each_status_is_derived_from_the_fields_written_so_far() {
+    let steps = [
+        (json!({}), "planned"),
+        (json!({"runs": []}), "planned"),
+        (json!({"runs": ["/suites/s/runs/1"]}), "running"),
+        (
+            json!({"runs": ["/suites/s/runs/1"], "verdict": "inconclusive"}),
+            "concluded",
+        ),
+        (
+            json!({"runs": ["/suites/s/runs/1"], "verdict": "inconclusive", "abandoned": "Moot."}),
+            "abandoned",
+        ),
+        (json!({"abandoned": "Moot."}), "abandoned"),
+    ];
+    for (fields, status) in steps {
+        let (_, output) = listed(
+            about,
+            vec![row("/evals/e", None, &fields)],
+            &json!({"subject": "gix"}),
+        );
+        assert_eq!(output["evals"][0]["status"], status, "{fields}");
+    }
+}
+
+/// A decision row whose basis names `basis`, superseding `supersedes`.
+fn decision(path: &str, basis: &[&str], supersedes: &[&str]) -> Vec<Value> {
+    let record = json!({
+        "$type": "decisions/decision/v1",
+        "decision": "Use gix.",
+        "why": "It is faster.",
+        "decided": "2026-10-20T09:00:00Z",
+        "session": "local_0a1b",
+        "basis": basis,
+        "supersedes": supersedes,
+    });
+    vec![json!(path), Value::Null, json!(record.to_string())]
+}
+
+#[test]
+fn each_eval_lists_the_decisions_resting_on_it_that_no_decision_supersedes() {
+    let mut host = host(vec![
+        row("/evals/a", None, &json!({})),
+        row("/evals/b", None, &json!({})),
+    ]);
+    host.decisions = vec![
+        decision("/d/old", &["/evals/a"], &[]),
+        decision("/d/new", &["/evals/a", "/evals/a"], &["/d/old"]),
+        decision("/d/other", &["/evals/ab", "/evals"], &[]),
+    ];
+    let output = open(&host, &json!({})).unwrap();
+    assert_eq!(output["evals"][0]["decisions"], json!(["/d/new"]));
+    assert_eq!(output["evals"][1]["decisions"], json!([]));
+    host.decisions.remove(1);
+    let output = open(&host, &json!({})).unwrap();
+    assert_eq!(output["evals"][0]["decisions"], json!(["/d/old"]));
 }
 
 /// A board that enables evals, built in, holding `evals` and a mount of a
@@ -394,10 +454,7 @@ fn a_failing_query_is_refused_with_boards_code_and_the_same_host_answering_is_re
 fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
     let (_scenario, _library, board) = evals_board(&[
         ("evals/b", record(&json!({"subjects": ["clap", "gix"]}))),
-        (
-            "evals/a",
-            record(&json!({"status": "concluded", "verdict": "supported"})),
-        ),
+        ("evals/a", record(&json!({"verdict": "supported"}))),
     ]);
     let call = |target: &str, input: &[u8]| {
         let target: Target = target.parse().unwrap();
@@ -412,7 +469,7 @@ fn board_calls_evals_in_its_own_process_over_this_board_and_its_mounted_ones() {
         ["/evals/b", "/vendor/evals/l"]
     );
     assert_eq!(
-        call("evals.about", br#"{"mount": "/vendor"}"#),
+        call("evals.about", br#"{"repo": "/vendor"}"#),
         ["/vendor/evals/l"]
     );
     assert_eq!(call("evals.open", b"{}"), ["/evals/b", "/vendor/evals/l"]);

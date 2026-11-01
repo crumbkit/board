@@ -11,15 +11,14 @@ fn board() -> Fixture {
     Fixture::enabling(&["evals", "runs"])
 }
 
-/// An `evals/eval/v1` record asking `question` about gix, planned, with
-/// `fields` added or replacing its own.
+/// An `evals/eval/v1` record asking `question` about gix, with `fields`
+/// added or replacing its own. Its status is derived from its fields.
 fn eval(question: &str, fields: &Value) -> String {
     record(
         json!({
             "$type": "evals/eval/v1",
             "question": question,
             "subjects": ["gix"],
-            "status": "planned",
         }),
         fields,
     )
@@ -62,16 +61,19 @@ fn about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_qu
     board
         .write(
             "evals/planned.json",
-            &eval("Planned?", &json!({"decision": "Pick a git library."})),
+            &eval("Planned?", &json!({"informs": "Pick a git library."})),
         )
         .write(
             "evals/done.json",
             &eval(
                 "Done?",
-                &json!({"subjects": ["gix", "git2"], "status": "concluded", "verdict": "supported", "conclusion": "Yes."}),
+                &json!({"subjects": ["gix", "git2"], "verdict": "supported", "conclusion": "Yes."}),
             ),
         )
-        .write("evals/other.json", &eval("Other?", &json!({"subjects": ["serde"]})));
+        .write(
+            "evals/other.json",
+            &eval("Other?", &json!({"subjects": ["serde"]})),
+        );
     let output = board.call("evals.about", &["--subject", "gix"]);
     assert_eq!(
         output,
@@ -83,7 +85,8 @@ fn about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_qu
                     "subjects": ["gix", "git2"],
                     "status": "concluded",
                     "verdict": "supported",
-                    "decision": null,
+                    "informs": null,
+                    "decisions": [],
                 },
                 {
                     "path": "/evals/planned",
@@ -91,7 +94,8 @@ fn about_lists_the_evals_that_name_a_subject_whatever_their_status_with_their_qu
                     "subjects": ["gix"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": "Pick a git library.",
+                    "informs": "Pick a git library.",
+                    "decisions": [],
                 },
             ],
             "total": 2,
@@ -128,9 +132,10 @@ fn about_quotes_a_subject_so_it_matches_only_itself() {
 #[test]
 fn an_eval_that_is_removed_is_no_longer_listed_by_about_or_open() {
     let board = board();
-    board
-        .write("evals/a.json", &eval("A?", &json!({})))
-        .write("evals/b.json", &eval("B?", &json!({"status": "running"})));
+    board.write("evals/a.json", &eval("A?", &json!({}))).write(
+        "evals/b.json",
+        &eval("B?", &json!({"runs": ["/suites/s/runs/1"]})),
+    );
     assert_eq!(
         paths(&board, "about", &["--subject", "gix"]),
         ["/evals/a", "/evals/b"]
@@ -147,8 +152,8 @@ fn a_record_of_another_type_or_one_the_schema_refuses_is_not_an_eval() {
     board
         .write("evals/ok.json", &eval("Ok?", &json!({})))
         .write(
-            "evals/odd-status.json",
-            &eval("Odd?", &json!({"status": "someday"})),
+            "evals/stored-status.json",
+            &eval("Stored?", &json!({"status": "planned"})),
         )
         // The plugin could read this one, which ignores fields it does not
         // know; Board's verdict leaves it out.
@@ -166,7 +171,7 @@ fn a_record_of_another_type_or_one_the_schema_refuses_is_not_an_eval() {
 #[test]
 fn board_refuses_the_call_when_its_eval_schema_is_looser_and_answers_with_the_shipped_one() {
     let board = board();
-    let ruled = json!({"status": "concluded", "verdict": "refuted"});
+    let ruled = json!({"verdict": "refuted"});
     board.write("evals/ruled.json", &eval("Ruled?", &ruled));
     assert_eq!(
         paths(&board, "about", &["--subject", "gix"]),
@@ -175,8 +180,7 @@ fn board_refuses_the_call_when_its_eval_schema_is_looser_and_answers_with_the_sh
     let path = ".board/types/evals/eval/v1.schema.json";
     let mut loosened: Value = serde_json::from_str(&board.read(path)).unwrap();
     let schema = loosened.as_object_mut().unwrap();
-    schema.remove("if");
-    schema.remove("then");
+    schema.remove("additionalProperties");
     board.write(path, &loosened.to_string());
     let refused = board.refusal("evals.about", &["--subject", "gix"]);
     assert_eq!(
@@ -210,15 +214,15 @@ fn an_eval_whose_run_reaches_nothing_is_still_listed() {
 fn about_and_open_answer_the_same_from_a_cold_cache() {
     let board = board();
     board
-        .write("evals/a.json", &eval("A?", &json!({"status": "running"})))
+        .write(
+            "evals/a.json",
+            &eval("A?", &json!({"runs": ["/suites/s/runs/1"]})),
+        )
         .write(
             "evals/b.json",
-            &eval(
-                "B?",
-                &json!({"status": "concluded", "verdict": "refuted", "conclusion": "No."}),
-            ),
+            &eval("B?", &json!({"verdict": "refuted", "conclusion": "No."})),
         )
-        .write("evals/c.json", &eval("C?", &json!({"status": "abandoned"})))
+        .write("evals/c.json", &eval("C?", &json!({"abandoned": "Moot."})))
         .write("evals/d.json", &eval("D?", &json!({})));
     for (target, flags) in [
         ("evals.about", &["--subject", "GIX"][..]),
@@ -232,17 +236,17 @@ fn about_and_open_answer_the_same_from_a_cold_cache() {
 #[test]
 fn about_and_open_show_at_most_their_limit_and_say_how_many_they_left_out() {
     let board = board();
-    // Each eval names gix and the mount /repos/x, so all three cases list the
-    // same three evals; the mount matters only to the `--mount` case.
+    // Each eval names gix and the repo /repos/x, so all three cases list the
+    // same three evals; the repo matters only to the `--repo` case.
     for name in ["a", "b", "c"] {
         board.write(
             &format!("evals/{name}.json"),
-            &eval("Q?", &json!({"mounts": ["/repos/x"]})),
+            &eval("Q?", &json!({"repos": ["/repos/x"]})),
         );
     }
     for (target, flags) in [
         ("evals.about", &["--subject", "gix"][..]),
-        ("evals.about", &["--mount", "/repos/x"]),
+        ("evals.about", &["--repo", "/repos/x"]),
         ("evals.open", &[]),
     ] {
         let with = |limit: &str| {
@@ -300,7 +304,7 @@ fn about_answers_across_two_mounted_repositories_and_the_boards_own_evals() {
     let board = board();
     let (first, first_commit) = evals_repository(&[(
         "evals/pin-gix.json",
-        eval("Does gix pin?", &json!({"decision": "Pick a library."})),
+        eval("Does gix pin?", &json!({"informs": "Pick a library."})),
     )]);
     let (second, second_commit) = evals_repository(&[
         (
@@ -349,13 +353,13 @@ fn a_mounted_eval_the_mounted_boards_schemas_refuse_is_not_listed_and_one_they_a
 }
 
 #[test]
-fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards() {
+fn about_a_repo_lists_the_evals_that_name_its_repo_record_here_and_in_mounted_boards() {
     let board = board();
     let (crumbkit, commit) = evals_repository(&[(
         "evals/regression.json",
         eval(
             "Still green?",
-            &json!({"subjects": ["crumbkit"], "mounts": ["/repos/crumbkit"]}),
+            &json!({"subjects": ["crumbkit"], "repos": ["/repos/crumbkit"]}),
         ),
     )]);
     mount(&board, "repos/crumbkit.json", &crumbkit, commit);
@@ -364,15 +368,15 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
             "evals/clap.json",
             &eval(
                 "Does clap fit?",
-                &json!({"subjects": ["clap"], "mounts": ["/repos/crumbkit"], "decision": "Pick a parser."}),
+                &json!({"subjects": ["clap"], "repos": ["/repos/crumbkit"], "informs": "Pick a parser."}),
             ),
         )
         .write("evals/named-only.json", &eval("Named only?", &json!({"subjects": ["crumbkit"]})))
         .write(
             "evals/other.json",
-            &eval("Other repo?", &json!({"subjects": ["clap"], "mounts": ["/repos/clap"]})),
+            &eval("Other repo?", &json!({"subjects": ["clap"], "repos": ["/repos/clap"]})),
         );
-    let output = board.call("evals.about", &["--mount", "/repos/crumbkit"]);
+    let output = board.call("evals.about", &["--repo", "/repos/crumbkit"]);
     assert_eq!(
         output,
         json!({
@@ -383,7 +387,8 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
                     "subjects": ["clap"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": "Pick a parser.",
+                    "informs": "Pick a parser.",
+                    "decisions": [],
                 },
                 {
                     "path": "/repos/crumbkit/evals/regression",
@@ -391,30 +396,31 @@ fn about_a_mount_lists_the_evals_that_name_its_mount_here_and_in_mounted_boards(
                     "subjects": ["crumbkit"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": null,
+                    "informs": null,
+                    "decisions": [],
                 },
             ],
             "total": 2,
             "truncated": false,
         })
     );
-    assert!(paths(&board, "about", &["--mount", "/repos/crumb"]).is_empty());
+    assert!(paths(&board, "about", &["--repo", "/repos/crumb"]).is_empty());
     assert!(paths(&board, "about", &["--subject", "/repos/crumbkit"]).is_empty());
-    let cold = board.answer("evals.about", &["--mount", "/repos/crumbkit"], true);
+    let cold = board.answer("evals.about", &["--repo", "/repos/crumbkit"], true);
     assert_eq!(cold, output);
 }
 
 #[test]
-fn about_takes_exactly_one_of_subject_and_mount_and_board_refuses_anything_else_before_the_plugin_runs()
+fn about_takes_exactly_one_of_subject_and_repo_and_board_refuses_anything_else_before_the_plugin_runs()
  {
     let board = board();
-    let eval_a = eval("A?", &json!({"mounts": ["/repos/x"]}));
+    let eval_a = eval("A?", &json!({"repos": ["/repos/x"]}));
     board.write("evals/a.json", &eval_a);
     let refused: [&[&str]; 4] = [
         &[],
         &["--limit", "5"],
-        &["--subject", "gix", "--mount", "/repos/x"],
-        &["--mount", ""],
+        &["--subject", "gix", "--repo", "/repos/x"],
+        &["--repo", ""],
     ];
     for flags in refused {
         let error = board.refusal("evals.about", flags);
@@ -424,8 +430,8 @@ fn about_takes_exactly_one_of_subject_and_mount_and_board_refuses_anything_else_
         );
     }
     let unknown: [&[&str]; 2] = [
-        &["--repo", "/repos/x"],
-        &["--mount", "/repos/x", "--x", "1"],
+        &["--mount", "/repos/x"],
+        &["--repo", "/repos/x", "--x", "1"],
     ];
     for flags in unknown {
         let error = board.refusal("evals.about", flags);
@@ -433,8 +439,8 @@ fn about_takes_exactly_one_of_subject_and_mount_and_board_refuses_anything_else_
     }
     let admitted: [&[&str]; 3] = [
         &["--subject", "gix"],
-        &["--mount", "/repos/x"],
-        &["--mount", "/repos/x", "--limit", "5"],
+        &["--repo", "/repos/x"],
+        &["--repo", "/repos/x", "--limit", "5"],
     ];
     for flags in admitted {
         assert_eq!(board.call("evals.about", flags)["total"], 1, "{flags:?}");
@@ -442,10 +448,10 @@ fn about_takes_exactly_one_of_subject_and_mount_and_board_refuses_anything_else_
 }
 
 #[test]
-fn about_a_mount_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount_sharing_its_prefix()
- {
+fn about_a_repo_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount_sharing_its_prefix()
+{
     let board = board();
-    // Evals in a repository's own board leave `mounts` out; they are found
+    // Evals in a repository's own board leave `repos` out; they are found
     // by where they live.
     let (crumbkit, crumbkit_commit) = evals_repository(&[
         (
@@ -456,7 +462,7 @@ fn about_a_mount_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount
             "evals/names-clap.json",
             eval(
                 "Names clap?",
-                &json!({"subjects": ["crumbkit"], "mounts": ["/repos/clap"]}),
+                &json!({"subjects": ["crumbkit"], "repos": ["/repos/clap"]}),
             ),
         ),
     ]);
@@ -476,7 +482,7 @@ fn about_a_mount_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount
         "/repos/crumbkit/evals/own",
     ];
     assert_eq!(
-        paths(&board, "about", &["--mount", "/repos/crumbkit"]),
+        paths(&board, "about", &["--repo", "/repos/crumbkit"]),
         inside
     );
     for (mount, expected) in [
@@ -490,31 +496,28 @@ fn about_a_mount_lists_the_evals_that_live_in_its_mount_and_not_those_in_a_mount
         ("/repos/crumbkit/evals/own", &[]),
     ] {
         assert_eq!(
-            paths(&board, "about", &["--mount", mount]),
+            paths(&board, "about", &["--repo", mount]),
             expected,
             "{mount}"
         );
     }
-    let cold = board.answer("evals.about", &["--mount", "/repos/crumbkit"], true);
+    let cold = board.answer("evals.about", &["--repo", "/repos/crumbkit"], true);
     assert_eq!(
         cold,
-        board.call("evals.about", &["--mount", "/repos/crumbkit"])
+        board.call("evals.about", &["--repo", "/repos/crumbkit"])
     );
 }
 
 #[test]
-fn about_a_mount_counts_and_limits_the_evals_in_its_mount_with_those_that_name_it() {
+fn about_a_repo_counts_and_limits_the_evals_in_its_mount_with_those_that_name_it() {
     let board = board();
     let (mounted, commit) = evals_repository(&[
         ("evals/b.json", eval("B?", &json!({}))),
-        ("evals/c.json", eval("C?", &json!({"mounts": ["/repos/x"]}))),
+        ("evals/c.json", eval("C?", &json!({"repos": ["/repos/x"]}))),
     ]);
     mount(&board, "repos/x.json", &mounted, commit);
-    board.write(
-        "evals/a.json",
-        &eval("A?", &json!({"mounts": ["/repos/x"]})),
-    );
-    let cut = board.call("evals.about", &["--mount", "/repos/x", "--limit", "2"]);
+    board.write("evals/a.json", &eval("A?", &json!({"repos": ["/repos/x"]})));
+    let cut = board.call("evals.about", &["--repo", "/repos/x", "--limit", "2"]);
     let listed: Vec<&Value> = cut["evals"]
         .as_array()
         .unwrap()
@@ -534,22 +537,25 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
     board
         .write(
             "evals/b-running.json",
-            &eval("B?", &json!({"subjects": ["serde"], "status": "running"})),
+            &eval(
+                "B?",
+                &json!({"subjects": ["serde"], "runs": ["/suites/s/runs/1"]}),
+            ),
         )
         .write(
             "evals/a-planned.json",
-            &eval("A?", &json!({"decision": "Pick a library."})),
+            &eval("A?", &json!({"informs": "Pick a library."})),
         )
         .write(
             "evals/done.json",
             &eval(
                 "Done?",
-                &json!({"status": "concluded", "verdict": "supported", "conclusion": "Yes."}),
+                &json!({"verdict": "supported", "conclusion": "Yes."}),
             ),
         )
         .write(
             "evals/dropped.json",
-            &eval("Dropped?", &json!({"status": "abandoned"})),
+            &eval("Dropped?", &json!({"abandoned": "Moot."})),
         );
     let output = board.call("evals.open", &[]);
     assert_eq!(
@@ -562,7 +568,8 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
                     "subjects": ["gix"],
                     "status": "planned",
                     "verdict": null,
-                    "decision": "Pick a library.",
+                    "informs": "Pick a library.",
+                    "decisions": [],
                 },
                 {
                     "path": "/evals/b-running",
@@ -570,7 +577,8 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
                     "subjects": ["serde"],
                     "status": "running",
                     "verdict": null,
-                    "decision": null,
+                    "informs": null,
+                    "decisions": [],
                 },
             ],
             "total": 2,
@@ -582,9 +590,12 @@ fn open_lists_planned_and_running_evals_and_leaves_out_concluded_and_abandoned_o
 #[test]
 fn an_eval_that_concludes_leaves_the_open_list() {
     let board = board();
-    board.write("evals/a.json", &eval("A?", &json!({"status": "running"})));
+    board.write(
+        "evals/a.json",
+        &eval("A?", &json!({"runs": ["/suites/s/runs/1"]})),
+    );
     assert_eq!(paths(&board, "open", &[]), ["/evals/a"]);
-    let concluded = json!({"status": "concluded", "verdict": "refuted", "conclusion": "No."});
+    let concluded = json!({"verdict": "refuted", "conclusion": "No."});
     board.write("evals/a.json", &eval("A?", &concluded));
     assert!(paths(&board, "open", &[]).is_empty());
 }
@@ -596,11 +607,13 @@ fn open_lists_the_open_evals_of_two_mounted_repositories() {
         ("evals/a.json", eval("A?", &json!({}))),
         (
             "evals/done.json",
-            eval("D?", &json!({"status": "abandoned"})),
+            eval("D?", &json!({"abandoned": "Moot."})),
         ),
     ]);
-    let (second, second_commit) =
-        evals_repository(&[("evals/b.json", eval("B?", &json!({"status": "running"})))]);
+    let (second, second_commit) = evals_repository(&[(
+        "evals/b.json",
+        eval("B?", &json!({"runs": ["/suites/s/runs/1"]})),
+    )]);
     mount(&board, "repos/first.json", &first, first_commit);
     mount(&board, "repos/second.json", &second, second_commit);
     assert_eq!(
@@ -629,80 +642,51 @@ fn board_lists_evals_as_enabled_and_enabling_wrote_the_schema_it_ships() {
 }
 
 #[test]
-fn each_of_the_four_statuses_is_admitted_and_any_other_is_refused() {
+fn a_stored_status_is_refused_and_an_eval_without_one_is_admitted() {
     let board = board();
     board
+        .write("evals/derived.json", &eval("D?", &json!({})))
         .write(
-            "evals/planned.json",
-            &eval("P?", &json!({"status": "planned"})),
-        )
-        .write(
-            "evals/running.json",
-            &eval("R?", &json!({"status": "running"})),
-        )
-        .write(
-            "evals/abandoned.json",
-            &eval("A?", &json!({"status": "abandoned"})),
-        )
-        .write(
-            "evals/concluded.json",
-            &eval(
-                "C?",
-                &json!({"status": "concluded", "verdict": "supported"}),
-            ),
-        )
-        .write(
-            "evals/someday.json",
-            &eval("S?", &json!({"status": "someday"})),
+            "evals/stored.json",
+            &eval("S?", &json!({"status": "planned"})),
         );
     assert_eq!(
         board.checked("/evals/"),
-        codes(&[
-            ("/evals/planned", None),
-            ("/evals/running", None),
-            ("/evals/abandoned", None),
-            ("/evals/concluded", None),
-            ("/evals/someday", INVALID),
-        ])
+        codes(&[("/evals/derived", None), ("/evals/stored", INVALID)])
     );
 }
 
 #[test]
-fn a_concluded_eval_needs_a_verdict_and_an_unfinished_one_does_not() {
+fn a_verdict_and_an_abandoned_reason_are_admitted_and_an_unknown_verdict_or_an_empty_reason_is_not()
+{
     let board = board();
     board
         .write(
             "evals/with.json",
-            &eval("W?", &json!({"status": "concluded", "verdict": "refuted"})),
+            &eval("W?", &json!({"verdict": "refuted"})),
         )
+        .write("evals/odd.json", &eval("O?", &json!({"verdict": "maybe"})))
         .write(
-            "evals/without.json",
-            &eval("W?", &json!({"status": "concluded"})),
+            "evals/dropped.json",
+            &eval("D?", &json!({"abandoned": "The library was withdrawn."})),
         )
-        .write(
-            "evals/running.json",
-            &eval("R?", &json!({"status": "running"})),
-        )
-        .write(
-            "evals/odd.json",
-            &eval("O?", &json!({"status": "concluded", "verdict": "maybe"})),
-        );
+        .write("evals/empty.json", &eval("E?", &json!({"abandoned": ""})));
     assert_eq!(
         board.checked("/evals/"),
         codes(&[
             ("/evals/with", None),
-            ("/evals/without", INVALID),
-            ("/evals/running", None),
             ("/evals/odd", INVALID),
+            ("/evals/dropped", None),
+            ("/evals/empty", INVALID),
         ])
     );
 }
 
 #[test]
-fn an_eval_needs_a_question_subjects_and_a_status() {
+fn an_eval_needs_a_question_and_subjects() {
     let board = board();
     board.write("evals/whole.json", &eval("W?", &json!({})));
-    for missing in ["question", "subjects", "status"] {
+    for missing in ["question", "subjects"] {
         let mut record: Value = serde_json::from_str(&eval("M?", &json!({}))).unwrap();
         record.as_object_mut().unwrap().remove(missing);
         board.write(&format!("evals/no-{missing}.json"), &record.to_string());
@@ -717,7 +701,6 @@ fn an_eval_needs_a_question_subjects_and_a_status() {
             ("/evals/whole", None),
             ("/evals/no-question", INVALID),
             ("/evals/no-subjects", INVALID),
-            ("/evals/no-status", INVALID),
             ("/evals/no-subjects-listed", INVALID),
         ])
     );
@@ -726,7 +709,7 @@ fn an_eval_needs_a_question_subjects_and_a_status() {
 #[test]
 fn an_eval_refers_to_suites_and_runs_and_holds_no_other_field() {
     let board = board();
-    let full = json!({"suites": ["/suites/s"], "runs": ["/suites/s/runs/1"], "decision": "Pick."});
+    let full = json!({"suites": ["/suites/s"], "runs": ["/suites/s/runs/1"], "informs": "Pick."});
     board
         .write("suites/s.json", &suite())
         .write("suites/s/runs/1.json", &run("/suites/s"))
@@ -778,7 +761,7 @@ fn an_eval_whose_suite_or_run_is_the_wrong_type_or_missing_is_degraded() {
 }
 
 #[test]
-fn an_eval_names_each_repository_by_its_mount_and_one_the_board_does_not_have_is_dangling() {
+fn an_eval_names_each_repository_by_its_repo_record_and_one_the_board_does_not_have_is_dangling() {
     let board = board();
     let (crumbkit, commit) = evals_repository(&[]);
     mount(&board, "repos/crumbkit.json", &crumbkit, commit);
@@ -789,30 +772,42 @@ fn an_eval_names_each_repository_by_its_mount_and_one_the_board_does_not_have_is
     };
     board
         .write(
+            "repos/clap.json",
+            &json!({"$type": "board/repo/v1", "remote": "clap-rs/clap"}).to_string(),
+        )
+        .write(
+            "evals/identity.json",
+            &eval(
+                "I?",
+                &json!({"subjects": ["clap"], "repos": ["/repos/clap"]}),
+            ),
+        )
+        .write(
             "evals/mounted.json",
-            &named(json!({"mounts": ["/repos/crumbkit"]})),
+            &named(json!({"repos": ["/repos/crumbkit"]})),
         )
         .write("evals/none.json", &named(json!({})))
         .write(
             "evals/missing.json",
-            &named(json!({"mounts": ["/repos/crumbkit", "/repos/gone"]})),
+            &named(json!({"repos": ["/repos/crumbkit", "/repos/gone"]})),
         )
         .write(
             "evals/by-name.json",
-            &named(json!({"mounts": ["crumbkit/crumbkit"]})),
+            &named(json!({"repos": ["crumbkit/crumbkit"]})),
         )
         .write(
             "evals/not-a-list.json",
-            &named(json!({"mounts": "/repos/crumbkit"})),
+            &named(json!({"repos": "/repos/crumbkit"})),
         )
         .write(
             "evals/old-key.json",
-            &named(json!({"repos": ["/repos/crumbkit"]})),
+            &named(json!({"mounts": ["/repos/crumbkit"]})),
         );
     assert_eq!(
         board.checked("/evals/"),
         codes(&[
             ("/evals/mounted", None),
+            ("/evals/identity", None),
             ("/evals/none", None),
             ("/evals/missing", Some("board::ref::dangling")),
             ("/evals/by-name", Some("board::ref::malformed")),
@@ -836,15 +831,15 @@ fn board_refs_on_a_repositorys_mount_lists_the_evals_that_name_it_and_no_others(
     board
         .write(
             "evals/a.json",
-            &eval("A?", &json!({"mounts": ["/repos/crumbkit"]})),
+            &eval("A?", &json!({"repos": ["/repos/crumbkit"]})),
         )
         .write(
             "evals/b.json",
-            &eval("B?", &json!({"mounts": ["/repos/clap", "/repos/crumbkit"]})),
+            &eval("B?", &json!({"repos": ["/repos/clap", "/repos/crumbkit"]})),
         )
         .write(
             "evals/c.json",
-            &eval("C?", &json!({"mounts": ["/repos/clap"]})),
+            &eval("C?", &json!({"repos": ["/repos/clap"]})),
         )
         .write("evals/d.json", &eval("D?", &json!({})));
     let naming = |path: &str| {
@@ -863,11 +858,11 @@ fn board_refs_on_a_repositorys_mount_lists_the_evals_that_name_it_and_no_others(
     let link = |path: &str, pointer: &str| (path.to_owned(), json!([pointer]));
     assert_eq!(
         naming("/repos/crumbkit"),
-        [link("/evals/a", "/mounts/0"), link("/evals/b", "/mounts/1")]
+        [link("/evals/a", "/repos/0"), link("/evals/b", "/repos/1")]
     );
     assert_eq!(
         naming("/repos/clap"),
-        [link("/evals/b", "/mounts/0"), link("/evals/c", "/mounts/0")]
+        [link("/evals/b", "/repos/0"), link("/evals/c", "/repos/0")]
     );
 }
 

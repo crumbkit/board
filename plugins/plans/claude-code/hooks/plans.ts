@@ -121,7 +121,8 @@ export const REPORT_SQL = [
   `WITH w AS (SELECT julianday(${DAY}, '-1 day', 'utc')) AS since, julianday(${DAY}, 'utc')) AS until)`,
   "SELECT 'since' AS kind, NULL AS path, datetime(w.since, 'localtime') AS at, NULL AS title, NULL AS detail FROM w",
   `UNION ALL SELECT 'decision', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, ${field('r', 'review')}`,
-  `FROM w, records r WHERE r.type = 'plans/decision/v1' AND ${within('r', 'decided')}`,
+  // A decision is a decisions/decision/v1, or a plans/decision/v1 until the runs mod stops writing stubs of it.
+  `FROM w, records r WHERE r.type IN ('decisions/decision/v1', 'plans/decision/v1') AND ${within('r', 'decided')}`,
   `UNION ALL SELECT 'asked', r.logical, ${field('r', 'asked')}, ${field('r', 'question')}, ${field('r', 'status')}`,
   `FROM w, records r WHERE r.type = 'plans/question/v1' AND ${within('r', 'asked')}`,
   `UNION ALL SELECT 'answered', a.logical, ${field('a', 'answered')},`,

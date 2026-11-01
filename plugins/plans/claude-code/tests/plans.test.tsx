@@ -300,6 +300,14 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
   expect((await ui.find({ type: 'Markdown' }))?.text).toContain('- Keep the types at v1. `/projects/board/decisions/d1`, review wanted')
 })
 
+test('the report lists decisions of both types and finds stubs among plans/decision/v1 records alone', () => {
+  expect(REPORT_SQL).toContain("FROM w, records r WHERE r.type IN ('decisions/decision/v1', 'plans/decision/v1') AND")
+  // plugins/decisions/tests/test_migrate.py runs this clause on a migrated board.
+  expect(REPORT_SQL).toContain(
+    "FROM records r WHERE r.type = 'plans/decision/v1' AND json_extract(r.body, '$.written_by') IS NOT NULL AND json_extract(r.body, '$.why') = ''",
+  )
+})
+
 test("a stub's detail in the report is the first of its urls, where the runs mod writes the pull request", () => {
   expect(REPORT_SQL).toContain("json_extract(r.body, '$.urls[0]')")
   expect(REPORT_SQL).not.toContain('$.refs')

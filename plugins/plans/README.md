@@ -15,14 +15,18 @@ so it is written at its path. Its schema declares its folder too, so
   sortable UTC time and a short suffix, such as `20261024T1830Z-k3`.
   `question`, `session` (the asking session's `local_` id), `asked` and
   `status` (`open`, `answered` or `withdrawn`) are required. `options`,
-  `recommendation`, `why`, `blocks`, `mount`, `context_path` and `note` are
-  optional.
+  `recommendation`, `why`, `blocks`, `for`, `mount`, `context_path` and
+  `note` are optional. `for` lists references to what the question belongs
+  to, beside the prose `blocks`; a question whose `for` names decisions asks
+  the owner to review them (plugins/decisions/README.md).
 - `plans/answer/v1` at `/projects/<project>/answers/<id>`, with its question's
   id. `question` references the question; `choice` names an option's `id`, or
   `none`; `words` holds the owner's words verbatim; `answered` is when.
   `written_by` names the plugin and hook when a mod wrote the answer, such as
   `plans/pane-answer`.
-- `plans/decision/v1` at `/projects/<project>/decisions/<id>`. `decision`,
+- `plans/decision/v1` at `/projects/<project>/decisions/<id>`, the old
+  decision record, which only the runs mod's stub still writes; a new
+  decision is a `decisions/decision/v1`. `decision`,
   `why`, `session` and `decided` are required; `alternatives`, `refs`,
   `urls`, `review` (`wanted` or `none`) and `written_by` are optional. `refs` lists board
   entries the decision concerns, such as an answer; `urls` lists web pages,

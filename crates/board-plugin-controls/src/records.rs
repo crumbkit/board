@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 #[serde(deny_unknown_fields)]
 #[schemars(
     title = "ControlRecord",
-    description = "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`."
+    description = "`controls/control/v1`: a requirement on files, why it exists, and optionally a rule a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`. `basis` names the decisions the control rests on."
 )]
 pub struct ControlRecord {
     #[serde(rename = "$type")]
@@ -32,6 +32,8 @@ pub struct ControlRecord {
     #[schemars(title = "Paths", extend("type" = "array"))]
     pub paths: Option<Vec<String>>,
     pub rule: Option<Rule>,
+    #[schemars(title = "Basis", extend("type" = "array"))]
+    pub basis: Option<Vec<Ref>>,
 }
 
 impl Record for ControlRecord {

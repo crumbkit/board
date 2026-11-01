@@ -22,6 +22,9 @@ such as a pull request body, instead of files.
 - `applies_to` holds references to entries. Board checks them, so renaming or
   deleting a referenced file makes the control `board::ref::dangling` in
   `board check`.
+- `basis` holds references to the records the control rests on, such as
+  the `decisions/decision/v1` it comes from (plugins/decisions/README.md).
+  Board checks them as it checks `applies_to`.
 - `paths` holds SQLite `GLOB` patterns, matched against each entry's path
   from the board's root, such as `docs/*.md`. In a `GLOB` pattern `*` also
   matches `/`. Patterns reach files in mounted boards, by their path through

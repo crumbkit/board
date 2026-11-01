@@ -82,8 +82,8 @@ reads the range in the caller's clone, after checking that
 `shown_remote(caller_remote())` is that repo record's `remote`; without
 `repo` it reads the board's own repository.
 
-A question that blocks a change names it in `for`, which plan/decisions.md
-adds; the question's stored `status`, including `withdrawn`, is unchanged.
+A question that blocks a change names it in `for`
+(plugins/plans/README.md); the question's stored `status`, including `withdrawn`, is unchanged.
 
 `start` sets `route` from CODEOWNERS and `suite` from the contributing docs
 when the repository has a checkout, as today. Without one it sets route

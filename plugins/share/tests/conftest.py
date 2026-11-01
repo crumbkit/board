@@ -150,7 +150,6 @@ EVAL: dict[str, Any] = {
     "subjects": ["gix", "git2"],
     "suites": ["/suites/x"],
     "runs": ["/suites/x/runs/1"],
-    "status": "concluded",
     "verdict": "supported",
 }
 SUITE: dict[str, Any] = {

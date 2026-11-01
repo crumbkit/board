@@ -24,9 +24,9 @@ needs to know.
    that needs a lower-case `http` or `https` scheme and a host. Board's
    validator is the only check; no Rust code parses a URL. A field that
    holds one URL is named for what it is, such as `pull_request`.
-7. A field that names a repository is a reference to that repository's mount
-   record at `/repos/<name>`, named for what it is, such as `mount` or
-   `mounts`. A pinned version is a sibling field, such as `commit`. A field
+7. A field that names a repository is a reference to that repository's repo
+   record or mount at `/repos/<name>`, named for what it is, such as `mount`
+   or `repos`. A pinned version is a sibling field, such as `commit`. A field
    whose values are matched against GitHub remotes (`owner/name` or
    `owner/*`) is not a mount reference; it is named `remote`, or for what it
    matches, such as notes `covers`.

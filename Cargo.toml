@@ -7,6 +7,7 @@ members = [
     "crates/board-plugin",
     "crates/board-plugin-boundary",
     "crates/board-plugin-controls",
+    "crates/board-plugin-decisions",
     "crates/board-plugin-evals",
     "crates/board-plugin-jira",
     "crates/board-plugin-plans",
@@ -36,6 +37,7 @@ board-model = { path = "crates/board-model", version = "0.0.0" }
 board-plugin = { path = "crates/board-plugin", version = "0.0.0" }
 board-plugin-boundary = { path = "crates/board-plugin-boundary", version = "0.0.0" }
 board-plugin-controls = { path = "crates/board-plugin-controls", version = "0.0.0" }
+board-plugin-decisions = { path = "crates/board-plugin-decisions", version = "0.0.0" }
 board-plugin-evals = { path = "crates/board-plugin-evals", version = "0.0.0" }
 board-plugin-jira = { path = "crates/board-plugin-jira", version = "0.0.0" }
 board-plugin-plans = { path = "crates/board-plugin-plans", version = "0.0.0" }

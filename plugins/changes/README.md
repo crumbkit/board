@@ -120,7 +120,7 @@ Board marks degraded satisfies nothing.
 
 | Leaving | Gate |
 | --- | --- |
-| plan | Each plan section has text, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. |
+| plan | Each plan section has text, and `route` is set. On `ask-first`, also a `decisions/decision/v1` whose `basis` names the plan or the change, or a `plans/decision/v1` whose `refs` do. Any such decision passes, including a rejection. |
 | build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
 | land | `pull_request` is set. Advancing enters `done`. |

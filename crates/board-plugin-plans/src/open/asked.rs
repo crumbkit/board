@@ -1,12 +1,12 @@
 //! Reads `asked` as Python's `datetime.fromisoformat` did for the Python plugin.
 
 /// An instant: seconds since 1970-01-01T00:00:00Z, then microseconds.
-pub(crate) type Instant = (i64, u32);
+pub type Instant = (i64, u32);
 
 /// `YYYY-MM-DDTHH:MM:SS[.F+](Z|±HH:MM)` in ASCII digits, `T` and `Z` in either
 /// case, a real date from year 1, hour to 23, offset under 24 hours whose
 /// minutes may run to 99. Fraction digits past the sixth are dropped.
-pub(crate) fn instant(text: &str) -> Option<Instant> {
+pub fn instant(text: &str) -> Option<Instant> {
     let bytes = text.as_bytes();
     let number = |from: usize, to: usize| -> Option<i64> {
         (bytes.get(from..to)?.iter()).try_fold(0, |number, &digit| {

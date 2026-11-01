@@ -31,8 +31,8 @@ The gate is the contract. `next` says what the current phase still lacks;
 
 - **plan**: interview the owner. Use your own planning skill where one is
   configured. Write the plan's Problem, Outcome and Out of scope sections.
-  On the `ask-first` route, attach the owner's `plans/decision/v1` whose
-  `refs` name the plan.
+  On the `ask-first` route, attach the owner's `decisions/decision/v1` whose
+  `basis` names the plan.
 - **build**: build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
   it.

@@ -65,8 +65,8 @@ fn manifest() -> Value {
         "types": [EvalRecord::TYPE],
         "capabilities": [{
             "name": "about",
-            "description": "The evals that name a subject, or that name a repository's mount or live in it, \
-                whatever their status, here and in mounted boards.",
+            "description": "The evals that name a subject, or that name a repository's repo record or live \
+                in its mount, whatever their status, here and in mounted boards.",
             "inputSchema": schema_of::<list::AboutInput>(SchemaSettings::draft2020_12()),
             "outputSchema": output(),
             "annotations": {"readOnlyHint": true},

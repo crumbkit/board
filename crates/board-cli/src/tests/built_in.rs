@@ -251,14 +251,16 @@ fn call_requests_thread_answers_from_a_warm_index_as_from_a_cold_one_after_a_new
     assert_eq!(warm, answer(None));
 }
 
-/// An eval about gix in `status`, as its schema admits it.
-fn eval(status: &str) -> String {
-    let eval = json!({
+/// An eval about gix with `fields`, as its schema admits it.
+fn eval(fields: &Value) -> String {
+    let mut eval = json!({
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
         "subjects": ["gix"],
-        "status": status,
     });
+    for (name, value) in fields.as_object().unwrap() {
+        eval[name] = value.clone();
+    }
     eval.to_string()
 }
 
@@ -269,7 +271,7 @@ fn evals() -> Scenario {
     board.write(".board/board.json", Item::File(config));
     let (output, _) = built_in(board.workdir(), None, &["plugin", "enable", "evals"]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
-    board.write("evals/a.json", Item::File(&eval("planned")));
+    board.write("evals/a.json", Item::File(&eval(&json!({}))));
     board
 }
 
@@ -289,8 +291,14 @@ fn call_evals_about_and_open_answer_from_a_warm_index_as_from_a_cold_one_after_e
     ];
     let before = calls.map(|arguments| answer(Some(cache.path()), arguments));
     board
-        .write("evals/a.json", Item::File(&eval("abandoned")))
-        .write("evals/b.json", Item::File(&eval("running")));
+        .write(
+            "evals/a.json",
+            Item::File(&eval(&json!({"abandoned": "Moot."}))),
+        )
+        .write(
+            "evals/b.json",
+            Item::File(&eval(&json!({"runs": ["/suites/s/runs/1"]}))),
+        );
     for (arguments, before) in calls.iter().zip(before) {
         let warm = answer(Some(cache.path()), arguments);
         assert_ne!(warm, before, "the change is seen");
@@ -304,7 +312,7 @@ fn call_evals_about_help_lists_its_input_as_flags() {
     let (output, _) = built_in(board.workdir(), None, &["call", "evals.about", "-h"]);
     assert_eq!(output.code, 0, "{}", text(&output.stderr));
     let help = text(&output.stdout);
-    for flag in ["--limit", "--mount", "--subject", "whatever their status"] {
+    for flag in ["--limit", "--repo", "--subject", "whatever their status"] {
         assert!(help.contains(flag), "{flag}: {help}");
     }
 }

@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 99] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 104] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
@@ -33,9 +33,14 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 99] = [
     ("controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     ("controls/control/v1", "/purpose", UntilAdopted, "Prose"),
     ("controls/control/v1", "/requirement", UntilAdopted, "Prose"),
+    ("decisions/decision/v1", "/alternatives/-", UntilAdopted, "Prose"),
+    ("decisions/decision/v1", "/decided", UntilAdopted, "Timestamp, as plans/decision/v1's (audit row 39)"),
+    ("decisions/decision/v1", "/decision", UntilAdopted, "Prose"),
+    ("decisions/decision/v1", "/session", UntilAdopted, "SessionId, as plans/decision/v1's (audit row 14)"),
+    ("decisions/decision/v1", "/why", UntilAdopted, "Prose"),
+    ("evals/eval/v1", "/abandoned", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
-    ("evals/eval/v1", "/decision", UntilAdopted, "Prose"),
-    ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),
+    ("evals/eval/v1", "/informs", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/question", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/subjects/-", UntilAdopted, "Subject (audit row 23)"),
     ("evals/eval/v1", "/written_by", UntilAdopted, "HookName (audit row 46)"),

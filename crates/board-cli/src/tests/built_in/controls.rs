@@ -80,6 +80,28 @@ fn enabling_writes_the_schema_so_a_control_checks_clean_and_a_broken_one_does_no
 }
 
 #[test]
+fn a_control_whose_basis_reaches_an_entry_checks_clean_and_one_whose_basis_reaches_nothing_dangles()
+{
+    let board = board();
+    board
+        .write("decisions/d.md", "# A decision\n")
+        .write(
+            "controls/rests.json",
+            &control("R.", &json!({"basis": ["/decisions/d.md"]})),
+        )
+        .write(
+            "controls/dangles.json",
+            &control("R.", &json!({"basis": ["/decisions/gone"]})),
+        );
+    let checked = board.checked("/");
+    assert_eq!(checked["/controls/rests"], None);
+    assert_eq!(
+        checked["/controls/dangles"].as_deref(),
+        Some("board::ref::dangling")
+    );
+}
+
+#[test]
 fn call_help_prints_the_path_flag_with_its_sentence() {
     let board = board();
     let sentence = "The directory or file whose controls to check, by its logical path, \
