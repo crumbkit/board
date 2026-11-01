@@ -71,7 +71,9 @@ on. In a subagent, that is `works_on` in the runs mod's agent record,
 `/agents/<id>`, read with `board --personal get`. In the main loop, or for a
 subagent with no such record, it is the one open change whose newest claim
 names the session, from `changes.open --holder`. With none, or several,
-`for` is left out.
+or when the lookup fails, `for` is left out. The session is the desktop
+app's `local_` id from `CLAUDE_CODE_HOST_SESSION_ID` when it is set, else
+the transcript's id, and the version's `session` is the same id.
 
 ## A listing
 

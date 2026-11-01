@@ -59,7 +59,9 @@ and `at` of its newest version, newest first.
 
 `--holder` keeps only the changes whose newest claim names that session,
 their agents, and the unattached agents that session started. It takes the
-session id as the claims and agent records hold it.
+session id as the claims and agent records hold it: the desktop app's
+`local_` id when there is one, else the transcript id
+(docs/plugins/claude-code/runs.md).
 
 The query makes no network call, so it cannot say that a pull request
 merged. A change with an `opened` record gives `pr_state`, the command that

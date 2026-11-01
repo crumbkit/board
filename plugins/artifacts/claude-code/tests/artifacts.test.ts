@@ -23,12 +23,13 @@ type Put = { path: string; body: unknown }
  * with, and `imported` what artifacts.import answers. `account.held` lists the changes changes.open says the session
  * holds, and `account.agents` the agent records `board get` finds, by path.
  */
-function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown } } = {}) {
+function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown }, env = {} as Record<string, string> } = {}) {
   const account = {
     email: 'owner@example.com',
     refuse: undefined as string | undefined,
     held: [] as string[],
     agents: {} as Record<string, object>,
+    garbled: false,
   }
   const held = new Map<string, unknown>()
   const writes: Put[] = []
@@ -50,6 +51,7 @@ function host(on: On, { imported = { written: [] as string[], known: 0, truncate
     if (program === 'shasum') return { value: { exitCode: 0, stdout: `${SHA}  ${rest.at(-1)}\n`, ...whole } }
     if (program === 'sh') return { value: { ...answer(rest[3]!, { file: rest[4] }), ...whole } }
     if (rest.includes('get')) {
+      if (account.garbled) return { value: { exitCode: 0, stdout: 'not json', ...whole } }
       const found = account.agents[rest.at(-1)!]
       if (found === undefined) return { value: { exitCode: 1, stdout: JSON.stringify({ code: 'board::path::not_found', message: 'no' }), ...whole } }
       return { value: { exitCode: 0, stdout: JSON.stringify({ data: [{ record: found }] }), ...whole } }
@@ -71,7 +73,7 @@ function host(on: On, { imported = { written: [] as string[], known: 0, truncate
     return { value: undefined }
   })
   on('session.id', () => ({ value: 'session-1' }))
-  mock.env(on, { HOME: '/home/owner' })
+  mock.env(on, { HOME: '/home/owner', ...env })
   return { account, held, writes, commands, logs, imports }
 }
 
@@ -393,4 +395,16 @@ test('a version belongs to the subagent’s change from its agent record, else t
   account.held = ['/changes/a', '/changes/b']
   await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
   expect(forOf()).toBeUndefined()
+})
+
+test('a version names the desktop session id when there is one, and a failed lookup leaves out only for', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { account, writes, logs } = host(on, { env: { CLAUDE_CODE_HOST_SESSION_ID: 'local_0a1b' } })
+  on('tool.call', () => published('1'))
+  account.garbled = true
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE, agentId: 'agent-7' })
+  const body = writes.at(-1)?.body as Record<string, unknown>
+  expect(body.session).toBe('local_0a1b')
+  expect(body.for).toBeUndefined()
+  expect(logs.find(log => log.to === 'debug')?.text).toStartWith("board: no change for the version's for:")
 })
