@@ -10,7 +10,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::host::{Hosted, PluginError, Settings};
+use crate::host::{HostBoard, Hosted, PluginError, Settings, Variables};
 use crate::plugins::{CallFailed, Plugins};
 
 impl Board {
@@ -74,6 +74,7 @@ impl Board {
                             environment: &plugins.environment,
                             limits: plugins.limits,
                             spawned: &spawned,
+                            leads: plugins.leads,
                         },
                     )
                 });
@@ -97,15 +98,36 @@ impl Board {
         plugins: &Plugins<'_>,
     ) -> Result<CallReport, CallError> {
         let environment = &plugins.environment;
+        let root = self.repository().path();
         let host = Hosted {
-            board: self,
+            board: HostBoard::Called(self),
             settings: Settings {
                 now: SystemTime::now(),
                 day_start: (environment.day_start.as_ref())
                     .map(|text| text.to_string_lossy().into_owned()),
                 caller: environment.caller.as_ref().map(PathBuf::from),
+                environment: Variables(board_plugin::passed(chosen, environment)?),
             },
-            cache: plugins.cache,
+            // As `board call` sets `BOARD_PLUGIN` for a child: the plugin
+            // already named, else this one. A put refuses a name that does
+            // not parse, as the child's `board put` would.
+            plugin: match &environment.plugin {
+                Some(text) => {
+                    (text.to_str().and_then(|name| name.parse().ok())).ok_or_else(|| text.clone())
+                }
+                None => Ok(chosen.manifest.name.clone()),
+            },
+            // What the plugin's own `board` would read.
+            plugins: Plugins {
+                environment: environment.nested(chosen, root)?,
+                known: plugins.known,
+                signing: plugins.signing.clone(),
+                // This Board leads its plugins' groups, and the built-in
+                // runs in it, so a process plugin it calls leads its own.
+                leads: plugins.leads || environment.depth()? == 0,
+                ..*plugins
+            },
+            root,
         };
         let plugin = &chosen.manifest.name;
         let capability = &chosen.capability().name;
@@ -120,10 +142,13 @@ impl Board {
                 code,
                 message,
                 fields,
+                hint,
             }) => {
                 return Err(CallError::Plugin {
                     plugin: plugin.clone(),
-                    failure: PluginFailure::parse(plugin, code, message, fields).map_err(bad)?,
+                    failure: Box::new(
+                        PluginFailure::parse(plugin, code, message, fields, hint).map_err(bad)?,
+                    ),
                     stderr: Vec::new(),
                 });
             }

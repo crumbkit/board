@@ -31,6 +31,8 @@ pub struct PluginFailure {
     pub code: PluginCode,
     pub message: String,
     pub fields: Map<String, Value>,
+    /// The plugin's own next step, which Board reports as the recovery.
+    pub hint: Option<String>,
 }
 
 impl PluginFailure {
@@ -41,12 +43,14 @@ impl PluginFailure {
         code: String,
         message: String,
         fields: Map<String, Value>,
+        hint: Option<String>,
     ) -> Result<Self, BadOutput> {
         Ok(Self {
             code: PluginCode::parse(plugin, code)
                 .map_err(|PluginCodeError { code }| BadOutput::Code { code })?,
             message,
             fields,
+            hint: hint.filter(|hint| !hint.trim().is_empty()),
         })
     }
 }
@@ -55,7 +59,7 @@ impl PluginFailure {
 #[derive(Debug)]
 pub(crate) enum Reply<T> {
     Result(T),
-    Error(PluginFailure),
+    Error(Box<PluginFailure>),
 }
 
 /// `board/call-result/v1`.
@@ -76,6 +80,8 @@ struct RawError {
     message: String,
     #[serde(default)]
     fields: Map<String, Value>,
+    #[serde(default)]
+    hint: Option<String>,
 }
 
 /// Reads the one document `plugin` wrote to stdout: a result of type
@@ -93,12 +99,13 @@ pub(crate) fn reply<T: DeserializeOwned>(
         }
         Some(ERROR_TYPE) => {
             let raw = RawError::deserialize(value).map_err(shape)?;
-            Ok(Reply::Error(PluginFailure::parse(
+            Ok(Reply::Error(Box::new(PluginFailure::parse(
                 plugin,
                 raw.code,
                 raw.message,
                 raw.fields,
-            )?))
+                raw.hint,
+            )?)))
         }
         found => Err(BadOutput::Type {
             found: found.map(str::to_owned),

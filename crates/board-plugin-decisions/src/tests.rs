@@ -25,6 +25,53 @@ impl Host for Empty {
         })
     }
 
+    fn refs(
+        &self,
+        _paths: &[board_model::LogicalPath],
+        _absent: board_ops::Absent,
+    ) -> Result<Vec<Result<board_ops::RefsReport, board_ops::RefsError>>, board_ops::RefsError>
+    {
+        panic!("this plugin resolves no paths")
+    }
+
+    fn get_each(
+        &self,
+        _paths: &[board_model::LogicalPath],
+    ) -> Result<Vec<Result<board_ops::GetReport, board_ops::ReadError>>, board_ops::ReadError> {
+        panic!("this plugin reads no files")
+    }
+
+    fn put(
+        &self,
+        _lines: &[serde_json::Value],
+    ) -> Result<board_ops::PutReport, board_ops::PutError> {
+        panic!("this plugin writes no records")
+    }
+
+    fn call(
+        &self,
+        _target: &board_plugin::Target,
+        _input: &serde_json::Value,
+    ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+        panic!("this plugin calls no plugin")
+    }
+
+    fn board(
+        &self,
+        _elsewhere: &board_ops::Elsewhere,
+    ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+        panic!("this plugin opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _op: &str,
+        _path: &board_model::LogicalPath,
+        _shown: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
+        panic!("this plugin asks the owner nothing")
+    }
+
     fn settings(&self) -> &Settings {
         &self.0
     }
@@ -35,6 +82,7 @@ fn empty() -> Empty {
         now: std::time::SystemTime::UNIX_EPOCH,
         day_start: None,
         caller: None,
+        environment: board_ops::Variables::default(),
     })
 }
 

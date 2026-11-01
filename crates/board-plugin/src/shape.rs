@@ -1,7 +1,7 @@
 //! Record and reference shapes for schemars
 //! (docs/architecture/records/shapes.md): a record's `$type`, a typed
-//! reference, and the settings every schema a built-in plugin ships is made
-//! with; and what its readers share.
+//! reference, the shared shapes a string field uses, and the settings every
+//! schema a built-in plugin ships is made with; and what its readers share.
 
 use std::borrow::Cow;
 use std::marker::PhantomData;
@@ -9,8 +9,9 @@ use std::marker::PhantomData;
 use schemars::generate::SchemaSettings;
 use schemars::transform::RecursiveTransform;
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
-use serde::{Deserialize, Deserializer};
-use serde_json::{Value, json};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_json::{Map, Value, json};
 
 /// Codes that depend on the tree rather than the record. A record holding
 /// one is still a record to read.
@@ -48,9 +49,41 @@ impl Accepts for Any {
     const TYPES: &'static [&'static str] = &[];
 }
 
-/// A record's `$type` field: the string `R::TYPE` and nothing else.
-#[derive(Debug)]
+/// A record's `$type` field: the string `R::TYPE` and nothing else. It
+/// writes `R::TYPE` and reads only that string.
 pub struct Tag<R>(PhantomData<fn() -> R>);
+
+impl<R> std::fmt::Debug for Tag<R> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Tag")
+    }
+}
+
+impl<R> Default for Tag<R> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<R: Record> Serialize for Tag<R> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(R::TYPE)
+    }
+}
+
+impl<'de, R: Record> Deserialize<'de> for Tag<R> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text == R::TYPE {
+            Ok(Self::default())
+        } else {
+            Err(D::Error::custom(format!(
+                "$type is {text:?}, not {:?}",
+                R::TYPE
+            )))
+        }
+    }
+}
 
 impl<R: Record> JsonSchema for Tag<R> {
     fn inline_schema() -> bool {
@@ -94,6 +127,135 @@ impl<T: Accepts> JsonSchema for Ref<T> {
         }
         schema
     }
+}
+
+/// Free text that a person reads and no program parses. A `String` field
+/// takes it with `#[schemars(with = "Prose")]`.
+#[derive(Debug)]
+pub enum Prose {}
+
+impl JsonSchema for Prose {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Prose".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "x-board-prose": true})
+    }
+}
+
+/// A calendar date, such as `2026-11-01`. A `String` field takes it with
+/// `#[schemars(with = "Date")]`.
+#[derive(Debug)]
+pub enum Date {}
+
+impl JsonSchema for Date {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Date".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "date"})
+    }
+}
+
+/// A web address: an absolute `http` or `https` URI with a host, such as
+/// `https://example.com/pull/1`. A `urls` field takes it with
+/// `#[schemars(with = "Vec<Url>")]`. Board's validator is the only check.
+#[derive(Debug)]
+pub enum Url {}
+
+/// `format: uri` admits `https://`, `https://:80` and `https://u@`, which
+/// have no host. After any user information the pattern needs a host
+/// character, and its tail is anchored at the next `/`, `?`, `#` or the end,
+/// so that the optional user-information group must take an `@` rather than
+/// let the regex read the user as the host. JSON Schema patterns are
+/// case-sensitive, so `HTTPS://` is refused.
+const URL_PATTERN: &str = "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)";
+
+impl JsonSchema for Url {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Url".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "format": "uri", "pattern": URL_PATTERN})
+    }
+}
+
+/// A SHA-256 in 64 lowercase hex digits, such as an effect's id or the
+/// digest of some content. A `String` field takes it with
+/// `#[schemars(with = "Sha256")]`.
+#[derive(Debug)]
+pub enum Sha256 {}
+
+impl JsonSchema for Sha256 {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Sha256".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "pattern": "^[0-9a-f]{64}$"})
+    }
+}
+
+/// An `SQLite` GLOB pattern, matched with case: `*` matches any characters,
+/// `/` and `.` included, `?` one character, and `[...]` one of a set, with
+/// `[^...]` its complement. A `String` field takes it with
+/// `#[schemars(with = "Glob")]`, and a plugin matches it with GLOB in a
+/// query, never with code of its own.
+#[derive(Debug)]
+pub enum Glob {}
+
+impl JsonSchema for Glob {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        "Glob".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        json_schema!({"type": "string", "minLength": 1, "x-board-glob": true})
+    }
+}
+
+/// Each shared shape's schema by its name. `crates/board-plugin/shapes.json`
+/// is this map, committed, and the shapes lint admits a string field whose
+/// schema is one of its entries.
+pub fn registry() -> Map<String, Value> {
+    let mut generator = SchemaGenerator::default();
+    Map::from_iter([
+        entry::<Date>(&mut generator),
+        entry::<Glob>(&mut generator),
+        entry::<Prose>(&mut generator),
+        entry::<Sha256>(&mut generator),
+        entry::<Url>(&mut generator),
+    ])
+}
+
+fn entry<T: JsonSchema>(generator: &mut SchemaGenerator) -> (String, Value) {
+    (
+        T::schema_name().into_owned(),
+        T::json_schema(generator).into(),
+    )
 }
 
 /// `T`'s JSON Schema, draft 2020-12 without `$schema`. A field a writer may

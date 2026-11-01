@@ -131,8 +131,6 @@ generates the eval schema from `EvalRecord` in `src/records.rs`. Its `types/`
 directory holds that schema as a committed golden, which a test compares with
 what the struct generates.
 
-This directory keeps `SKILL.md` and a uv project that only tests the plugin
-through the real binary. The gates, which CI runs: `uv run ruff format --check .`,
-`uv run ruff check .`, `uv run pyright` and `uv run pytest`. The tests drive
-`$BOARD_BIN`, by default the workspace's `target/debug/board`, so build it
-first with `cargo build -p board-cli`.
+This directory keeps `SKILL.md`. The tests of the plugin through the binary are
+in `crates/board-cli/src/tests/built_in/evals.rs`, which runs the same
+commands in process.

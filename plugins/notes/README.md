@@ -1,5 +1,8 @@
 # notes
 
+This plugin is still a Python program (docs/plugins/python.md). A new plugin
+is a crate built into Board (docs/plugins/built-in/writing.md).
+
 A Board plugin that appends to and reads notes in notes repos: git
 repositories of Markdown notes in the layout of
 [Reflect](https://github.com/team-reflect/reflect-open). `add` appends a

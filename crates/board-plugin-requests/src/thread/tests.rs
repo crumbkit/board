@@ -21,7 +21,7 @@ fn personal() -> Scenario {
     let mut board = Board::open(scenario.workdir(), None).unwrap();
     board.build_in(&[&Requests]);
     board
-        .plugin_enable(None, None, &"requests".parse().unwrap())
+        .plugin_enable(None, None, &"requests".parse().unwrap(), &[])
         .unwrap();
     scenario
 }

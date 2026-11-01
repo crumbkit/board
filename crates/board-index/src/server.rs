@@ -77,6 +77,14 @@ pub fn write_statement(cache: &Path, root: &Path, bytes: &[u8]) -> io::Result<te
     Ok(file.into_temp_path())
 }
 
+/// A new empty directory in the system's temporary directory, removed when
+/// the value drops, for a process a built-in plugin runs. Soft limit: a
+/// Board that dies on a signal leaves it behind, since it ends before the
+/// value drops; the system's temporary directory is cleaned in time.
+pub fn empty_directory() -> io::Result<tempfile::TempDir> {
+    tempfile::Builder::new().prefix("board-process-").tempdir()
+}
+
 /// Removes the opener at `file`; one already gone is not an error.
 #[expect(
     clippy::disallowed_methods,

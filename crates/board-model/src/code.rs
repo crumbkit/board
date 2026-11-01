@@ -104,6 +104,7 @@ codes! {
     PluginSchemaDiffers => "board::plugin::schema_differs",
     PluginAmbiguous => "board::plugin::ambiguous",
     PluginDuplicate => "board::plugin::duplicate",
+    PluginAliasConflict => "board::plugin::alias_conflict",
     PluginBadInput => "board::plugin::bad_input",
     PluginBadOutput => "board::plugin::bad_output",
     PluginFailed => "board::plugin::failed",

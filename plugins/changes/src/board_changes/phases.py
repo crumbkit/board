@@ -1,14 +1,21 @@
 """The `next`, `attach` and `advance` capabilities: where a change stands, what it cites, and moving it on."""
 
 import json
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PHASES, PLUGIN, TREE_CODES, Change, read, write
+from board_changes.change import FINAL, PHASES, PLUGIN, PULL_TYPES, TICKET_TYPES, TREE_CODES, Change, read, write
 from board_changes.gates import Observed, gate
 from board_changes.repo import check_suite
+
+# Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
+ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ...]], ...] = (
+    ("ref", "records", ()),
+    ("ticket", "tickets", TICKET_TYPES),
+    ("pull", "pulls", PULL_TYPES),
+)
 
 INSTRUCTIONS = {
     "plan": "Interview the owner and fill in the plan's Problem, Outcome and Out of scope sections. On the "
@@ -91,29 +98,47 @@ def next_step(request: CallRequest) -> dict[str, object]:
 
 
 def attach(request: CallRequest) -> dict[str, object]:
-    """Add a record reference, or set the route, head commit, issue or pull request, in one write."""
+    """Add a record, ticket or pull reference, or set the route, head commit, issue or pull request, in one write."""
     asked = request.input
     path = str(asked["path"])
     board = Board(request.board.root, PLUGIN)
     change, blob = read(board, path)
-    ref = asked.get("ref")
-    if isinstance(ref, str):
-        [answer] = board.refs([ref])
-        if answer is None:
-            raise PluginError(
-                "changes::ref::dangling",
-                f"nothing is at {ref}, so it cannot be attached; check the path with `board ls`",
-                {"ref": ref},
-            )
-        records = change.setdefault("records", [])
-        if ref not in records:
-            records.append(ref)
+    for field, listed, types in ATTACHED:
+        ref = asked.get(field)
+        if isinstance(ref, str):
+            check_target(board, ref, types)
+            references = change.get(listed, [])
+            change[listed] = references if ref in references else [*references, ref]
     for field in ("route", "head", "issue", "pull_request"):
         value = asked.get(field)
         if isinstance(value, str):
             change[field] = value
     write(board, [{"path": path, "expect": blob, "record": change}])
     return {"path": path, "records": len(change.get("records", []))}
+
+
+def check_target(board: Board, ref: str, types: tuple[str, ...]) -> None:
+    """Refuse `ref` when nothing is there, or when `types` names some and it is a record of none of them."""
+    [answer] = board.refs([ref])
+    if answer is None:
+        raise PluginError(
+            "changes::ref::dangling",
+            f"nothing is at {ref}, so it cannot be attached; check the path with `board ls`",
+            {"ref": ref},
+        )
+    if not types:
+        return
+    display = answer["location"]["display"]
+    rows = board.rows(f"SELECT type FROM entries WHERE logical = {literal(display)}")  # noqa: S608 - quoted by literal()
+    found = rows[0][0] if rows else None
+    if found not in types:
+        kind = f"has type {found}" if found else "is not a record"
+        raise PluginError(
+            "changes::ref::wrong_type",
+            f"{ref} {kind}, and this reference accepts only {' or '.join(types)} records; point it at one of "
+            f"those, or check the target's `$type` with `board get {ref}`",
+            {"ref": ref, "type": found, "accepts": list(types)},
+        )
 
 
 def advance(request: CallRequest) -> dict[str, object]:

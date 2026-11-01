@@ -757,6 +757,11 @@ board call plans.open
   fails with board::plugin::duplicate
   hint
 
+board tk due
+  fails with board::plugin::alias_conflict
+  run board call tasks.due
+    exits 0
+
 board call notes.due
   fails with board::plugin::schema_differs
   run board plugin enable notes

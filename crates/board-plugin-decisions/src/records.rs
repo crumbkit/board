@@ -1,7 +1,7 @@
 //! The record type the plugin ships. Its schema is generated from this
 //! struct; the file under `types/` is that schema, committed.
 
-use board_plugin::shape::{Record, Ref, Tag};
+use board_plugin::shape::{Record, Ref, Tag, Url};
 use schemars::JsonSchema;
 
 /// `decisions/decision/v1`: a choice and why it was made, written once.
@@ -38,7 +38,7 @@ pub struct DecisionRecord {
     pub basis: Vec<Ref>,
     /// Web pages the decision concerns, such as a pull request.
     #[serde(default)]
-    #[schemars(inner(regex(pattern = r"^https?://")))]
+    #[schemars(with = "Vec<Url>")]
     pub urls: Vec<String>,
     /// The decisions this one replaces.
     #[serde(default)]

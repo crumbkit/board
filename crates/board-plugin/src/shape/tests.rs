@@ -75,6 +75,20 @@ fn a_tag_is_its_record_type_as_a_constant() {
 }
 
 #[test]
+fn a_tag_writes_its_record_type_and_reads_only_that_type() {
+    assert_eq!(
+        serde_json::to_value(Tag::<Task>::default()).unwrap(),
+        json!("tasks/task/v2")
+    );
+    assert!(serde_json::from_value::<Tag<Task>>(json!("tasks/task/v2")).is_ok());
+    let refused = serde_json::from_value::<Tag<Task>>(json!("tasks/task/v1")).unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        r#"$type is "tasks/task/v1", not "tasks/task/v2""#
+    );
+}
+
+#[test]
 fn a_reference_names_one_type_several_or_none_and_two_types_share_no_definition() {
     let properties = &sample()["properties"];
     let reference = |types: Value| {
@@ -195,4 +209,109 @@ fn board_finds_each_reference_and_refuses_null_in_an_optional_field() {
         schema.validate(&nulled).unwrap_err().code(),
         board_model::Code::RecordInvalid
     );
+}
+
+#[derive(JsonSchema)]
+struct Noted {
+    /// Why it matters.
+    #[schemars(with = "Prose")]
+    why: String,
+    /// When it is due.
+    #[schemars(with = "Date")]
+    due: String,
+}
+
+#[test]
+fn a_prose_field_is_marked_as_prose_and_a_date_field_is_a_date() {
+    let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
+    assert_eq!(
+        properties["why"],
+        json!({"description": "Why it matters.", "type": "string", "x-board-prose": true})
+    );
+    assert_eq!(
+        properties["due"],
+        json!({"description": "When it is due.", "type": "string", "format": "date"})
+    );
+}
+
+#[test]
+fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
+    let registry = registry();
+    assert_eq!(
+        registry.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["Date", "Glob", "Prose", "Sha256", "Url"]
+    );
+    let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
+    let mut why = properties["why"].clone();
+    why.as_object_mut().unwrap().remove("description");
+    assert_eq!(registry["Prose"], why);
+}
+
+/// The committed `shapes.json` holds, byte for byte, the canonical JSON of
+/// the registry. `SNAPSHOTS=overwrite` rewrites the file.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "shapes.json is a golden, selected and written as crumbkit-test's are"
+)]
+#[test]
+fn the_committed_shapes_file_is_the_registry() {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("shapes.json");
+    let generated = board_model::canonical_json(&Value::Object(registry()));
+    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+        std::fs::write(&file, generated.as_bytes()).unwrap();
+    }
+    let committed = std::fs::read(&file).unwrap();
+    assert!(
+        committed == generated.as_bytes(),
+        "{} differs from shape::registry(); run this test with SNAPSHOTS=overwrite:\n{}",
+        file.display(),
+        String::from_utf8_lossy(generated.as_bytes())
+    );
+}
+
+/// Board's validator refuses each URL without a lower-case `http` or `https`
+/// scheme or without a host, and admits its twin.
+#[test]
+fn a_url_without_a_host_or_a_web_scheme_is_refused_and_its_twin_is_admitted() {
+    let schema =
+        board_validate::Schema::compile(schema_of::<Url>(SchemaSettings::draft2020_12())).unwrap();
+    let code = |text: &str| schema.validate(&json!(text)).err().map(|e| e.code());
+    let invalid = Some(board_model::Code::RecordInvalid);
+    for (refused, admitted) in [
+        ("https://", "https://a"),
+        ("http://u@", "http://u@h"),
+        ("https://:80", "https://h:80"),
+        ("https://u@:80/x", "https://u@[::1]:80/x"),
+        ("HTTPS://example.com", "https://example.com"),
+        ("ftp://example.com/x", "https://example.com/x"),
+        ("/pull/1", "https://example.com/pull/1"),
+        ("https://a b", "http://localhost:8080/x"),
+    ] {
+        assert_eq!((refused, code(refused)), (refused, invalid));
+        assert_eq!((admitted, code(admitted)), (admitted, None));
+    }
+}
+
+/// Board's validator refuses a digest that is not 64 lowercase hex digits
+/// and an empty glob, and admits each one's twin.
+#[test]
+fn a_sha256_not_in_lowercase_hex_and_an_empty_glob_are_refused_and_their_twins_are_admitted() {
+    let compiled = |schema| board_validate::Schema::compile(schema).unwrap();
+    let sha256 = compiled(schema_of::<Sha256>(SchemaSettings::draft2020_12()));
+    let glob = compiled(schema_of::<Glob>(SchemaSettings::draft2020_12()));
+    let code = |schema: &board_validate::Schema, text: &str| {
+        schema.validate(&json!(text)).err().map(|e| e.code())
+    };
+    let invalid = Some(board_model::Code::RecordInvalid);
+    let lower = "0123456789abcdef".repeat(4);
+    for refused in [
+        lower.to_uppercase(),
+        lower[1..].to_owned(),
+        format!("{lower}0"),
+    ] {
+        assert_eq!(code(&sha256, &refused), invalid, "{refused}");
+    }
+    assert_eq!(code(&sha256, &lower), None);
+    assert_eq!(code(&glob, ""), invalid);
+    assert_eq!(code(&glob, "*"), None);
 }
