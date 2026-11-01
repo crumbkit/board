@@ -5,11 +5,10 @@ schemas, so a call loads no pydantic (STANDARDS.md P3).
 """
 
 import datetime as dt
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, Literal
 
-from board_plugin.model import Strict
-from pydantic import ConfigDict, Field
-from pydantic.config import JsonDict
+from board_plugin.model import Strict, unset
+from pydantic import Field
 from pydantic.json_schema import SkipJsonSchema
 
 # The most entries each part returns by default, and at most.
@@ -17,25 +16,20 @@ LIMIT = 20
 MAX = 50
 
 
-def shipped(schema: JsonDict) -> None:
-    """A schema hook: no `null` default for an input field typed otherwise."""
-    for field in cast("dict[str, JsonDict]", schema.get("properties", {})).values():
-        field.pop("default", None)
-
-
 class NowInput(Strict):
     """What is open or running right now."""
 
-    model_config = ConfigDict(json_schema_extra=shipped)
-
     holder: Annotated[str, Field(pattern=r"\S")] | SkipJsonSchema[None] = Field(
-        default=None, description="Only the changes this session holds, their agents, and the agents it started."
+        default=None,
+        description="Only the changes this session holds, their agents, and the agents it started.",
+        json_schema_extra=unset,
     )
     stopped_at: dt.datetime | SkipJsonSchema[None] = Field(
         default=None,
         alias="stopped-at",
         description="When the sessions stopped, with a time zone; an agent with no run that started before it is"
         " stalled.",
+        json_schema_extra=unset,
     )
     limit: int = Field(
         default=LIMIT,

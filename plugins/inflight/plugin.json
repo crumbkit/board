@@ -18,6 +18,7 @@
             "type": "string"
           },
           "limit": {
+            "default": 20,
             "description": "The most entries each part returns, 1 to 50; 20 when left out.",
             "maximum": 50,
             "minimum": 1,
