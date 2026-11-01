@@ -8,6 +8,7 @@ from board_plugin.protocol import PluginError
 
 PLUGIN = "changes"
 CHANGE_TYPE = "changes/change/v1"
+PLAN_TYPE = "changes/plan/v1"
 # The phases a change passes through, in order. `dropped` ends a change outside this order.
 PHASES = ("plan", "build", "review", "land", "done")
 FINAL = ("done", "dropped")

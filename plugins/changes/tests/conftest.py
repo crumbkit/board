@@ -117,19 +117,37 @@ class Board:
         document: dict[str, Any] = json.loads(ran.stdout)
         return document
 
-    def call(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
-        """The output of `board call changes.<capability>`."""
-        report = self.json("call", f"changes.{capability}", *flags(given))
+    def call(self, capability: str, given: dict[str, Any], *, stdin: bool = False) -> dict[str, Any]:
+        """The output of `board call changes.<capability>`, given as flags or, with `stdin`, as JSON on stdin."""
+        report = self.json(
+            "call", f"changes.{capability}", *self.as_flags(given, stdin=stdin), stdin=self.piped(given, stdin=stdin)
+        )
         assert report.get("schema") == "board/call-report/v2", report
         output: dict[str, Any] = report["data"]["output"]
         return output
 
-    def refusal(self, capability: str, given: dict[str, Any]) -> dict[str, Any]:
+    def refusal(self, capability: str, given: dict[str, Any], *, stdin: bool = False) -> dict[str, Any]:
         """The failure `board call changes.<capability>` prints when the plugin refuses."""
-        ran = self.run("--json", "call", f"changes.{capability}", *flags(given))
+        ran = self.run(
+            "--json",
+            "call",
+            f"changes.{capability}",
+            *self.as_flags(given, stdin=stdin),
+            stdin=self.piped(given, stdin=stdin),
+        )
         assert ran.returncode != 0, ran.stdout
         failure: dict[str, Any] = json.loads(ran.stdout)
         return failure
+
+    @staticmethod
+    def as_flags(given: dict[str, Any], *, stdin: bool) -> list[str]:
+        """`given` as flags, or no flags when it goes on stdin."""
+        return [] if stdin else flags(given)
+
+    @staticmethod
+    def piped(given: dict[str, Any], *, stdin: bool) -> str:
+        """`given` as JSON when it goes on stdin, else nothing."""
+        return json.dumps(given) if stdin else ""
 
     def plugin(self, capability: str, given: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """Run the plugin once on a call of `capability`, as Board runs it, for a call Board itself would refuse."""
