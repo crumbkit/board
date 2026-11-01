@@ -177,7 +177,7 @@ impl fmt::Debug for BuiltIn {
 
 /// The host a built-in plugin sees during one call.
 pub(crate) struct Hosted<'a> {
-    pub(crate) board: Held<'a>,
+    pub(crate) board: HostBoard<'a>,
     pub(crate) settings: Settings,
     /// The plugin a put is checked as, or the `BOARD_PLUGIN` that names
     /// none.
@@ -191,12 +191,12 @@ pub(crate) struct Hosted<'a> {
 }
 
 /// The board a host acts on: the called one, or one it opened.
-pub(crate) enum Held<'a> {
+pub(crate) enum HostBoard<'a> {
     Called(&'a Board),
     Opened(Box<Board>),
 }
 
-impl Deref for Held<'_> {
+impl Deref for HostBoard<'_> {
     type Target = Board;
 
     fn deref(&self) -> &Board {
@@ -273,8 +273,13 @@ impl Host for Hosted<'_> {
 
     fn call(&self, target: &Target, input: &Value) -> Result<CallReport, Box<Refusal>> {
         let board = self.again().map_err(|error| opened(&error))?;
-        (board.call(target, input.to_string().as_bytes(), &self.plugins))
-            .map_err(|error| Box::new(error.refusal()))
+        // As bytes, so the input passes the size limit and parse a process
+        // plugin's `board call` reads it through.
+        let called = board.call(target, input.to_string().as_bytes(), &self.plugins);
+        // The processes it started count in this call's trace.
+        let started = board.take_trace().work.get("started").copied();
+        (self.board.trace.borrow_mut()).count("started", started.unwrap_or(0));
+        called.map_err(|error| Box::new(error.refusal()))
     }
 
     fn board(&self, elsewhere: &Elsewhere) -> Result<Box<dyn Host + '_>, Box<Refusal>> {
@@ -290,7 +295,7 @@ impl Host for Hosted<'_> {
         board.build_in(self.board.built_in.0);
         board.built_by(self.board.build);
         Ok(Box::new(Hosted {
-            board: Held::Opened(Box::new(board)),
+            board: HostBoard::Opened(Box::new(board)),
             settings: self.settings.clone(),
             plugin: self.plugin.clone(),
             plugins: self.plugins.clone(),

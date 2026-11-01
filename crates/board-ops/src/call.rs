@@ -10,7 +10,7 @@ use board_plugin::{
 use serde_json::Value;
 
 use crate::Board;
-use crate::host::{Held, Hosted, PluginError, Settings};
+use crate::host::{HostBoard, Hosted, PluginError, Settings};
 use crate::plugins::{CallFailed, Plugins};
 
 impl Board {
@@ -74,6 +74,7 @@ impl Board {
                             environment: &plugins.environment,
                             limits: plugins.limits,
                             spawned: &spawned,
+                            leads: plugins.leads,
                         },
                     )
                 });
@@ -99,7 +100,7 @@ impl Board {
         let environment = &plugins.environment;
         let root = self.repository().path();
         let host = Hosted {
-            board: Held::Called(self),
+            board: HostBoard::Called(self),
             settings: Settings {
                 now: SystemTime::now(),
                 day_start: (environment.day_start.as_ref())
@@ -120,6 +121,9 @@ impl Board {
                 environment: environment.nested(chosen, root)?,
                 known: plugins.known,
                 signing: plugins.signing.clone(),
+                // This Board leads its plugins' groups, and the built-in
+                // runs in it, so a process plugin it calls leads its own.
+                leads: plugins.leads || environment.depth()? == 0,
                 ..*plugins
             },
             root,

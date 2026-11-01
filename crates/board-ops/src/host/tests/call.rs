@@ -20,9 +20,11 @@ fn calling(input: &'static str, elsewhere: Option<Elsewhere>) -> Fixture {
             let other;
             let host = match &elsewhere {
                 Some(elsewhere) => {
-                    other = host
-                        .board(elsewhere)
-                        .map_err(|refusal| refused("--personal", &refusal))?;
+                    let flag = match elsewhere {
+                        Elsewhere::Personal => "--personal",
+                        Elsewhere::Directory(_) => "-C",
+                    };
+                    other = (host.board(elsewhere)).map_err(|refusal| refused(flag, &refusal))?;
                     &*other
                 }
                 None => host,
@@ -205,17 +207,22 @@ fn known(personal: &Path) -> KnownBoards {
     KnownBoards::parse(Path::new("/known/config.json"), Ok(file)).unwrap()
 }
 
-/// `outer.due` in a board that enables only `outer`, calling `fixture.due`
-/// in the board `elsewhere` names, with `known` the known boards.
-fn elsewhere(elsewhere: Elsewhere, known: Option<&KnownBoards>) -> Result<Value, Box<Refusal>> {
+/// `outer.due` at `depth` in a board that enables only `outer`, calling
+/// `fixture.due` in its own board or in the one `elsewhere` names, with
+/// `known` the known boards.
+fn elsewhere(
+    elsewhere: Option<Elsewhere>,
+    known: Option<&KnownBoards>,
+    depth: &str,
+) -> Result<Value, Box<Refusal>> {
     let scenario = board(BOTH, &["outer"], Holds::Same);
     let mut board = open(&scenario);
     board.build_in(built(vec![
-        calling(NESTED.input, Some(elsewhere)),
+        calling(NESTED.input, elsewhere),
         fixture("fixture"),
     ]));
     let plugins = Plugins {
-        environment: environment("0"),
+        environment: environment(depth),
         known,
         ..Plugins::default()
     };
@@ -224,35 +231,53 @@ fn elsewhere(elsewhere: Elsewhere, known: Option<&KnownBoards>) -> Result<Value,
         .map_err(|error| Box::new(error.refusal()))
 }
 
+/// The code of `refusal`, a refusal `outer` passed on, and Board's code in it.
+fn codes(refusal: &Refusal) -> (&str, &Value) {
+    (refusal.code.as_str(), &refusal.fields["code"])
+}
+
 #[test]
 fn a_built_ins_personal_board_is_refused_when_the_known_boards_name_none_and_its_twin_calls_there()
 {
     let personal = board(BOTH, NESTED.enabled, Holds::Same);
-    let refusal = elsewhere(Elsewhere::Personal, None).unwrap_err();
-    assert_eq!(refusal.code.as_str(), "outer::board::refused");
-    assert_eq!(refusal.fields["code"], json!("board::config::not_found"));
+    let refusal = elsewhere(Some(Elsewhere::Personal), None, "0").unwrap_err();
+    assert_eq!(
+        codes(&refusal),
+        ("outer::board::refused", &json!("board::config::not_found"))
+    );
     let named = known(personal.workdir());
-    let output = elsewhere(Elsewhere::Personal, Some(&named)).unwrap();
+    let output = elsewhere(Some(Elsewhere::Personal), Some(&named), "0").unwrap();
     assert_eq!(output, json!({"count": 2}));
 }
 
 #[test]
-fn a_built_ins_call_in_its_own_board_is_refused_where_that_board_does_not_enable_it_and_its_twin_elsewhere_answers()
+fn a_built_ins_call_in_its_own_board_is_refused_where_that_board_does_not_enable_it_and_its_twin_in_the_personal_board_answers()
  {
     let personal = board(BOTH, NESTED.enabled, Holds::Same);
-    let scenario = board(BOTH, &["outer"], Holds::Same);
-    let mut board = open(&scenario);
-    board.build_in(built(vec![calling(NESTED.input, None), fixture("fixture")]));
     let named = known(personal.workdir());
-    let plugins = Plugins {
-        known: Some(&named),
-        ..Plugins::default()
-    };
-    let refusal = (board.call(&target("outer.due"), br#"{"n": 1}"#, &plugins))
-        .unwrap_err()
-        .refusal();
-    assert_eq!(refusal.fields["code"], json!("board::plugin::not_enabled"));
-    let output = elsewhere(Elsewhere::Personal, Some(&named)).unwrap();
+    let refusal = elsewhere(None, Some(&named), "0").unwrap_err();
+    assert_eq!(
+        codes(&refusal),
+        (
+            "outer::board::refused",
+            &json!("board::plugin::not_enabled")
+        )
+    );
+    let output = elsewhere(Some(Elsewhere::Personal), Some(&named), "0").unwrap();
+    assert_eq!(output, json!({"count": 2}));
+}
+
+#[test]
+fn a_call_through_another_board_is_as_deep_as_one_in_its_own_so_it_is_refused_too_deep_and_its_shallower_twin_answers()
+ {
+    let personal = board(BOTH, NESTED.enabled, Holds::Same);
+    let named = known(personal.workdir());
+    let refusal = elsewhere(Some(Elsewhere::Personal), Some(&named), "7").unwrap_err();
+    assert_eq!(
+        codes(&refusal),
+        ("outer::board::refused", &json!("board::plugin::too_deep"))
+    );
+    let output = elsewhere(Some(Elsewhere::Personal), Some(&named), "6").unwrap();
     assert_eq!(output, json!({"count": 2}));
 }
 
@@ -261,13 +286,99 @@ fn a_built_ins_board_in_a_directory_that_does_not_exist_is_refused_as_minus_c_re
  {
     let other = board(BOTH, NESTED.enabled, Holds::Same);
     let root = other.workdir().to_path_buf();
-    let refusal = elsewhere(Elsewhere::Directory(root.join("missing")), None).unwrap_err();
-    assert_eq!(refusal.fields["code"], json!("board::cli::usage"));
+    let missing = Elsewhere::Directory(root.join("missing"));
+    let refusal = elsewhere(Some(missing), None, "0").unwrap_err();
+    assert_eq!(
+        codes(&refusal),
+        ("outer::board::refused", &json!("board::cli::usage"))
+    );
     assert!(
         refusal.message.contains("does not exist"),
         "{}",
         refusal.message
     );
-    let output = elsewhere(Elsewhere::Directory(root), None).unwrap();
+    let output = elsewhere(Some(Elsewhere::Directory(root)), None, "0").unwrap();
     assert_eq!(output, json!({"count": 2}));
+}
+
+/// `outer` putting a record at `path` in the personal board, answering
+/// with the count of files written, or with the put's refusal.
+fn putting_elsewhere(path: &'static str) -> Fixture {
+    answering(
+        "outer",
+        Box::new(move |host| {
+            let refused =
+                |command, refusal: &Refusal| PluginError::board_refused("outer", command, refusal);
+            let other = (host.board(&Elsewhere::Personal))
+                .map_err(|refusal| refused("--personal", &refusal))?;
+            let line = json!({"path": path, "record": {"$type": "outer/item/v1"}});
+            match other.put(&[line]) {
+                Ok(report) => Ok(json!({"count": report.writes.len()})),
+                Err(error) => Err(refused("put --batch", &error.refusal())),
+            }
+        }),
+    )
+}
+
+#[test]
+fn a_put_in_the_personal_board_is_checked_as_the_plugin_so_an_owner_only_path_is_refused_and_its_twin_is_written()
+ {
+    let put = |path| {
+        let personal = board(BOTH, NESTED.enabled, Holds::Same);
+        personal.write(
+            ".git/config",
+            Item::Appended("[user]\n\tname = Board Test\n\temail = board@example.com\n"),
+        );
+        let scenario = board(BOTH, &["outer"], Holds::Same);
+        let mut board = open(&scenario);
+        board.build_in(built(vec![putting_elsewhere(path)]));
+        let named = known(personal.workdir());
+        let plugins = Plugins {
+            known: Some(&named),
+            ..Plugins::default()
+        };
+        let called = board.call(&target("outer.due"), br#"{"n": 1}"#, &plugins);
+        (called.map(|report| report.output)).map_err(|error| error.refusal())
+    };
+    let refusal = put("/effects/a").unwrap_err();
+    assert_eq!(refusal.code.as_str(), "outer::board::refused");
+    let line = &refusal.fields["refusals"][0];
+    assert_eq!(
+        (&line["code"], &line["fields"]["plugin"]),
+        (&json!("board::settings::from_plugin"), &json!("outer"))
+    );
+    assert_eq!(put("/notes/a").unwrap(), json!({"count": 1}));
+}
+
+/// A process `fixture` that answers whether it leads its own process group.
+fn leading(data: &Scenario) {
+    install(data, "fixture", true, BASE.reply);
+    let script = "#!/bin/sh\ncat > /dev/null\nif [ \"$(ps -o pgid= -p $$ | tr -d ' ')\" = \"$$\" ]; then leads=true; else leads=false; fi\nprintf '{\"$type\": \"board/call-result/v1\", \"output\": {\"count\": 2, \"leads\": %s}}' \"$leads\"\n";
+    data.write("plugins/fixture/run", Item::File(script));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_process_plugin_a_built_in_calls_from_the_outermost_board_leads_its_own_process_group_and_one_called_inside_a_plugin_does_not()
+ {
+    let scenario = board(BOTH, NESTED.enabled, Holds::Same);
+    let data = Scenario::new();
+    leading(&data);
+    let directory = data.workdir().join("plugins");
+    for (depth, leads) in [("0", true), ("1", false)] {
+        let mut board = open(&scenario);
+        board.build_in(built(vec![calling(NESTED.input, None)]));
+        let plugins = Plugins {
+            directory: Some(&directory),
+            environment: environment(depth),
+            ..Plugins::default()
+        };
+        let output = board.call(&target("outer.due"), br#"{"n": 1}"#, &plugins);
+        assert_eq!(
+            output.unwrap().output,
+            json!({"count": 2, "leads": leads}),
+            "{depth}"
+        );
+        assert_eq!(board.take_trace().work.get("started"), Some(&1), "{depth}");
+    }
 }

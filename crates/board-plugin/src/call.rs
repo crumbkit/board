@@ -278,6 +278,11 @@ pub struct Context<'a> {
     pub environment: &'a Environment,
     pub limits: Limits,
     pub spawned: &'a RefCell<Vec<Spawned>>,
+    /// Whether a plugin this call starts leads its own process group even
+    /// when the call is nested: true when the call came from a built-in
+    /// plugin in a Board that leads its plugins' groups, since no plugin
+    /// process holds a group around it.
+    pub leads: bool,
 }
 
 /// `bytes` read as the chosen capability's input, once its schema admits
@@ -377,7 +382,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     // A nested Board leaves its plugin in the outermost plugin's group. A
     // new group there would escape the outermost Board's signals after they
     // stopped the nested Board that enforces this plugin's limits.
-    let scope = if child.depth == 0 {
+    let scope = if child.depth == 0 || context.leads {
         Scope::Group
     } else {
         Scope::Process

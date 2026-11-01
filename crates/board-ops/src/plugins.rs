@@ -26,6 +26,9 @@ pub struct Plugins<'a> {
     pub known: Option<&'a KnownBoards>,
     /// How the owner's approval of a built-in plugin's decide is checked.
     pub signing: Signing,
+    /// Whether a process plugin a nested call starts leads its own process
+    /// group, as `board_plugin::Context::leads` says.
+    pub leads: bool,
 }
 
 /// A call that failed: the plugin's or Board's refusal.
