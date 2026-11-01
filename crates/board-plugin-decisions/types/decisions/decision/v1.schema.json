@@ -51,7 +51,8 @@
       "default": [],
       "description": "Web pages the decision concerns, such as a pull request.",
       "items": {
-        "pattern": "^https?://",
+        "format": "uri",
+        "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
         "type": "string"
       },
       "type": "array"

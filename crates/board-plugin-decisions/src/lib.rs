@@ -47,6 +47,7 @@ impl Plugin for Decisions {
                     "decisions offers no capability {other}; it offers about and open"
                 ),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

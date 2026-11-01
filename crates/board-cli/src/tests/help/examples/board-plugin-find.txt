@@ -4,7 +4,9 @@ boundary.record disabled Add what the destination returned, such as a URL, to a 
 controls.for-path disabled The controls that apply to a path.
 controls.check disabled Check the controls under a path, `/` when left out. Fails naming each control over budget or degraded.
 controls.evaluate disabled Check named parts of text against controls' budget, pattern and judged rules, and return each control's verdict on each part with its findings.
-evals.about disabled The evals that name a subject, or that name a repository's mount or live in it, whatever their status, here and in mounted boards.
+decisions.about disabled The decisions not superseded whose basis names a path or an entry under it, newest first, here and in mounted boards.
+decisions.open disabled The decisions under a path that an open question asks the owner to review, oldest first.
+evals.about disabled The evals that name a subject, or that name a repository's repo record or live in its mount, whatever their status, here and in mounted boards.
 evals.open disabled The evals still planned or running, here and in mounted boards.
 jira.ref disabled Write the issue at /jira/<site>/<key> with its title, read once through acli, unless a record is already there.
 plans.open disabled The questions under a path whose status is open, oldest first.

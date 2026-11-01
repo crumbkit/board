@@ -80,7 +80,8 @@ fn enabling_writes_the_schema_so_a_control_checks_clean_and_a_broken_one_does_no
 }
 
 #[test]
-fn a_control_whose_basis_reaches_an_entry_checks_clean_and_one_whose_basis_reaches_nothing_dangles() {
+fn a_control_whose_basis_reaches_an_entry_checks_clean_and_one_whose_basis_reaches_nothing_dangles()
+{
     let board = board();
     board
         .write("decisions/d.md", "# A decision\n")
