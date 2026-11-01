@@ -278,6 +278,11 @@ pub struct Context<'a> {
     pub environment: &'a Environment,
     pub limits: Limits,
     pub spawned: &'a RefCell<Vec<Spawned>>,
+    /// Whether a plugin this call starts leads its own process group even
+    /// when the call is nested: true when the call came from a built-in
+    /// plugin in a Board that leads its plugins' groups, since no plugin
+    /// process holds a group around it.
+    pub leads: bool,
 }
 
 /// `bytes` read as the chosen capability's input, once its schema admits
@@ -377,7 +382,7 @@ pub(crate) fn exchange<T: DeserializeOwned, U>(
     // A nested Board leaves its plugin in the outermost plugin's group. A
     // new group there would escape the outermost Board's signals after they
     // stopped the nested Board that enforces this plugin's limits.
-    let scope = if child.depth == 0 {
+    let scope = if child.depth == 0 || context.leads {
         Scope::Group
     } else {
         Scope::Process
@@ -490,6 +495,61 @@ fn environment<'a>(
             ),
         ])
         .collect()
+}
+
+impl Environment {
+    /// What a Board that a process plugin offering `chosen`'s capability
+    /// starts in `directory` reads: the variables `board call` gives
+    /// that plugin, one call deeper, with `directory` as where it started.
+    /// The known boards file it reads is this one's, so `day_start` stays.
+    pub fn nested(&self, chosen: &Chosen, directory: &Path) -> Result<Self, CallError> {
+        let depth = self.depth()?;
+        let given = environment(
+            self,
+            &chosen.capability().env,
+            depth + 1,
+            &chosen.manifest.name,
+        );
+        // The last of a name is the one a process sees.
+        let get = |name: &str| {
+            (given.iter().rev())
+                .find(|(given, _)| *given == name)
+                .map(|(_, value)| value.clone())
+        };
+        Ok(Self {
+            path: get("PATH"),
+            home: get("HOME"),
+            lang: get("LANG"),
+            tz: get("TZ"),
+            cache: get("XDG_CACHE_HOME"),
+            data: get("XDG_DATA_HOME"),
+            config: get("XDG_CONFIG_HOME"),
+            depth: get(DEPTH_VARIABLE),
+            timings: get("BOARD_TIMINGS"),
+            caller: Some(directory.as_os_str().to_owned()),
+            day_start: self.day_start.clone(),
+            plugin: get(PLUGIN_VARIABLE),
+            inherited: (given.into_iter())
+                .map(|(name, value)| (OsString::from(name), value))
+                .collect(),
+        })
+    }
+}
+
+/// The variables a process plugin offering `chosen`'s capability would see,
+/// for a built-in plugin to pass on to a child it starts, such as an agent.
+pub fn passed(
+    chosen: &Chosen,
+    inherited: &Environment,
+) -> Result<Vec<(String, OsString)>, CallError> {
+    let depth = inherited.depth()?;
+    let pass = &chosen.capability().env;
+    let plugin = &chosen.manifest.name;
+    Ok(
+        (environment(inherited, pass, depth + 1, plugin).into_iter())
+            .map(|(name, value)| (name.to_owned(), value))
+            .collect(),
+    )
 }
 
 /// A call Board refuses, or the plugin's own refusal.

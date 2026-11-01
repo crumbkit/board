@@ -195,9 +195,7 @@ Its properties carry titles, as the former Python plugin generated them.
 `rule` is one object listing every kind's fields, with a `oneOf` that picks
 the kind, because Board checks no reference under `anyOf` or `oneOf`.
 
-This directory keeps `SKILL.md`, the mod and a uv project that only tests
-the plugin through the real binary. The gates, which CI runs:
-`uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and
-`uv run pytest`. The tests drive `$BOARD_BIN`, by default the workspace's
-`target/debug/board`, so build it first with `cargo build -p board-cli`.
+This directory keeps `SKILL.md` and the mod. The tests of the plugin through
+the binary are in `crates/board-cli/src/tests/built_in/controls.rs` and the
+two files beside it in `controls/`, which run the same commands in process.
 `claude plugin test claude-code` runs the mod's tests.

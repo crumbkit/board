@@ -19,6 +19,7 @@ rustix.workspace = true
 signal-hook.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 board-scenario.workspace = true
 
 [lints]

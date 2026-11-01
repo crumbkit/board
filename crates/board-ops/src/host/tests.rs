@@ -70,6 +70,7 @@ fn manifest(name: &str) -> Value {
             "description": "",
             "inputSchema": serde_json::from_str::<Value>(INPUT_SCHEMA).unwrap(),
             "outputSchema": serde_json::from_str::<Value>(OUTPUT_SCHEMA).unwrap(),
+            "env": ["FIXTURE_GIVEN"],
         }],
     })
 }
@@ -89,6 +90,7 @@ impl Reply {
                 code: code.to_owned(),
                 message: "the task is late".to_owned(),
                 fields: Map::new(),
+                hint: None,
             }),
         })
     }
@@ -589,6 +591,47 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn a_built_in_runs_a_process_with_its_capabilitys_declared_variables_and_its_own_name_and_no_others()
+ {
+    let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+    let mut board = open(&scenario);
+    board.build_in(built(vec![answering(
+        "fixture",
+        Box::new(|host| {
+            let arguments = [
+                "-c".to_owned(),
+                "printf '%s' \"$FIXTURE_GIVEN-$FIXTURE_HIDDEN-$BOARD_PLUGIN-$BOARD_CALL_DEPTH\""
+                    .to_owned(),
+            ];
+            let process = Run {
+                program: "sh",
+                arguments: &arguments,
+                directory: None,
+                input: b"",
+                deadline: Duration::from_secs(5),
+            };
+            let exited = host.run(&process).unwrap();
+            Ok(json!({"count": exited.code, "seen": String::from_utf8(exited.stdout).unwrap()}))
+        }),
+    )]));
+    let set = Plugins {
+        environment: Environment {
+            path: Some(OsString::from("/usr/bin:/bin")),
+            inherited: [("FIXTURE_GIVEN", "yes"), ("FIXTURE_HIDDEN", "no")]
+                .into_iter()
+                .map(|(name, value)| (OsString::from(name), OsString::from(value)))
+                .collect(),
+            ..Environment::default()
+        },
+        ..Plugins::default()
+    };
+    let output = call_base(&board, &set).unwrap().output;
+    // The process is identified as the built-in plugin, one call deeper.
+    assert_eq!(output, json!({"count": 0, "seen": "yes--fixture-1"}));
+}
+
 /// `fixture` answering the query `sql` with how many rows it returned and
 /// whether its index was in memory, or with the query's refusal.
 fn querying(sql: &'static str) -> Fixture {
@@ -707,6 +750,28 @@ fn a_board_refused_error_adds_the_refusals_hint_and_leaves_out_an_empty_one() {
 }
 
 #[test]
+fn a_built_ins_error_with_a_hint_is_refused_with_that_hint_and_its_twin_without_one_has_none() {
+    for hint in [Some("check again"), None] {
+        let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+        let mut board = open(&scenario);
+        let answer: Answer = Box::new(move |_| {
+            Err(PluginError {
+                code: "fixture::task::late".to_owned(),
+                message: "the task is late".to_owned(),
+                fields: Map::new(),
+                hint: hint.map(str::to_owned),
+            })
+        });
+        board.build_in(built(vec![answering("fixture", answer)]));
+        let refusal = call_base(&board, &Plugins::default())
+            .unwrap_err()
+            .refusal();
+        assert_eq!(refusal.code.as_str(), "fixture::task::late");
+        assert_eq!(refusal.hint.as_deref(), hint);
+    }
+}
+
+#[test]
 fn built_in_plugins_debug_as_their_names() {
     let plugins = built(vec![
         answering("first", BASE.reply.answer()),
@@ -775,4 +840,6 @@ fn a_built_in_resolves_and_reads_paths_as_refs_and_get_do_and_a_missing_path_is_
     assert_eq!(output["read"], json!(["a\n", "board::path::not_found"]));
 }
 
+mod call;
+mod decide;
 mod put;

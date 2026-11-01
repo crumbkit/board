@@ -59,6 +59,30 @@ impl Host for Answering {
         panic!("this plugin writes no records")
     }
 
+    fn call(
+        &self,
+        _target: &board_plugin::Target,
+        _input: &serde_json::Value,
+    ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+        panic!("this plugin calls no plugin")
+    }
+
+    fn board(
+        &self,
+        _elsewhere: &board_ops::Elsewhere,
+    ) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+        panic!("this plugin opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _op: &str,
+        _path: &board_model::LogicalPath,
+        _shown: Option<&board_ops::Shown>,
+    ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
+        panic!("this plugin asks the owner nothing")
+    }
+
     fn settings(&self) -> &Settings {
         &self.settings
     }
@@ -73,6 +97,7 @@ fn host(rows: Vec<Vec<Value>>) -> Answering {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
             caller: None,
+            environment: board_ops::Variables::default(),
         },
     }
 }

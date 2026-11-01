@@ -190,7 +190,21 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "strsim",
+ "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "board-plugin-boundary"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-validate",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -219,6 +233,19 @@ dependencies = [
  "board-scenario",
  "board-validate",
  "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "board-plugin-jira"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-validate",
  "schemars",
  "serde",
  "serde_json",
@@ -273,8 +300,10 @@ name = "board-plugins"
 version = "0.0.0"
 dependencies = [
  "board-ops",
+ "board-plugin-boundary",
  "board-plugin-controls",
  "board-plugin-evals",
+ "board-plugin-jira",
  "board-plugin-plans",
  "board-plugin-requests",
  "board-plugin-runs",
