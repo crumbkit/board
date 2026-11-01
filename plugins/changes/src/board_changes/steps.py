@@ -176,7 +176,8 @@ def files_at(held: Records, head: str | None) -> list[str] | None:
 
 def added(board: Board, change: Change, files: list[str] | None) -> list[tuple[str, str]]:
     """Each (control, step) a control on the repository adds: those matching `files`, or every one without them."""
-    given: dict[str, Any] = {"path": change["repo"], "limit": CONTROLS_LIMIT}
+    # Only the steps controls add matter here, so an over-budget file never stops `next` or `brief`.
+    given: dict[str, Any] = {"path": change["repo"], "limit": CONTROLS_LIMIT, "measure": False}
     if files is not None:
         given["files"] = files
     report = board.document("call", "controls.check", stdin=json.dumps(given).encode())

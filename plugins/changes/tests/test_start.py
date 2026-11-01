@@ -161,3 +161,12 @@ def test_start_records_the_issue_when_one_is_given(board: Board) -> None:
     issue = "https://github.com/example/app/issues/2"
     output = board.call("start", given(name="t", issue=issue), cwd=clone(board).path)
     assert board.read(output["path"].removeprefix("/") + ".json")["issue"] == issue
+
+
+def test_a_name_or_repo_name_outside_the_pattern_is_refused_and_one_inside_is_admitted(board: Board) -> None:
+    ready(board)
+    cloned = clone(board)
+    for bad in ({"name": "Has Spaces"}, {"repo-name": "Example.App"}):
+        assert board.refusal("start", given(**bad), cwd=cloned.path)["code"].startswith("board::")
+    output = board.call("start", given(name="timeout", **{"repo-name": "example-app"}), cwd=cloned.path)
+    assert (output["path"], output["repo"]) == ("/changes/timeout", "/repos/example-app")

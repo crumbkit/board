@@ -145,6 +145,12 @@
             "title": "Limit",
             "type": "integer"
           },
+          "measure": {
+            "default": true,
+            "description": "Whether to measure each budget, refusing the check when one is over; when false, budgets are listed among `stated` unmeasured. True when left out.",
+            "title": "Measure",
+            "type": "boolean"
+          },
           "path": {
             "description": "The directory or file whose controls to check, by its logical path, such as /repos/app; the caller's repository when left out, / in the board's own.",
             "format": "board-path",
