@@ -1,6 +1,6 @@
 //! `plans.open`: the questions still waiting for the owner, oldest first.
 
-mod asked;
+pub(crate) mod asked;
 
 use board_model::parse_json;
 use board_ops::{Host, Limit, PluginError};

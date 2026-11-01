@@ -33,7 +33,7 @@ personal board and from the repository's own board.
   change gains the step when a file in its files record matches the control.
   Until then the field is stored and shown, and adds nothing.
 - `basis` lists the decisions and other records the control rests on. The
-  decisions pull request already added it (plan/decisions.md); this step
+  decisions pull request already added it (plugins/controls/README.md); this step
   reads it.
 
 A control ends when it is deleted, and git history keeps it. A control whose

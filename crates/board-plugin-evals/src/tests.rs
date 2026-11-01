@@ -66,7 +66,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
 }
 
 #[test]
-fn every_input_property_carries_a_sentence_and_about_takes_a_subject_or_a_mount() {
+fn every_input_property_carries_a_sentence_and_about_takes_a_subject_or_a_repo() {
     let manifest = manifest();
     let [about, open] = [0, 1].map(|n| manifest["capabilities"][n]["inputSchema"].clone());
     for input in [&about, &open] {
@@ -88,9 +88,9 @@ fn every_input_property_carries_a_sentence_and_about_takes_a_subject_or_a_mount(
     }
     assert_eq!(
         about["oneOf"],
-        json!([{"required": ["subject"]}, {"required": ["mount"]}])
+        json!([{"required": ["subject"]}, {"required": ["repo"]}])
     );
-    for name in ["subject", "mount"] {
+    for name in ["subject", "repo"] {
         let property = &about["properties"][name];
         assert_eq!(
             (&property["type"], &property["minLength"]),
@@ -118,7 +118,8 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
             "subjects": ["gix"],
             "status": "concluded",
             "verdict": "supported",
-            "decision": null,
+            "informs": null,
+            "decisions": ["/projects/p/decisions/d"],
         }],
         "total": 1,
         "truncated": false,
@@ -129,15 +130,14 @@ fn the_output_schema_admits_an_answer_and_refuses_one_without_its_total() {
     assert!(output.validate(&partial).is_err());
 }
 
-/// A concluded eval that refers to a mount, a suite and a run.
+/// A concluded eval that refers to a repo record, a suite and a run.
 fn concluded() -> Value {
     json!({
         "$type": "evals/eval/v1",
         "question": "Is gix faster?",
         "subjects": ["gix"],
-        "status": "concluded",
         "verdict": "supported",
-        "mounts": ["/repos/board"],
+        "repos": ["/repos/board"],
         "suites": ["/suites/s"],
         "runs": ["/suites/s/runs/1"],
         "written_by": "runs/test-run",
@@ -193,7 +193,7 @@ fn the_shipped_schema_finds_each_reference_with_its_type() {
     assert_eq!(
         found,
         [
-            ("/mounts/0".to_owned(), None),
+            ("/repos/0".to_owned(), None),
             ("/runs/0".to_owned(), typed("runs/run/v1")),
             ("/suites/0".to_owned(), typed("runs/suite/v1")),
         ]
@@ -201,7 +201,7 @@ fn the_shipped_schema_finds_each_reference_with_its_type() {
 }
 
 #[test]
-fn the_shipped_schema_refuses_a_concluded_eval_without_a_verdict_a_null_and_a_bad_writer_and_admits_their_twins()
+fn the_shipped_schema_refuses_a_stored_status_an_empty_reason_a_null_and_a_bad_writer_and_admits_their_twins()
  {
     let [(_, schema)] = &Evals.schemas()[..] else {
         panic!("one schema")
@@ -209,21 +209,29 @@ fn the_shipped_schema_refuses_a_concluded_eval_without_a_verdict_a_null_and_a_ba
     let schema = board_validate::Schema::compile(schema.clone()).unwrap();
     let with = |name: &str, value: Value| {
         let mut record = concluded();
-        if value.is_null() && name == "verdict" {
-            record.as_object_mut().unwrap().remove(name);
-        } else {
-            record[name] = value;
-        }
+        record[name] = value;
         record
     };
     for (refused, admitted) in [
         (
-            with("verdict", Value::Null),
-            with("status", json!("running")),
+            with("status", json!("concluded")),
+            with("conclusion", json!("Yes.")),
         ),
         (
-            with("decision", Value::Null),
+            with("abandoned", json!("")),
+            with("abandoned", json!("Moot.")),
+        ),
+        (
+            with("informs", Value::Null),
+            with("informs", json!("Pick.")),
+        ),
+        (
             with("decision", json!("Pick.")),
+            with("informs", json!("Pick.")),
+        ),
+        (
+            with("mounts", json!(["/repos/board"])),
+            with("repos", json!(["/repos/board"])),
         ),
         (
             with("written_by", json!("the hook")),

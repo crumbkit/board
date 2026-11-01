@@ -43,6 +43,18 @@ def test_enabling_writes_the_schema_so_a_control_checks_clean_and_a_broken_one_d
     assert status["/controls/bad"]["code"] == "board::record::invalid"
 
 
+def test_a_control_whose_basis_reaches_an_entry_checks_clean_and_one_whose_basis_reaches_nothing_dangles(
+    board: Board,
+) -> None:
+    board.write("decisions/d.md", "# A decision\n")
+    board.write("controls/rests.json", control("R.", basis=["/decisions/d.md"]))
+    board.write("controls/dangles.json", control("R.", basis=["/decisions/gone"]))
+    report = json.loads(board.run("--json", "check").stdout)
+    status = {entry["logical"]: entry for entry in report["data"]}
+    assert status["/controls/rests"]["status"] == "ok"
+    assert status["/controls/dangles"]["code"] == "board::ref::dangling"
+
+
 def skill_description() -> str:
     """The `description` of SKILL.md's frontmatter, a single-quoted YAML scalar on one line."""
     [line] = [line for line in (PLUGIN / "SKILL.md").read_text().splitlines() if line.startswith("description: ")]

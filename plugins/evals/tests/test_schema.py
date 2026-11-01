@@ -15,37 +15,30 @@ def checked(board: Board, prefix: str = "/evals/") -> dict[str, str | None]:
     return {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith(prefix)}
 
 
-def test_each_of_the_four_statuses_is_admitted_and_any_other_is_refused(board: Board) -> None:
-    board.write("evals/planned.json", experiment("P?", status="planned"))
-    board.write("evals/running.json", experiment("R?", status="running"))
-    board.write("evals/abandoned.json", experiment("A?", status="abandoned"))
-    board.write("evals/concluded.json", experiment("C?", status="concluded", verdict="supported"))
-    board.write("evals/someday.json", experiment("S?", status="someday"))
-    assert checked(board) == {
-        "/evals/planned": None,
-        "/evals/running": None,
-        "/evals/abandoned": None,
-        "/evals/concluded": None,
-        "/evals/someday": INVALID,
-    }
+def test_a_stored_status_is_refused_and_an_eval_without_one_is_admitted(board: Board) -> None:
+    board.write("evals/derived.json", experiment("D?"))
+    board.write("evals/stored.json", experiment("S?", status="planned"))
+    assert checked(board) == {"/evals/derived": None, "/evals/stored": INVALID}
 
 
-def test_a_concluded_eval_needs_a_verdict_and_an_unfinished_one_does_not(board: Board) -> None:
-    board.write("evals/with.json", experiment("W?", status="concluded", verdict="refuted"))
-    board.write("evals/without.json", experiment("W?", status="concluded"))
-    board.write("evals/running.json", experiment("R?", status="running"))
-    board.write("evals/odd.json", experiment("O?", status="concluded", verdict="maybe"))
+def test_a_verdict_and_an_abandoned_reason_are_admitted_and_an_unknown_verdict_or_an_empty_reason_is_not(
+    board: Board,
+) -> None:
+    board.write("evals/with.json", experiment("W?", verdict="refuted"))
+    board.write("evals/odd.json", experiment("O?", verdict="maybe"))
+    board.write("evals/dropped.json", experiment("D?", abandoned="The library was withdrawn."))
+    board.write("evals/empty.json", experiment("E?", abandoned=""))
     assert checked(board) == {
         "/evals/with": None,
-        "/evals/without": INVALID,
-        "/evals/running": None,
         "/evals/odd": INVALID,
+        "/evals/dropped": None,
+        "/evals/empty": INVALID,
     }
 
 
 def test_an_eval_needs_a_question_subjects_and_a_status(board: Board) -> None:
     board.write("evals/whole.json", experiment("W?"))
-    for missing in ("question", "subjects", "status"):
+    for missing in ("question", "subjects"):
         record: dict[str, Any] = json.loads(experiment("M?"))
         del record[missing]
         board.write(f"evals/no-{missing}.json", json.dumps(record))
@@ -55,7 +48,6 @@ def test_an_eval_needs_a_question_subjects_and_a_status(board: Board) -> None:
     assert {path: code for path, code in codes.items() if path != "/evals/whole"} == {
         "/evals/no-question": INVALID,
         "/evals/no-subjects": INVALID,
-        "/evals/no-status": INVALID,
         "/evals/no-subjects-listed": INVALID,
     }
 
@@ -63,7 +55,7 @@ def test_an_eval_needs_a_question_subjects_and_a_status(board: Board) -> None:
 def test_an_eval_refers_to_suites_and_runs_and_holds_no_other_field(board: Board) -> None:
     board.write("suites/s.json", suite())
     board.write("suites/s/runs/1.json", run("/suites/s"))
-    board.write("evals/full.json", experiment("F?", suites=["/suites/s"], runs=["/suites/s/runs/1"], decision="Pick."))
+    board.write("evals/full.json", experiment("F?", suites=["/suites/s"], runs=["/suites/s/runs/1"], informs="Pick."))
     board.write("evals/method.json", experiment("M?", method="Run it."))
     board.write("evals/colour.json", experiment("C?", colour="red"))
     assert checked(board) == {"/evals/full": None, "/evals/method": INVALID, "/evals/colour": INVALID}
@@ -84,19 +76,22 @@ def test_an_eval_whose_suite_or_run_is_the_wrong_type_or_missing_is_degraded(boa
     }
 
 
-def test_an_eval_names_each_repository_by_its_mount_and_one_the_board_does_not_have_is_dangling(
+def test_an_eval_names_each_repository_by_its_repo_record_and_one_the_board_does_not_have_is_dangling(
     board: Board, tmp_path: Path
 ) -> None:
     crumbkit, commit = repository(tmp_path, "crumbkit", {})
     mount(board, "repos/crumbkit.json", crumbkit, commit)
-    board.write("evals/mounted.json", experiment("M?", ["crumbkit"], mounts=["/repos/crumbkit"]))
+    board.write("repos/clap.json", json.dumps({"$type": "board/repo/v1", "remote": "clap-rs/clap"}))
+    board.write("evals/identity.json", experiment("I?", ["clap"], repos=["/repos/clap"]))
+    board.write("evals/mounted.json", experiment("M?", ["crumbkit"], repos=["/repos/crumbkit"]))
     board.write("evals/none.json", experiment("N?", ["crumbkit"]))
-    board.write("evals/missing.json", experiment("L?", ["crumbkit"], mounts=["/repos/crumbkit", "/repos/gone"]))
-    board.write("evals/by-name.json", experiment("B?", ["crumbkit"], mounts=["crumbkit/crumbkit"]))
-    board.write("evals/not-a-list.json", experiment("S?", ["crumbkit"], mounts="/repos/crumbkit"))
-    board.write("evals/old-key.json", experiment("O?", ["crumbkit"], repos=["/repos/crumbkit"]))
+    board.write("evals/missing.json", experiment("L?", ["crumbkit"], repos=["/repos/crumbkit", "/repos/gone"]))
+    board.write("evals/by-name.json", experiment("B?", ["crumbkit"], repos=["crumbkit/crumbkit"]))
+    board.write("evals/not-a-list.json", experiment("S?", ["crumbkit"], repos="/repos/crumbkit"))
+    board.write("evals/old-key.json", experiment("O?", ["crumbkit"], mounts=["/repos/crumbkit"]))
     assert checked(board) == {
         "/evals/mounted": None,
+        "/evals/identity": None,
         "/evals/none": None,
         "/evals/missing": "board::ref::dangling",
         "/evals/by-name": "board::ref::malformed",
@@ -112,17 +107,17 @@ def test_board_refs_on_a_repositorys_mount_lists_the_evals_that_name_it_and_no_o
         # Each holds a file of its own; two identical repositories would share one commit and be one object.
         root, commit = repository(tmp_path, name, {"README.md": name})
         mount(board, f"repos/{name}.json", root, commit)
-    board.write("evals/a.json", experiment("A?", ["crumbkit"], mounts=["/repos/crumbkit"]))
-    board.write("evals/b.json", experiment("B?", ["crumbkit", "clap"], mounts=["/repos/clap", "/repos/crumbkit"]))
-    board.write("evals/c.json", experiment("C?", ["clap"], mounts=["/repos/clap"]))
+    board.write("evals/a.json", experiment("A?", ["crumbkit"], repos=["/repos/crumbkit"]))
+    board.write("evals/b.json", experiment("B?", ["crumbkit", "clap"], repos=["/repos/clap", "/repos/crumbkit"]))
+    board.write("evals/c.json", experiment("C?", ["clap"], repos=["/repos/clap"]))
     board.write("evals/d.json", experiment("D?", ["crumbkit"]))
 
     def naming(path: str) -> list[tuple[str, list[str]]]:
         report = board.json("refs", path)
         return sorted((link["logical"], link["pointers"]) for link in report["data"][0]["to"])
 
-    assert naming("/repos/crumbkit") == [("/evals/a", ["/mounts/0"]), ("/evals/b", ["/mounts/1"])]
-    assert naming("/repos/clap") == [("/evals/b", ["/mounts/0"]), ("/evals/c", ["/mounts/0"])]
+    assert naming("/repos/crumbkit") == [("/evals/a", ["/repos/0"]), ("/evals/b", ["/repos/1"])]
+    assert naming("/repos/clap") == [("/evals/b", ["/repos/0"]), ("/evals/c", ["/repos/0"])]
 
 
 def test_an_eval_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else(board: Board) -> None:

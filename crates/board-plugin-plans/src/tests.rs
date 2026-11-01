@@ -161,8 +161,9 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         "asked": "2026-10-01T09:00:00Z",
         "status": "open",
         "options": [{"id": "a", "text": "A"}],
-        "mount": "/repos/dispatch",
+        "mount": "/repos/app",
         "context_path": "/projects/a/notes/background",
+        "for": ["/projects/a/decisions/d"],
     });
     let answer = json!({
         "$type": "plans/answer/v1",
@@ -203,6 +204,7 @@ fn sample_records_validate_and_their_references_are_the_ones_the_structs_declare
         found,
         [
             ("plans/question/v1", "/context_path".to_owned(), None),
+            ("plans/question/v1", "/for/0".to_owned(), None),
             ("plans/question/v1", "/mount".to_owned(), None),
             (
                 "plans/answer/v1",
@@ -281,6 +283,32 @@ fn a_question_names_its_repository_by_a_reference_to_its_mount() {
         Some(board_model::Code::RecordInvalid)
     );
     assert_eq!(code("mount", "/repos/app"), None);
+}
+
+/// A question's `for` lists board references to what it belongs to; a web
+/// address there is refused with its exact code, and a board path admitted.
+#[test]
+fn a_question_names_what_it_belongs_to_by_board_references_in_for() {
+    let schema = board_validate::Schema::compile(Plans.schemas()[0].1.clone()).unwrap();
+    let question = |target: &str| {
+        json!({
+            "$type": "plans/question/v1",
+            "question": "Review these decisions?",
+            "session": "local_0a1b",
+            "asked": "2026-10-01T09:00:00Z",
+            "status": "open",
+            "for": [target],
+        })
+    };
+    let refused = schema
+        .validate(&question("https://example.com/pull/1"))
+        .unwrap_err();
+    assert_eq!(refused.code(), board_model::Code::RefMalformed);
+    assert!(
+        schema
+            .validate(&question("/projects/a/decisions/d"))
+            .is_ok()
+    );
 }
 
 /// The question schema declares every field `open` returns, and `open`'s

@@ -106,13 +106,12 @@ def board(tmp_path: Path) -> Board:
     return fixture
 
 
-def experiment(question: str, subjects: list[str] | None = None, status: str = "planned", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
+def experiment(question: str, subjects: list[str] | None = None, **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """An `evals/eval/v1` record."""
     record: dict[str, Any] = {
         "$type": EVAL_TYPE,
         "question": question,
         "subjects": ["gix"] if subjects is None else subjects,
-        "status": status,
         **fields,
     }
     return json.dumps(record)

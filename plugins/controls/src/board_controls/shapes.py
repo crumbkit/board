@@ -51,6 +51,7 @@ ControlRecord = TypedDict(
         "applies_to": NotRequired[list[BoardRef]],
         "paths": NotRequired[list[str]],
         "rule": NotRequired[Annotated[Budget | None, Extra(default=None)]],
+        "basis": NotRequired[list[BoardRef]],
     },
 )
 ControlRecord.__doc__ = (
@@ -59,7 +60,7 @@ ControlRecord.__doc__ = (
 
 It applies to the entries `applies_to` references and to every entry of
 the board whose path matches one of `paths`, SQLite GLOB patterns such as
-`docs/*.md`."""
+`docs/*.md`. `basis` names the decisions the control rests on."""
 )
 
 

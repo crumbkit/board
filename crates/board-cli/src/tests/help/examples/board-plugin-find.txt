@@ -1,4 +1,6 @@
-evals.about disabled The evals that name a subject, or that name a repository's mount or live in it, whatever their status, here and in mounted boards.
+decisions.about disabled The decisions not superseded whose basis names a path or an entry under it, newest first, here and in mounted boards.
+decisions.open disabled The decisions under a path that an open question asks the owner to review, oldest first.
+evals.about disabled The evals that name a subject, or that name a repository's repo record or live in its mount, whatever their status, here and in mounted boards.
 evals.open disabled The evals still planned or running, here and in mounted boards.
 plans.open disabled The questions under a path whose status is open, oldest first.
 requests.thread disabled Every version of the effect's request, oldest first, with its answer, and the owner's replies to them, oldest first.
