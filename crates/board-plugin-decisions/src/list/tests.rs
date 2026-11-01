@@ -1,7 +1,7 @@
 //! Each derived state is reached from records written in order, and each
 //! has a twin that does not reach it.
 
-use board_ops::{QueryError, QueryReport, Settings};
+use board_ops::{Limit, QueryError, QueryReport, Settings};
 use serde_json::json;
 
 use super::*;
