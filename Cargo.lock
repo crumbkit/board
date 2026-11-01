@@ -190,6 +190,7 @@ dependencies = [
  "serde_json",
  "signal-hook",
  "strsim",
+ "tempfile",
  "thiserror",
 ]
 
