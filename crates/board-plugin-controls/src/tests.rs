@@ -34,7 +34,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
-    assert_eq!(names, ["for-path", "check"]);
+    assert_eq!(names, ["for-path", "check", "evaluate"]);
     assert_eq!(manifest.description, skill_description());
 }
 
@@ -112,7 +112,7 @@ fn the_committed_control_schema_is_what_its_struct_generates() {
 }
 
 #[test]
-fn the_shipped_schema_refuses_a_budget_per_directory_and_a_null_purpose_and_admits_their_twins() {
+fn the_shipped_schema_refuses_a_bad_rule_or_purpose_and_admits_its_twin() {
     let [(_, schema)] = &Controls.schemas()[..] else {
         panic!("one schema")
     };
@@ -123,7 +123,6 @@ fn the_shipped_schema_refuses_a_budget_per_directory_and_a_null_purpose_and_admi
             "requirement": "R.",
             "purpose": "P.",
             "applies_to": ["/AGENTS.md"],
-            "rule": null,
         });
         for (name, value) in fields.as_object().unwrap() {
             record[name] = value.clone();
@@ -131,9 +130,18 @@ fn the_shipped_schema_refuses_a_budget_per_directory_and_a_null_purpose_and_admi
         record
     };
     let rule = |per: &str| json!({"rule": {"budget": "words", "max": 1, "per": per}});
+    let judged = json!({"rule": {"judged": "/rubrics/plain.md"}});
+    let pattern = |show: &str| json!({"rule": {"pattern": "/private/names.txt", "show": show}});
+    let mixed = json!({"rule": {"budget": "words", "max": 1, "judged": "/rubrics/plain.md"}});
+    let stray = json!({"rule": {"judged": "/rubrics/plain.md", "show": "pattern"}});
     for (refused, admitted) in [
         (control(rule("directory")), control(rule("file"))),
         (control(json!({"purpose": null})), control(json!({}))),
+        (control(pattern("all")), control(pattern("match-only"))),
+        (control(mixed), control(rule("total"))),
+        (control(stray), control(judged.clone())),
+        (control(json!({"rule": null})), control(judged)),
+        (control(json!({"rule": {}})), control(pattern("pattern"))),
     ] {
         assert_eq!(
             schema.validate(&refused).unwrap_err().code(),
@@ -152,7 +160,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_check_is_answered() {
     assert_eq!(refused.code, "controls::call::unknown_capability");
     assert_eq!(
         refused.message,
-        "controls offers no capability budgets; it offers for-path and check"
+        "controls offers no capability budgets; it offers for-path, check and evaluate"
     );
     let check: CapabilityName = "check".parse().unwrap();
     let answered = Controls.call(&host, &check, json!({})).unwrap();
@@ -168,4 +176,62 @@ fn a_malformed_path_is_refused_as_board_refs_refuses_it_and_a_well_formed_one_is
     assert_eq!(refused.fields["code"], json!("board::cli::usage"));
     let answered = Controls.call(&host, &for_path, json!({"path": "/docs/x"}));
     assert_eq!(answered.unwrap(), json!({"controls": []}));
+}
+
+#[test]
+fn evaluate_takes_at_least_one_control_by_path_and_one_named_part_each_with_a_sentence() {
+    let parsed = Controls.manifest();
+    let input = &parsed.capabilities[2].input;
+    let given = |controls: Value, parts: Value| json!({"controls": controls, "parts": parts});
+    for (refused, admitted) in [
+        (
+            given(json!([]), json!({"a": "x"})),
+            given(json!(["/c"]), json!({"a": "x"})),
+        ),
+        (
+            given(json!(["c"]), json!({"a": "x"})),
+            given(json!(["/c"]), json!({"a": "x"})),
+        ),
+        (
+            given(json!(["/c"]), json!({})),
+            given(json!(["/c"]), json!({"a": ""})),
+        ),
+        (
+            given(json!(["/c"]), json!({"a": 1})),
+            given(json!(["/c"]), json!({"a": "1"})),
+        ),
+    ] {
+        assert!(input.validate(&refused).is_err(), "{refused}");
+        input.validate(&admitted).unwrap();
+    }
+    let schema = &manifest()["capabilities"][2]["inputSchema"];
+    for name in ["controls", "parts"] {
+        let description = schema["properties"][name]["description"].as_str().unwrap();
+        assert!(description.ends_with('.'), "{description}");
+    }
+}
+
+#[test]
+fn the_for_path_output_schema_admits_each_kind_of_rule_or_none_and_refuses_null() {
+    let manifest = Controls.manifest();
+    let output = &manifest.capabilities[0].output;
+    let applying = |rule: Option<Value>| {
+        let mut item = json!({"control": "/controls/c", "requirement": "R.", "purpose": "P."});
+        if let Some(rule) = rule {
+            item["rule"] = rule;
+        }
+        json!({"controls": [item]})
+    };
+    for rule in [
+        None,
+        Some(json!({"budget": "words", "max": 1})),
+        Some(json!({"budget": "bytes", "max": 1, "per": "file"})),
+        Some(json!({"pattern": "/private/names.txt", "show": "match-only"})),
+        Some(json!({"judged": "/rubrics/plain.md"})),
+    ] {
+        output
+            .validate(&applying(rule.clone()))
+            .unwrap_or_else(|e| panic!("{rule:?}: {e:?}"));
+    }
+    assert!(output.validate(&applying(Some(Value::Null))).is_err());
 }

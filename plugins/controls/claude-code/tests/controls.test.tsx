@@ -11,7 +11,7 @@ import { contextText, parseCheck } from '../hooks/controls'
 const ROOT = '/work/crumbkit'
 const DOCS = { control: '/controls/crumbkit/docs-1', requirement: 'AGENTS.md has at most 200 words.', budget: 'words', used: 196, max: 200, files: [] }
 const README = { control: '/controls/example/readme', requirement: 'Keep the usage section of the README current.', files: 3, paths: [], purpose: 'p' }
-const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p', rule: null }
+const PARSER = { control: '/controls/crumbkit/rust-10', requirement: 'A hand-written parser says what it misses.', purpose: 'p' }
 const report = (output: object) => JSON.stringify({ schema: 'board/call-report/v2', data: { plugin: 'controls', output } })
 const CHECK = report({ measured: [DOCS], stated: [README] })
 const BAND = {
