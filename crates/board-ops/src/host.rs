@@ -50,12 +50,42 @@ pub trait Host {
         paths: &[LogicalPath],
     ) -> Result<Vec<Result<GetReport, ReadError>>, ReadError>;
     fn settings(&self) -> &Settings;
-    /// Runs `process` through board-plugin's process module with the
-    /// settings' `environment`, as the leader of its own process group,
-    /// killed when it exits, past its deadline or when Board is stopped.
-    fn run(&self, process: &Process<'_>) -> Result<Exited, ProcessError> {
-        board_plugin::child::run(process, &self.settings().environment.0)
+    /// Runs `run` through board-plugin's process module with the settings'
+    /// `environment` and nothing else, as the leader of its own process
+    /// group. Every process still in the group is killed when it exits, past
+    /// its deadline or when Board is stopped.
+    fn run(&self, run: &Run<'_>) -> Result<Exited, ProcessError> {
+        let empty;
+        let directory = if let Some(directory) = run.directory {
+            directory
+        } else {
+            empty = board_index::empty_directory()
+                .map_err(|source| ProcessError::NotStarted { source })?;
+            empty.path()
+        };
+        let process = Process {
+            program: run.program,
+            arguments: run.arguments,
+            directory,
+            input: run.input,
+            deadline: run.deadline,
+        };
+        board_plugin::child::run(&process, &self.settings().environment.0)
     }
+}
+
+/// A process a built-in plugin runs through [`Host::run`]: its program,
+/// found on the environment's `PATH`, its arguments, the directory it runs
+/// in, what it reads on stdin, and how long it may run.
+#[derive(Clone, Copy, Debug)]
+pub struct Run<'a> {
+    pub program: &'a str,
+    pub arguments: &'a [String],
+    /// The directory it runs in; none runs it in a new empty temporary
+    /// directory, removed when it exits.
+    pub directory: Option<&'a Path>,
+    pub input: &'a [u8],
+    pub deadline: std::time::Duration,
 }
 
 /// What a built-in plugin reads in place of a process plugin's environment.

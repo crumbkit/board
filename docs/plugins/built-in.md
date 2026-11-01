@@ -36,13 +36,17 @@ Board is called. `controls`, `plans`, `evals` and
     would see, its `env` among them. A built-in plugin reads no environment
     of its own.
   - `run(process)` starts a program, such as git, gh or an agent, through
-    board-plugin's process module, with `environment` and nothing else. It
-    runs in the directory given, or in a new empty temporary directory, and
-    reads the input given on stdin. It leads its own process group, which is
-    killed when it exits, past its deadline, past 16 MiB of stdout, or when
-    Board gets SIGINT, SIGTERM or SIGHUP, so nothing it started outlives
-    it. It returns the exit code, stdout and the end of stderr, or why it
-    did not start or was stopped.
+    board-plugin's process module, with `environment` and nothing else, so
+    the program is identified as the built-in plugin through `BOARD_PLUGIN`
+    and runs one call deeper through `BOARD_CALL_DEPTH`. It runs in the
+    directory given, or in a new empty temporary directory, and reads the
+    input given on stdin. It leads its own process group. Every process
+    still in that group is killed when the program exits, even while one of
+    them holds its output open, past its deadline, past 16 MiB of stdout,
+    or when Board gets SIGINT, SIGTERM or SIGHUP. A process that leaves the
+    group with `setsid` is not killed, and the temporary directory is left
+    behind if a signal ends Board. It returns the exit code, stdout and the
+    end of stderr, or why it did not start or was stopped.
 
 ## Registration
 
@@ -59,7 +63,7 @@ and validates input and output the same way for both kinds, with the same
 codes. A built-in plugin runs in Board's process, so it has no time or size
 limit and never gives `not_started`, `failed`, `timeout` or `too_large`.
 Its capability's `timeout` is not enforced; each process it runs has its
-own deadline. It
-must not panic: a panic ends Board's run instead of refusing the call. Its
-refusal carries an empty `stderr`. The `plugin.call` phase of the timing
-log includes the queries it makes, and `started` counts no process.
+own deadline. It must not panic: a panic ends Board's run instead of
+refusing the call. Its refusal carries an empty `stderr`. The `plugin.call`
+phase of the timing log includes the queries it makes and the processes it
+runs, and `started` counts none of those processes.

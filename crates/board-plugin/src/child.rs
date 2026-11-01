@@ -16,9 +16,7 @@ use crate::process::{self, Finished, Limits, Stopped};
 pub struct Process<'a> {
     pub program: &'a str,
     pub arguments: &'a [String],
-    /// The directory it runs in; none runs it in a new empty temporary
-    /// directory, removed when it exits.
-    pub directory: Option<&'a Path>,
+    pub directory: &'a Path,
     pub input: &'a [u8],
     pub deadline: Duration,
 }
@@ -46,34 +44,35 @@ pub enum ProcessError {
 }
 
 /// Runs `process` with only `environment`, as the leader of its own process
-/// group. The group is killed when the process exits, past its deadline,
-/// past the stdout bound, or when Board gets SIGINT, SIGTERM or SIGHUP, so
-/// nothing it started outlives it.
+/// group. Every process still in the group is killed when the process
+/// exits, even while one of them holds its output open, past its deadline,
+/// past 16 MiB of stdout, or when Board gets SIGINT, SIGTERM or SIGHUP. A
+/// process that left the group, as `setsid` does, is not killed.
 pub fn run(
     process: &Process<'_>,
     environment: &[(String, OsString)],
 ) -> Result<Exited, ProcessError> {
-    let empty;
-    let directory = if let Some(directory) = process.directory {
-        directory
-    } else {
-        empty = tempfile::Builder::new()
-            .prefix("board-process-")
-            .tempdir()
-            .map_err(|source| ProcessError::NotStarted { source })?;
-        empty.path()
-    };
+    run_within(process, environment, Limits::default().stdout)
+}
+
+/// [`run`], reading at most `stdout` bytes of stdout.
+fn run_within(
+    process: &Process<'_>,
+    environment: &[(String, OsString)],
+    stdout: usize,
+) -> Result<Exited, ProcessError> {
     let environment: Vec<(&str, OsString)> = (environment.iter())
         .map(|(name, value)| (name.as_str(), value.clone()))
         .collect();
     let limits = Limits {
         time: process.deadline,
+        stdout,
         ..Limits::default()
     };
     let (_, finished) = process::run_alone(
         Path::new(process.program),
         process.arguments,
-        directory,
+        process.directory,
         &environment,
         process.input.to_vec(),
         limits,
