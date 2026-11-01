@@ -45,28 +45,20 @@
                 "type": "string"
               },
               "rule": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Budget"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "$ref": "#/$defs/Rule"
               }
             },
             "required": [
               "control",
               "requirement",
-              "purpose",
-              "rule"
+              "purpose"
             ],
             "title": "Applying",
             "type": "object"
           },
-          "Budget": {
+          "Rule": {
             "additionalProperties": false,
-            "description": "A limit on the words or bytes of the files the control applies to.\n\nWith `per` `total`, the default, the files' usage is summed; with `file`,\neach file on its own must be within `max`. Words are separated by any\nwhitespace.",
+            "description": "What a program checks: a budget, a pattern file or a judged rubric, told apart by their fields.\n\nA budget, `budget` and `max`, limits the words or bytes of the files or\ntext; with `per` `total`, the default, the files' usage is summed, and\nwith `file` each file on its own must be within `max`. Words are\nseparated by any whitespace. A pattern, `pattern` and `show`, names a file\nof regular expressions, one per line, that text must not match; with\n`show` `match-only`, a finding quotes what matched and never the\nexpression. A judged rule, `judged`, names a rubric that a clean-context\nmodel reads text against.",
             "properties": {
               "budget": {
                 "enum": [
@@ -76,10 +68,20 @@
                 "title": "Budget",
                 "type": "string"
               },
+              "judged": {
+                "format": "board-ref",
+                "title": "Judged",
+                "type": "string"
+              },
               "max": {
                 "minimum": 0,
                 "title": "Max",
                 "type": "integer"
+              },
+              "pattern": {
+                "format": "board-ref",
+                "title": "Pattern",
+                "type": "string"
               },
               "per": {
                 "default": "total",
@@ -89,13 +91,17 @@
                 ],
                 "title": "Per",
                 "type": "string"
+              },
+              "show": {
+                "enum": [
+                  "match-only",
+                  "pattern"
+                ],
+                "title": "Show",
+                "type": "string"
               }
             },
-            "required": [
-              "budget",
-              "max"
-            ],
-            "title": "Budget",
+            "title": "Rule",
             "type": "object"
           }
         },
@@ -233,7 +239,7 @@
           },
           "Stated": {
             "additionalProperties": false,
-            "description": "A control without a rule, its patterns, and how many of its files are at or under the path.",
+            "description": "A control without a budget, its patterns, and how many of its files are at or under the path.",
             "properties": {
               "control": {
                 "title": "Control",
@@ -295,6 +301,175 @@
         "title": "CheckOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "description": "Check named parts of text against controls' budget, pattern and judged rules, and return each control's verdict on each part with its findings.",
+      "env": [
+        "BOARD_CONTROLS_AGENT",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN"
+      ],
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "Check each part of text against each control's rule.",
+        "properties": {
+          "controls": {
+            "description": "The controls to check the parts against, by their logical paths in the board's own tree.",
+            "items": {
+              "pattern": "^/",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Controls",
+            "type": "array"
+          },
+          "parts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Each part of text to check, by its name, such as pr.body.",
+            "minProperties": 1,
+            "title": "Parts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "controls",
+          "parts"
+        ],
+        "title": "EvaluateInput",
+        "type": "object"
+      },
+      "name": "evaluate",
+      "outputSchema": {
+        "$defs": {
+          "Evaluated": {
+            "additionalProperties": false,
+            "description": "One control's verdict on one part.\n\n`status` is `skipped` for a judged rule when the part failed a budget or\npattern rule, and `stated` for a control without a rule. A budget result\ncarries `used` and `max`. `omitted` counts the findings left out past the\nfirst 20.",
+            "properties": {
+              "control": {
+                "title": "Control",
+                "type": "string"
+              },
+              "findings": {
+                "items": {
+                  "$ref": "#/$defs/Finding"
+                },
+                "title": "Findings",
+                "type": "array"
+              },
+              "max": {
+                "title": "Max",
+                "type": "integer"
+              },
+              "omitted": {
+                "title": "Omitted",
+                "type": "integer"
+              },
+              "part": {
+                "title": "Part",
+                "type": "string"
+              },
+              "rule": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Kind"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "$ref": "#/$defs/Status"
+              },
+              "used": {
+                "title": "Used",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "control",
+              "part",
+              "rule",
+              "status",
+              "findings"
+            ],
+            "title": "Evaluated",
+            "type": "object"
+          },
+          "Finding": {
+            "additionalProperties": false,
+            "description": "What a rule found wrong in a part: the text at fault, and its line when it has one.\n\nA pattern finding quotes what matched, and names the expression as\n`pattern` only when the rule's `show` is `pattern`. A judged finding\ncarries `rewrite`, the model's instruction for fixing the text.",
+            "properties": {
+              "line": {
+                "title": "Line",
+                "type": "integer"
+              },
+              "pattern": {
+                "title": "Pattern",
+                "type": "string"
+              },
+              "rewrite": {
+                "title": "Rewrite",
+                "type": "string"
+              },
+              "text": {
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text"
+            ],
+            "title": "Finding",
+            "type": "object"
+          },
+          "Kind": {
+            "enum": [
+              "budget",
+              "pattern",
+              "judged"
+            ],
+            "type": "string"
+          },
+          "Status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped",
+              "stated"
+            ],
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Each control's verdict on each part, by control as given and then by part; `passed` when none failed.",
+        "properties": {
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/$defs/Evaluated"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "passed",
+          "results"
+        ],
+        "title": "EvaluateOutput",
+        "type": "object"
+      },
+      "timeout": 1800
     }
   ],
   "description": "The controls plugin keeps requirements on files as records in the board that holds the files. Use it when you start work in a board or a repository it mounts, and before you edit a file a control may govern. Start with `board -C <board> call controls.check --path /<directory>`, which lists the budgets it measures and the written requirements under that path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. SKILL.md and README.md in the plugin's directory say more.",

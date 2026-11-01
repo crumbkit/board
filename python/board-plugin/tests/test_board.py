@@ -380,6 +380,23 @@ def test_a_run_past_its_timeout_is_given_up_on_with_its_code_and_one_within_it_i
     assert demo.document("fast", timeout=5) == {"data": 1}
 
 
+def test_a_boards_flags_start_every_run_and_a_board_without_flags_runs_its_arguments_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = tmp_path / "board"
+    fake.write_text('#!/bin/sh\nprintf \'{"argv": "%s"}\' "$*"\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    assert Board(str(tmp_path), "demo", flags=("--personal",)).document("ls") == {"argv": "--personal --json ls"}
+    assert Board(str(tmp_path), "demo").document("ls") == {"argv": "--json ls"}
+    fake.write_text(
+        '#!/bin/sh\necho \'{"schema": "board/failure/v1", "code": "board::x::y", "message": "no"}\'\nexit 1\n'
+    )
+    with pytest.raises(PluginError) as refused:
+        Board(str(tmp_path), "demo", flags=("--personal",)).document("ls")
+    assert refused.value.message.startswith("`board --personal ls` refused with board::x::y")
+
+
 def test_a_literal_doubles_its_quotes() -> None:
     assert board.literal("it's") == "'it''s'"
 

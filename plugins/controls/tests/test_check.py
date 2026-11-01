@@ -496,3 +496,18 @@ def test_a_per_file_control_with_no_files_measures_nothing_as_its_largest(board:
     )
     [measured] = board.call("check", {})["data"]["output"]["measured"]
     assert (measured["used"], measured["largest"], measured["over"]) == (0, None, [])
+
+
+def test_a_pattern_or_judged_control_is_stated_and_a_budget_beside_it_is_measured(board: Board) -> None:
+    board.write("docs/a.md", "one two")
+    board.write("private/names.txt", "acme\n")
+    board.write("rubrics/plain.md", "Write plainly.\n")
+    board.write(
+        "controls/names.json",
+        control("No names.", paths=["docs/*.md"], rule={"pattern": "/private/names.txt", "show": "match-only"}),
+    )
+    board.write("controls/plain.json", control("Plain.", paths=["docs/*.md"], rule={"judged": "/rubrics/plain.md"}))
+    board.write("controls/short.json", control("Short.", paths=["docs/*.md"], rule={"budget": "words", "max": 2}))
+    output = board.call("check", {})["data"]["output"]
+    assert [item["control"] for item in output["measured"]] == ["/controls/short"]
+    assert [item["control"] for item in output["stated"]] == ["/controls/names", "/controls/plain"]

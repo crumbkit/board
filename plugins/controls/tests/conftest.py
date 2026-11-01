@@ -46,8 +46,10 @@ class Board:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
 
-    def run(self, *arguments: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
-        """Run `board` in the board's root, with only the variables a user's shell would pass it."""
+    def run(
+        self, *arguments: str, stdin: str = "", extra: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        """Run `board` in the board's root, with only the variables a user's shell would pass it, and `extra`."""
         uv = shutil.which("uv")
         assert uv is not None, "uv is on PATH"
         directories = [board_binary().parent, Path(uv).parent, Path("/usr/bin"), Path("/bin")]
@@ -60,7 +62,7 @@ class Board:
             "XDG_DATA_HOME": str(self.data),
             "XDG_CACHE_HOME": str(self.cache),
             "XDG_CONFIG_HOME": str(self.cache.parent / "config"),
-        }
+        } | (extra or {})
         return subprocess.run(
             [str(board_binary()), *arguments],
             cwd=self.root,
@@ -76,6 +78,52 @@ class Board:
         ran = self.run("--json", "call", f"controls.{capability}", *flags(given))
         document: dict[str, Any] = json.loads(ran.stdout)
         return document
+
+
+# A stub in place of a model: it keeps the prompt, counts its calls and prints `answer.txt` beside it.
+AGENT = """#!/bin/sh
+here="$(dirname "$0")"
+cat > "$here/prompt.txt"
+echo call >> "$here/calls.txt"
+cat "$here/answer.txt"
+"""
+
+
+@dataclass(frozen=True)
+class Agent:
+    """The stub agent in `directory`, which `evaluate` starts through BOARD_CONTROLS_AGENT."""
+
+    directory: Path
+
+    @property
+    def argv(self) -> list[str]:
+        """The agent's argv, as BOARD_CONTROLS_AGENT gives it."""
+        return [str(self.directory / "agent")]
+
+    def answers(self, findings: list[dict[str, Any]]) -> None:
+        """Make the agent answer with some prose and then `findings`."""
+        (self.directory / "answer.txt").write_text(f"Read it.\n{json.dumps({'findings': findings})}\n")
+
+    def calls(self) -> int:
+        """How many times the agent ran."""
+        calls = self.directory / "calls.txt"
+        return len(calls.read_text().splitlines()) if calls.exists() else 0
+
+    def prompt(self) -> str:
+        """What the agent last read."""
+        return (self.directory / "prompt.txt").read_text()
+
+
+@pytest.fixture
+def agent(tmp_path: Path) -> Agent:
+    """A stub agent that answers with no findings until told otherwise."""
+    stub = Agent(tmp_path / "agent")
+    stub.directory.mkdir()
+    script = stub.directory / "agent"
+    script.write_text(AGENT)
+    script.chmod(0o755)
+    stub.answers([])
+    return stub
 
 
 @pytest.fixture

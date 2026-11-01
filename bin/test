@@ -45,7 +45,7 @@ fi
 # suites run at once and each prints its output when it ends.
 if [ "$part" = all ] || [ "$part" = python ]; then
   cargo build -p board-cli --locked
-  projects=(python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/runs plugins/share plugins/notes plugins/plans plugins/changes plugins/review plugins/prompts plugins/github)
+  projects=(python/board-plugin plugins/tasks plugins/controls plugins/evals plugins/runs plugins/share plugins/notes plugins/plans plugins/changes plugins/review plugins/prompts plugins/github plugins/boundary)
   pids=()
   for project in "${projects[@]}"; do
     (cd "$project" && uv run --locked pytest) > "$logs/${project//\//-}" 2>&1 &

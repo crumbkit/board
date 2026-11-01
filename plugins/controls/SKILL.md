@@ -42,4 +42,12 @@ To run a command in a board other than the one you are in, add `-C <path>`.
    something owed, write a new control that says what is owed, which change
    owes it, and the file it applies to.
 
-The plugin's README.md gives the control record's fields.
+4. To check text before it leaves the checkout, such as a pull request
+   body, pass the controls and the named parts on stdin:
+
+       echo '{"controls": ["/<control>"], "parts": {"pr.body": "<text>"}}' | board -C <board> call controls.evaluate
+
+   Each result says whether that part passed that control, with the line
+   and text of each finding. Fix each failed part and evaluate it again.
+
+The plugin's README.md gives the control record's fields and rules.
