@@ -11,8 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_github.objects import ISSUE_TYPE, PULL_TYPE
-from board_github.ref import REF_PATTERN
+from board_github.objects import ISSUE_TYPE, PULL_TYPE, REF_PATTERN
 
 PULL_SCHEMA_PATH = f"{PULL_TYPE}.schema.json"
 ISSUE_SCHEMA_PATH = f"{ISSUE_TYPE}.schema.json"
@@ -30,8 +29,10 @@ class _Object(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=shaped)
 
-    owner: str = Field(min_length=1, description="The repository's owner, a user or organisation, such as octo.")
-    repo: str = Field(min_length=1, description="The repository's name, such as widgets.")
+    owner: str = Field(
+        pattern="^[^A-Z]+$", description="The repository's owner, a user or organisation, in lower case, such as octo."
+    )
+    repo: str = Field(pattern="^[^A-Z]+$", description="The repository's name, in lower case, such as widgets.")
     number: int = Field(ge=1, description="The number GitHub gave it in the repository.")
     url: str = Field(pattern="^https://", description="Its page on GitHub.")
     title: str | SkipJsonSchema[None] = Field(

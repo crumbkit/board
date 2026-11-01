@@ -81,17 +81,47 @@ def test_an_empty_title_is_left_out_of_the_record(board: Board) -> None:
     assert "title" not in board.read("gh/octo/widgets/issues/7.json")
 
 
-def test_a_repository_whose_name_starts_with_a_dot_is_admitted(board: Board) -> None:
-    board.gh_answers(issue(3) | {"html_url": "https://github.com/octo/.github/issues/3"})
-    assert board.call("octo/.github#3")["path"] == "/gh/octo/.github/issues/3"
+def test_owner_and_repository_are_stored_in_lower_case_and_the_url_as_github_gives_it(board: Board) -> None:
+    board.gh_answers(issue(12, pull=True) | {"html_url": "https://github.com/Octo/Widgets/pull/12"})
+    assert board.call("Octo/Widgets#12")["path"] == "/gh/octo/widgets/pulls/12"
+    record = board.read("gh/octo/widgets/pulls/12.json")
+    assert (record["owner"], record["repo"], record["url"]) == (
+        "octo",
+        "widgets",
+        "https://github.com/Octo/Widgets/pull/12",
+    )
 
 
-def test_a_ref_without_a_positive_number_is_refused_and_one_with_it_is_admitted(board: Board) -> None:
-    board.gh_answers(issue(1))
-    for bad in ("octo/widgets#0", "octo/widgets", "octo#1", "octo/widgets/x#1", "octo/..#1"):
-        assert board.refusal(bad)["code"] == "board::plugin::bad_input", bad
-    assert board.call("octo/widgets#1")["written"] is True
+def test_a_ref_differing_only_in_case_finds_the_same_record_without_asking_gh(board: Board) -> None:
+    board.gh_answers(issue(12, pull=True))
+    first = board.call("octo/widgets#12")
+    assert board.call("Octo/WIDGETS#12") == first | {"written": False}
     assert board.gh_calls() == 1
+
+
+def test_a_hand_written_record_in_capitals_is_degraded_and_one_in_lower_case_is_reported(board: Board) -> None:
+    record = {"$type": "github/issue/v1", "number": 7, "url": "https://github.com/octo/widgets/issues/7"}
+    board.write("gh/octo/widgets/issues/7.json", json.dumps(record | {"owner": "Octo", "repo": "widgets"}))
+    assert board.refusal("octo/widgets#7")["code"] == "github::record::degraded"
+    board.write("gh/octo/widgets/issues/7.json", json.dumps(record | {"owner": "octo", "repo": "widgets"}))
+    assert board.call("octo/widgets#7")["written"] is False
+
+
+def test_each_malformed_ref_is_refused_and_its_nearest_well_formed_twin_is_admitted(board: Board) -> None:
+    pairs = [
+        ("octo/widgets#0", "octo/widgets#1"),
+        ("octo/widgets", "octo/widgets#2"),
+        ("octo#3", "octo/octo#3"),
+        ("octo/widgets/x#4", "octo/widgets-x#4"),
+        ("octo/..#5", "octo/.github#5"),
+    ]
+    for bad, good in pairs:
+        assert board.refusal(bad)["code"] == "board::plugin::bad_input", bad
+        owner, repo_number = good.split("/")
+        repo, number = repo_number.split("#")
+        board.gh_answers(issue(int(number)) | {"html_url": f"https://github.com/{owner}/{repo}/issues/{number}"})
+        assert board.call(good)["path"] == f"/gh/{owner}/{repo}/issues/{number}", good
+    assert board.gh_calls() == len(pairs)
 
 
 def test_a_number_github_does_not_know_is_refused_and_one_it_knows_is_admitted(board: Board) -> None:
@@ -122,7 +152,10 @@ def test_gh_missing_from_path_is_refused_and_gh_on_path_is_admitted(board: Board
 def test_an_answer_without_a_page_url_is_refused_and_one_with_it_is_admitted(board: Board) -> None:
     answer = issue(7)
     board.gh_answers({key: value for key, value in answer.items() if key != "html_url"})
-    assert board.refusal("octo/widgets#7")["code"] == "github::gh::failed"
+    failure = board.refusal("octo/widgets#7")
+    assert failure["code"] == "github::gh::failed"
+    assert "run `gh api repos/octo/widgets/issues/7`" in failure["message"]
+    assert "gh auth status" not in failure["message"]
     board.gh_answers(answer)
     assert board.call("octo/widgets#7")["written"] is True
 
