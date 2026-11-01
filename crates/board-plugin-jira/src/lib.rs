@@ -49,6 +49,7 @@ impl Plugin for Jira {
                 code: "jira::call::unknown_capability".to_owned(),
                 message: format!("jira offers no capability {other}; it offers ref"),
                 fields: Map::new(),
+                hint: None,
             }),
         }
     }

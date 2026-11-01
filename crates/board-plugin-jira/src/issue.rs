@@ -98,6 +98,7 @@ fn refusal(code: &str, message: String, field: &str, value: &str) -> PluginError
         code: code.to_owned(),
         message,
         fields,
+        hint: None,
     }
 }
 
@@ -159,6 +160,7 @@ fn read(host: &dyn Host, path: &str) -> Result<Option<Value>, PluginError> {
             code: "jira::board::refused".to_owned(),
             message: "board get gave no answer for the issue's path".to_owned(),
             fields: Map::new(),
+            hint: None,
         }),
     }
 }
@@ -181,6 +183,7 @@ fn reported(
                     "the record at {path} has no {name}; run `board check {path}` and fix it"
                 ),
                 fields: Map::from_iter([("path".to_owned(), Value::from(path.as_str()))]),
+                hint: None,
             })
     };
     let output = Output {
