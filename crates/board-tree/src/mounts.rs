@@ -364,7 +364,7 @@ impl Repositories {
                 matched: Matched::Remote,
             })
         };
-        entries.iter().filter_map(|entry| named(entry)).collect()
+        entries.iter().filter_map(named).collect()
     }
 }
 
