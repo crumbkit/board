@@ -38,7 +38,7 @@ impl Recording {
     }
 
     /// The `refs` and `get_each` calls made since the last time this was asked.
-    fn resolved(&self) -> Vec<Call> {
+    pub(crate) fn resolved(&self) -> Vec<Call> {
         (self.calls.take().into_iter())
             .filter(|call| *call != Call::Query)
             .collect()

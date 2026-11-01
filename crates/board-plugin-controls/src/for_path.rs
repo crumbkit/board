@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::index::{self, FILES, literal};
 use crate::logical;
-use crate::records::Budget;
+use crate::records::{Rule, rule_output_schema};
 
 /// The controls that apply to this logical path.
 #[derive(Deserialize, JsonSchema)]
@@ -29,14 +29,16 @@ pub(crate) struct Output {
     controls: Vec<Applying>,
 }
 
-/// A control that applies to the path asked about.
+/// A control that applies to the path asked about, and its rule, null when
+/// it has none.
 #[derive(Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Applying {
     control: String,
     requirement: String,
     purpose: String,
-    rule: Option<Budget>,
+    #[schemars(schema_with = "rule_output_schema")]
+    rule: Option<Rule>,
 }
 
 /// Each readable control whose `applies_to` reaches the path or whose
