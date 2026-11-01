@@ -120,9 +120,8 @@ export const REPORT_LIMIT = 1000
 export const REPORT_SQL = [
   `WITH w AS (SELECT julianday(${DAY}, '-1 day', 'utc')) AS since, julianday(${DAY}, 'utc')) AS until)`,
   "SELECT 'since' AS kind, NULL AS path, datetime(w.since, 'localtime') AS at, NULL AS title, NULL AS detail FROM w",
-  `UNION ALL SELECT 'decision', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, ${field('r', 'review')}`,
-  // A decision is a decisions/decision/v1, or a plans/decision/v1 until the runs mod stops writing stubs of it.
-  `FROM w, records r WHERE r.type IN ('decisions/decision/v1', 'plans/decision/v1') AND ${within('r', 'decided')}`,
+  `UNION ALL SELECT 'decision', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, NULL`,
+  `FROM w, records r WHERE r.type = 'decisions/decision/v1' AND ${within('r', 'decided')}`,
   `UNION ALL SELECT 'asked', r.logical, ${field('r', 'asked')}, ${field('r', 'question')}, ${field('r', 'status')}`,
   `FROM w, records r WHERE r.type = 'plans/question/v1' AND ${within('r', 'asked')}`,
   `UNION ALL SELECT 'answered', a.logical, ${field('a', 'answered')},`,
@@ -131,19 +130,16 @@ export const REPORT_SQL = [
   `WHERE a.type = 'plans/answer/v1' AND ${within('a', 'answered')}`,
   `UNION ALL SELECT 'run', r.logical, ${field('r', 'finished')}, coalesce(${field('r', 'summary')}, ${field('r', 'by')}), ${field('r', 'by')}`,
   `FROM w, records r WHERE r.type = 'runs/run/v1' AND ${within('r', 'finished')}`,
-  `UNION ALL SELECT 'stub', r.logical, ${field('r', 'decided')}, ${field('r', 'decision')}, ${field('r', 'urls[0]')}`,
-  `FROM records r WHERE r.type = 'plans/decision/v1' AND ${field('r', 'written_by')} IS NOT NULL AND ${field('r', 'why')} = ''`,
   'ORDER BY 1, 3',
 ].join('\n')
 
 type Row = { kind: string; path: string; at: string; title: string; detail: string | null }
 
 const SECTIONS = [
-  { kind: 'decision', heading: 'Decisions made', line: (r: Row) => `${r.title} \`${r.path}\`${r.detail === 'wanted' ? ', review wanted' : ''}` },
+  { kind: 'decision', heading: 'Decisions made', line: (r: Row) => `${r.title} \`${r.path}\`` },
   { kind: 'asked', heading: 'Questions asked', line: (r: Row) => `${r.title} (${r.detail}) \`${r.path}\`` },
   { kind: 'answered', heading: 'Questions answered', line: (r: Row) => `${r.title} Answer: ${r.detail} \`${r.path}\`` },
   { kind: 'run', heading: 'Runs recorded', line: (r: Row) => `${r.title} (${r.detail}) \`${r.path}\`` },
-  { kind: 'stub', heading: 'Decision stubs that still want a why', line: (r: Row) => `${r.title} ${r.detail ?? 'names no pull request'} \`${r.path}\`` },
 ] as const
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -163,7 +159,6 @@ export function report(rows: readonly Record<string, unknown>[], truncated: bool
   const line =
     `board: ${plural(of('decision').length, 'decision', 'decisions')}, ` +
     `${plural(of('asked').length, 'question', 'questions')} asked, ${of('answered').length} answered, ` +
-    `${plural(of('run').length, 'run', 'runs')} and ${plural(of('stub').length, 'decision stub', 'decision stubs')} ` +
-    `that want a why, since ${since}${truncated ? `, counting only the first ${REPORT_LIMIT} records` : ''}.`
+    `and ${plural(of('run').length, 'run', 'runs')}, since ${since}${truncated ? `, counting only the first ${REPORT_LIMIT} records` : ''}.`
   return { markdown, line }
 }

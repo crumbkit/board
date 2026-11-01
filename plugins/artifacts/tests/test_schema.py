@@ -63,3 +63,16 @@ def test_a_version_names_its_session_and_time_and_may_leave_its_version_id_out(b
         "/artifacts/a/versions/slashed": INVALID,
         "/artifacts/a/versions/other": INVALID,
     }
+
+
+def test_a_versions_for_lists_references_that_reach_something(board: Board) -> None:
+    board.write("changes/t.json", "{}")
+    belonging = json.loads(version())
+    board.write("artifacts/a/versions/for.json", json.dumps({**belonging, "for": ["/changes/t"]}))
+    board.write("artifacts/a/versions/gone.json", json.dumps({**belonging, "for": ["/changes/gone"]}))
+    board.write("artifacts/a/versions/single.json", json.dumps({**belonging, "for": "/changes/t"}))
+    assert checked(board) == {
+        "/artifacts/a/versions/for": None,
+        "/artifacts/a/versions/gone": "board::ref::dangling",
+        "/artifacts/a/versions/single": INVALID,
+    }

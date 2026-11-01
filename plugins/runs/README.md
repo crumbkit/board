@@ -78,6 +78,32 @@ names a new run there.
 - `written_by` names the plugin and hook that wrote the run, such as
   `runs/subagent-stop`, when a hook wrote it without an agent. A run an agent
   or a person wrote leaves it out.
+- `agent` references the `runs/agent/v1` of the subagent the run records,
+  when the mod saw it start.
+
+## The agent record
+
+The Claude Code mod writes a `runs/agent/v1` at `/agents/<id>.json` when a
+subagent starts, with the prompt it was started with beside it as
+`/agents/<id>.md`. Each is written once.
+
+```json
+{
+  "$type": "runs/agent/v1",
+  "session": "0b8a7c6e-1f2d-4c3b-9a8e-7d6c5b4a3f21",
+  "cwd": "/work/app",
+  "started": "2026-11-01T09:00:00Z",
+  "works_on": "/changes/suite-timeout",
+  "written_by": "runs/agent-spawn"
+}
+```
+
+- `session`, `cwd` and `started` are required: the session that started the
+  subagent, the absolute directory it runs in, and when, with a time zone.
+- `works_on` references the change the subagent works on, so `check`
+  reports one that reaches nothing.
+- An agent record that no run's `agent` names is running, or stalled when
+  the session stopped without a stop hook.
 
 ## Capabilities
 
@@ -111,9 +137,11 @@ have no capability: query the `records` view with `json_each` over
 
 ## The Claude Code mod
 
-`claude-code/` holds a Claude Code mod that records each subagent and task a
-session delegates as a run, and each pull request it opens as a decision
-stub. docs/plugins/claude-code.md says what it writes and how to load it.
+`claude-code/` holds a Claude Code mod that records each subagent a session
+starts and each subagent and task it delegates as a run, starts a subagent
+working on a change with its brief, and refuses `gh pr create` for a branch
+no open change names. docs/plugins/claude-code/runs.md says what it writes
+and refuses; docs/plugins/claude-code.md says how to load it.
 
 ## Installing
 
@@ -121,7 +149,7 @@ stub. docs/plugins/claude-code.md says what it writes and how to load it.
     ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/runs"
     board plugin enable runs
 
-`board plugin enable runs` writes the two schemas to `.board/types/runs/` and
+`board plugin enable runs` writes the three schemas to `.board/types/runs/` and
 names the plugin in `.board/board.json`. The types stay at v1 and change in
 place while the plugin has one user; after such a change, run
 `board plugin enable runs` again.

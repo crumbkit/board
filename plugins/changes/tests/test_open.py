@@ -2,7 +2,7 @@
 
 import json
 
-from conftest import Board, change, record, setup
+from conftest import Board, change, clone, mount, record, setup
 
 
 def test_open_lists_changes_with_no_landed_or_dropped_record_by_path(board: Board) -> None:
@@ -14,9 +14,10 @@ def test_open_lists_changes_with_no_landed_or_dropped_record_by_path(board: Boar
     board.write("changes/d/dropped.json", record("changes/dropped/v1", why="Not needed."))
     output = board.call("open", {})
     shown = {"title": "Let a suite declare a timeout", "repo": "/repos/app", "branch": "work"}
+    unheld = {"holder": None, "worktree": None}
     assert output["changes"] == [
-        {"path": "/changes/a", **shown, "route": "owner"},
-        {"path": "/changes/b", **shown, "route": "unread"},
+        {"path": "/changes/a", **shown, "route": "owner", **unheld},
+        {"path": "/changes/b", **shown, "route": "unread", **unheld},
     ]
     assert (output["total"], output["truncated"], output["unreadable"]) == (2, False, 0)
 
@@ -64,3 +65,52 @@ def test_the_schema_refuses_a_change_without_its_branch_and_admits_one_with_it(b
     del fields["branch"]
     board.write("changes/bare.json", json.dumps(fields))
     assert checked(board) == {"/changes/t": None, "/changes/bare": "board::record::invalid"}
+
+
+def claim(session: str, worktree: str = "/work/app") -> str:
+    """A claim of a change by `session`, working in `worktree`."""
+    return record("changes/claim/v1", session=session, worktree=worktree)
+
+
+def test_each_change_names_its_holder_and_worktree_from_its_newest_claim(board: Board) -> None:
+    board.write("changes/a.json", change())
+    board.write("changes/a/claims/20261101T090000000000Z.json", claim("s1", "/work/one"))
+    board.write("changes/a/claims/20261101T100000000000Z.json", claim("s2", "/work/two"))
+    board.write("changes/b.json", change())
+    output = board.call("open", {})
+    held = {entry["path"]: (entry["holder"], entry["worktree"]) for entry in output["changes"]}
+    assert held == {"/changes/a": ("s2", "/work/two"), "/changes/b": (None, None)}
+
+
+def test_holder_keeps_only_the_changes_whose_newest_claim_names_the_session(board: Board) -> None:
+    board.write("changes/a.json", change())
+    board.write("changes/a/claims/20261101T090000000000Z.json", claim("s1"))
+    board.write("changes/b.json", change())
+    board.write("changes/b/claims/20261101T090000000000Z.json", claim("s1"))
+    board.write("changes/b/claims/20261101T100000000000Z.json", claim("s2"))
+    assert [entry["path"] for entry in board.call("open", {"holder": "s1"})["changes"]] == ["/changes/a"]
+    assert [entry["path"] for entry in board.call("open", {"holder": "s2"})["changes"]] == ["/changes/b"]
+    assert board.call("open", {"holder": "s3"})["total"] == 0
+
+
+def test_remote_and_branch_keep_the_changes_to_that_repository_and_branch(board: Board) -> None:
+    board.write("repos/app.json", record("board/repo/v1", remote="example/app"))
+    board.write("repos/other.json", record("board/repo/v1", remote="example/other"))
+    board.write("changes/a.json", change())
+    board.write("changes/b.json", change(branch="next"))
+    board.write("changes/c.json", change(repo="/repos/other"))
+    on = {"remote": "https://github.com/example/app.git", "branch": "work"}
+    assert [entry["path"] for entry in board.call("open", on)["changes"]] == ["/changes/a"]
+    assert [entry["path"] for entry in board.call("open", {"remote": "example/app"})["changes"]] == [
+        "/changes/a",
+        "/changes/b",
+    ]
+    assert board.call("open", {"remote": "example/none", "branch": "work"})["total"] == 0
+
+
+def test_remote_matches_a_mounted_repository_by_its_clones_origin(board: Board) -> None:
+    cloned = clone(board)
+    mount(board, cloned)
+    board.write("changes/a.json", change())
+    assert [entry["path"] for entry in board.call("open", {"remote": "example/app"})["changes"]] == ["/changes/a"]
+    assert board.call("open", {"remote": "example/other"})["total"] == 0

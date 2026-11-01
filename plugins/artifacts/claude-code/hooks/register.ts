@@ -4,6 +4,8 @@ import type { EngineInterface, Register } from 'claude-code'
 // personal board through `board --personal`: a publish or a read writes the
 // artifact record when it is missing and a version record with a copy of the
 // page; a listing of the account's own artifacts goes to artifacts.import.
+// A version's `for` names the change the loop works on: a subagent's, from
+// the runs mod's agent record, else the one change the session holds.
 // A hook never blocks the tool: a failure is logged, never thrown.
 
 const ARTIFACT_URL = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/([A-Za-z0-9_-]+)$/
@@ -28,6 +30,8 @@ type Refused = { code: string; message: string }
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
+// How the runs mod names an agent record from an agent id.
+const segment = (id: string) => id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 /** The page a read result's text holds or names, or undefined when it holds only part of one.
  *
@@ -119,8 +123,29 @@ function refused($: EngineInterface, what: string, error: unknown) {
   $.ui.log(`board: ${what}: ${error instanceof Error ? error.message : String(error)}`, { to })
 }
 
+/** The output document of `board --personal --json <args>`, or undefined when board refused. */
+async function document($: EngineInterface, args: string[]): Promise<unknown> {
+  const ran = await $.process.run(['board', '--personal', '--json', ...args])
+  return ran.exitCode === 0 ? JSON.parse(ran.stdout) : undefined
+}
+
+/**
+ * The change the loop works on: for a subagent, the `works_on` of its agent
+ * record; else, or without one, the one open change the session holds.
+ */
+async function belongsTo($: EngineInterface, agentId: string | undefined): Promise<string | undefined> {
+  if (agentId !== undefined) {
+    const got = (await document($, ['get', `/agents/${segment(agentId)}`])) as { data?: { record?: { works_on?: string } }[] } | undefined
+    const worksOn = got?.data?.[0]?.record?.works_on
+    if (worksOn !== undefined) return worksOn
+  }
+  const open = (await document($, ['call', 'changes.open', '--holder', await $.session.id()])) as { data?: { output?: { changes: { path: string }[]; total: number } } } | undefined
+  const output = open?.data?.output
+  return output?.total === 1 ? output.changes[0]?.path : undefined
+}
+
 /** Writes the artifact record when it is missing, then the version and its page when the version is new. */
-async function record($: EngineInterface, seen: Seen) {
+async function record($: EngineInterface, seen: Seen, agentId: string | undefined) {
   const id = ARTIFACT_URL.exec(seen.url)?.[1]
   if (id === undefined) return $.ui.log(`board: ${seen.url} is not a claude.ai artifact link, so it was not recorded`, { to: 'debug' })
   try {
@@ -130,6 +155,7 @@ async function record($: EngineInterface, seen: Seen) {
     const key = seen.version ?? sha?.slice(0, 16)
     if (key === undefined) return $.ui.log(`board: ${seen.url} gave neither a version id nor a page, so it was not recorded`, { to: 'debug' })
     const now = iso(await $.clock.now())
+    const belongs = await belongsTo($, agentId)
     const artifact = `/artifacts/${id}`
     const path = `${artifact}/versions/${key}`
     const created = await put($, artifact, { record: { $type: 'artifacts/artifact/v1', url: seen.url, account: email, first_seen: now } })
@@ -144,6 +170,7 @@ async function record($: EngineInterface, seen: Seen) {
       source: seen.source,
       session: await $.session.id(),
       at: now,
+      for: belongs === undefined ? undefined : [belongs],
     }
     const written = await put($, path, { record: version })
     if (!written && !copied && !created) return $.ui.log(`board: ${seen.url} version ${key} is already recorded`, { to: 'debug' })
@@ -200,7 +227,7 @@ export const register: Register = on => {
       // A publish to another person's artifact, which the owner may edit, is not the owner's artifact.
       if (result.url !== undefined && result.owned !== false) {
         const page = sentPage(source)
-        await record($, { url: result.url, version: result.version, title: result.title, description: e.description, source: page === undefined ? undefined : source, page })
+        await record($, { url: result.url, version: result.version, title: result.title, description: e.description, source: page === undefined ? undefined : source, page }, e.agentId)
       }
     } else if (action === 'read' && e.path === undefined && e.paths === undefined && e.type_url === undefined) {
       const result = ran.result as Read
@@ -211,7 +238,7 @@ export const register: Register = on => {
         $.ui.log(`board: the read of ${result.read.url} held no whole page, so it was not recorded`, { to: 'debug' })
         return ran
       }
-      await record($, { url: result.read.url, version: result.artifactRead?.ver, title: result.read.title, page })
+      await record($, { url: result.read.url, version: result.artifactRead?.ver, title: result.read.title, page }, e.agentId)
     } else if (action === 'list' && (e.scope ?? 'mine') === 'mine' && e.type === undefined && e.type_url === undefined && e.url === undefined) {
       const listing = ran.result as Listing
       if (!Array.isArray(listing.artifacts) || listing.scope !== undefined) return ran

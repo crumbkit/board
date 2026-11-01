@@ -1,25 +1,39 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PluginOptions, Register } from 'claude-code'
 
-import type { Started } from '../types'
+import type { Agents, Started } from '../types'
 
-// Each hook writes one record through `board put` and reports it. A hook
-// never blocks what it watches: it records after the engine has answered, and
-// a failure is logged, never thrown.
+// Every hook runs `board --personal`, so its records, the gate's changes and
+// the brief come from the personal board whatever the session's directory.
+//
+// The recording hooks write after the engine has answered and never block:
+// a failure is logged, never thrown. The pull request gate is the one hook
+// that blocks what it watches. It refuses `gh pr create` before it runs when
+// no open change names the repository and branch, because a pull request
+// opened outside a change leaves the owner no record of its plan, checks and
+// review. It reads local records only and makes no network call.
 
 const started = atom({ plugin: 'board-runs', key: 'started' } as const, {} as Started)
+const agents = atom({ plugin: 'board-runs', key: 'agents' } as const, {} as Agents)
 const written = atom({ plugin: 'board-runs', key: 'written' } as const, 0)
 
 // A put refused with one of these means the board does not take this record
-// at all: no board here, or no plans plugin. Only the debug log says so.
+// at all: no personal board, or no runs plugin. Only the debug log says so.
 const QUIET = ['board::config::not_found', 'board::record::unknown_type']
 const PR_CREATE = /(^|[\s;&|(])gh\s+pr\s+create\b/
 const PR_URL = /https:\/\/[^\s/]+\/[^\s/]+\/([^\s/]+)\/pull\/(\d+)/g
+// The line that ends a brief to a subagent working on a change (plugins/changes/SKILL.md).
+const BOARD_LINE = /^Board:\s*(\/changes\/\S+)$/
+// A leading `cd <dir> &&`, and any other change of directory.
+const LEADING_CD = /^\s*cd\s+('[^']*'|"[^"]*"|\S+)\s*&&/
+const CD = /(^|[\s;&|(])(cd|pushd|popd)(\s|$)/
 
-type Config = { board: string; suite: string; decisionsTemplate: string }
+type Config = { suite: string }
 type Unit = { kind: 'agent' | 'task'; id: string; by: string; summary: string | undefined; noun: string }
 const HOOK = { agent: 'subagent-stop', task: 'task-completed' }
 type Refused = { code: string; message: string }
+type Ran = { exitCode: number; stdout: string; stderr: string }
+type Open = { changes: { path: string }[]; total: number }
 
 /** The last line of `text` that holds anything but spaces, trimmed. */
 export function finalLine(text: string | undefined): string | undefined {
@@ -32,28 +46,92 @@ export function pullRequest(stdout: string): { url: string; repo: string; number
   return match === undefined ? undefined : { url: match[0], repo: match[1]!, number: match[2]! }
 }
 
+/** The change the prompt's last line names as `Board: /changes/<name>`. */
+export function boardLine(prompt: string): string | undefined {
+  const line = finalLine(prompt)
+  return line === undefined ? undefined : BOARD_LINE.exec(line)?.[1]
+}
+
+/** What `gh pr create` in `command` targets: the repository and branch it names, and the directory to read the rest from. */
+export type Target = { repo: string | undefined; head: string | undefined; dir: string | undefined } | { unclear: string }
+
+const unquote = (word: string) => word.replace(/^'(.*)'$|^"(.*)"$/s, (_, one, two) => one ?? two)
+
+/** The words of `text`, split at spaces outside quotes, with their quotes removed. */
+function words(text: string): string[] {
+  return [...text.matchAll(/'[^']*'|"[^"]*"|\S+/g)].map(match => unquote(match[0]))
+}
+
+/** The value of the flag `short` or `long` among `args`, as `-R x`, `--repo x` or `--repo=x`. */
+function flag(args: string[], short: string, long: string): string | undefined {
+  for (const [at, arg] of args.entries()) {
+    if (arg === short || arg === long) return args[at + 1]
+    if (arg.startsWith(`${long}=`)) return arg.slice(long.length + 1)
+    if (arg.startsWith(short) && arg.length > short.length && !arg.startsWith('--')) return arg.slice(short.length)
+  }
+  return undefined
+}
+
+/**
+ * The repository and branch the first `gh pr create` in `command` targets.
+ *
+ * `-R` and `--head` name them. What they leave out is read from the
+ * directory: a leading `cd <dir> &&`, else the session's. Any other change
+ * of directory before the command makes the directory unknown.
+ */
+export function target(command: string): Target {
+  const at = PR_CREATE.exec(command)
+  if (at === null) return { unclear: 'the command runs no gh pr create' }
+  const start = at.index + at[0].indexOf('gh')
+  const args = words(command.slice(start).split(/&&|\|\||[;|\n]/)[0]!).slice(3)
+  const repo = flag(args, '-R', '--repo')
+  const head = flag(args, '-H', '--head')?.replace(/^[^:]+:/, '')
+  if (repo !== undefined && head !== undefined) return { repo, head, dir: undefined }
+  const before = command.slice(0, start)
+  const leading = LEADING_CD.exec(before)
+  const rest = leading === null ? before : before.slice(leading[0].length)
+  if (CD.test(rest)) return { unclear: 'the command changes directory before gh pr create, so its repository and branch are unknown' }
+  return { repo, head, dir: leading === null ? undefined : unquote(leading[1]!) }
+}
+
+/** `-R`'s `HOST/OWNER/REPO` as a URL, so the stored form of its remote is `OWNER/REPO`; any other value as given. */
+export function remoteOf(repo: string): string {
+  return /^[^/:@]+\.[^/:@]+\/[^/]+\/[^/]+$/.test(repo) ? `https://${repo}` : repo
+}
+
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z')
 const stamp = (ms: number) => iso(ms).replace(/[-:]/g, '')
 const segment = (id: string) => id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
-// The options' defaults are in plugin.json, which fills them in.
-const config = (options: PluginOptions): Config => ({
-  board: String(options.board ?? ''),
-  suite: String(options.suite),
-  decisionsTemplate: String(options.decisions_template),
-})
+// The option's default is in plugin.json, which fills it in.
+const config = (options: PluginOptions): Config => ({ suite: String(options.suite) })
 
-/** Runs `board put`; resolves the refusal's code and message, or undefined once written. */
-async function put($: EngineInterface, board: string, path: string, body: object, expectNone = false): Promise<Refused | undefined> {
-  const argv = ['board', ...(board === '' ? [] : ['-C', board]), '--json', 'put', path, ...(expectNone ? ['--expect', 'none'] : [])]
-  const ran = await $.process.run(argv, { stdin: JSON.stringify(body) })
-  if (ran.exitCode === 0) return undefined
+function refusal(ran: Ran): Refused {
   try {
     const failure = JSON.parse(ran.stdout) as Partial<Refused>
     return { code: failure.code ?? 'unknown', message: failure.message ?? ran.stderr.trim() }
   } catch {
     return { code: 'unknown', message: ran.stderr.trim() || `board exited with status ${ran.exitCode}` }
   }
+}
+
+/** Runs `board --personal --json <args>`; resolves its output document, or the refusal's code and message. */
+async function board($: EngineInterface, args: string[], stdin?: string): Promise<{ data: unknown } | Refused> {
+  const ran = await $.process.run(['board', '--personal', '--json', ...args], stdin === undefined ? undefined : { stdin })
+  if (ran.exitCode !== 0) return refusal(ran)
+  return JSON.parse(ran.stdout) as { data: unknown }
+}
+
+/** Runs `board --personal call <capability>`; resolves its output, or the refusal. */
+async function call<T>($: EngineInterface, capability: string, args: string[]): Promise<{ output: T } | Refused> {
+  const ran = await board($, ['call', capability, ...args])
+  return 'data' in ran ? { output: (ran.data as { output: T }).output } : ran
+}
+
+/** Runs `board put`; resolves the refusal's code and message, or undefined once written. */
+async function put($: EngineInterface, path: string, body: object, expectNone = false): Promise<Refused | undefined> {
+  const ran = await board($, ['put', path, ...(expectNone ? ['--expect', 'none'] : [])], JSON.stringify(body))
+  return 'data' in ran ? undefined : ran
 }
 
 async function counted($: EngineInterface, line: string) {
@@ -67,6 +145,24 @@ function refused($: EngineInterface, what: string, refusal: Refused) {
   $.ui.log(`board: ${what}: ${refusal.code} ${refusal.message}`, { to })
 }
 
+/** The one open change this session holds, or undefined when it holds none or several. */
+async function heldChange($: EngineInterface): Promise<string | undefined> {
+  const open = await call<Open>($, 'changes.open', ['--holder', await $.session.id()])
+  if (!('output' in open)) return void refused($, 'no held change', open)
+  return open.output.total === 1 ? open.output.changes[0]!.path : undefined
+}
+
+/** The prompt with the change's brief before it, so the subagent starts with the plan and the controls command. */
+async function briefed($: EngineInterface, prompt: string, change: string): Promise<string> {
+  const brief = await call<object>($, 'changes.brief', ['--path', change])
+  if (!('output' in brief)) {
+    refused($, `no brief for ${change}`, brief)
+    return prompt
+  }
+  const told = `The runs mod ran \`board --personal call changes.brief --path ${change}\` before you started. It printed:`
+  return `${told}\n\n${JSON.stringify(brief.output, null, 2)}\n\n${prompt}`
+}
+
 // Whether this load has made sure the suite exists. A reload asks again.
 let suiteReady = false
 
@@ -76,15 +172,17 @@ async function begin($: EngineInterface, key: string) {
 }
 
 /** Writes the run of a delegated unit that stopped. A failure is logged, never thrown. */
-async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit) {
+async function writeRun($: EngineInterface, { suite }: Config, unit: Unit) {
   try {
     const finished = await $.clock.now()
     const key = `${unit.kind}:${unit.id}`
     const since = (await read($, started))[key]
     await update($, started, ({ [key]: _, ...rest }) => rest)
+    const agent = unit.kind === 'agent' ? (await read($, agents))[unit.id] : undefined
+    if (agent !== undefined) await update($, agents, ({ [unit.id]: _, ...rest }) => rest)
     if (!suiteReady) {
       const method = 'Each run is one subagent or task a Claude Code session delegated, recorded when it stopped.'
-      const refusal = await put($, board, suite, { $type: 'runs/suite/v1', subjects: ['claude-code'], method }, true)
+      const refusal = await put($, suite, { $type: 'runs/suite/v1', subjects: ['claude-code'], method }, true)
       if (refusal !== undefined && refusal.code !== 'board::put::stale') return refused($, `no suite ${suite}`, refusal)
       suiteReady = true
     }
@@ -99,9 +197,10 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
       results: [],
       ...(since === undefined ? {} : { measures: { duration_s: Math.round((finished - since) / 1000) } }),
       ...(unit.summary === undefined ? {} : { summary: unit.summary }),
+      ...(agent === undefined ? {} : { agent }),
       written_by: `runs/${HOOK[unit.kind]}`,
     }
-    const refusal = await put($, board, path, run)
+    const refusal = await put($, path, run)
     if (refusal === undefined) await counted($, `recorded the ${unit.noun} as ${path}`)
     else refused($, `no run for the ${unit.noun}`, refusal)
   } catch (error) {
@@ -109,42 +208,110 @@ async function writeRun($: EngineInterface, { board, suite }: Config, unit: Unit
   }
 }
 
-/** Writes a decision stub for the pull request `gh pr create` printed. A failure is logged, never thrown. */
-async function stub($: EngineInterface, { board, decisionsTemplate }: Config, stdout: string, agentId: string | undefined) {
+/** Writes the agent record of a subagent that started, with its prompt beside it. A failure is logged, never thrown. */
+async function writeAgent($: EngineInterface, id: string, record: object, prompt: string) {
+  try {
+    const path = `/agents/${segment(id)}`
+    const lines = [
+      { path: `${path}.md`, expect: 'none', text: prompt },
+      { path, expect: 'none', record },
+    ]
+    const ran = await board($, ['put', '--batch'], lines.map(line => `${JSON.stringify(line)}\n`).join(''))
+    if (!('data' in ran)) return refused($, `no agent record for ${id}`, ran)
+    await update($, agents, map => ({ ...map, [id]: path }))
+    await counted($, `recorded the subagent ${id} as ${path}`)
+  } catch (error) {
+    $.ui.log(`board: no agent record for ${id}: ${String(error)}`)
+  }
+}
+
+/** What `git -C <dir> <args>` printed, trimmed, or undefined when it failed. */
+async function git($: EngineInterface, dir: string, ...args: string[]): Promise<string | undefined> {
+  const ran = await $.process.run(['git', '-C', dir, ...args])
+  const out = ran.stdout.trim()
+  return ran.exitCode === 0 && out !== '' ? out : undefined
+}
+
+/** `dir` as an absolute path, from the session's directory and with `~` as HOME. */
+async function absolute($: EngineInterface, dir: string | undefined): Promise<string> {
+  const cwd = await $.session.cwd()
+  if (dir === undefined) return cwd
+  if (dir === '~' || dir.startsWith('~/')) return `${(await $.env.get('HOME')) ?? ''}${dir.slice(1)}`
+  return dir.startsWith('/') ? dir : `${cwd.replace(/\/$/, '')}/${dir}`
+}
+
+const RETRY = 'run gh pr create with -R <owner/name> and --head <branch>'
+
+/** The open changes `command` opens a pull request for, or the reason the gate refuses it. */
+async function gate($: EngineInterface, command: string): Promise<{ changes: string[] } | { deny: string }> {
+  const found = target(command)
+  if ('unclear' in found) return { deny: `board: refused: ${found.unclear}; ${RETRY}` }
+  const dir = found.repo !== undefined && found.head !== undefined ? undefined : await absolute($, found.dir)
+  const repo = found.repo ?? (dir === undefined ? undefined : await git($, dir, 'remote', 'get-url', 'origin'))
+  const head = found.head ?? (dir === undefined ? undefined : await git($, dir, 'symbolic-ref', '--quiet', '--short', 'HEAD'))
+  if (repo === undefined || head === undefined) {
+    const missing = repo === undefined ? 'no origin' : 'no branch checked out'
+    return { deny: `board: refused: ${dir} has ${missing}, so the pull request's repository and branch are unknown; ${RETRY}` }
+  }
+  const open = await call<Open>($, 'changes.open', ['--remote', remoteOf(repo), '--branch', head])
+  if (!('output' in open)) {
+    return { deny: `board: refused: board --personal call changes.open failed with ${open.code} ${open.message}; fix the personal board, then run gh pr create again` }
+  }
+  if (open.output.total === 0) {
+    return {
+      deny:
+        `board: refused: no open change names ${repo} on ${head}, so the pull request would have no record. ` +
+        `From the clone, on ${head}, run \`board --personal call changes.start --title '<title>' --session <session>\`, ` +
+        'which records the repository too when the board has no record of it, then run gh pr create again.',
+    }
+  }
+  return { changes: open.output.changes.map(change => change.path) }
+}
+
+/** Writes the `opened` record of the one change the pull request belongs to. A failure is logged, never thrown. */
+async function opened($: EngineInterface, changes: string[], stdout: string) {
   try {
     const pr = pullRequest(stdout)
-    if (pr === undefined) return $.ui.log('board: gh pr create printed no pull request URL, so no decision stub was written', { to: 'debug' })
-    const view = await $.process.run(['gh', 'pr', 'view', pr.url, '--json', 'title', '--jq', '.title'])
-    const title = view.stdout.trim()
-    if (view.exitCode !== 0 || title === '') return $.ui.log(`board: gh pr view ${pr.url} gave no title, so no decision stub was written`)
-    const now = await $.clock.now()
-    const repo = segment(pr.repo)
-    const path = `${decisionsTemplate.replaceAll('{repo}', repo)}/${stamp(now)}-${repo}-${pr.number}`
-    const decision = {
-      $type: 'plans/decision/v1',
-      decision: title,
-      why: '',
-      session: await $.session.id(),
-      decided: iso(now),
-      urls: [pr.url],
-      review: 'wanted',
-      written_by: 'runs/pr-create',
-    }
-    const refusal = await put($, board, path, decision)
-    if (refusal !== undefined) return refused($, `no decision stub for ${path}`, refusal)
-    await counted($, `decision stub ${path} for ${pr.url}, review wanted`)
-    const ask =
-      `The runs mod recorded ${pr.url} as a decision stub at ${path}. ` +
-      'Its why is empty. Fill in why and alternatives: read it with board get, then board put it back.'
-    // The row goes to the agent that opened the pull request, a subagent or the main one.
-    await $.session.append({ message: { type: 'user', content: [{ type: 'text', text: ask }] }, ...(agentId === undefined ? {} : { agentId }) })
+    if (pr === undefined) return $.ui.log('board: gh pr create printed no pull request URL, so no opened record was written', { to: 'debug' })
+    if (changes.length !== 1) return $.ui.log(`board: ${changes.length} open changes name this branch (${changes.join(', ')}), so no opened record was written for ${pr.url}`)
+    const path = `${changes[0]}/opened`
+    const refusal = await put($, path, { $type: 'changes/opened/v1', pull_request: pr.url }, true)
+    if (refusal === undefined) await counted($, `recorded ${pr.url} as ${path}`)
+    else refused($, `no opened record for ${pr.url}`, refusal)
   } catch (error) {
-    $.ui.log(`board: no decision stub: ${String(error)}`)
+    $.ui.log(`board: no opened record: ${String(error)}`)
   }
 }
 
 export const register: Register = (on, options) => {
   const cfg = config(options)
+
+  on('agent.spawn', async ($, e, next) => {
+    // A resumed run continues an agent recorded when it first started.
+    if (e.resume !== undefined) return next(e)
+    let worksOn: string | undefined
+    let prompt = e.prompt
+    try {
+      worksOn = boardLine(e.prompt) ?? (await heldChange($))
+      if (worksOn !== undefined) prompt = await briefed($, e.prompt, worksOn)
+    } catch (error) {
+      $.ui.log(`board: no brief for the subagent: ${String(error)}`)
+    }
+    const now = await $.clock.now()
+    const cwd = await absolute($, e.cwd)
+    const result = await next(prompt === e.prompt ? e : { ...e, prompt })
+    if (result.deny !== undefined || result.agentId === undefined) return result
+    const record = {
+      $type: 'runs/agent/v1',
+      session: await $.session.id(),
+      cwd,
+      started: iso(now),
+      ...(worksOn === undefined ? {} : { works_on: worksOn }),
+      written_by: 'runs/agent-spawn',
+    }
+    await writeAgent($, result.agentId, record, e.prompt)
+    return result
+  })
 
   on('classic.SubagentStart', async ($, e, next) => {
     await begin($, `agent:${e.agent_id}`)
@@ -173,8 +340,11 @@ export const register: Register = (on, options) => {
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    if (!PR_CREATE.test(e.command)) return next(e)
+    const allowed = await gate($, e.command)
+    if ('deny' in allowed) return { deny: allowed.deny }
     const ran = await next(e)
-    if (PR_CREATE.test(e.command) && ran.deny === undefined && ran.isError !== true) await stub($, cfg, ran.result.stdout, e.agentId)
+    if (ran.deny === undefined && ran.isError !== true) await opened($, allowed.changes, ran.result.stdout)
     return ran
   })
 }

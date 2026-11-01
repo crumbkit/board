@@ -1,13 +1,14 @@
 # plans
 
-A plugin built into Board for the questions an agent session asks the owner, the owner's
-answers, and the decisions sessions record. Each schema's descriptions hold
-the meaning of every field.
+A plugin built into Board for the questions an agent session asks the owner
+and the owner's answers. A decision is a `decisions/decision/v1`
+(plugins/decisions/README.md). Each schema's descriptions hold the meaning
+of every field.
 
 ## Records
 
 Each schema declares its folder, so `board put --new --var project=<project>`
-names a new question or decision there. An answer takes its question's id,
+names a new question there. An answer takes its question's id,
 so it is written at its path. Its schema declares its folder too, so
 `put --new` can write an answer that has no question id.
 
@@ -24,28 +25,6 @@ so it is written at its path. Its schema declares its folder too, so
   `none`; `words` holds the owner's words verbatim; `answered` is when.
   `written_by` names the plugin and hook when a mod wrote the answer, such as
   `plans/pane-answer`.
-- `plans/decision/v1` at `/projects/<project>/decisions/<id>`, the old
-  decision record, which only the runs mod's stub still writes; a new
-  decision is a `decisions/decision/v1`. `decision`,
-  `why`, `session` and `decided` are required; `alternatives`, `refs`,
-  `urls`, `review` (`wanted` or `none`) and `written_by` are optional. `refs` lists board
-  entries the decision concerns, such as an answer; `urls` lists web pages,
-  such as a pull request.
-
-```json
-{
-  "$type": "plans/decision/v1",
-  "decision": "Ship the plans types unchanged.",
-  "why": "Records already in the personal board must stay valid.",
-  "session": "local_335a90f9",
-  "decided": "2026-10-25T12:00:00Z",
-  "review": "wanted"
-}
-```
-
-`why` must not be empty, except in a stub that a hook wrote without an agent.
-Such a stub names its plugin and hook in `written_by`, such as
-`runs/pr-create`, and the agent fills in `why` on its next turn.
 
 ## Capabilities
 

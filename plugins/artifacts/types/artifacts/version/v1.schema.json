@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`artifacts/version/v1` at `/artifacts/<id>/versions/<key>`: one version, written once.\n\nThe page is beside it as `<key>.html` or `<key>.md`. `<key>` is `version`,\nthe version id the Artifact tool returned, or, when it returned none, the\nfirst 16 hex digits of `sha256`, and the record leaves `version` out.\n`title` and `description` are the artifact's at this version. A version\nwith no local page, such as one an Artifact type wrote, has no copy and\nsays `copy: \"none\"`, and then has no `sha256`.",
+  "description": "`artifacts/version/v1` at `/artifacts/<id>/versions/<key>`: one version, written once.\n\nThe page is beside it as `<key>.html` or `<key>.md`. `<key>` is `version`,\nthe version id the Artifact tool returned, or, when it returned none, the\nfirst 16 hex digits of `sha256`, and the record leaves `version` out.\n`title` and `description` are the artifact's at this version. A version\nwith no local page, such as one an Artifact type wrote, has no copy and\nsays `copy: \"none\"`, and then has no `sha256`. `for` references what the\nversion belongs to; an artifact belongs to every `for` of its versions.",
   "else": {
     "required": [
       "sha256"
@@ -30,6 +30,14 @@
     "description": {
       "description": "The description the publish passed, when it passed one.",
       "type": "string"
+    },
+    "for": {
+      "description": "The changes, evals or projects this version belongs to, such as /changes/suite-timeout.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
     },
     "session": {
       "description": "The Claude Code session that published or read this version.",

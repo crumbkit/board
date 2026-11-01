@@ -12,7 +12,7 @@ def test_brief_gives_one_line_for_each_record_the_newest_plan_uses_with_a_contro
     setup(board)
     board.write("controls/a.json", record(CONTROL, requirement="Refusals carry a code.", purpose="p"))
     board.write("controls/b.json", record(CONTROL, summary="Stay small.", requirement="Long text.", purpose="p"))
-    board.write("decisions/d.json", record("plans/decision/v1", decision="Plans are records."))
+    board.write("decisions/d.json", record("decisions/decision/v1", decision="Plans are records."))
     board.write("evals/e.json", record("evals/eval/v1", question="Do trees help?", verdict="supported"))
     board.write("standards/errors.md", "Intro.\n\n## Refusal codes\n\nText.\n")
     board.call("plan", {"path": PATH, "text": PLAN, "uses": []}, stdin=True)

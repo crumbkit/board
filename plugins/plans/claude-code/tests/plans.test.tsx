@@ -284,7 +284,7 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
     ['kind', 'path', 'at', 'title', 'detail'],
     [
       ['since', null, '2026-10-24 07:00:00', null, null],
-      ['decision', '/projects/board/decisions/d1', '2026-10-24T10:00:00Z', 'Keep the types at v1.', 'wanted'],
+      ['decision', '/projects/board/decisions/d1', '2026-10-24T10:00:00Z', 'Keep the types at v1.', null],
       ['run', '/suites/claude-code/runs/r1', '2026-10-24T11:00:00Z', 'The parser lives in src/parse.rs.', 'Explore'],
     ],
   )
@@ -295,22 +295,14 @@ test('/yesterday reads the day from 07:00 in one query, opens the report pane an
   expect(sql).toContain("'localtime', '-7 hours', 'start of day', '+7 hours', '-1 day', 'utc'")
   expect(ran[1]?.slice(3)).toEqual(['--limit', '1000'])
   expect(panes).toEqual(['yesterday'])
-  expect(result.text).toBe('board: 1 decision, 0 questions asked, 0 answered, 1 run and 0 decision stubs that want a why, since 2026-10-24 07:00.')
+  expect(result.text).toBe('board: 1 decision, 0 questions asked, 0 answered, and 1 run, since 2026-10-24 07:00.')
   const ui = await $.ui.mount({ ...pane('yesterday'), surface: 'desktop' })
-  expect((await ui.find({ type: 'Markdown' }))?.text).toContain('- Keep the types at v1. `/projects/board/decisions/d1`, review wanted')
+  expect((await ui.find({ type: 'Markdown' }))?.text).toContain('- Keep the types at v1. `/projects/board/decisions/d1`')
 })
 
-test('the report lists decisions of both types and finds stubs among plans/decision/v1 records alone', () => {
-  expect(REPORT_SQL).toContain("FROM w, records r WHERE r.type IN ('decisions/decision/v1', 'plans/decision/v1') AND")
-  // plugins/decisions/tests/test_migrate.py runs this clause on a migrated board.
-  expect(REPORT_SQL).toContain(
-    "FROM records r WHERE r.type = 'plans/decision/v1' AND json_extract(r.body, '$.written_by') IS NOT NULL AND json_extract(r.body, '$.why') = ''",
-  )
-})
-
-test("a stub's detail in the report is the first of its urls, where the runs mod writes the pull request", () => {
-  expect(REPORT_SQL).toContain("json_extract(r.body, '$.urls[0]')")
-  expect(REPORT_SQL).not.toContain('$.refs')
+test('the report lists decisions of the decisions plugin alone', () => {
+  expect(REPORT_SQL).toContain("FROM w, records r WHERE r.type = 'decisions/decision/v1' AND")
+  expect(REPORT_SQL).not.toContain('plans/decision/v1')
 })
 
 test('the report lists each kind of record under its heading, and says none where there is none', () => {
@@ -319,7 +311,6 @@ test('the report lists each kind of record under its heading, and says none wher
       { kind: 'since', path: null, at: '2026-10-24 07:00:00', title: null, detail: null },
       { kind: 'asked', path: '/projects/core/questions/q1', at: '2026-10-24T09:00:00Z', title: 'Which region?', detail: 'answered' },
       { kind: 'answered', path: '/projects/core/answers/q1', at: '2026-10-24T10:00:00Z', title: 'Which region?', detail: 'eu-west-1' },
-      { kind: 'stub', path: '/projects/widgets/decisions/s1', at: '2026-10-20T09:00:00Z', title: 'Widgets ship in blue', detail: 'https://github.com/acme/widgets/pull/42' },
     ],
     true,
   )
@@ -330,9 +321,8 @@ test('the report lists each kind of record under its heading, and says none wher
       '## Questions asked (1)\n\n- Which region? (answered) `/projects/core/questions/q1`',
       '## Questions answered (1)\n\n- Which region? Answer: eu-west-1 `/projects/core/answers/q1`',
       '## Runs recorded (0)\n\n- none',
-      '## Decision stubs that still want a why (1)\n\n- Widgets ship in blue https://github.com/acme/widgets/pull/42 `/projects/widgets/decisions/s1`',
       'Board returned only the first rows; `board query` shows the rest.',
     ].join('\n\n'),
   )
-  expect(line).toBe('board: 0 decisions, 1 question asked, 1 answered, 0 runs and 1 decision stub that want a why, since 2026-10-24 07:00, counting only the first 1000 records.')
+  expect(line).toBe('board: 0 decisions, 1 question asked, 1 answered, and 0 runs, since 2026-10-24 07:00, counting only the first 1000 records.')
 })

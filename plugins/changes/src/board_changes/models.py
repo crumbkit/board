@@ -372,22 +372,36 @@ class BriefOutput(Strict):
 class OpenInput(Strict):
     """The changes that have not ended, by path."""
 
+    model_config = ConfigDict(json_schema_extra=shipped)
+
     limit: int = Field(
         default=OPEN_LIMIT,
         ge=1,
         le=OPEN_MAX,
         description=f"The most changes to return, 1 to {OPEN_MAX:,}; {OPEN_LIMIT} when left out.",
     )
+    holder: Session | SkipJsonSchema[None] = Field(
+        default=None, description="Only the changes whose newest claim names this session."
+    )
+    remote: Annotated[str, Field(min_length=1)] | SkipJsonSchema[None] = Field(
+        default=None,
+        description="Only the changes to this repository, by its remote, such as owner/name or its origin URL.",
+    )
+    branch: Annotated[str, Field(min_length=1)] | SkipJsonSchema[None] = Field(
+        default=None, description="Only the changes on this branch."
+    )
 
 
 class OpenChange(Strict):
-    """A change that has not ended."""
+    """A change that has not ended, with the session and worktree its newest claim names, or null without one."""
 
     path: str
     title: str
     repo: str
     branch: str
     route: Route
+    holder: str | None
+    worktree: str | None
 
 
 class OpenOutput(Strict):

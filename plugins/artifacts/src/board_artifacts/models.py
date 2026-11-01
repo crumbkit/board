@@ -116,7 +116,8 @@ class VersionRecord(Record):
     first 16 hex digits of `sha256`, and the record leaves `version` out.
     `title` and `description` are the artifact's at this version. A version
     with no local page, such as one an Artifact type wrote, has no copy and
-    says `copy: "none"`, and then has no `sha256`.
+    says `copy: "none"`, and then has no `sha256`. `for` references what the
+    version belongs to; an artifact belongs to every `for` of its versions.
     """
 
     model_config = ConfigDict(json_schema_extra=shipped(COPY_RULES))
@@ -140,6 +141,11 @@ class VersionRecord(Record):
     copy_: SkipJsonSchema[None] | Literal["none"] = Field(
         default=None, alias="copy", description="none when the version has no local page, so nothing was copied."
     )
+    for_: SkipJsonSchema[None] | list[Annotated[str, Field(json_schema_extra={"format": "board-ref"})]] = Field(
+        default=None,
+        alias="for",
+        description="The changes, evals or projects this version belongs to, such as /changes/suite-timeout.",
+    )
 
 
 class ListInput(Strict):
@@ -149,6 +155,11 @@ class ListInput(Strict):
 
     account: SkipJsonSchema[None] | Annotated[str, Field(min_length=1)] = Field(
         default=None, description="Only the artifacts of this account, by its email address."
+    )
+    for_: SkipJsonSchema[None] | Annotated[str, Field(min_length=1)] = Field(
+        default=None,
+        alias="for",
+        description="Only the artifacts with a version whose for names this reference, such as /changes/<name>.",
     )
     limit: int = Field(
         default=LIST_DEFAULT,

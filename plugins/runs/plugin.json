@@ -273,7 +273,8 @@
   ],
   "types": [
     "runs/suite/v1",
-    "runs/run/v1"
+    "runs/run/v1",
+    "runs/agent/v1"
   ],
   "version": "0.1.0"
 }

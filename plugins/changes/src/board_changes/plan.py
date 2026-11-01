@@ -18,7 +18,7 @@ BRIEF_WORDS = 600
 # What `brief` gives to list the controls on the caller's repository, from any directory in its clone.
 CONTROLS = "board --personal call controls.check"
 CONTROL_TYPE = "controls/control/v1"
-DECISION_TYPE = "plans/decision/v1"
+DECISION_TYPE = "decisions/decision/v1"
 EVAL_TYPE = "evals/eval/v1"
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
 

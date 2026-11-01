@@ -109,16 +109,3 @@ def question(status: str = "open", asked: str = "2026-10-01T09:00:00Z", **fields
         **fields,
     }
     return json.dumps(record)
-
-
-def decision(**fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
-    """A `plans/decision/v1` record with a reason."""
-    record: dict[str, Any] = {
-        "$type": "plans/decision/v1",
-        "decision": "Do it.",
-        "why": "It is needed.",
-        "session": "local_0a1b",
-        "decided": "2026-10-01T09:00:00Z",
-        **fields,
-    }
-    return json.dumps(record)

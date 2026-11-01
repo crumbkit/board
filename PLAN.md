@@ -54,7 +54,8 @@ which brings review accounting into scope.
 Every change, decision and artifact is recorded as small records written
 once, and each one's state is derived from which records exist. Decisions,
 control scope and work records are built (plugins/decisions/README.md,
-plugins/controls/README.md, plugins/changes/README.md). Build
+plugins/controls/README.md, plugins/changes/README.md), as is the runs
+mod (docs/plugins/claude-code/runs.md). Build
 [inflight](plan/inflight.md) next.
 
 ## Out of scope

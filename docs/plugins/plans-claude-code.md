@@ -72,11 +72,8 @@ message was not delivered.
 `/yesterday` runs one `board query` for the day before the current one, from
 07:00 local time to 07:00 today, and opens the `yesterday` pane. SQLite works
 out the window from board's clock, daylight saving included. The pane lists,
-as Markdown, the decisions made, the questions asked, the questions answered
-and the runs recorded in that window, and every decision stub that still has
-an empty `why`, whenever it was written. A decision made is a
-`decisions/decision/v1` or a `plans/decision/v1`; a stub is a
-`plans/decision/v1` with `written_by`, which only the runs mod still writes. The command's output row gives the
+as Markdown, the decisions made (`decisions/decision/v1`), the questions
+asked, the questions answered and the runs recorded in that window. The command's output row gives the
 totals. The query reads at most 1000 records, and when Board cuts it there,
 both the pane and the output row say so. The report quotes record fields only and calls no model.
 

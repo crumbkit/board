@@ -64,6 +64,15 @@ SHA-256 when the result has none.
   or `paths`), of an artifact the owner does not own, or whose text holds
   only part of the page, records nothing.
 
+## What a version belongs to
+
+A version's `for` names the change the loop that published or read it works
+on. In a subagent, that is `works_on` in the runs mod's agent record,
+`/agents/<id>`, read with `board --personal get`. In the main loop, or for a
+subagent with no such record, it is the one open change whose newest claim
+names the session, from `changes.open --holder`. With none, or several,
+`for` is left out.
+
 ## A listing
 
 After the `list` action with no `scope` (or `mine`), no `type`, no

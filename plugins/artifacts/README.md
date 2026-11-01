@@ -40,7 +40,8 @@ by `at`, is the artifact's current version.
   "sha256": "9f2c…",
   "source": "/tmp/scratch/plan.html",
   "session": "0b8a7c6e-1f2d-4c3b-9a8e-7d6c5b4a3f21",
-  "at": "2026-10-31T18:20:00Z"
+  "at": "2026-10-31T18:20:00Z",
+  "for": ["/changes/release-plan"]
 }
 ```
 
@@ -57,13 +58,19 @@ by `at`, is the artifact's current version.
 - A version with no local page, such as one written through an Artifact
   type, says `copy: "none"` and has no `sha256`. The schema refuses a
   version that has neither, or both.
+- `for` lists references to the changes, evals or projects the version
+  belongs to, so `check` reports one that reaches nothing. The mod sets it
+  to the change the session works on. An artifact belongs to every `for` of
+  its versions.
 
 ## Capabilities
 
 `board --personal call artifacts.list` returns the artifacts, newest first,
 each with its newest version's `path`, `version`, `title` and `at`, or a
 `current` of null when it has no version yet. An artifact with no version
-sorts by `first_seen`. `--account <email>` keeps one account's artifacts, and
+sorts by `first_seen`. `--account <email>` keeps one account's artifacts,
+`--for <ref>` keeps those with a version whose `for` names the reference,
+and
 `--limit` is 1 to 200 (50 by default). `total` counts every artifact that
 matched, `truncated` says whether the limit left some out, and `unreadable`
 counts the records Board marks degraded, which are left out. A version

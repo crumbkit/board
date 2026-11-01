@@ -11,7 +11,11 @@ FAILED = {"case": "a", "outcome": "fail", "note": "a timed out after 30 s"}
 def checked(board: Board) -> dict[str, str | None]:
     """Each record's code from `board check`, by its path; `None` when it is valid."""
     report = json.loads(board.run("--json", "check", "--all").stdout)
-    return {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/suites/")}
+    return {
+        entry["logical"]: entry.get("code")
+        for entry in report["data"]
+        if entry["logical"].startswith(("/suites/", "/agents/"))
+    }
 
 
 def test_a_suite_lists_its_cases_inline_or_in_a_file_and_is_refused_with_both(board: Board) -> None:
@@ -111,4 +115,58 @@ def test_a_run_a_hook_wrote_names_the_plugin_and_hook_and_nothing_else(board: Bo
         "/suites/a/runs/hooked": None,
         "/suites/a/runs/prose": INVALID,
         "/suites/a/runs/empty": INVALID,
+    }
+
+
+def agent(**fields: object) -> str:
+    """A `runs/agent/v1` record with `fields` over a valid one."""
+    record = {
+        "$type": "runs/agent/v1",
+        "session": "0b8a7c6e-1f2d-4c3b-9a8e-7d6c5b4a3f21",
+        "cwd": "/work/app",
+        "started": "2026-11-01T09:00:00Z",
+        "written_by": "runs/agent-spawn",
+    }
+    return json.dumps({**record, **fields})
+
+
+def test_an_agent_names_its_session_an_absolute_directory_and_when_it_started_with_a_zone(board: Board) -> None:
+    board.write("changes/t.json", "{}")
+    board.write("agents/a1.json", agent(works_on="/changes/t"))
+    board.write("agents/a1.md", "Build the parser.\n")
+    board.write("agents/bare.json", agent())
+    board.write("agents/relative.json", agent(cwd="work/app"))
+    board.write("agents/no-zone.json", agent(started="2026-11-01T09:00:00"))
+    board.write("agents/no-session.json", agent(session=""))
+    board.write("agents/extra.json", agent(prompt="Build the parser."))
+    assert checked(board) == {
+        "/agents/a1": None,
+        "/agents/a1.md": None,
+        "/agents/bare": None,
+        "/agents/relative": INVALID,
+        "/agents/no-zone": INVALID,
+        "/agents/no-session": INVALID,
+        "/agents/extra": INVALID,
+    }
+
+
+def test_an_agent_works_on_an_entry_that_exists(board: Board) -> None:
+    board.write("changes/t.json", "{}")
+    board.write("agents/on.json", agent(works_on="/changes/t"))
+    board.write("agents/off.json", agent(works_on="/changes/gone"))
+    assert checked(board) == {"/agents/on": None, "/agents/off": "board::ref::dangling"}
+
+
+def test_a_runs_agent_must_be_an_agent_record(board: Board) -> None:
+    board.write("suites/a.json", suite())
+    board.write("agents/a1.json", agent())
+    board.write("suites/a/runs/paired.json", run("/suites/a", agent="/agents/a1"))
+    board.write("suites/a/runs/wrong.json", run("/suites/a", agent="/suites/a"))
+    board.write("suites/a/runs/gone.json", run("/suites/a", agent="/agents/gone"))
+    assert checked(board) == {
+        "/suites/a": None,
+        "/agents/a1": None,
+        "/suites/a/runs/paired": None,
+        "/suites/a/runs/wrong": "board::ref::wrong_type",
+        "/suites/a/runs/gone": "board::ref::dangling",
     }

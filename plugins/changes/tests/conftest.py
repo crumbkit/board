@@ -34,7 +34,7 @@ FOREIGN_TYPES: dict[str, dict[str, Any]] = {
     "review/brief/v1": {"for": ref(), "repo": ref()},
     "review/report/v1": {"brief": ref()},
     "evals/eval/v1": {},
-    "plans/decision/v1": {},
+    "decisions/decision/v1": {},
 }
 
 

@@ -16,7 +16,8 @@ reads. You never write these records yourself.
     board --personal call artifacts.list
 
 It lists each artifact's link, account and newest version with its title,
-newest first. `--account <email>` keeps one account's artifacts, and
+newest first. `--account <email>` keeps one account's artifacts,
+`--for /changes/<name>` keeps those published for that change, and
 `--limit <n>` returns up to 200 (50 by default). The newest version's
 `path` names its record; the page is beside it as `<path>.html` or
 `<path>.md`, which `board --personal get` reads.

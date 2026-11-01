@@ -4,8 +4,10 @@ from board_plugin.protocol import dumped
 from pydantic import JsonValue
 
 from board_runs.models import (
+    AGENT_TYPE,
     RUN_TYPE,
     SUITE_TYPE,
+    AgentRecord,
     LatestInput,
     LatestOutput,
     RunRecord,
@@ -29,7 +31,7 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_runs"],
         "metadata": {"area": "testing"},
-        "types": [SUITE_TYPE, RUN_TYPE],
+        "types": [SUITE_TYPE, RUN_TYPE, AGENT_TYPE],
         "capabilities": [
             {
                 "name": "latest",
@@ -65,6 +67,11 @@ def suite_schema() -> dict[str, JsonValue]:
 def run_schema() -> dict[str, JsonValue]:
     """The schema of `runs/run/v1`, as the plugin ships it."""
     return RunRecord.model_json_schema(by_alias=True)
+
+
+def agent_schema() -> dict[str, JsonValue]:
+    """The schema of `runs/agent/v1`, as the plugin ships it."""
+    return AgentRecord.model_json_schema(by_alias=True)
 
 
 if __name__ == "__main__":

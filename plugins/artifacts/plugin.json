@@ -16,6 +16,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "for": {
+            "description": "Only the artifacts with a version whose for names this reference, such as /changes/<name>.",
+            "minLength": 1,
+            "type": "string"
+          },
           "limit": {
             "default": 50,
             "description": "The most artifacts to return, 1 to 200; 50 when left out.",

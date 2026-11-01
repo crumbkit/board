@@ -152,9 +152,15 @@ and `open`.
   added it, `route` for an approve step a route added, else null) and
   `if_touched`; `next` and `actor`; and `ended`.
 - `landed --commit <sha>` and `drop --why '<text>'` end the change.
-- `open [--limit <n>]`: read-only. Changes with no `landed` or `dropped`
-  record, by path, at most 100 by default, with `total`, `truncated` and
-  `unreadable`.
+- `open [--limit <n>] [--holder <session>] [--remote <remote>] [--branch <branch>]`:
+  read-only. Changes with no `landed` or `dropped` record, by path, at most
+  100 by default, with `total`, `truncated` and `unreadable`. Each gives its
+  `holder` and `worktree`, from its newest claim, or null without one.
+  `--holder` keeps the changes that session holds. `--remote` keeps those
+  whose repository has that remote in stored form: the repo record's
+  `remote`, or the origin of a mounted clone. `--branch` keeps those on that
+  branch. The runs mod's pull request gate and its brief use these filters
+  (docs/plugins/claude-code/runs.md).
 - `pr` drafts the pull request; see below.
 - `migrate` rewrites each `changes/change/v1`; see Migrating below.
 

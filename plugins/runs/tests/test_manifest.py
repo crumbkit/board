@@ -10,13 +10,14 @@ from typing import Any, cast
 from board_plugin.protocol import dumped
 from conftest import PLUGIN, SCHEMAS, Board, board_binary, suite
 
-from board_runs.manifest import manifest, run_schema, suite_schema
+from board_runs.manifest import agent_schema, manifest, run_schema, suite_schema
 
 
 def test_the_committed_manifest_and_schemas_are_the_ones_the_models_generate() -> None:
     assert (PLUGIN / "plugin.json").read_text() == dumped(manifest())
     assert (SCHEMAS / "suite" / "v1.schema.json").read_text() == dumped(suite_schema())
     assert (SCHEMAS / "run" / "v1.schema.json").read_text() == dumped(run_schema())
+    assert (SCHEMAS / "agent" / "v1.schema.json").read_text() == dumped(agent_schema())
 
 
 def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships(board: Board) -> None:
@@ -27,6 +28,7 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_shi
     types = board.root / ".board" / "types" / "runs"
     assert json.loads((types / "suite" / "v1.schema.json").read_text()) == suite_schema()
     assert json.loads((types / "run" / "v1.schema.json").read_text()) == run_schema()
+    assert json.loads((types / "agent" / "v1.schema.json").read_text()) == agent_schema()
 
 
 def request(root: Path, capability: str) -> dict[str, Any]:

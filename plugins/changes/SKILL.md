@@ -1,6 +1,6 @@
 ---
 name: changes
-description: 'Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository''s clone, on the work branch, with `board --personal call changes.start --title ''<title>'' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin''s directory say more.'
+description: 'Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository''s clone, on the work branch, with `board --personal call changes.start --title ''<title>'' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. A subagent whose prompt ends with `Board: /changes/<name>` first runs `board --personal call changes.brief --path /changes/<name>`, unless that brief is already in its context. SKILL.md and README.md in the plugin''s directory say more.'
 ---
 
 # changes
@@ -53,9 +53,14 @@ repository that is itself a board, plain `board` runs as that board.
 
 ## Subagents
 
-End every brief to a subagent with the line `Board: /changes/<name>`. A
-subagent whose prompt ends with that line runs `changes.brief` for it first
-when no brief is in its context.
+End every brief to a subagent with the line `Board: /changes/<name>`. The
+runs mod records the subagent as working on that change and starts it with
+the change's brief.
+
+If you are a subagent and your prompt ends with `Board: /changes/<name>`,
+first run `board --personal call changes.brief --path /changes/<name>`,
+unless your context already holds that brief, which starts with "The runs
+mod ran".
 
 Work across two repositories is two changes, each plan naming the other in
 `uses`.
@@ -72,3 +77,6 @@ Work across two repositories is two changes, each plan naming the other in
 - `changes::change::exists`: pass another `--name`, or resume the change.
 - `changes::change::ended`: the change landed or was dropped. Start a new
   one.
+- The runs mod refuses `gh pr create` when no open change names the
+  repository and branch it targets. Start the change, or give `-R` and
+  `--head` when the command cannot name its directory.

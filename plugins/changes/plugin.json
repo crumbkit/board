@@ -853,18 +853,35 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "The changes that have not ended, with their repository, branch and route.",
+      "description": "The changes that have not ended, with their repository, branch, route, holder and worktree.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "The changes that have not ended, by path.",
         "properties": {
+          "branch": {
+            "description": "Only the changes on this branch.",
+            "minLength": 1,
+            "title": "Branch",
+            "type": "string"
+          },
+          "holder": {
+            "description": "Only the changes whose newest claim names this session.",
+            "pattern": "\\S",
+            "title": "Holder",
+            "type": "string"
+          },
           "limit": {
-            "default": 100,
             "description": "The most changes to return, 1 to 10,000; 100 when left out.",
             "maximum": 10000,
             "minimum": 1,
             "title": "Limit",
             "type": "integer"
+          },
+          "remote": {
+            "description": "Only the changes to this repository, by its remote, such as owner/name or its origin URL.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
           }
         },
         "title": "OpenInput",
@@ -875,11 +892,22 @@
         "$defs": {
           "OpenChange": {
             "additionalProperties": false,
-            "description": "A change that has not ended.",
+            "description": "A change that has not ended, with the session and worktree its newest claim names, or null without one.",
             "properties": {
               "branch": {
                 "title": "Branch",
                 "type": "string"
+              },
+              "holder": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Holder"
               },
               "path": {
                 "title": "Path",
@@ -902,6 +930,17 @@
               "title": {
                 "title": "Title",
                 "type": "string"
+              },
+              "worktree": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Worktree"
               }
             },
             "required": [
@@ -909,7 +948,9 @@
               "title",
               "repo",
               "branch",
-              "route"
+              "route",
+              "holder",
+              "worktree"
             ],
             "title": "OpenChange",
             "type": "object"
@@ -1126,7 +1167,7 @@
       }
     }
   ],
-  "description": "Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository's clone, on the work branch, with `board --personal call changes.start --title '<title>' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
+  "description": "Record one change to a repository, from its plan to its merge, as records written once, and derive its next step from them. Use it when you start a change to a repository, and whenever you resume one. Start in the repository's clone, on the work branch, with `board --personal call changes.start --title '<title>' --session <session>`, then call `changes.next --path /changes/<name>` for the next step. A subagent whose prompt ends with `Board: /changes/<name>` first runs `board --personal call changes.brief --path /changes/<name>`, unless that brief is already in its context. SKILL.md and README.md in the plugin's directory say more.",
   "metadata": {
     "area": "delivery"
   },

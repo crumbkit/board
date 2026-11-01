@@ -1,30 +1,58 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { finalLine, pullRequest } from '../hooks/register'
+import { boardLine, finalLine, pullRequest, remoteOf, target } from '../hooks/register'
 
-// These prove which `board put` and `gh` commands the hooks run, what records
-// they hand `board`, and what the agent and the person are told. `board` and
-// `gh` are stood in by a process.run hook, so the records are not checked
-// against the shipped schemas here; tests/test_schema.py does that for the
-// `written_by` field.
+// These prove which `board`, `git` and `gh` commands the hooks run, what
+// records they hand `board`, what a subagent is started with, and what the
+// agent and the person are told. `board`, `git` and `gh` are stood in by a
+// process.run hook, so the records are not checked against the shipped
+// schemas here; tests/test_schema.py does that.
 
 const NOW = Date.UTC(2026, 9, 25, 9, 30, 0)
 const URL = 'https://github.com/acme/widgets/pull/42'
+const SESSION = 'session-1'
+const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
-type Put = { argv: readonly string[]; record: Record<string, unknown> | undefined }
+type Put = { argv: readonly string[]; stdin: string | undefined }
+type Answer = { exitCode: number; stdout: string }
+type Changes = { path: string }[]
 
-/** Stands in for `board` and `gh`: each `board put` answers `answer(path)`, and `gh pr view` prints a title. */
-function host(on: On, answer: (path: string) => { exitCode: number; stdout: string } = () => ({ exitCode: 0, stdout: '{}' })) {
+/**
+ * Stands in for `board`, `git` and `gh`. `open(args)` gives the changes
+ * `changes.open` answers for its flags, `brief` what `changes.brief` prints,
+ * and `answer(path)` what a put answers. git reports the origin and branch
+ * of `/work/widgets` only.
+ */
+function host(
+  on: On,
+  {
+    open = () => [] as Changes,
+    brief = { plan: '/changes/w/plans/1.md', next: 'build' } as object,
+    answer = () => ({ exitCode: 0, stdout: '{"data":{}}' }) as Answer,
+  }: { open?: (args: readonly string[]) => Changes; brief?: object; answer?: (path: string) => Answer } = {},
+) {
   const puts: Put[] = []
+  const calls: (readonly string[])[] = []
+  const gits: (readonly string[])[] = []
   const logs: { text: string; to: string }[] = []
   const statuses: (string | undefined)[] = []
-  const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   on('process.run', (_, e) => {
-    if (e.argv[0] === 'gh') return { value: { exitCode: 0, stdout: 'Widgets ship in blue\n', ...whole } }
-    const stdin = e.init?.stdin
-    puts.push({ argv: e.argv, record: stdin === undefined ? undefined : JSON.parse(stdin) })
-    const path = e.argv[e.argv.indexOf('put') + 1] ?? ''
+    const [program, ...rest] = e.argv
+    if (program === 'git') {
+      gits.push(e.argv)
+      const known = rest[1] === '/work/widgets'
+      const out = rest.includes('get-url') ? 'git@github.com:acme/widgets.git\n' : 'blue\n'
+      return { value: { exitCode: known ? 0 : 128, stdout: known ? out : '', ...whole } }
+    }
+    if (rest.includes('call')) {
+      calls.push(e.argv)
+      const capability = rest[rest.indexOf('call') + 1]
+      const output = capability === 'changes.brief' ? brief : { changes: open(rest), total: open(rest).length }
+      return { value: { exitCode: 0, stdout: JSON.stringify({ data: { output } }), ...whole } }
+    }
+    puts.push({ argv: e.argv, stdin: e.init?.stdin })
+    const path = rest[rest.indexOf('put') + 1] ?? ''
     return { value: { ...answer(path), ...whole } }
   })
   on('ui.log', (_, e) => {
@@ -35,34 +63,64 @@ function host(on: On, answer: (path: string) => { exitCode: number; stdout: stri
     statuses.push(e.text)
     return { value: undefined }
   })
-  on('session.id', () => ({ value: 'session-1' }))
-  const session = mock.session(on)
-  const appended = () => session.appended().map(row => row.message.content)
-  return { puts, logs, statuses, appended }
+  on('session.id', () => ({ value: SESSION }))
+  on('session.cwd', () => ({ value: '/work/widgets' }))
+  mock.env(on, { HOME: '/home/owner' })
+  return { puts, calls, gits, logs, statuses }
 }
 
-test('a subagent that stops is recorded as a run with its duration and final line', async ($, on) => {
+const record = (put: Put | undefined) => (put?.stdin === undefined ? undefined : JSON.parse(put.stdin))
+const lines = (put: Put | undefined) => put?.stdin?.trimEnd().split('\n').map(line => JSON.parse(line))
+
+/** An engine that starts every subagent as `agent-7`, keeping the prompt it was started with. */
+function engine(on: On) {
+  const prompts: string[] = []
+  on('agent.spawn', (_, e) => {
+    prompts.push(e.prompt)
+    return { model: 'm', agentId: 'agent-7' }
+  })
+  return prompts
+}
+
+test('a subagent that starts is recorded with its prompt, and the run at its stop names that record', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const { puts, logs, statuses } = host(on)
+  const { puts, logs } = host(on)
+  const prompts = engine(on)
   on('classic.SubagentStart', () => ({}))
   on('classic.SubagentStop', () => ({}))
 
-  await $.classic.SubagentStart({ agent_id: 'a1b2', agent_type: 'Explore' })
+  await $.agent.spawn({ prompt: 'Find the parser.', cwd: '/work/widgets-wt' })
+  await $.classic.SubagentStart({ agent_id: 'agent-7', agent_type: 'Explore' })
   await clock.advance(90_000)
   await $.classic.SubagentStop({
-    agent_id: 'a1b2',
+    agent_id: 'agent-7',
     agent_type: 'Explore',
     agent_transcript_path: '/t',
     stop_hook_active: false,
     last_assistant_message: 'Searched the crates.\n\nThe parser lives in src/parse.rs.\n',
   })
 
+  expect(prompts).toEqual(['Find the parser.'])
   expect(puts.map(p => p.argv)).toEqual([
-    ['board', '--json', 'put', '/suites/claude-code', '--expect', 'none'],
-    ['board', '--json', 'put', '/suites/claude-code/runs/20261025T093000Z-a1b2'],
+    ['board', '--personal', '--json', 'put', '--batch'],
+    ['board', '--personal', '--json', 'put', '/suites/claude-code', '--expect', 'none'],
+    ['board', '--personal', '--json', 'put', '/suites/claude-code/runs/20261025T093000Z-agent-7'],
   ])
-  expect(puts[0]?.record?.$type).toBe('runs/suite/v1')
-  expect(puts[1]?.record).toEqual({
+  expect(lines(puts[0])).toEqual([
+    { path: '/agents/agent-7.md', expect: 'none', text: 'Find the parser.' },
+    {
+      path: '/agents/agent-7',
+      expect: 'none',
+      record: {
+        $type: 'runs/agent/v1',
+        session: SESSION,
+        cwd: '/work/widgets-wt',
+        started: '2026-10-25T09:30:00Z',
+        written_by: 'runs/agent-spawn',
+      },
+    },
+  ])
+  expect(record(puts[2])).toEqual({
     $type: 'runs/run/v1',
     suite: '/suites/claude-code',
     by: 'Explore',
@@ -72,21 +130,72 @@ test('a subagent that stops is recorded as a run with its duration and final lin
     results: [],
     measures: { duration_s: 90 },
     summary: 'The parser lives in src/parse.rs.',
+    agent: '/agents/agent-7',
     written_by: 'runs/subagent-stop',
   })
-  expect(logs).toEqual([{ text: 'board: recorded the Explore subagent as /suites/claude-code/runs/20261025T093000Z-a1b2', to: 'transcript' }])
-  expect(statuses).toEqual(['board: 1 record this session'])
+  expect(logs.map(log => log.text)).toEqual([
+    'board: recorded the subagent agent-7 as /agents/agent-7',
+    'board: recorded the Explore subagent as /suites/claude-code/runs/20261025T093000Z-agent-7',
+  ])
 })
 
-test('a subagent that a stop hook keeps running is not recorded until it stops', async ($, on) => {
+test('a subagent the mod did not see start is recorded at its stop without an agent', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { puts } = host(on)
-  on('classic.SubagentStop', () => ({ block: 'Run the tests first.' }))
+  on('classic.SubagentStop', () => ({}))
   await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'Explore', agent_transcript_path: '/t', stop_hook_active: false })
-  expect(puts).toEqual([])
+  expect(record(puts[1])?.agent).toBeUndefined()
 })
 
-test('a completed task is recorded under the configured board and suite, with its subject as the summary', { options: { board: '/boards/work', suite: '/suites/agents' } }, async ($, on) => {
+test('a prompt that ends with a Board line works on that change and starts with its brief', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { puts, calls } = host(on)
+  const prompts = engine(on)
+  const prompt = 'Build the parser.\n\nBoard: /changes/parser\n'
+  await $.agent.spawn({ prompt })
+  expect(calls).toEqual([['board', '--personal', '--json', 'call', 'changes.brief', '--path', '/changes/parser']])
+  expect(prompts[0]).toBe(
+    'The runs mod ran `board --personal call changes.brief --path /changes/parser` before you started. It printed:\n\n' +
+      '{\n  "plan": "/changes/w/plans/1.md",\n  "next": "build"\n}\n\n' +
+      prompt,
+  )
+  const [prose, agent] = lines(puts[0])!
+  expect(prose.text).toBe(prompt)
+  expect(agent.record.works_on).toBe('/changes/parser')
+  expect(agent.record.cwd).toBe('/work/widgets')
+})
+
+test('without a Board line the session’s one held change is the one worked on, and two held changes give none', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  let held: Changes = [{ path: '/changes/held' }]
+  const { puts, calls } = host(on, { open: args => (args.includes('--holder') ? held : []) })
+  const prompts = engine(on)
+  await $.agent.spawn({ prompt: 'Build the parser.' })
+  expect(calls[0]).toEqual(['board', '--personal', '--json', 'call', 'changes.open', '--holder', SESSION])
+  expect(lines(puts[0])![1].record.works_on).toBe('/changes/held')
+  expect(prompts[0]).toContain('changes.brief --path /changes/held')
+
+  held = [{ path: '/changes/a' }, { path: '/changes/b' }]
+  await $.agent.spawn({ prompt: 'Build the lexer.' })
+  expect(lines(puts[1])![1].record.works_on).toBeUndefined()
+  expect(prompts[1]).toBe('Build the lexer.')
+})
+
+test('a resumed or refused spawn writes no agent record', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { puts } = host(on)
+  let deny: string | undefined
+  on('agent.spawn', () => (deny === undefined ? { model: 'm', agentId: 'agent-7' } : { deny }))
+  await $.agent.spawn({ prompt: 'Go on.', resume: { agentId: 'agent-7' } } as never)
+  deny = 'not now'
+  await $.agent.spawn({ prompt: 'Start.' })
+  expect(puts).toEqual([])
+  deny = undefined
+  await $.agent.spawn({ prompt: 'Start.' })
+  expect(puts.length).toBe(1)
+})
+
+test('a completed task is recorded under the configured suite, with its subject as the summary', { options: { suite: '/suites/agents' } }, async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const { puts } = host(on)
   on('classic.TaskCreated', () => ({}))
@@ -94,86 +203,125 @@ test('a completed task is recorded under the configured board and suite, with it
   await $.classic.TaskCreated({ task_id: '7', task_subject: 'Write the parser' })
   await clock.advance(5_000)
   await $.classic.TaskCompleted({ task_id: '7', task_subject: 'Write the parser', teammate_name: 'builder' })
-  expect(puts[1]?.argv).toEqual(['board', '-C', '/boards/work', '--json', 'put', '/suites/agents/runs/20261025T093000Z-7'])
-  expect(puts[1]?.record).toMatchObject({
-    by: 'builder',
-    measures: { duration_s: 5 },
-    summary: 'Write the parser',
-    written_by: 'runs/task-completed',
-  })
+  expect(puts[1]?.argv).toEqual(['board', '--personal', '--json', 'put', '/suites/agents/runs/20261025T093000Z-7'])
+  expect(record(puts[1])).toMatchObject({ by: 'builder', measures: { duration_s: 5 }, summary: 'Write the parser', written_by: 'runs/task-completed' })
 })
 
-test('gh pr create writes a decision stub and asks the agent for its why and alternatives', async ($, on) => {
-  mock.clock(on, { now: NOW })
-  const { puts, statuses, appended } = host(on)
-  on('tool.call', () => ({ result: { stdout: `Creating pull request\n${URL}\n`, stderr: '', interrupted: false } }))
-
-  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
-
-  expect(puts.map(p => p.argv)).toEqual([['board', '--json', 'put', '/projects/widgets/decisions/20261025T093000Z-widgets-42']])
-  expect(puts[0]?.record).toEqual({
-    $type: 'plans/decision/v1',
-    decision: 'Widgets ship in blue',
-    why: '',
-    session: 'session-1',
-    decided: '2026-10-25T09:30:00Z',
-    urls: [URL],
-    review: 'wanted',
-    written_by: 'runs/pr-create',
+/** A `gh pr create` that prints `stdout`, counting the times it ran. */
+function gh(on: On, stdout = `Creating pull request\n${URL}\n`) {
+  const ran: string[] = []
+  on('tool.call', (_, e) => {
+    ran.push(e.tool === 'Bash' ? e.command : '')
+    return { result: { stdout, stderr: '', interrupted: false } }
   })
-  expect(appended()).toEqual([[
-    {
-      type: 'text',
-      text:
-        `The runs mod recorded ${URL} as a decision stub at /projects/widgets/decisions/20261025T093000Z-widgets-42. ` +
-        'Its why is empty. Fill in why and alternatives: read it with board get, then board put it back.',
-    },
-  ]])
+  return ran
+}
+
+test('gh pr create on a branch an open change names runs, and its URL becomes that change’s opened record', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { puts, calls, gits, statuses } = host(on, { open: args => (args.includes('blue') ? [{ path: '/changes/blue' }] : []) })
+  const ran = gh(on)
+  const result = await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(result.deny).toBeUndefined()
+  expect(ran).toEqual(['gh pr create --fill'])
+  expect(gits).toEqual([
+    ['git', '-C', '/work/widgets', 'remote', 'get-url', 'origin'],
+    ['git', '-C', '/work/widgets', 'symbolic-ref', '--quiet', '--short', 'HEAD'],
+  ])
+  expect(calls).toEqual([['board', '--personal', '--json', 'call', 'changes.open', '--remote', 'git@github.com:acme/widgets.git', '--branch', 'blue']])
+  expect(puts.map(p => p.argv)).toEqual([['board', '--personal', '--json', 'put', '/changes/blue/opened', '--expect', 'none']])
+  expect(record(puts[0])).toEqual({ $type: 'changes/opened/v1', pull_request: URL })
   expect(statuses).toEqual(['board: 1 record this session'])
 })
 
-test('the decisions template places the stub, with {repo} standing for the repository each time it appears', { options: { decisions_template: '/repos/{repo}/{repo}-decisions' } }, async ($, on) => {
+test('gh pr create on a branch no open change names is refused before it runs, and says how to start one', async ($, on) => {
   mock.clock(on, { now: NOW })
   const { puts } = host(on)
-  on('tool.call', () => ({ result: { stdout: `${URL}\n`, stderr: '', interrupted: false } }))
-  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
-  expect(puts.map(p => p.argv.at(-1))).toEqual(['/repos/widgets/widgets-decisions/20261025T093000Z-widgets-42'])
+  const ran = gh(on)
+  const result = await $.tool.call({ tool: 'Bash', command: 'git push && gh pr create --fill' })
+  expect(ran).toEqual([])
+  expect(puts).toEqual([])
+  expect(result.deny).toBe(
+    'board: refused: no open change names git@github.com:acme/widgets.git on blue, so the pull request would have no record. ' +
+      "From the clone, on blue, run `board --personal call changes.start --title '<title>' --session <session>`, " +
+      'which records the repository too when the board has no record of it, then run gh pr create again.',
+  )
 })
 
-test('a board without the plans type gets no stub, and only the debug log says so', async ($, on) => {
+test('-R and --head name the target, and a leading cd names the directory for what they leave out', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const unknown = JSON.stringify({ code: 'board::record::unknown_type', message: 'no schema for plans/decision/v1' })
-  const { logs, statuses, appended } = host(on, () => ({ exitCode: 1, stdout: unknown }))
-  on('tool.call', () => ({ result: { stdout: `${URL}\n`, stderr: '', interrupted: false } }))
-  await $.tool.call({ tool: 'Bash', command: 'gh pr create -t x -b y' })
-  expect(appended()).toEqual([])
-  expect(statuses).toEqual([])
-  expect(logs).toEqual([{ text: 'board: no decision stub for /projects/widgets/decisions/20261025T093000Z-widgets-42: board::record::unknown_type no schema for plans/decision/v1', to: 'debug' }])
+  const { calls, gits } = host(on, { open: () => [{ path: '/changes/x' }] })
+  gh(on)
+  await $.tool.call({ tool: 'Bash', command: "gh pr create -R github.com/acme/widgets --head 'acme:green' --fill" })
+  expect(gits).toEqual([])
+  expect(calls.at(-1)?.slice(-4)).toEqual(['--remote', 'https://github.com/acme/widgets', '--branch', 'green'])
+  await $.tool.call({ tool: 'Bash', command: 'cd ~/elsewhere && gh pr create --head green' })
+  expect(gits.at(-1)).toEqual(['git', '-C', '/home/owner/elsewhere', 'remote', 'get-url', 'origin'])
 })
 
-test('output with no pull request URL is logged and nothing is written; a refused put is logged where the person sees it', async ($, on) => {
+test('gh pr create after another cd, or in a directory with no origin, is refused and says to give -R and --head', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const invalid = JSON.stringify({ code: 'board::record::invalid', message: 'written_by is not allowed' })
-  const { puts, logs } = host(on, path => (path.includes('/decisions/') ? { exitCode: 1, stdout: invalid } : { exitCode: 0, stdout: '{}' }))
+  host(on, { open: () => [{ path: '/changes/x' }] })
+  const ran = gh(on)
+  const after = await $.tool.call({ tool: 'Bash', command: 'cd /work/widgets && cd sub && gh pr create --fill' })
+  expect(after.deny).toBe('board: refused: the command changes directory before gh pr create, so its repository and branch are unknown; run gh pr create with -R <owner/name> and --head <branch>')
+  const bare = await $.tool.call({ tool: 'Bash', command: 'cd /tmp && gh pr create --fill' })
+  expect(bare.deny).toBe("board: refused: /tmp has no origin, so the pull request's repository and branch are unknown; run gh pr create with -R <owner/name> and --head <branch>")
+  const named = await $.tool.call({ tool: 'Bash', command: 'cd /work/widgets && cd sub && gh pr create -R acme/widgets -H blue' })
+  expect(named.deny).toBeUndefined()
+  expect(ran).toEqual(['cd /work/widgets && cd sub && gh pr create -R acme/widgets -H blue'])
+})
+
+test('a pull request that prints no URL, or whose branch two changes name, writes no opened record', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  let open: Changes = [{ path: '/changes/x' }]
+  const { puts, logs } = host(on, { open: () => open })
   let stdout = 'pull request create failed\n'
   on('tool.call', () => ({ result: { stdout, stderr: '', interrupted: false } }))
-
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  open = [{ path: '/changes/x' }, { path: '/changes/y' }]
+  stdout = `${URL}\n`
   await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
   expect(puts).toEqual([])
-  stdout = `${URL}\n`
-  await $.tool.call({ tool: 'Bash', command: 'gh pr list' })
-  expect(puts).toEqual([])
-  await $.tool.call({ tool: 'Bash', command: 'git push && gh pr create --fill' })
   expect(logs).toEqual([
-    { text: 'board: gh pr create printed no pull request URL, so no decision stub was written', to: 'debug' },
-    { text: 'board: no decision stub for /projects/widgets/decisions/20261025T093000Z-widgets-42: board::record::invalid written_by is not allowed', to: 'transcript' },
+    { text: 'board: gh pr create printed no pull request URL, so no opened record was written', to: 'debug' },
+    { text: `board: 2 open changes name this branch (/changes/x, /changes/y), so no opened record was written for ${URL}`, to: 'transcript' },
   ])
 })
 
-test('the final line is the last line with text, and a pull request URL names its repository and number', () => {
+test('a refused opened record is logged where the person sees it, and a missing plugin only in the debug log', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  let code = 'board::put::stale'
+  const { logs } = host(on, { open: () => [{ path: '/changes/x' }], answer: () => ({ exitCode: 1, stdout: JSON.stringify({ code, message: 'no' }) }) })
+  gh(on)
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  code = 'board::record::unknown_type'
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(logs).toEqual([
+    { text: `board: no opened record for ${URL}: board::put::stale no`, to: 'transcript' },
+    { text: `board: no opened record for ${URL}: board::record::unknown_type no`, to: 'debug' },
+  ])
+})
+
+test('other Bash commands pass through the gate untouched', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { calls } = host(on)
+  const ran = gh(on)
+  await $.tool.call({ tool: 'Bash', command: 'gh pr list' })
+  expect(ran).toEqual(['gh pr list'])
+  expect(calls).toEqual([])
+})
+
+test('the helpers read the final line, a Board line, a pull request URL, a remote and a target', () => {
   expect(finalLine('a\n\n  b  \n\n')).toBe('b')
-  expect(finalLine('\n')).toBeUndefined()
   expect(finalLine(undefined)).toBeUndefined()
+  expect(boardLine('Do it.\nBoard: /changes/parser\n')).toBe('/changes/parser')
+  expect(boardLine('Board: /changes/parser\nDo it.')).toBeUndefined()
+  expect(boardLine('Do it.\nBoard: /evals/e')).toBeUndefined()
   expect(pullRequest(`Warning: 1 uncommitted change\n${URL}\n`)).toEqual({ url: URL, repo: 'widgets', number: '42' })
   expect(pullRequest('https://github.com/acme/widgets/issues/42')).toBeUndefined()
+  expect(remoteOf('github.com/acme/widgets')).toBe('https://github.com/acme/widgets')
+  expect(remoteOf('acme/widgets')).toBe('acme/widgets')
+  expect(target('gh pr create --repo=acme/w -Hblue')).toEqual({ repo: 'acme/w', head: 'blue', dir: undefined })
+  expect(target('cd "/a b" && gh pr create --fill && cd /c')).toEqual({ repo: undefined, head: undefined, dir: '/a b' })
 })

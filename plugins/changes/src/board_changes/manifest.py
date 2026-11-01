@@ -102,7 +102,13 @@ CAPABILITIES: list[tuple[str, str, type[BaseModel], type[BaseModel], bool]] = [
     ),
     ("landed", "End the change as merged at a commit.", LandedInput, Written, False),
     ("drop", "End the change as stopped, saying why.", DropInput, Written, False),
-    ("open", "The changes that have not ended, with their repository, branch and route.", OpenInput, OpenOutput, True),
+    (
+        "open",
+        "The changes that have not ended, with their repository, branch, route, holder and worktree.",
+        OpenInput,
+        OpenOutput,
+        True,
+    ),
     (
         "pr",
         (
@@ -152,7 +158,9 @@ def manifest() -> dict[str, JsonValue]:
             "its next step from them. Use it when you start a change to a repository, and whenever you resume "
             "one. Start in the repository's clone, on the work branch, with `board --personal call changes.start "
             "--title '<title>' --session <session>`, then call `changes.next --path /changes/<name>` for the "
-            "next step. SKILL.md and README.md in the plugin's directory say more."
+            "next step. A subagent whose prompt ends with `Board: /changes/<name>` first runs `board --personal "
+            "call changes.brief --path /changes/<name>`, unless that brief is already in its context. SKILL.md and "
+            "README.md in the plugin's directory say more."
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},

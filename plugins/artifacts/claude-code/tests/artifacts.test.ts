@@ -18,9 +18,18 @@ const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
 type Put = { path: string; body: unknown }
 
-/** Stands in for jq, shasum and board: `account.email` is what jq reads, `account.refuse` a code every put refuses with, and `imported` what artifacts.import answers. */
+/**
+ * Stands in for jq, shasum and board: `account.email` is what jq reads, `account.refuse` a code every put refuses
+ * with, and `imported` what artifacts.import answers. `account.held` lists the changes changes.open says the session
+ * holds, and `account.agents` the agent records `board get` finds, by path.
+ */
 function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown } } = {}) {
-  const account = { email: 'owner@example.com', refuse: undefined as string | undefined }
+  const account = {
+    email: 'owner@example.com',
+    refuse: undefined as string | undefined,
+    held: [] as string[],
+    agents: {} as Record<string, object>,
+  }
   const held = new Map<string, unknown>()
   const writes: Put[] = []
   const commands: (readonly string[])[] = []
@@ -40,6 +49,15 @@ function host(on: On, { imported = { written: [] as string[], known: 0, truncate
     if (program === 'jq') return { value: { exitCode: 0, stdout: `${account.email}\n`, ...whole } }
     if (program === 'shasum') return { value: { exitCode: 0, stdout: `${SHA}  ${rest.at(-1)}\n`, ...whole } }
     if (program === 'sh') return { value: { ...answer(rest[3]!, { file: rest[4] }), ...whole } }
+    if (rest.includes('get')) {
+      const found = account.agents[rest.at(-1)!]
+      if (found === undefined) return { value: { exitCode: 1, stdout: JSON.stringify({ code: 'board::path::not_found', message: 'no' }), ...whole } }
+      return { value: { exitCode: 0, stdout: JSON.stringify({ data: [{ record: found }] }), ...whole } }
+    }
+    if (rest.includes('changes.open')) {
+      const output = { changes: account.held.map(path => ({ path })), total: account.held.length }
+      return { value: { exitCode: 0, stdout: JSON.stringify({ data: { output } }), ...whole } }
+    }
     if (rest.includes('call')) {
       imports.push(JSON.parse(stdin ?? 'null'))
       return { value: { exitCode: 0, stdout: JSON.stringify({ data: { output: imported } }), ...whole } }
@@ -347,4 +365,32 @@ test('every bracketed note between the header and an inline page is left out of 
   expect(sentPage('/t/plan.md')).toEqual({ file: '/t/plan.md', ext: 'md' })
   expect(sentPage('/t/data.json')).toBeUndefined()
   expect(sentPage(undefined)).toBeUndefined()
+})
+
+test('a version belongs to the subagent’s change from its agent record, else to the one change the session holds', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { account, writes, commands } = host(on)
+  let version = '1'
+  on('tool.call', () => published(version))
+  const forOf = () => (writes.at(-1)?.body as Record<string, unknown>).for
+
+  account.agents['/agents/agent-7'] = { $type: 'runs/agent/v1', works_on: '/changes/parser' }
+  account.held = ['/changes/held']
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE, agentId: 'Agent-7' })
+  expect(commands).toContainEqual(['board', '--personal', '--json', 'get', '/agents/agent-7'])
+  expect(forOf()).toEqual(['/changes/parser'])
+
+  version = '2'
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(commands).toContainEqual(['board', '--personal', '--json', 'call', 'changes.open', '--holder', 'session-1'])
+  expect(forOf()).toEqual(['/changes/held'])
+
+  version = '3'
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE, agentId: 'unrecorded' })
+  expect(forOf()).toEqual(['/changes/held'])
+
+  version = '4'
+  account.held = ['/changes/a', '/changes/b']
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(forOf()).toBeUndefined()
 })

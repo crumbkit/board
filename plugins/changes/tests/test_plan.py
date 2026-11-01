@@ -67,7 +67,7 @@ def test_documents_used_over_3000_words_in_all_are_refused_and_3000_are_admitted
     board.write("changes/t.json", change())
     board.write("standards/a.md", words(1499))
     board.write("standards/b.md", words(1500))
-    board.write("decisions/d.json", record("plans/decision/v1", decision=" w" * 4000))
+    board.write("decisions/d.json", record("decisions/decision/v1", decision=" w" * 4000))
     uses = ["/standards/a.md", "/standards/b.md", "/decisions/d"]
     refused = board.refusal("plan", {"path": PATH, "text": PLAN, "uses": uses}, stdin=True)
     assert refused["code"] == "changes::plan::uses_too_long"

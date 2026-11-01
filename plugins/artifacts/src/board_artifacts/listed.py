@@ -25,7 +25,8 @@ def listed(request: CallRequest) -> ListOutput:
     """Every artifact record with its newest version record, newest first, at most `limit`.
 
     A version belongs to the artifact whose path is its own up to `/versions/`,
-    so an artifact in a mounted board reads the same as one here. Its newest
+    so an artifact in a mounted board reads the same as one here. With `for`,
+    only the artifacts with a version whose `for` names it are listed. Its newest
     version is the one recorded last, a tie going to the path that sorts last.
     """
     asked = ListInput.model_validate(request.input)
@@ -35,6 +36,7 @@ def listed(request: CallRequest) -> ListOutput:
     )
     artifacts: dict[str, ArtifactRecord] = {}
     newest: dict[str, tuple[VersionRecord, str]] = {}
+    belongs: set[str] = set()
     unreadable = 0
     for path, kind, code, body in rows:
         if code is not None:
@@ -49,13 +51,15 @@ def listed(request: CallRequest) -> ListOutput:
             unreadable += 1
             continue
         owner = path.rsplit(VERSIONS, 1)[0]
+        if asked.for_ is not None and asked.for_ in (version.for_ or []):
+            belongs.add(owner)
         held = newest.get(owner)
         if held is None or (version.at, path) > (held[0].at, held[1]):
             newest[owner] = (version, path)
     found = [
         _entry(path, artifact, newest.get(path))
         for path, artifact in artifacts.items()
-        if asked.account is None or artifact.account == asked.account
+        if (asked.account is None or artifact.account == asked.account) and (asked.for_ is None or path in belongs)
     ]
     found.sort(key=_recency, reverse=True)
     return ListOutput(

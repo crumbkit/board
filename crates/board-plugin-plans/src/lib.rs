@@ -12,7 +12,7 @@ use board_plugin::shape::{Record, schema_of};
 use schemars::generate::SchemaSettings;
 use serde_json::{Map, Value, json};
 
-use crate::records::{AnswerRecord, DecisionRecord, QuestionRecord};
+use crate::records::{AnswerRecord, QuestionRecord};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Plans;
@@ -57,8 +57,8 @@ fn manifest() -> Value {
         "$type": "board/plugin-manifest/v1",
         "name": "plans",
         "version": "0.1.0",
-        "description": "Questions an agent session asks the owner, the owner's answers, and the decisions \
-            sessions record. `board call plans.open` lists the questions still waiting for an answer, \
+        "description": "Questions an agent session asks the owner and the owner's answers. \
+            `board call plans.open` lists the questions still waiting for an answer, \
             oldest first. plugins/plans/README.md in Board's repository says where each record lives.",
         "metadata": {"area": "planning"},
         "types": record_schemas().map(|(name, _)| name),
@@ -74,7 +74,7 @@ fn manifest() -> Value {
 }
 
 /// Each record type the plugin ships, with the schema its struct generates.
-fn record_schemas() -> [(&'static str, Value); 3] {
+fn record_schemas() -> [(&'static str, Value); 2] {
     let settings = SchemaSettings::draft2020_12;
     [
         (
@@ -82,10 +82,6 @@ fn record_schemas() -> [(&'static str, Value); 3] {
             schema_of::<QuestionRecord>(settings()),
         ),
         (AnswerRecord::TYPE, schema_of::<AnswerRecord>(settings())),
-        (
-            DecisionRecord::TYPE,
-            schema_of::<DecisionRecord>(settings()),
-        ),
     ]
 }
 

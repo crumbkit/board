@@ -15,6 +15,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 SUITE_TYPE = "runs/suite/v1"
 RUN_TYPE = "runs/run/v1"
+AGENT_TYPE = "runs/agent/v1"
 
 # The most points `trend` returns, and its default `limit`. The cap keeps the output bounded (STANDARDS 23).
 TREND_LIMIT = 1000
@@ -31,6 +32,13 @@ FAILED = ("fail", "error")
 # `anyOf` with null, because Board does not search `anyOf` for references.
 FileRef = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
 SuiteRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": SUITE_TYPE})]
+AgentRef = Annotated[
+    str,
+    Field(
+        json_schema_extra={"format": "board-ref", "x-board-type": AGENT_TYPE},
+        description="The agent record of the subagent this run records.",
+    ),
+]
 
 # A suite named by its logical path, which `board call` reads relative to the prefix.
 SuitePath = Annotated[
@@ -203,6 +211,36 @@ class RunRecord(Record):
     measures: dict[str, MeasureValue] | SkipJsonSchema[None] = None
     setup: str | SkipJsonSchema[None] = None
     summary: str | SkipJsonSchema[None] = None
+    agent: AgentRef | SkipJsonSchema[None] = None
+    written_by: WrittenBy | SkipJsonSchema[None] = None
+
+
+class AgentRecord(Record):
+    """`runs/agent/v1` at `/agents/<id>`: a subagent a session started, written once when it started.
+
+    The prompt it was started with is beside it as `<id>.md`. `session` is the
+    session that started it and `cwd` the directory it runs in. `works_on`
+    references the change it works on, when the prompt's last line or the
+    session's one held change names it. A run whose `agent` names this record
+    says the subagent stopped; until one does, it is running.
+    """
+
+    model_config = ConfigDict(json_schema_extra=shipped())
+
+    tag: Literal["runs/agent/v1"] = Field(alias="$type")
+    session: str = Field(min_length=1, description="The session that started the subagent.")
+    cwd: str = Field(pattern="^/", description="The directory the subagent runs in, absolute.")
+    started: AwareDatetime = Field(description="When the subagent started, with a time zone.")
+    works_on: (
+        Annotated[
+            str,
+            Field(
+                json_schema_extra={"format": "board-ref"},
+                description="The change the subagent works on, such as /changes/suite-timeout.",
+            ),
+        ]
+        | SkipJsonSchema[None]
+    ) = None
     written_by: WrittenBy | SkipJsonSchema[None] = None
 
 

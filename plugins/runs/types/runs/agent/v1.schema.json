@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "description": "`runs/agent/v1` at `/agents/<id>`: a subagent a session started, written once when it started.\n\nThe prompt it was started with is beside it as `<id>.md`. `session` is the\nsession that started it and `cwd` the directory it runs in. `works_on`\nreferences the change it works on, when the prompt's last line or the\nsession's one held change names it. A run whose `agent` names this record\nsays the subagent stopped; until one does, it is running.",
+  "properties": {
+    "$type": {
+      "const": "runs/agent/v1",
+      "title": "$Type",
+      "type": "string"
+    },
+    "cwd": {
+      "description": "The directory the subagent runs in, absolute.",
+      "pattern": "^/",
+      "title": "Cwd",
+      "type": "string"
+    },
+    "session": {
+      "description": "The session that started the subagent.",
+      "minLength": 1,
+      "title": "Session",
+      "type": "string"
+    },
+    "started": {
+      "description": "When the subagent started, with a time zone.",
+      "format": "date-time",
+      "title": "Started",
+      "type": "string"
+    },
+    "works_on": {
+      "description": "The change the subagent works on, such as /changes/suite-timeout.",
+      "format": "board-ref",
+      "title": "Works On",
+      "type": "string"
+    },
+    "written_by": {
+      "description": "The plugin and hook that wrote this record, such as runs/subagent-stop; absent when an agent or a person wrote it.",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "title": "Written By",
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "session",
+    "cwd",
+    "started"
+  ],
+  "title": "AgentRecord",
+  "type": "object"
+}
