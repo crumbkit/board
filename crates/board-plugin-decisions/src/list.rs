@@ -4,14 +4,13 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
-use board_model::parse_json;
-use board_ops::{Host, Limit, PluginError};
-use board_plugin::shape::{TREE_CODES, whole};
+use board_ops::{Host, PluginError};
+use board_plugin::shape::whole;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::standing::{Decision, decisions};
+use crate::standing::{Decision, decisions, rows};
 
 /// Every question that names what it belongs to.
 pub(crate) const QUESTIONS: &str = "SELECT logical, code, body FROM records \
@@ -192,19 +191,11 @@ fn listed(
 /// how many questions were unreadable. Paths are compared as written, as
 /// `supersedes` is (`crate::standing`).
 fn reviews(host: &dyn Host) -> Result<(HashMap<String, Reviews>, usize), PluginError> {
-    let report = (host.query(QUESTIONS, Limit::ALL))
-        .map_err(|error| PluginError::board_refused("decisions", "query", &error.refusal()))?;
+    let (asked, unreadable) = rows(host, QUESTIONS, "decisions", |record| {
+        Asked::deserialize(record).ok()
+    })?;
     let mut reviews: HashMap<String, Reviews> = HashMap::new();
-    let mut unreadable = 0;
-    for row in &report.rows {
-        let [Value::String(question), code, body] = &row[..] else {
-            continue;
-        };
-        let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
-        let Some(asked) = tree.then(|| readable(body)).flatten() else {
-            unreadable += 1;
-            continue;
-        };
+    for (question, asked) in asked {
         for named in asked.belongs_to {
             let review = reviews.entry(named).or_default();
             match asked.status {
@@ -215,11 +206,6 @@ fn reviews(host: &dyn Host) -> Result<(HashMap<String, Reviews>, usize), PluginE
         }
     }
     Ok((reviews, unreadable))
-}
-
-fn readable(body: &Value) -> Option<Asked> {
-    let record = parse_json(body.as_str()?.as_bytes()).ok()?;
-    Asked::deserialize(&record).ok()
 }
 
 fn output(

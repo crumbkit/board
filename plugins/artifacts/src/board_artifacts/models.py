@@ -16,9 +16,7 @@ from pydantic.json_schema import GenerateJsonSchema, SkipJsonSchema
 ARTIFACT_TYPE = "artifacts/artifact/v1"
 VERSION_TYPE = "artifacts/version/v1"
 
-# The most artifacts the Artifact tool's `list` action returns, and so the most one import reads.
-LISTING_LIMIT = 200
-# The most artifacts `list` returns, and its default.
+# The most artifacts the Artifact tool's `list` action returns: the most one import reads and `list` returns.
 LIST_LIMIT = 200
 LIST_DEFAULT = 50
 
@@ -218,8 +216,8 @@ class Listing(BaseModel):
     model_config = ConfigDict(extra="allow", frozen=True, json_schema_extra=unset_defaults)
 
     artifacts: list[Row] = Field(
-        max_length=LISTING_LIMIT,
-        description=f"The listed artifacts, at most {LISTING_LIMIT}, most recently updated first.",
+        max_length=LIST_LIMIT,
+        description=f"The listed artifacts, at most {LIST_LIMIT}, most recently updated first.",
     )
     truncated: SkipJsonSchema[None] | bool = Field(
         default=None, description="Whether the account has more artifacts than the listing holds."

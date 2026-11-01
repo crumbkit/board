@@ -1,5 +1,6 @@
 use super::*;
 use crate::code::Code;
+use crate::location::ObjectId;
 use crate::pointer::{Pointer, pointer, repinned};
 use crate::record::{Content, Kind, Role};
 
@@ -101,22 +102,15 @@ fn a_refused_remote_is_named_by_its_stored_form_and_never_by_its_user_or_passwor
 }
 
 #[test]
-fn a_checkout_of_a_remote_repository_is_refused_as_a_mount_of_one_is() {
+fn a_checkout_of_a_remote_repository_or_a_short_commit_is_refused_as_a_mount_of_one_is() {
     assert!(pointer(repo(&checkout("/srv/board")).as_bytes()).is_ok());
     let error = pointer(repo(&checkout("https://example.com/board.git")).as_bytes()).unwrap_err();
     assert_eq!(error.code(), Code::MountRemoteUnsupported);
-}
-
-#[test]
-fn a_checkout_commit_must_be_a_full_id_as_a_mount_commit_must() {
-    let commit = |commit: &str| {
-        repo(&format!(
-            r#", "checkout": {{"repo": "/r", "follow": "main", "commit": "{commit}"}}"#
-        ))
-    };
-    assert!(pointer(commit(&"ab".repeat(20)).as_bytes()).is_ok());
-    let error = pointer(commit("abc").as_bytes()).unwrap_err();
-    assert_eq!(error.code(), Code::MountInvalid);
+    let short = repo(r#", "checkout": {"repo": "/r", "follow": "main", "commit": "abc"}"#);
+    assert_eq!(
+        pointer(short.as_bytes()).unwrap_err().code(),
+        Code::MountInvalid
+    );
 }
 
 #[test]

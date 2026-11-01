@@ -62,46 +62,56 @@ struct Stored {
 /// link, or one a mounted board's decision makes to its own board, matches
 /// nothing; decisions live in the owner's board, where neither happens.
 pub fn decisions(host: &dyn Host, plugin: &str) -> Result<Read, PluginError> {
-    let report = (host.query(DECISIONS, Limit::ALL))
-        .map_err(|error| PluginError::board_refused(plugin, "query", &error.refusal()))?;
-    let mut found = Vec::new();
-    let mut superseded = HashSet::new();
-    let mut unreadable = 0;
-    for row in &report.rows {
-        let [Value::String(path), code, body] = &row[..] else {
-            continue;
-        };
-        let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
-        let Some((stored, when)) = tree.then(|| readable(body)).flatten() else {
-            unreadable += 1;
-            continue;
-        };
-        superseded.extend(stored.supersedes);
-        found.push(Decision {
-            path: path.clone(),
+    let (found, unreadable) = rows(host, DECISIONS, plugin, |record| {
+        let stored = Stored::deserialize(record).ok()?;
+        let when = instant(&stored.decided)?;
+        Some((stored, when))
+    })?;
+    let superseded: HashSet<String> = (found.iter())
+        .flat_map(|(_, (stored, _))| stored.supersedes.iter().cloned())
+        .collect();
+    let decisions = (found.into_iter())
+        .map(|(path, (stored, when))| Decision {
+            superseded: superseded.contains(&path),
+            path,
             decision: stored.decision,
             why: stored.why,
             decided: stored.decided,
             when,
             basis: stored.basis,
             urls: stored.urls,
-            superseded: false,
-        });
-    }
-    for decision in &mut found {
-        decision.superseded = superseded.contains(&decision.path);
-    }
+        })
+        .collect();
     Ok(Read {
-        decisions: found,
+        decisions,
         unreadable,
     })
 }
 
-/// `None` when `body` is not a decision this plugin reads: one whose
-/// `decided` is not a time.
-fn readable(body: &Value) -> Option<(Stored, Instant)> {
-    let record = parse_json(body.as_str()?.as_bytes()).ok()?;
-    let stored = Stored::deserialize(&record).ok()?;
-    let when = instant(&stored.decided)?;
-    Some((stored, when))
+/// Each row `sql` selects as `logical, code, body` that `read` reads from
+/// the parsed body, by path, and how many rows were left out because Board
+/// marks them degraded for anything but the tree or `read` cannot read
+/// them. `plugin` names the caller in the code of a refused query.
+pub fn rows<T>(
+    host: &dyn Host,
+    sql: &str,
+    plugin: &str,
+    read: impl Fn(&Value) -> Option<T>,
+) -> Result<(Vec<(String, T)>, usize), PluginError> {
+    let report = (host.query(sql, Limit::ALL))
+        .map_err(|error| PluginError::board_refused(plugin, "query", &error.refusal()))?;
+    let mut found = Vec::new();
+    let mut unreadable = 0;
+    for row in &report.rows {
+        let [Value::String(path), code, body] = &row[..] else {
+            continue;
+        };
+        let tree = code.is_null() || TREE_CODES.iter().any(|tree| code == *tree);
+        let parsed = || parse_json(body.as_str()?.as_bytes()).ok();
+        match tree.then(parsed).flatten().as_ref().and_then(&read) {
+            Some(read) => found.push((path.clone(), read)),
+            None => unreadable += 1,
+        }
+    }
+    Ok((found, unreadable))
 }

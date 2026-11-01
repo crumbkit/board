@@ -10,13 +10,14 @@ from typing import Any, cast
 from board_plugin.protocol import dumped
 from conftest import PLUGIN, SCHEMAS, Board, board_binary
 
-from board_artifacts.manifest import artifact_schema, manifest, version_schema
+from board_artifacts.manifest import manifest
+from board_artifacts.models import ArtifactRecord, VersionRecord, schema_of
 
 
 def test_the_committed_manifest_and_schemas_are_the_ones_the_models_generate() -> None:
     assert (PLUGIN / "plugin.json").read_text() == dumped(manifest())
-    assert (SCHEMAS / "artifact" / "v1.schema.json").read_text() == dumped(artifact_schema())
-    assert (SCHEMAS / "version" / "v1.schema.json").read_text() == dumped(version_schema())
+    assert (SCHEMAS / "artifact" / "v1.schema.json").read_text() == dumped(schema_of(ArtifactRecord))
+    assert (SCHEMAS / "version" / "v1.schema.json").read_text() == dumped(schema_of(VersionRecord))
 
 
 def skill_description() -> str:
@@ -38,8 +39,8 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_shi
     assert plugin["status"] == "ok"
     assert plugin["enabled"] is True
     types = board.root / ".board" / "types" / "artifacts"
-    assert json.loads((types / "artifact" / "v1.schema.json").read_text()) == artifact_schema()
-    assert json.loads((types / "version" / "v1.schema.json").read_text()) == version_schema()
+    assert json.loads((types / "artifact" / "v1.schema.json").read_text()) == schema_of(ArtifactRecord)
+    assert json.loads((types / "version" / "v1.schema.json").read_text()) == schema_of(VersionRecord)
 
 
 def request(root: Path, capability: str) -> dict[str, Any]:
