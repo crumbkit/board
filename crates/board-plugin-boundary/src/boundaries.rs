@@ -43,7 +43,8 @@ impl Boundary {
         let record = &self.record;
         let within = |path: &String| {
             from.is_none_or(|from| {
-                from == path || from.starts_with(&format!("{}/", path.trim_end_matches('/')))
+                from == path.as_str()
+                    || from.starts_with(&format!("{}/", path.trim_end_matches('/')))
             })
         };
         globs.matches(&to.to_lowercase(), &record.to.to_lowercase())

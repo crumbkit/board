@@ -51,6 +51,7 @@ pub struct Check {
 }
 
 /// The controls plugin's record, which a check and a verdict name.
+#[derive(Debug)]
 pub enum Control {}
 
 impl Record for Control {

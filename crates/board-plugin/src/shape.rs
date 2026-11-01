@@ -51,8 +51,13 @@ impl Accepts for Any {
 
 /// A record's `$type` field: the string `R::TYPE` and nothing else. It
 /// writes `R::TYPE` and reads only that string.
-#[derive(Debug)]
 pub struct Tag<R>(PhantomData<fn() -> R>);
+
+impl<R> std::fmt::Debug for Tag<R> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Tag")
+    }
+}
 
 impl<R> Default for Tag<R> {
     fn default() -> Self {

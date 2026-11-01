@@ -509,8 +509,8 @@ fn an_entry_under_boundaries_that_is_not_a_boundary_refuses_with_the_step_to_mov
         hint.contains("move each entry that is not a boundary out of /boundaries/"),
         "{hint}"
     );
-    let root = personal.board.workdir();
-    std::fs::rename(root.join("boundaries/README.md"), root.join("README.md")).unwrap();
+    personal.board.write("boundaries/README.md", Item::Deleted);
+    personal.write("README.md", "# Boundaries\n");
     let (ran, _) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
     assert_eq!(ran.code, 0, "{}", printed(&ran));
 }
@@ -546,9 +546,9 @@ fn a_symlink_at_boundaries_refuses_and_the_same_files_in_a_directory_pass() {
     );
     let hint = document["recovery"]["text"].as_str().unwrap();
     assert!(hint.contains("make /boundaries/ a directory"), "{hint}");
-    let root = personal.board.workdir();
-    std::fs::remove_file(root.join("boundaries")).unwrap();
-    std::fs::rename(root.join("policies"), root.join("boundaries")).unwrap();
+    personal.board.write("boundaries", Item::Deleted);
+    personal.board.write("policies/octo.json", Item::Deleted);
+    personal.write("boundaries/octo.json", &boundary(&fields));
     let (ran, document) = personal.call("check", &pr(&json!({"pr.body": "Fine."})));
     assert_eq!(ran.code, 0, "{}", printed(&ran));
     assert_eq!(output(&document)["boundaries"], json!(["/boundaries/octo"]));
