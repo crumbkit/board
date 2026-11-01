@@ -9,6 +9,8 @@ pub const BUILT_IN: BuiltIn = BuiltIn(&[
     &board_plugin_controls::Controls,
     #[cfg(feature = "evals")]
     &board_plugin_evals::Evals,
+    #[cfg(feature = "jira")]
+    &board_plugin_jira::Jira,
     #[cfg(feature = "plans")]
     &board_plugin_plans::Plans,
     #[cfg(feature = "requests")]
