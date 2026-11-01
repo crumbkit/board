@@ -37,6 +37,8 @@ def test_the_output_carries_the_requirement_purpose_and_rule(board: Board) -> No
             "requirement": "Stay short.",
             "purpose": "A test.",
             "rule": {"budget": "words", "max": 10},
+            "kind": "standing",
+            "show": "failing",
         },
     ]
 

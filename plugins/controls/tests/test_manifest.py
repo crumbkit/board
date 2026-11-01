@@ -10,10 +10,11 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
     plugin = next(plugin for plugin in json.loads(report.stdout)["data"] if plugin["name"] == "controls")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
     assert "run" not in plugin
-    assert sorted(path.name for path in SCHEMAS.iterdir()) == ["control"]
-    shipped = SCHEMAS / "control" / "v1.schema.json"
-    written = board.root / ".board" / "types" / "controls" / "control" / "v1.schema.json"
-    assert written.read_text() == shipped.read_text()
+    assert sorted(path.name for path in SCHEMAS.iterdir()) == ["control", "source"]
+    for name in ["control", "source"]:
+        shipped = SCHEMAS / name / "v1.schema.json"
+        written = board.root / ".board" / "types" / "controls" / name / "v1.schema.json"
+        assert written.read_text() == shipped.read_text()
 
 
 def test_enabling_writes_the_schema_so_a_control_checks_clean_and_a_broken_one_does_not(board: Board) -> None:

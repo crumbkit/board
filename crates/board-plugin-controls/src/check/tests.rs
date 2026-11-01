@@ -262,3 +262,135 @@ fn a_path_is_under_itself_and_its_directories_and_not_under_a_sibling_that_share
     assert!(!under("/docs2/a.md", "/docs"));
     assert!(!under("/doc", "/docs"));
 }
+
+#[test]
+fn a_source_that_names_nothing_degrades_its_control_and_one_naming_a_source_note_passes() {
+    let note = json!({
+        "$type": "controls/source/v1",
+        "url": "https://example.com/paper",
+        "title": "A paper.",
+        "read_on": "2026-11-01",
+        "why": "It measures the cost.",
+    });
+    let citing = |source: &str| control(&json!({"paths": ["docs/*"], "sources": [source]}));
+    let dangling = citing("/controls/sources/missing");
+    let (_scenario, host) = recording(&[
+        ("docs/a.md", "one"),
+        ("controls/sources/paper.json", &note.to_string()),
+        ("controls/cites.json", &dangling),
+    ]);
+    let refused = check(&host, &json!({})).unwrap_err();
+    assert_eq!(refused.code, "controls::control::degraded");
+    assert_eq!(
+        refused.fields["controls"],
+        json!([{"control": "/controls/cites", "code": "board::ref::dangling"}])
+    );
+    let cited = citing("/controls/sources/paper");
+    let (_scenario, host) = recording(&[
+        ("docs/a.md", "one"),
+        ("controls/sources/paper.json", &note.to_string()),
+        ("controls/cites.json", &cited),
+    ]);
+    let output = check(&host, &json!({})).unwrap();
+    assert_eq!(output["stated"][0]["control"], "/controls/cites");
+}
+
+/// Six controls on `docs/a.md`: an obligation, a budget and a stated
+/// control that leave `show` out, and a twin of each that sets it.
+fn shown() -> (Scenario, Recording) {
+    let on_docs = |mut fields: Value, show: Option<&str>| {
+        fields["paths"] = json!(["docs/*"]);
+        if let Some(show) = show {
+            fields["show"] = json!(show);
+        }
+        control(&fields)
+    };
+    let obligation = |show| on_docs(json!({"kind": "obligation"}), show);
+    let budget = |show| on_docs(json!({"rule": words(9)}), show);
+    let stated = |show| on_docs(json!({"kind": "standing"}), show);
+    recording(&[
+        ("docs/a.md", "one"),
+        ("controls/a-obligation.json", &obligation(None)),
+        ("controls/b-obligation-edit.json", &obligation(Some("edit"))),
+        ("controls/c-budget.json", &budget(None)),
+        ("controls/d-budget-start.json", &budget(Some("start"))),
+        ("controls/e-stated.json", &stated(None)),
+        ("controls/f-stated-failing.json", &stated(Some("failing"))),
+    ])
+}
+
+/// Each item's control, kind and show.
+fn kinds(items: &Value) -> Vec<(String, String, String)> {
+    (items.as_array().unwrap().iter())
+        .map(|item| {
+            let field = |name: &str| item[name].as_str().unwrap().to_owned();
+            (field("control"), field("kind"), field("show"))
+        })
+        .collect()
+}
+
+fn row(control: &str, kind: &str, show: &str) -> (String, String, String) {
+    (
+        format!("/controls/{control}"),
+        kind.to_owned(),
+        show.to_owned(),
+    )
+}
+
+#[test]
+fn check_and_for_path_give_each_control_its_kind_and_the_show_it_defaults_to_or_sets() {
+    let (_scenario, host) = shown();
+    let output = check(&host, &json!({})).unwrap();
+    assert_eq!(
+        kinds(&output["measured"]),
+        [
+            row("c-budget", "standing", "failing"),
+            row("d-budget-start", "standing", "start"),
+        ]
+    );
+    let stated = [
+        row("a-obligation", "obligation", "start"),
+        row("b-obligation-edit", "obligation", "edit"),
+        row("e-stated", "standing", "edit"),
+        row("f-stated-failing", "standing", "failing"),
+    ];
+    assert_eq!(kinds(&output["stated"]), stated);
+    let output = for_path(&host, &json!({"path": "/docs/a.md"})).unwrap();
+    assert_eq!(
+        kinds(&output["controls"]),
+        [
+            stated[0].clone(),
+            stated[1].clone(),
+            row("c-budget", "standing", "failing"),
+            row("d-budget-start", "standing", "start"),
+            stated[2].clone(),
+            stated[3].clone(),
+        ]
+    );
+}
+
+#[test]
+fn a_budget_failure_carries_the_report_check_would_have_returned_and_a_pass_returns_it() {
+    let budget = |max: u64| control(&json!({"paths": ["docs/*"], "rule": words(max)}));
+    let start = control(&json!({"paths": ["docs/*"], "show": "start"}));
+    let files = |budget: &str| {
+        recording(&[
+            ("docs/a.md", "one two"),
+            ("controls/budget.json", budget),
+            ("controls/start.json", &start),
+        ])
+    };
+    let (_scenario, host) = files(&budget(1));
+    let refused = check(&host, &json!({})).unwrap_err();
+    assert_eq!(refused.code, "controls::budget::exceeded");
+    let report = &refused.fields["report"];
+    assert_eq!(report["measured"][0]["used"], 2);
+    assert_eq!(
+        kinds(&report["stated"]),
+        [row("start", "standing", "start")]
+    );
+    let (_scenario, host) = files(&budget(2));
+    let output = check(&host, &json!({})).unwrap();
+    assert_eq!(output["measured"][0]["used"], 2);
+    assert_eq!(output["stated"], report["stated"]);
+}

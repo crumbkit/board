@@ -5,25 +5,25 @@
       "description": "A limit on the words or bytes of the files the control applies to.\n\nWith `per` `total`, the default, the files' usage is summed; with `file`,\neach file on its own must be within `max`. Words are separated by any\nwhitespace.",
       "properties": {
         "budget": {
+          "description": "What the budget counts: `words` or `bytes`.",
           "enum": [
             "words",
             "bytes"
           ],
-          "title": "Budget",
           "type": "string"
         },
         "max": {
+          "description": "The most the files may use.",
           "minimum": 0,
-          "title": "Max",
           "type": "integer"
         },
         "per": {
           "default": "total",
+          "description": "`total`, the default, to sum the files, or `file` to limit each one.",
           "enum": [
             "total",
             "file"
           ],
-          "title": "Per",
           "type": "string"
         }
       },
@@ -31,51 +31,70 @@
         "budget",
         "max"
       ],
-      "title": "Budget",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "`controls/control/v1`: a requirement on files, why it exists, and optionally a budget a program checks.\n\nIt applies to the entries `applies_to` references and to every entry of\nthe board whose path matches one of `paths`, SQLite GLOB patterns such as\n`docs/*.md`.",
+  "description": "`controls/control/v1`: a requirement on files, why it exists, and\noptionally a budget a program checks. It applies to the entries\n`applies_to` references and to every entry of the board whose path\nmatches one of `paths`.",
   "properties": {
     "$type": {
       "const": "controls/control/v1",
-      "title": "$Type",
+      "description": "The record's type.",
       "type": "string"
     },
     "applies_to": {
+      "description": "The entries the control applies to.",
       "items": {
         "format": "board-ref",
         "type": "string"
       },
-      "title": "Applies To",
       "type": "array"
     },
+    "kind": {
+      "description": "`standing`, the default, for a rule that stays until it is changed,\nor `obligation` for work a landed change left owed, which the work\nthat discharges it deletes.",
+      "enum": [
+        "standing",
+        "obligation"
+      ],
+      "type": "string"
+    },
     "paths": {
+      "description": "`SQLite` GLOB patterns, such as `docs/*.md`, matched against each\nentry's path from the board's root.",
       "items": {
         "type": "string"
       },
-      "title": "Paths",
       "type": "array"
     },
     "purpose": {
-      "title": "Purpose",
-      "type": "string"
+      "description": "Why the requirement exists.",
+      "type": "string",
+      "x-board-prose": true
     },
     "requirement": {
-      "title": "Requirement",
-      "type": "string"
+      "description": "What the files must do, in a sentence or two.",
+      "type": "string",
+      "x-board-prose": true
     },
     "rule": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Budget"
-        },
-        {
-          "type": "null"
-        }
+      "$ref": "#/$defs/Budget",
+      "description": "The budget a program checks; a control without one is stated."
+    },
+    "show": {
+      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol with a budget when `failing`, and any other at `edit`.",
+      "enum": [
+        "start",
+        "edit",
+        "failing"
       ],
-      "default": null
+      "type": "string"
+    },
+    "sources": {
+      "description": "What justifies the control, such as a source note\n(`controls/source/v1`) or an eval.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "type": "array"
     }
   },
   "required": [

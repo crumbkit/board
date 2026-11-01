@@ -30,7 +30,7 @@ fn the_manifest_parses_as_a_built_in_one_and_describes_the_plugin_with_the_skill
     );
     assert!(manifest.run.is_empty());
     let types: Vec<&str> = manifest.types.iter().map(RecordType::as_str).collect();
-    assert_eq!(types, [ControlRecord::TYPE]);
+    assert_eq!(types, [ControlRecord::TYPE, SourceRecord::TYPE]);
     let names: Vec<&str> = (manifest.capabilities.iter())
         .map(|capability| capability.name.as_str())
         .collect();
@@ -73,6 +73,8 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
                 "max": 1,
                 "used": 0,
                 "files": [],
+                "kind": "standing",
+                "show": "failing",
                 "per": "file",
                 "largest": largest,
                 "over": [],
@@ -85,63 +87,155 @@ fn the_check_output_schema_admits_a_null_or_string_largest_and_refuses_a_number(
     assert!(output.validate(&measured(json!(5))).is_err());
 }
 
-/// The committed schema file holds, byte for byte, the canonical JSON of the
-/// schema its struct generates. `SNAPSHOTS=overwrite` rewrites the file.
+/// Each committed schema file, the plugin's golden under `types/` and the
+/// copy in this repository's own board, holds, byte for byte, the canonical
+/// JSON of the schema its struct generates, so `board call controls.check`
+/// in a Board checkout finds its copy equal to the shipped one.
+/// `SNAPSHOTS=overwrite` rewrites both.
 #[expect(
     clippy::disallowed_methods,
     reason = "the schema files are goldens, selected and written as crumbkit-test's are"
 )]
 #[test]
-fn the_committed_control_schema_is_what_its_struct_generates() {
-    let [(record_type, schema)] = &Controls.schemas()[..] else {
-        panic!("one schema")
-    };
-    let file = (Path::new(env!("CARGO_MANIFEST_DIR")).join("types"))
-        .join(format!("{}.schema.json", record_type.as_str()));
-    let generated = canonical_json(schema);
-    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
-        std::fs::write(&file, generated.as_bytes()).unwrap();
+fn each_committed_schema_and_the_boards_own_copy_is_what_its_struct_generates() {
+    let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let schemas = Controls.schemas();
+    let names: Vec<&str> = schemas.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, [ControlRecord::TYPE, SourceRecord::TYPE]);
+    for (record_type, schema) in &schemas {
+        let generated = canonical_json(schema);
+        for top in [
+            crate_root.join("types"),
+            crate_root.join("../../.board/types"),
+        ] {
+            let file = top.join(format!("{}.schema.json", record_type.as_str()));
+            if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+                std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+                std::fs::write(&file, generated.as_bytes()).unwrap();
+            }
+            let committed = std::fs::read(&file).unwrap();
+            assert!(
+                committed == generated.as_bytes(),
+                "{} differs from what its struct generates; run this test with SNAPSHOTS=overwrite:\n{}",
+                file.display(),
+                String::from_utf8_lossy(generated.as_bytes())
+            );
+        }
     }
-    let committed = std::fs::read(&file).unwrap();
-    assert!(
-        committed == generated.as_bytes(),
-        "{} differs from what its struct generates; run this test with SNAPSHOTS=overwrite:\n{}",
-        file.display(),
-        String::from_utf8_lossy(generated.as_bytes())
-    );
+}
+
+/// The compiled schema `Controls` ships for `record_type`.
+fn shipped(record_type: &str) -> board_validate::Schema {
+    let schemas = Controls.schemas();
+    let (_, schema) = (schemas.iter())
+        .find(|(name, _)| name.as_str() == record_type)
+        .unwrap();
+    board_validate::Schema::compile(schema.clone()).unwrap()
+}
+
+/// `base` with `fields` set.
+fn with(mut base: Value, fields: &Value) -> Value {
+    for (name, value) in fields.as_object().unwrap() {
+        base[name] = value.clone();
+    }
+    base
+}
+
+/// `record` without its field `name`.
+fn without(mut record: Value, name: &str) -> Value {
+    record.as_object_mut().unwrap().remove(name);
+    record
+}
+
+/// Each refused record is `board::record::invalid`, and its admitted twin passes.
+fn pairs(schema: &board_validate::Schema, pairs: &[(Value, Value)]) {
+    for (refused, admitted) in pairs {
+        assert_eq!(
+            schema.validate(refused).unwrap_err().code(),
+            Code::RecordInvalid,
+            "{refused}"
+        );
+        schema.validate(admitted).unwrap();
+    }
 }
 
 #[test]
-fn the_shipped_schema_refuses_a_budget_per_directory_and_a_null_purpose_and_admits_their_twins() {
-    let [(_, schema)] = &Controls.schemas()[..] else {
-        panic!("one schema")
-    };
-    let schema = board_validate::Schema::compile(schema.clone()).unwrap();
+fn the_control_schema_refuses_a_bad_rule_kind_show_or_source_and_admits_their_twins() {
     let control = |fields: Value| {
-        let mut record = json!({
+        let base = json!({
             "$type": "controls/control/v1",
             "requirement": "R.",
             "purpose": "P.",
             "applies_to": ["/AGENTS.md"],
-            "rule": null,
+            "kind": "obligation",
+            "show": "start",
+            "sources": ["/controls/sources/paper"],
         });
-        for (name, value) in fields.as_object().unwrap() {
-            record[name] = value.clone();
-        }
-        record
+        with(base, &fields)
     };
     let rule = |per: &str| json!({"rule": {"budget": "words", "max": 1, "per": per}});
-    for (refused, admitted) in [
-        (control(rule("directory")), control(rule("file"))),
-        (control(json!({"purpose": null})), control(json!({}))),
-    ] {
-        assert_eq!(
-            schema.validate(&refused).unwrap_err().code(),
-            Code::RecordInvalid,
-            "{refused}"
-        );
-        schema.validate(&admitted).unwrap();
-    }
+    let fields = |name: &str, value: Value| json!({ name: value });
+    pairs(
+        &shipped(ControlRecord::TYPE),
+        &[
+            (control(rule("directory")), control(rule("file"))),
+            (without(control(json!({})), "purpose"), control(json!({}))),
+            (control(json!({"rule": null})), control(json!({}))),
+            (
+                control(fields("kind", json!("sometimes"))),
+                control(fields("kind", json!("standing"))),
+            ),
+            (
+                control(fields("show", json!("sometimes"))),
+                control(fields("show", json!("failing"))),
+            ),
+            (
+                control(fields("sources", json!("/evals/x"))),
+                control(fields("sources", json!(["/evals/x"]))),
+            ),
+            (
+                control(fields("urls", json!(["https://example.com/x"]))),
+                control(json!({})),
+            ),
+        ][..],
+    );
+}
+
+#[test]
+fn the_source_schema_refuses_a_bad_url_or_date_or_a_missing_field_and_admits_their_twins() {
+    let source = |fields: Value| {
+        let base = json!({
+            "$type": "controls/source/v1",
+            "url": "https://example.com/paper",
+            "title": "A paper.",
+            "read_on": "2026-11-01",
+            "why": "It measures the cost.",
+        });
+        with(base, &fields)
+    };
+    let fields = |name: &str, value: Value| json!({ name: value });
+    pairs(
+        &shipped(SourceRecord::TYPE),
+        &[
+            (
+                source(fields("url", json!("ftp://example.com/x"))),
+                source(fields("url", json!("https://example.com/x"))),
+            ),
+            (
+                source(fields("url", json!("/controls/sources/x"))),
+                source(json!({})),
+            ),
+            (
+                source(fields("read_on", json!("yesterday"))),
+                source(fields("read_on", json!("2026-10-31"))),
+            ),
+            (without(source(json!({})), "why"), source(json!({}))),
+            (
+                source(fields("urls", json!(["https://example.com/x"]))),
+                source(json!({})),
+            ),
+        ][..],
+    );
 }
 
 #[test]

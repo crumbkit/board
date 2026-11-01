@@ -13,7 +13,10 @@ files it governs.
   "purpose": "Every agent loads it, so every word costs every session.",
   "applies_to": ["/AGENTS.md", "/CLAUDE.md"],
   "paths": ["docs/*.md"],
-  "rule": {"budget": "words", "max": 1000}
+  "rule": {"budget": "words", "max": 1000},
+  "kind": "standing",
+  "show": "failing",
+  "sources": ["/controls/sources/context-cost"]
 }
 ```
 
@@ -38,15 +41,43 @@ files it governs.
   `total`, the default, limits the sum over every file, and `file` limits
   each file on its own, such as
   `{"budget": "words", "max": 500, "per": "file"}` on `changes/*/plan.md`.
+- `kind` is `standing`, the default, for a rule that stays until it is
+  changed, or `obligation` for work a landed change left owed. The work that
+  discharges an obligation deletes it.
+- `show` says when to show the control: `start` at session start, `edit`
+  before the first edit of a file it covers, or `failing` only when `check`
+  reports it failing. Left out, an obligation shows at `start`, a control
+  with a budget when `failing`, and any other control at `edit`.
+- `sources` holds references to what justifies the control, such as a
+  source note or an eval. Board checks them as it checks `applies_to`, so a
+  dangling source makes `check` fail with `controls::control::degraded`.
 
-The plugin ships the record's schema. `board plugin enable controls` writes it
-to `.board/types/controls/control/v1.schema.json`.
+A source note, `controls/source/v1`, records an outside source that controls
+cite, so one note serves every control that cites it:
+
+```json
+{
+  "$type": "controls/source/v1",
+  "url": "https://example.com/context-cost",
+  "title": "What each word of agent context costs",
+  "read_on": "2026-11-01",
+  "why": "It measures the cost per session of each word every agent loads."
+}
+```
+
+Every field is required. `url` is an absolute `http` or `https` URL with a
+host, and `read_on` is a date.
+
+The plugin ships both schemas. `board plugin enable controls` writes them to
+`.board/types/controls/control/v1.schema.json` and
+`.board/types/controls/source/v1.schema.json`.
 
 ## Capabilities
 
 - `board call controls.for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
-  its requirement, purpose and rule. A control with a dangling reference
+  its requirement, purpose, rule, `kind` and `show`, the effective value
+  with its default applied. A control with a dangling reference
   still applies to the paths it does reach; an invalid control applies to
   nothing. An agent can ask before it edits a file. Patterns match the file
   the path resolves to, through any link or mount. A path with nothing there
@@ -69,9 +100,11 @@ to `.board/types/controls/control/v1.schema.json`.
   usage, so the error names the files to shorten. `stated` holds the rest,
   with their `paths` patterns and `files`, the number of their files under
   the path, so the output stays short; `board get <control>` shows its
-  `applies_to` and `paths`. A stated control never fails the call. It
+  `applies_to`, `paths` and `sources`. Every item carries `kind` and the
+  effective `show`. A stated control never fails the call. It
   fails, exiting 1, with `controls::budget::exceeded` when a measured
-  control is over budget;
+  control is over budget, whose fields carry `report`, the output the call
+  would otherwise have returned;
   `controls::control::degraded` when Board marks any control degraded, under
   any path; and `controls::file::unreadable` when a measured control reaches
   something that is not a readable file, such as a directory. Each error names
@@ -81,7 +114,7 @@ to `.board/types/controls/control/v1.schema.json`.
   in one pass.
 
 Board refuses both calls with `board::plugin::schema_differs` when the board's
-copy of the control schema differs from the one the plugin ships;
+copy of either schema differs from the one the plugin ships;
 `board plugin enable controls` replaces the board's copy. When Board refuses a request the plugin makes, such as
 a malformed path, the plugin fails with `controls::board::refused`, carrying
 Board's code and hint.
@@ -124,11 +157,10 @@ explains the design.
 
 The plugin is the crate `crates/board-plugin-controls`. It generates the
 manifest's input and output schemas from Rust structs with schemars, and
-generates the control schema from `ControlRecord` in `src/records.rs`. Its
-`types/` directory holds that schema as a committed golden, which a test
-compares with what the struct generates. The schema keeps the bytes the
-former Python plugin generated, so its properties carry titles and `rule`
-admits null.
+generates the record schemas from `ControlRecord` and `SourceRecord` in
+`src/records.rs`. Its `types/` directory holds them as committed goldens,
+which a test compares with what the structs generate. The same test keeps
+this repository's own copies under `.board/types/controls/` equal to them.
 
 This directory keeps `SKILL.md`, the mod and a uv project that only tests
 the plugin through the real binary. The gates, which CI runs:

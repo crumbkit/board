@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 use crate::index::{self, Control, File, Health};
 use crate::logical;
-use crate::records::{Budget, Measure, Per};
+use crate::records::{Budget, Kind, Measure, Per, Show};
 
 /// Check the controls that apply to a file at or under `path`, `/` when left out.
 #[derive(Deserialize, JsonSchema)]
@@ -42,6 +42,8 @@ pub(crate) struct Checked {
     max: u64,
     used: u64,
     files: Vec<String>,
+    kind: Kind,
+    show: Show,
     #[serde(flatten)]
     each: Option<EachFile>,
 }
@@ -83,6 +85,8 @@ struct Stated {
     purpose: String,
     paths: Vec<String>,
     files: usize,
+    kind: Kind,
+    show: Show,
 }
 
 fn path_or_null(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -163,12 +167,6 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         let control = &controls[logical];
         measured.push(checked(logical, control, budget, &files[logical], &reads)?);
     }
-    let failing: Vec<&Checked> = (measured.iter())
-        .filter(|item| item.used > item.max)
-        .collect();
-    if !failing.is_empty() {
-        return Err(exceeded(&failing));
-    }
     let stated = (applying.into_iter())
         .filter(|logical| controls[*logical].rule.is_none())
         .map(|logical| {
@@ -177,6 +175,8 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
                 control: logical.clone(),
                 requirement: control.requirement.clone(),
                 purpose: control.purpose.clone(),
+                kind: control.kind,
+                show: control.show(),
                 paths: control.paths.clone().unwrap_or_default(),
                 files: files[logical]
                     .iter()
@@ -191,6 +191,12 @@ pub(crate) fn check(host: &dyn Host, input: &Value) -> Result<Value, PluginError
         })
         .collect();
     let output = Output { measured, stated };
+    let failing: Vec<&Checked> = (output.measured.iter())
+        .filter(|item| item.used > item.max)
+        .collect();
+    if !failing.is_empty() {
+        return Err(exceeded(&failing, &output));
+    }
     Ok(serde_json::to_value(output).expect("Output holds only strings, numbers and lists"))
 }
 
@@ -308,6 +314,8 @@ fn checked(
         max,
         used: usage.iter().map(|(_, used)| used).sum(),
         files: files.iter().map(ToString::to_string).collect(),
+        kind: control.kind,
+        show: control.show(),
         each: None,
     };
     if per.unwrap_or(Per::Total) == Per::Total {
@@ -372,16 +380,23 @@ fn over(item: &Checked) -> String {
     }
 }
 
-fn exceeded(failing: &[&Checked]) -> PluginError {
+/// The failing controls, and in `report` the output `check` would
+/// otherwise have returned, so a reader can still show the other controls.
+fn exceeded(failing: &[&Checked], report: &Output) -> PluginError {
     let names: Vec<String> = failing.iter().map(|item| over(item)).collect();
     let controls = serde_json::to_value(failing).expect("Checked holds only strings and numbers");
+    let report =
+        serde_json::to_value(report).expect("Output holds only strings, numbers and lists");
     PluginError {
         code: "controls::budget::exceeded".to_owned(),
         message: format!(
             "over budget: {}; shorten the files, or raise the control's max in a change that says why",
             names.join(", ")
         ),
-        fields: Map::from_iter([("controls".to_owned(), controls)]),
+        fields: Map::from_iter([
+            ("controls".to_owned(), controls),
+            ("report".to_owned(), report),
+        ]),
     }
 }
 

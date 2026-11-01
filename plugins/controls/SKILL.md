@@ -36,10 +36,11 @@ To run a command in a board other than the one you are in, add `-C <path>`.
 
    Follow each requirement it returns. A new file is asked about by the
    path it will have.
-3. Some controls are obligations: work that a landed change left owed. When
-   your work does what one asks, delete the control in the commit that does
-   the work, and name the work in the commit message. When your work leaves
-   something owed, write a new control that says what is owed, which change
-   owes it, and the file it applies to.
+3. Some controls are obligations, with `kind: obligation`: work that a
+   landed change left owed. When your work does what one asks, delete the
+   control in the commit that does the work, and name the work in the
+   commit message. When your work leaves something owed, write a new control
+   with `kind: obligation` that says what is owed, which change owes it, and
+   the file it applies to.
 
 The plugin's README.md gives the control record's fields.

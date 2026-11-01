@@ -16,11 +16,9 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 97] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 93] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
-    (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
-    (".board/controls/control/v1", "/requirement", UntilAdopted, "Prose"),
     // The schemas the plugins ship.
     ("changes/change/v1", "/head", UntilAdopted, "ObjectId (audit row 2)"),
     ("changes/change/v1", "/issue", UntilAdopted, "Url (audit row 11)"),
@@ -28,8 +26,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 97] = [
     ("changes/change/v1", "/pull_request", UntilAdopted, "PullRequestUrl (audit row 12)"),
     ("changes/change/v1", "/title", UntilAdopted, "Prose"),
     ("controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
-    ("controls/control/v1", "/purpose", UntilAdopted, "Prose"),
-    ("controls/control/v1", "/requirement", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/conclusion", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/decision", UntilAdopted, "Prose"),
     ("evals/eval/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 25)"),

@@ -9,12 +9,10 @@ use board_model::{CapabilityName, Code, Fields, LogicalPath, RecordType, Refusal
 use board_ops::{Host, Plugin, PluginError};
 use board_plugin::Manifest;
 use board_plugin::shape::{Record, schema_of};
-use schemars::Schema;
 use schemars::generate::SchemaSettings;
-use schemars::transform::RecursiveTransform;
 use serde_json::{Map, Value, json};
 
-use records::ControlRecord;
+use records::{ControlRecord, SourceRecord};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Controls;
@@ -27,9 +25,22 @@ impl Plugin for Controls {
     }
 
     fn schemas(&self) -> Vec<(RecordType, Value)> {
-        let name = (ControlRecord::TYPE.parse())
-            .expect("ControlRecord's TYPE is a record type; a test parses it");
-        vec![(name, record_schema())]
+        let schema = |name: &str, schema: Value| {
+            let name = name
+                .parse()
+                .expect("each record's TYPE is a record type; a test parses it");
+            (name, schema)
+        };
+        vec![
+            schema(
+                ControlRecord::TYPE,
+                schema_of::<ControlRecord>(SchemaSettings::draft2020_12()),
+            ),
+            schema(
+                SourceRecord::TYPE,
+                schema_of::<SourceRecord>(SchemaSettings::draft2020_12()),
+            ),
+        ]
     }
 
     fn call(
@@ -50,23 +61,6 @@ impl Plugin for Controls {
             }),
         }
     }
-}
-
-/// The schema of `controls/control/v1`. `schema_of` would take null out of
-/// `rule`, which the committed schema admits, so this generator only drops
-/// an integer's `format`, as `schema_of` does.
-fn record_schema() -> Value {
-    let mut settings =
-        SchemaSettings::draft2020_12().with_transform(RecursiveTransform(|schema: &mut Schema| {
-            if schema.get("type").and_then(Value::as_str) == Some("integer") {
-                schema.remove("format");
-            }
-        }));
-    settings.meta_schema = None;
-    let schema = settings
-        .into_generator()
-        .into_root_schema_for::<ControlRecord>();
-    schema.into()
 }
 
 /// `path` as a logical path, or the refusal `board refs` gives a path it
@@ -91,7 +85,7 @@ fn manifest() -> Value {
             path. `board -C <board> call controls.for-path --path /<file>` lists the controls on one file. \
             SKILL.md and README.md in the plugin's directory say more.",
         "metadata": {"area": "governance"},
-        "types": [ControlRecord::TYPE],
+        "types": [ControlRecord::TYPE, SourceRecord::TYPE],
         "capabilities": [{
             "name": "for-path",
             "description": "The controls that apply to a path.",
