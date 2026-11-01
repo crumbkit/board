@@ -1,6 +1,18 @@
 import type { EngineInterface, Register } from 'claude-code'
 
-import { MOUNTS_SQL, briefOf, judge, noBrief, parseBoards, parseChange, parseMounts, repositoryOf, unknown } from './guard'
+import {
+  MOUNTS_SQL,
+  briefOf,
+  judge,
+  noBrief,
+  originOf,
+  parseBoards,
+  parseChange,
+  parseMounts,
+  parseOrigins,
+  repositoryOf,
+  unknown,
+} from './guard'
 import type { Mount } from './guard'
 
 // The write guard. Before an Edit, Write or NotebookEdit of a file in a
@@ -17,9 +29,12 @@ import type { Mount } from './guard'
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 // The file may not exist yet, so git runs in its nearest directory that does.
+// It prints the repository's common directory, then its origin URL, if any.
 const LOCATE =
   'd=$1; while [ ! -d "$d" ]; do d=$(dirname "$d"); done; ' +
-  'cd "$d" && exec git rev-parse --path-format=absolute --git-common-dir'
+  'cd "$d" && git rev-parse --path-format=absolute --git-common-dir && { git config --get remote.origin.url || true; }'
+// Each mounted repository's origin URL, `<repo>\t<url>` per line; empty when it has none.
+const ORIGINS = 'for r; do printf \'%s\\t%s\\n\' "$r" "$(git -C "$r" config --get remote.origin.url 2>/dev/null)"; done'
 // Exit 3 says there is no config, so no board is known.
 const BOARDS = 'f="${XDG_CONFIG_HOME:-$HOME/.config}/board/config.json"; [ -e "$f" ] || exit 3; exec cat "$f"'
 const MOUNTS = `PATH=${PATH} exec board -C "$1" --json query --all "$2"`
@@ -37,34 +52,47 @@ const TIMEOUT_MS = 5000
 const briefs = new Map<string, string>()
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
-const sh = ($: EngineInterface, script: string, ...args: string[]): Promise<Ran> =>
+const sh = ($: EngineInterface, script: string, args: string[]): Promise<Ran> =>
   $.process.run(['/bin/sh', '-c', script, 'guard', ...args], { timeoutMs: TIMEOUT_MS })
 
 const said = (ran: Ran) => (ran.stderr.trim() || ran.stdout.trim()).slice(0, 500) || `exit ${ran.exitCode}`
 
 class Unknown extends Error {}
 
-/** The repositories' mounts that hold `file`, across every known board; empty when none does. */
+/**
+ * The mounts that hold `file`, across every known board; empty when none does.
+ * A mount holds the file when the file's repository is a worktree of the
+ * mount's `repo`, or else when both repositories' origins name one repository,
+ * so a separate clone is guarded too. A repository with no origin that is no
+ * worktree of a mount stays outside the guard.
+ */
 async function mountsOf($: EngineInterface, file: string): Promise<Mount[]> {
-  const located = await sh($, LOCATE, file)
+  const located = await sh($, LOCATE, [file])
   if (located.exitCode !== 0) {
     if (/not a git repository/i.test(located.stderr)) return []
     throw new Unknown(`git could not find the repository of the file: ${said(located)}`)
   }
-  const repo = repositoryOf(located.stdout)
-  const config = await sh($, BOARDS)
+  const [commonDir = '', url = ''] = located.stdout.split('\n')
+  const repo = repositoryOf(commonDir)
+  const origin = originOf(url)
+  const config = await sh($, BOARDS, [])
   if (config.exitCode === 3) return []
   if (config.exitCode !== 0) throw new Unknown(`the board config could not be read: ${said(config)}`)
   const boards = parseBoards(config.stdout)
   if (!Array.isArray(boards)) throw new Unknown(boards.why)
-  const found: Mount[] = []
+  const all: Mount[] = []
   for (const board of boards) {
-    const ran = await sh($, MOUNTS, board, MOUNTS_SQL)
+    const ran = await sh($, MOUNTS, [board, MOUNTS_SQL])
     const mounts = ran.exitCode === 0 ? parseMounts(board, ran.stdout) : null
     if (mounts === null) throw new Unknown(`\`board -C ${board} query\` did not list its mounts: ${said(ran)}`)
-    found.push(...mounts.filter(m => m.repo === repo))
+    all.push(...mounts)
   }
-  return found
+  const worktreeOf = all.filter(m => m.repo === repo)
+  if (worktreeOf.length > 0 || origin === null || all.length === 0) return worktreeOf
+  const ran = await sh($, ORIGINS, [...new Set(all.map(m => m.repo))])
+  if (ran.exitCode !== 0) throw new Unknown(`git could not read the mounted repositories' origins: ${said(ran)}`)
+  const origins = parseOrigins(ran.stdout)
+  return all.filter(m => origins.get(m.repo) === origin)
 }
 
 /** The change the acting agent's first message names, or null. */
@@ -88,7 +116,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
     const named = await briefNamed($, agentId)
     if (named === null) return noBrief(file, mounts[0]!, null)
     for (const at of mounts) {
-      const ran = await sh($, GET, at.board, named)
+      const ran = await sh($, GET, [at.board, named])
       const change = parseChange(ran.stdout)
       if (change.kind === 'missing') continue
       if (change.kind === 'failed') {

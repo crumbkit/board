@@ -178,9 +178,13 @@ every Edit, Write and NotebookEdit. Install it with
 1. It finds the git repository that holds the file, through its common
    directory, so a worktree counts as its repository. It lists the mounts of
    each board in `boards` of `$XDG_CONFIG_HOME/board/config.json` (by default
-   `~/.config/board/config.json`) and compares each mount's `repo`, as
-   spelled, with that repository's directory. A file that no mount holds is
-   admitted, so board records, memory and scratch directories stay writable.
+   `~/.config/board/config.json`). A mount holds the file when the file's
+   repository is a worktree of the mount's `repo`, compared as spelled, or
+   else when both repositories' `origin` remotes name the same repository.
+   ssh and https forms, letter case and a trailing `.git` do not matter, so
+   a separate clone is guarded too. A file that no mount holds is admitted,
+   so board records, memory and scratch directories stay writable. A
+   repository with no `origin` that is no worktree of a mount is admitted.
 2. Otherwise it reads the acting agent's first user message: a subagent's
    own, or the main conversation's. The first line that holds text must be
    `board-brief: /changes/<name>`.
@@ -204,8 +208,8 @@ There is no bypass. The guard cannot see:
 
 - files written through Bash, such as `sed -i` or a heredoc. The review gate
   checks that a change's commits came from its builder sessions;
-- a separate clone of a mounted repository, since only a worktree shares the
-  mount's git directory;
+- a clone of a mounted repository with no `origin` remote, or one whose
+  `origin` points somewhere else, such as a fork;
 - a first message that has left the newest 4,096 entries of a conversation,
   or that a compaction replaced, before the agent's first guarded edit. The
   guard keeps a brief it has found until the mod reloads.

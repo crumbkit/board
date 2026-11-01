@@ -24,6 +24,31 @@ export function repositoryOf(commonDir: string): string {
   return dir.endsWith('/.git') ? dir.slice(0, -'/.git'.length) : dir
 }
 
+/**
+ * The repository an origin URL names, as `host/owner/name` in lower case, or
+ * null for an empty URL. ssh (`git@host:path`, `ssh://`) and http(s) forms of
+ * one repository, with or without `.git`, give the same answer.
+ */
+export function originOf(url: string): string | null {
+  const trimmed = url.trim()
+  if (trimmed === '') return null
+  const scp = trimmed.match(/^[^/@:]+@([^/:]+):(.*)$/)
+  const parts = scp ?? trimmed.match(/^[a-z+]+:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.*)$/i)
+  const [host, path] = parts === null ? ['', trimmed] : [parts[1]!, parts[2]!]
+  const name = path.replace(/\/+$/, '').replace(/\.git$/, '').replace(/^\/+/, '')
+  return `${host}/${name}`.replace(/^\//, '').toLowerCase()
+}
+
+/** Each repository's origin from the ORIGINS script, `<repo>\t<url>` per line, by repository. */
+export function parseOrigins(stdout: string): Map<string, string | null> {
+  const origins = new Map<string, string | null>()
+  for (const line of stdout.split('\n')) {
+    const tab = line.indexOf('\t')
+    if (tab > 0) origins.set(line.slice(0, tab), originOf(line.slice(tab + 1)))
+  }
+  return origins
+}
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text)

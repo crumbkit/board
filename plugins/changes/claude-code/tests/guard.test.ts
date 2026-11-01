@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { Engine } from 'claude-code/testing'
 
-import { briefOf } from '../hooks/guard'
+import { briefOf, originOf } from '../hooks/guard'
 
 // These prove which edits the write guard lets through and the exact refusal
 // for each that it stops. git, the board config and `board` are stood in by
@@ -58,7 +58,15 @@ function engine(on: On, answers: Answers) {
       if (path.startsWith(`${REPO}/`)) return run(0, `${REPO}/.git\n`)
       if (path.startsWith('/work/gadgets/')) return run(0, '/work/gadgets/.git\n')
       if (path.startsWith('/work/loose/')) return run(0, '/work/loose/.git\n')
+      if (path.startsWith('/work/clone-ssh/')) return run(0, '/work/clone-ssh/.git\ngit@github.com:acme/widgets.git\n')
+      if (path.startsWith('/work/clone-https/')) return run(0, '/work/clone-https/.git\nhttps://github.com/Acme/widgets\n')
+      if (path.startsWith('/work/other/')) return run(0, '/work/other/.git\nssh://git@github.com/acme/other.git\n')
       return run(128, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
+    }
+    if (script.includes('for r')) {
+      ran.push(`origins ${args.join(' ')}`)
+      const origins: Record<string, string> = { [REPO]: 'git@github.com:acme/widgets.git', '/work/gadgets': 'https://github.com/acme/gadgets.git' }
+      return run(0, args.map(repo => `${repo}\t${origins[repo] ?? ''}\n`).join(''))
     }
     if (script.includes('config.json')) {
       ran.push('config')
@@ -215,4 +223,35 @@ test('a brief found once is kept for the agent, so a long conversation keeps its
   answers.first = { a1: 'a later message, once the first left the window' }
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit', 'Edit'])
+})
+
+test('a clone whose ssh origin names the mounted repository is guarded like a worktree of it', async ($, on) => {
+  const file = '/work/clone-ssh/src/lib.rs'
+  const { ran, edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
+  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: \/work\/clone-ssh\/src\/lib.rs is in \/repos\/widgets, /)
+  expect((await edit($, file, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  expect(ran.slice(0, 4)).toEqual(['git', 'config', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
+})
+
+test('a clone whose https origin names the mounted repository is guarded like a worktree of it', async ($, on) => {
+  const file = '/work/clone-https/src/lib.rs'
+  const { edits } = engine(on, { first: { '': 'Coordinate the work.', a1: BRIEF } })
+  expect((await edit($, file)).deny).toMatch(/^changes::guard::no_brief: .* is in \/repos\/widgets, /)
+  expect((await edit($, file, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a repository whose origin names no mounted repository is admitted without reading the conversation', async ($, on) => {
+  const { ran, edits } = engine(on, {})
+  expect((await edit($, '/work/other/src/lib.rs')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, `origins ${REPO} /work/gadgets`])
+})
+
+test('origins match across ssh and https forms, case and a trailing .git', () => {
+  const same = ['git@github.com:acme/widgets.git', 'ssh://git@github.com/acme/widgets', 'https://github.com/Acme/widgets.git/', 'http://GitHub.com/acme/widgets']
+  expect(new Set(same.map(originOf))).toEqual(new Set(['github.com/acme/widgets']))
+  expect(originOf('git@github.com:acme/other.git')).toBe('github.com/acme/other')
+  expect(originOf('')).toBeNull()
 })
