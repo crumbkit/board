@@ -147,9 +147,14 @@ fn rule_schema(generator: &mut SchemaGenerator) -> Schema {
     schema
 }
 
-/// A rule as an output repeats it: [`RuleFields`] without the `oneOf`.
+/// A rule as an output repeats it: [`RuleFields`] without the `oneOf`, or
+/// null for a control without one.
 pub(crate) fn rule_output_schema(generator: &mut SchemaGenerator) -> Schema {
-    generator.subschema_for::<RuleFields>()
+    // Null widens the object's type. A `oneOf` with null would hide the
+    // board-ref fields inside it, and Board checks no reference there.
+    let mut rule = <RuleFields as JsonSchema>::json_schema(generator);
+    rule.insert("type".to_owned(), json!(["object", "null"]));
+    rule
 }
 
 // What a budget counts. No doc comment, which would describe the inlined

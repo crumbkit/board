@@ -68,10 +68,9 @@ to `.board/types/controls/control/v1.schema.json`.
 
 - `board call controls.for-path --path /AGENTS.md` returns
   each control that applies to that path, by reference or by pattern, with
-  its requirement, purpose and rule, which is left out when it has none. A
-  control with a dangling reference
-  still applies to the paths it does reach; an invalid control applies to
-  nothing. An agent can ask before it edits a file. Patterns match the file
+  its requirement, purpose and rule, which is null when it has none. A
+  control with a dangling reference still applies to the paths it does
+  reach; an invalid control applies to nothing. An agent can ask before it edits a file. Patterns match the file
   the path resolves to, through any link or mount. A path with nothing there
   yet is matched where a file there would be, as
   `board refs --missing` reports it, so a control on a link's target applies
@@ -122,11 +121,14 @@ to `.board/types/controls/control/v1.schema.json`.
     `skipped` for a judged rule when the part failed a budget or pattern
     rule. Budget and pattern rules always run first, whatever the order of
     `controls`.
-  - A finding holds `text`, the words at fault, and `line` when it has one.
-    A pattern finding quotes the match, and adds `pattern` only with
-    `show` `pattern`. A failed budget has one finding without a line.
-  - A budget result adds `used` and `max`. A result shows at most 20
-    findings and counts the rest in `omitted`.
+  - A finding holds `text`, the words at fault, `line`, `pattern` and
+    `rewrite`. A pattern finding quotes the match and gives its line, and
+    names the expression in `pattern` only with `show` `pattern`. A failed
+    budget has one finding with a null `line`. Every key is present, and
+    null means none.
+  - A result holds `used` and `max`, which are null except in a budget
+    result. A result shows at most 20 findings and counts the rest in
+    `omitted`, which is null when none is left out.
 
   A failed part is an answer, so the call still exits 0. It fails with
   `controls::control::not_found` when a named control is not a valid
