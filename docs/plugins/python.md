@@ -26,6 +26,6 @@ the file name Reflect gives it.
 Each lives in `plugins/<name>/` with its lockfile and a committed
 `plugin.json` that a test compares with the one it generates.
 Its pytest suite drives the real `board` binary against fixture boards.
-`plugins/controls/`, `plugins/evals/` and `plugins/plans/` keep only such a
-suite, which checks that the built-in plugin answers as the Python one did.
-CI's `python` job runs the gates of every Python project here.
+`plugins/controls/`, `plugins/evals/` and `plugins/plans/` keep only that
+suite, as a parity check of the built-in. CI's `python` job runs every
+Python project's gates.

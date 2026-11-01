@@ -206,13 +206,11 @@ comes right after the alias; a flag in its place is a usage error.
 
 ## Writing a plugin
 
-A new plugin is a built-in crate, never a Python program;
-[plugins/built-in/writing.md](plugins/built-in/writing.md) says how. `controls`, `plans`, `requests` and `evals` are
-built in. `tasks`, `runs`, `share`, `notes`, `changes`, `review`, `prompts`,
-`jira` and `github` are still Python;
-[plugins/python.md](plugins/python.md) describes them. The README in each
-`plugins/<name>/` describes its records and capabilities.
-[plugins/share.md](plugins/share.md) explains the design of `share`, and
+A new plugin is a built-in crate, never a Python program
+([plugins/built-in/writing.md](plugins/built-in/writing.md)).
+[plugins/python.md](plugins/python.md) describes the plugins still in
+Python. Each `plugins/<name>/` README describes its records and
+capabilities. [plugins/share.md](plugins/share.md) explains `share`, and
 [plugins/claude-code.md](plugins/claude-code.md) covers Claude Code mods,
 with [the controls mod](plugins/controls-claude-code.md) and
 [the plans mod](plugins/plans-claude-code.md).

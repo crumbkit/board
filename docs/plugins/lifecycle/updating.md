@@ -29,8 +29,7 @@ Each step leaves a valid board in its own commit.
 - It is an ordinary capability, conventionally `migrate`, whose input has
   `apply`, false by default.
 - For a plugin still in Python, the `board_plugin.migrate` module in
-  `python/board-plugin/` does the work. A built-in plugin needs a write
-  method on `Host` first (built-in/writing.md):
+  `python/board-plugin/` does the work:
   - `olds(board, types)` reads the records of `types` in the board's own
     tree that parse, each as an `Old` with its logical `path`, `blob` and
     `record`.
@@ -43,6 +42,8 @@ Each step leaves a valid board in its own commit.
     owner must do afterwards, such as re-signing. Without `apply` it writes
     nothing. With it, one `board put --batch` writes every line in one
     commit.
+- A built-in plugin cannot migrate until `Host` can write
+  ([built-in/writing.md](../built-in/writing.md)).
 - `board call` sets `BOARD_PLUGIN`, so the batch is checked as the plugin's
   own put ([architecture/writes/effects.md](../../architecture/writes/effects.md)).
 - Board's wire format has no migration concept. What is owed is the plugin's
