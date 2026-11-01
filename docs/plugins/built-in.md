@@ -19,7 +19,8 @@ Board is called. `controls`, `plans`, `evals` and
   - `schemas()` returns the schema shipped for each declared type. A declared
     type without a compiling schema is `board::plugin::bad_manifest`.
   - `call(host, capability, input)` returns the output, or a `PluginError`
-    with `code`, `message` and `fields`, as `board/error/v1` holds them.
+    with `code`, `message` and `fields`, as `board/error/v1` holds them. A
+    built-in plugin's refusal has no `hint`.
 - `Host`, what Board offers during a call:
   - `query(sql, limit)` runs SQL as `board query` does, with the caller's
     index cache. `Limit::rows(n)` takes 1 to 10,000 rows; `Limit::ALL` every

@@ -576,7 +576,7 @@ pub enum CallError {
     #[error("{}", failure.message)]
     Plugin {
         plugin: PluginName,
-        failure: PluginFailure,
+        failure: Box<PluginFailure>,
         stderr: Vec<u8>,
     },
 }
@@ -600,7 +600,7 @@ impl CallError {
     /// This error as Board reports it, with the end of the
     /// plugin's stderr when it ran, also under `stderr` in its fields. The
     /// plugin's own refusal keeps its code and fields, with `plugin` and
-    /// `stderr` added, and has no hint from Board.
+    /// `stderr` added, and the plugin's own hint when it gave one.
     pub fn refusal(&self) -> Refusal {
         let stderr = match self {
             Self::Timeout { stderr, .. }
@@ -623,6 +623,7 @@ impl CallError {
                 fields.extend(extra);
                 let (code, message) = (failure.code.clone(), failure.message.clone());
                 return Refusal {
+                    hint: failure.hint.clone(),
                     stderr: stderr.cloned().unwrap_or_default(),
                     ..Refusal::plugin(code, message, fields)
                 };
