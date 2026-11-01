@@ -15,15 +15,6 @@ use serde_json::{Map, Value, json};
 
 use records::{IssueRecord, PullRecord};
 
-/// A capability's name and the function that runs it.
-type Capability = (
-    &'static str,
-    fn(&dyn Host, &Value) -> Result<Value, PluginError>,
-);
-
-/// Every capability the plugin offers, in the order its manifest lists them.
-const CAPABILITIES: [Capability; 1] = [("ref", reference::reference)];
-
 #[derive(Clone, Copy, Debug)]
 pub struct Github;
 
@@ -58,19 +49,14 @@ impl Plugin for Github {
         capability: &CapabilityName,
         input: Value,
     ) -> Result<Value, PluginError> {
-        let Some((_, run)) = (CAPABILITIES.iter()).find(|(name, _)| *name == capability.as_str())
-        else {
-            let offered: Vec<&str> = CAPABILITIES.iter().map(|(name, _)| *name).collect();
-            return Err(PluginError {
+        match capability.as_str() {
+            "ref" => reference::reference(host, &input),
+            other => Err(PluginError {
                 code: "github::call::unknown_capability".to_owned(),
-                message: format!(
-                    "github offers no capability {capability}; it offers {}",
-                    offered.join(", ")
-                ),
+                message: format!("github offers no capability {other}; it offers ref"),
                 fields: Map::new(),
-            });
-        };
-        run(host, &input)
+            }),
+        }
     }
 }
 

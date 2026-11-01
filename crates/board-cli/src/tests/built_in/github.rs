@@ -315,11 +315,14 @@ fn a_failing_gh_is_refused_with_its_error_and_a_working_one_is_admitted() {
 fn gh_missing_from_path_is_refused_and_gh_on_path_is_admitted() {
     let mut board = board();
     board.gh_answers(&issue(7, "Widgets wobble", false), 0, "");
-    let with_gh = std::mem::replace(&mut board.board.path, PATH.to_owned());
-    assert_eq!(
-        board.refusal("octo/widgets#7")["code"],
-        "github::gh::failed"
-    );
+    // A `PATH` of an empty directory, since a runner may have gh in
+    // `/usr/bin`.
+    let empty = Scenario::new();
+    let with_gh = std::mem::replace(&mut board.board.path, empty.workdir().display().to_string());
+    let failure = board.refusal("octo/widgets#7");
+    assert_eq!(failure["code"], "github::gh::failed");
+    let message = failure["message"].as_str().unwrap();
+    assert!(message.contains("did not start"), "{message}");
     board.board.path = with_gh;
     assert_eq!(board.call("octo/widgets#7")["written"], true);
 }
@@ -389,4 +392,22 @@ fn a_capability_the_plugin_does_not_offer_is_refused_by_board_and_ref_is_answere
         .refusal("github.push", &["--ref", "octo/widgets#7"]);
     assert_eq!(refused["code"], "board::plugin::not_installed", "{refused}");
     assert_eq!(board.call("octo/widgets#7")["written"], false);
+}
+
+#[test]
+fn ref_answers_from_a_warm_index_as_from_a_cold_one_after_the_record_changes() {
+    let board = board();
+    let flags = ["--ref", "octo/widgets#7"];
+    let url = json!({"url": "https://github.com/octo/widgets/issues/7"});
+    let path = "gh/octo/widgets/issues/7.json";
+    board.board.write(path, &seven(&url));
+    let before = board.board.answer("github.ref", &flags, false);
+    let mut retitled = url.clone();
+    retitled["title"] = json!("Widgets wobble");
+    board.board.write(path, &seven(&retitled));
+    let warm = board.board.answer("github.ref", &flags, false);
+    assert_ne!(warm, before, "the change is seen");
+    assert_eq!(warm["title"], "Widgets wobble");
+    assert_eq!(warm, board.board.answer("github.ref", &flags, true));
+    assert_eq!(board.gh_calls(), 0);
 }

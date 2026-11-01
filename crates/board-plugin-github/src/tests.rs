@@ -15,17 +15,20 @@ use serde_json::json;
 use super::*;
 use objects::{Kind, Object};
 
-/// A host whose only answer is the run of a process, which it records; a
-/// test here reaches nothing else of the board.
+/// A host that answers a query with `rows` and a process's run with
+/// `answer`, recording the run; a test here reaches nothing else of the
+/// board.
 struct Running {
     ran: RefCell<Vec<(String, Vec<String>)>>,
     answer: fn() -> Result<Exited, ProcessError>,
+    rows: Option<Vec<Vec<Value>>>,
 }
 
 fn running(answer: fn() -> Result<Exited, ProcessError>) -> Running {
     Running {
         ran: RefCell::new(Vec::new()),
         answer,
+        rows: None,
     }
 }
 
@@ -35,7 +38,14 @@ impl Host for Running {
         _sql: &str,
         _limit: board_ops::Limit,
     ) -> Result<board_ops::QueryReport, board_ops::QueryError> {
-        panic!("this test reaches no query")
+        let rows = self.rows.clone().expect("this test reaches no query");
+        Ok(board_ops::QueryReport {
+            columns: ["logical", "code", "body"].map(str::to_owned).to_vec(),
+            rows,
+            truncated: false,
+            over_budget: false,
+            memory: None,
+        })
     }
 
     fn refs(
@@ -236,11 +246,23 @@ fn gh_api_fails_naming_gh_s_error_when_gh_fails_cannot_start_or_prints_no_object
     assert!(missing.contains("did not start"), "{missing}");
     let slow = failed(|| Err(ProcessError::Timeout { stderr: Vec::new() }));
     assert!(slow.contains("did not finish: it ran past 20 s"), "{slow}");
+    let large = failed(|| {
+        Err(ProcessError::TooLarge {
+            limit: 16,
+            stderr: Vec::new(),
+        })
+    });
+    assert!(
+        large.contains("did not finish: it printed more than 16 bytes"),
+        "{large}"
+    );
+    let killed = failed(|| Ok(exited(None, "", "killed\n")));
+    assert!(killed.contains("exited on a signal: killed;"), "{killed}");
 }
 
 #[test]
-fn a_capability_the_plugin_does_not_offer_is_refused_and_ref_reaches_its_own_check() {
-    let host = running(|| panic!("a refused call runs nothing"));
+fn a_capability_the_plugin_does_not_offer_is_refused_and_ref_is_admitted() {
+    let host = running(|| panic!("a held record runs nothing"));
     let other: CapabilityName = "push".parse().unwrap();
     let refused = Github.call(&host, &other, json!({})).unwrap_err();
     assert_eq!(refused.code, "github::call::unknown_capability");
@@ -248,7 +270,71 @@ fn a_capability_the_plugin_does_not_offer_is_refused_and_ref_reaches_its_own_che
         refused.message,
         "github offers no capability push; it offers ref"
     );
+    let held =
+        json!({"$type": "github/issue/v1", "url": "https://github.com/octo/widgets/issues/7"});
+    let host = Running {
+        rows: Some(vec![vec![
+            json!("/gh/octo/widgets/issues/7"),
+            Value::Null,
+            json!(held.to_string()),
+        ]]),
+        ..host
+    };
     let known: CapabilityName = "ref".parse().unwrap();
-    let refused = Github.call(&host, &known, json!({})).unwrap_err();
-    assert_eq!(refused.code, "github::call::bad_input");
+    let answer = Github
+        .call(&host, &known, json!({"ref": "octo/widgets#7"}))
+        .unwrap();
+    assert_eq!(
+        answer,
+        json!({
+            "path": "/gh/octo/widgets/issues/7",
+            "type": "github/issue/v1",
+            "written": false,
+            "url": "https://github.com/octo/widgets/issues/7",
+            "title": null,
+        })
+    );
+}
+
+/// A pull or issue record as `ref` writes it, with `fields` over it.
+fn written(record_type: &str, fields: &Value) -> Value {
+    let mut record = json!({
+        "$type": record_type,
+        "owner": "octo",
+        "repo": "widgets",
+        "number": 7,
+        "url": "https://github.com/octo/widgets/pull/7",
+        "title": "Fix it",
+    });
+    for (name, value) in fields.as_object().unwrap() {
+        if value.is_null() {
+            record.as_object_mut().unwrap().remove(name);
+        } else {
+            record[name] = value.clone();
+        }
+    }
+    record
+}
+
+#[test]
+fn each_shipped_schema_refuses_a_bad_record_and_admits_its_twin() {
+    for (record_type, schema) in Github.schemas() {
+        let schema = board_validate::Schema::compile(schema).unwrap();
+        let record_type = record_type.as_str();
+        schema.validate(&written(record_type, &json!({}))).unwrap();
+        schema
+            .validate(&written(record_type, &json!({"title": null})))
+            .unwrap();
+        for bad in [
+            json!({"repo": "Widgets"}),
+            json!({"url": null}),
+            json!({"url": "http://github.com/octo/widgets/pull/7"}),
+            json!({"number": 0}),
+            json!({"title": ""}),
+            json!({"state": "open"}),
+        ] {
+            let record = written(record_type, &bad);
+            assert!(schema.validate(&record).is_err(), "{record_type} {bad}");
+        }
+    }
 }

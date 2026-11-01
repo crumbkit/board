@@ -480,7 +480,8 @@ impl Fixture {
     }
 
     /// The output of `board call <target>` with `flags`, which starts no
-    /// process. With `cold`, the call keeps its index in memory, as after
+    /// plugin process; `started` does not count a process a built-in runs
+    /// through `Host::run`. With `cold`, the call keeps its index in memory, as after
     /// the cache is deleted.
     fn answer(&self, target: &str, flags: &[&str], cold: bool) -> Value {
         let arguments: Vec<&str> = ["--json", "call", target]

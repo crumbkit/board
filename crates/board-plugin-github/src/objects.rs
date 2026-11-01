@@ -42,12 +42,6 @@ impl Kind {
             Self::Issue => "issues",
         }
     }
-
-    fn of(record_type: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|kind| kind.record_type() == record_type)
-    }
 }
 
 /// A pull request or issue, `owner/repo#number`, with owner and repository
@@ -113,43 +107,42 @@ pub(crate) fn held(host: &dyn Host, object: &Object) -> Result<Option<Held>, Plu
         .map(|kind| literal(kind.record_type()))
         .collect();
     let sql = format!(
-        "SELECT logical, code, body, type FROM records WHERE logical IN ({}) AND type IN ({}) \
+        "SELECT logical, code, body FROM records WHERE logical IN ({}) AND type IN ({}) \
          ORDER BY logical",
         paths.join(", "),
         kinds.join(", ")
     );
     let report = (host.query(&sql, Limit::ALL))
         .map_err(|error| PluginError::board_refused("github", "query", &error.refusal()))?;
-    let Some([Value::String(path), code, body, Value::String(record_type)]) =
-        report.rows.first().map(Vec::as_slice)
-    else {
+    let Some([Value::String(path), code, body]) = report.rows.first().map(Vec::as_slice) else {
         return Ok(None);
     };
-    if let Value::String(code) = code {
+    let degraded = |code: &str, why: String| {
         let mut fields = Map::new();
         fields.insert("path".to_owned(), Value::from(path.as_str()));
-        fields.insert("code".to_owned(), Value::from(code.as_str()));
-        return Err(PluginError {
+        fields.insert("code".to_owned(), Value::from(code));
+        PluginError {
             code: "github::record::degraded".to_owned(),
-            message: format!(
-                "the record at {path} is degraded with {code}; run `board check {path}` and fix it"
-            ),
+            message: format!("the record at {path} {why}; run `board check {path}` and fix it"),
             fields,
-        });
+        }
+    };
+    if let Value::String(code) = code {
+        return Err(degraded(code, format!("is degraded with {code}")));
     }
-    let record = (body.as_str())
-        .and_then(|body| parse_json(body.as_bytes()).ok())
-        .and_then(|record| match record {
-            Value::Object(record) => Some(record),
-            _ => None,
-        });
-    match (record, Kind::of(record_type)) {
-        (Some(record), Some(kind)) => Ok(Some(Held {
+    // The query matched one of the two paths, so the path names the kind.
+    let kind = (Kind::ALL.into_iter()).find(|kind| object.path(*kind) == *path);
+    let record = (body.as_str()).and_then(|body| parse_json(body.as_bytes()).ok());
+    match (kind, record) {
+        (Some(kind), Some(Value::Object(record))) => Ok(Some(Held {
             path: path.clone(),
             kind,
             record,
         })),
-        _ => Ok(None),
+        _ => Err(degraded(
+            "github::record::unreadable",
+            "does not read as a pull or issue record".to_owned(),
+        )),
     }
 }
 
