@@ -144,8 +144,7 @@ whole number and a time only as JSON writes them. Pydantic also read
 `"false"` or `0` as a flag, `"2"` or `true` as a number, and a number as a
 time, which only a board's own looser schema could admit.
 
-This directory keeps the mod and a uv project that only tests the plugin
-through the real binary. The gates, which CI runs:
-`uv run ruff format --check .`, `uv run ruff check .`, `uv run pyright` and
-`uv run pytest`. The tests drive `$BOARD_BIN`, by default the workspace's
-`target/debug/board`, so build it first with `cargo build -p board-cli`.
+This directory keeps the mod. The tests that drove the former
+Python plugin through the binary are in
+`crates/board-cli/src/tests/built_in/runs.rs`, which runs the same commands
+in process.

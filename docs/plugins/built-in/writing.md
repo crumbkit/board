@@ -123,9 +123,10 @@ in `plugin list` and `plugin find`.
   keep null in `rule`.
 - Keep each capability's output, messages and codes. Drop codes that only a
   subprocess could give, such as `<name>::board::failed`.
-- Keep the Python tests as a parity suite that drives the real binary until
-  Rust tests cover what they prove, then delete them with the plugin's
-  `pyproject.toml` and `uv.lock`.
+- Port each Python test into `crates/board-cli/src/tests/built_in/<name>.rs`,
+  which runs the same commands in process on a `Fixture` board, and delete
+  the plugin's `tests/`, `pyproject.toml` and `uv.lock` with its entries in
+  `bin/lint` and `bin/test`.
 - Delete `plugin.json`, `src/` and `types/`, and take the plugin out of the
   packaging loop in `.github/workflows/release.yml`.
 - Search the repository for the plugin's name and `plugins/<name>`: CI
