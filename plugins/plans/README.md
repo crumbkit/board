@@ -87,7 +87,6 @@ schemars. The record schemas are committed in its `types/` directory, and a
 test fails when they differ from what the structs generate; run it with
 `SNAPSHOTS=overwrite` to rewrite them.
 
-This directory keeps the mod. The tests that drove the former
-Python plugin through the binary are in
-`crates/board-cli/src/tests/built_in/plans.rs`, which runs the same commands
-in process.
+This directory keeps the mod. The tests of the plugin through the binary are
+in `crates/board-cli/src/tests/built_in/plans.rs`, which runs the same
+commands in process.

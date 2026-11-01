@@ -124,7 +124,8 @@ in `plugin list` and `plugin find`.
 - Keep each capability's output, messages and codes. Drop codes that only a
   subprocess could give, such as `<name>::board::failed`.
 - Port each Python test into `crates/board-cli/src/tests/built_in/<name>.rs`,
-  which runs the same commands in process on a `Fixture` board, and delete
+  which runs the same commands in process on a `Fixture` board (split it into
+  `<name>/` beside it when it passes the line limit), and delete
   the plugin's `tests/`, `pyproject.toml` and `uv.lock` with its entries in
   `bin/lint` and `bin/test`.
 - Delete `plugin.json`, `src/` and `types/`, and take the plugin out of the

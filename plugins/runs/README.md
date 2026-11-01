@@ -144,7 +144,6 @@ whole number and a time only as JSON writes them. Pydantic also read
 `"false"` or `0` as a flag, `"2"` or `true` as a number, and a number as a
 time, which only a board's own looser schema could admit.
 
-This directory keeps the mod. The tests that drove the former
-Python plugin through the binary are in
-`crates/board-cli/src/tests/built_in/runs.rs`, which runs the same commands
-in process.
+This directory keeps the mod. The tests of the plugin through the binary are
+in `crates/board-cli/src/tests/built_in/runs.rs`, which runs the same
+commands in process.

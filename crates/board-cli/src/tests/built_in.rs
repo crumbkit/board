@@ -445,6 +445,17 @@ impl Fixture {
         .0
     }
 
+    /// Runs `board` in the board's root with its cache and `stdin` as its
+    /// standard input.
+    fn run_with(&self, arguments: &[&str], stdin: &str) -> Output {
+        board_with(
+            self.board.workdir(),
+            Some(self.cache.path()),
+            arguments,
+            stdin.as_bytes(),
+        )
+    }
+
     /// Runs `board --json` and reads its one document.
     fn json(&self, arguments: &[&str]) -> Value {
         let arguments: Vec<&str> = std::iter::once("--json")
@@ -561,6 +572,7 @@ fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId)
     fixture.write(path, &mount_of(&repository.path(), commit));
 }
 
+mod controls;
 mod evals;
 mod plans;
 mod runs;

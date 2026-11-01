@@ -123,7 +123,6 @@ generates the eval schema from `EvalRecord` in `src/records.rs`. Its `types/`
 directory holds that schema as a committed golden, which a test compares with
 what the struct generates.
 
-This directory keeps `SKILL.md`. The tests that drove the former
-Python plugin through the binary are in
-`crates/board-cli/src/tests/built_in/evals.rs`, which runs the same commands
-in process.
+This directory keeps `SKILL.md`. The tests of the plugin through the binary are
+in `crates/board-cli/src/tests/built_in/evals.rs`, which runs the same
+commands in process.
