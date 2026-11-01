@@ -196,3 +196,61 @@ fn board_finds_each_reference_and_refuses_null_in_an_optional_field() {
         board_model::Code::RecordInvalid
     );
 }
+
+#[derive(JsonSchema)]
+struct Noted {
+    /// Why it matters.
+    #[schemars(with = "Prose")]
+    why: String,
+    /// When it is due.
+    #[schemars(with = "Date")]
+    due: String,
+}
+
+#[test]
+fn a_prose_field_is_marked_as_prose_and_a_date_field_is_a_date() {
+    let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
+    assert_eq!(
+        properties["why"],
+        json!({"description": "Why it matters.", "type": "string", "x-board-prose": true})
+    );
+    assert_eq!(
+        properties["due"],
+        json!({"description": "When it is due.", "type": "string", "format": "date"})
+    );
+}
+
+#[test]
+fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
+    let registry = registry();
+    assert_eq!(
+        registry.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["Date", "Prose"]
+    );
+    let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
+    let mut why = properties["why"].clone();
+    why.as_object_mut().unwrap().remove("description");
+    assert_eq!(registry["Prose"], why);
+}
+
+/// The committed `shapes.json` holds, byte for byte, the canonical JSON of
+/// the registry. `SNAPSHOTS=overwrite` rewrites the file.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "shapes.json is a golden, selected and written as crumbkit-test's are"
+)]
+#[test]
+fn the_committed_shapes_file_is_the_registry() {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("shapes.json");
+    let generated = board_model::canonical_json(&Value::Object(registry()));
+    if std::env::var("SNAPSHOTS").as_deref() == Ok("overwrite") {
+        std::fs::write(&file, generated.as_bytes()).unwrap();
+    }
+    let committed = std::fs::read(&file).unwrap();
+    assert!(
+        committed == generated.as_bytes(),
+        "{} differs from shape::registry(); run this test with SNAPSHOTS=overwrite:\n{}",
+        file.display(),
+        String::from_utf8_lossy(generated.as_bytes())
+    );
+}

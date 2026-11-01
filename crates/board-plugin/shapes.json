@@ -1,0 +1,10 @@
+{
+  "Date": {
+    "format": "date",
+    "type": "string"
+  },
+  "Prose": {
+    "type": "string",
+    "x-board-prose": true
+  }
+}
