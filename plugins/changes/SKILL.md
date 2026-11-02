@@ -39,7 +39,8 @@ commits and pushes to `proto/<name>` after every round, and may edit only
 there. When the owner has his answer, ask him for the verdict in one
 sentence and the artifact version he means, and record it with
 `changes.verdict --path /changes/<name> --state settled --verdict '<sentence>' --artifact <url>`.
-Ask again when a prototype has had no new round for three days. Record
+The verdict also closes the prototype's task. Ask again when a prototype
+has had no new round for three days. Record
 `abandoned` only when the owner says so. `changes.open --kind prototype`
 lists every prototype with its verdict.
 
@@ -73,6 +74,9 @@ lists every prototype with its verdict.
 - `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.
 - `changes::prototype::not_prototype`: only a prototype takes a verdict.
+- `changes::task::not_a_task_path`: `--parent` names a task under a
+  `tasks/` directory, such as `/repos/notes-personal/tasks/<slug>.md`, not
+  a project brief.
 - `changes::task::unrouted`: name the task with `--task`, or the repo to
   add it to with `--task-repo`.
 - `changes::ref::dangling`: nothing is at the path. Write the record
