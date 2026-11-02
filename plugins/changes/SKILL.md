@@ -18,7 +18,8 @@ The gate is the contract. `next` says what the current phase still lacks;
    changing.
 2. Run `board -C <board> call changes.next --path /changes/<name>`
    whenever you start a phase or lose context. Do what `instruction` says
-   and fix each check whose `status` is `missing`.
+   and fix each check whose `status` is `missing`. After a usage stop,
+   `board --personal call inflight.now` lists every open change with it.
 3. Attach every record you make with
    `board -C <board> call changes.attach --path /changes/<name> --ref <path>`.
    Set the commit under test with `--head <sha>` after each push, the issue
