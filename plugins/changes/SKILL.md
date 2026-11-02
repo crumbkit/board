@@ -28,6 +28,13 @@ The gate is the contract. `next` says what the current phase still lacks;
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
 5. To drop a change, `board put` it with `phase` set to `dropped`.
+6. At most three build changes are in `build` at once, and apart from them
+   three prototypes exploring. When `advance` or `prototype` refuses with
+   `changes::wip::full`, pause the lowest-ranked change with
+   `changes.pause --path /changes/<name>` and stop its builder, or wait.
+   Pause new work too when more than five items wait on the owner, or one
+   has waited more than two days; ask him one question when the ranking is
+   unclear. Resume with `changes.resume`.
 
 ## Prototypes
 
@@ -87,6 +94,11 @@ lists every prototype with its verdict.
 - `changes::data::not_signed`: run the understanding check and attach its
   record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.
+- `changes::wip::full`: `building` lists the changes holding places. Pause
+  one, or wait.
+- `changes::phase::paused`: `resume` the change first.
+- `changes::pause::not_building`, `changes::resume::not_paused`: only a
+  change in `build` is paused, and only a paused one resumed.
 - `changes::prototype::not_prototype`: only a prototype takes a verdict.
 - `changes::task::unrouted`: name the task with `--task`, or the repo to
   add it to with `--task-repo`.

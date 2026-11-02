@@ -141,3 +141,15 @@ def test_the_schema_refuses_an_unknown_kind_or_state_and_admits_a_prototype(boar
         "/changes/state": "board::record::invalid",
         "/changes/good": None,
     }
+
+
+@needs_parent
+def test_prototype_refuses_when_three_prototypes_explore_and_starts_once_one_is_settled(tasks_board: Board) -> None:
+    mount = mount_repo(tasks_board, {"README.md": "x"})
+    tasks_board.write(PARENT.removeprefix("/"), task())
+    for number in range(3):
+        tasks_board.write(f"changes/p{number}.json", prototype())
+    given = {"mount": mount, "question": QUESTION, "parent": PARENT, "title": "Step list"}
+    assert tasks_board.refusal("prototype", given)["code"] == "changes::wip::full"
+    tasks_board.call("verdict", {"path": "/changes/p0", "state": "settled", "verdict": "Yes."})
+    assert tasks_board.call("prototype", given)["path"] == PATH

@@ -19,7 +19,7 @@ from board_changes.plan import PLAN_WORDS, USES_WORDS
 # The most changes `open` returns.
 OPEN_MAX = 10_000
 
-Phase = Literal["plan", "build", "review", "land", "done", "dropped"]
+Phase = Literal["plan", "build", "review", "land", "done", "dropped", "paused"]
 Route = Literal["owner", "ask-first", "unowned"]
 Kind = Literal["build", "prototype"]
 State = Literal["exploring", "settled", "abandoned"]
@@ -78,6 +78,8 @@ class ChangeRecord(BaseModel):
     under test and review. `pull_request` is the pull request's URL.
     `tickets` references the Jira or GitHub issues the change works on, and
     `pulls` its GitHub pull requests, each as a record of that type.
+    A keeper moves a change in build to `paused` to keep the work in progress
+    small, and back to `build` when the cap allows.
     `records` references every record the change produced: tasks, runs,
     evals, questions, decisions and review reports.
     `task` references the task the change does. `kind` is `build`, as when
