@@ -102,7 +102,9 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   separated by whitespace. The last limit comes from
   `/evals/board-standards-selection` in the owner's board: agents that chose
   standards from each directory's `index.md` stayed within it.
-- `brief --path /changes/<name>`: read-only. The newest plan's text path,
+- `brief --path /changes/<name>`: read-only. `brief_line`,
+  `board-brief: /changes/<name>`, which comes first; a builder's first
+  message starts with it (see "The write guard"). The newest plan's text path,
   even once a reference in it breaks,
   one line per record it uses (a control's `summary`, else its
   `requirement`; a decision's `decision`; an eval's question and verdict; a
@@ -165,6 +167,88 @@ its note, a report's author) go in inline code; empty text shows as
 counts the rest. `Closes` is left out when the
 issue holds whitespace. Evidence is listed by logical path, since a board path
 has no URL.
+
+## The write guard
+
+`claude-code/` holds a Claude Code mod, `board-changes`, that runs before
+every Edit, Write and NotebookEdit. Install it with
+`claude plugin install board-changes@board`. It needs `git`, and `board` on
+`PATH` or in `~/.local/bin`, `/opt/homebrew/bin` or `/usr/local/bin`.
+
+1. It places the file: it expands a leading `~/` from `HOME`, follows every
+   symbolic link, and takes a file that does not exist yet from its nearest
+   directory that does. A path it cannot place, such as `~user/x` or a link
+   that leads nowhere, is refused with `changes::guard::unknown`.
+2. It finds the git repository that holds that directory, through its
+   common directory, so a worktree counts as its repository. It lists the
+   mounts of each board in `boards` of `$XDG_CONFIG_HOME/board/config.json`
+   (by default `~/.config/board/config.json`). A mount holds the file when
+   the file's repository is a worktree of the mount's `repo`, compared as
+   spelled. Otherwise, when the repository's `origin` is a local path or a
+   `file://` URL, a mount holds the file when that origin is a worktree of
+   the mount's `repo`. Otherwise a mount holds the file when both
+   repositories' `origin` remotes name the same repository; ssh and https
+   forms, letter case and a trailing `.git` do not matter. So a separate
+   clone is guarded too. A file that no mount holds is admitted, so plans,
+   other board records, memory and scratch directories stay writable. A
+   repository with no `origin` that is no worktree of a mount is admitted.
+3. Otherwise it reads the acting agent's first user message: a subagent's
+   own, or the main conversation's. The first line that holds text must be
+   `board-brief: /changes/<name>`. The guard checks that line, and does not
+   check that `changes.brief` produced it, so a parent agent can write the
+   line itself.
+4. It reads that change from each board that mounts the repository. It
+   admits the call when the change's `phase` is `build` and its `mount` is the
+   mount that holds the file.
+
+Before any of that, the guard refuses three kinds of file to every agent,
+brief or not, because they change only through board commands: the board
+config, each known board's change records (`changes/<name>.json`) and its
+mount records. A change's plan, `changes/<name>/plan.md`, stays writable.
+
+Each refusal names one code and what fixes it:
+
+- `changes::guard::board_record`: the file is the board config, a change
+  record or a mount record. The refusal names the board command to use.
+
+- `changes::guard::no_brief`: the first message has no brief line, or names
+  a change no such board holds. Start a builder whose first message is the
+  output of `changes.brief`.
+- `changes::guard::not_building`: run `changes.advance` until the change is
+  in `build`.
+- `changes::guard::wrong_mount`: the brief's change is for another
+  repository.
+- `changes::guard::unknown`: the path could not be placed, git, the config
+  or `board` failed, or the conversation could not be read. The refusal says
+  what failed.
+
+The guard is a guardrail for agents that follow the process, not a defence
+against an agent set on getting round it. The known routes round it are
+Bash writes, a hand-typed brief line and a clone of a local clone.
+
+There is no bypass flag. The guard cannot see:
+
+- files written through Bash, such as `sed -i` or a heredoc. The review gate
+  checks that a change's commits came from its builder sessions;
+- a clone of a mounted repository with no `origin` remote, or one whose
+  `origin` points somewhere else, such as a fork or an ssh host alias like
+  `git@github-work:owner/name.git`;
+- a brief line that a parent agent wrote by hand. The review gate checks
+  that a change's commits came from its builder sessions;
+- a first message that has left the newest 4,096 entries of a conversation,
+  or that a compaction replaced, before the agent's first guarded edit. The
+  guard keeps a brief it has found for each session and agent until the mod
+  reloads, and `/clear` or `/resume` starts over. With no brief kept and a
+  full window of 4,096 entries, the guard refuses with
+  `changes::guard::unknown`, since the oldest row left may be one another
+  agent wrote.
+
+The guard refuses an edit of every mounted repository, including the notes
+repositories a personal board mounts, such as `/repos/notes-personal`. An
+agent without a brief writes notes and tasks through the `tasks` and `notes`
+capabilities instead.
+
+`claude plugin test plugins/changes/claude-code` runs the mod's tests.
 
 ## Installing
 

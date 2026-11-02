@@ -1,12 +1,12 @@
-"""The write calls: `add`, `claim`, `done`, `defer`, `drop` and `reviewed` (README.md, Writing tasks).
+"""The write calls: `add`, `claim`, `done`, `defer`, `drop`, `reviewed` and `move` (README.md, Writing tasks).
 
-Each call syncs a mounted repo before it writes and pushes after, as notes `add` does, and sets
-`reviewed` to the person's today.
+Each call syncs a mounted repo before it writes and pushes after, as notes `add` does, and each but `move`
+sets `reviewed` to the person's today.
 """
 
 import datetime as dt
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from board_plugin import repos, writing
@@ -17,10 +17,12 @@ from board_plugin.repos import Repo
 from board_plugin.slug import slug
 from pydantic import ValidationError
 
+from board_tasks import available
 from board_tasks.available import HORIZONS
 from board_tasks.lines import with_fields
 from board_tasks.models import TASK_TYPE, Task
 from board_tasks.repeat import completed
+from board_tasks.tree import Forest, descendants
 
 PLUGIN = "tasks"
 # The refusal of a write that found the task busy: edited in its clone and not committed, or changing.
@@ -28,9 +30,9 @@ BUSY = "tasks::task::busy"
 # How many names a new task tries, `<slug>.md`, then `<slug>-2.md` and on.
 NAMES = 10
 # The fields `add` writes in this order, after `$type`, `title` and `status`.
-ADDED = ("due", "defer", "after", "repeat", "ephemeral", "from_hour", "contexts")
+ADDED = ("kind", "brief", "parent", "due", "defer", "after", "repeat", "ephemeral", "from_hour", "contexts")
 # What a call changes, from the task's record and the person's today.
-Change = Callable[[dict[str, Any], dt.date], dict[str, str]]
+Change = Callable[[dict[str, Any], dt.date], Mapping[str, str | None]]
 
 
 def add(request: CallRequest) -> dict[str, object]:
@@ -43,6 +45,10 @@ def add(request: CallRequest) -> dict[str, object]:
     fields |= {key: given[key] for key in ADDED if given.get(key) is not None}
     if "defer" in fields:
         fields["defer"] = until(str(fields["defer"]), day)
+    found = repos.listed(board)
+    for key in ("brief", "parent"):
+        if key in fields:
+            fields[key] = in_repo(found, repo, str(fields[key]), {key: fields[key]}, "add")
     fields["reviewed"] = day.isoformat()
     text = (
         "---\n"
@@ -52,6 +58,9 @@ def add(request: CallRequest) -> dict[str, object]:
     body = given.get("text")
     text += "" if body is None else "\n" + str(body).rstrip() + "\n"
     synced = writing.push(repo)
+    if given.get("parent") is not None:
+        repo.pin()
+        parented(board, repo, str(given["parent"]), {"parent": given["parent"]}, "add")
     path, commit = writing.create(repo, f"tasks/{slug(str(given['title']))}", text, names=NAMES, busy=BUSY)
     return written(repo, path, fields, commit, synced)
 
@@ -106,8 +115,54 @@ def reviewed(request: CallRequest) -> dict[str, object]:
     return edit(request, lambda _, __: {}, finished=True)
 
 
-def edit(request: CallRequest, change: Change, *, finished: bool = False) -> dict[str, object]:
-    """Set the fields `change` names, and `reviewed`, on the task at the input's path, an open one unless `finished`.
+def move(request: CallRequest) -> dict[str, object]:
+    """Set the task's parent to another task in its repo, or clear it with `none`, and change nothing else.
+
+    The new parent is refused when it is in another repo, holds no task, or is the task or one of its
+    descendants, which would make a loop. The tree is read after the sync, on every attempt.
+    """
+    board = Board(request.board.root, PLUGIN)
+    logical, parent = str(request.input["path"]), str(request.input["parent"])
+    found = repos.listed(board)
+    repo = held(board, found, logical)
+    fields: dict[str, object] = {"path": logical, "parent": parent}
+    written_as = None if parent == "none" else in_repo(found, repo, parent, fields, "move")
+
+    def change(_record: dict[str, Any], _day: dt.date) -> dict[str, str | None]:
+        if parent == "none":
+            return {"parent": None}
+        tree = parented(board, repo, parent, fields, "move")
+        if parent == logical or parent in descendants(tree, logical):
+            why = f"{parent} is {logical} or under it, so the move would make a loop; give a task outside its tree"
+            raise PluginError("tasks::move::cycle", why, fields)
+        return {"parent": written_as}
+
+    output = edit(request, change, finished=True, stamped=False)
+    keys = ("repo", "path", "commit", "unsynced", "unpushed")
+    return {key: output[key] for key in keys} | {"parent": None if parent == "none" else parent}
+
+
+def in_repo(found: list[repos.Listed], repo: Repo, path: str, fields: dict[str, object], call: str) -> str:
+    """The board path `path` as a path in `repo`; refused with `tasks::<call>::cross_repo` in another repo."""
+    if available.held_by(found, path) != repo.root:
+        why = f"{path} is in another repo than {repo.root}, and a task's references stay in its repo; name one in it"
+        raise PluginError(f"tasks::{call}::cross_repo", why, fields)
+    return path.removeprefix(repo.root.rstrip("/"))
+
+
+def parented(board: Board, repo: Repo, parent: str, fields: dict[str, object], call: str) -> Forest:
+    """The tree of `repo`, refused with `tasks::<call>::parent_not_found` when `parent` holds none of its tasks."""
+    tasks, _ = available.read(available.listing(board)[1], [repo.root])
+    if parent not in {task.path for task in tasks}:
+        why = f"no task is at {parent}; give the path of a task, as `board call tasks.tree --root true` lists them"
+        raise PluginError(f"tasks::{call}::parent_not_found", why, fields)
+    return available.grown(tasks, available.resolve(board, tasks))[1]
+
+
+def edit(request: CallRequest, change: Change, *, finished: bool = False, stamped: bool = True) -> dict[str, object]:
+    """Set the fields `change` names on the task at the input's path, an open one unless `finished`.
+
+    Unless `stamped` is False, it sets `reviewed` to today too.
 
     A write refused because the task or the clone moved since it was read is tried again on a new read. A new
     read that finds the text the last write sent, which Board wrote before it refused, is that write.
@@ -125,7 +180,7 @@ def edit(request: CallRequest, change: Change, *, finished: bool = False) -> dic
         if sent is not None and task.text == sent and task.record is not None:
             return written(repo, path, task.record, None, synced)
         record = checked(task, repo, logical, finished=finished)
-        values = change(record, day) | {"reviewed": day.isoformat()}
+        values = {**change(record, day), **({"reviewed": day.isoformat()} if stamped else {})}
         sent = with_fields(str(task.text), values, logical)
         try:
             commit = repo.write(path, sent, task.blob)
@@ -205,10 +260,14 @@ def routed(board: Board, name: object, remote: object) -> Repo:
 
 
 def holder(board: Board, logical: str) -> Repo:
-    """The repo that holds the board path `logical`: the mount whose root is the longest prefix of it, else `/`."""
-    found = [(at, clone) for at, _, clone, _ in repos.listed(board) if logical.startswith(at.rstrip("/") + "/")]
-    at, clone = max(found, key=lambda each: len(each[0]), default=("/", None))
-    return Repo(board, at, clone)
+    """The repo that holds the board path `logical`."""
+    return held(board, repos.listed(board), logical)
+
+
+def held(board: Board, found: list[repos.Listed], logical: str) -> Repo:
+    """The repo of `found` that holds the board path `logical`, with its clone."""
+    at = available.held_by(found, logical)
+    return Repo(board, at, next((clone for root, _, clone, _ in found if root == at), None))
 
 
 def until(value: str, day: dt.date) -> str:
@@ -225,7 +284,7 @@ def written(repo: Repo, path: str, record: dict[str, Any], commit: str | None, s
         "status": record["status"],
         "defer": None if record.get("defer") is None else str(record["defer"]),
         "owner": record.get("owner"),
-        "reviewed": record["reviewed"],
+        "reviewed": record.get("reviewed"),
         "commit": commit,
         "unsynced": synced,
         "unpushed": unpushed,

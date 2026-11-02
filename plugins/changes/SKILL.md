@@ -33,7 +33,11 @@ The gate is the contract. `next` says what the current phase still lacks;
   configured. Write the plan's Problem, Outcome and Out of scope sections.
   On the `ask-first` route, attach the owner's `plans/decision/v1` whose
   `refs` name the plan.
-- **build**: build test-first. Attach each `tasks/task/v2`. Run the check
+- **build**: start each builder in a fresh agent whose first message
+  begins with `brief_line` from `changes.brief`, then the brief. With the
+  `board-changes` mod installed, no other agent can Edit, Write or
+  NotebookEdit the repository; it cannot see writes made through Bash.
+  Build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
   it.
 - **review**: review the head commit with clean context and attach the
@@ -59,5 +63,11 @@ The gate is the contract. `next` says what the current phase still lacks;
 - `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
 - `changes::mount::not_found`: run `board ls /repos` to find the mount.
+- `changes::guard::no_brief`: this agent did not start from a brief. Hand
+  the edit to a builder started from `changes.brief`.
+- `changes::guard::not_building`: `advance` the change to `build`.
+- `changes::guard::wrong_mount`: the brief's change is for another
+  repository.
+- `changes::guard::unknown`: the guard could not check; fix what it names.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

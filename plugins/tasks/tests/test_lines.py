@@ -62,3 +62,9 @@ def test_a_file_without_a_closed_frontmatter_is_refused_and_one_with_it_is_edite
         with_fields(text, {"status": "done"}, "/t.md")
     assert refused.value.code == "tasks::task::not_plain"
     assert with_fields(f"---\n{text.removeprefix('---\n')}---\n", {"status": "done"}, "/t.md").endswith('"done"\n---\n')
+
+
+def test_a_key_set_to_none_loses_its_line_and_a_missing_one_adds_none() -> None:
+    text = '---\ntitle: T\nparent: "/tasks/plan.md"  # moved\nstatus: open\n---\n'
+    assert with_fields(text, {"parent": None}, "/t.md") == "---\ntitle: T\nstatus: open\n---\n"
+    assert with_fields("---\ntitle: T\n---\n", {"parent": None}, "/t.md") == "---\ntitle: T\n---\n"

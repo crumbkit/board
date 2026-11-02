@@ -23,6 +23,10 @@
     {
       "name": "board-artifacts",
       "source": "./plugins/artifacts/claude-code"
+    },
+    {
+      "name": "board-changes",
+      "source": "./plugins/changes/claude-code"
     }
   ],
   "description": "Claude Code mods of Board and its plugins."
