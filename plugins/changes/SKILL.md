@@ -10,7 +10,9 @@ The gate is the contract. `next` says what the current phase still lacks;
 
 ## Steps
 
-1. Run `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`.
+1. Every change does a task. Run
+   `board -C <board> call changes.start --mount /repos/<name> --title '<title>' --task <task>`,
+   or leave out `--task` to add one titled as the change.
    Add `--handle @<you>` so the route reflects who owns what. Read every path
    in `docs`. Treat each `ask_first` pattern as a file to ask about before
    changing.
@@ -26,18 +28,59 @@ The gate is the contract. `next` says what the current phase still lacks;
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
 5. To drop a change, `board put` it with `phase` set to `dropped`.
+6. At most three build changes are in `build` at once, and apart from them
+   three prototypes exploring. When `advance` or `prototype` refuses with
+   `changes::wip::full`, pause the lowest-ranked change with
+   `changes.pause --path /changes/<name>` and stop its builder, or wait.
+   Pause new work too when more than five items wait on the owner, or one
+   has waited more than two days; ask him one question when the ranking is
+   unclear. Resume with `changes.resume`.
+
+## Prototypes
+
+When the owner wants to try an idea, run
+`board -C <board> call changes.prototype --mount /repos/<name> --question '<question>' --parent <task>`.
+It adds the task, writes the change in `build` and returns its brief. Start
+one builder from the brief; the owner iterates with it directly. The builder
+commits and pushes to `proto/<name>` after every round, and may edit only
+there. When the owner has his answer, ask him for the verdict in one
+sentence and the artifact version he means, and record it with
+`changes.verdict --path /changes/<name> --state settled --verdict '<sentence>' --artifact <url>`.
+The verdict also closes the prototype's task. Ask again when a prototype
+has had no new round for three days. Record
+`abandoned` only when the owner says so. `changes.open --kind prototype`
+lists every prototype with its verdict.
 
 ## Each phase
 
 - **plan**: interview the owner. Use your own planning skill where one is
-  configured. Write the plan's Problem, Outcome and Out of scope sections.
+  configured. Write the plan's Problem, Outcome, Out of scope, UX and Data
+  sections. UX starts with "No UI change" and a reason, or lists each
+  mockup by URL or board path under a `### Mockups` heading, and holds a
+  `### Neighbours` list of the open changes and
+  artifacts in the same area and the components the design reuses. Attach
+  the owner's decision that names each mockup in its `urls` or `refs`; a
+  decision an agent wrote, with `written_by` set, does not count.
+  Data starts with "None", or holds the data shapes, where each is stored,
+  who reads and writes it and what users see; then run the
+  `understanding-check` skill and attach its record and the owner's
+  decision that references it.
   On the `ask-first` route, attach the owner's `plans/decision/v1` whose
   `refs` name the plan.
-- **build**: build test-first. Attach each `tasks/task/v2`. Run the check
+- **build**: start each builder in a fresh agent whose first message
+  begins with `brief_line` from `changes.brief`, then the brief. With the
+  `board-changes` mod installed, no other agent can Edit, Write or
+  NotebookEdit the repository; it cannot see writes made through Bash.
+  Build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
-  it.
+  it. Before advancing, ask the owner two of each understanding check's
+  predict or edge questions again, worded differently, and add them to the
+  record's `rechecks`. The build gate refuses until each record holds two
+  rechecks that matched.
 - **review**: review the head commit with clean context and attach the
-  report. Fix every critical or high finding, record the new head, and
+  report. When the plan says "No UI change" or "None", list the
+  repository's UI-path and data-path controls with `controls.check`, and
+  report a diff that touches a path they name as a high finding. Fix every critical or high finding, record the new head, and
   review again.
 - **land**: add `## What the tests prove` and `## What the tests do not
   prove` sections to the plan with what the runs cannot show on their own.
@@ -51,6 +94,23 @@ The gate is the contract. `next` says what the current phase still lacks;
 ## Refusals
 
 - `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
+- `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
+  UX lists none and does not say "No UI change".
+- `changes::ux::no_neighbours`: add a Neighbours list under UX.
+- `changes::data::not_signed`: run the understanding check and attach its
+  record and the sign-off decision.
+- `changes::prototype::never_lands`: a prototype ends with `verdict`.
+- `changes::wip::full`: `building` lists the changes holding places. Pause
+  one, or wait.
+- `changes::phase::paused`: `resume` the change first.
+- `changes::pause::not_building`, `changes::resume::not_paused`: only a
+  change in `build` is paused, and only a paused one resumed.
+- `changes::prototype::not_prototype`: only a prototype takes a verdict.
+- `changes::task::not_a_task_path`: `--parent` names a task under a
+  `tasks/` directory, such as `/repos/notes-personal/tasks/<slug>.md`, not
+  a project brief.
+- `changes::task::unrouted`: name the task with `--task`, or the repo to
+  add it to with `--task-repo`.
 - `changes::ref::dangling`: nothing is at the path. Write the record
   first.
 - `changes::ref::wrong_type`: the ticket or pull is not a record of a type
@@ -59,5 +119,13 @@ The gate is the contract. `next` says what the current phase still lacks;
 - `changes::change::exists`: pass another `--name`, or resume the
   change with `next`.
 - `changes::mount::not_found`: run `board ls /repos` to find the mount.
+- `changes::guard::no_brief`: this agent did not start from a brief. Hand
+  the edit to a builder started from `changes.brief`.
+- `changes::guard::not_building`: `advance` the change to `build`.
+- `changes::guard::wrong_mount`: the brief's change is for another
+  repository.
+- `changes::guard::wrong_branch`: a prototype's builder edits only on
+  `proto/<name>`; switch to it.
+- `changes::guard::unknown`: the guard could not check; fix what it names.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

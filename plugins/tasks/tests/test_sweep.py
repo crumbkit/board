@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from board_tasks.available import Task, read, sweep
+from board_tasks.tree import forest, place
 
 ZONE = dt.timezone(dt.timedelta(hours=3))
 SEVEN = dt.timedelta(hours=7)
@@ -26,6 +27,11 @@ def task(title: str, **fields: Any) -> Task:  # noqa: ANN401 - the task's other 
     return Task(repo="/", path=f"/tasks/{title}.md", title=title, **values)
 
 
+def unplaced(tasks: list[Task]) -> dict[str, dict[str, Any]]:
+    """Each task's place in the tree when no task has a parent: a root with no subtasks."""
+    return {task.path: place(forest({}), {}, task.path) for task in tasks}
+
+
 def sections(
     tasks: list[Task],
     now: dt.datetime = NOW,
@@ -33,7 +39,7 @@ def sections(
     blocked: dict[str, list[str]] | None = None,
 ) -> dict[str, list[str]]:
     """The titles in each section."""
-    swept = sweep(tasks, blocked or {}, now, start)
+    swept = sweep(tasks, blocked or {}, unplaced(tasks), now, start)
     return {name: [item["title"] for item in section["tasks"]] for name, section in swept.items()}
 
 
@@ -74,7 +80,7 @@ def test_an_hour_before_the_day_starts_belongs_to_the_day_before() -> None:
 
 def test_a_blocked_task_waits_and_its_blocker_counts_it() -> None:
     tasks = [task("blocker"), task("waiter", waits=True)]
-    swept = sweep(tasks, {"/tasks/waiter.md": ["/tasks/blocker.md"]}, NOW, SEVEN)
+    swept = sweep(tasks, {"/tasks/waiter.md": ["/tasks/blocker.md"]}, unplaced(tasks), NOW, SEVEN)
     shown = {item["title"]: (item["waiting"], item["blocked_by"]) for item in swept["available"]["tasks"]}
     assert shown == {"blocker": (1, [])}
 
@@ -110,7 +116,7 @@ def test_a_section_lists_at_most_a_hundred_tasks_by_repo_then_title_and_counts_t
             "/repos/a", "/repos/a/tasks/a.md", "a", None, None, None, dt.date(2026, 10, 25), [], waits=False, owner=None
         )
     )
-    swept = sweep(tasks, {}, NOW, SEVEN)["available"]
+    swept = sweep(tasks, {}, unplaced(tasks), NOW, SEVEN)["available"]
     assert (len(swept["tasks"]), swept["total"]) == (100, 103)
     assert [item["title"] for item in swept["tasks"][:3]] == ["t000", "t001", "t002"]
     assert swept["tasks"][-1]["title"] == "t099"
@@ -153,7 +159,7 @@ def test_an_owner_keeps_the_tasks_it_or_nobody_holds_and_held_lists_its_tasks_th
         task("theirs-deferred", owner="other", defer="2026-10-30"),
     ]
     blocked = {"/tasks/mine-blocked.md": ["/tasks/theirs.md"]}
-    swept = sweep(tasks, blocked, NOW, SEVEN, "lead")
+    swept = sweep(tasks, blocked, unplaced(tasks), NOW, SEVEN, owner="lead")
     assert {name: [item["title"] for item in section["tasks"]] for name, section in swept.items()} == {
         "available": ["mine", "nobodys"],
         "due_soon": ["mine", "nobodys"],

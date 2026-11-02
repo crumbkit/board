@@ -6,9 +6,23 @@ from typing import Any, Literal, cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PHASES, PLUGIN, PULL_TYPES, TICKET_TYPES, TREE_CODES, Change, read, write
-from board_changes.gates import Observed, gate
+from board_changes.change import (
+    FINAL,
+    PHASES,
+    PLUGIN,
+    PULL_TYPES,
+    TASK_TYPE,
+    TICKET_TYPES,
+    TREE_CODES,
+    Change,
+    branch_of,
+    kind_of,
+    read,
+    write,
+)
+from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
+from board_changes.wip import refuse_full
 
 # Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
 ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ...]], ...] = (
@@ -18,17 +32,31 @@ ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ..
 )
 
 INSTRUCTIONS = {
-    "plan": "Interview the owner and fill in the plan's Problem, Outcome and Out of scope sections. On the "
-    "ask-first route, attach the owner's plans/decision/v1 whose refs name the plan.",
+    "plan": "Interview the owner and fill in the plan's Problem, Outcome, Out of scope, UX and Data sections. UX "
+    "says No UI change with a reason, or lists the mockups and a Neighbours list; attach the owner's decision "
+    "naming each mockup. Data says None, or run the understanding-check skill and attach its record and the "
+    "owner's decision that references it. On the ask-first route, attach the owner's plans/decision/v1 whose refs "
+    "name the plan.",
     "build": "Build test-first. Attach each task, record the head commit with --head, run the check suite on it "
-    "and attach the run.",
-    "review": "Review the head commit with clean context and attach the review/report/v1. Fix blocking findings, "
-    "record the new head and review again.",
+    "and attach the run. Before advancing, ask the owner two of each attached understanding check's predict or edge "
+    "questions again, worded differently, and add them to its rechecks.",
+    "review": "Review the head commit with clean context and attach the review/report/v1. When the plan's UX says "
+    "No UI change or its Data says None, list the repository's UI-path and data-path controls, "
+    "/controls/<repo>/ui-paths and /controls/<repo>/data-paths, with `board call controls.check`, and report a "
+    "diff that touches a path they name as a high finding. Fix "
+    "blocking findings, record the new head and review again.",
     "land": "Draft the pull request with `board call changes.pr`, open it with the command it returns, and record its "
     "URL with --pull-request. Merging happens outside Board.",
     "done": "Nothing is left to do.",
     "dropped": "Nothing is left to do.",
+    "paused": "The keeper paused this change to keep the work in progress small. Resume it with "
+    "`board call changes.resume` when the owner's queue and the cap allow.",
 }
+# What a prototype's builder does while it explores.
+PROTOTYPE = (
+    "Iterate with the owner on branch {branch}, committing and pushing after every round. When the owner has "
+    "his answer, ask for the verdict in one sentence and record it with `board call changes.verdict`."
+)
 
 
 # The phases whose gates read the records a change references.
@@ -84,17 +112,29 @@ def observe(board: Board, path: str, change: Change) -> Observed:
     return Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
 
 
+def instruction_for(path: str, change: Change, checks: list[Check]) -> str:
+    """What to do now: the prototype's loop, the advance command once the gate passes, or the phase's instruction."""
+    phase = change["phase"]
+    if kind_of(change) == "prototype" and phase == "build":
+        return PROTOTYPE.format(branch=branch_of(path))
+    if phase not in FINAL and phase != "paused" and all(found["status"] == "pass" for found in checks):
+        return f"The gate passes: run `board call changes.advance --path {path}`."
+    return INSTRUCTIONS[phase]
+
+
 def next_step(request: CallRequest) -> dict[str, object]:
     """The change's phase and route, its gate's checks, and the next instruction."""
     path = str(request.input["path"])
     board = Board(request.board.root, PLUGIN)
     change, _ = read(board, path)
     checks = gate(observe(board, path, change))
-    phase = change["phase"]
-    instruction = INSTRUCTIONS[phase]
-    if phase not in FINAL and all(found["status"] == "pass" for found in checks):
-        instruction = f"The gate passes: run `board call changes.advance --path {path}`."
-    return {"path": path, "phase": phase, "route": change.get("route"), "gate": checks, "instruction": instruction}
+    return {
+        "path": path,
+        "phase": change["phase"],
+        "route": change.get("route"),
+        "gate": checks,
+        "instruction": instruction_for(path, change, checks),
+    }
 
 
 def attach(request: CallRequest) -> dict[str, object]:
@@ -109,6 +149,10 @@ def attach(request: CallRequest) -> dict[str, object]:
             check_target(board, ref, types)
             references = change.get(listed, [])
             change[listed] = references if ref in references else [*references, ref]
+    task = asked.get("task")
+    if isinstance(task, str):
+        check_target(board, task, (TASK_TYPE,))
+        change["task"] = task
     for field in ("route", "head", "issue", "pull_request"):
         value = asked.get(field)
         if isinstance(value, str):
@@ -154,15 +198,59 @@ def advance(request: CallRequest) -> dict[str, object]:
             "`board call changes.open`, or start one with `board call changes.start`",
             {"path": path, "phase": phase},
         )
+    if phase == "paused":
+        raise PluginError(
+            "changes::phase::paused",
+            f"the change at {path} is paused, which has no gate; resume it with "
+            f"`board call changes.resume --path {path}`",
+            {"path": path, "phase": phase},
+        )
     missing = [found for found in gate(observe(board, path, change)) if found["status"] == "missing"]
     if missing:
         raise PluginError(
-            "changes::gate::unmet",
+            CODES.get(missing[0]["check"], "changes::gate::unmet"),
             f"the {phase} gate of {path} is unmet: "
             + "; ".join(f"{found['check']}: {found['detail']}" for found in missing)
             + f"; run `board call changes.next --path {path}` for the next step",
             {"path": path, "phase": phase, "missing": [found["check"] for found in missing]},
         )
     change["phase"] = PHASES[PHASES.index(phase) + 1]
+    if change["phase"] == "build":
+        refuse_full(board, kind_of(change), path)
     write(board, [{"path": path, "expect": blob, "record": change}])
     return {"path": path, "from": phase, "to": change["phase"]}
+
+
+def pause(request: CallRequest) -> dict[str, object]:
+    """Move a change in build to `paused`, which frees its place under the cap."""
+    path = str(request.input["path"])
+    board = Board(request.board.root, PLUGIN)
+    change, blob = read(board, path)
+    if change["phase"] != "build":
+        raise PluginError(
+            "changes::pause::not_building",
+            f"the change at {path} is in {change['phase']}, and only a change in build is paused; "
+            "list the changes in build with `board call changes.open`",
+            {"path": path, "phase": change["phase"]},
+        )
+    change["phase"] = "paused"
+    write(board, [{"path": path, "expect": blob, "record": change}])
+    return {"path": path, "from": "build", "to": "paused"}
+
+
+def resume(request: CallRequest) -> dict[str, object]:
+    """Move a paused change back to build, refused when its kind's cap is full."""
+    path = str(request.input["path"])
+    board = Board(request.board.root, PLUGIN)
+    change, blob = read(board, path)
+    if change["phase"] != "paused":
+        raise PluginError(
+            "changes::resume::not_paused",
+            f"the change at {path} is in {change['phase']}, and only a paused change is resumed; "
+            f"run `board call changes.next --path {path}` for its next step",
+            {"path": path, "phase": change["phase"]},
+        )
+    refuse_full(board, kind_of(change), path)
+    change["phase"] = "build"
+    write(board, [{"path": path, "expect": blob, "record": change}])
+    return {"path": path, "from": "paused", "to": "build"}

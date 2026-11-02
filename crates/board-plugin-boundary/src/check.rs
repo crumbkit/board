@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use board_model::LogicalPath;
+use board_model::{Code, LogicalPath};
 use board_ops::{Host, PluginError, Shown};
 use board_plugin::Target;
 use board_plugin::shape::{Ref, Sha256, Tag};
@@ -28,9 +28,9 @@ const GIVE_RULE: &str = "give each control without a rule a rule, or remove it f
 /// The op the owner approves to let one failed crossing through, and how
 /// Board refuses a decide it has not admitted.
 const OVERRIDE: &str = "boundary.override";
-const ASKED: &str = "board::settings::asked";
-const REFUSED: &str = "board::settings::refused";
-const TOO_LARGE: &str = "board::json::too_large";
+const ASKED: &str = Code::SettingsAsked.as_str();
+const REFUSED: &str = Code::SettingsRefused.as_str();
+const TOO_LARGE: &str = Code::JsonTooLarge.as_str();
 
 /// Check the parts against every boundary that matches the action,
 /// destination and checkout.
