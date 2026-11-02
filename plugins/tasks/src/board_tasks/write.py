@@ -59,6 +59,7 @@ def add(request: CallRequest) -> dict[str, object]:
     text += "" if body is None else "\n" + str(body).rstrip() + "\n"
     synced = writing.push(repo)
     if given.get("parent") is not None:
+        repo.pin()
         parented(board, repo, str(given["parent"]), {"parent": given["parent"]}, "add")
     path, commit = writing.create(repo, f"tasks/{slug(str(given['title']))}", text, names=NAMES, busy=BUSY)
     return written(repo, path, fields, commit, synced)

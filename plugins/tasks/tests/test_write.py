@@ -483,3 +483,18 @@ def test_move_inside_a_mount_writes_the_parent_as_a_path_in_that_repo(board: Boa
     assert "parent:" not in cleared
     assert call(board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "none")[0] == 0
     assert (mounted / "tasks" / "report.md").read_text() == cleared
+
+
+def test_add_finds_a_parent_its_sync_just_pulled_and_refuses_one_nobody_pushed(board: Board, mounted: Path) -> None:
+    other = board.root.parent / "work-phone"
+    git(board.root.parent, "clone", "-q", str(board.root.parent / "work.git"), str(other))
+    (other / "tasks" / "plan.md").write_text(task_v2("Plan"))
+    git(other, "add", ".")
+    git(other, "commit", "-qm", "from the phone")
+    git(other, "push", "-q")
+    flags = ("--title", "Child", "--repo", "/repos/work")
+    code, refused = call(board, "add", *flags, "--parent", "/repos/work/tasks/elsewhere.md")
+    assert (code, refused["code"]) == (1, "tasks::add::parent_not_found"), refused
+    code, output = call(board, "add", *flags, "--parent", "/repos/work/tasks/plan.md")
+    assert (code, output["path"]) == (0, "/repos/work/tasks/child.md"), output
+    assert 'parent: "/tasks/plan.md"\n' in (mounted / "tasks" / "child.md").read_text()
