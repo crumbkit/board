@@ -63,7 +63,7 @@ impl Host for Nothing {
         _path: &board_model::LogicalPath,
         _shown: Option<&board_ops::Shown>,
     ) -> Result<board_ops::DecideReport, Box<board_model::Refusal>> {
-        panic!("artifacts asks the owner nothing")
+        panic!("a refused call asks the owner nothing")
     }
 
     fn settings(&self) -> &board_ops::Settings {

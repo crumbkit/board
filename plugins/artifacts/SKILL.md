@@ -44,13 +44,17 @@ artifact, ask yourself whether the new one replaces it. If it does, run
 
 ## Record the owner's agreement
 
-Only the owner's decision moves an artifact to `agreed`. Record the owner's
-answer and a `plans/decision/v1` whose `refs` name that answer, then run:
+Only the owner's Touch ID moves an artifact to `agreed`. When the owner
+accepts an artifact, record a `plans/decision/v1` that says so, then run:
 
     board --personal call artifacts.agree --path /artifacts/<id> --decision <decision>
 
-`artifacts::agree::no_decision` means the decision is missing, is a hook's
-stub, or names none of the owner's answers.
+The first run refuses with `artifacts::agree::asked` and writes nothing. Its
+`effect` field names the approval Board is waiting for. Ask the owner to run
+`board answer <effect> approve`, which asks for Touch ID, then run the same
+agree again. `artifacts::agree::refused` means the owner refused it.
+`artifacts::agree::no_decision` means the decision path holds no
+`plans/decision/v1`.
 
 ## artifacts sync
 

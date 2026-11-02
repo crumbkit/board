@@ -94,14 +94,6 @@ impl Record for Decision {
     const TYPE: &'static str = "plans/decision/v1";
 }
 
-/// The answer record a decision of the owner's names.
-#[derive(Debug)]
-pub enum Answer {}
-
-impl Record for Answer {
-    const TYPE: &'static str = "plans/answer/v1";
-}
-
 /// `artifacts/version/v1` at `/artifacts/<id>/versions/<key>`: one version,
 /// written once.
 ///

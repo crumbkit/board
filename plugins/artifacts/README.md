@@ -110,11 +110,20 @@ artifact with `artifacts::artifact::not_found`, and a `--state` on an agreed
 or superseded artifact with `artifacts::state::settled`.
 
 `artifacts.agree --path <artifact> --decision <decision>` sets `state` to
-`agreed` and `agreed_by` to the decision. The decision must be the owner's: a
-`plans/decision/v1` that no hook wrote (no `written_by`) and whose `refs` name
-a `plans/answer/v1`, which holds the owner's own words. Anything else is
-refused with `artifacts::agree::no_decision`, and a superseded artifact with
+`agreed` and `agreed_by` to the decision once the owner approves it. The
+decision must be a `plans/decision/v1`, or the agree is refused with
+`artifacts::agree::no_decision`; a superseded artifact is refused with
 `artifacts::state::settled`.
+
+The owner approves each agree with Touch ID through Board's effects. The
+plugin asks Board to decide `artifacts.agree` at the artifact's path, showing
+the artifact record as it would be written. With no answer yet, Board writes
+a pending effect in the personal board and the agree refuses with
+`artifacts::agree::asked`, naming the effect; the owner approves with
+`board answer <effect> approve`. The approval covers that exact record, so it
+admits only the same artifact agreed with the same decision, and a record an
+agent writes cannot stand in for it. When the owner refuses, the agree
+refuses with `artifacts::agree::refused`.
 
 ## Keeping the records current
 

@@ -691,101 +691,129 @@ fn set_refuses_a_state_on_an_agreed_artifact_and_admits_it_on_a_shown_one() {
     );
 }
 
-/// A board that enables artifacts and plans, with an artifact, an answer
-/// of the owner's, and a decision that names it.
-fn decided() -> Fixture {
-    let board = Fixture::enabling(&["artifacts", "plans"]);
+/// The owner's personal board, which enables artifacts and plans, with a
+/// shown artifact and two decisions that accept it.
+fn decided() -> Personal {
+    let personal = Personal::enabling(&["artifacts", "plans"]);
+    let decision = |text: &str| {
+        json!({
+            "$type": "plans/decision/v1",
+            "decision": text,
+            "why": "The owner said so.",
+            "session": "local_0a1b",
+            "decided": "2026-11-01T09:05:00Z",
+            "refs": ["/artifacts/A"],
+        })
+        .to_string()
+    };
+    personal
+        .write("artifacts/A.json", &artifact(A, &json!({"state": "shown"})))
+        .write(
+            "projects/a/decisions/steps.json",
+            &decision("The step list is agreed."),
+        )
+        .write(
+            "projects/a/decisions/other.json",
+            &decision("The other plan is agreed."),
+        );
+    personal
+}
+
+/// `board --json call artifacts.agree` of `/artifacts/A` with `decision`,
+/// and its one document.
+fn agree(personal: &Personal, decision: &str) -> (Output, Value) {
+    let ran = personal.run(&[
+        "--json",
+        "call",
+        "artifacts.agree",
+        "--path",
+        "/artifacts/A",
+        "--decision",
+        decision,
+    ]);
+    let document = json(&ran);
+    (ran, document)
+}
+
+/// The state of `/artifacts/A` in the personal board.
+fn state(personal: &Personal) -> Value {
+    personal.record("/artifacts/A").unwrap()["state"].clone()
+}
+
+#[test]
+fn agree_asks_the_owner_and_agrees_the_artifact_only_once_the_owner_approves() {
+    let personal = decided();
+    let (ran, asked) = agree(&personal, "/projects/a/decisions/steps");
+    assert_ne!(ran.code, 0);
+    assert_eq!(asked["code"], "artifacts::agree::asked", "{asked}");
+    let effect = asked["fields"]["effect"].as_str().unwrap();
+    assert_eq!(personal.pending(), [effect]);
+    let hint = asked["recovery"]["text"].as_str().unwrap();
+    assert!(
+        hint.contains(&format!("board answer {effect} approve")),
+        "{hint}"
+    );
+    assert_eq!(state(&personal), "shown");
+    personal.answer(effect, "approve");
+    let (ran, agreed) = agree(&personal, "/projects/a/decisions/steps");
+    assert_eq!(ran.code, 0, "{agreed}");
+    assert_eq!(
+        agreed["data"]["output"],
+        json!({"path": "/artifacts/A", "state": "agreed", "agreed_by": "/projects/a/decisions/steps"})
+    );
+    let held = personal.record("/artifacts/A").unwrap();
+    assert_eq!(
+        (&held["state"], &held["agreed_by"]),
+        (&json!("agreed"), &json!("/projects/a/decisions/steps"))
+    );
+}
+
+#[test]
+fn agree_leaves_the_artifact_unagreed_when_the_owner_refuses() {
+    let personal = decided();
+    let (_, asked) = agree(&personal, "/projects/a/decisions/steps");
+    let effect = asked["fields"]["effect"].as_str().unwrap();
+    personal.answer(effect, "refuse");
+    let (ran, refused) = agree(&personal, "/projects/a/decisions/steps");
+    assert_ne!(ran.code, 0);
+    assert_eq!(refused["code"], "artifacts::agree::refused", "{refused}");
+    assert_eq!(refused["fields"]["effect"], effect);
+    assert_eq!(state(&personal), "shown");
+}
+
+#[test]
+fn an_approval_of_one_decision_does_not_admit_an_agree_with_another() {
+    let personal = decided();
+    let (_, asked) = agree(&personal, "/projects/a/decisions/steps");
+    let approved = asked["fields"]["effect"].as_str().unwrap().to_owned();
+    personal.answer(&approved, "approve");
+    let (ran, other) = agree(&personal, "/projects/a/decisions/other");
+    assert_ne!(ran.code, 0);
+    assert_eq!(other["code"], "artifacts::agree::asked", "{other}");
+    assert_ne!(other["fields"]["effect"], approved.as_str());
+    assert_eq!(state(&personal), "shown");
+}
+
+#[test]
+fn agree_refuses_a_decision_that_is_missing_or_not_a_decision_without_asking_the_owner() {
+    let personal = decided();
     let answer = json!({
         "$type": "plans/answer/v1",
         "choice": "none",
         "words": "Yes, that step list is what I want.",
         "answered": "2026-11-01T09:00:00Z",
     });
-    let decision = |refs: Value| {
-        json!({
-            "$type": "plans/decision/v1",
-            "decision": "The step list is agreed.",
-            "why": "The owner said so.",
-            "session": "local_0a1b",
-            "decided": "2026-11-01T09:05:00Z",
-            "refs": refs,
-        })
-        .to_string()
-    };
-    board
-        .write("artifacts/A.json", &artifact(A, &json!({"state": "shown"})))
-        .write("projects/a/answers/x.json", &answer.to_string())
-        .write(
-            "projects/a/decisions/owners.json",
-            &decision(json!(["/projects/a/answers/x", "/artifacts/A"])),
-        )
-        .write(
-            "projects/a/decisions/agents.json",
-            &decision(json!(["/artifacts/A"])),
-        );
-    board
-}
-
-#[test]
-fn agree_moves_an_artifact_to_agreed_with_a_decision_that_names_the_owners_answer() {
-    let board = decided();
-    let output = board.call(
-        "artifacts.agree",
-        &[
-            "--path",
-            "/artifacts/A",
-            "--decision",
-            "/projects/a/decisions/owners",
-        ],
-    );
-    assert_eq!(
-        output,
-        json!({"path": "/artifacts/A", "state": "agreed", "agreed_by": "/projects/a/decisions/owners"})
-    );
-    let held = stored(&board, "artifacts/A.json");
-    assert_eq!(
-        (&held["state"], &held["agreed_by"]),
-        (&json!("agreed"), &json!("/projects/a/decisions/owners"))
-    );
-}
-
-#[test]
-fn agree_refuses_a_decision_that_is_missing_or_not_the_owners() {
-    let board = decided();
-    let stub = json!({
-        "$type": "plans/decision/v1",
-        "decision": "Opened a pull request.",
-        "why": "",
-        "session": "local_0a1b",
-        "decided": "2026-11-01T09:05:00Z",
-        "refs": ["/projects/a/answers/x"],
-        "written_by": "runs/pr-create",
-    });
-    board.write("projects/a/decisions/stub.json", &stub.to_string());
-    for decision in [
-        "/projects/a/decisions/none",
-        "/projects/a/answers/x",
-        "/projects/a/decisions/agents",
-        "/projects/a/decisions/stub",
-    ] {
-        let failure = board.refusal(
-            "artifacts.agree",
-            &["--path", "/artifacts/A", "--decision", decision],
-        );
+    personal.write("projects/a/answers/x.json", &answer.to_string());
+    for decision in ["/projects/a/decisions/none", "/projects/a/answers/x"] {
+        let (ran, failure) = agree(&personal, decision);
+        assert_ne!(ran.code, 0);
         assert_eq!(
             failure["code"], "artifacts::agree::no_decision",
             "{decision}"
         );
         assert_eq!(failure["fields"]["decision"], decision);
     }
-    assert_eq!(stored(&board, "artifacts/A.json")["state"], "shown");
-    board.call(
-        "artifacts.agree",
-        &[
-            "--path",
-            "/artifacts/A",
-            "--decision",
-            "/projects/a/decisions/owners",
-        ],
-    );
+    assert_eq!(personal.pending(), Vec::<String>::new());
+    let (_, asked) = agree(&personal, "/projects/a/decisions/steps");
+    assert_eq!(asked["code"], "artifacts::agree::asked", "{asked}");
 }

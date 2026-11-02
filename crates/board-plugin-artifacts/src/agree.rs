@@ -1,16 +1,23 @@
-//! `artifacts.agree`: move an artifact to `agreed`, naming the owner's
-//! decision that accepts it.
+//! `artifacts.agree`: move an artifact to `agreed` once the owner approves
+//! it with Touch ID, naming the decision that accepts it.
 
-use board_ops::{Host, PluginError};
+use board_ops::{Host, PluginError, Shown};
 use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::held::{self, refusal};
-use crate::records::{Answer, Decision, State};
+use crate::held::{self, refusal, refused};
+use crate::records::{ArtifactRecord, Decision, State};
 
-/// The artifact and the owner's decision that accepts it.
+/// The capability Board asks the owner to approve.
+const AGREE: &str = "artifacts.agree";
+/// Board has written the pending effect and the owner has not answered.
+const ASKED: &str = "board::settings::asked";
+/// The owner refused the effect.
+const REFUSED: &str = "board::settings::refused";
+
+/// The artifact and the decision that accepts it.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(rename = "AgreeInput")]
@@ -18,8 +25,8 @@ pub(crate) struct Input {
     /// The artifact's record, such as /artifacts/AbCdEf0123456789xyzQ.
     #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
     path: String,
-    /// The owner's plans/decision/v1 that accepts the artifact. It names
-    /// the owner's plans/answer/v1 in its refs.
+    /// The plans/decision/v1 that accepts the artifact. The owner approves
+    /// the artifact with this decision named in it.
     #[schemars(regex(pattern = "^/"), extend("format" = "board-path"))]
     decision: String,
 }
@@ -34,8 +41,9 @@ pub(crate) struct Output {
     agreed_by: String,
 }
 
-/// Sets the artifact's state to `agreed` and `agreed_by` to the decision,
-/// once the decision is the owner's.
+/// Sets the artifact's state to `agreed` and `agreed_by` to the decision
+/// once the owner approves that exact record with Touch ID. Until then it
+/// refuses with `artifacts::agree::asked` and writes nothing.
 pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError> {
     let Input { path, decision } = PluginError::read_input("artifacts", "agree", input)?;
     let (mut record, blob) = held::artifact(host, &path)?;
@@ -53,9 +61,10 @@ pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError
             &[("path", &path), ("state", "superseded")],
         ));
     }
-    owners(host, &decision)?;
+    is_decision(host, &decision)?;
     record.state = State::Agreed;
     record.agreed_by = Some(decision.clone());
+    approved(host, &path, &record)?;
     held::put(
         host,
         &[json!({"path": path, "expect": blob, "record": record})],
@@ -68,41 +77,58 @@ pub(crate) fn agree(host: &dyn Host, input: &Value) -> Result<Value, PluginError
     Ok(serde_json::to_value(output).expect("the output is plain strings"))
 }
 
-/// Refuses with `artifacts::agree::no_decision` unless `decision` is a
-/// `plans/decision/v1` that a person or agent wrote, not a hook's stub,
-/// and that names one of the owner's answers in its `refs`. An answer holds
-/// the owner's own words, so it is what makes the decision the owner's.
-fn owners(host: &dyn Host, decision: &str) -> Result<(), PluginError> {
-    let no_decision = |why: &str| {
-        refusal(
-            "artifacts::agree::no_decision",
-            format!(
-                "{decision} {why}; record the owner's answer with the plans plugin, then a \
-                 plans/decision/v1 whose refs name that answer, and pass the decision's path"
-            ),
-            &[("decision", decision)],
-        )
-    };
-    let Some((record, _)) = held::get(host, decision)? else {
-        return Err(no_decision("holds no record"));
-    };
-    if record["$type"] != Decision::TYPE {
-        return Err(no_decision("is not a plans/decision/v1 record"));
-    }
-    if record.get("written_by").is_some() {
-        return Err(no_decision(
-            "is a stub a hook wrote, not the owner's decision",
-        ));
-    }
-    let refs = (record["refs"].as_array().into_iter().flatten()).filter_map(Value::as_str);
-    for answer in refs {
-        if let Ok(Some((held, _))) = held::get(host, answer)
-            && held["$type"] == Answer::TYPE
-        {
-            return Ok(());
+/// Refuses with `artifacts::agree::no_decision` unless `decision` holds a
+/// `plans/decision/v1` record.
+fn is_decision(host: &dyn Host, decision: &str) -> Result<(), PluginError> {
+    let why = match held::get(host, decision)? {
+        None => "holds no record",
+        Some((record, _)) if record["$type"] != Decision::TYPE => {
+            "is not a plans/decision/v1 record"
         }
-    }
-    Err(no_decision(
-        "names none of the owner's plans/answer/v1 records in its refs",
+        Some(_) => return Ok(()),
+    };
+    Err(refusal(
+        "artifacts::agree::no_decision",
+        format!(
+            "{decision} {why}; pass the path of the plans/decision/v1 that accepts the artifact"
+        ),
+        &[("decision", decision)],
     ))
+}
+
+/// Asks the owner, through Board, to approve `record` as the agreed record
+/// at `path`. The approval covers that exact record, so it admits only an
+/// agree of the same artifact with the same decision. Only the owner's
+/// Touch ID signs an approval, so a record an agent writes cannot stand in
+/// for it.
+fn approved(host: &dyn Host, path: &str, record: &ArtifactRecord) -> Result<(), PluginError> {
+    let shown = serde_json::to_vec(record).expect("an artifact record serializes");
+    let at = held::logical(path)?;
+    let Err(refusal) = host.decide(AGREE, &at, Some(&Shown::Record(shown))) else {
+        return Ok(());
+    };
+    let effect = (refusal.fields.get("effect").and_then(Value::as_str)).unwrap_or_default();
+    match refusal.code.as_str() {
+        ASKED => {
+            let mut asked = held::refusal(
+                "artifacts::agree::asked",
+                format!("{path} waits for the owner to approve agreeing it ({effect})"),
+                &[("path", path), ("effect", effect)],
+            );
+            asked.hint = Some(format!(
+                "the owner approves with `board answer {effect} approve`, which asks for Touch ID; \
+                 then run the same agree again"
+            ));
+            Err(asked)
+        }
+        REFUSED => Err(held::refusal(
+            "artifacts::agree::refused",
+            format!(
+                "the owner refused agreeing {path} ({effect}); the owner can ask again by \
+                 deleting /effects/seen/{effect} in the personal board"
+            ),
+            &[("path", path), ("effect", effect)],
+        )),
+        _ => Err(refused("decide", &refusal)),
+    }
 }

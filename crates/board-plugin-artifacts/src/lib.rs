@@ -126,7 +126,7 @@ fn manifest() -> Value {
             ),
             capability::<agree::Input, agree::Output>(
                 "agree",
-                "Move an artifact to agreed, naming the owner's decision that accepts it.",
+                "Move an artifact to agreed once the owner approves it with Touch ID, naming the decision that accepts it.",
                 false,
             ),
         ],
