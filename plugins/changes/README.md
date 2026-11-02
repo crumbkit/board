@@ -213,7 +213,8 @@ The plan gate's last three checks:
   followed by a full stop, a colon or nothing, or an attached
   `plans/decision/v1` names in its `refs` an attached
   `changes/understanding/v1` whose `change` is this change and whose
-  `subject` is `data`.
+  `subject` is `data`. As for mockups, a decision with `written_by` set
+  does not count.
 
 The gate cannot see the diff. At review, when the plan says "No UI change"
 or "None", the reviewer lists the repository's UI-path and data-path
