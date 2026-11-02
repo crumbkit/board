@@ -3,6 +3,10 @@ import type { EngineInterface, Register } from 'claude-code'
 import {
   MOUNTS_SQL,
   briefOf,
+  changeRecord,
+  configRecord,
+  isChangeRecord,
+  mountRecord,
   judge,
   localOrigin,
   noBrief,
@@ -20,7 +24,9 @@ import type { Mount } from './guard'
 // repository that a known board mounts, it reads the acting agent's first
 // message and admits the call only when that message starts with
 // `board-brief: /changes/<name>` for a change in build to that repository.
-// Every other file is admitted untouched. A lookup that fails refuses: a guard
+// Every other file is admitted untouched, except the board config and each
+// known board's change and mount records, which change only through board
+// commands and are refused to every agent. A lookup that fails refuses: a guard
 // that admits what it cannot check would be optional. There is no bypass.
 //
 // Soft limit: the guard sees only these three tools. A file written through
@@ -69,12 +75,13 @@ const parentOf = (path: string) => {
 }
 
 /**
- * The real directory that holds `file`, every symbolic link followed. A file
- * that does not exist yet is placed by its nearest directory that does, and a
- * `~/` path is taken from the home directory. Throws when the path cannot be
- * placed: a `~user` path, or a symbolic link that leads nowhere.
+ * Where `file` lands, every symbolic link followed: its real path and the real
+ * directory that holds it. A file that does not exist yet is placed by its
+ * nearest directory that does, and a `~/` path is taken from the home
+ * directory. Throws when the path cannot be placed: a `~user` path, or a
+ * symbolic link that leads nowhere.
  */
-async function folderOf($: EngineInterface, file: string): Promise<string> {
+async function place($: EngineInterface, file: string): Promise<{ real: string; dir: string }> {
   let path = file
   if (path === '~' || path.startsWith('~/')) {
     const home = await $.env.get('HOME')
@@ -83,15 +90,24 @@ async function folderOf($: EngineInterface, file: string): Promise<string> {
   } else if (path.startsWith('~')) {
     throw new Unknown(`it cannot place ${file}`)
   }
-  for (let at = path; ; at = parentOf(at)) {
+  let tail = ''
+  for (let at = path; ; ) {
     const stat = await $.fs.stat(at, { resolve: true }).catch(() => undefined)
     if (stat !== undefined) {
       if (stat.realPath === undefined) throw new Unknown(`it cannot place ${file}, since ${at} leads nowhere`)
-      return stat.kind === 'dir' ? stat.realPath : parentOf(stat.realPath)
+      if (tail !== '') return { real: `${stat.realPath.replace(/\/$/, '')}/${tail}`, dir: stat.realPath }
+      return { real: stat.realPath, dir: stat.kind === 'dir' ? stat.realPath : parentOf(stat.realPath) }
     }
     if (at === '/' || at === '.') throw new Unknown(`it cannot place ${file}`)
+    const name = at.replace(/\/+$/, '').slice(parentOf(at).length).replace(/^\//, '')
+    tail = tail === '' ? name : `${name}/${tail}`
+    at = parentOf(at)
   }
 }
+
+/** The real path of `path`, or `path` itself when it leads nowhere. */
+const realOf = async ($: EngineInterface, path: string) =>
+  (await $.fs.stat(path, { resolve: true }).catch(() => undefined))?.realPath ?? path
 
 /** The repository's own directory and origin URL, from `dir`; null outside a repository. */
 async function locate($: EngineInterface, dir: string): Promise<{ repo: string; url: string } | null> {
@@ -104,10 +120,13 @@ async function locate($: EngineInterface, dir: string): Promise<{ repo: string; 
   return { repo: repositoryOf(commonDir), url }
 }
 
+/** The board config's path. */
+const configPath = async ($: EngineInterface) =>
+  `${(await $.env.get('XDG_CONFIG_HOME')) || `${await $.env.get('HOME')}/.config`}/board/config.json`
+
 /** The known boards' directories; none when there is no board config. */
 async function knownBoards($: EngineInterface): Promise<string[]> {
-  const config = (await $.env.get('XDG_CONFIG_HOME')) || `${await $.env.get('HOME')}/.config`
-  const path = `${config}/board/config.json`
+  const path = await configPath($)
   if (!(await $.fs.exists(path))) return []
   const boards = parseBoards(await $.fs.read(path))
   if (!Array.isArray(boards)) throw new Unknown(boards.why)
@@ -115,21 +134,31 @@ async function knownBoards($: EngineInterface): Promise<string[]> {
 }
 
 /**
- * The mounts that hold `file`, across every known board; empty when none does.
- * A mount holds the file when the file's repository is a worktree of the
- * mount's `repo`; else when its origin is a local path or `file://` URL of a
- * worktree of it; else when both repositories' origins name one repository.
- * So a separate clone is guarded too. A repository with no origin that is no
- * worktree of a mount stays outside the guard.
+ * The mounts that hold `file`, across every known board, or the refusal of a
+ * board record. A mount holds the file when the file's repository is a
+ * worktree of the mount's `repo`; else when its origin is a local path or
+ * `file://` URL of a worktree of it; else when both repositories' origins name
+ * one repository. So a separate clone is guarded too. A repository with no
+ * origin that is no worktree of a mount stays outside the guard.
  */
-async function mountsOf($: EngineInterface, file: string): Promise<Mount[]> {
-  const found = await locate($, await folderOf($, file))
+async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | string> {
+  const placed = await place($, file)
+  if (placed.real === (await realOf($, await configPath($)))) return configRecord(file)
+  // Every board is a git repository, so a file outside one is no board record either.
+  const found = await locate($, placed.dir)
   if (found === null) return []
   const all: Mount[] = []
   for (const board of await knownBoards($)) {
     const ran = await sh($, MOUNTS, [board, MOUNTS_SQL])
     const mounts = ran.exitCode === 0 ? parseMounts(board, ran.stdout) : null
     if (mounts === null) throw new Unknown(`\`board -C ${board} query\` did not list its mounts: ${said(ran)}`)
+    const root = `${(await realOf($, board)).replace(/\/$/, '')}/`
+    if (placed.real.startsWith(root)) {
+      const relative = placed.real.slice(root.length)
+      if (isChangeRecord(relative)) return changeRecord(file, board)
+      const record = mounts.find(m => m.record === relative)
+      if (record !== undefined) return mountRecord(file, record)
+    }
     all.push(...mounts)
   }
   const worktreeOf = (repo: string) => all.filter(m => m.repo === repo)
@@ -142,10 +171,11 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[]> {
   }
   const origin = originOf(found.url)
   if (origin === null) return []
-  const ran = await sh($, ORIGINS, [...new Set(all.map(m => m.repo))])
+  const repos = [...new Set(all.flatMap(m => (m.repo === null ? [] : [m.repo])))]
+  const ran = await sh($, ORIGINS, repos)
   if (ran.exitCode !== 0) throw new Unknown(`git could not read the mounted repositories' origins: ${said(ran)}`)
   const origins = parseOrigins(ran.stdout)
-  return all.filter(m => origins.get(m.repo) === origin)
+  return all.filter(m => m.repo !== null && origins.get(m.repo) === origin)
 }
 
 /** The change the acting agent's first message names, or null. */
@@ -172,6 +202,7 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
 async function refusal($: EngineInterface, file: string, agentId: string | undefined): Promise<string | null> {
   try {
     const mounts = await mountsOf($, file)
+    if (typeof mounts === 'string') return mounts
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
     if (named === null) return noBrief(file, mounts[0]!, null)

@@ -189,9 +189,9 @@ every Edit, Write and NotebookEdit. Install it with
    the mount's `repo`. Otherwise a mount holds the file when both
    repositories' `origin` remotes name the same repository; ssh and https
    forms, letter case and a trailing `.git` do not matter. So a separate
-   clone is guarded too. A file that no mount holds is admitted, so board
-   records, memory and scratch directories stay writable. A repository with
-   no `origin` that is no worktree of a mount is admitted.
+   clone is guarded too. A file that no mount holds is admitted, so plans,
+   other board records, memory and scratch directories stay writable. A
+   repository with no `origin` that is no worktree of a mount is admitted.
 3. Otherwise it reads the acting agent's first user message: a subagent's
    own, or the main conversation's. The first line that holds text must be
    `board-brief: /changes/<name>`. The guard checks that line, and does not
@@ -201,7 +201,15 @@ every Edit, Write and NotebookEdit. Install it with
    admits the call when the change's `phase` is `build` and its `mount` is the
    mount that holds the file.
 
+Before any of that, the guard refuses three kinds of file to every agent,
+brief or not, because they change only through board commands: the board
+config, each known board's change records (`changes/<name>.json`) and its
+mount records. A change's plan, `changes/<name>/plan.md`, stays writable.
+
 Each refusal names one code and what fixes it:
+
+- `changes::guard::board_record`: the file is the board config, a change
+  record or a mount record. The refusal names the board command to use.
 
 - `changes::guard::no_brief`: the first message has no brief line, or names
   a change no such board holds. Start a builder whose first message is the
@@ -214,7 +222,11 @@ Each refusal names one code and what fixes it:
   or `board` failed, or the conversation could not be read. The refusal says
   what failed.
 
-There is no bypass. The guard cannot see:
+The guard is a guardrail for agents that follow the process, not a defence
+against an agent set on getting round it. The known routes round it are
+Bash writes, a hand-typed brief line and a clone of a local clone.
+
+There is no bypass flag. The guard cannot see:
 
 - files written through Bash, such as `sed -i` or a heredoc. The review gate
   checks that a change's commits came from its builder sessions;

@@ -1,8 +1,12 @@
 // What the write guard reads from git, the board config and `board`, and the
 // words of each refusal. Pure functions, so the tests can pin every word.
 
-/** A repository a known board mounts: the board's directory, the mount's path, the repository's directory. */
-export type Mount = { board: string; mount: string; repo: string }
+/**
+ * A mount in a known board: the board's directory, the mount's path, the
+ * repository's directory (null when Board cannot read it) and the file of the
+ * mount record, relative to the board.
+ */
+export type Mount = { board: string; mount: string; repo: string | null; record: string }
 
 /** What `board get` answered for the change a brief names. */
 export type Change =
@@ -81,16 +85,23 @@ export function parseBoards(stdout: string): string[] | { why: string } {
 
 /** The SQL that lists a board's own mounts with the directory of each repository. */
 export const MOUNTS_SQL =
-  'SELECT e.logical, s.repository FROM mounts m JOIN sources s ON s.source = m.target ' +
-  "JOIN entries e ON e.source = m.source AND e.path = m.path WHERE m.source = 'worktree' AND m.code IS NULL"
+  'SELECT e.logical, CASE WHEN m.code IS NULL THEN s.repository END, m.path FROM mounts m ' +
+  'LEFT JOIN sources s ON s.source = m.target JOIN entries e ON e.source = m.source AND e.path = m.path ' +
+  "WHERE m.source = 'worktree'"
 
 /** The mounts in a `board --json query` report of MOUNTS_SQL, or null when it is not one. */
 export function parseMounts(board: string, stdout: string): Mount[] | null {
   const report = parseJson(stdout) as { schema?: unknown; data?: unknown } | undefined
   if (report?.schema !== 'board/query-report/v2' || !Array.isArray(report.data)) return null
   return report.data
-    .filter((row): row is [string, string] => Array.isArray(row) && typeof row[0] === 'string' && typeof row[1] === 'string')
-    .map(([mount, repo]) => ({ board, mount, repo: repo.replace(/\/+$/, '') }))
+    .filter(
+      (row): row is [string, string | null, string] =>
+        Array.isArray(row) &&
+        typeof row[0] === 'string' &&
+        (typeof row[1] === 'string' || row[1] === null) &&
+        typeof row[2] === 'string',
+    )
+    .map(([mount, repo, record]) => ({ board, mount, repo: repo?.replace(/\/+$/, '') ?? null, record }))
 }
 
 /** The change in a `board --json get` report. */
@@ -107,6 +118,26 @@ export function parseChange(stdout: string): Change {
   if (typeof failure?.code === 'string') return { kind: 'failed', why: `${failure.code}: ${String(failure.message)}` }
   return { kind: 'failed', why: 'it printed no change record' }
 }
+
+/** The refusal of an edit of the board config. */
+export const configRecord = (file: string) =>
+  `changes::guard::board_record: ${file} is the board config, which changes only outside an agent's Edit, ` +
+  'Write and NotebookEdit. Ask the owner to change it.'
+
+/** The refusal of an edit of a change record. */
+export const changeRecord = (file: string, board: string) =>
+  `changes::guard::board_record: ${file} is a change record of the board at ${board}, which changes only ` +
+  `through board commands. Use \`board -C ${board} call changes.start\`, \`changes.attach\` or ` +
+  '`changes.advance`, or `board put` to drop a change.'
+
+/** The refusal of an edit of a mount record. */
+export const mountRecord = (file: string, at: Mount) =>
+  `changes::guard::board_record: ${file} is the mount record of ${at.mount} in the board at ${at.board}, ` +
+  `which changes only through board commands. Use \`board -C ${at.board} mount update ${at.mount}\` to ` +
+  'follow its repository, or `board put` to change the mount.'
+
+/** Whether `relative`, a path inside a board, is a change record: `changes/<name>.json`. */
+export const isChangeRecord = (relative: string) => /^changes\/[^/]+\.json$/.test(relative)
 
 /** The refusal of an edit the guard cannot check. */
 export const unknown = (file: string, why: string) =>

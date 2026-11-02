@@ -19,9 +19,11 @@ const FILE = `${REPO}/src/lib.rs`
 const BRIEF = 'board-brief: /changes/fix-it\n\nYou are the builder for /changes/fix-it.'
 const report = (schema: string, data: unknown) => JSON.stringify({ schema, data })
 const MOUNTS = report('board/query-report/v2', [
-  ['/repos/widgets', REPO],
-  ['/repos/gadgets', '/work/gadgets'],
+  ['/repos/widgets', REPO, 'repos/widgets.json'],
+  ['/repos/gadgets', '/work/gadgets', 'repos/gadgets.json'],
+  ['/repos/broken', null, 'repos/broken.json'],
 ])
+const CONFIG = `${HOME}/.config/board/config.json`
 const change = (record: object) =>
   report('board/get-report/v2', [{ record: { $type: 'changes/change/v1', title: 't', ...record } }])
 const BUILDING = change({ mount: '/repos/widgets', phase: 'build' })
@@ -48,10 +50,17 @@ const FILES = new Set([
   '/work/clone-local/src/lib.rs',
   '/work/clone-file/src/lib.rs',
   '/work/other/src/lib.rs',
+
   '/work/widgets.worktrees/x/src/lib.rs',
   '/work/dubious/a.rs',
   '/work/throws/a.rs',
   '/tmp/x/.keep',
+  CONFIG,
+  `${HOME}/.config/board/notes.txt`,
+  `${BOARD}/changes/fix-it.json`,
+  `${BOARD}/changes/fix-it/plan.md`,
+  `${BOARD}/repos/widgets.json`,
+  `${BOARD}/repos/README.md`,
 ])
 const DIRS = new Set([...FILES].flatMap(f => f.split('/').slice(1, -1).map((_, i, parts) => `/${parts.slice(0, i + 1).join('/')}`)))
 DIRS.add('/')
@@ -73,6 +82,7 @@ const REPOSITORIES: [string, string][] = [
   ['/work/widgets.worktrees/x', `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   [REPO, `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   ['/work/gadgets', '/work/gadgets/.git\n'],
+  [BOARD, `${BOARD}/.git\n`],
   ['/work/loose', '/work/loose/.git\n'],
   ['/work/clone-ssh', '/work/clone-ssh/.git\ngit@github.com:acme/widgets.git\n'],
   ['/work/clone-https', '/work/clone-https/.git\nhttps://github.com/Acme/widgets\n'],
@@ -242,7 +252,7 @@ test('a path outside every mounted repository is admitted without reading the co
     expect(done.deny).toBeUndefined()
   }
   expect(edits).toEqual(['Write', 'Write', 'Write'])
-  expect(ran).toEqual(['git', 'git', 'config', `query ${BOARD}`, 'git'])
+  expect(ran).toEqual(['git', 'config', `query ${BOARD}`, 'git', 'config', `query ${BOARD}`, 'git'])
 })
 
 test('with no board config no repository is mounted, and the edit runs', async ($, on) => {
@@ -421,4 +431,47 @@ test('a full window with no kept brief refuses with unknown, and a window that h
   expect((await edit($, FILE, 'w1')).deny).toMatch(/^changes::guard::unknown: .*4,096/)
   answers.entries = 4095
   expect((await edit($, FILE, 'w1')).deny).toBeUndefined()
+})
+
+test('the board config is refused to every agent, and another file beside it is admitted', async ($, on) => {
+  const { edits } = engine(on, { first: { a1: BRIEF } })
+  const write = (file: string, agentId?: string) =>
+    $.tool.call({ tool: 'Write', file_path: file, content: '{"boards": []}', ...(agentId ? { agentId } : {}) })
+  for (const agent of [undefined, 'a1']) {
+    expect((await write(CONFIG, agent)).deny).toBe(
+      `changes::guard::board_record: ${CONFIG} is the board config, which changes only outside an agent's ` +
+        'Edit, Write and NotebookEdit. Ask the owner to change it.',
+    )
+  }
+  expect((await write('~/.config/board/config.json')).deny).toMatch(/^changes::guard::board_record: /)
+  expect((await write(`${HOME}/.config/board/notes.txt`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Write'])
+})
+
+test('a change record is refused to every agent, and its plan is admitted', async ($, on) => {
+  const { edits } = engine(on, { first: { a1: BRIEF } })
+  for (const agent of [undefined, 'a1']) {
+    expect((await edit($, `${BOARD}/changes/fix-it.json`, agent)).deny).toBe(
+      `changes::guard::board_record: ${BOARD}/changes/fix-it.json is a change record of the board at ${BOARD}, ` +
+        `which changes only through board commands. Use \`board -C ${BOARD} call changes.start\`, \`changes.attach\` ` +
+        'or `changes.advance`, or `board put` to drop a change.',
+    )
+  }
+  expect((await edit($, `${BOARD}/changes/new.json`)).deny).toMatch(/^changes::guard::board_record: /)
+  expect((await edit($, `${BOARD}/changes/fix-it/plan.md`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a mount record is refused to every agent, and another file beside it is admitted', async ($, on) => {
+  const { edits } = engine(on, { first: { a1: BRIEF } })
+  for (const agent of [undefined, 'a1']) {
+    expect((await edit($, `${BOARD}/repos/widgets.json`, agent)).deny).toBe(
+      `changes::guard::board_record: ${BOARD}/repos/widgets.json is the mount record of /repos/widgets in the ` +
+        `board at ${BOARD}, which changes only through board commands. Use \`board -C ${BOARD} mount update ` +
+        '/repos/widgets` to follow its repository, or `board put` to change the mount.',
+    )
+  }
+  expect((await edit($, `${BOARD}/repos/broken.json`)).deny).toMatch(/^changes::guard::board_record: .*\/repos\/broken /)
+  expect((await edit($, `${BOARD}/repos/README.md`)).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
 })
