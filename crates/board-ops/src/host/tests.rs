@@ -90,6 +90,7 @@ impl Reply {
                 code: code.to_owned(),
                 message: "the task is late".to_owned(),
                 fields: Map::new(),
+                hint: None,
             }),
         })
     }
@@ -749,6 +750,28 @@ fn a_board_refused_error_adds_the_refusals_hint_and_leaves_out_an_empty_one() {
 }
 
 #[test]
+fn a_built_ins_error_with_a_hint_is_refused_with_that_hint_and_its_twin_without_one_has_none() {
+    for hint in [Some("check again"), None] {
+        let scenario = board(&[("fixture", true)], &["fixture"], Holds::Same);
+        let mut board = open(&scenario);
+        let answer: Answer = Box::new(move |_| {
+            Err(PluginError {
+                code: "fixture::task::late".to_owned(),
+                message: "the task is late".to_owned(),
+                fields: Map::new(),
+                hint: hint.map(str::to_owned),
+            })
+        });
+        board.build_in(built(vec![answering("fixture", answer)]));
+        let refusal = call_base(&board, &Plugins::default())
+            .unwrap_err()
+            .refusal();
+        assert_eq!(refusal.code.as_str(), "fixture::task::late");
+        assert_eq!(refusal.hint.as_deref(), hint);
+    }
+}
+
+#[test]
 fn built_in_plugins_debug_as_their_names() {
     let plugins = built(vec![
         answering("first", BASE.reply.answer()),
@@ -837,4 +860,6 @@ fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
     assert_eq!(cache_place(&settings, "board-controls/judged"), None);
 }
 
+mod call;
+mod decide;
 mod put;

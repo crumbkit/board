@@ -163,7 +163,8 @@ A plugin exits 0 with a result, or 1 with an error whose code is
 code as its own, with the plugin's fields plus `plugin` and `stderr`, the end
 of the plugin's stderr; Board adds no other key. The plugin's `hint`, a
 sentence saying what to try next, becomes the failure's `hint` recovery; an
-empty hint counts as none. Python's `PluginError` takes it as `hint`. Any
+empty hint counts as none. Python's `PluginError` and a built-in's take it
+as `hint`. Any
 other answer on stdout is `board::plugin::bad_output`; a non-zero exit without
 an error document, or a signal, is `board::plugin::failed`. A `run` program
 that cannot be started is `board::plugin::not_started`. Stderr is for logs;

@@ -147,6 +147,7 @@ fn found(stdout: &str) -> Result<Vec<Finding>, PluginError> {
                       a text and a rewrite; change the agent's command"
             .to_owned(),
         fields: Map::from_iter([("stdout".to_owned(), Value::from(agent::tail(stdout, TAIL)))]),
+        hint: None,
     })
 }
 

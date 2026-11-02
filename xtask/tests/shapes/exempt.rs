@@ -16,12 +16,23 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 97] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 107] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
     (".board/controls/control/v1", "/requirement", UntilAdopted, "Prose"),
     // The schemas the plugins ship.
+    ("artifacts/artifact/v1", "/account", UntilAdopted, "Actor, once an account email has its own shape"),
+    ("artifacts/artifact/v1", "/area/-", Local, "an area tag groups only artifacts, for finding neighbouring work"),
+    ("artifacts/artifact/v1", "/first_seen", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
+    ("artifacts/artifact/v1", "/url", Local, "a claude.ai artifact link, narrower than the shared Url shape"),
+    ("artifacts/version/v1", "/at", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
+    ("artifacts/version/v1", "/session", UntilAdopted, "SessionId, as plans' (audit row 14)"),
+    ("artifacts/version/v1", "/source", Local, "a file path on the machine that published, which only artifacts records"),
+    ("artifacts/version/v1", "/version", Local, "an Artifact tool version id is the artifacts plugin's own identifier"),
+    ("boundary/crossing/v1", "/action", Local, "the action that sends content names itself, and only boundaries match it"),
+    ("boundary/crossing/v1", "/to", Local, "a destination is named by the action that sends to it, and only boundaries match it"),
+    ("boundary/crossing/v1", "/verdicts/-/part", Local, "a part is named by the action that sends it, and only boundaries match it"),
     ("changes/change/v1", "/head", UntilAdopted, "ObjectId (audit row 2)"),
     ("changes/change/v1", "/issue", UntilAdopted, "Url (audit row 11)"),
     ("changes/change/v1", "/mount", UntilAdopted, "Ref<Mount> (audit row 27)"),
@@ -76,7 +87,6 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 97] = [
     ("prompts/prompt/v1", "/runs_in/remote", UntilAdopted, "Remote, or an input placeholder (audit row 22)"),
     ("prompts/prompt/v1", "/title", UntilAdopted, "Prose"),
     ("prompts/repos/v1", "/mounts/-", UntilAdopted, "Ref<Mount> (audit row 28)"),
-    ("requests/reply/v1", "/effect", UntilAdopted, "EffectId (audit row 42)"),
     ("requests/reply/v1", "/text", UntilAdopted, "Prose"),
     ("review/brief/v1", "/focus", UntilAdopted, "Prose"),
     ("review/brief/v1", "/questions/-", UntilAdopted, "Prose"),

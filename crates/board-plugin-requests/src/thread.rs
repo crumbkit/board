@@ -145,6 +145,7 @@ fn not_found(id: &str, why: &str) -> PluginError {
              `board --personal ls /effects/pending` lists them"
         ),
         fields,
+        hint: None,
     }
 }
 

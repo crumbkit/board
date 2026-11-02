@@ -134,7 +134,7 @@ impl Fixture {
             directory: Some(&directory),
             environment: environment.clone(),
             limits,
-            cache: None,
+            ..Plugins::default()
         };
         let board = open(&self.board);
         let called = board.call(&target, input.as_bytes(), &plugins);

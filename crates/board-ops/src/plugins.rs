@@ -10,8 +10,8 @@ use board_plugin::{
 use board_tree::Reader;
 use serde_json::Value;
 
-use crate::Board;
 use crate::types::Held;
+use crate::{Board, KnownBoards, Signing};
 
 /// Where plugins are installed, what they inherit and what a run may take.
 #[derive(Clone, Debug, Default)]
@@ -21,6 +21,14 @@ pub struct Plugins<'a> {
     pub limits: Limits,
     /// Where a built-in plugin's queries keep the index.
     pub cache: Option<&'a Path>,
+    /// The known boards, which a built-in plugin's `--personal` and
+    /// `decide` read as the plugin's own `board` would; none names none.
+    pub known: Option<&'a KnownBoards>,
+    /// How the owner's approval of a built-in plugin's decide is checked.
+    pub signing: Signing,
+    /// Whether a process plugin a nested call starts leads its own process
+    /// group, as `board_plugin::Context::leads` says.
+    pub leads: bool,
 }
 
 /// A call that failed: the plugin's or Board's refusal.

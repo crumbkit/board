@@ -3,12 +3,12 @@
 use std::collections::BTreeSet;
 
 use board_model::Code;
-use board_ops::{Absent, Host, PluginError, RefsReport, source_name};
+use board_ops::{Absent, Host, PluginError, RefsReport, literal, source_name};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::index::{self, FILES, literal};
+use crate::index::{self, FILES};
 use crate::logical;
 use crate::records::{Rule, rule_output_schema};
 

@@ -217,6 +217,7 @@ fn refused<const N: usize>(
         fields: (fields.into_iter())
             .map(|(name, value)| (name.to_owned(), value))
             .collect(),
+        hint: None,
     }
 }
 

@@ -16,8 +16,11 @@ from board_plugin.protocol import PluginError
 ONE_LINE = re.compile(r"""("(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s|>\[{&*!"'#][^#]*?)\s*(?:\s#.*)?""")
 
 
-def with_fields(text: str, values: dict[str, str], path: str) -> str:
-    """`text` with each key's line set to its value, written as JSON, which is YAML; a missing key goes last."""
+def with_fields(text: str, values: dict[str, str | None], path: str) -> str:
+    """`text` with each key's line set to its value, written as JSON, which is YAML; a missing key goes last.
+
+    A value of None removes the key's line, and adds none when the key is missing.
+    """
     lines = re.split(r"(?<=\n)", text)
     newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
     if lines[0].removeprefix("﻿").rstrip("\r\n") != "---":
@@ -31,7 +34,7 @@ def with_fields(text: str, values: dict[str, str], path: str) -> str:
         line = f"{key}: {json.dumps(value, ensure_ascii=False)}{newline}"
         found = [i for i in range(1, end) if re.match(rf"{re.escape(key)}\s*:(\s|$)", lines[i])]
         if not found:
-            added.append(line)
+            added += [] if value is None else [line]
             continue
         at = found[0]
         held = lines[at].split(":", 1)[1].strip()
@@ -43,5 +46,5 @@ def with_fields(text: str, values: dict[str, str], path: str) -> str:
                 f"holding one plain value; make it one line such as `{key}: value`, then call again"
             )
             raise PluginError("tasks::task::not_plain", why, {"path": path, "key": key})
-        lines[at] = line
+        lines[at] = "" if value is None else line
     return "".join(lines[:end] + added + lines[end:])

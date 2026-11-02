@@ -484,6 +484,7 @@ fn not_found(missing: &[&String]) -> PluginError {
             names.join(", ")
         ),
         fields: Map::from_iter([("controls".to_owned(), Value::from(names))]),
+        hint: None,
     }
 }
 
@@ -499,6 +500,7 @@ fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
             ("file".to_owned(), Value::from(file)),
             ("code".to_owned(), Value::from(code)),
         ]),
+        hint: None,
     }
 }
 
@@ -528,6 +530,7 @@ fn invalid(
             ("file".to_owned(), Value::from(file)),
             ("line".to_owned(), Value::from(number)),
         ]),
+        hint: None,
     }
 }
 

@@ -1,7 +1,7 @@
 # Built-in plugins
 
 This file holds detail for docs/plugins.md. It says how a plugin compiled into
-Board is called. `controls`, `plans`, `evals`, `runs` and
+Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`, `jira` and
 [`requests`](built-in/requests.md) are built in.
 [built-in/writing.md](built-in/writing.md) says how to write one.
 
@@ -20,8 +20,8 @@ Board is called. `controls`, `plans`, `evals`, `runs` and
   - `schemas()` returns the schema shipped for each declared type. A declared
     type without a compiling schema is `board::plugin::bad_manifest`.
   - `call(host, capability, input)` returns the output, or a `PluginError`
-    with `code`, `message` and `fields`, as `board/error/v1` holds them. A
-    built-in plugin's refusal has no `hint`.
+    with `code`, `message`, `fields` and `hint`, as `board/error/v1` holds
+    them. The hint becomes the refusal's `hint`, as a process plugin's does.
 - `Host`, what Board offers during a call:
   - `query(sql, limit)` runs SQL as `board query` does, with the caller's
     index cache. `Limit::rows(n)` takes 1 to 10,000 rows; `Limit::ALL` every
@@ -36,6 +36,11 @@ Board is called. `controls`, `plans`, `evals`, `runs` and
     `expect`, refusals and report, one commit or nothing. It is checked as
     the plugin `BOARD_PLUGIN` names, else the called one, so it is refused
     what only the owner writes (docs/architecture/writes/effects.md).
+  - `call`, `board` and `decide` run another capability, act on the
+    personal board or the board holding another directory, and ask the
+    owner, as the plugin's own `board call`,
+    `board --personal`, `board -C` and `board decide` do
+    ([built-in/elsewhere.md](built-in/elsewhere.md)).
   - `settings()` gives `now`, the time the call started, and `day_start` and
     `caller`, from `BOARD_DAY_START` and `BOARD_CALLER_DIR`. It also gives
     `environment`, the variables a process plugin offering the capability

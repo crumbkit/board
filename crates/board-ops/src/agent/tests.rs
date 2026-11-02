@@ -38,6 +38,27 @@ impl Host for Bare {
         unreachable!("an agent writes nothing")
     }
 
+    fn call(
+        &self,
+        _: &board_plugin::Target,
+        _: &serde_json::Value,
+    ) -> Result<board_plugin::CallReport, Box<board_model::Refusal>> {
+        unreachable!("an agent calls no plugin")
+    }
+
+    fn board(&self, _: &crate::Elsewhere) -> Result<Box<dyn Host + '_>, Box<board_model::Refusal>> {
+        unreachable!("an agent opens no other board")
+    }
+
+    fn decide(
+        &self,
+        _: &str,
+        _: &LogicalPath,
+        _: Option<&crate::Shown>,
+    ) -> Result<crate::DecideReport, Box<board_model::Refusal>> {
+        unreachable!("an agent asks the owner nothing")
+    }
+
     fn settings(&self) -> &Settings {
         &self.0
     }
