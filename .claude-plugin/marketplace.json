@@ -21,6 +21,10 @@
       "source": "./plugins/effects/claude-code"
     },
     {
+      "name": "board-artifacts",
+      "source": "./plugins/artifacts/claude-code"
+    },
+    {
       "name": "board-changes",
       "source": "./plugins/changes/claude-code"
     }

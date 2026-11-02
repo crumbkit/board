@@ -15,6 +15,9 @@ Board's own effects have no plugin, so their mod, `board-effects`, lives in
 `plugins/effects/claude-code/`, where the `mods` workflow and the marketplace
 find it. `plugins/effects/` holds nothing else and is not a Board plugin.
 [effects-claude-code.md](effects-claude-code.md) says what it shows and runs.
+The artifacts mod, `board-artifacts`, records each artifact a session
+publishes or reads; [claude-code/artifacts.md](claude-code/artifacts.md)
+says what it writes.
 
 Claude Code loads a mod with `claude --plugin-dir plugins/<name>/claude-code`,
 or from the folders `CLAUDE_CODE_PLUGIN_DIRS` names. `claude plugin validate`
@@ -27,7 +30,7 @@ The repository is also a Claude Code marketplace named `board`, listed in
 `.claude-plugin/marketplace.json`. To install a mod, add the marketplace once
 with `claude plugin marketplace add crumbkit/board`, then run
 `claude plugin install <name>@board`, where `<name>` is the mod's name in its
-`plugin.json`, such as `board-runs`, `board-controls` or `board-plans`. The `mods` workflow
+`plugin.json`, such as `board-runs` or `board-artifacts`. The `mods` workflow
 fails when a mod has no entry in the marketplace.
 
 ## board-changes
