@@ -119,11 +119,13 @@ pub(crate) fn call(
         Ok(input) => input,
         Err(refusal) => return render::refused(printer, refusal),
     };
-    let mut plugins = plugins(context);
-    plugins.environment.day_start = match context.known() {
-        Ok(known) => known.day_start().map(OsString::from),
+    let known = match context.known() {
+        Ok(known) => known,
         Err(refusal) => return render::refused(printer, *refusal),
     };
+    let mut plugins = plugins(context);
+    plugins.environment.day_start = known.day_start().map(OsString::from);
+    plugins.known = Some(&known);
     match board.call(target, &input, &plugins) {
         Ok(report) => render::call(printer, &report),
         Err(error) => render::refused(printer, error.refusal()),

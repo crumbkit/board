@@ -198,17 +198,27 @@ pub(crate) fn from_plugin(context: &Context, ran: &Ran) -> Option<Box<Refusal>> 
 pub(crate) fn asker(context: &Context, personal: bool) -> Result<Asker, Box<Refusal>> {
     let plugin = plugin(context)?;
     let known = personal.then(|| context.known()).transpose()?;
+    board_ops::asker(
+        plugin,
+        known.as_ref(),
+        context.home.clone(),
+        signing(context),
+    )
+}
+
+/// How the owner signs an approval, and the allowed signers file it is
+/// checked against, which a built-in plugin's decide reads too.
+pub(crate) fn signing(context: &Context) -> Signing {
     let environment = &context.environment;
     let passed = [("PATH", &environment.path), ("HOME", &environment.home)];
-    let signing = Signing {
+    Signing {
         signer: context.signer.clone(),
         allowed: context.allowed_signers.clone(),
         cache: context.cache.clone(),
         environment: (passed.into_iter())
             .filter_map(|(name, value)| Some((name, value.clone()?)))
             .collect(),
-    };
-    board_ops::asker(plugin, known.as_ref(), context.home.clone(), signing)
+    }
 }
 
 /// The plugin `BOARD_PLUGIN` names, refused unless it is a plugin's name.

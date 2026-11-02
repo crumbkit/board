@@ -417,6 +417,7 @@ fn judge(control: &str, _text: &str, _rubric: &[u8]) -> Result<Vec<Finding>, Plu
              judges text lands in a follow-up change; leave {control} out of `controls` until then"
         ),
         fields: Map::from_iter([("control".to_owned(), Value::from(control))]),
+        hint: None,
     })
 }
 
@@ -430,6 +431,7 @@ fn not_found(missing: &[&String]) -> PluginError {
             names.join(", ")
         ),
         fields: Map::from_iter([("controls".to_owned(), Value::from(names))]),
+        hint: None,
     }
 }
 
@@ -445,6 +447,7 @@ fn unreadable(control: &str, file: &str, code: &str) -> PluginError {
             ("file".to_owned(), Value::from(file)),
             ("code".to_owned(), Value::from(code)),
         ]),
+        hint: None,
     }
 }
 
@@ -474,6 +477,7 @@ fn invalid(
             ("file".to_owned(), Value::from(file)),
             ("line".to_owned(), Value::from(number)),
         ]),
+        hint: None,
     }
 }
 

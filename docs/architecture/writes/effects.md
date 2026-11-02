@@ -8,8 +8,10 @@ the owner may write, and how a plugin asks the owner before an op.
 - A Board run with `BOARD_PLUGIN` set is checked as that plugin. `board call`
   sets it to the plugin's name, or keeps the value it already has, so a
   plugin that calls another stays named.
-- A built-in plugin's `Host::put` is checked the same way, as the plugin
-  `BOARD_PLUGIN` names, else the called one.
+- A built-in plugin's `Host::put`, `Host::call` and `Host::decide` are
+  checked the same way, as the plugin `BOARD_PLUGIN` names, else the called
+  one. A built-in plugin's decide reads the known boards file and the
+  allowed signers file that `board call` read.
 - A run without `BOARD_PLUGIN` is the owner's.
 - `board call` also passes `XDG_CONFIG_HOME`, so a nested run finds the
   same known boards file and personal board.

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use board_model::parse_json;
-use board_ops::{Host, Limit, PluginError, QueryReport};
+use board_ops::{Host, Limit, PluginError, QueryReport, literal};
 use board_plugin::shape::{Record, TREE_CODES};
 use serde::Deserialize;
 use serde_json::{Map, Number, Value};
@@ -117,6 +117,7 @@ pub(crate) fn qualifying(host: &dyn Host, suite: &str) -> Result<Qualifying, Plu
                  .json, and list the suites with `{LIST_SUITES}`"
             ),
             fields: Map::from_iter([("suite".to_owned(), Value::from(suite))]),
+            hint: None,
         });
     }
     let prefix = literal(&format!("{suite}/runs/"));
@@ -199,11 +200,6 @@ fn readable(body: &str) -> Option<(Run, bool)> {
         measures: run.measures,
     };
     Some((run, clean))
-}
-
-/// SQL `text` as a string literal. Board's query takes no parameters.
-fn literal(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "''"))
 }
 
 /// The rows of `sql`, every one of them.

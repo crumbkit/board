@@ -1,5 +1,9 @@
-//! The plugins built into the binary, run in-process: controls, plans,
-//! requests, evals and runs, beside installed plugins.
+//! The plugins built into the binary, run in-process: boundary, controls,
+//! plans, requests, evals and runs, beside installed plugins.
+
+use std::collections::BTreeMap;
+
+use board_scenario::signer::Signer;
 
 use super::plugins::{TASKS, installed};
 use super::*;
@@ -18,6 +22,21 @@ fn cached(
     cache: Option<&Path>,
     arguments: &[&str],
 ) -> (Output, Ran) {
+    cached_with(directory, data, cache, PATH, arguments, b"")
+}
+
+/// The `PATH` the built-in plugins' processes see.
+const PATH: &str = "/usr/bin:/bin";
+
+/// [`cached`] with `path` as the `PATH` and `stdin` as the standard input.
+fn cached_with(
+    directory: &Path,
+    data: Option<&Scenario>,
+    cache: Option<&Path>,
+    path: &str,
+    arguments: &[&str],
+    stdin: &[u8],
+) -> (Output, Ran) {
     let context = Context {
         start: directory.to_path_buf(),
         home: None,
@@ -27,7 +46,7 @@ fn cached(
         signer: None,
         allowed_signers: None,
         environment: board_plugin::Environment {
-            path: Some("/usr/bin:/bin".into()),
+            path: Some(path.into()),
             ..board_plugin::Environment::default()
         },
         complete: None,
@@ -41,7 +60,7 @@ fn cached(
         .chain(arguments.iter().copied())
         .map(OsString::from);
     let mut ran = Ran::default();
-    let output = run(arguments, &context, &mut &b""[..], &mut ran);
+    let output = run(arguments, &context, &mut &stdin[..], &mut ran);
     (output, ran)
 }
 
@@ -392,3 +411,307 @@ fn call_runs_latest_and_trend_answer_from_a_warm_index_as_from_a_cold_one_after_
         assert_eq!(warm, answer(None, arguments));
     }
 }
+
+/// A board that does not commit, with built-in plugins enabled and an index
+/// cache of its own. The parity modules below run the commands each plugin's
+/// former pytest suite ran through the binary. The plugins' processes see
+/// `path` as their `PATH`.
+struct Fixture {
+    board: Scenario,
+    cache: tempfile::TempDir,
+    path: String,
+}
+
+impl Fixture {
+    /// A board that enables each of `plugins` with `board plugin enable`.
+    fn enabling(plugins: &[&str]) -> Self {
+        let board = Scenario::new();
+        let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+        board.write(".board/board.json", Item::File(config));
+        let fixture = Self {
+            board,
+            cache: tempfile::tempdir().unwrap(),
+            path: PATH.to_owned(),
+        };
+        for plugin in plugins {
+            let enabled = fixture.run(&["plugin", "enable", plugin]);
+            assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+        }
+        fixture
+    }
+
+    fn write(&self, path: &str, text: &str) -> &Self {
+        self.board.write(path, Item::File(text));
+        self
+    }
+
+    fn delete(&self, path: &str) {
+        self.board.write(path, Item::Deleted);
+    }
+
+    /// The text of the file at `path` from the board's root.
+    fn read(&self, path: &str) -> String {
+        std::fs::read_to_string(self.board.workdir().join(path)).unwrap()
+    }
+
+    /// Runs `board` in the board's root with its cache.
+    fn run(&self, arguments: &[&str]) -> Output {
+        self.run_with(arguments, "")
+    }
+
+    /// Runs `board` in the board's root with its cache and `stdin` as its
+    /// standard input.
+    fn run_with(&self, arguments: &[&str], stdin: &str) -> Output {
+        cached_with(
+            self.board.workdir(),
+            None,
+            Some(self.cache.path()),
+            &self.path,
+            arguments,
+            stdin.as_bytes(),
+        )
+        .0
+    }
+
+    /// Runs `board --json` and reads its one document.
+    fn json(&self, arguments: &[&str]) -> Value {
+        let arguments: Vec<&str> = std::iter::once("--json")
+            .chain(arguments.iter().copied())
+            .collect();
+        json(&self.run(&arguments))
+    }
+
+    /// The output of `board call <target>` with `flags`, which starts no
+    /// process. With `cold`, the call keeps its index in memory, as after
+    /// the cache is deleted.
+    fn answer(&self, target: &str, flags: &[&str], cold: bool) -> Value {
+        let arguments: Vec<&str> = ["--json", "call", target]
+            .into_iter()
+            .chain(flags.iter().copied())
+            .collect();
+        let cache = (!cold).then(|| self.cache.path());
+        let (output, ran) = cached_with(
+            self.board.workdir(),
+            None,
+            cache,
+            &self.path,
+            &arguments,
+            b"",
+        );
+        assert_eq!(
+            output.code,
+            0,
+            "{target} {flags:?}: {}",
+            text(&output.stdout)
+        );
+        assert_eq!(ran.trace.work.get("started"), Some(&0));
+        let report = json(&output);
+        assert_eq!(report["schema"], "board/call-report/v2", "{report}");
+        report["data"]["output"].clone()
+    }
+
+    fn call(&self, target: &str, flags: &[&str]) -> Value {
+        self.answer(target, flags, false)
+    }
+
+    /// The failure `board call <target>` prints when it is refused.
+    fn refusal(&self, target: &str, flags: &[&str]) -> Value {
+        let arguments: Vec<&str> = ["--json", "call", target]
+            .into_iter()
+            .chain(flags.iter().copied())
+            .collect();
+        let output = self.run(&arguments);
+        assert_ne!(output.code, 0, "{}", text(&output.stdout));
+        json(&output)
+    }
+
+    /// Each entry's code from `board check --all` whose path starts with
+    /// `prefix`; `None` when it is whole.
+    fn checked(&self, prefix: &str) -> BTreeMap<String, Option<String>> {
+        let report = self.json(&["check", "--all"]);
+        (report["data"].as_array().unwrap().iter())
+            .filter_map(|entry| {
+                let logical = entry["logical"].as_str()?;
+                let code = entry["code"].as_str().map(str::to_owned);
+                logical
+                    .starts_with(prefix)
+                    .then(|| (logical.to_owned(), code))
+            })
+            .collect()
+    }
+}
+
+/// `base` with each of `fields` added or replacing its own, as JSON text.
+fn record(mut base: Value, fields: &Value) -> String {
+    for (name, value) in fields.as_object().unwrap() {
+        base[name] = value.clone();
+    }
+    base.to_string()
+}
+
+/// `entries` by path, each with `code`, as [`Fixture::checked`] gives them.
+fn codes(entries: &[(&str, Option<&str>)]) -> BTreeMap<String, Option<String>> {
+    (entries.iter())
+        .map(|(path, code)| ((*path).to_owned(), code.map(str::to_owned)))
+        .collect()
+}
+
+/// The schemas the built-in `plugin` ships, by their path in a board.
+fn shipped(plugin: &str) -> Vec<(String, String)> {
+    let plugin = (board_plugins::BUILT_IN.0.iter())
+        .find(|built| built.manifest().name.as_str() == plugin)
+        .unwrap();
+    (plugin.schemas().into_iter())
+        .map(|(name, schema)| {
+            let path = format!(".board/types/{}.schema.json", name.as_str());
+            (
+                path,
+                board_model::canonical_json(&schema).as_str().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// A new repository holding one commit of a board that enables each of
+/// `plugins`, with the schemas they ship and `files` by path, and the
+/// commit.
+fn repository(plugins: &[&str], files: &[(&str, String)]) -> (Scenario, ObjectId) {
+    let repository = Scenario::new();
+    let config = json!({"$type": "board/config/v1", "plugins": plugins}).to_string();
+    let schemas: Vec<(String, String)> =
+        plugins.iter().flat_map(|plugin| shipped(plugin)).collect();
+    let mut tree: Vec<(&str, &str)> = vec![(".board/board.json", &config)];
+    tree.extend(
+        schemas
+            .iter()
+            .map(|(path, text)| (path.as_str(), text.as_str())),
+    );
+    tree.extend(files.iter().map(|(path, text)| (*path, text.as_str())));
+    let commit = repository.commit(&tree);
+    (repository, commit)
+}
+
+/// Mounts `repository` at `commit` at `path` in `fixture`.
+fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId) {
+    fixture.write(path, &mount_of(&repository.path(), commit));
+}
+
+/// The owner's personal board, which does not commit, named in a known
+/// boards file, with the test signer, whose key the allowed signers file
+/// holds, and an index cache. The boundary and artifacts modules use it.
+struct Personal {
+    board: Scenario,
+    xdg: Scenario,
+    signer: Signer,
+    /// The index cache, where the signer also keeps its statements.
+    cache: tempfile::TempDir,
+}
+
+impl Personal {
+    /// The personal board, enabling each of `plugins`.
+    fn enabling(plugins: &[&str]) -> Self {
+        let personal = Self {
+            board: uncommitted(),
+            xdg: Scenario::new(),
+            signer: Signer::new(),
+            cache: tempfile::tempdir().unwrap(),
+        };
+        let known = json!({"personal": personal.board.path()}).to_string();
+        personal.xdg.write("board/config.json", Item::File(&known));
+        personal.enable(personal.board.workdir(), plugins);
+        personal
+    }
+
+    /// Enables each of `plugins` in the board at `directory`.
+    fn enable(&self, directory: &Path, plugins: &[&str]) {
+        for plugin in plugins {
+            let enabled = self.run_in(directory, &["plugin", "enable", plugin], "");
+            assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+        }
+    }
+
+    /// Runs `board` in `directory` with the known boards file, the signer
+    /// and the allowed signers file, and `stdin` as its standard input.
+    fn run_in(&self, directory: &Path, arguments: &[&str], stdin: &str) -> Output {
+        let context = Context {
+            start: directory.to_path_buf(),
+            home: None,
+            cache: Some(self.cache.path().to_path_buf()),
+            plugins: None,
+            boards: Some(self.xdg.workdir().join("board/config.json")),
+            signer: Some(self.signer.program().into_os_string()),
+            allowed_signers: Some(self.signer.allowed()),
+            environment: board_plugin::Environment {
+                path: Some("/usr/bin:/bin".into()),
+                ..board_plugin::Environment::default()
+            },
+            complete: None,
+            terminal: false,
+            browser: None,
+            binary: None,
+            cursor: None,
+            built_in: board_plugins::BUILT_IN,
+        };
+        let arguments = std::iter::once(BINARY_NAME)
+            .chain(arguments.iter().copied())
+            .map(OsString::from);
+        run(
+            arguments,
+            &context,
+            &mut stdin.as_bytes(),
+            &mut Ran::default(),
+        )
+    }
+
+    /// Runs `board` in the personal board's root.
+    fn run(&self, arguments: &[&str]) -> Output {
+        self.run_in(self.board.workdir(), arguments, "")
+    }
+
+    fn write(&self, path: &str, text: &str) -> &Self {
+        self.board.write(path, Item::File(text));
+        self
+    }
+
+    /// The record at `path`, read from the working tree, or `None`.
+    fn record(&self, path: &str) -> Option<Value> {
+        let file = (self.board.workdir()).join(format!("{}.json", path.trim_start_matches('/')));
+        let text = std::fs::read_to_string(file).ok()?;
+        Some(serde_json::from_str(&text).unwrap())
+    }
+
+    /// The ids of the pending effects, sorted.
+    fn pending(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(self.board.workdir().join("effects/pending")) else {
+            return Vec::new();
+        };
+        let mut ids: Vec<String> = (entries.map(|entry| entry.unwrap().path()))
+            .filter_map(|path| Some(path.file_stem()?.to_str()?.to_owned()))
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// `board answer <effect> <answer>`, as the owner, whose approval the
+    /// test signer signs.
+    fn answer(&self, effect: &str, answer: &str) {
+        let answered = self.run(&["answer", effect, answer]);
+        assert_eq!(answered.code, 0, "{}", text(&answered.stderr));
+    }
+}
+
+/// A board that does not commit.
+fn uncommitted() -> Scenario {
+    let board = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    board
+}
+
+mod artifacts;
+mod boundary;
+mod controls;
+mod evals;
+mod jira;
+mod plans;
+mod runs;

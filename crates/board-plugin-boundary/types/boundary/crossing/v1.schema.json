@@ -1,0 +1,166 @@
+{
+  "$defs": {
+    "Finding": {
+      "additionalProperties": false,
+      "description": "What a control found wrong in a part: the text at fault, and its line\nwhen it has one.",
+      "properties": {
+        "line": {
+          "description": "The line of the part the text starts on.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pattern": {
+          "description": "The expression that matched, when its control shows it.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "rewrite": {
+          "description": "How to rewrite the text, from a judged rule.",
+          "type": "string",
+          "x-board-prose": true
+        },
+        "text": {
+          "description": "The text at fault: a match, a budget's count, or a quoted sentence.",
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "Verdict": {
+      "additionalProperties": false,
+      "description": "One control's verdict on one part, as `controls.evaluate` gave it, with\neach null left out.",
+      "properties": {
+        "control": {
+          "description": "The control's path.",
+          "format": "board-ref",
+          "type": "string",
+          "x-board-type": "controls/control/v1"
+        },
+        "findings": {
+          "description": "What the control found wrong, at most 20.",
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "type": "array"
+        },
+        "max": {
+          "description": "A budget's limit.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "omitted": {
+          "description": "How many findings were left out past the first 20.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "part": {
+          "description": "The part's name.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The kind of the control's rule; left out for a written requirement.",
+          "enum": [
+            "budget",
+            "pattern",
+            "judged"
+          ],
+          "type": "string"
+        },
+        "status": {
+          "description": "passed, failed, skipped after a free rule failed, or stated.",
+          "enum": [
+            "passed",
+            "failed",
+            "skipped",
+            "stated"
+          ],
+          "type": "string"
+        },
+        "used": {
+          "description": "What a budget counted.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "control",
+        "part",
+        "status",
+        "findings"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`boundary/crossing/v1`: the verdicts on one content, at\n`/crossings/<digest>` in the personal board.",
+  "properties": {
+    "$type": {
+      "const": "boundary/crossing/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "action": {
+      "description": "The capability that sends the parts, such as github.pr-create.",
+      "type": "string"
+    },
+    "boundaries": {
+      "description": "The boundaries that matched, by their paths.",
+      "items": {
+        "format": "board-ref",
+        "type": "string",
+        "x-board-type": "boundary/boundary/v1"
+      },
+      "type": "array"
+    },
+    "digest": {
+      "description": "The SHA-256 of the content's action, destination and parts.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "from": {
+      "description": "The checkout the parts leave, by its path in the personal board; left\nout when the check named none.",
+      "format": "board-ref",
+      "type": "string"
+    },
+    "override": {
+      "description": "The id of the owner's approved effect that let this content through\nits failed checks.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "passed": {
+      "description": "Whether every check passed, or the owner approved an override.",
+      "type": "boolean"
+    },
+    "result": {
+      "description": "What the destination returned, such as a URL.",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "to": {
+      "description": "Where the parts go, such as github:octo/board.",
+      "type": "string"
+    },
+    "verdicts": {
+      "description": "Each check's verdict on each part it applies to.",
+      "items": {
+        "$ref": "#/$defs/Verdict"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "$type",
+    "digest",
+    "action",
+    "to",
+    "passed",
+    "boundaries",
+    "verdicts"
+  ],
+  "title": "CrossingRecord",
+  "type": "object"
+}

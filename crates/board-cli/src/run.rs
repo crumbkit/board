@@ -2,13 +2,14 @@
 
 use std::ffi::OsString;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use board_model::{
     BINARY_NAME, CapabilityName, Code, DISPLAY_NAME, Fields, LogicalPath, Malformation, PathError,
     Refusal,
 };
+pub(crate) use board_ops::entered;
 use board_ops::{Absent, Board, DEFAULT_LIMIT, Expect, MAX_LIMIT, Plugins, PutError};
 use board_plugin::{Limits, Target};
 
@@ -19,6 +20,9 @@ pub(crate) fn plugins(context: &Context) -> Plugins<'_> {
         environment: context.environment.clone(),
         limits: Limits::default(),
         cache: context.cache.as_deref(),
+        known: None,
+        signing: effects::signing(context),
+        leads: false,
     }
 }
 use clap::{CommandFactory, Parser, Subcommand};
@@ -694,38 +698,6 @@ fn climbed(from: &LogicalPath, text: &str) -> Option<LogicalPath> {
 /// A refusal with the hint for its code.
 pub(crate) fn plain(code: Code, message: &dyn std::fmt::Display) -> Refusal {
     Refusal::new(code, message, &Fields::default())
-}
-
-/// `start` after entering each of `directories` in turn, as `git -C` does,
-/// or the refusal of the first that is not a directory.
-pub(crate) fn entered(start: &Path, directories: &[OsString]) -> Result<PathBuf, Box<Refusal>> {
-    let mut start = start.to_path_buf();
-    for directory in directories {
-        let joined = start.join(directory);
-        let fault = match std::fs::canonicalize(&joined) {
-            Ok(path) if path.is_dir() => {
-                start = path;
-                continue;
-            }
-            Ok(_) => "is not a directory".to_owned(),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                "does not exist".to_owned()
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => {
-                "is not a directory".to_owned()
-            }
-            Err(error) => format!("cannot be read: {error}"),
-        };
-        let message = format!(
-            "cannot change to '{}': {} {fault}",
-            Path::new(directory).display(),
-            joined.display()
-        );
-        let hint = "give -C a directory that exists, such as the board's root or a directory \
-                    inside it; a relative -C is taken from the one before it";
-        return Err(Box::new(plain(Code::CliUsage, &message).with_hint(hint)));
-    }
-    Ok(start)
 }
 
 /// `get` of `paths`, with each attachment's bytes when `fetch` is set.

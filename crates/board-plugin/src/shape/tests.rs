@@ -75,6 +75,20 @@ fn a_tag_is_its_record_type_as_a_constant() {
 }
 
 #[test]
+fn a_tag_writes_its_record_type_and_reads_only_that_type() {
+    assert_eq!(
+        serde_json::to_value(Tag::<Task>::default()).unwrap(),
+        json!("tasks/task/v2")
+    );
+    assert!(serde_json::from_value::<Tag<Task>>(json!("tasks/task/v2")).is_ok());
+    let refused = serde_json::from_value::<Tag<Task>>(json!("tasks/task/v1")).unwrap_err();
+    assert_eq!(
+        refused.to_string(),
+        r#"$type is "tasks/task/v1", not "tasks/task/v2""#
+    );
+}
+
+#[test]
 fn a_reference_names_one_type_several_or_none_and_two_types_share_no_definition() {
     let properties = &sample()["properties"];
     let reference = |types: Value| {
@@ -225,7 +239,7 @@ fn the_registry_holds_each_shared_shape_by_name_as_a_field_using_it_sees_it() {
     let registry = registry();
     assert_eq!(
         registry.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["Date", "Prose", "Url"]
+        ["Date", "Glob", "Prose", "Sha256", "Url"]
     );
     let properties = &schema_of::<Noted>(SchemaSettings::draft2020_12())["properties"];
     let mut why = properties["why"].clone();
@@ -276,4 +290,28 @@ fn a_url_without_a_host_or_a_web_scheme_is_refused_and_its_twin_is_admitted() {
         assert_eq!((refused, code(refused)), (refused, invalid));
         assert_eq!((admitted, code(admitted)), (admitted, None));
     }
+}
+
+/// Board's validator refuses a digest that is not 64 lowercase hex digits
+/// and an empty glob, and admits each one's twin.
+#[test]
+fn a_sha256_not_in_lowercase_hex_and_an_empty_glob_are_refused_and_their_twins_are_admitted() {
+    let compiled = |schema| board_validate::Schema::compile(schema).unwrap();
+    let sha256 = compiled(schema_of::<Sha256>(SchemaSettings::draft2020_12()));
+    let glob = compiled(schema_of::<Glob>(SchemaSettings::draft2020_12()));
+    let code = |schema: &board_validate::Schema, text: &str| {
+        schema.validate(&json!(text)).err().map(|e| e.code())
+    };
+    let invalid = Some(board_model::Code::RecordInvalid);
+    let lower = "0123456789abcdef".repeat(4);
+    for refused in [
+        lower.to_uppercase(),
+        lower[1..].to_owned(),
+        format!("{lower}0"),
+    ] {
+        assert_eq!(code(&sha256, &refused), invalid, "{refused}");
+    }
+    assert_eq!(code(&sha256, &lower), None);
+    assert_eq!(code(&glob, ""), invalid);
+    assert_eq!(code(&glob, "*"), None);
 }
