@@ -69,8 +69,9 @@ such as a pull request body, instead of files.
 - `show` says when to show the control: `start` at session start, `edit`
   before the first edit of a file it covers, or `failing` only when `check`
   reports it failing. Left out, an obligation shows at `start`, a control
-  with a budget when `failing`, and any other control at `edit`. It is
-  unrelated to a pattern rule's `show`, which says what a finding quotes.
+  with a budget when `failing`, and any other control at `edit`. `check`
+  fails only a control with a budget, so a control without one that says
+  `failing` is never shown. It is unrelated to a pattern rule's `show`, which says what a finding quotes.
 - `sources` holds references to what justifies the control, such as a
   source note or an eval. Board checks them as it checks `applies_to`, so a
   dangling source makes `check` fail with `controls::control::degraded`.
