@@ -136,8 +136,11 @@ class BriefOutput(Strict):
     record. `uses` gives one line per record it uses, in order, and
     `left_out` counts those the word limit left out. `controls` is the
     command that lists the controls on the change's repository.
+    `brief_line`, `board-brief: <path>`, comes first in the output; a
+    builder's first message starts with it, and the write guard reads it.
     """
 
+    brief_line: str
     path: str
     plan: str | None
     uses: list[BriefUse]

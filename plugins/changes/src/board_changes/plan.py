@@ -142,7 +142,8 @@ def brief(request: CallRequest) -> dict[str, object]:
     texts = documents(board, uses, records)
     step = next_step(request)
     controls = f"board call controls.check --path {change['mount']}"
-    spent = words(" ".join([path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
+    brief_line = f"board-brief: {path}"
+    spent = words(" ".join([brief_line, path, text or "", str(step["phase"]), str(step["instruction"]), controls]))
     shown: list[dict[str, str]] = []
     for ref in uses:
         line = line_of(records.get(ref), texts.get(ref))
@@ -152,6 +153,7 @@ def brief(request: CallRequest) -> dict[str, object]:
         shown.append({"ref": ref, "line": line})
         spent += cost
     return {
+        "brief_line": brief_line,
         "path": path,
         "plan": text,
         "uses": shown,

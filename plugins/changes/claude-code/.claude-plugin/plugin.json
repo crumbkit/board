@@ -1,0 +1,8 @@
+{
+  "name": "board-changes",
+  "version": "0.1.0",
+  "description": "Refuses an Edit, Write or NotebookEdit of a repository a known board mounts unless the acting agent started from the brief of a change to that repository in build.",
+  "author": {
+    "name": "Luke Randall"
+  }
+}
