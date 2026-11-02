@@ -21,9 +21,13 @@ from board_changes.models import (
     PlanInput,
     PlanOutput,
     PlanRecord,
+    PrototypeInput,
+    PrototypeOutput,
     PrOutput,
     StartInput,
     StartOutput,
+    VerdictInput,
+    VerdictOutput,
 )
 
 
@@ -61,8 +65,8 @@ def manifest() -> dict[str, JsonValue]:
         "capabilities": [
             capability(
                 "start",
-                "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the "
-                "repository's owners, contributing docs and check suite.",
+                "Create a change, its plan to fill in and, unless one is named, its task, set its route from "
+                "CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
                 StartInput,
                 StartOutput,
                 read_only=False,
@@ -76,7 +80,7 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "attach",
-                "Add a reference to a record the change produced, or set its route, head commit or pull request.",
+                "Add a reference to a record the change produced, or set its task, route, head commit or pull request.",
                 AttachInput,
                 AttachOutput,
                 read_only=False,
@@ -90,7 +94,8 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "open",
-                "The changes that are not done or dropped, with their phase and route.",
+                "The changes that are not done or dropped, with their phase, route, task and kind; by kind, every"
+                " prototype with its question, state, verdict and branch.",
                 OpenInput,
                 OpenOutput,
                 read_only=True,
@@ -119,6 +124,22 @@ def manifest() -> dict[str, JsonValue]:
                 PathInput,
                 BriefOutput,
                 read_only=True,
+            ),
+            capability(
+                "prototype",
+                "Start a prototype that answers one question: add its task under a parent, write its change in"
+                " build on branch proto/<name>, and return its brief. It never lands.",
+                PrototypeInput,
+                PrototypeOutput,
+                read_only=False,
+            ),
+            capability(
+                "verdict",
+                "Record what a prototype found in one sentence, and the artifact version it means, which ends it:"
+                " done when settled, dropped when abandoned.",
+                VerdictInput,
+                VerdictOutput,
+                read_only=False,
             ),
         ],
     }

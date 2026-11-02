@@ -40,6 +40,8 @@ type Answers = {
   change?: string
   /** What reading the board config answers. */
   config?: { exitCode: number; stdout: string }
+  /** The branch every checkout is on; '' for a detached HEAD, 'main' when left out. */
+  branch?: string
 }
 
 /** Stands in for git, the board config, `board` and each conversation; `ran` lists the commands. */
@@ -55,12 +57,13 @@ function engine(on: On, answers: Answers) {
     if (script.includes('rev-parse')) {
       ran.push('git')
       const path = args[0] ?? ''
-      if (path.startsWith(`${REPO}/`)) return run(0, `${REPO}/.git\n`)
-      if (path.startsWith('/work/gadgets/')) return run(0, '/work/gadgets/.git\n')
-      if (path.startsWith('/work/loose/')) return run(0, '/work/loose/.git\n')
-      if (path.startsWith('/work/clone-ssh/')) return run(0, '/work/clone-ssh/.git\ngit@github.com:acme/widgets.git\n')
-      if (path.startsWith('/work/clone-https/')) return run(0, '/work/clone-https/.git\nhttps://github.com/Acme/widgets\n')
-      if (path.startsWith('/work/other/')) return run(0, '/work/other/.git\nssh://git@github.com/acme/other.git\n')
+      const at = (dir: string, url = '') => run(0, `${dir}/.git\n${answers.branch ?? 'main'}\n${url}${url ? '\n' : ''}`)
+      if (path.startsWith(`${REPO}/`)) return at(REPO)
+      if (path.startsWith('/work/gadgets/')) return at('/work/gadgets')
+      if (path.startsWith('/work/loose/')) return at('/work/loose')
+      if (path.startsWith('/work/clone-ssh/')) return at('/work/clone-ssh', 'git@github.com:acme/widgets.git')
+      if (path.startsWith('/work/clone-https/')) return at('/work/clone-https', 'https://github.com/Acme/widgets')
+      if (path.startsWith('/work/other/')) return at('/work/other', 'ssh://git@github.com/acme/other.git')
       return run(128, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
     }
     if (script.includes('for r')) {
@@ -146,6 +149,28 @@ test('a brief for a change to another repository is refused, and one for this re
       '/repos/widgets. Start a builder from the brief of a change to /repos/widgets.',
   )
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a prototype builder is refused off its proto branch and admitted on it', async ($, on) => {
+  const prototype = change({ mount: '/repos/widgets', phase: 'build', kind: 'prototype' })
+  const answers: Answers = { first: { a1: BRIEF }, change: prototype, branch: 'main' }
+  const { edits } = engine(on, answers)
+  expect((await edit($, FILE, 'a1')).deny).toBe(
+    `changes::guard::wrong_branch: /changes/fix-it is a prototype, and its builder may edit ${FILE} only on ` +
+      "branch proto/fix-it, but the file's checkout is on branch main. Run `git switch -c proto/fix-it` there, or " +
+      '`git switch proto/fix-it` once it exists.',
+  )
+  answers.branch = ''
+  expect((await edit($, FILE, 'a1')).deny).toMatch(/checkout is on a detached HEAD\./)
+  answers.branch = 'proto/fix-it'
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a build change is admitted on any branch', async ($, on) => {
+  const { edits } = engine(on, { first: { a1: BRIEF }, branch: 'proto/other' })
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
 })

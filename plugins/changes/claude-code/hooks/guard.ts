@@ -6,7 +6,7 @@ export type Mount = { board: string; mount: string; repo: string }
 
 /** What `board get` answered for the change a brief names. */
 export type Change =
-  | { kind: 'found'; mount: string; phase: string }
+  | { kind: 'found'; mount: string; phase: string; changeKind: string }
   | { kind: 'missing' }
   | { kind: 'failed'; why: string }
 
@@ -82,11 +82,15 @@ export function parseMounts(board: string, stdout: string): Mount[] | null {
 /** The change in a `board --json get` report. */
 export function parseChange(stdout: string): Change {
   const report = parseJson(stdout) as
-    | { data?: { record?: { mount?: unknown; phase?: unknown } }[]; failures?: { code?: unknown; message?: unknown }[] }
+    | {
+        data?: { record?: { mount?: unknown; phase?: unknown; kind?: unknown } }[]
+        failures?: { code?: unknown; message?: unknown }[]
+      }
     | undefined
   const record = report?.data?.[0]?.record
   if (typeof record?.mount === 'string' && typeof record.phase === 'string') {
-    return { kind: 'found', mount: record.mount, phase: record.phase }
+    const changeKind = typeof record.kind === 'string' ? record.kind : 'build'
+    return { kind: 'found', mount: record.mount, phase: record.phase, changeKind }
   }
   const failure = report?.failures?.[0]
   if (failure?.code === 'board::path::not_found') return { kind: 'missing' }
@@ -112,8 +116,20 @@ export function noBrief(file: string, at: Mount, named: string | null): string {
   )
 }
 
-/** The refusal for a change, or null when its builder may edit `file`. */
-export function judge(file: string, at: Mount, name: string, change: { mount: string; phase: string }): string | null {
+/** The only branch a prototype's builder may edit: `proto/<name>`. */
+export const prototypeBranch = (name: string) => `proto/${name.replace(/\/+$/, '').split('/').pop()}`
+
+/**
+ * The refusal for a change, or null when its builder may edit `file`, which
+ * is checked out on `branch` ('' when detached).
+ */
+export function judge(
+  file: string,
+  at: Mount,
+  name: string,
+  change: { mount: string; phase: string; changeKind: string },
+  branch: string,
+): string | null {
   if (change.phase !== 'build') {
     return (
       `changes::guard::not_building: ${name} is in phase ${change.phase}, and its builder may edit ${file} only ` +
@@ -124,6 +140,15 @@ export function judge(file: string, at: Mount, name: string, change: { mount: st
     return (
       `changes::guard::wrong_mount: ${name} is a change to ${change.mount}, and ${file} is in ${at.mount}. ` +
       `Start a builder from the brief of a change to ${at.mount}.`
+    )
+  }
+  const only = prototypeBranch(name)
+  if (change.changeKind === 'prototype' && branch !== only) {
+    const on = branch === '' ? 'a detached HEAD' : `branch ${branch}`
+    return (
+      `changes::guard::wrong_branch: ${name} is a prototype, and its builder may edit ${file} only on branch ` +
+      `${only}, but the file's checkout is on ${on}. Run \`git switch -c ${only}\` there, or \`git switch ${only}\` ` +
+      'once it exists.'
     )
   }
   return null

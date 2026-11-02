@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`tickets` references the Jira or GitHub issues the change works on, and\n`pulls` its GitHub pull requests, each as a record of that type.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.",
+  "description": "`changes/change/v1`: one change to a repository, its phase, and every record it produced.\n\nA change lives at `/changes/<name>.json`; its plan and any files it owns\nsit in `/changes/<name>/`. Git history holds its earlier phases. `mount`\nreferences the repository's mount, such as `/repos/board`. `phase` moves\nfrom `plan` through `build`, `review` and `land` to `done`; `dropped`\nends a change early. `route` is `owner` when no one else owns the files,\n`ask-first` when someone else does, and `unowned` when the repository\nnames no owners. `plan` references the Markdown plan.\n`issue` links the spec issue, when there is one. `head` is the commit\nunder test and review. `pull_request` is the pull request's URL.\n`tickets` references the Jira or GitHub issues the change works on, and\n`pulls` its GitHub pull requests, each as a record of that type.\n`records` references every record the change produced: tasks, runs,\nevals, questions, decisions and review reports.\n`task` references the task the change does. `kind` is `build`, as when\nit is left out, for work that lands on main, or `prototype` for work that\nanswers `question` on branch `proto/<name>` and never lands. A\nprototype's `state` is `exploring` until `verdict`, one sentence, settles\nor abandons it; `verdict_artifact` is the URL of the artifact version\nthe verdict means.",
   "properties": {
     "$type": {
       "const": "changes/change/v1",
@@ -15,6 +15,14 @@
     "issue": {
       "pattern": "^https?://",
       "title": "Issue",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "build",
+        "prototype"
+      ],
+      "title": "Kind",
       "type": "string"
     },
     "mount": {
@@ -55,6 +63,12 @@
       "title": "Pulls",
       "type": "array"
     },
+    "question": {
+      "minLength": 1,
+      "title": "Question",
+      "type": "string",
+      "x-board-prose": true
+    },
     "records": {
       "items": {
         "format": "board-ref",
@@ -72,6 +86,21 @@
       "title": "Route",
       "type": "string"
     },
+    "state": {
+      "enum": [
+        "exploring",
+        "settled",
+        "abandoned"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "task": {
+      "format": "board-ref",
+      "title": "Task",
+      "type": "string",
+      "x-board-type": "tasks/task/v2"
+    },
     "tickets": {
       "items": {
         "format": "board-ref",
@@ -87,6 +116,18 @@
     "title": {
       "minLength": 1,
       "title": "Title",
+      "type": "string"
+    },
+    "verdict": {
+      "minLength": 1,
+      "title": "Verdict",
+      "type": "string",
+      "x-board-prose": true
+    },
+    "verdict_artifact": {
+      "format": "uri",
+      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "title": "Verdict Artifact",
       "type": "string"
     }
   },

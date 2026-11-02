@@ -2,6 +2,7 @@
 
 import json
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -84,18 +85,20 @@ def plan(request: CallRequest) -> dict[str, object]:
             "limit; use fewer, choosing from each directory's index.md",
             {"path": path, "words": used},
         )
+    record, lines = plan_lines(path, text, uses)
+    change["plan"] = lines[0]["path"]
+    write(board, [*lines, {"path": path, "expect": blob, "record": change}])
+    return {"path": record, "text": change["plan"], "uses": len(uses)}
+
+
+def plan_lines(path: str, text: str, uses: list[str]) -> tuple[str, list[dict[str, Any]]]:
+    """A new plan record for the change at `path`, and the `put` lines that write its text and then the record."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     record, written = f"{path}/plans/{stamp}", f"{path}/plans/{stamp}.md"
-    change["plan"] = written
-    write(
-        board,
-        [
-            {"path": written, "expect": "none", "text": text},
-            {"path": record, "expect": "none", "record": {"$type": PLAN_TYPE, "text": written, "uses": uses}},
-            {"path": path, "expect": blob, "record": change},
-        ],
-    )
-    return {"path": record, "text": written, "uses": len(uses)}
+    return record, [
+        {"path": written, "expect": "none", "text": text},
+        {"path": record, "expect": "none", "record": {"$type": PLAN_TYPE, "text": written, "uses": uses}},
+    ]
 
 
 def line_of(found: tuple[str, dict[str, Any]] | None, text: str | None) -> str:
@@ -134,13 +137,17 @@ def newest(board: Board, path: str) -> tuple[str | None, list[str]]:
 
 def brief(request: CallRequest) -> dict[str, object]:
     """The newest plan, one line per record it uses within the word limit, the next step and the controls command."""
-    path = str(request.input["path"])
+    return brief_of(request, str(request.input["path"]))
+
+
+def brief_of(request: CallRequest, path: str) -> dict[str, object]:
+    """The brief of the change at `path`, read from the board `request` names."""
     board = Board(request.board.root, PLUGIN)
     change, _ = read(board, path)
     text, uses = newest(board, path)
     records, _ = referenced(board, uses)
     texts = documents(board, uses, records)
-    step = next_step(request)
+    step = next_step(replace(request, input={"path": path}))
     controls = f"board call controls.check --path {change['mount']}"
     brief_line = f"board-brief: {path}"
     spent = words(" ".join([brief_line, path, text or "", str(step["phase"]), str(step["instruction"]), controls]))

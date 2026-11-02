@@ -7,7 +7,7 @@ from board_plugin.board import Board
 from board_plugin.protocol import CallRequest
 
 from board_changes.change import PLUGIN, read, write
-from board_changes.gates import HEADING, REPORT_TYPE, RUN_TYPE, Observed, of_type, same_commit
+from board_changes.gates import REPORT_TYPE, RUN_TYPE, Observed, of_type, same_commit, sections
 from board_changes.phases import plan_text, referenced
 
 # Severities in the order a report's findings are counted.
@@ -22,33 +22,6 @@ PROVES = "What the tests prove"
 DOES_NOT_PROVE = "What the tests do not prove"
 # Cases a run lists as failed, errored or skipped before the rest are only counted.
 CASES = 20
-# Lines that open or close a Markdown code fence.
-FENCES = ("```", "~~~")
-
-
-def sections(text: str) -> dict[str, str]:
-    """The text under each heading of a Markdown document, by heading without case, trimmed.
-
-    A section runs to the next heading of the same or a higher level, so it
-    holds its subsections. A line inside a code fence is never a heading.
-    """
-    found: dict[str, list[str]] = {}
-    opened: list[tuple[int, str]] = []
-    fenced = False
-    for line in text.splitlines():
-        match = None if fenced else HEADING.match(line)
-        if line.lstrip().startswith(FENCES):
-            fenced = not fenced
-        level = len(line) - len(line.lstrip("#"))
-        while match and opened and opened[-1][0] >= level:
-            opened.pop()
-        for _, heading in opened:
-            found[heading].append(line)
-        if match:
-            heading = str(match.group(1)).casefold()
-            found.setdefault(heading, [])
-            opened.append((level, heading))
-    return {name: "\n".join(lines).strip() for name, lines in found.items()}
 
 
 def one_line(value: object) -> str:

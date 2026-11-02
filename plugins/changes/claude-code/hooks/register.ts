@@ -18,7 +18,8 @@ import type { Mount } from './guard'
 // The write guard. Before an Edit, Write or NotebookEdit of a file in a
 // repository that a known board mounts, it reads the acting agent's first
 // message and admits the call only when that message starts with
-// `board-brief: /changes/<name>` for a change in build to that repository.
+// `board-brief: /changes/<name>` for a change in build to that repository,
+// and, for a prototype, only on its branch `proto/<name>`.
 // Every other file is admitted untouched. A lookup that fails refuses: a guard
 // that admits what it cannot check would be optional. There is no bypass.
 //
@@ -29,10 +30,12 @@ import type { Mount } from './guard'
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
 // The file may not exist yet, so git runs in its nearest directory that does.
-// It prints the repository's common directory, then its origin URL, if any.
+// It prints the repository's common directory, the checkout's branch (an
+// empty line when HEAD is detached), then its origin URL, if any.
 const LOCATE =
   'd=$1; while [ ! -d "$d" ]; do d=$(dirname "$d"); done; ' +
-  'cd "$d" && git rev-parse --path-format=absolute --git-common-dir && { git config --get remote.origin.url || true; }'
+  'cd "$d" && git rev-parse --path-format=absolute --git-common-dir && ' +
+  '{ git symbolic-ref --short -q HEAD || echo; } && { git config --get remote.origin.url || true; }'
 // Each mounted repository's origin URL, `<repo>\t<url>` per line; empty when it has none.
 const ORIGINS = 'for r; do printf \'%s\\t%s\\n\' "$r" "$(git -C "$r" config --get remote.origin.url 2>/dev/null)"; done'
 // Exit 3 says there is no config, so no board is known.
@@ -66,17 +69,17 @@ class Unknown extends Error {}
  * so a separate clone is guarded too. A repository with no origin that is no
  * worktree of a mount stays outside the guard.
  */
-async function mountsOf($: EngineInterface, file: string): Promise<Mount[]> {
+async function mountsOf($: EngineInterface, file: string): Promise<{ mounts: Mount[]; branch: string }> {
   const located = await sh($, LOCATE, [file])
   if (located.exitCode !== 0) {
-    if (/not a git repository/i.test(located.stderr)) return []
+    if (/not a git repository/i.test(located.stderr)) return { mounts: [], branch: '' }
     throw new Unknown(`git could not find the repository of the file: ${said(located)}`)
   }
-  const [commonDir = '', url = ''] = located.stdout.split('\n')
+  const [commonDir = '', branch = '', url = ''] = located.stdout.split('\n')
   const repo = repositoryOf(commonDir)
   const origin = originOf(url)
   const config = await sh($, BOARDS, [])
-  if (config.exitCode === 3) return []
+  if (config.exitCode === 3) return { mounts: [], branch }
   if (config.exitCode !== 0) throw new Unknown(`the board config could not be read: ${said(config)}`)
   const boards = parseBoards(config.stdout)
   if (!Array.isArray(boards)) throw new Unknown(boards.why)
@@ -88,11 +91,11 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[]> {
     all.push(...mounts)
   }
   const worktreeOf = all.filter(m => m.repo === repo)
-  if (worktreeOf.length > 0 || origin === null || all.length === 0) return worktreeOf
+  if (worktreeOf.length > 0 || origin === null || all.length === 0) return { mounts: worktreeOf, branch }
   const ran = await sh($, ORIGINS, [...new Set(all.map(m => m.repo))])
   if (ran.exitCode !== 0) throw new Unknown(`git could not read the mounted repositories' origins: ${said(ran)}`)
   const origins = parseOrigins(ran.stdout)
-  return all.filter(m => origins.get(m.repo) === origin)
+  return { mounts: all.filter(m => origins.get(m.repo) === origin), branch }
 }
 
 /** The change the acting agent's first message names, or null. */
@@ -111,7 +114,7 @@ async function briefNamed($: EngineInterface, agentId: string | undefined): Prom
 /** The refusal of an edit of `file` by `agentId`, or null to admit it. */
 async function refusal($: EngineInterface, file: string, agentId: string | undefined): Promise<string | null> {
   try {
-    const mounts = await mountsOf($, file)
+    const { mounts, branch } = await mountsOf($, file)
     if (mounts.length === 0) return null
     const named = await briefNamed($, agentId)
     if (named === null) return noBrief(file, mounts[0]!, null)
@@ -123,7 +126,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
         const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
         return unknown(file, `\`board -C ${at.board} get ${named}\` failed with ${why}`)
       }
-      return judge(file, at, named, change)
+      return judge(file, at, named, change, branch)
     }
     return noBrief(file, mounts[0]!, named)
   } catch (error) {

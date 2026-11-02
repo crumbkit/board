@@ -54,6 +54,10 @@ REVIEW_SCHEMA = {
     },
 }
 BASE = "0123456789abcdef0123456789abcdef01234567"
+# The task every fixture change does, which the fixture board holds.
+TASK = "/tasks/given.md"
+# The tasks plugin a test that adds tasks enables: `$TASKS_PLUGIN`, or this repository's.
+TASKS_PLUGIN = Path(os.environ.get("TASKS_PLUGIN", REPOSITORY / "plugins" / "tasks")).resolve()
 
 
 def board_binary() -> Path:
@@ -189,12 +193,29 @@ def board(tmp_path: Path) -> Board:
     for name in FOREIGN_TYPES:
         fixture.write(f".board/types/{name}.schema.json", json.dumps({"type": "object"}))
     fixture.write(f".board/types/{REVIEW_TYPE}.schema.json", json.dumps(REVIEW_SCHEMA))
+    fixture.write(TASK.removeprefix("/"), task())
     plugins = fixture.data / "board" / "plugins"
     plugins.mkdir(parents=True)
     (plugins / "changes").symlink_to(PLUGIN)
     enabled = fixture.run("plugin", "enable", "changes")
     assert enabled.returncode == 0, enabled.stderr
     return fixture
+
+
+@pytest.fixture
+def tasks_board(board: Board) -> Board:
+    """The fixture board with the tasks plugin enabled too, so `tasks.add` writes tasks to its own tree."""
+    (board.data / "board" / "plugins" / "tasks").symlink_to(TASKS_PLUGIN)
+    enabled = board.run("plugin", "enable", "tasks")
+    assert enabled.returncode == 0, enabled.stderr
+    return board
+
+
+def tasks_add_takes_parent() -> bool:
+    """Whether the tasks plugin under test lets `tasks.add` set a parent, which crumbkit/board#80 adds."""
+    manifest = json.loads((TASKS_PLUGIN / "plugin.json").read_text())
+    [add] = [capability for capability in manifest["capabilities"] if capability["name"] == "add"]
+    return "parent" in add["inputSchema"]["properties"]
 
 
 def mount_repo(board: Board, files: dict[str, str], at: str = "repos/x") -> str:
@@ -238,7 +259,12 @@ def report(head: str = HEAD, verdict: str = "approve", **fields: Any) -> str:  #
 
 def change(phase: str = "plan", **fields: Any) -> str:  # noqa: ANN401 - the record's other fields, as JSON
     """An `changes/change/v1` record in `phase`."""
-    defaults: dict[str, Any] = {"title": "Let a suite declare a timeout", "mount": "/repos/x", "phase": phase}
+    defaults: dict[str, Any] = {
+        "title": "Let a suite declare a timeout",
+        "mount": "/repos/x",
+        "phase": phase,
+        "task": TASK,
+    }
     return record("changes/change/v1", **(defaults | fields))
 
 

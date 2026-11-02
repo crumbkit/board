@@ -8,6 +8,7 @@ from board_changes.open import open_changes
 from board_changes.phases import advance, attach, next_step
 from board_changes.plan import brief, plan
 from board_changes.pr import pr
+from board_changes.prototype import prototype, verdict
 from board_changes.start import start
 
 CAPABILITIES = {
@@ -19,6 +20,8 @@ CAPABILITIES = {
     "pr": pr,
     "plan": plan,
     "brief": brief,
+    "prototype": prototype,
+    "verdict": verdict,
 }
 
 

@@ -4,9 +4,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
-from board_changes.change import Change
+from board_changes.change import TASK_TYPE, Change, kind_of
 
-TASK_TYPE = "tasks/task/v2"
 RUN_TYPE = "runs/run/v1"
 DECISION_TYPE = "plans/decision/v1"
 REPORT_TYPE = "review/report/v1"
@@ -17,6 +16,11 @@ BLOCKING = ("critical", "high")
 # The fewest hex digits a commit is named by when compared with another.
 SHORT_COMMIT = 7
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
+# Lines that open or close a Markdown code fence.
+FENCES = ("```", "~~~")
+# The refusal `advance` gives when a check with its own code is the first that is missing; any other is
+# `changes::gate::unmet`.
+CODES = {"verdict": "changes::prototype::never_lands"}
 
 
 class Check(TypedDict):
@@ -49,6 +53,31 @@ class Observed:
     unreadable: dict[str, str] = field(default_factory=dict[str, str])
 
 
+def sections(text: str) -> dict[str, str]:
+    """The text under each heading of a Markdown document, by heading without case, trimmed.
+
+    A section runs to the next heading of the same or a higher level, so it
+    holds its subsections. A line inside a code fence is never a heading.
+    """
+    found: dict[str, list[str]] = {}
+    opened: list[tuple[int, str]] = []
+    fenced = False
+    for line in text.splitlines():
+        match = None if fenced else HEADING.match(line)
+        if line.lstrip().startswith(FENCES):
+            fenced = not fenced
+        level = len(line) - len(line.lstrip("#"))
+        while match and opened and opened[-1][0] >= level:
+            opened.pop()
+        for _, heading in opened:
+            found[heading].append(line)
+        if match:
+            heading = str(match.group(1)).casefold()
+            found.setdefault(heading, [])
+            opened.append((level, heading))
+    return {name: "\n".join(lines).strip() for name, lines in found.items()}
+
+
 def check(name: str, missing: str | None) -> Check:
     """A check that passes when nothing is `missing`."""
     if missing is None:
@@ -59,8 +88,14 @@ def check(name: str, missing: str | None) -> Check:
 def gate(observed: Observed) -> list[Check]:
     """The checks for leaving the change's phase. `done` and `dropped` have none."""
     phase = observed.change["phase"]
+    if kind_of(observed.change) == "prototype" and phase == "build":
+        return [check("verdict", verdict_missing(observed))]
     if phase == "plan":
-        checks = [check("plan", plan_missing(observed)), check("route", route_missing(observed))]
+        checks = [
+            check("plan", plan_missing(observed)),
+            check("task", task_missing(observed)),
+            check("route", route_missing(observed)),
+        ]
         if observed.change.get("route") == "ask-first":
             checks.append(check("owner-approval", approval_missing(observed)))
         return checks
@@ -84,16 +119,27 @@ def plan_missing(observed: Observed) -> str | None:
     plan = observed.change.get("plan")
     if plan is None or observed.plan is None:
         return f"no plan file is at {plan}" if plan else "the change names no plan file"
-    filled: set[str] = set()
-    heading: str | None = None
-    for line in observed.plan.splitlines():
-        found = HEADING.match(line)
-        if found:
-            heading = found.group(1).casefold()
-        elif heading is not None and line.strip():
-            filled.add(heading)
-    empty = [section for section in SECTIONS if section.casefold() not in filled]
+    found = sections(observed.plan)
+    empty = [section for section in SECTIONS if not found.get(section.casefold())]
     return f"the plan at {plan} has no text under: {', '.join(empty)}" if empty else None
+
+
+def task_missing(observed: Observed) -> str | None:
+    """Whether the change names the task it does."""
+    if observed.change.get("task"):
+        return None
+    return (
+        "the change names no task; add one with `board call tasks.add` and set it with "
+        f"`board call changes.attach --path {observed.path} --task <path>`"
+    )
+
+
+def verdict_missing(observed: Observed) -> str:
+    """Why a prototype never passes its build gate: its verdict ends it instead."""
+    return (
+        "a prototype never advances or lands; when it has answered its question, end it with "
+        f"`board call changes.verdict --path {observed.path} --state settled --verdict '<one sentence>'`"
+    )
 
 
 def route_missing(observed: Observed) -> str | None:
