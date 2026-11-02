@@ -189,15 +189,15 @@ def mockups(found: dict[str, str]) -> list[str]:
     return list(dict.fromkeys(name for name in named if name is not None))
 
 
-def named_by_decisions(observed: Observed) -> set[str]:
-    """Every URL and board path an attached decision names in its `urls` or `refs`.
+def signed_decisions(observed: Observed) -> list[dict[str, Any]]:
+    """The attached decisions the owner signed; a stub a hook wrote names itself in `written_by`."""
+    return [body for _, body in of_type(observed, DECISION_TYPE) if not body.get("written_by")]
 
-    A stub a hook wrote, which names itself in `written_by`, agrees nothing.
-    """
+
+def named_by_decisions(observed: Observed) -> set[str]:
+    """Every URL and board path a signed attached decision names in its `urls` or `refs`."""
     named: set[str] = set()
-    for _, body in of_type(observed, DECISION_TYPE):
-        if body.get("written_by"):
-            continue
+    for body in signed_decisions(observed):
         for key in ("urls", "refs"):
             values: list[Any] = body.get(key) or []
             named.update(value for value in values if isinstance(value, str))
@@ -244,7 +244,7 @@ def data_missing(observed: Observed, found: dict[str, str]) -> str | None:
         for path, body in of_type(observed, UNDERSTANDING_TYPE)
         if body.get("change") == observed.path and body.get("subject") == "data"
     }
-    for _, body in of_type(observed, DECISION_TYPE):
+    for body in signed_decisions(observed):
         refs: list[Any] = body.get("refs") or []
         if understood.intersection(ref for ref in refs if isinstance(ref, str)):
             return None

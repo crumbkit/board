@@ -290,6 +290,14 @@ def test_data_that_is_not_none_needs_a_decision_referencing_this_changes_underst
     assert plan_checks(plan, {UNDERSTOOD: understanding(), "/d/s": signed(UNDERSTOOD)})["data"] == "pass"
 
 
+def test_a_data_decision_a_hook_wrote_signs_nothing_and_one_the_owner_signed_does() -> None:
+    plan = planned(data="One record per call, in the calls table.")
+    kind, body = signed(UNDERSTOOD)
+    stub = {UNDERSTOOD: understanding(), "/d/s": (kind, body | {"written_by": "runs/pr-create"})}
+    assert plan_checks(plan, stub)["data"] == "missing"
+    assert plan_checks(plan, {UNDERSTOOD: understanding(), "/d/s": signed(UNDERSTOOD)})["data"] == "pass"
+
+
 def rechecked(matches: list[bool]) -> list[dict[str, Any]]:
     """Rechecks, one per entry, each matching the plan or not."""
     return [{"kind": "edge", "question": "Q?", "answer": "A.", "matches": match} for match in matches]
