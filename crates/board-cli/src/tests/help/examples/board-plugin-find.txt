@@ -12,9 +12,11 @@ requests.thread disabled Every version of the effect's request, oldest first, wi
 runs.latest disabled The latest full run of a clean revision of a suite, with its outcome, measures, failed cases and age, or null when no run qualifies.
 runs.trend disabled One measure of a suite, or of one of its cases, over its full runs of clean revisions, newest first.
 tasks.available disabled Sync the repos the caller's remote chooses, then list their open tasks available now, those due within seven days, the stale ones, and those an owner holds.
+tasks.tree disabled List a task and its descendants in every status, nested by title, or with --root every top-level tree in the repos the caller's remote chooses, read at their pins.
 tasks.add disabled Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.claim disabled Claim an open task for an owner, refused when another owner holds it. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.done disabled Mark a task done, or defer a repeating one to its next occurrence. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.defer disabled Defer a task until a date or a horizon from today, written as a date. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.drop disabled Mark a task dropped. It syncs the task's repo first and pushes after, and sets reviewed.
 tasks.reviewed disabled Mark a task reviewed today. It syncs the task's repo first and pushes after, and sets reviewed.
+tasks.move disabled Set a task's parent to another task in its repo, or clear it with none, refused when the parent is the task or under it. It syncs the task's repo first and pushes after, and changes nothing else.

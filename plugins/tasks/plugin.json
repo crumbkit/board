@@ -37,6 +37,26 @@
       "name": "available",
       "outputSchema": {
         "$defs": {
+          "CrossParent": {
+            "additionalProperties": false,
+            "description": "A `parent` that names a task in another notes repo than its task's own, which is not followed.",
+            "properties": {
+              "parent": {
+                "title": "Parent",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "parent"
+            ],
+            "title": "CrossParent",
+            "type": "object"
+          },
           "CrossRepo": {
             "additionalProperties": false,
             "description": "An `after` that names a task in another notes repo than its task's own, which is not followed.",
@@ -80,9 +100,29 @@
             "title": "Section",
             "type": "object"
           },
+          "Subtasks": {
+            "additionalProperties": false,
+            "description": "How many of a task's descendants are open, and how many it has in every status.",
+            "properties": {
+              "open": {
+                "title": "Open",
+                "type": "integer"
+              },
+              "total": {
+                "title": "Total",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "open",
+              "total"
+            ],
+            "title": "Subtasks",
+            "type": "object"
+          },
           "SweptTask": {
             "additionalProperties": false,
-            "description": "An open task: where it is, why it waits, and how many open tasks wait on it.",
+            "description": "An open task: where it is, why it waits, how many open tasks wait on it, and its place in the tree.\n\n`parent` is the parent's path in the board, or None when it has none, names no task in its repo, or is\nwhere a loop was cut. `tree_path` joins the slugs from its root to it.",
             "properties": {
               "blocked_by": {
                 "items": {
@@ -132,6 +172,17 @@
                 ],
                 "title": "Owner"
               },
+              "parent": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Parent"
+              },
               "path": {
                 "title": "Path",
                 "type": "string"
@@ -152,8 +203,15 @@
                 ],
                 "title": "Reviewed"
               },
+              "subtasks": {
+                "$ref": "#/$defs/Subtasks"
+              },
               "title": {
                 "title": "Title",
+                "type": "string"
+              },
+              "tree_path": {
+                "title": "Tree Path",
                 "type": "string"
               },
               "waiting": {
@@ -171,7 +229,10 @@
               "contexts",
               "owner",
               "blocked_by",
-              "waiting"
+              "waiting",
+              "parent",
+              "subtasks",
+              "tree_path"
             ],
             "title": "SweptTask",
             "type": "object"
@@ -205,7 +266,14 @@
           },
           "cross_repo": {
             "items": {
-              "$ref": "#/$defs/CrossRepo"
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CrossRepo"
+                },
+                {
+                  "$ref": "#/$defs/CrossParent"
+                }
+              ]
             },
             "title": "Cross Repo",
             "type": "array"
@@ -266,6 +334,246 @@
     },
     {
       "_meta": {},
+      "description": "List a task and its descendants in every status, nested by title, or with --root every top-level tree in the repos the caller's remote chooses, read at their pins.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The tree to list: one task's, or every top-level node's in the repos in scope.",
+        "properties": {
+          "path": {
+            "description": "The task whose tree to list, such as /tasks/ship-flows-editor.md.",
+            "title": "Path",
+            "type": "string"
+          },
+          "remote": {
+            "description": "A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.",
+            "minLength": 1,
+            "title": "Remote",
+            "type": "string"
+          },
+          "repo": {
+            "description": "One repo's tasks: / for the board's own tree, or a notes repo's mount path such as /repos/notes-personal; the caller's git remote chooses the repos when left out.",
+            "title": "Repo",
+            "type": "string"
+          },
+          "root": {
+            "description": "Whether to list every top-level node of the repos in scope, with its descendants.",
+            "title": "Root",
+            "type": "boolean"
+          }
+        },
+        "title": "TreeInput",
+        "type": "object"
+      },
+      "name": "tree",
+      "outputSchema": {
+        "$defs": {
+          "CrossParent": {
+            "additionalProperties": false,
+            "description": "A `parent` that names a task in another notes repo than its task's own, which is not followed.",
+            "properties": {
+              "parent": {
+                "title": "Parent",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "parent"
+            ],
+            "title": "CrossParent",
+            "type": "object"
+          },
+          "CrossRepo": {
+            "additionalProperties": false,
+            "description": "An `after` that names a task in another notes repo than its task's own, which is not followed.",
+            "properties": {
+              "after": {
+                "title": "After",
+                "type": "string"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "after"
+            ],
+            "title": "CrossRepo",
+            "type": "object"
+          },
+          "Subtasks": {
+            "additionalProperties": false,
+            "description": "How many of a task's descendants are open, and how many it has in every status.",
+            "properties": {
+              "open": {
+                "title": "Open",
+                "type": "integer"
+              },
+              "total": {
+                "title": "Total",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "open",
+              "total"
+            ],
+            "title": "Subtasks",
+            "type": "object"
+          },
+          "TreeNode": {
+            "additionalProperties": false,
+            "description": "A task in a tree, with its children by title.\n\n`blocked_by` holds its open `after` targets, then its open descendants nearest to it.",
+            "properties": {
+              "blocked_by": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Blocked By",
+                "type": "array"
+              },
+              "brief": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Brief"
+              },
+              "children": {
+                "items": {
+                  "$ref": "#/$defs/TreeNode"
+                },
+                "title": "Children",
+                "type": "array"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "owner": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Owner"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "status": {
+                "title": "Status",
+                "type": "string"
+              },
+              "subtasks": {
+                "$ref": "#/$defs/Subtasks"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "tree_path": {
+                "title": "Tree Path",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "title",
+              "status",
+              "kind",
+              "brief",
+              "owner",
+              "blocked_by",
+              "subtasks",
+              "tree_path",
+              "children"
+            ],
+            "title": "TreeNode",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "A tree, or the top-level trees.\n\nWith `--path`, `tree` is that task's tree. With `--root`, `roots` holds at most 100 top-level nodes, open\nones first and then by title, and `total` counts them all. `repos` are the repos read, `cycles` the tasks\nin them where a loop of `parent` links was cut, and `cross_repo` the references in them to another repo.",
+        "properties": {
+          "cross_repo": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/CrossRepo"
+                },
+                {
+                  "$ref": "#/$defs/CrossParent"
+                }
+              ]
+            },
+            "title": "Cross Repo",
+            "type": "array"
+          },
+          "cycles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Cycles",
+            "type": "array"
+          },
+          "repos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Repos",
+            "type": "array"
+          },
+          "roots": {
+            "items": {
+              "$ref": "#/$defs/TreeNode"
+            },
+            "title": "Roots",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "tree": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TreeNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "tree",
+          "roots",
+          "total",
+          "repos",
+          "cycles",
+          "cross_repo"
+        ],
+        "title": "TreeOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
       "description": "Write a new open task to tasks/<slug>.md in the repo the caller's remote routes to. It syncs the task's repo first and pushes after, and sets reviewed.",
       "inputSchema": {
         "additionalProperties": false,
@@ -278,6 +586,11 @@
             },
             "title": "After",
             "type": "array"
+          },
+          "brief": {
+            "description": "The board path, in the task's own repo, of a project's brief, such as /projects/flows/README.md.",
+            "title": "Brief",
+            "type": "string"
           },
           "contexts": {
             "description": "Tags of where it can be done, such as errands.",
@@ -310,6 +623,20 @@
             "title": "From Hour",
             "type": "integer"
           },
+          "kind": {
+            "description": "task, as when left out, or project.",
+            "enum": [
+              "task",
+              "project"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent": {
+            "description": "The board path, in the task's own repo, of the task it is part of, such as /tasks/ship-flows-editor.md.",
+            "title": "Parent",
+            "type": "string"
+          },
           "remote": {
             "description": "A git remote, or owner/name, to choose the repos by in place of the origin of the directory board was started in.",
             "minLength": 1,
@@ -332,7 +659,7 @@
             "type": "string"
           },
           "title": {
-            "description": "The task's title, which also names its file.",
+            "description": "The task's title, which names its file once and for all.",
             "minLength": 1,
             "title": "Title",
             "type": "string"
@@ -1009,6 +1336,103 @@
         "title": "Written",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "description": "Set a task's parent to another task in its repo, or clear it with none, refused when the parent is the task or under it. It syncs the task's repo first and pushes after, and changes nothing else.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "The task to move, and its new parent.",
+        "properties": {
+          "parent": {
+            "description": "The new parent's path in the board, in the task's own repo, such as /tasks/ship-flows-editor.md, or none to clear it.",
+            "pattern": "^(none|/.*\\.md)$",
+            "title": "Parent",
+            "type": "string"
+          },
+          "path": {
+            "description": "The task's path in the board, such as /tasks/call-the-bank.md or /repos/personal/tasks/x.md.",
+            "pattern": "^/.*\\.md$",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "parent"
+        ],
+        "title": "MoveInput",
+        "type": "object"
+      },
+      "name": "move",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The task as `move` left it: `parent` as written, or None once cleared. The other fields are as in Written.",
+        "properties": {
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commit"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "repo": {
+            "title": "Repo",
+            "type": "string"
+          },
+          "unpushed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unpushed"
+          },
+          "unsynced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unsynced"
+          }
+        },
+        "required": [
+          "repo",
+          "path",
+          "parent",
+          "commit",
+          "unsynced",
+          "unpushed"
+        ],
+        "title": "Moved",
+        "type": "object"
+      }
     }
   ],
   "description": "Sweep the person's tasks one at a time, marking each done, deferring, dropping or editing it, and add a task. Use it when the person asks to sweep, review or go through their tasks or to-do list, or to add a task to their own list. Start with `board -C <board> call tasks.available`, run in the repository you work in, which syncs the notes repos that repository's git remote routes to and lists the tasks to sweep. SKILL.md and README.md in the plugin's directory say more.",
@@ -1028,5 +1452,5 @@
   "types": [
     "tasks/task/v2"
   ],
-  "version": "0.3.0"
+  "version": "0.4.0"
 }
