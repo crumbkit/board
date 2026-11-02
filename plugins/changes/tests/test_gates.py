@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from conftest import BASE, HEAD, PLAN, TASK
 
-from board_changes.gates import Observed, gate
+from board_changes.gates import Observed, gate, mockups, sections
 
 if TYPE_CHECKING:
     from board_changes.change import Change
@@ -96,12 +96,12 @@ def test_the_build_gate_passes_with_tasks_done_or_dropped_and_a_passing_run_on_t
         "/t/b.md": ("tasks/task/v2", {"status": "dropped"}),
         RUN: run(),
     }
-    assert statuses(observed("build", records, head=HEAD)) == {"tasks": "pass", "check-run": "pass"}
+    assert statuses(observed("build", records, head=HEAD)) == {"tasks": "pass", "check-run": "pass", "recheck": "pass"}
 
 
 def test_the_build_gate_misses_each_task_still_open() -> None:
     records = {"/t/a.md": ("tasks/task/v2", {"status": "open"}), "/t/b.md": ("tasks/task/v2", {"status": "deferred"})}
-    [tasks, _] = gate(observed("build", records | {RUN: run()}, head=HEAD))
+    [tasks, *_] = gate(observed("build", records | {RUN: run()}, head=HEAD))
     assert tasks["detail"] == "these tasks are not done or dropped: /t/a.md, /t/b.md"
 
 
@@ -128,9 +128,9 @@ def test_a_run_belongs_to_the_suite_whose_runs_directory_holds_it_whatever_its_s
 
 
 def test_the_build_gate_says_when_no_suite_is_named_or_no_head_is_recorded() -> None:
-    [_, no_suite] = gate(observed("build", {RUN: run()}, suite=None, head=HEAD))
+    [_, no_suite, _] = gate(observed("build", {RUN: run()}, suite=None, head=HEAD))
     assert no_suite["detail"] == "no contributing doc in /repos/x names a runs/suite/v1 path as its check suite"
-    [_, no_head] = gate(observed("build", {RUN: run()}))
+    [_, no_head, _] = gate(observed("build", {RUN: run()}))
     assert no_head["detail"] == "the change records no head commit; attach one with --head"
 
 
@@ -195,33 +195,73 @@ def test_a_plan_with_no_ui_change_and_no_data_passes_the_ux_neighbours_and_data_
     assert (checks["ux"], checks["neighbours"], checks["data"]) == ("pass", "pass", "pass")
 
 
-def test_ux_listing_no_mockup_is_missing_and_one_listing_an_agreed_mockup_passes() -> None:
+MOCKUPS = f"### Mockups\n\n- The list view: {MOCKUP}\n- `/artifacts/m2`\n"
+BOTH = agreed(MOCKUP, "/artifacts/m2")
+
+
+def test_ux_that_says_no_ui_change_needs_a_reason() -> None:
+    assert plan_checks(planned(ux="No UI change."))["ux"] == "missing"
+    assert plan_checks(planned(ux="No UI change: it runs headless."))["ux"] == "pass"
+
+
+def test_ux_with_no_mockups_list_is_missing_and_one_listing_agreed_mockups_passes() -> None:
     vague = planned(ux=f"A new list view.\n\n{NEIGHBOURS}")
     assert detail(vague, "ux") == (
-        "the UX section neither starts with No UI change nor lists a mockup artifact by URL or by a board path "
-        "in inline code"
+        "the UX section neither starts with No UI change and a reason nor lists mockups under a ### Mockups heading"
     )
-    listed = planned(ux=f"Mockup: {MOCKUP}.\n\n{NEIGHBOURS}")
-    assert plan_checks(listed, agreed(MOCKUP))["ux"] == "pass"
+    assert plan_checks(planned(ux=f"A new list view.\n\n{MOCKUPS}\n{NEIGHBOURS}"), BOTH)["ux"] == "pass"
+
+
+def test_only_the_mockups_list_names_mockups_so_a_route_or_an_issue_link_in_the_prose_is_not_one() -> None:
+    prose = "The list opens at `/flows/:id`, as https://github.com/acme/widgets/issues/12 asks."
+    plan = planned(ux=f"{prose}\n\n{MOCKUPS}\n{NEIGHBOURS}")
+    assert mockups(sections(plan)) == [MOCKUP, "/artifacts/m2"]
+    assert plan_checks(plan, BOTH)["ux"] == "pass"
+
+
+def test_a_mockups_item_that_names_no_artifact_is_missing_and_one_that_names_one_passes() -> None:
+    plan = planned(ux=f"### Mockups\n\n- the list view, still to draw\n\n{NEIGHBOURS}")
+    assert (
+        detail(plan, "ux")
+        == "this item of the Mockups list names no artifact by URL or board path: the list view, still to draw"
+    )
+    assert plan_checks(planned(ux=f"{MOCKUPS}\n{NEIGHBOURS}"), BOTH)["ux"] == "pass"
 
 
 def test_a_mockup_with_no_decision_naming_it_is_not_agreed_and_one_named_in_urls_or_refs_is() -> None:
-    plan = planned(ux=f"- {MOCKUP}\n- `/artifacts/m2`\n\n{NEIGHBOURS}")
+    plan = planned(ux=f"{MOCKUPS}\n{NEIGHBOURS}")
     assert detail(plan, "ux", agreed(MOCKUP)) == (
         "these mockups have no attached plans/decision/v1 that names them in its urls or refs: /artifacts/m2"
     )
-    assert plan_checks(plan, agreed(MOCKUP, "/artifacts/m2"))["ux"] == "pass"
+    assert plan_checks(plan, BOTH)["ux"] == "pass"
 
 
-def test_ux_with_mockups_needs_a_neighbours_list_and_passes_with_one() -> None:
-    bare = planned(ux=f"- {MOCKUP}")
-    assert detail(bare, "neighbours", agreed(MOCKUP)) == (
-        "the UX section lists mockups but has no Neighbours heading with a list: name the open changes and "
-        "artifacts in the same area, and the components and flows the design reuses"
+def test_a_decision_a_hook_wrote_agrees_nothing_and_one_an_agent_wrote_does() -> None:
+    plan = planned(ux=f"{MOCKUPS}\n{NEIGHBOURS}")
+    [(path, (kind, body))] = BOTH.items()
+    stub = {path: (kind, body | {"written_by": "runs/pr-create"})}
+    assert plan_checks(plan, stub)["ux"] == "missing"
+    assert plan_checks(plan, BOTH)["ux"] == "pass"
+
+
+def test_ux_with_mockups_needs_a_neighbours_list_under_it_and_passes_with_one() -> None:
+    bare = planned(ux=MOCKUPS)
+    assert detail(bare, "neighbours", BOTH) == (
+        "the UX section lists mockups but has no ### Neighbours heading under it with a list: name the open "
+        "changes and artifacts "
+        "in the same area, and the components and flows the design reuses"
     )
-    headed = planned(ux=f"- {MOCKUP}\n\n### Neighbours\n\nNone found.\n")
-    assert plan_checks(headed, agreed(MOCKUP))["neighbours"] == "missing"
-    assert plan_checks(planned(ux=f"- {MOCKUP}\n\n{NEIGHBOURS}"), agreed(MOCKUP))["neighbours"] == "pass"
+    headed = planned(ux=f"{MOCKUPS}\n### Neighbours\n\nNone found.\n")
+    assert plan_checks(headed, BOTH)["neighbours"] == "missing"
+    sibling = planned(ux=MOCKUPS).replace("## Data", "## Neighbours\n\n- /changes/other\n\n## Data")
+    assert plan_checks(sibling, BOTH)["neighbours"] == "missing"
+    assert plan_checks(planned(ux=f"{MOCKUPS}\n{NEIGHBOURS}"), BOTH)["neighbours"] == "pass"
+
+
+def test_data_that_says_none_alone_passes_and_none_of_followed_by_a_change_does_not() -> None:
+    for none in ("None", "None.", "None: it stores nothing."):
+        assert plan_checks(planned(data=none))["data"] == "pass", none
+    assert plan_checks(planned(data="None of the tables change; we add a column."))["data"] == "missing"
 
 
 def understanding(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the record's other fields
@@ -248,3 +288,25 @@ def test_data_that_is_not_none_needs_a_decision_referencing_this_changes_underst
     ux = {UNDERSTOOD: understanding(subject="ux"), "/d/s": signed(UNDERSTOOD)}
     assert plan_checks(plan, ux)["data"] == "missing"
     assert plan_checks(plan, {UNDERSTOOD: understanding(), "/d/s": signed(UNDERSTOOD)})["data"] == "pass"
+
+
+def rechecked(matches: list[bool]) -> list[dict[str, Any]]:
+    """Rechecks, one per entry, each matching the plan or not."""
+    return [{"kind": "edge", "question": "Q?", "answer": "A.", "matches": match} for match in matches]
+
+
+def test_the_build_gate_needs_two_matching_rechecks_on_each_attached_understanding_check() -> None:
+    done = {RUN: run()}
+    for rechecks in ([], rechecked([True]), rechecked([True, False])):
+        found = observed("build", done | {UNDERSTOOD: understanding(rechecks=rechecks)}, head=HEAD)
+        assert statuses(found)["recheck"] == "missing", rechecks
+    [check] = [
+        c for c in gate(observed("build", done | {UNDERSTOOD: understanding()}, head=HEAD)) if c["check"] == "recheck"
+    ]
+    assert check["detail"] == (
+        "the understanding check at /changes/t/understanding/data holds fewer than two rechecks that match the "
+        "plan; before review, ask two of its predict or edge questions again, worded differently, and add them to "
+        "its rechecks"
+    )
+    passed = observed("build", done | {UNDERSTOOD: understanding(rechecks=rechecked([True, True]))}, head=HEAD)
+    assert statuses(passed) == {"tasks": "pass", "check-run": "pass", "recheck": "pass"}

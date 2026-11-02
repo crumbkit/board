@@ -248,7 +248,7 @@ MOCKUP = "https://claude.ai/artifact/m1"
 def test_advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_decision_names_it(
     board: Board,
 ) -> None:
-    planned_change(board, ux_plan(f"- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"))
+    planned_change(board, ux_plan(f"### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"))
     assert board.refusal("advance", {"path": PATH})["code"] == "changes::ux::not_agreed"
     board.write("decisions/ux.json", decision(urls=[MOCKUP]))
     board.call("attach", {"path": PATH, "ref": "/decisions/ux"})
@@ -257,10 +257,10 @@ def test_advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_d
 
 def test_advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_written(board: Board) -> None:
     board.write("decisions/ux.json", decision(urls=[MOCKUP]))
-    planned_change(board, ux_plan(f"- {MOCKUP}"))
+    planned_change(board, ux_plan(f"### Mockups\n\n- {MOCKUP}"))
     board.call("attach", {"path": PATH, "ref": "/decisions/ux"})
     assert board.refusal("advance", {"path": PATH})["code"] == "changes::ux::no_neighbours"
-    board.write("changes/t/plan.md", ux_plan(f"- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"))
+    board.write("changes/t/plan.md", ux_plan(f"### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"))
     assert board.call("advance", {"path": PATH})["to"] == "build"
 
 
@@ -283,7 +283,7 @@ def understanding_record() -> str:
 def test_advance_refuses_unsigned_data_and_moves_on_once_a_decision_references_the_understanding_check(
     board: Board,
 ) -> None:
-    planned_change(board, ux_plan("No UI change.", data="One record per call, in the calls table."))
+    planned_change(board, ux_plan("No UI change: it is headless.", data="One record per call, in the calls table."))
     assert board.refusal("advance", {"path": PATH})["code"] == "changes::data::not_signed"
     board.write("changes/t/understanding/data.json", understanding_record())
     board.write("decisions/data.json", decision(refs=["/changes/t/understanding/data"]))

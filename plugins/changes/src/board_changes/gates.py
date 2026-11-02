@@ -12,12 +12,14 @@ REPORT_TYPE = "review/report/v1"
 # The plan's sections the plan gate requires, by heading, compared without case.
 SECTIONS = ("Problem", "Outcome", "Out of scope", "UX", "Data")
 # How a UX section says it lists no mockups, and a Data section that it changes no data, at its start, without case.
-NO_UI = re.compile(r"^no ui change\b", re.IGNORECASE)
-NO_DATA = re.compile(r"^none\b", re.IGNORECASE)
-# A mockup a UX section lists: a URL, or a board path in inline code.
+NO_UI = re.compile(r"^no ui change\b[\s.:,;-]*\w", re.IGNORECASE)
+NO_DATA = re.compile(r"^none\s*(?:[.:]|$)", re.IGNORECASE)
+# A mockup an item of the UX section's Mockups list names: its first URL, or else its first board path in inline code.
 MOCKUP_URL = re.compile(r"https?://[^\s)>\]]+")
 MOCKUP_PATH = re.compile(r"`(/[^`\s]+)`")
-LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\S", re.MULTILINE)
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(\S.*)$", re.MULTILINE)
+# The fewest rechecks matching the plan that each understanding check holds before review.
+RECHECKS = 2
 # Findings at these severities block the review gate.
 BLOCKING = ("critical", "high")
 # The fewest hex digits a commit is named by when compared with another.
@@ -118,7 +120,11 @@ def gate(observed: Observed) -> list[Check]:
             check("data", data_missing(observed, found)),
         ]
     if phase == "build":
-        return [check("tasks", tasks_missing(observed)), check("check-run", run_missing(observed))]
+        return [
+            check("tasks", tasks_missing(observed)),
+            check("check-run", run_missing(observed)),
+            check("recheck", recheck_missing(observed)),
+        ]
     if phase == "review":
         return [check("review", review_missing(observed))]
     if phase == "land":
@@ -160,17 +166,38 @@ def verdict_missing(observed: Observed) -> str:
     )
 
 
-def mockups(ux: str) -> list[str]:
-    """The mockups a UX section lists before its Neighbours, each once, in order: URLs and board paths in code."""
-    listed = re.split(r"^#{1,6}\s+neighbours\b", ux, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)[0]
-    urls = [url.rstrip(".,;:") for url in MOCKUP_URL.findall(listed)]
-    return list(dict.fromkeys([*urls, *MOCKUP_PATH.findall(listed)]))
+def under_ux(found: dict[str, str], heading: str) -> list[str]:
+    """The list items under the `heading` subsection of the UX section, or none when UX holds no such heading."""
+    text = found.get(heading, "")
+    if not re.search(rf"^#{{1,6}}\s+{heading}\s*$", found.get("ux", ""), re.IGNORECASE | re.MULTILINE):
+        return []
+    return [item.strip() for item in LIST_ITEM.findall(text)]
+
+
+def named_in(item: str) -> str | None:
+    """The artifact a Mockups item names: its first URL, or else its first board path in inline code."""
+    url = MOCKUP_URL.search(item)
+    if url:
+        return url.group(0).rstrip(".,;:")
+    path = MOCKUP_PATH.search(item)
+    return path.group(1) if path else None
+
+
+def mockups(found: dict[str, str]) -> list[str]:
+    """The artifacts the UX section's Mockups list names, each once, in order."""
+    named = [named_in(item) for item in under_ux(found, "mockups")]
+    return list(dict.fromkeys(name for name in named if name is not None))
 
 
 def named_by_decisions(observed: Observed) -> set[str]:
-    """Every URL and board path an attached decision names in its `urls` or `refs`."""
+    """Every URL and board path an attached decision names in its `urls` or `refs`.
+
+    A stub a hook wrote, which names itself in `written_by`, agrees nothing.
+    """
     named: set[str] = set()
     for _, body in of_type(observed, DECISION_TYPE):
+        if body.get("written_by"):
+            continue
         for key in ("urls", "refs"):
             values: list[Any] = body.get(key) or []
             named.update(value for value in values if isinstance(value, str))
@@ -178,17 +205,18 @@ def named_by_decisions(observed: Observed) -> set[str]:
 
 
 def ux_missing(observed: Observed, found: dict[str, str]) -> str | None:
-    """Whether the UX section says No UI change, or lists mockups that an attached decision names each of."""
-    ux = found.get("ux", "")
-    if NO_UI.match(ux):
+    """Whether the UX section says No UI change and why, or lists mockups that an attached decision names each of."""
+    if NO_UI.match(found.get("ux", "")):
         return None
-    listed = mockups(ux)
-    if not listed:
+    items = under_ux(found, "mockups")
+    if not items:
         return (
-            "the UX section neither starts with No UI change nor lists a mockup artifact by URL or by a board path "
-            "in inline code"
+            "the UX section neither starts with No UI change and a reason nor lists mockups under a ### Mockups heading"
         )
-    unagreed = [mockup for mockup in listed if mockup not in named_by_decisions(observed)]
+    unnamed = [item for item in items if named_in(item) is None]
+    if unnamed:
+        return f"this item of the Mockups list names no artifact by URL or board path: {unnamed[0]}"
+    unagreed = [mockup for mockup in mockups(found) if mockup not in named_by_decisions(observed)]
     if unagreed:
         return "these mockups have no attached plans/decision/v1 that names them in its urls or refs: " + ", ".join(
             unagreed
@@ -197,14 +225,13 @@ def ux_missing(observed: Observed, found: dict[str, str]) -> str | None:
 
 
 def neighbours_missing(found: dict[str, str]) -> str | None:
-    """Whether a UX section that lists mockups holds a Neighbours heading with a list under it."""
-    ux = found.get("ux", "")
-    neighbours = found.get("neighbours", "")
-    if NO_UI.match(ux) or not mockups(ux) or (neighbours in ux and LIST_ITEM.search(neighbours)):
+    """Whether a UX section that lists mockups holds a ### Neighbours heading with a list under it."""
+    if not under_ux(found, "mockups") or under_ux(found, "neighbours"):
         return None
     return (
-        "the UX section lists mockups but has no Neighbours heading with a list: name the open changes and "
-        "artifacts in the same area, and the components and flows the design reuses"
+        "the UX section lists mockups but has no ### Neighbours heading under it with a list: name the open "
+        "changes and artifacts "
+        "in the same area, and the components and flows the design reuses"
     )
 
 
@@ -226,6 +253,19 @@ def data_missing(observed: Observed, found: dict[str, str]) -> str | None:
         f"{UNDERSTANDING_TYPE} of this change's data; run the understanding-check skill, then have the owner "
         "sign a decision whose refs name its record"
     )
+
+
+def recheck_missing(observed: Observed) -> str | None:
+    """Whether each attached understanding check of this change holds two rechecks that match the plan."""
+    for path, body in of_type(observed, UNDERSTANDING_TYPE):
+        rechecks: list[dict[str, Any]] = body.get("rechecks") or []
+        if body.get("change") == observed.path and sum(1 for r in rechecks if r.get("matches") is True) < RECHECKS:
+            return (
+                f"the understanding check at {path} holds fewer than two rechecks that match the plan; before "
+                "review, ask two of its predict or edge questions again, worded differently, and add them to its "
+                "rechecks"
+            )
+    return None
 
 
 def route_missing(observed: Observed) -> str | None:

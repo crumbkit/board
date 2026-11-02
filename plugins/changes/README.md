@@ -172,30 +172,35 @@ Board marks degraded satisfies nothing.
 | Leaving | Gate |
 | --- | --- |
 | plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
-| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
+| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
 | land | `pull_request` is set. Advancing enters `done`. |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 The plan gate's last three checks:
 
-- `ux`: the UX section starts with "No UI change", or lists mockups, each a
-  URL or a board path in inline code, before any Neighbours heading. Each
-  mockup is named in the `urls` or `refs` of an attached
-  `plans/decision/v1`.
-- `neighbours`: a UX section that lists mockups holds a Neighbours heading
-  with a list under it: the open changes and artifacts in the same area,
+- `ux`: the UX section starts with "No UI change" followed by a reason,
+  or holds a `### Mockups` heading with a list under it. Each item of
+  that list names one mockup, by its first URL or, without one, by its
+  first board path in inline code. Other links in the section are not
+  mockups. Each mockup is named in the `urls` or `refs` of an attached
+  `plans/decision/v1` that the owner signed: a decision with
+  `written_by` set is an agent's stub and does not count.
+- `neighbours`: a UX section that lists mockups holds a `### Neighbours`
+  heading with a list under it: the open changes and artifacts in the same area,
   and the components and flows the design reuses. The gate checks that the
   list exists; the reviewer judges what it says.
-- `data`: the Data section starts with "None", or an attached
+- `data`: the Data section starts with "None" as a word of its own,
+  followed by a full stop, a colon or nothing, or an attached
   `plans/decision/v1` names in its `refs` an attached
   `changes/understanding/v1` whose `change` is this change and whose
   `subject` is `data`.
 
 The gate cannot see the diff. At review, when the plan says "No UI change"
 or "None", the reviewer lists the repository's UI-path and data-path
-controls with `controls.check` and reports a diff that touches a path they
-name as a high finding.
+controls, `/controls/<repo>/ui-paths` and `/controls/<repo>/data-paths`,
+with `controls.check`, and reports a diff that touches a path they name as
+a high finding.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.

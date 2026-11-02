@@ -49,9 +49,11 @@ lists every prototype with its verdict.
 - **plan**: interview the owner. Use your own planning skill where one is
   configured. Write the plan's Problem, Outcome, Out of scope, UX and Data
   sections. UX starts with "No UI change" and a reason, or lists each
-  mockup by URL and a `### Neighbours` list of the open changes and
+  mockup by URL or board path under a `### Mockups` heading, and holds a
+  `### Neighbours` list of the open changes and
   artifacts in the same area and the components the design reuses. Attach
-  the owner's decision that names each mockup in its `urls` or `refs`.
+  the owner's decision that names each mockup in its `urls` or `refs`; a
+  decision an agent wrote, with `written_by` set, does not count.
   Data starts with "None", or holds the data shapes, where each is stored,
   who reads and writes it and what users see; then run the
   `understanding-check` skill and attach its record and the owner's
@@ -64,7 +66,10 @@ lists every prototype with its verdict.
   NotebookEdit the repository; it cannot see writes made through Bash.
   Build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
-  it.
+  it. Before advancing, ask the owner two of each understanding check's
+  predict or edge questions again, worded differently, and add them to the
+  record's `rechecks`. The build gate refuses until each record holds two
+  rechecks that matched.
 - **review**: review the head commit with clean context and attach the
   report. When the plan says "No UI change" or "None", list the
   repository's UI-path and data-path controls with `controls.check`, and
