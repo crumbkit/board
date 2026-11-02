@@ -133,11 +133,15 @@ skill in `claude-code/skills/` runs the check.
   owner then iterates with that builder for as many rounds as he likes.
   The task is added before the change is written, so a refused write leaves
   it behind for `tasks.drop`. Refuses an existing name
-  (`changes::change::exists`), and refuses with `changes::wip::full` while
-  three prototypes are exploring.
+  (`changes::change::exists`), and a `--parent` that is not under a
+  `tasks/` directory (`changes::task::not_a_task_path`), before it adds
+  anything. Refuses with `changes::wip::full` while three prototypes are
+  exploring.
 - `verdict --path /changes/<name> --state settled|abandoned --verdict '<sentence>' [--artifact <url>]`
   records what a prototype found and ends it: `done` when settled,
-  `dropped` when abandoned. Refuses a change that is not a prototype
+  `dropped` when abandoned. It then closes the prototype's task through
+  `tasks.done` or `tasks.drop`, unless the task is already done or
+  dropped. Refuses a change that is not a prototype
   (`changes::prototype::not_prototype`) and one already ended
   (`changes::phase::final`).
 
@@ -185,30 +189,35 @@ Board marks degraded satisfies nothing.
 | Leaving | Gate |
 | --- | --- |
 | plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
-| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
+| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
 | land | `pull_request` is set. Advancing enters `done`. |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 The plan gate's last three checks:
 
-- `ux`: the UX section starts with "No UI change", or lists mockups, each a
-  URL or a board path in inline code, before any Neighbours heading. Each
-  mockup is named in the `urls` or `refs` of an attached
-  `plans/decision/v1`.
-- `neighbours`: a UX section that lists mockups holds a Neighbours heading
-  with a list under it: the open changes and artifacts in the same area,
+- `ux`: the UX section starts with "No UI change" followed by a reason,
+  or holds a `### Mockups` heading with a list under it. Each item of
+  that list names one mockup, by its first URL or, without one, by its
+  first board path in inline code. Other links in the section are not
+  mockups. Each mockup is named in the `urls` or `refs` of an attached
+  `plans/decision/v1` that the owner signed: a decision with
+  `written_by` set is an agent's stub and does not count.
+- `neighbours`: a UX section that lists mockups holds a `### Neighbours`
+  heading with a list under it: the open changes and artifacts in the same area,
   and the components and flows the design reuses. The gate checks that the
   list exists; the reviewer judges what it says.
-- `data`: the Data section starts with "None", or an attached
+- `data`: the Data section starts with "None" as a word of its own,
+  followed by a full stop, a colon or nothing, or an attached
   `plans/decision/v1` names in its `refs` an attached
   `changes/understanding/v1` whose `change` is this change and whose
   `subject` is `data`.
 
 The gate cannot see the diff. At review, when the plan says "No UI change"
 or "None", the reviewer lists the repository's UI-path and data-path
-controls with `controls.check` and reports a diff that touches a path they
-name as a high finding.
+controls, `/controls/<repo>/ui-paths` and `/controls/<repo>/data-paths`,
+with `controls.check`, and reports a diff that touches a path they name as
+a high finding.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.
@@ -317,6 +326,9 @@ There is no bypass flag. The guard cannot see:
 
 - files written through Bash, such as `sed -i` or a heredoc. The review gate
   checks that a change's commits came from its builder sessions;
+- a prototype's builder that switches its checkout to `proto/<name>` for
+  the edit and back before it commits. The guard reads the branch at the
+  moment of the edit;
 - a clone of a mounted repository with no `origin` remote, or one whose
   `origin` points somewhere else, such as a fork or an ssh host alias like
   `git@github-work:owner/name.git`;
@@ -355,3 +367,7 @@ the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
 from `src/board_changes/models.py` by `board_changes.manifest`, and
 a test checks that the committed files match.
+
+`start`, `prototype` and `verdict` call the tasks plugin through a nested
+`board call`, which syncs and pushes a notes repo, so each may run for 120
+seconds instead of Board's default limit.

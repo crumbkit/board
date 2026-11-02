@@ -46,7 +46,8 @@ commits and pushes to `proto/<name>` after every round, and may edit only
 there. When the owner has his answer, ask him for the verdict in one
 sentence and the artifact version he means, and record it with
 `changes.verdict --path /changes/<name> --state settled --verdict '<sentence>' --artifact <url>`.
-Ask again when a prototype has had no new round for three days. Record
+The verdict also closes the prototype's task. Ask again when a prototype
+has had no new round for three days. Record
 `abandoned` only when the owner says so. `changes.open --kind prototype`
 lists every prototype with its verdict.
 
@@ -55,9 +56,11 @@ lists every prototype with its verdict.
 - **plan**: interview the owner. Use your own planning skill where one is
   configured. Write the plan's Problem, Outcome, Out of scope, UX and Data
   sections. UX starts with "No UI change" and a reason, or lists each
-  mockup by URL and a `### Neighbours` list of the open changes and
+  mockup by URL or board path under a `### Mockups` heading, and holds a
+  `### Neighbours` list of the open changes and
   artifacts in the same area and the components the design reuses. Attach
-  the owner's decision that names each mockup in its `urls` or `refs`.
+  the owner's decision that names each mockup in its `urls` or `refs`; a
+  decision an agent wrote, with `written_by` set, does not count.
   Data starts with "None", or holds the data shapes, where each is stored,
   who reads and writes it and what users see; then run the
   `understanding-check` skill and attach its record and the owner's
@@ -70,7 +73,10 @@ lists every prototype with its verdict.
   NotebookEdit the repository; it cannot see writes made through Bash.
   Build test-first. Attach each `tasks/task/v2`. Run the check
   suite that `start` reported on the head commit, record the run, and attach
-  it.
+  it. Before advancing, ask the owner two of each understanding check's
+  predict or edge questions again, worded differently, and add them to the
+  record's `rechecks`. The build gate refuses until each record holds two
+  rechecks that matched.
 - **review**: review the head commit with clean context and attach the
   report. When the plan says "No UI change" or "None", list the
   repository's UI-path and data-path controls with `controls.check`, and
@@ -100,6 +106,9 @@ lists every prototype with its verdict.
 - `changes::pause::not_building`, `changes::resume::not_paused`: only a
   change in `build` is paused, and only a paused one resumed.
 - `changes::prototype::not_prototype`: only a prototype takes a verdict.
+- `changes::task::not_a_task_path`: `--parent` names a task under a
+  `tasks/` directory, such as `/repos/notes-personal/tasks/<slug>.md`, not
+  a project brief.
 - `changes::task::unrouted`: name the task with `--task`, or the repo to
   add it to with `--task-repo`.
 - `changes::ref::dangling`: nothing is at the path. Write the record

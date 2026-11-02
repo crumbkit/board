@@ -32,6 +32,10 @@ from board_changes.models import (
     VerdictOutput,
 )
 
+# Seconds a call that runs `tasks.add`, `tasks.done` or `tasks.drop` through a nested `board call` may take: the
+# nested call syncs and pushes a notes repo, and may first build the tasks plugin's environment.
+NESTED_TIMEOUT = 120
+
 
 def capability(
     name: str, description: str, given: type[BaseModel], output: type[BaseModel], *, read_only: bool
@@ -45,6 +49,11 @@ def capability(
         "annotations": {"readOnlyHint": read_only},
         "_meta": {},
     }
+
+
+def nested(tool: dict[str, Any]) -> dict[str, Any]:
+    """A capability that calls the tasks plugin, given NESTED_TIMEOUT in place of Board's default limit."""
+    return tool | {"timeout": NESTED_TIMEOUT}
 
 
 def manifest() -> dict[str, JsonValue]:
@@ -65,13 +74,15 @@ def manifest() -> dict[str, JsonValue]:
         "metadata": {"area": "delivery"},
         "types": [CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE],
         "capabilities": [
-            capability(
-                "start",
-                "Create a change, its plan to fill in and, unless one is named, its task, set its route from "
-                "CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
-                StartInput,
-                StartOutput,
-                read_only=False,
+            nested(
+                capability(
+                    "start",
+                    "Create a change, its plan to fill in and, unless one is named, its task, set its route from "
+                    "CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
+                    StartInput,
+                    StartOutput,
+                    read_only=False,
+                )
             ),
             capability(
                 "next",
@@ -128,21 +139,25 @@ def manifest() -> dict[str, JsonValue]:
                 BriefOutput,
                 read_only=True,
             ),
-            capability(
-                "prototype",
-                "Start a prototype that answers one question: add its task under a parent, write its change in"
-                " build on branch proto/<name>, and return its brief. It never lands.",
-                PrototypeInput,
-                PrototypeOutput,
-                read_only=False,
+            nested(
+                capability(
+                    "prototype",
+                    "Start a prototype that answers one question: add its task under a parent, write its change in"
+                    " build on branch proto/<name>, and return its brief. It never lands.",
+                    PrototypeInput,
+                    PrototypeOutput,
+                    read_only=False,
+                )
             ),
-            capability(
-                "verdict",
-                "Record what a prototype found in one sentence, and the artifact version it means, which ends it:"
-                " done when settled, dropped when abandoned.",
-                VerdictInput,
-                VerdictOutput,
-                read_only=False,
+            nested(
+                capability(
+                    "verdict",
+                    "Record what a prototype found in one sentence, and the artifact version it means, which ends it"
+                    " and its task: done when settled, dropped when abandoned.",
+                    VerdictInput,
+                    VerdictOutput,
+                    read_only=False,
+                )
             ),
             capability(
                 "pause",

@@ -60,40 +60,42 @@ def test_next_tells_a_prototypes_builder_to_iterate_on_its_branch_and_ask_for_th
     assert "changes.verdict" in output["instruction"]
 
 
-def test_a_settled_verdict_ends_the_prototype_in_done_with_the_artifact_it_means(board: Board) -> None:
-    board.write("changes/step-list.json", prototype())
+def test_a_settled_verdict_ends_the_prototype_in_done_with_the_artifact_it_means(tasks_board: Board) -> None:
+    tasks_board.write("changes/step-list.json", prototype())
     artifact = "https://claude.ai/artifact/abc"
     given = {"path": PATH, "state": "settled", "verdict": "A step list reads better.", "artifact": artifact}
-    assert board.call("verdict", given) == {"path": PATH, "state": "settled", "phase": "done"}
-    record = board.read("changes/step-list.json")
+    assert tasks_board.call("verdict", given) == {"path": PATH, "state": "settled", "phase": "done"}
+    record = tasks_board.read("changes/step-list.json")
     assert (record["state"], record["verdict"], record["verdict_artifact"]) == (
         "settled",
         "A step list reads better.",
         artifact,
     )
+    assert 'status: "done"' in (tasks_board.root / "tasks/given.md").read_text()
 
 
-def test_an_abandoned_verdict_ends_the_prototype_in_dropped(board: Board) -> None:
-    board.write("changes/step-list.json", prototype())
+def test_an_abandoned_verdict_ends_the_prototype_in_dropped(tasks_board: Board) -> None:
+    tasks_board.write("changes/step-list.json", prototype())
     given = {"path": PATH, "state": "abandoned", "verdict": "The owner lost interest."}
-    assert board.call("verdict", given)["phase"] == "dropped"
-    assert "verdict_artifact" not in board.read("changes/step-list.json")
+    assert tasks_board.call("verdict", given)["phase"] == "dropped"
+    assert "verdict_artifact" not in tasks_board.read("changes/step-list.json")
+    assert 'status: "dropped"' in (tasks_board.root / "tasks/given.md").read_text()
 
 
-def test_verdict_refuses_a_build_change_and_admits_a_prototype(board: Board) -> None:
+def test_verdict_refuses_a_build_change_and_admits_a_prototype(tasks_board: Board) -> None:
     given = {"path": PATH, "state": "settled", "verdict": "Yes."}
-    board.write("changes/step-list.json", change("build"))
-    assert board.refusal("verdict", given)["code"] == "changes::prototype::not_prototype"
-    board.write("changes/step-list.json", prototype())
-    assert board.call("verdict", given)["phase"] == "done"
+    tasks_board.write("changes/step-list.json", change("build"))
+    assert tasks_board.refusal("verdict", given)["code"] == "changes::prototype::not_prototype"
+    tasks_board.write("changes/step-list.json", prototype())
+    assert tasks_board.call("verdict", given)["phase"] == "done"
 
 
-def test_verdict_refuses_a_prototype_already_ended_and_admits_one_exploring(board: Board) -> None:
+def test_verdict_refuses_a_prototype_already_ended_and_admits_one_exploring(tasks_board: Board) -> None:
     given = {"path": PATH, "state": "settled", "verdict": "Yes."}
-    board.write("changes/step-list.json", prototype("done", state="settled", verdict="Yes."))
-    assert board.refusal("verdict", given)["code"] == "changes::phase::final"
-    board.write("changes/step-list.json", prototype())
-    assert board.call("verdict", given)["phase"] == "done"
+    tasks_board.write("changes/step-list.json", prototype("done", state="settled", verdict="Yes."))
+    assert tasks_board.refusal("verdict", given)["code"] == "changes::phase::final"
+    tasks_board.write("changes/step-list.json", prototype())
+    assert tasks_board.call("verdict", given)["phase"] == "done"
 
 
 def test_open_by_kind_prototype_lists_every_prototype_with_its_question_verdict_and_branch(board: Board) -> None:
@@ -146,3 +148,22 @@ def test_prototype_refuses_when_three_prototypes_explore_and_starts_once_one_is_
     assert tasks_board.refusal("prototype", given)["code"] == "changes::wip::full"
     tasks_board.call("verdict", {"path": "/changes/p0", "state": "settled", "verdict": "Yes."})
     assert tasks_board.call("prototype", given)["path"] == PATH
+
+
+def test_a_verdict_leaves_a_task_already_closed_as_it_is(tasks_board: Board) -> None:
+    tasks_board.write("tasks/given.md", task("done"))
+    tasks_board.write("changes/step-list.json", prototype())
+    given = {"path": PATH, "state": "abandoned", "verdict": "Not needed."}
+    assert tasks_board.call("verdict", given)["phase"] == "dropped"
+    assert "status: done" in (tasks_board.root / "tasks/given.md").read_text()
+
+
+def test_prototype_refuses_a_parent_outside_a_tasks_directory_and_admits_one_inside(tasks_board: Board) -> None:
+    mount = mount_repo(tasks_board, {"README.md": "x"})
+    tasks_board.write("projects/flows.md", task())
+    tasks_board.write(PARENT.removeprefix("/"), task())
+    given = {"mount": mount, "question": QUESTION, "title": "Step list"}
+    refused = tasks_board.refusal("prototype", given | {"parent": "/projects/flows.md"})
+    assert refused["code"] == "changes::task::not_a_task_path"
+    assert not (tasks_board.root / "changes/step-list.json").exists()
+    assert tasks_board.call("prototype", given | {"parent": PARENT})["path"] == PATH

@@ -51,7 +51,10 @@ knows what the plan does, and records what he showed.
 9. **Check again before review.** An answer given minutes after reading the
    plan can be short-term recall. Before the change moves to `review`, ask
    two of the predict or edge questions again, worded differently, and add
-   them to `rechecks`. A wrong answer reopens the check for that part.
+   them to `rechecks`, each with its `kind`, his answer and whether it
+   matched. The build gate refuses with `changes::gate::unmet` until the
+   record holds two rechecks and every one matched. A wrong answer reopens
+   the check for that part.
 
 The owner can take the check live in chat or as a written questionnaire:
 the most important questions first, one idea per question, room for an

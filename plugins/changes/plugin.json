@@ -164,7 +164,8 @@
         ],
         "title": "StartOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     },
     {
       "_meta": {},
@@ -1146,14 +1147,15 @@
         ],
         "title": "PrototypeOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     },
     {
       "_meta": {},
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Record what a prototype found in one sentence, and the artifact version it means, which ends it: done when settled, dropped when abandoned.",
+      "description": "Record what a prototype found in one sentence, and the artifact version it means, which ends it and its task: done when settled, dropped when abandoned.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "What a prototype found, which ends it.",
@@ -1234,7 +1236,8 @@
         ],
         "title": "VerdictOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     },
     {
       "_meta": {},

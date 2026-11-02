@@ -158,6 +158,7 @@ class Recheck(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
 
+    kind: Literal["predict", "edge"] = Field(description="The kind of question asked again.")
     question: Prose = Field(description="The question, as asked again.")
     answer: Prose = Field(description="The owner's answer.")
     matches: bool = Field(description="Whether the answer matches the plan; a wrong one reopens that part.")
