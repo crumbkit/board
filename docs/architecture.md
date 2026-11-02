@@ -34,7 +34,7 @@ directory's repository, so a linked worktree matches too. With exactly one
 match, Board runs as that board, as git runs from a subdirectory. The prefix
 is the mount's path joined with the directory's path beneath the
 repository's root, such as `/repos/crumbkit/docs`, and the timing log
-records it. In a known board with no such mount, a repo record whose
+records it. When no known board has such a mount, a repo record whose
 `remote` is the repository's origin matches instead, with its own path as
 the prefix (architecture/paths/repos.md). A directory inside the git directory has no prefix and
 matches nothing. No match is `board::config::not_found`. When the file lists

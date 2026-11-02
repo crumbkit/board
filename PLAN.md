@@ -57,11 +57,9 @@ this order.
 
 1. [Decisions](plan/decisions.md).
 
-2. [Artifacts](plan/artifacts.md), independent of decisions.
+2. [Control scope](plan/control-scope.md).
 
-3. [Control scope](plan/control-scope.md).
-
-4. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
+3. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
 
 ## Out of scope
 

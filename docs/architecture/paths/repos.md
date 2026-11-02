@@ -50,12 +50,12 @@ with `board put`.
 When no board holds the directory Board started in, Board reads the known
 boards (docs/architecture.md, Boards and entries). In each known board it
 first looks for a mount whose clone is the directory's repository, with a
-`board/mount/v1` mount or a repo record's checkout alike. When none is, it
-reads that repository's `origin`, as `git remote get-url origin` gives it,
+`board/mount/v1` mount or a repo record's checkout alike. When no known board
+has such a mount, it reads that repository's `origin`, as `git remote get-url origin` gives it,
 and looks for a repo record in the known board's working tree whose `remote`
 is the origin's stored form. Such a record gives the prefix `/repos/<name>`,
-its own path, from any directory in the clone. Matches count across all known
-boards, so two boards with a record for one `remote` are
+its own path, from any directory in the clone. A mount in any known board outranks a repo record matched by remote in
+another. Remote matches count across all known boards, so two boards with a record for one `remote` are
 `board::config::ambiguous`. When nothing matches, the run is
 `board::config::not_found`, so a check there still means the repository has
 no controls.
