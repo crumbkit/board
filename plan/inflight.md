@@ -81,7 +81,8 @@ It returns, each part bounded and saying what it left out:
   `changes.next` through `board call`, so the rules live in one plugin. Each
   shows its
   repository, holder, worktree, next step and actor, its subagents, its pull request
-  URL when one is open, and the artifacts whose `for` names it.
+  URL when one is open, and the artifacts whose `subject` names it
+  (`artifacts.list --subject`).
 - **Agents** that are running, or stalled when `--stopped-at` is given and
   they started before that time, grouped under their change. Unattached
   agents come last.
@@ -113,8 +114,7 @@ Two pull requests.
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
    request gate, the `opened` record, the end of the decision stub with the
-   second migration run (plan/decisions.md), and the artifacts mod's `for`
-   (plan/artifacts.md). Its
+   second migration run (plan/decisions.md). Its
    tests cover each hook with a twin that is refused or left out.
 2. The `inflight` plugin. Its fixture is a board holding four changes
    stopped at different steps, with running subagents, a waiting question

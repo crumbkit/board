@@ -4,98 +4,15 @@
 //! `verify.rs` the other two capabilities. These were the plugin's pytest
 //! suite.
 
-use board_scenario::signer::Signer;
-
 use super::*;
 
 mod overrides;
 mod verify;
 
-/// An expression whose text differs from anything it matches, so a quote
-/// of a match never reveals it.
-const PRIVATE: &str = r"acme-\d{3}";
-
-/// The owner's personal board, which enables controls and boundary and does
-/// not commit, named in a known boards file, with the test signer, whose key
-/// the allowed signers file holds, and an index cache.
-struct Personal {
-    board: Scenario,
-    xdg: Scenario,
-    signer: Signer,
-    /// The index cache, where the signer also keeps its statements.
-    cache: tempfile::TempDir,
-}
-
 impl Personal {
+    /// The personal board, enabling controls and boundary.
     fn new() -> Self {
-        let personal = Self {
-            board: uncommitted(),
-            xdg: Scenario::new(),
-            signer: Signer::new(),
-            cache: tempfile::tempdir().unwrap(),
-        };
-        let known = json!({"personal": personal.board.path()}).to_string();
-        personal.xdg.write("board/config.json", Item::File(&known));
-        personal.enable(personal.board.workdir(), &["controls", "boundary"]);
-        personal
-    }
-
-    /// Enables each of `plugins` in the board at `directory`.
-    fn enable(&self, directory: &Path, plugins: &[&str]) {
-        for plugin in plugins {
-            let enabled = self.run_in(directory, &["plugin", "enable", plugin], "");
-            assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
-        }
-    }
-
-    /// Runs `board` in `directory` with the known boards file, the signer
-    /// and the allowed signers file, and `stdin` as its standard input.
-    fn run_in(&self, directory: &Path, arguments: &[&str], stdin: &str) -> Output {
-        let context = Context {
-            start: directory.to_path_buf(),
-            home: None,
-            cache: Some(self.cache.path().to_path_buf()),
-            plugins: None,
-            boards: Some(self.xdg.workdir().join("board/config.json")),
-            signer: Some(self.signer.program().into_os_string()),
-            allowed_signers: Some(self.signer.allowed()),
-            environment: board_plugin::Environment {
-                path: Some("/usr/bin:/bin".into()),
-                ..board_plugin::Environment::default()
-            },
-            complete: None,
-            terminal: false,
-            browser: None,
-            binary: None,
-            cursor: None,
-            built_in: board_plugins::BUILT_IN,
-        };
-        let arguments = std::iter::once(BINARY_NAME)
-            .chain(arguments.iter().copied())
-            .map(OsString::from);
-        run(
-            arguments,
-            &context,
-            &mut stdin.as_bytes(),
-            &mut Ran::default(),
-        )
-    }
-
-    /// Runs `board` in the personal board's root.
-    fn run(&self, arguments: &[&str]) -> Output {
-        self.run_in(self.board.workdir(), arguments, "")
-    }
-
-    fn write(&self, path: &str, text: &str) -> &Self {
-        self.board.write(path, Item::File(text));
-        self
-    }
-
-    /// The record at `path`, read from the working tree, or `None`.
-    fn record(&self, path: &str) -> Option<Value> {
-        let file = (self.board.workdir()).join(format!("{}.json", path.trim_start_matches('/')));
-        let text = std::fs::read_to_string(file).ok()?;
-        Some(serde_json::from_str(&text).unwrap())
+        Self::enabling(&["controls", "boundary"])
     }
 
     /// `board --json call boundary.<capability>` in `directory` with
@@ -110,34 +27,11 @@ impl Personal {
     fn call(&self, capability: &str, input: &Value) -> (Output, Value) {
         self.call_in(self.board.workdir(), capability, input)
     }
-
-    /// The ids of the pending effects, sorted.
-    fn pending(&self) -> Vec<String> {
-        let Ok(entries) = std::fs::read_dir(self.board.workdir().join("effects/pending")) else {
-            return Vec::new();
-        };
-        let mut ids: Vec<String> = (entries.map(|entry| entry.unwrap().path()))
-            .filter_map(|path| Some(path.file_stem()?.to_str()?.to_owned()))
-            .collect();
-        ids.sort();
-        ids
-    }
-
-    /// `board answer <effect> <answer>`, as the owner, whose approval the
-    /// test signer signs.
-    fn answer(&self, effect: &str, answer: &str) {
-        let answered = self.run(&["answer", effect, answer]);
-        assert_eq!(answered.code, 0, "{}", text(&answered.stderr));
-    }
 }
 
-/// A board that does not commit.
-fn uncommitted() -> Scenario {
-    let board = Scenario::new();
-    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
-    board.write(".board/board.json", Item::File(config));
-    board
-}
+/// An expression whose text differs from anything it matches, so a quote
+/// of a match never reveals it.
+const PRIVATE: &str = r"acme-\d{3}";
 
 /// A `controls/control/v1` record with `rule`.
 fn control(rule: &Value) -> String {

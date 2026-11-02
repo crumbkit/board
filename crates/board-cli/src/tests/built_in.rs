@@ -3,6 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use board_scenario::signer::Signer;
+
 use super::plugins::{TASKS, installed};
 use super::*;
 
@@ -594,6 +596,119 @@ fn mount(fixture: &Fixture, path: &str, repository: &Scenario, commit: ObjectId)
     fixture.write(path, &mount_of(&repository.path(), commit));
 }
 
+/// The owner's personal board, which does not commit, named in a known
+/// boards file, with the test signer, whose key the allowed signers file
+/// holds, and an index cache. The boundary and artifacts modules use it.
+struct Personal {
+    board: Scenario,
+    xdg: Scenario,
+    signer: Signer,
+    /// The index cache, where the signer also keeps its statements.
+    cache: tempfile::TempDir,
+}
+
+impl Personal {
+    /// The personal board, enabling each of `plugins`.
+    fn enabling(plugins: &[&str]) -> Self {
+        let personal = Self {
+            board: uncommitted(),
+            xdg: Scenario::new(),
+            signer: Signer::new(),
+            cache: tempfile::tempdir().unwrap(),
+        };
+        let known = json!({"personal": personal.board.path()}).to_string();
+        personal.xdg.write("board/config.json", Item::File(&known));
+        personal.enable(personal.board.workdir(), plugins);
+        personal
+    }
+
+    /// Enables each of `plugins` in the board at `directory`.
+    fn enable(&self, directory: &Path, plugins: &[&str]) {
+        for plugin in plugins {
+            let enabled = self.run_in(directory, &["plugin", "enable", plugin], "");
+            assert_eq!(enabled.code, 0, "{}", text(&enabled.stderr));
+        }
+    }
+
+    /// Runs `board` in `directory` with the known boards file, the signer
+    /// and the allowed signers file, and `stdin` as its standard input.
+    fn run_in(&self, directory: &Path, arguments: &[&str], stdin: &str) -> Output {
+        let context = Context {
+            start: directory.to_path_buf(),
+            home: None,
+            cache: Some(self.cache.path().to_path_buf()),
+            plugins: None,
+            boards: Some(self.xdg.workdir().join("board/config.json")),
+            signer: Some(self.signer.program().into_os_string()),
+            allowed_signers: Some(self.signer.allowed()),
+            environment: board_plugin::Environment {
+                path: Some("/usr/bin:/bin".into()),
+                ..board_plugin::Environment::default()
+            },
+            complete: None,
+            terminal: false,
+            browser: None,
+            binary: None,
+            cursor: None,
+            built_in: board_plugins::BUILT_IN,
+        };
+        let arguments = std::iter::once(BINARY_NAME)
+            .chain(arguments.iter().copied())
+            .map(OsString::from);
+        run(
+            arguments,
+            &context,
+            &mut stdin.as_bytes(),
+            &mut Ran::default(),
+        )
+    }
+
+    /// Runs `board` in the personal board's root.
+    fn run(&self, arguments: &[&str]) -> Output {
+        self.run_in(self.board.workdir(), arguments, "")
+    }
+
+    fn write(&self, path: &str, text: &str) -> &Self {
+        self.board.write(path, Item::File(text));
+        self
+    }
+
+    /// The record at `path`, read from the working tree, or `None`.
+    fn record(&self, path: &str) -> Option<Value> {
+        let file = (self.board.workdir()).join(format!("{}.json", path.trim_start_matches('/')));
+        let text = std::fs::read_to_string(file).ok()?;
+        Some(serde_json::from_str(&text).unwrap())
+    }
+
+    /// The ids of the pending effects, sorted.
+    fn pending(&self) -> Vec<String> {
+        let Ok(entries) = std::fs::read_dir(self.board.workdir().join("effects/pending")) else {
+            return Vec::new();
+        };
+        let mut ids: Vec<String> = (entries.map(|entry| entry.unwrap().path()))
+            .filter_map(|path| Some(path.file_stem()?.to_str()?.to_owned()))
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// `board answer <effect> <answer>`, as the owner, whose approval the
+    /// test signer signs.
+    fn answer(&self, effect: &str, answer: &str) {
+        let answered = self.run(&["answer", effect, answer]);
+        assert_eq!(answered.code, 0, "{}", text(&answered.stderr));
+    }
+}
+
+/// A board that does not commit.
+fn uncommitted() -> Scenario {
+    let board = Scenario::new();
+    let config = r#"{"$type": "board/config/v1", "commit_on_put": false}"#;
+    board.write(".board/board.json", Item::File(config));
+    board
+}
+
+mod artifacts;
 mod boundary;
 mod controls;
 mod evals;

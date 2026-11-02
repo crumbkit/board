@@ -101,3 +101,36 @@ def test_owner_is_a_non_empty_string(board: Board) -> None:
         "/tasks/empty.md": "board::record::invalid",
         "/tasks/number.md": "board::record::invalid",
     }
+
+
+def test_parent_references_a_v2_task_by_its_path_with_md(board: Board) -> None:
+    board.write("tasks/plan.md", task_v2("Plan"))
+    board.write(".board/types/other/thing/v1.schema.json", '{"type": "object"}')
+    board.write("tasks/thing.json", '{"$type": "other/thing/v1"}')
+    board.write("tasks/piece.md", task_v2("Piece", parent="/tasks/plan.md"))
+    board.write("tasks/under-thing.md", task_v2("Under a thing", parent="/tasks/thing"))
+    board.write("tasks/no-suffix.md", task_v2("No suffix", parent="/tasks/plan"))
+    board.write("tasks/two.md", task_v2("Two parents", parent=["/tasks/plan.md"]))
+    codes = checked(board)
+    del codes["/tasks/thing"]
+    assert codes == {
+        "/tasks/plan.md": None,
+        "/tasks/piece.md": None,
+        "/tasks/under-thing.md": "board::ref::wrong_type",
+        "/tasks/no-suffix.md": "board::ref::dangling",
+        "/tasks/two.md": "board::record::invalid",
+    }
+
+
+def test_kind_is_task_or_project_and_brief_references_any_file(board: Board) -> None:
+    board.write("projects/flows/README.md", "# Flows\n")
+    board.write("tasks/project.md", task_v2("Project", kind="project", brief="/projects/flows/README.md"))
+    board.write("tasks/task.md", task_v2("Task", kind="task"))
+    board.write("tasks/epic.md", task_v2("Epic", kind="epic"))
+    board.write("tasks/lost.md", task_v2("Lost", kind="project", brief="/projects/gone/README.md"))
+    assert checked(board) == {
+        "/tasks/project.md": None,
+        "/tasks/task.md": None,
+        "/tasks/epic.md": "board::record::invalid",
+        "/tasks/lost.md": "board::ref::dangling",
+    }

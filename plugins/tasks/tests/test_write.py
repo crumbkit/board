@@ -355,3 +355,146 @@ def test_a_stale_put_is_tried_again_on_a_new_read_and_a_landed_one_is_not_writte
     with pytest.raises(PluginError) as refused:
         write.done(REQUEST)
     assert (refused.value.code, len(busy.puts), busy.texts) == ("tasks::task::busy", 3, [])
+
+
+def test_add_writes_a_project_with_its_brief_under_a_parent(board: Board) -> None:
+    board.write("tasks/flows.md", task_v2("Flows"))
+    flags = ("--kind", "project", "--brief", "/projects/flows/README.md", "--parent", "/tasks/flows.md")
+    code, output = call(board, "add", "--title", "Flow document store", *flags)
+    assert (code, output["path"]) == (0, "/tasks/flow-document-store.md"), output
+    assert (board.root / "tasks" / "flow-document-store.md").read_text() == (
+        '---\n$type: "tasks/task/v2"\ntitle: "Flow document store"\nstatus: "open"\nkind: "project"\n'
+        f'brief: "/projects/flows/README.md"\nparent: "/tasks/flows.md"\nreviewed: "{day()}"\n---\n'
+    )
+    code, refused = call(board, "add", "--title", "Epic", "--kind", "epic")
+    assert (code, refused["code"]) == (1, "board::plugin::bad_input"), refused
+
+
+PLAN = task_v2("Plan", reviewed="2026-10-01")
+PIECE = '---\n$type: tasks/task/v2\ntitle: Piece  # of the plan\nstatus: done\nreviewed: "2026-10-01"\n---\n\nBody.\n'
+
+
+@pytest.fixture
+def plan(board: Board) -> Board:
+    """The board with a plan, a finished piece and an open bit under the piece, and another task."""
+    board.write("tasks/plan.md", PLAN)
+    board.write("tasks/piece.md", PIECE)
+    board.write("tasks/bit.md", task_v2("Bit", parent="/tasks/piece.md"))
+    board.write("tasks/other.md", task_v2("Other"))
+    return board
+
+
+def test_move_sets_the_parent_of_any_task_and_keeps_every_other_byte_and_none_clears_it(plan: Board) -> None:
+    code, output = call(plan, "move", "--path", "/tasks/piece.md", "--parent", "/tasks/plan.md")
+    assert code == 0, output
+    assert output == {
+        "repo": "/",
+        "path": "/tasks/piece.md",
+        "parent": "/tasks/plan.md",
+        "commit": None,
+        "unsynced": NOT_SYNCED,
+        "unpushed": NOT_SYNCED,
+    }
+    moved = PIECE.replace('"2026-10-01"\n', '"2026-10-01"\nparent: "/tasks/plan.md"\n')
+    assert (plan.root / "tasks" / "piece.md").read_text() == moved
+    code, output = call(plan, "move", "--path", "/tasks/piece.md", "--parent", "none")
+    assert (code, output["parent"]) == (0, None), output
+    assert (plan.root / "tasks" / "piece.md").read_text() == PIECE
+
+
+def test_move_refuses_a_parent_that_is_the_task_or_under_it_and_admits_one_beside_it(plan: Board) -> None:
+    plan.write("tasks/piece.md", PIECE.replace("status: done\n", 'status: done\nparent: "/tasks/plan.md"\n'))
+    for parent in ("/tasks/plan.md", "/tasks/piece.md", "/tasks/bit.md"):
+        code, refused = call(plan, "move", "--path", "/tasks/plan.md", "--parent", parent)
+        assert (code, refused["code"]) == (1, "tasks::move::cycle"), refused
+        assert (refused["fields"]["path"], refused["fields"]["parent"]) == ("/tasks/plan.md", parent)
+    assert (plan.root / "tasks" / "plan.md").read_text() == PLAN
+    assert call(plan, "move", "--path", "/tasks/plan.md", "--parent", "/tasks/other.md")[0] == 0
+
+
+def test_move_refuses_a_parent_that_holds_no_task_and_admits_a_task(plan: Board) -> None:
+    plan.write("tasks/note.md", "# A note\n")
+    for parent in ("/tasks/gone.md", "/tasks/note.md"):
+        code, refused = call(plan, "move", "--path", "/tasks/other.md", "--parent", parent)
+        assert (code, refused["code"], refused["fields"]["parent"]) == (1, "tasks::move::parent_not_found", parent)
+    assert call(plan, "move", "--path", "/tasks/other.md", "--parent", "/tasks/plan.md")[0] == 0
+
+
+def test_move_refuses_a_parent_in_another_repo_and_admits_one_in_the_tasks_own(plan: Board, mounted: Path) -> None:
+    del mounted
+    for path, parent in (
+        ("/tasks/other.md", "/repos/work/tasks/report.md"),
+        ("/repos/work/tasks/report.md", "/tasks/plan.md"),
+    ):
+        code, refused = call(plan, "move", "--path", path, "--parent", parent)
+        assert (code, refused["code"]) == (1, "tasks::move::cross_repo"), refused
+        assert (refused["fields"]["path"], refused["fields"]["parent"]) == (path, parent)
+    assert call(plan, "move", "--path", "/tasks/other.md", "--parent", "/tasks/plan.md")[0] == 0
+
+
+def test_add_takes_board_paths_for_parent_and_brief_and_writes_them_as_paths_in_the_tasks_repo(
+    board: Board, mounted: Path
+) -> None:
+    flags = ("--repo", "/repos/work", "--parent", "/repos/work/tasks/report.md")
+    code, output = call(board, "add", "--title", "Child", *flags, "--brief", "/repos/work/projects/x/README.md")
+    assert (code, output["path"]) == (0, "/repos/work/tasks/child.md"), output
+    text = (mounted / "tasks" / "child.md").read_text()
+    assert 'brief: "/projects/x/README.md"\nparent: "/tasks/report.md"\n' in text, text
+    code, tree = call(board, "tree", "--path", "/repos/work/tasks/report.md")
+    assert code == 0, tree
+    [child] = tree["tree"]["children"]
+    assert (child["path"], child["tree_path"], child["brief"]) == (
+        "/repos/work/tasks/child.md",
+        "report/child",
+        "/repos/work/projects/x/README.md",
+    )
+
+
+def test_add_refuses_a_parent_or_brief_in_another_repo_and_a_parent_that_holds_no_task(
+    board: Board, mounted: Path
+) -> None:
+    board.write("tasks/plan.md", task_v2("Plan"))
+    for flags, refusal in (
+        (("--parent", "/tasks/plan.md"), "tasks::add::cross_repo"),
+        (("--brief", "/projects/x/README.md"), "tasks::add::cross_repo"),
+        (("--parent", "/repos/work/tasks/gone.md"), "tasks::add::parent_not_found"),
+    ):
+        code, refused = call(board, "add", "--title", "Child", "--repo", "/repos/work", *flags)
+        assert (code, refused["code"]) == (1, refusal), refused
+        assert refused["fields"][flags[0].removeprefix("--")] == flags[1]
+    assert not (mounted / "tasks" / "child.md").exists()
+    code, output = call(
+        board, "add", "--title", "Child", "--repo", "/repos/work", "--parent", "/repos/work/tasks/report.md"
+    )
+    assert code == 0, output
+
+
+def test_move_inside_a_mount_writes_the_parent_as_a_path_in_that_repo(board: Board, mounted: Path) -> None:
+    assert call(board, "add", "--title", "Plan B", "--repo", "/repos/work")[0] == 0
+    code, output = call(
+        board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "/repos/work/tasks/plan-b.md"
+    )
+    assert (code, output["parent"]) == (0, "/repos/work/tasks/plan-b.md"), output
+    assert 'parent: "/tasks/plan-b.md"\n' in (mounted / "tasks" / "report.md").read_text()
+    code, tree = call(board, "tree", "--path", "/repos/work/tasks/plan-b.md")
+    assert (code, [child["tree_path"] for child in tree["tree"]["children"]]) == (0, ["plan-b/report"]), tree
+    assert call(board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "none")[0] == 0
+    cleared = (mounted / "tasks" / "report.md").read_text()
+    assert "parent:" not in cleared
+    assert call(board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "none")[0] == 0
+    assert (mounted / "tasks" / "report.md").read_text() == cleared
+
+
+def test_add_finds_a_parent_its_sync_just_pulled_and_refuses_one_nobody_pushed(board: Board, mounted: Path) -> None:
+    other = board.root.parent / "work-phone"
+    git(board.root.parent, "clone", "-q", str(board.root.parent / "work.git"), str(other))
+    (other / "tasks" / "plan.md").write_text(task_v2("Plan"))
+    git(other, "add", ".")
+    git(other, "commit", "-qm", "from the phone")
+    git(other, "push", "-q")
+    flags = ("--title", "Child", "--repo", "/repos/work")
+    code, refused = call(board, "add", *flags, "--parent", "/repos/work/tasks/elsewhere.md")
+    assert (code, refused["code"]) == (1, "tasks::add::parent_not_found"), refused
+    code, output = call(board, "add", *flags, "--parent", "/repos/work/tasks/plan.md")
+    assert (code, output["path"]) == (0, "/repos/work/tasks/child.md"), output
+    assert 'parent: "/tasks/plan.md"\n' in (mounted / "tasks" / "child.md").read_text()

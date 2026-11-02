@@ -2,7 +2,7 @@
 
 import json
 
-from conftest import Board, change, record
+from conftest import TASK, Board, change, record
 
 
 def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -> None:
@@ -18,6 +18,9 @@ def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -
             "mount": "/repos/x",
             "phase": "plan",
             "route": None,
+            "task": TASK,
+            "kind": "build",
+            "prototype": None,
         },
         {
             "path": "/changes/b",
@@ -25,6 +28,9 @@ def test_open_lists_changes_that_are_not_done_or_dropped_by_path(board: Board) -
             "mount": "/repos/x",
             "phase": "build",
             "route": "owner",
+            "task": TASK,
+            "kind": "build",
+            "prototype": None,
         },
     ]
     assert (output["total"], output["truncated"], output["unreadable"]) == (2, False, 0)
