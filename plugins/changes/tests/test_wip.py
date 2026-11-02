@@ -23,7 +23,8 @@ def test_the_cap_counts_build_changes_in_build_apart_from_prototypes_exploring()
         held("build", kind="build"),
         held("paused"),
         held("review"),
-        held("build", kind="prototype", state="exploring"),
+        held("build", kind="prototype"),
+        held("paused", kind="prototype"),
         held("done", kind="prototype", state="settled"),
     ]
     assert building(changes, "build") == changes[:2]

@@ -16,14 +16,8 @@ WIP_LIMIT = 3
 
 
 def building(changes: list[Change], kind: str) -> list[Change]:
-    """The changes of `kind` that hold a place: a build change in build, or a prototype in build and exploring."""
-    return [
-        change
-        for change in changes
-        if change["phase"] == "build"
-        and kind_of(change) == kind
-        and (kind != "prototype" or change.get("state") == "exploring")
-    ]
+    """The changes of `kind` in build, which hold a place; a prototype in build is always exploring."""
+    return [change for change in changes if change["phase"] == "build" and kind_of(change) == kind]
 
 
 def in_build(board: Board) -> dict[str, Change]:
@@ -39,11 +33,9 @@ def in_build(board: Board) -> dict[str, Change]:
 
 def refuse_full(board: Board, kind: str, path: str) -> None:
     """Refuse moving the change at `path` into build with `changes::wip::full` when its kind's cap is reached."""
-    others = {other: change for other, change in in_build(board).items() if other != path}
-    held = building(list(others.values()), kind)
-    if len(held) < WIP_LIMIT:
+    paths = [other for other, change in in_build(board).items() if other != path and building([change], kind)]
+    if len(paths) < WIP_LIMIT:
         return
-    paths = [other for other, change in others.items() if any(change is one for one in held)]
     what = "build changes are in build" if kind == "build" else "prototypes are exploring"
     then = (
         "pause the lowest-ranked with `board call changes.pause --path <change>`, or wait for one to move on"
@@ -52,6 +44,6 @@ def refuse_full(board: Board, kind: str, path: str) -> None:
     )
     raise PluginError(
         "changes::wip::full",
-        f"{len(held)} {what}, the most at once ({', '.join(paths)}), so {path} waits; {then}",
+        f"{len(paths)} {what}, the most at once ({', '.join(paths)}), so {path} waits; {then}",
         {"path": path, "kind": kind, "building": paths},
     )
