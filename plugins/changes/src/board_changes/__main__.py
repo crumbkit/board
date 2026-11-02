@@ -5,7 +5,7 @@ import sys
 from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_changes.open import open_changes
-from board_changes.phases import advance, attach, next_step
+from board_changes.phases import advance, attach, next_step, pause, resume
 from board_changes.plan import brief, plan
 from board_changes.pr import pr
 from board_changes.prototype import prototype, verdict
@@ -22,6 +22,8 @@ CAPABILITIES = {
     "brief": brief,
     "prototype": prototype,
     "verdict": verdict,
+    "pause": pause,
+    "resume": resume,
 }
 
 

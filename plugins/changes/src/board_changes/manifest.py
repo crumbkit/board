@@ -100,7 +100,8 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "advance",
-                "Move the change to its next phase when its gate passes; otherwise refuse and list what is missing.",
+                "Move the change to its next phase when its gate passes and, into build, while fewer than three"
+                " changes are in build; otherwise refuse and say what is missing.",
                 PathInput,
                 AdvanceOutput,
                 read_only=False,
@@ -157,6 +158,20 @@ def manifest() -> dict[str, JsonValue]:
                     VerdictOutput,
                     read_only=False,
                 )
+            ),
+            capability(
+                "pause",
+                "Move a change in build to paused, which frees its place under the cap of three changes in build.",
+                PathInput,
+                AdvanceOutput,
+                read_only=False,
+            ),
+            capability(
+                "resume",
+                "Move a paused change back to build, refused while three changes of its kind hold places.",
+                PathInput,
+                AdvanceOutput,
+                read_only=False,
             ),
         ],
     }

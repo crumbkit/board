@@ -226,6 +226,17 @@ test('a brief that names a change in plan is refused, and the same brief in buil
   expect(edits).toEqual(['Edit'])
 })
 
+test('a paused change is refused and says to resume it, and the same change in build is admitted', async ($, on) => {
+  const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/widgets', phase: 'paused' }) }
+  engine(on, answers)
+  expect((await edit($, FILE, 'a1')).deny).toBe(
+    `changes::guard::not_building: /changes/fix-it is paused, and its builder may edit ${FILE} only in build. ` +
+      `Run \`board -C ${BOARD} call changes.resume --path /changes/fix-it\` when the cap allows.`,
+  )
+  answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+})
+
 test('a brief for a change to another repository is refused, and one for this repository is admitted', async ($, on) => {
   const answers: Answers = { first: { a1: BRIEF }, change: change({ mount: '/repos/gadgets', phase: 'build' }) }
   const { edits } = engine(on, answers)

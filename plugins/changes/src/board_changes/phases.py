@@ -22,6 +22,7 @@ from board_changes.change import (
 )
 from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
+from board_changes.wip import refuse_full
 
 # Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
 ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ...]], ...] = (
@@ -48,6 +49,8 @@ INSTRUCTIONS = {
     "URL with --pull-request. Merging happens outside Board.",
     "done": "Nothing is left to do.",
     "dropped": "Nothing is left to do.",
+    "paused": "The keeper paused this change to keep the work in progress small. Resume it with "
+    "`board call changes.resume` when the owner's queue and the cap allow.",
 }
 # What a prototype's builder does while it explores.
 PROTOTYPE = (
@@ -114,7 +117,7 @@ def instruction_for(path: str, change: Change, checks: list[Check]) -> str:
     phase = change["phase"]
     if kind_of(change) == "prototype" and phase == "build":
         return PROTOTYPE.format(branch=branch_of(path))
-    if phase not in FINAL and all(found["status"] == "pass" for found in checks):
+    if phase not in FINAL and phase != "paused" and all(found["status"] == "pass" for found in checks):
         return f"The gate passes: run `board call changes.advance --path {path}`."
     return INSTRUCTIONS[phase]
 
@@ -195,6 +198,13 @@ def advance(request: CallRequest) -> dict[str, object]:
             "`board call changes.open`, or start one with `board call changes.start`",
             {"path": path, "phase": phase},
         )
+    if phase == "paused":
+        raise PluginError(
+            "changes::phase::paused",
+            f"the change at {path} is paused, which has no gate; resume it with "
+            f"`board call changes.resume --path {path}`",
+            {"path": path, "phase": phase},
+        )
     missing = [found for found in gate(observe(board, path, change)) if found["status"] == "missing"]
     if missing:
         raise PluginError(
@@ -205,5 +215,42 @@ def advance(request: CallRequest) -> dict[str, object]:
             {"path": path, "phase": phase, "missing": [found["check"] for found in missing]},
         )
     change["phase"] = PHASES[PHASES.index(phase) + 1]
+    if change["phase"] == "build":
+        refuse_full(board, kind_of(change), path)
     write(board, [{"path": path, "expect": blob, "record": change}])
     return {"path": path, "from": phase, "to": change["phase"]}
+
+
+def pause(request: CallRequest) -> dict[str, object]:
+    """Move a change in build to `paused`, which frees its place under the cap."""
+    path = str(request.input["path"])
+    board = Board(request.board.root, PLUGIN)
+    change, blob = read(board, path)
+    if change["phase"] != "build":
+        raise PluginError(
+            "changes::pause::not_building",
+            f"the change at {path} is in {change['phase']}, and only a change in build is paused; "
+            "list the changes in build with `board call changes.open`",
+            {"path": path, "phase": change["phase"]},
+        )
+    change["phase"] = "paused"
+    write(board, [{"path": path, "expect": blob, "record": change}])
+    return {"path": path, "from": "build", "to": "paused"}
+
+
+def resume(request: CallRequest) -> dict[str, object]:
+    """Move a paused change back to build, refused when its kind's cap is full."""
+    path = str(request.input["path"])
+    board = Board(request.board.root, PLUGIN)
+    change, blob = read(board, path)
+    if change["phase"] != "paused":
+        raise PluginError(
+            "changes::resume::not_paused",
+            f"the change at {path} is in {change['phase']}, and only a paused change is resumed; "
+            f"run `board call changes.next --path {path}` for its next step",
+            {"path": path, "phase": change["phase"]},
+        )
+    refuse_full(board, kind_of(change), path)
+    change["phase"] = "build"
+    write(board, [{"path": path, "expect": blob, "record": change}])
+    return {"path": path, "from": "paused", "to": "build"}

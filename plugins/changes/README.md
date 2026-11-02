@@ -30,7 +30,7 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
 
 - `title`, `mount` and `phase` are required.
 - `phase`: `plan`, `build`, `review`, `land`, `done`, or `dropped` to end a
-  change early.
+  change early. `paused` holds a change the keeper took out of `build`.
 - To drop a change, `board put` it with `phase` set to `dropped`.
 - `route`: `owner` (nobody else owns a CODEOWNERS pattern), `ask-first`
   (someone else does) or `unowned` (no CODEOWNERS pattern names anyone).
@@ -106,8 +106,19 @@ skill in `claude-code/skills/` runs the check.
   code is that of the first failed check: `changes::ux::not_agreed`,
   `changes::ux::no_neighbours`, `changes::data::not_signed`,
   `changes::prototype::never_lands` for a prototype's `verdict` check, else
-  `changes::gate::unmet`. Leaving `done` or `dropped` is
+  `changes::gate::unmet`. Moving into `build` is also refused with
+  `changes::wip::full`, whose `building` lists them, while three other
+  build changes are in `build`. A paused change is refused with
+  `changes::phase::paused`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
+- `pause --path /changes/<name>` moves a change in `build` to `paused`,
+  which frees its place. A prototype can be paused too, and `verdict`
+  still ends a paused prototype. It refuses any other phase
+  (`changes::pause::not_building`).
+- `resume --path /changes/<name>` moves a paused change back to `build`.
+  It refuses a change that is not paused (`changes::resume::not_paused`),
+  and refuses with `changes::wip::full` while three changes of its kind
+  hold places.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
   `truncated` and `unreadable`. Each names its `task` and `kind`, and a
@@ -125,7 +136,8 @@ skill in `claude-code/skills/` runs the check.
   it behind for `tasks.drop`. Refuses an existing name
   (`changes::change::exists`), and a `--parent` that is not under a
   `tasks/` directory (`changes::task::not_a_task_path`), before it adds
-  anything.
+  anything. Refuses with `changes::wip::full` while three prototypes are
+  exploring.
 - `verdict --path /changes/<name> --state settled|abandoned --verdict '<sentence>' [--artifact <url>]`
   records what a prototype found and ends it: `done` when settled,
   `dropped` when abandoned. It then closes the prototype's task through
@@ -161,6 +173,13 @@ skill in `claude-code/skills/` runs the check.
   gives, and the `controls.check` command for the change's mount. It holds at
   most 600 words, counting each line with its reference, and `left_out`
   counts the lines it dropped.
+
+The cap on work in progress counts build changes in `build`, at most
+three, and apart from them prototypes in `build`, at most three. A
+prototype in `build` is always `exploring`, because `verdict` moves it out
+of `build` in the same write that sets its state. A paused change holds no place. The cap reads every change in
+the board, so it is checked when a change moves into `build` and never
+appears in a gate.
 
 A path that holds no change is `changes::change::not_found`; a degraded
 change is `changes::change::degraded`.
@@ -275,7 +294,8 @@ every Edit, Write and NotebookEdit. Install it with
    line itself.
 4. It reads that change from each board that mounts the repository. It
    admits the call when the change's `phase` is `build` and its `mount` is the
-   mount that holds the file. For a prototype, the file's checkout must also
+   mount that holds the file; a paused change is refused and told to
+   resume. For a prototype, the file's checkout must also
    be on branch `proto/<name>`.
 
 Before any of that, the guard refuses three kinds of file to every agent,

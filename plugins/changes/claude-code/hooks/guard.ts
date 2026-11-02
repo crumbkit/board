@@ -175,6 +175,12 @@ export function judge(
   change: { mount: string; phase: string; changeKind: string },
   branch: string,
 ): string | null {
+  if (change.phase === 'paused') {
+    return (
+      `changes::guard::not_building: ${name} is paused, and its builder may edit ${file} only in build. ` +
+      `Run \`board -C ${at.board} call changes.resume --path ${name}\` when the cap allows.`
+    )
+  }
   if (change.phase !== 'build') {
     return (
       `changes::guard::not_building: ${name} is in phase ${change.phase}, and its builder may edit ${file} only ` +

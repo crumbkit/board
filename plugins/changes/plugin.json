@@ -249,7 +249,8 @@
               "review",
               "land",
               "done",
-              "dropped"
+              "dropped",
+              "paused"
             ],
             "title": "Phase",
             "type": "string"
@@ -431,7 +432,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Move the change to its next phase when its gate passes; otherwise refuse and list what is missing.",
+      "description": "Move the change to its next phase when its gate passes and, into build, while fewer than three changes are in build; otherwise refuse and say what is missing.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "One change, by path.",
@@ -462,7 +463,8 @@
               "review",
               "land",
               "done",
-              "dropped"
+              "dropped",
+              "paused"
             ],
             "title": "From",
             "type": "string"
@@ -478,7 +480,8 @@
               "review",
               "land",
               "done",
-              "dropped"
+              "dropped",
+              "paused"
             ],
             "title": "To",
             "type": "string"
@@ -553,7 +556,8 @@
                   "review",
                   "land",
                   "done",
-                  "dropped"
+                  "dropped",
+                  "paused"
                 ],
                 "title": "Phase",
                 "type": "string"
@@ -935,7 +939,8 @@
               "review",
               "land",
               "done",
-              "dropped"
+              "dropped",
+              "paused"
             ],
             "title": "Phase",
             "type": "string"
@@ -1056,7 +1061,8 @@
                   "review",
                   "land",
                   "done",
-                  "dropped"
+                  "dropped",
+                  "paused"
                 ],
                 "title": "Phase",
                 "type": "string"
@@ -1208,7 +1214,8 @@
               "review",
               "land",
               "done",
-              "dropped"
+              "dropped",
+              "paused"
             ],
             "title": "Phase",
             "type": "string"
@@ -1231,6 +1238,144 @@
         "type": "object"
       },
       "timeout": 120
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Move a change in build to paused, which frees its place under the cap of three changes in build.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One change, by path.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathInput",
+        "type": "object"
+      },
+      "name": "pause",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The phase the change left and the phase it entered.",
+        "properties": {
+          "from": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped",
+              "paused"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "to": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped",
+              "paused"
+            ],
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "from",
+          "to"
+        ],
+        "title": "AdvanceOutput",
+        "type": "object"
+      }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Move a paused change back to build, refused while three changes of its kind hold places.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "One change, by path.",
+        "properties": {
+          "path": {
+            "description": "The change's logical path, such as /changes/suite-timeout.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "PathInput",
+        "type": "object"
+      },
+      "name": "resume",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The phase the change left and the phase it entered.",
+        "properties": {
+          "from": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped",
+              "paused"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "to": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped",
+              "paused"
+            ],
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "from",
+          "to"
+        ],
+        "title": "AdvanceOutput",
+        "type": "object"
+      }
     }
   ],
   "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",

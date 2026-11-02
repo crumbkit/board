@@ -139,6 +139,17 @@ def test_the_schema_refuses_an_unknown_kind_or_state_and_admits_a_prototype(boar
     }
 
 
+def test_prototype_refuses_when_three_prototypes_explore_and_starts_once_one_is_settled(tasks_board: Board) -> None:
+    mount = mount_repo(tasks_board, {"README.md": "x"})
+    tasks_board.write(PARENT.removeprefix("/"), task())
+    for number in range(3):
+        tasks_board.write(f"changes/p{number}.json", prototype())
+    given = {"mount": mount, "question": QUESTION, "parent": PARENT, "title": "Step list"}
+    assert tasks_board.refusal("prototype", given)["code"] == "changes::wip::full"
+    tasks_board.call("verdict", {"path": "/changes/p0", "state": "settled", "verdict": "Yes."})
+    assert tasks_board.call("prototype", given)["path"] == PATH
+
+
 def test_a_verdict_leaves_a_task_already_closed_as_it_is(tasks_board: Board) -> None:
     tasks_board.write("tasks/given.md", task("done"))
     tasks_board.write("changes/step-list.json", prototype())
@@ -156,3 +167,29 @@ def test_prototype_refuses_a_parent_outside_a_tasks_directory_and_admits_one_ins
     assert refused["code"] == "changes::task::not_a_task_path"
     assert not (tasks_board.root / "changes/step-list.json").exists()
     assert tasks_board.call("prototype", given | {"parent": PARENT})["path"] == PATH
+
+
+def test_build_changes_in_build_do_not_fill_the_prototype_cap(tasks_board: Board) -> None:
+    mount = mount_repo(tasks_board, {"README.md": "x"})
+    tasks_board.write(PARENT.removeprefix("/"), task())
+    for number in range(3):
+        tasks_board.write(f"changes/b{number}.json", change("build"))
+    given = {"mount": mount, "question": QUESTION, "parent": PARENT, "title": "Step list"}
+    assert tasks_board.call("prototype", given)["path"] == PATH
+
+
+def test_a_paused_prototype_resumes_only_while_fewer_than_three_others_explore(board: Board) -> None:
+    board.write("changes/step-list.json", prototype())
+    assert board.call("pause", {"path": PATH})["to"] == "paused"
+    for number in range(3):
+        board.write(f"changes/p{number}.json", prototype())
+    refused = board.refusal("resume", {"path": PATH})
+    assert (refused["code"], refused["fields"]["kind"]) == ("changes::wip::full", "prototype")
+    (board.root / "changes/p0.json").unlink()
+    assert board.call("resume", {"path": PATH})["to"] == "build"
+
+
+def test_a_verdict_ends_a_paused_prototype(tasks_board: Board) -> None:
+    tasks_board.write("changes/step-list.json", prototype("paused"))
+    given = {"path": PATH, "state": "abandoned", "verdict": "The owner lost interest."}
+    assert tasks_board.call("verdict", given)["phase"] == "dropped"

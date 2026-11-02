@@ -10,6 +10,7 @@ from board_changes.plan import brief_of, plan_lines
 from board_changes.repo import exists
 from board_changes.start import name_of, refuse_existing
 from board_changes.tasks import add_task, close_task
+from board_changes.wip import refuse_full
 
 # The phase a verdict ends a prototype in, by its state.
 ENDS = {"settled": "done", "abandoned": "dropped"}
@@ -33,6 +34,7 @@ def prototype(request: CallRequest) -> dict[str, object]:
     board = Board(request.board.root, PLUGIN)
     exists(board, mount)
     refuse_existing(board, path)
+    refuse_full(board, "prototype", path)
     task = add_task(board, title, {}, parent=str(asked["parent"]))
     _, lines = plan_lines(path, question_plan(title, question), [])
     change: Change = {
