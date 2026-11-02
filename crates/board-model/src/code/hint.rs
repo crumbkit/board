@@ -366,7 +366,7 @@ fn generic(code: Code) -> &'static str {
             "`.board/board.json` holds `$type` `board/config/v1`, and may hold `commit_on_put` (true or false), `plugins` (distinct plugin names) and `store` (a `backend` and a `location`), nothing else"
         }
         Code::ConfigAmbiguous => {
-            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"
+            "choose a board with `board -C <dir> check`, naming one of the boards listed, or leave one mount or repo record of this repository among the boards in `$XDG_CONFIG_HOME/board/config.json`"
         }
         Code::SchemaInvalid => {
             "fix the schema so it compiles as JSON Schema 2020-12; the message says what failed"
@@ -396,7 +396,7 @@ fn generic(code: Code) -> &'static str {
             "create what the reference names, or change the reference; `board refs <path>` lists them"
         }
         Code::MountInvalid => {
-            "a link holds `$type` `board/mount/v1` and `path`; a mount holds `repo`, `follow` and `commit`"
+            "a link holds `$type` `board/mount/v1` and `path`; a mount holds `repo`, `follow` and `commit`; a `board/repo/v1` record holds `remote`, in the form `owner/name` for GitHub, and may hold a `checkout` of `repo`, `follow` and `commit`"
         }
         Code::MountRepoMissing => {
             "clone the mounted repository to the path in `repo`, or change `repo`"
@@ -426,7 +426,10 @@ fn generic(code: Code) -> &'static str {
             "run the command again, because a file may have changed while it was read; if it fails again, check that git can read the repository, for example with `git fsck`"
         }
         Code::RepoSubmodule => {
-            "Board does not read submodules; mount the repository with a `board/mount/v1` record instead"
+            "Board does not read submodules; mount the repository with a `board/repo/v1` record instead"
+        }
+        Code::RepoDuplicateRemote => {
+            "a repository has one repo record: remove all but one of the records the message names, or fix the `remote` of the one that names another repository"
         }
         Code::SymlinkOutside => {
             "make the symlink a relative path to a file inside the repository, or replace it with the file; Board reads only the repository's tree"

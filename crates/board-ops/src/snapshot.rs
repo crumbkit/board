@@ -10,12 +10,14 @@
 //! snapshot is a decided run over the index; `Repositories::snapshot` is a
 //! different thing, a view of the git working tree for resolving paths.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 
 use board_index::{Decided, Index, IndexError, Storage, View, Writer};
-use board_model::{Change, Code, Digest, Kind, LogicalPath, ObjectId, Role, Source, Stat};
+use board_model::{
+    Change, Code, Digest, Kind, LogicalPath, ObjectId, REPO_TYPE, RecordType, Role, Source, Stat,
+};
 use board_tree::{
     Cache, Entry, Held, Mounted, Place, Repository, Scopes, TreeRow, TreeRows, in_scope,
 };
@@ -139,7 +141,9 @@ impl Board {
         let (places, _, _) = transact(index, |writer| {
             let refresh = self.refresh(writer)?;
             let is_pointer = |path: &str| Indexing::is_pointer(&refresh.facts, path);
-            let places = (self.repositories()).places(&refresh.entries, &is_pointer, directory);
+            let is_repo = |path: &str| is_repo(&refresh.facts, path);
+            let places =
+                (self.repositories()).places(&refresh.entries, &is_pointer, &is_repo, directory);
             Ok((places, Vec::new()))
         })?;
         Ok(places)
@@ -187,6 +191,7 @@ impl Board {
             resolve: RefCell::new(Box::new(|path: &LogicalPath| resolver.resolve(path))),
             reader: RefCell::new(self.repositories().root().reader()),
             failed: Cell::new(false),
+            remotes: OnceCell::new(),
         };
         for entry in &refresh.entries {
             if !in_scope(scopes, &Source::WorkingTree, entry.logical.as_ref()) {
@@ -274,6 +279,7 @@ impl Board {
             resolve: RefCell::new(Box::new(|path: &LogicalPath| in_commit.resolve(path))),
             reader: RefCell::new(self.repositories().root().reader()),
             failed: Cell::new(false),
+            remotes: OnceCell::new(),
         };
         let start = decided.resolved.len();
         let checked = decided.checked.len();
@@ -408,6 +414,15 @@ impl Cache for Indexing<'_> {
     fn kept(&mut self, key: &Digest) -> bool {
         self.writer.has_decision(key).unwrap_or(false)
     }
+}
+
+/// Whether the entry at the physical `path` holds a valid repo record, with
+/// a checkout or without.
+fn is_repo(facts: &Facts, path: &str) -> bool {
+    facts.get(path).is_some_and(|indexed| {
+        let fact = &indexed.fact;
+        fact.code.is_none() && fact.record_type.as_ref().map(RecordType::as_str) == Some(REPO_TYPE)
+    })
 }
 
 /// Stores every source, the root's repository first, and every mount.

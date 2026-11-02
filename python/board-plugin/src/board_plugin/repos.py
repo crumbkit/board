@@ -158,9 +158,18 @@ class Repo:
 
 
 def shown_remote(remote: str) -> str:
-    """`remote` as it may be shown and stored: `owner/name` for GitHub, else the URL without its user and password."""
-    matched = GITHUB.fullmatch(remote)
-    return f"{matched[1]}/{matched[2]}" if matched else USERINFO.sub(r"\1", remote)
+    """`remote` as it may be shown and stored: `owner/name` for GitHub, else the URL without its user and password.
+
+    The form is reapplied until it holds still, so the stored form of a stored form is itself. Each change
+    shortens the text, so this ends. board-model's `shown_remote` does the same, reading the same table.
+    """
+    shown = remote
+    while True:
+        matched = GITHUB.fullmatch(shown)
+        following = f"{matched[1]}/{matched[2]}" if matched else USERINFO.sub(r"\1", shown)
+        if following == shown:
+            return shown
+        shown = following
 
 
 def caller_remote() -> str | None:

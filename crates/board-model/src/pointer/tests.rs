@@ -9,6 +9,7 @@ fn documents() -> impl Strategy<Value = String> {
     let tag = prop_oneof![
         Just(None),
         Just(Some(r#""board/mount/v1""#)),
+        Just(Some(r#""board/repo/v1""#)),
         Just(Some(r#""lr/task/v1""#)),
         Just(Some(r#""board/nope/v1""#)),
         Just(Some(r#""not a type""#)),
@@ -24,6 +25,12 @@ fn documents() -> impl Strategy<Value = String> {
         ),
         Just(r#""repo": "https://h/r", "follow": "main", "commit": "ab""#),
         Just(r#""title": "t""#),
+        Just(r#""remote": "example-org/a""#),
+        Just(r#""remote": "git@github.com:a/b.git""#),
+        Just(
+            r#""checkout": {"repo": "/r", "follow": "main", "commit": "abababababababababababababababababababab"}"#
+        ),
+        Just(r#""checkout": {"repo": "https://h/r", "follow": "main", "commit": "ab"}"#),
     ];
     let fields = prop::collection::vec(field, 0..3);
     let shape = (tag, fields, any::<bool>(), any::<bool>(), any::<bool>());
