@@ -7,7 +7,7 @@ sync and push apply, and this plugin never writes a task file itself.
 import json
 
 from board_plugin import repos
-from board_plugin.board import Board
+from board_plugin.board import Board, literal
 from board_plugin.protocol import PluginError
 
 # Where a notes repo keeps its tasks, which splits a task's board path into its repo and its path in that repo.
@@ -63,3 +63,17 @@ def add_task(board: Board, title: str, route: dict[str, str], parent: str | None
         given.pop("remote", None)
     report = board.document("call", "tasks.add", stdin=json.dumps(given).encode())
     return str(report["data"]["output"]["path"])
+
+
+# The `tasks` capability that closes a task, by the state a prototype's verdict ends it in.
+CLOSES = {"settled": "done", "abandoned": "drop"}
+
+
+def close_task(board: Board, path: str, state: str) -> None:
+    """Close the open task at `path` through `tasks.done` when `state` is settled, or `tasks.drop` when abandoned.
+
+    A task already done or dropped, or one Board cannot read, is left as it is.
+    """
+    rows = board.rows(f"SELECT json_extract(body, '$.status') FROM records WHERE logical = {literal(path)}")  # noqa: S608 - quoted by literal()
+    if rows and rows[0][0] == "open":
+        board.document("call", f"tasks.{CLOSES[state]}", "--path", path)

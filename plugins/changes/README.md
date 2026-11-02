@@ -123,10 +123,14 @@ skill in `claude-code/skills/` runs the check.
   owner then iterates with that builder for as many rounds as he likes.
   The task is added before the change is written, so a refused write leaves
   it behind for `tasks.drop`. Refuses an existing name
-  (`changes::change::exists`).
+  (`changes::change::exists`), and a `--parent` that is not under a
+  `tasks/` directory (`changes::task::not_a_task_path`), before it adds
+  anything.
 - `verdict --path /changes/<name> --state settled|abandoned --verdict '<sentence>' [--artifact <url>]`
   records what a prototype found and ends it: `done` when settled,
-  `dropped` when abandoned. Refuses a change that is not a prototype
+  `dropped` when abandoned. It then closes the prototype's task through
+  `tasks.done` or `tasks.drop`, unless the task is already done or
+  dropped. Refuses a change that is not a prototype
   (`changes::prototype::not_prototype`) and one already ended
   (`changes::phase::final`).
 
@@ -299,6 +303,9 @@ There is no bypass flag. The guard cannot see:
 
 - files written through Bash, such as `sed -i` or a heredoc. The review gate
   checks that a change's commits came from its builder sessions;
+- a prototype's builder that switches its checkout to `proto/<name>` for
+  the edit and back before it commits. The guard reads the branch at the
+  moment of the edit;
 - a clone of a mounted repository with no `origin` remote, or one whose
   `origin` points somewhere else, such as a fork or an ssh host alias like
   `git@github-work:owner/name.git`;
@@ -337,3 +344,7 @@ the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
 from `src/board_changes/models.py` by `board_changes.manifest`, and
 a test checks that the committed files match.
+
+`start`, `prototype` and `verdict` call the tasks plugin through a nested
+`board call`, which syncs and pushes a notes repo, so each may run for 120
+seconds instead of Board's default limit.

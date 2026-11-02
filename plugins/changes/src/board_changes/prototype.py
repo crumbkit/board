@@ -9,7 +9,7 @@ from board_changes.change import CHANGE_TYPE, FINAL, PLUGIN, Change, branch_of, 
 from board_changes.plan import brief_of, plan_lines
 from board_changes.repo import exists
 from board_changes.start import name_of, refuse_existing
-from board_changes.tasks import add_task
+from board_changes.tasks import add_task, close_task
 
 # The phase a verdict ends a prototype in, by its state.
 ENDS = {"settled": "done", "abandoned": "dropped"}
@@ -52,7 +52,7 @@ def prototype(request: CallRequest) -> dict[str, object]:
 
 
 def verdict(request: CallRequest) -> dict[str, object]:
-    """Record what the prototype found, and end it: done when settled, dropped when abandoned."""
+    """Record what the prototype found, and end it and its task: done when settled, dropped when abandoned."""
     asked = request.input
     path, state = str(asked["path"]), str(asked["state"])
     board = Board(request.board.root, PLUGIN)
@@ -76,4 +76,6 @@ def verdict(request: CallRequest) -> dict[str, object]:
     if isinstance(artifact, str):
         change["verdict_artifact"] = artifact
     write(board, [{"path": path, "expect": blob, "record": change}])
+    if "task" in change:
+        close_task(board, str(change["task"]), state)
     return {"path": path, "state": state, "phase": change["phase"]}

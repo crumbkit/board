@@ -164,7 +164,8 @@
         ],
         "title": "StartOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     },
     {
       "_meta": {},
@@ -1140,14 +1141,15 @@
         ],
         "title": "PrototypeOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     },
     {
       "_meta": {},
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Record what a prototype found in one sentence, and the artifact version it means, which ends it: done when settled, dropped when abandoned.",
+      "description": "Record what a prototype found in one sentence, and the artifact version it means, which ends it and its task: done when settled, dropped when abandoned.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "What a prototype found, which ends it.",
@@ -1227,7 +1229,8 @@
         ],
         "title": "VerdictOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     }
   ],
   "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",
