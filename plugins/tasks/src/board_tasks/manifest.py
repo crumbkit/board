@@ -10,8 +10,12 @@ from board_tasks.models import (
     AvailableOutput,
     ClaimInput,
     DeferInput,
+    Moved,
+    MoveInput,
     Task,
     TaskPath,
+    TreeInput,
+    TreeOutput,
     Written,
 )
 
@@ -21,7 +25,7 @@ def manifest() -> dict[str, JsonValue]:
     return {
         "$type": "board/plugin-manifest/v1",
         "name": "tasks",
-        "version": "0.3.0",
+        "version": "0.4.0",
         # SKILL.md's description, the callout an agent sees first.
         "description": (
             "Sweep the person's tasks one at a time, marking each done, deferring, dropping or editing it, and add a "
@@ -44,7 +48,28 @@ def manifest() -> dict[str, JsonValue]:
                 "outputSchema": AvailableOutput.model_json_schema(),
                 "_meta": {},
             },
+            {
+                "name": "tree",
+                "description": (
+                    "List a task and its descendants in every status, nested by title, or with --root every"
+                    " top-level tree in the repos the caller's remote chooses, read at their pins."
+                ),
+                "inputSchema": TreeInput.model_json_schema(),
+                "outputSchema": TreeOutput.model_json_schema(),
+                "_meta": {},
+            },
             *writes(),
+            {
+                "name": "move",
+                "description": (
+                    "Set a task's parent to another task in its repo, or clear it with none, refused when the parent"
+                    " is the task or under it. It syncs the task's repo first and pushes after, and changes nothing"
+                    " else."
+                ),
+                "inputSchema": MoveInput.model_json_schema(),
+                "outputSchema": Moved.model_json_schema(),
+                "_meta": {},
+            },
         ],
     }
 

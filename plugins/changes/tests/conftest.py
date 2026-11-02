@@ -56,8 +56,8 @@ REVIEW_SCHEMA = {
 BASE = "0123456789abcdef0123456789abcdef01234567"
 # The task every fixture change does, which the fixture board holds.
 TASK = "/tasks/given.md"
-# The tasks plugin a test that adds tasks enables: `$TASKS_PLUGIN`, or this repository's.
-TASKS_PLUGIN = Path(os.environ.get("TASKS_PLUGIN", REPOSITORY / "plugins" / "tasks")).resolve()
+# The tasks plugin a test that adds tasks enables.
+TASKS_PLUGIN = REPOSITORY / "plugins" / "tasks"
 
 
 def board_binary() -> Path:
@@ -209,13 +209,6 @@ def tasks_board(board: Board) -> Board:
     enabled = board.run("plugin", "enable", "tasks")
     assert enabled.returncode == 0, enabled.stderr
     return board
-
-
-def tasks_add_takes_parent() -> bool:
-    """Whether the tasks plugin under test lets `tasks.add` set a parent, which crumbkit/board#80 adds."""
-    manifest = json.loads((TASKS_PLUGIN / "plugin.json").read_text())
-    [add] = [capability for capability in manifest["capabilities"] if capability["name"] == "add"]
-    return "parent" in add["inputSchema"]["properties"]
 
 
 def mount_repo(board: Board, files: dict[str, str], at: str = "repos/x") -> str:

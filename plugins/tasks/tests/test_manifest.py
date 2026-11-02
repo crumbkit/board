@@ -49,8 +49,10 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("available", "remote"),
         ("available", "owner"),
         *(("add", name) for name in ("title", "text", "due", "defer", "after", "repeat", "ephemeral")),
-        *(("add", name) for name in ("from_hour", "contexts", "repo", "remote")),
-        *((name, "path") for name in ("claim", "done", "defer", "drop", "reviewed")),
+        *(("add", name) for name in ("from_hour", "contexts", "repo", "remote", "kind", "brief", "parent")),
+        *(("tree", name) for name in ("path", "root", "repo", "remote")),
+        *((name, "path") for name in ("claim", "done", "defer", "drop", "reviewed", "move")),
+        ("move", "parent"),
         ("defer", "until"),
         ("claim", "owner"),
     }
