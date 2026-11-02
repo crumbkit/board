@@ -8,7 +8,7 @@ use board_ops::{Host, Limit, PluginError, QueryReport};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::records::Rule;
+use crate::records::{Kind, Rule, ShowAt};
 
 /// Each file a pattern can match, with `full`: its display path without the
 /// leading `/`, with `.json` put back when the display path dropped it. A
@@ -49,6 +49,17 @@ pub(crate) struct Control {
     pub(crate) applies_to: Option<Vec<String>>,
     pub(crate) paths: Option<Vec<String>>,
     pub(crate) rule: Option<Rule>,
+    #[serde(default)]
+    pub(crate) kind: Kind,
+    pub(crate) show: Option<ShowAt>,
+}
+
+impl Control {
+    /// When the mod shows this control, its default applied.
+    pub(crate) fn show(&self) -> ShowAt {
+        let budget = matches!(self.rule, Some(Rule::Budget(_)));
+        ShowAt::effective(self.show, self.kind, budget)
+    }
 }
 
 /// One file a control's pattern matches, and whether Board can read it.

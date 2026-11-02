@@ -65,6 +65,15 @@
       "title": "Applies To",
       "type": "array"
     },
+    "kind": {
+      "description": "`standing`, the default, for a rule that stays until it is changed,\nor `obligation` for work a landed change left owed, which the work\nthat discharges it deletes.",
+      "enum": [
+        "standing",
+        "obligation"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
     "paths": {
       "items": {
         "type": "string"
@@ -74,11 +83,13 @@
     },
     "purpose": {
       "title": "Purpose",
-      "type": "string"
+      "type": "string",
+      "x-board-prose": true
     },
     "requirement": {
       "title": "Requirement",
-      "type": "string"
+      "type": "string",
+      "x-board-prose": true
     },
     "rule": {
       "$ref": "#/$defs/Rule",
@@ -173,6 +184,25 @@
           ]
         }
       ]
+    },
+    "show": {
+      "description": "When to show the control: `start` at session start, `edit` before\nthe first edit of a file it covers, or `failing` only when `check`\nreports it failing. Left out, an obligation shows at `start`, a\ncontrol with a budget when `failing`, and any other at `edit`.",
+      "enum": [
+        "start",
+        "edit",
+        "failing"
+      ],
+      "title": "Show",
+      "type": "string"
+    },
+    "sources": {
+      "description": "What justifies the control, such as a source note\n(`controls/source/v1`) or an eval.",
+      "items": {
+        "format": "board-ref",
+        "type": "string"
+      },
+      "title": "Sources",
+      "type": "array"
     }
   },
   "required": [

@@ -58,7 +58,13 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ships() {
     assert!(plugin.get("run").is_none(), "{plugin}");
     let shipped = shipped("controls");
     let paths: Vec<&str> = shipped.iter().map(|(path, _)| path.as_str()).collect();
-    assert_eq!(paths, [".board/types/controls/control/v1.schema.json"]);
+    assert_eq!(
+        paths,
+        [
+            ".board/types/controls/control/v1.schema.json",
+            ".board/types/controls/source/v1.schema.json",
+        ]
+    );
     for (path, text) in shipped {
         assert_eq!(board.read(&path), text, "{path}");
     }
@@ -234,8 +240,17 @@ fn the_output_carries_the_requirement_purpose_and_rule_and_null_for_a_missing_ru
                 "requirement": "Stay short.",
                 "purpose": "A test.",
                 "rule": {"budget": "words", "max": 10},
+                "kind": "standing",
+                "show": "failing",
             },
-            {"control": "/controls/kind", "requirement": "Be kind.", "purpose": "A test.", "rule": null},
+            {
+                "control": "/controls/kind",
+                "requirement": "Be kind.",
+                "purpose": "A test.",
+                "rule": null,
+                "kind": "standing",
+                "show": "edit",
+            },
         ])
     );
 }
