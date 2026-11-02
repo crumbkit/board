@@ -1,16 +1,12 @@
 """`changes.prototype` and `changes.verdict`: a change that answers one question on its own branch and never lands."""
 
-import pytest
-from conftest import TASK, Board, change, mount_repo, task, tasks_add_takes_parent
+from conftest import TASK, Board, change, mount_repo, task
 
 from board_changes.tasks import split_task
 
 PATH = "/changes/step-list"
 QUESTION = "Does a step list read better than a graph?"
 PARENT = "/tasks/flows-editor.md"
-needs_parent = pytest.mark.skipif(
-    not tasks_add_takes_parent(), reason="tasks.add --parent arrives with crumbkit/board#80"
-)
 
 
 def prototype(phase: str = "build", **fields: object) -> str:
@@ -19,7 +15,6 @@ def prototype(phase: str = "build", **fields: object) -> str:
     return change(phase, **(given | fields))
 
 
-@needs_parent
 def test_prototype_adds_its_task_under_the_parent_and_writes_an_exploring_change_in_build(tasks_board: Board) -> None:
     mount = mount_repo(tasks_board, {"README.md": "x"})
     tasks_board.write(PARENT.removeprefix("/"), task())
@@ -41,7 +36,6 @@ def test_prototype_adds_its_task_under_the_parent_and_writes_an_exploring_change
     assert plan == f"# Step list\n\n## Question\n\n{QUESTION}\n"
 
 
-@needs_parent
 def test_prototype_refuses_a_name_a_change_already_has_and_admits_another(tasks_board: Board) -> None:
     mount = mount_repo(tasks_board, {"README.md": "x"})
     tasks_board.write(PARENT.removeprefix("/"), task())

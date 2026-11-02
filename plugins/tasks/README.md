@@ -6,8 +6,8 @@ is a crate built into Board (docs/plugins/built-in/writing.md).
 A Board plugin for tasks. It reads `tasks/task/v2` Markdown tasks through
 `board query`. `available` sorts the tasks of the repos
 in scope into the tasks to work on now, those due soon, the stale ones and
-those an owner holds. `add`, `claim`, `done`, `defer`, `drop` and `reviewed`
-write tasks.
+those an owner holds. `tree` lists tasks and projects as one tree. `add`,
+`claim`, `done`, `defer`, `drop`, `reviewed` and `move` write tasks.
 
 Install it from this checkout:
 
@@ -41,6 +41,7 @@ from_hour: 17
 contexts: [errands]
 reviewed: 2026-10-25
 owner: lead-7f3a
+parent: /tasks/ship-the-release.md
 ---
 The plan covers ...
 ```
@@ -65,10 +66,20 @@ The plan covers ...
 - `contexts` are lowercase tags, `[a-z0-9-]+`.
 - `owner` names the agent or person who holds the task, such as a session id
   or a handle. It is free-form and not empty. `claim` sets it.
+- `parent` names the one task this task is part of, by its path in the
+  task's own repo, as `after` does, and `board check` reports it the same way.
+  A second task that needs the same work lists it in `after` instead.
+- `kind` is `task`, as when it is left out, or `project`. A project may name
+  its brief, such as `/projects/flows/README.md`, in `brief`, a reference to
+  any file in the repo. Any task or project may be the parent of either.
 
 A task may hold other fields, such as the `id` and `pinned` that Reflect
 writes; the plugin ignores them. So a misspelt field, such as `defr`, is
 admitted and has no effect. Its scope is the repo that holds it.
+
+A task's file name is its slug, set from the title when `add` writes it. It
+never changes: a new title leaves the file where it is, so every reference to
+the task, such as a `parent` or an `after`, keeps working.
 
 ## Capabilities
 
@@ -87,7 +98,13 @@ returns four sections of their `open` tasks:
 
 Each section lists at most 100 tasks by repo, title and path, with `total`
 counting all of them. Each task carries `blocked_by`, the unfinished tasks it
-waits on, and `waiting`, how many tasks wait on it. `--context <tag>` keeps the
+waits on, and `waiting`, how many tasks wait on it. A parent waits on its open
+subtasks as if they were in its `after`: `blocked_by` lists its open `after`
+targets, then each open child, and under a finished child that child's own
+open ones. So a parent is available once every task under it is done or
+dropped, and the agent then marks it done; nothing closes it on its own. Each
+task also carries `parent`, `subtasks` and `tree_path`, as Projects and trees
+says. `--context <tag>` keeps the
 tasks with that tag in every section, and `--owner <id>` keeps the tasks that
 owner or nobody holds; `waiting` still counts every task. Each task also
 carries its `owner`, or null. So a lead agent that calls
@@ -120,9 +137,10 @@ repo whose sync or pin failed, with its code, and the call reads that repo at
 its pin. `degraded` counts the Markdown files under a `tasks/` directory in
 scope that are not a readable task. `repos` lists the repos read.
 
-An `after` that reaches a task in another repo than its task's own, such as a
-task in `/` naming one in a mount, is not followed and never blocks;
-`cross_repo` lists each one. Two clock edges are left as they are: a
+An `after` or a `parent` that reaches a task in another repo than its task's
+own, such as a task in `/` naming one in a mount, is not followed and never
+blocks; `cross_repo` lists each one, with its `path` and its `after` or
+`parent`. Two clock edges are left as they are: a
 `from_hour` before the day starts falls on the next date, and on a day whose
 clock changes for daylight saving, `from_hour` is counted with the offset in
 force at the call, so it can be an hour off.
@@ -132,6 +150,36 @@ plugin's model. A task file is degraded, whatever its status, when check
 degrades it for more than a dangling or wrong-typed reference, or when the
 model refuses a record the board's schema admits.
 
+## Projects and trees
+
+The `parent` links of a repo's tasks, in every status, make a tree. A link
+that reaches no task, or one in another repo, leaves its task at the top. A
+loop of links is cut at the task with the first path in it, which then counts
+as a top-level task and is listed in `cycles`.
+
+- `parent` is the parent's path in the board, or null for a top-level task.
+- `subtasks` is `{"open": n, "total": m}`, counting every task under it.
+- `tree_path` joins the slugs from the top-level task down to the task, such
+  as `ship-flows-editor/dispatch-owns-flow-documents/choose-store`. A move
+  changes it, and nothing else.
+
+`board call tasks.tree --path <task>` returns the task and every task under
+it, nested, in every status, so finished pieces still show. Each node carries
+`path`, `title`, `status`, `kind`, `brief`, `owner`, `blocked_by`,
+`subtasks`, `tree_path` and `children`, which are sorted by title. A project
+under a task is one of its children, so the task's tree holds the project's
+tasks too. `brief` is a path in the board. A path that holds no task is
+refused with `tasks::task::not_found`.
+
+`board call tasks.tree --root true` returns `roots`, every top-level task of
+the repos in scope with its tree: at most 100, open ones first and then by
+title, with `total` counting them all. The scope is chosen as `available`
+chooses it, with `--repo` and `--remote`. Giving both `--path` and `--root
+true`, or neither, is refused with `tasks::tree::path_or_root`. Both forms
+read the repos at their pins without syncing, and list `repos`, `cycles` and
+`cross_repo` for the repos read. A tree costs one `board query`, and one
+`board refs` when a task has an `after` or a `parent`.
+
 ## Writing tasks
 
 `board call tasks.add --title <title>` writes a new open task to
@@ -140,7 +188,13 @@ with `-2` and on added when the name is taken. It takes `--text` for the body,
 and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`; `after`
 and `contexts`, which are lists, come as JSON on stdin. `--repo` names the
 repo. Otherwise it is the one repo whose record covers the remote, from
-`--remote` or the caller's `origin`, else the personal repo, else `/`. Two
+`--remote` or the caller's `origin`, else the personal repo, else `/`.
+`--parent <path>`, `--kind project` and `--brief <path>` write those fields.
+`--parent` and `--brief` take paths in the board, as `tree` lists them, and
+are written as paths in the task's own repo. A path in another repo is refused
+with `tasks::add::cross_repo`, and a parent that holds no task with
+`tasks::add::parent_not_found`, so `add` never writes a parent that reaches
+nothing. Two
 repos that could each hold it are refused with `tasks::repo::ambiguous`. A
 caller inside a git repository whose origin git does not give is refused with
 `tasks::repo::origin_unread`, since the task may belong to a work repo; pass
@@ -168,7 +222,15 @@ the holder. `done`, `defer`, `drop` and `reviewed` leave `owner` as it is, so
 a finished task still says who held it. No call clears `owner`; edit the task
 to hand it on.
 
-Each call sets `reviewed` to today. Today is the person's day, which starts at
+`move --path <task> --parent <task>` sets the task's `parent`, written as its
+path in the task's own repo, and `--parent none` removes the line. Both take
+paths in the board, as `tree` lists them, and act on a task in any status.
+`move` changes nothing else, `reviewed` included. It reads the tree after the
+sync and refuses a parent that is the task or under it with
+`tasks::move::cycle`, one in another repo with `tasks::move::cross_repo`, and
+a path that holds no task with `tasks::move::parent_not_found`.
+
+Each call but `move` sets `reviewed` to today. Today is the person's day, which starts at
 `BOARD_DAY_START`, so a call at 01:00 with a day that starts at 07:00 writes
 yesterday's date. The calls edit the frontmatter's lines in place. Each sets
 the line of a key it writes, or adds one before the closing `---`, as
