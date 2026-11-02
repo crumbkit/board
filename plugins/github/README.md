@@ -55,7 +55,7 @@ sees.
 ## Layout
 
 The plugin is built into Board as the crate `crates/board-plugin-github`.
-Each capability is one module in its `src/`, listed in `CAPABILITIES` in
+Each capability is one module in its `src/`, dispatched by `Github::call` in
 `lib.rs`. Every call to GitHub goes through `gh.rs`, which runs gh through
 the host with a 20-second deadline. `objects.rs` holds the record kinds and
 their paths, and `records.rs` the record types.
