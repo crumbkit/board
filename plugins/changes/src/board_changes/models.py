@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE, PULL_TYPES, TICKET_TYPES
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE, PULL_TYPES, TASK_TYPE, TICKET_TYPES
 from board_changes.open import OPEN_LIMIT
 from board_changes.plan import PLAN_WORDS, USES_WORDS
 
@@ -21,10 +21,19 @@ OPEN_MAX = 10_000
 
 Phase = Literal["plan", "build", "review", "land", "done", "dropped"]
 Route = Literal["owner", "ask-first", "unowned"]
+Kind = Literal["build", "prototype"]
+State = Literal["exploring", "settled", "abandoned"]
+Ended = Literal["settled", "abandoned"]
 # References Board resolves and checks. Each is a plain property, never an `anyOf` with null.
 Ref = Annotated[str, Field(json_schema_extra={"format": "board-ref"})]
 TicketRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": list(TICKET_TYPES)})]
 PullRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": list(PULL_TYPES)})]
+TaskRef = Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": TASK_TYPE})]
+# The shared shapes of crates/board-plugin/shapes.json (docs/architecture/records/shapes.md, rule 14).
+Prose = Annotated[str, Field(min_length=1, json_schema_extra={"x-board-prose": True})]
+SharedUrl = Annotated[
+    str, Field(pattern="^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)", json_schema_extra={"format": "uri"})
+]
 Commit = Annotated[str, Field(pattern="^[0-9a-f]{7,40}$")]
 Url = Annotated[str, Field(pattern="^https?://")]
 # Input properties `board call` takes as flags, relative to the run's prefix.
@@ -32,7 +41,9 @@ LogicalPath = Annotated[str, Field(pattern="^/", json_schema_extra={"format": "b
 
 # `attach` changes at least one thing. pydantic cannot emit this itself.
 ATTACH_SOMETHING: JsonDict = {
-    "anyOf": [{"required": [name]} for name in ("ref", "ticket", "pull", "route", "head", "issue", "pull_request")],
+    "anyOf": [
+        {"required": [name]} for name in ("ref", "ticket", "pull", "task", "route", "head", "issue", "pull_request")
+    ],
 }
 
 
@@ -69,6 +80,12 @@ class ChangeRecord(BaseModel):
     `pulls` its GitHub pull requests, each as a record of that type.
     `records` references every record the change produced: tasks, runs,
     evals, questions, decisions and review reports.
+    `task` references the task the change does. `kind` is `build`, as when
+    it is left out, for work that lands on main, or `prototype` for work that
+    answers `question` on branch `proto/<name>` and never lands. A
+    prototype's `state` is `exploring` until `verdict`, one sentence, settles
+    or abandons it; `verdict_artifact` is the URL of the artifact version
+    the verdict means.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=shipped())
@@ -85,6 +102,12 @@ class ChangeRecord(BaseModel):
     tickets: list[TicketRef] | SkipJsonSchema[None] = None
     pulls: list[PullRef] | SkipJsonSchema[None] = None
     records: list[Ref] | SkipJsonSchema[None] = None
+    task: TaskRef | SkipJsonSchema[None] = None
+    kind: Kind | SkipJsonSchema[None] = None
+    question: Prose | SkipJsonSchema[None] = None
+    state: State | SkipJsonSchema[None] = None
+    verdict: Prose | SkipJsonSchema[None] = None
+    verdict_artifact: SharedUrl | SkipJsonSchema[None] = None
 
 
 class PlanRecord(BaseModel):
@@ -167,6 +190,52 @@ class StartInput(Strict):
         pattern=r"^@\S+$",
         description="Whose change this is, as CODEOWNERS names people, such as @luke; sets the route.",
     )
+    task: LogicalPath | SkipJsonSchema[None] = Field(
+        default=None,
+        description="The task the change does, such as /repos/notes-personal/tasks/<slug>.md; when left out, "
+        "tasks.add adds one titled as the change.",
+    )
+    task_repo: LogicalPath | SkipJsonSchema[None] = Field(
+        default=None,
+        description="The notes repo tasks.add writes the new task to, such as /repos/notes-personal; the caller's "
+        "git remote chooses it when left out.",
+    )
+
+
+class PrototypeInput(Strict):
+    """A prototype that answers one question: its task under `parent`, its change in build and its brief."""
+
+    model_config = ConfigDict(json_schema_extra=shipped())
+
+    mount: LogicalPath = Field(description="The repository's mount, such as /repos/board.")
+    question: str = Field(pattern=r"\S", description="The question the prototype answers, which is its whole plan.")
+    parent: LogicalPath = Field(
+        description="The task or project the prototype's task goes under, such as "
+        "/repos/notes-personal/tasks/<slug>.md."
+    )
+    title: str | SkipJsonSchema[None] = Field(
+        default=None,
+        pattern="[A-Za-z0-9]",
+        description="What the prototype is, in a few words; the question when left out.",
+    )
+    name: str | SkipJsonSchema[None] = Field(
+        default=None,
+        pattern="^[a-z0-9][a-z0-9-]{0,59}$",
+        description="The change's name, so it lives at /changes/<name>; made from the title when left out.",
+    )
+
+
+class VerdictInput(Strict):
+    """What a prototype found, which ends it."""
+
+    model_config = ConfigDict(json_schema_extra=shipped())
+
+    path: LogicalPath = Field(description="The prototype's logical path, such as /changes/step-list.")
+    state: Ended = Field(description="settled when it answered its question, abandoned when the owner says so.")
+    verdict: str = Field(pattern=r"\S", description="What it found, in one sentence.")
+    artifact: SharedUrl | SkipJsonSchema[None] = Field(
+        default=None, description="The URL of the artifact version the verdict means."
+    )
 
 
 class PathInput(Strict):
@@ -176,7 +245,7 @@ class PathInput(Strict):
 
 
 class AttachInput(Strict):
-    """Add a record, ticket or pull reference to a change, or set its route, head commit, issue or pull request."""
+    """Add a record, ticket or pull reference, or set the task, route, head commit, issue or pull request."""
 
     model_config = ConfigDict(json_schema_extra=shipped(ATTACH_SOMETHING))
 
@@ -190,6 +259,9 @@ class AttachInput(Strict):
     pull: LogicalPath | SkipJsonSchema[None] = Field(
         default=None, description=f"A pull request of the change, a {' or '.join(PULL_TYPES)} record."
     )
+    task: LogicalPath | SkipJsonSchema[None] = Field(
+        default=None, description=f"The task the change does, a {TASK_TYPE} record."
+    )
     route: Route | SkipJsonSchema[None] = Field(default=None, description="The route: owner, ask-first or unowned.")
     head: Commit | SkipJsonSchema[None] = Field(default=None, description="The commit under test and review.")
     issue: Url | SkipJsonSchema[None] = Field(default=None, description="The URL of the issue the change answers.")
@@ -199,6 +271,12 @@ class AttachInput(Strict):
 class OpenInput(Strict):
     """The changes that are not done or dropped, by path."""
 
+    model_config = ConfigDict(json_schema_extra=shipped())
+
+    kind: Kind | SkipJsonSchema[None] = Field(
+        default=None,
+        description="Only changes of this kind; prototype also lists the settled and abandoned ones.",
+    )
     limit: int = Field(
         default=OPEN_LIMIT,
         ge=1,
@@ -225,6 +303,7 @@ class StartOutput(Strict):
 
     path: str
     plan: str
+    task: str
     route: Route
     owners: list[Rule]
     ask_first: list[str]
@@ -266,14 +345,27 @@ class AdvanceOutput(Strict):
     to: Phase
 
 
+class Prototype(Strict):
+    """What a prototype asks and found, and the branch its code is on."""
+
+    question: str | None
+    state: State | None
+    verdict: str | None
+    verdict_artifact: str | None
+    branch: str
+
+
 class OpenChange(Strict):
-    """A change that is not done or dropped."""
+    """A change that is not done or dropped, its task and kind, and, for a prototype, what it asks and found."""
 
     path: str
     title: str
     mount: str
     phase: Phase
     route: Route | None
+    task: str | None
+    kind: Kind
+    prototype: Prototype | None
 
 
 class OpenOutput(Strict):
@@ -288,6 +380,23 @@ class OpenOutput(Strict):
     total: int
     truncated: bool
     unreadable: int
+
+
+class PrototypeOutput(Strict):
+    """The prototype started: its change, task and branch, and the brief its builder starts from."""
+
+    path: str
+    task: str
+    branch: str
+    brief: BriefOutput
+
+
+class VerdictOutput(Strict):
+    """The prototype ended, and the phase that ended it: done when settled, dropped when abandoned."""
+
+    path: str
+    state: Ended
+    phase: Phase
 
 
 class PrOutput(Strict):

@@ -20,6 +20,7 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   "phase": "build",
   "route": "owner",
   "plan": "/changes/suite-timeout/plan.md",
+  "task": "/repos/notes-personal/tasks/suite-timeout.md",
   "head": "a3f9c0d",
   "tickets": ["/jira/acme/ACME-123"],
   "pulls": ["/gh/octo/widgets/pulls/7"],
@@ -43,6 +44,13 @@ sit in `/changes/<name>/`. Git history holds earlier phases.
   reference a ticket.
 - `issue` and `pull_request` are URLs. `head` is the commit under test and
   review.
+- `task` references the `tasks/task/v2` the change does. `start` always
+  sets it; a change without one cannot leave `plan`.
+- `kind` is `build`, as when it is left out, or `prototype`. A prototype
+  answers `question` on branch `proto/<name>` and never lands. Its `state`
+  is `exploring` until `verdict`, one sentence, ends it as `settled` or
+  `abandoned`; `verdict_artifact` is the URL of the artifact version the
+  verdict means.
 
 `changes/plan/v1` at `/changes/<name>/plans/<stamp>.json`, beside its text
 at `<stamp>.md`. The newest stamp is the change's current plan.
@@ -61,9 +69,14 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
 
 ## Capabilities
 
-- `start --mount /repos/<name> --title '<title>' [--name <name>] [--handle @<you>]`
+- `start --mount /repos/<name> --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>]`
   creates the change in `plan` and a plan with empty Problem, Outcome and
-  Out of scope sections. It reads `CODEOWNERS` (`.github/`, root, `docs/`,
+  Out of scope sections. `--task` names the task the change does, and must
+  be a `tasks/task/v2` (`changes::ref::wrong_type`). Without it, `start`
+  adds a task titled as the change through `board call tasks.add`, in
+  `--task-repo` or, when that is left out, in the repo the caller's git
+  remote routes to. A caller in a git repository with no `origin` is
+  refused with `changes::task::unrouted`. It reads `CODEOWNERS` (`.github/`, root, `docs/`,
   the first found) to set the route and list `ask_first` patterns. `docs`
   lists the contributing docs found (`CONTRIBUTING.md` at the root, in
   `.github/` or in `docs/`, and `AGENTS.md`). `suite` is the first
@@ -73,17 +86,42 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   (`changes::mount::not_found`).
 - `next --path /changes/<name>`: read-only. The phase, each gate check as
   `pass` or `missing` with a detail, and the instruction.
-- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
-  adds a reference once or sets the fields. `--ref` adds to `records`,
+- `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
+  adds a reference once or sets the fields. `--task` sets `task`, and must
+  be a `tasks/task/v2`. `--ref` adds to `records`,
   `--ticket` to `tickets` and `--pull` to `pulls`. Refuses a reference that
   reaches nothing (`changes::ref::dangling`), and a ticket or pull that is
   not a record of a type its list accepts (`changes::ref::wrong_type`).
 - `advance --path /changes/<name>` moves to the next phase when the gate
-  passes. Otherwise refuses with `changes::gate::unmet`, whose `missing`
-  lists the failed checks. Leaving `done` or `dropped` is
+  passes. Otherwise it refuses, and `missing` lists the failed checks. The
+  code is that of the first failed check: `changes::prototype::never_lands`
+  for a prototype's `verdict` check, else `changes::gate::unmet`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
-- `open [--limit <n>]`: read-only. Changes not `done` or `dropped`, by path,
-  at most 100 by default, with `total`, `truncated` and `unreadable`.
+- `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
+  `done` or `dropped`, by path, at most 100 by default, with `total`,
+  `truncated` and `unreadable`. Each names its `task` and `kind`, and a
+  prototype also its `question`, `state`, `verdict`, `verdict_artifact` and
+  `branch`. `--kind` keeps one kind; `--kind prototype` also lists the
+  settled and abandoned prototypes, since their verdicts are what is looked
+  for.
+- `prototype --mount /repos/<name> --question '<question>' --parent <task> [--title '<title>'] [--name <name>]`
+  adds the prototype's task under `--parent` through `board call tasks.add
+  --parent`, in the parent's repo. It writes a `kind: prototype` change in
+  `build`, `state: exploring`, whose plan is the question, and returns
+  `path`, `task`, `branch` and the `brief` its one builder starts from. The
+  owner then iterates with that builder for as many rounds as he likes.
+  The task is added before the change is written, so a refused write leaves
+  it behind for `tasks.drop`. Refuses an existing name
+  (`changes::change::exists`), and a `--parent` that is not under a
+  `tasks/` directory (`changes::task::not_a_task_path`), before it adds
+  anything.
+- `verdict --path /changes/<name> --state settled|abandoned --verdict '<sentence>' [--artifact <url>]`
+  records what a prototype found and ends it: `done` when settled,
+  `dropped` when abandoned. It then closes the prototype's task through
+  `tasks.done` or `tasks.drop`, unless the task is already done or
+  dropped. Refuses a change that is not a prototype
+  (`changes::prototype::not_prototype`) and one already ended
+  (`changes::phase::final`).
 
 - `pr --path /changes/<name>` drafts the pull request. It writes the body
   to `/changes/<name>/pr.md`, replacing an earlier one, and returns `path`,
@@ -122,10 +160,11 @@ Board marks degraded satisfies nothing.
 
 | Leaving | Gate |
 | --- | --- |
-| plan | Each plan section has text, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. |
+| plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. |
 | build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
 | land | `pull_request` is set. Advancing enters `done`. |
+| build, for a prototype | Never passes: `verdict` ends a prototype instead. |
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.
@@ -199,7 +238,8 @@ every Edit, Write and NotebookEdit. Install it with
    line itself.
 4. It reads that change from each board that mounts the repository. It
    admits the call when the change's `phase` is `build` and its `mount` is the
-   mount that holds the file.
+   mount that holds the file. For a prototype, the file's checkout must also
+   be on branch `proto/<name>`.
 
 Before any of that, the guard refuses three kinds of file to every agent,
 brief or not, because they change only through board commands: the board
@@ -218,6 +258,8 @@ Each refusal names one code and what fixes it:
   in `build`.
 - `changes::guard::wrong_mount`: the brief's change is for another
   repository.
+- `changes::guard::wrong_branch`: the brief's change is a prototype, and
+  the file's checkout is not on `proto/<name>`. Switch to that branch.
 - `changes::guard::unknown`: the path could not be placed, git, the config
   or `board` failed, or the conversation could not be read. The refusal says
   what failed.
@@ -230,6 +272,9 @@ There is no bypass flag. The guard cannot see:
 
 - files written through Bash, such as `sed -i` or a heredoc. The review gate
   checks that a change's commits came from its builder sessions;
+- a prototype's builder that switches its checkout to `proto/<name>` for
+  the edit and back before it commits. The guard reads the branch at the
+  moment of the edit;
 - a clone of a mounted repository with no `origin` remote, or one whose
   `origin` points somewhere else, such as a fork or an ssh host alias like
   `git@github-work:owner/name.git`;
@@ -268,3 +313,7 @@ the workspace's `target/debug/board`, so build it first with
 `cargo build -p board-cli`. `plugin.json` and the shipped schema are generated
 from `src/board_changes/models.py` by `board_changes.manifest`, and
 a test checks that the committed files match.
+
+`start`, `prototype` and `verdict` call the tasks plugin through a nested
+`board call`, which syncs and pushes a notes repo, so each may run for 120
+seconds instead of Board's default limit.

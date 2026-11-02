@@ -77,7 +77,8 @@ const resolve = (path: string) => {
   return path
 }
 
-// What `git rev-parse --git-common-dir` and the origin print in each repository's directory.
+// What `git rev-parse --git-common-dir` and the origin print in each repository's directory; the
+// harness puts the branch line between them.
 const REPOSITORIES: [string, string][] = [
   ['/work/widgets.worktrees/x', `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
   [REPO, `${REPO}/.git\ngit@github.com:acme/widgets.git\n`],
@@ -105,6 +106,8 @@ type Answers = {
   queryFails?: boolean
   /** The session's id; s1 when left out. */
   session?: string
+  /** The branch every checkout is on; '' for a detached HEAD, 'main' when left out. */
+  branch?: string
 }
 
 /** Stands in for git, the file system, `board` and each conversation; `ran` lists the commands. */
@@ -143,7 +146,7 @@ function engine(on: On, answers: Answers) {
       const found = REPOSITORIES.find(([root]) => dir === root || dir.startsWith(`${root}/`))
       return found === undefined
         ? run(128, '', 'fatal: not a git repository (or any of the parent directories): .git\n')
-        : run(0, found[1])
+        : run(0, found[1].replace('\n', `\n${answers.branch ?? 'main'}\n`))
     }
     if (script.includes('for r')) {
       ran.push(`origins ${args.join(' ')}`)
@@ -232,6 +235,28 @@ test('a brief for a change to another repository is refused, and one for this re
       '/repos/widgets. Start a builder from the brief of a change to /repos/widgets.',
   )
   answers.change = change({ mount: '/repos/widgets', phase: 'build' })
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a prototype builder is refused off its proto branch and admitted on it', async ($, on) => {
+  const prototype = change({ mount: '/repos/widgets', phase: 'build', kind: 'prototype' })
+  const answers: Answers = { first: { a1: BRIEF }, change: prototype, branch: 'main' }
+  const { edits } = engine(on, answers)
+  expect((await edit($, FILE, 'a1')).deny).toBe(
+    `changes::guard::wrong_branch: /changes/fix-it is a prototype, and its builder may edit ${FILE} only on ` +
+      "branch proto/fix-it, but the file's checkout is on branch main. Run `git switch -c proto/fix-it` there, or " +
+      '`git switch proto/fix-it` once it exists.',
+  )
+  answers.branch = ''
+  expect((await edit($, FILE, 'a1')).deny).toMatch(/checkout is on a detached HEAD\./)
+  answers.branch = 'proto/fix-it'
+  expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
+  expect(edits).toEqual(['Edit'])
+})
+
+test('a build change is admitted on any branch', async ($, on) => {
+  const { edits } = engine(on, { first: { a1: BRIEF }, branch: 'proto/other' })
   expect((await edit($, FILE, 'a1')).deny).toBeUndefined()
   expect(edits).toEqual(['Edit'])
 })

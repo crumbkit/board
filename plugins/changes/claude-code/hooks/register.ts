@@ -23,7 +23,8 @@ import type { Mount } from './guard'
 // The write guard. Before an Edit, Write or NotebookEdit of a file in a
 // repository that a known board mounts, it reads the acting agent's first
 // message and admits the call only when that message starts with
-// `board-brief: /changes/<name>` for a change in build to that repository.
+// `board-brief: /changes/<name>` for a change in build to that repository,
+// and, for a prototype, only on its branch `proto/<name>`.
 // Every other file is admitted untouched, except the board config and each
 // known board's change and mount records, which change only through board
 // commands and are refused to every agent. A lookup that fails refuses: a guard
@@ -39,9 +40,11 @@ import type { Mount } from './guard'
 // covers that gap too.
 
 const PATH = '"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
-// Run in a directory, it prints the repository's common directory, then its origin URL, if any.
+// Run in a directory, it prints the repository's common directory, the
+// checkout's branch (an empty line when HEAD is detached), then its origin URL, if any.
 const LOCATE =
-  'cd "$1" && git rev-parse --path-format=absolute --git-common-dir && { git config --get remote.origin.url || true; }'
+  'cd "$1" && git rev-parse --path-format=absolute --git-common-dir && ' +
+  '{ git symbolic-ref --short -q HEAD || echo; } && { git config --get remote.origin.url || true; }'
 // Each mounted repository's origin URL, `<repo>\t<url>` per line; empty when it has none.
 const ORIGINS = 'for r; do printf \'%s\\t%s\\n\' "$r" "$(git -C "$r" config --get remote.origin.url 2>/dev/null)"; done'
 const MOUNTS = `PATH=${PATH} exec board -C "$1" --json query --all "$2"`
@@ -109,15 +112,15 @@ async function place($: EngineInterface, file: string): Promise<{ real: string; 
 const realOf = async ($: EngineInterface, path: string) =>
   (await $.fs.stat(path, { resolve: true }).catch(() => undefined))?.realPath ?? path
 
-/** The repository's own directory and origin URL, from `dir`; null outside a repository. */
-async function locate($: EngineInterface, dir: string): Promise<{ repo: string; url: string } | null> {
+/** The repository's own directory, checkout branch and origin URL, from `dir`; null outside a repository. */
+async function locate($: EngineInterface, dir: string): Promise<{ repo: string; branch: string; url: string } | null> {
   const ran = await sh($, LOCATE, [dir])
   if (ran.exitCode !== 0) {
     if (/not a git repository/i.test(ran.stderr)) return null
     throw new Unknown(`git could not find the repository in ${dir}: ${said(ran)}`)
   }
-  const [commonDir = '', url = ''] = ran.stdout.split('\n')
-  return { repo: repositoryOf(commonDir), url }
+  const [commonDir = '', branch = '', url = ''] = ran.stdout.split('\n')
+  return { repo: repositoryOf(commonDir), branch, url }
 }
 
 /** The board config's path. */
@@ -178,6 +181,10 @@ async function mountsOf($: EngineInterface, file: string): Promise<Mount[] | str
   return all.filter(m => m.repo !== null && origins.get(m.repo) === origin)
 }
 
+/** The branch the checkout that holds `file` is on; '' when HEAD is detached. */
+const branchOf = async ($: EngineInterface, file: string) =>
+  (await locate($, (await place($, file)).dir))?.branch ?? ''
+
 /** The change the acting agent's first message names, or null. */
 async function briefNamed($: EngineInterface, agentId: string | undefined): Promise<string | null> {
   const key = `${await $.session.id()}\n${agentId ?? ''}`
@@ -214,7 +221,7 @@ async function refusal($: EngineInterface, file: string, agentId: string | undef
         const why = ran.exitCode !== 0 && ran.stdout.trim() === '' ? said(ran) : change.why
         return unknown(file, `\`board -C ${at.board} get ${named}\` failed with ${why}`)
       }
-      return judge(file, at, named, change)
+      return judge(file, at, named, change, change.changeKind === 'prototype' ? await branchOf($, file) : '')
     }
     return noBrief(file, mounts[0]!, named)
   } catch (error) {

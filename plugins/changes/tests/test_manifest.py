@@ -37,7 +37,18 @@ def test_board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schema_it_ship
     report = board.json("plugin", "list")
     plugin = next(plugin for plugin in report["data"] if plugin["name"] == "changes")
     assert (plugin["status"], plugin["enabled"]) == ("ok", True)
-    assert plugin["offers"] == ["start", "next", "attach", "advance", "open", "pr", "plan", "brief"]
+    assert plugin["offers"] == [
+        "start",
+        "next",
+        "attach",
+        "advance",
+        "open",
+        "pr",
+        "plan",
+        "brief",
+        "prototype",
+        "verdict",
+    ]
     for path, schema in schemas().items():
         assert json.loads((board.root / ".board" / "types" / path).read_text()) == schema, path
 
@@ -73,22 +84,35 @@ def test_every_input_property_carries_a_sentence_that_says_what_it_means() -> No
         ("start", "title"),
         ("start", "name"),
         ("start", "handle"),
+        ("start", "task"),
+        ("start", "task_repo"),
         ("next", "path"),
         ("attach", "path"),
         ("attach", "ref"),
         ("attach", "ticket"),
         ("attach", "pull"),
+        ("attach", "task"),
         ("attach", "route"),
         ("attach", "head"),
         ("attach", "issue"),
         ("attach", "pull_request"),
         ("advance", "path"),
+        ("open", "kind"),
         ("open", "limit"),
         ("pr", "path"),
         ("plan", "path"),
         ("plan", "text"),
         ("plan", "uses"),
         ("brief", "path"),
+        ("prototype", "mount"),
+        ("prototype", "question"),
+        ("prototype", "parent"),
+        ("prototype", "title"),
+        ("prototype", "name"),
+        ("verdict", "path"),
+        ("verdict", "state"),
+        ("verdict", "verdict"),
+        ("verdict", "artifact"),
     }
     for key, description in descriptions.items():
         assert isinstance(description, str), key

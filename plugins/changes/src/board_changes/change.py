@@ -12,6 +12,12 @@ PLAN_TYPE = "changes/plan/v1"
 # The record types a change's `tickets` and `pulls` may reference; the jira and github plugins own them.
 TICKET_TYPES = ("jira/issue/v1", "github/issue/v1")
 PULL_TYPES = ("github/pull/v1",)
+# The record type a change's `task` references; the tasks plugin owns it.
+TASK_TYPE = "tasks/task/v2"
+# What a change is for: `build` lands on main, `prototype` answers a question on its own branch and never lands.
+KINDS = ("build", "prototype")
+# Where a prototype stands: exploring until its verdict settles or abandons it.
+STATES = ("exploring", "settled", "abandoned")
 # The phases a change passes through, in order. `dropped` ends a change outside this order.
 PHASES = ("plan", "build", "review", "land", "done")
 FINAL = ("done", "dropped")
@@ -33,6 +39,12 @@ Change = TypedDict(
         "tickets": list[str],
         "pulls": list[str],
         "records": list[str],
+        "task": str,
+        "kind": str,
+        "question": str,
+        "state": str,
+        "verdict": str,
+        "verdict_artifact": str,
     },
     total=False,
 )
@@ -63,6 +75,21 @@ def read(board: Board, path: str) -> tuple[Change, str]:
             {"path": path, "code": code},
         )
     return cast("Change", json.loads(body)), str(blob)
+
+
+def kind_of(change: Change) -> str:
+    """The change's kind; `build` when it names none, as a change written before kinds does."""
+    return change.get("kind", "build")
+
+
+def name_in(path: str) -> str:
+    """The change's name, the last part of its logical path, such as `fix-it` in `/changes/fix-it`."""
+    return path.rstrip("/").rsplit("/", 1)[-1]
+
+
+def branch_of(path: str) -> str:
+    """The only branch a prototype's builder may edit: `proto/<name>`."""
+    return f"proto/{name_in(path)}"
 
 
 def write(board: Board, lines: list[dict[str, Any]]) -> None:

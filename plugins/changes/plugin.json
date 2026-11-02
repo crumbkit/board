@@ -6,7 +6,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
+      "description": "Create a change, its plan to fill in and, unless one is named, its task, set its route from CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "Create a change in `plan` for a mounted repository.",
@@ -26,6 +26,20 @@
           "name": {
             "description": "The change's name, so it lives at /changes/<name>; made from the title when left out.",
             "title": "Name",
+            "type": "string"
+          },
+          "task": {
+            "description": "The task the change does, such as /repos/notes-personal/tasks/<slug>.md; when left out, tasks.add adds one titled as the change.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Task",
+            "type": "string"
+          },
+          "task_repo": {
+            "description": "The notes repo tasks.add writes the new task to, such as /repos/notes-personal; the caller's git remote chooses it when left out.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Task Repo",
             "type": "string"
           },
           "title": {
@@ -131,11 +145,16 @@
               }
             ],
             "title": "Suite"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
           }
         },
         "required": [
           "path",
           "plan",
+          "task",
           "route",
           "owners",
           "ask_first",
@@ -145,7 +164,8 @@
         ],
         "title": "StartOutput",
         "type": "object"
-      }
+      },
+      "timeout": 120
     },
     {
       "_meta": {},
@@ -267,7 +287,7 @@
       "annotations": {
         "readOnlyHint": false
       },
-      "description": "Add a reference to a record the change produced, or set its route, head commit or pull request.",
+      "description": "Add a reference to a record the change produced, or set its task, route, head commit or pull request.",
       "inputSchema": {
         "additionalProperties": false,
         "anyOf": [
@@ -284,6 +304,11 @@
           {
             "required": [
               "pull"
+            ]
+          },
+          {
+            "required": [
+              "task"
             ]
           },
           {
@@ -307,7 +332,7 @@
             ]
           }
         ],
-        "description": "Add a record, ticket or pull reference to a change, or set its route, head commit, issue or pull request.",
+        "description": "Add a record, ticket or pull reference, or set the task, route, head commit, issue or pull request.",
         "properties": {
           "head": {
             "description": "The commit under test and review.",
@@ -356,6 +381,13 @@
               "unowned"
             ],
             "title": "Route",
+            "type": "string"
+          },
+          "task": {
+            "description": "The task the change does, a tasks/task/v2 record.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Task",
             "type": "string"
           },
           "ticket": {
@@ -466,13 +498,21 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "description": "The changes that are not done or dropped, with their phase and route.",
+      "description": "The changes that are not done or dropped, with their phase, route, task and kind; by kind, every prototype with its question, state, verdict and branch.",
       "inputSchema": {
         "additionalProperties": false,
         "description": "The changes that are not done or dropped, by path.",
         "properties": {
+          "kind": {
+            "description": "Only changes of this kind; prototype also lists the settled and abandoned ones.",
+            "enum": [
+              "build",
+              "prototype"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "limit": {
-            "default": 100,
             "description": "The most changes to return, 1 to 10,000; 100 when left out.",
             "maximum": 10000,
             "minimum": 1,
@@ -488,8 +528,16 @@
         "$defs": {
           "OpenChange": {
             "additionalProperties": false,
-            "description": "A change that is not done or dropped.",
+            "description": "A change that is not done or dropped, its task and kind, and, for a prototype, what it asks and found.",
             "properties": {
+              "kind": {
+                "enum": [
+                  "build",
+                  "prototype"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
               "mount": {
                 "title": "Mount",
                 "type": "string"
@@ -510,6 +558,16 @@
                 "title": "Phase",
                 "type": "string"
               },
+              "prototype": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Prototype"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "route": {
                 "anyOf": [
                   {
@@ -526,6 +584,17 @@
                 ],
                 "title": "Route"
               },
+              "task": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Task"
+              },
               "title": {
                 "title": "Title",
                 "type": "string"
@@ -536,9 +605,80 @@
               "title",
               "mount",
               "phase",
-              "route"
+              "route",
+              "task",
+              "kind",
+              "prototype"
             ],
             "title": "OpenChange",
+            "type": "object"
+          },
+          "Prototype": {
+            "additionalProperties": false,
+            "description": "What a prototype asks and found, and the branch its code is on.",
+            "properties": {
+              "branch": {
+                "title": "Branch",
+                "type": "string"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Question"
+              },
+              "state": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "exploring",
+                      "settled",
+                      "abandoned"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "State"
+              },
+              "verdict": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Verdict"
+              },
+              "verdict_artifact": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Verdict Artifact"
+              }
+            },
+            "required": [
+              "question",
+              "state",
+              "verdict",
+              "verdict_artifact",
+              "branch"
+            ],
+            "title": "Prototype",
             "type": "object"
           }
         },
@@ -832,6 +972,265 @@
         "title": "BriefOutput",
         "type": "object"
       }
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Start a prototype that answers one question: add its task under a parent, write its change in build on branch proto/<name>, and return its brief. It never lands.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "A prototype that answers one question: its task under `parent`, its change in build and its brief.",
+        "properties": {
+          "mount": {
+            "description": "The repository's mount, such as /repos/board.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Mount",
+            "type": "string"
+          },
+          "name": {
+            "description": "The change's name, so it lives at /changes/<name>; made from the title when left out.",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "description": "The task or project the prototype's task goes under, such as /repos/notes-personal/tasks/<slug>.md.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Parent",
+            "type": "string"
+          },
+          "question": {
+            "description": "The question the prototype answers, which is its whole plan.",
+            "pattern": "\\S",
+            "title": "Question",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the prototype is, in a few words; the question when left out.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mount",
+          "question",
+          "parent"
+        ],
+        "title": "PrototypeInput",
+        "type": "object"
+      },
+      "name": "prototype",
+      "outputSchema": {
+        "$defs": {
+          "BriefOutput": {
+            "additionalProperties": false,
+            "description": "What an agent needs to start a change, in at most 600 words.\n\n`plan` is the newest plan's text, or `null` when the change has no plan\nrecord. `uses` gives one line per record it uses, in order, and\n`left_out` counts those the word limit left out. `controls` is the\ncommand that lists the controls on the change's repository.\n`brief_line`, `board-brief: <path>`, comes first in the output; a\nbuilder's first message starts with it, and the write guard reads it.",
+            "properties": {
+              "brief_line": {
+                "title": "Brief Line",
+                "type": "string"
+              },
+              "controls": {
+                "title": "Controls",
+                "type": "string"
+              },
+              "instruction": {
+                "title": "Instruction",
+                "type": "string"
+              },
+              "left_out": {
+                "title": "Left Out",
+                "type": "integer"
+              },
+              "path": {
+                "title": "Path",
+                "type": "string"
+              },
+              "phase": {
+                "enum": [
+                  "plan",
+                  "build",
+                  "review",
+                  "land",
+                  "done",
+                  "dropped"
+                ],
+                "title": "Phase",
+                "type": "string"
+              },
+              "plan": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Plan"
+              },
+              "uses": {
+                "items": {
+                  "$ref": "#/$defs/BriefUse"
+                },
+                "title": "Uses",
+                "type": "array"
+              }
+            },
+            "required": [
+              "brief_line",
+              "path",
+              "plan",
+              "uses",
+              "left_out",
+              "phase",
+              "instruction",
+              "controls"
+            ],
+            "title": "BriefOutput",
+            "type": "object"
+          },
+          "BriefUse": {
+            "additionalProperties": false,
+            "description": "One record the plan uses, and one line saying what it holds.",
+            "properties": {
+              "line": {
+                "title": "Line",
+                "type": "string"
+              },
+              "ref": {
+                "title": "Ref",
+                "type": "string"
+              }
+            },
+            "required": [
+              "ref",
+              "line"
+            ],
+            "title": "BriefUse",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The prototype started: its change, task and branch, and the brief its builder starts from.",
+        "properties": {
+          "branch": {
+            "title": "Branch",
+            "type": "string"
+          },
+          "brief": {
+            "$ref": "#/$defs/BriefOutput"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "task": {
+            "title": "Task",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "task",
+          "branch",
+          "brief"
+        ],
+        "title": "PrototypeOutput",
+        "type": "object"
+      },
+      "timeout": 120
+    },
+    {
+      "_meta": {},
+      "annotations": {
+        "readOnlyHint": false
+      },
+      "description": "Record what a prototype found in one sentence, and the artifact version it means, which ends it and its task: done when settled, dropped when abandoned.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "description": "What a prototype found, which ends it.",
+        "properties": {
+          "artifact": {
+            "description": "The URL of the artifact version the verdict means.",
+            "format": "uri",
+            "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+            "title": "Artifact",
+            "type": "string"
+          },
+          "path": {
+            "description": "The prototype's logical path, such as /changes/step-list.",
+            "format": "board-path",
+            "pattern": "^/",
+            "title": "Path",
+            "type": "string"
+          },
+          "state": {
+            "description": "settled when it answered its question, abandoned when the owner says so.",
+            "enum": [
+              "settled",
+              "abandoned"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "verdict": {
+            "description": "What it found, in one sentence.",
+            "pattern": "\\S",
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "state",
+          "verdict"
+        ],
+        "title": "VerdictInput",
+        "type": "object"
+      },
+      "name": "verdict",
+      "outputSchema": {
+        "additionalProperties": false,
+        "description": "The prototype ended, and the phase that ended it: done when settled, dropped when abandoned.",
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "phase": {
+            "enum": [
+              "plan",
+              "build",
+              "review",
+              "land",
+              "done",
+              "dropped"
+            ],
+            "title": "Phase",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "settled",
+              "abandoned"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "state",
+          "phase"
+        ],
+        "title": "VerdictOutput",
+        "type": "object"
+      },
+      "timeout": 120
     }
   ],
   "description": "Walk one change to a repository from its plan to its pull request, and gather every record it produces. Use it when you start a change to a repository mounted in the board, and whenever you resume one. Start with `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`, then call `changes.next --path /changes/<name>` for the next step. SKILL.md and README.md in the plugin's directory say more.",

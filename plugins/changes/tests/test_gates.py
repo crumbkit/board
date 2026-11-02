@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from conftest import BASE, HEAD, PLAN
+from conftest import BASE, HEAD, PLAN, TASK
 
 from board_changes.gates import Observed, gate
 
@@ -22,7 +22,7 @@ def observed(
     **fields: Any,  # noqa: ANN401 - the change's other fields
 ) -> Observed:
     """What a gate reads for a change in `phase` with a plan at /changes/t/plan.md."""
-    change: Change = {"$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": phase}
+    change: Change = {"$type": "changes/change/v1", "title": "T", "mount": "/repos/x", "phase": phase, "task": TASK}
     change["plan"] = "/changes/t/plan.md"
     change.update(fields)  # type: ignore[typeddict-item]
     return Observed(path=PATH, change=change, records=records or {}, plan=plan, suite=suite)
@@ -56,21 +56,21 @@ def report(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the r
 
 
 def test_the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_empty() -> None:
-    assert statuses(observed("plan", route="owner")) == {"plan": "pass", "route": "pass"}
-    [plan, _] = gate(
+    assert statuses(observed("plan", route="owner")) == {"plan": "pass", "task": "pass", "route": "pass"}
+    [plan, *_] = gate(
         observed("plan", plan="# T\n\n## Problem\n\nX.\n\n## Outcome\n\n## out of scope\nY.\n", route="owner")
     )
     assert (plan["status"], plan["detail"]) == ("missing", "the plan at /changes/t/plan.md has no text under: Outcome")
 
 
 def test_the_plan_gate_misses_a_plan_file_that_is_not_there_and_passes_one_with_text() -> None:
-    [plan, _] = gate(observed("plan", plan=None, route="owner"))
+    [plan, *_] = gate(observed("plan", plan=None, route="owner"))
     assert (plan["status"], plan["detail"]) == ("missing", "no plan file is at /changes/t/plan.md")
     assert statuses(observed("plan", plan=PLAN, route="owner"))["plan"] == "pass"
 
 
 def test_the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() -> None:
-    [_, route] = gate(observed("plan"))
+    [*_, route] = gate(observed("plan"))
     assert (route["status"], route["detail"]) == (
         "missing",
         "the change records no route; set one with `board call changes.attach --path /changes/t --route <route>`",

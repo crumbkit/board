@@ -6,8 +6,21 @@ from typing import Any, Literal, cast
 from board_plugin.board import Board, literal
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_changes.change import FINAL, PHASES, PLUGIN, PULL_TYPES, TICKET_TYPES, TREE_CODES, Change, read, write
-from board_changes.gates import Observed, gate
+from board_changes.change import (
+    FINAL,
+    PHASES,
+    PLUGIN,
+    PULL_TYPES,
+    TASK_TYPE,
+    TICKET_TYPES,
+    TREE_CODES,
+    Change,
+    branch_of,
+    kind_of,
+    read,
+    write,
+)
+from board_changes.gates import CODES, Check, Observed, gate
 from board_changes.repo import check_suite
 
 # Each input that adds a reference, the list it adds to, and the record types it accepts; none means any entry.
@@ -29,6 +42,11 @@ INSTRUCTIONS = {
     "done": "Nothing is left to do.",
     "dropped": "Nothing is left to do.",
 }
+# What a prototype's builder does while it explores.
+PROTOTYPE = (
+    "Iterate with the owner on branch {branch}, committing and pushing after every round. When the owner has "
+    "his answer, ask for the verdict in one sentence and record it with `board call changes.verdict`."
+)
 
 
 # The phases whose gates read the records a change references.
@@ -84,17 +102,29 @@ def observe(board: Board, path: str, change: Change) -> Observed:
     return Observed(path=path, change=change, records=records, plan=plan, suite=suite, unreadable=unreadable)
 
 
+def instruction_for(path: str, change: Change, checks: list[Check]) -> str:
+    """What to do now: the prototype's loop, the advance command once the gate passes, or the phase's instruction."""
+    phase = change["phase"]
+    if kind_of(change) == "prototype" and phase == "build":
+        return PROTOTYPE.format(branch=branch_of(path))
+    if phase not in FINAL and all(found["status"] == "pass" for found in checks):
+        return f"The gate passes: run `board call changes.advance --path {path}`."
+    return INSTRUCTIONS[phase]
+
+
 def next_step(request: CallRequest) -> dict[str, object]:
     """The change's phase and route, its gate's checks, and the next instruction."""
     path = str(request.input["path"])
     board = Board(request.board.root, PLUGIN)
     change, _ = read(board, path)
     checks = gate(observe(board, path, change))
-    phase = change["phase"]
-    instruction = INSTRUCTIONS[phase]
-    if phase not in FINAL and all(found["status"] == "pass" for found in checks):
-        instruction = f"The gate passes: run `board call changes.advance --path {path}`."
-    return {"path": path, "phase": phase, "route": change.get("route"), "gate": checks, "instruction": instruction}
+    return {
+        "path": path,
+        "phase": change["phase"],
+        "route": change.get("route"),
+        "gate": checks,
+        "instruction": instruction_for(path, change, checks),
+    }
 
 
 def attach(request: CallRequest) -> dict[str, object]:
@@ -109,6 +139,10 @@ def attach(request: CallRequest) -> dict[str, object]:
             check_target(board, ref, types)
             references = change.get(listed, [])
             change[listed] = references if ref in references else [*references, ref]
+    task = asked.get("task")
+    if isinstance(task, str):
+        check_target(board, task, (TASK_TYPE,))
+        change["task"] = task
     for field in ("route", "head", "issue", "pull_request"):
         value = asked.get(field)
         if isinstance(value, str):
@@ -157,7 +191,7 @@ def advance(request: CallRequest) -> dict[str, object]:
     missing = [found for found in gate(observe(board, path, change)) if found["status"] == "missing"]
     if missing:
         raise PluginError(
-            "changes::gate::unmet",
+            CODES.get(missing[0]["check"], "changes::gate::unmet"),
             f"the {phase} gate of {path} is unmet: "
             + "; ".join(f"{found['check']}: {found['detail']}" for found in missing)
             + f"; run `board call changes.next --path {path}` for the next step",

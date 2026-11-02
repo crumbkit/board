@@ -21,10 +21,18 @@ from board_changes.models import (
     PlanInput,
     PlanOutput,
     PlanRecord,
+    PrototypeInput,
+    PrototypeOutput,
     PrOutput,
     StartInput,
     StartOutput,
+    VerdictInput,
+    VerdictOutput,
 )
+
+# Seconds a call that runs `tasks.add`, `tasks.done` or `tasks.drop` through a nested `board call` may take: the
+# nested call syncs and pushes a notes repo, and may first build the tasks plugin's environment.
+NESTED_TIMEOUT = 120
 
 
 def capability(
@@ -39,6 +47,11 @@ def capability(
         "annotations": {"readOnlyHint": read_only},
         "_meta": {},
     }
+
+
+def nested(tool: dict[str, Any]) -> dict[str, Any]:
+    """A capability that calls the tasks plugin, given NESTED_TIMEOUT in place of Board's default limit."""
+    return tool | {"timeout": NESTED_TIMEOUT}
 
 
 def manifest() -> dict[str, JsonValue]:
@@ -59,13 +72,15 @@ def manifest() -> dict[str, JsonValue]:
         "metadata": {"area": "delivery"},
         "types": [CHANGE_TYPE, PLAN_TYPE],
         "capabilities": [
-            capability(
-                "start",
-                "Create a change and its plan to fill in, set its route from CODEOWNERS, and return the "
-                "repository's owners, contributing docs and check suite.",
-                StartInput,
-                StartOutput,
-                read_only=False,
+            nested(
+                capability(
+                    "start",
+                    "Create a change, its plan to fill in and, unless one is named, its task, set its route from "
+                    "CODEOWNERS, and return the repository's owners, contributing docs and check suite.",
+                    StartInput,
+                    StartOutput,
+                    read_only=False,
+                )
             ),
             capability(
                 "next",
@@ -76,7 +91,7 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "attach",
-                "Add a reference to a record the change produced, or set its route, head commit or pull request.",
+                "Add a reference to a record the change produced, or set its task, route, head commit or pull request.",
                 AttachInput,
                 AttachOutput,
                 read_only=False,
@@ -90,7 +105,8 @@ def manifest() -> dict[str, JsonValue]:
             ),
             capability(
                 "open",
-                "The changes that are not done or dropped, with their phase and route.",
+                "The changes that are not done or dropped, with their phase, route, task and kind; by kind, every"
+                " prototype with its question, state, verdict and branch.",
                 OpenInput,
                 OpenOutput,
                 read_only=True,
@@ -119,6 +135,26 @@ def manifest() -> dict[str, JsonValue]:
                 PathInput,
                 BriefOutput,
                 read_only=True,
+            ),
+            nested(
+                capability(
+                    "prototype",
+                    "Start a prototype that answers one question: add its task under a parent, write its change in"
+                    " build on branch proto/<name>, and return its brief. It never lands.",
+                    PrototypeInput,
+                    PrototypeOutput,
+                    read_only=False,
+                )
+            ),
+            nested(
+                capability(
+                    "verdict",
+                    "Record what a prototype found in one sentence, and the artifact version it means, which ends it"
+                    " and its task: done when settled, dropped when abandoned.",
+                    VerdictInput,
+                    VerdictOutput,
+                    read_only=False,
+                )
             ),
         ],
     }

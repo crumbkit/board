@@ -10,7 +10,9 @@ The gate is the contract. `next` says what the current phase still lacks;
 
 ## Steps
 
-1. Run `board -C <board> call changes.start --mount /repos/<name> --title '<title>'`.
+1. Every change does a task. Run
+   `board -C <board> call changes.start --mount /repos/<name> --title '<title>' --task <task>`,
+   or leave out `--task` to add one titled as the change.
    Add `--handle @<you>` so the route reflects who owns what. Read every path
    in `docs`. Treat each `ask_first` pattern as a file to ask about before
    changing.
@@ -26,6 +28,21 @@ The gate is the contract. `next` says what the current phase still lacks;
 4. Run `board -C <board> call changes.advance --path /changes/<name>`
    when every check passes.
 5. To drop a change, `board put` it with `phase` set to `dropped`.
+
+## Prototypes
+
+When the owner wants to try an idea, run
+`board -C <board> call changes.prototype --mount /repos/<name> --question '<question>' --parent <task>`.
+It adds the task, writes the change in `build` and returns its brief. Start
+one builder from the brief; the owner iterates with it directly. The builder
+commits and pushes to `proto/<name>` after every round, and may edit only
+there. When the owner has his answer, ask him for the verdict in one
+sentence and the artifact version he means, and record it with
+`changes.verdict --path /changes/<name> --state settled --verdict '<sentence>' --artifact <url>`.
+The verdict also closes the prototype's task. Ask again when a prototype
+has had no new round for three days. Record
+`abandoned` only when the owner says so. `changes.open --kind prototype`
+lists every prototype with its verdict.
 
 ## Each phase
 
@@ -55,6 +72,13 @@ The gate is the contract. `next` says what the current phase still lacks;
 ## Refusals
 
 - `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
+- `changes::prototype::never_lands`: a prototype ends with `verdict`.
+- `changes::prototype::not_prototype`: only a prototype takes a verdict.
+- `changes::task::not_a_task_path`: `--parent` names a task under a
+  `tasks/` directory, such as `/repos/notes-personal/tasks/<slug>.md`, not
+  a project brief.
+- `changes::task::unrouted`: name the task with `--task`, or the repo to
+  add it to with `--task-repo`.
 - `changes::ref::dangling`: nothing is at the path. Write the record
   first.
 - `changes::ref::wrong_type`: the ticket or pull is not a record of a type
@@ -68,6 +92,8 @@ The gate is the contract. `next` says what the current phase still lacks;
 - `changes::guard::not_building`: `advance` the change to `build`.
 - `changes::guard::wrong_mount`: the brief's change is for another
   repository.
+- `changes::guard::wrong_branch`: a prototype's builder edits only on
+  `proto/<name>`; switch to it.
 - `changes::guard::unknown`: the guard could not check; fix what it names.
 - `changes::phase::final`: the change is done or dropped. Run `open`, or
   `start` a new change.

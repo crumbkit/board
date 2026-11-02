@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from conftest import HEAD, PLAN, Board, change, mount_repo, record, report, task
+from conftest import HEAD, PLAN, TASK, Board, change, mount_repo, record, report, task
 
 PATH = "/changes/t"
 
@@ -12,7 +12,7 @@ def test_next_reads_the_gate_from_the_plan_file_and_says_what_to_do(board: Board
     board.write("changes/t/plan.md", "# T\n\n## Problem\n\n## Outcome\n\n## Out of scope\n")
     output = board.call("next", {"path": PATH})
     assert (output["phase"], output["route"]) == ("plan", "owner")
-    assert [check["status"] for check in output["gate"]] == ["missing", "pass"]
+    assert [check["status"] for check in output["gate"]] == ["missing", "pass", "pass"]
     assert output["instruction"].startswith("Interview the owner")
     board.write("changes/t/plan.md", PLAN)
     output = board.call("next", {"path": PATH})
@@ -198,3 +198,18 @@ def test_attach_refuses_a_ticket_that_is_a_markdown_file_and_adds_a_ticket_recor
     assert "is not a record" in refused["message"]
     board.call("attach", {"path": PATH, "ticket": "/tickets/ACME-123"})
     assert board.read("changes/t.json")["tickets"] == ["/tickets/ACME-123"]
+
+
+def test_a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it(board: Board) -> None:
+    board.write(
+        "changes/t.json",
+        record(
+            "changes/change/v1", title="T", mount="/repos/x", phase="plan", plan="/changes/t/plan.md", route="owner"
+        ),
+    )
+    board.write("changes/t/plan.md", PLAN)
+    assert board.refusal("advance", {"path": PATH})["fields"]["missing"] == ["task"]
+    board.write("notes/a.json", record("plans/decision/v1", refs=[]))
+    assert board.refusal("attach", {"path": PATH, "task": "/notes/a"})["code"] == "changes::ref::wrong_type"
+    board.call("attach", {"path": PATH, "task": TASK})
+    assert board.call("advance", {"path": PATH})["to"] == "build"
