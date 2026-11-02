@@ -22,7 +22,9 @@ def test_start_creates_the_change_in_plan_with_a_plan_whose_sections_are_left_to
         "task": TASK,
     }
     plan = (board.root / "changes/let-a-suite-declare-a-timeout/plan.md").read_text()
-    assert plan == "# Let a suite declare a timeout!\n\n## Problem\n\n## Outcome\n\n## Out of scope\n"
+    assert (
+        plan == "# Let a suite declare a timeout!\n\n## Problem\n\n## Outcome\n\n## Out of scope\n\n## UX\n\n## Data\n"
+    )
 
 
 def test_start_keeps_a_plan_already_written_at_the_plan_path(board: Board) -> None:

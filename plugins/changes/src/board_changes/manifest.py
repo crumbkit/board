@@ -5,10 +5,11 @@ from typing import Any
 from board_plugin.protocol import dumped
 from pydantic import BaseModel, JsonValue
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE
 from board_changes.models import (
     CHANGE_SCHEMA_PATH,
     PLAN_SCHEMA_PATH,
+    UNDERSTANDING_SCHEMA_PATH,
     AdvanceOutput,
     AttachInput,
     AttachOutput,
@@ -26,6 +27,7 @@ from board_changes.models import (
     PrOutput,
     StartInput,
     StartOutput,
+    UnderstandingRecord,
     VerdictInput,
     VerdictOutput,
 )
@@ -70,7 +72,7 @@ def manifest() -> dict[str, JsonValue]:
         ),
         "run": ["uv", "run", "--frozen", "--no-dev", "python", "-m", "board_changes"],
         "metadata": {"area": "delivery"},
-        "types": [CHANGE_TYPE, PLAN_TYPE],
+        "types": [CHANGE_TYPE, PLAN_TYPE, UNDERSTANDING_TYPE],
         "capabilities": [
             nested(
                 capability(
@@ -165,6 +167,7 @@ def schemas() -> dict[str, dict[str, JsonValue]]:
     return {
         CHANGE_SCHEMA_PATH: ChangeRecord.model_json_schema(by_alias=True),
         PLAN_SCHEMA_PATH: PlanRecord.model_json_schema(by_alias=True),
+        UNDERSTANDING_SCHEMA_PATH: UnderstandingRecord.model_json_schema(by_alias=True),
     }
 
 

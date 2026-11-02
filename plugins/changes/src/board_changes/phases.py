@@ -31,12 +31,19 @@ ATTACHED: tuple[tuple[str, Literal["records", "tickets", "pulls"], tuple[str, ..
 )
 
 INSTRUCTIONS = {
-    "plan": "Interview the owner and fill in the plan's Problem, Outcome and Out of scope sections. On the "
-    "ask-first route, attach the owner's plans/decision/v1 whose refs name the plan.",
+    "plan": "Interview the owner and fill in the plan's Problem, Outcome, Out of scope, UX and Data sections. UX "
+    "says No UI change with a reason, or lists the mockups and a Neighbours list; attach the owner's decision "
+    "naming each mockup. Data says None, or run the understanding-check skill and attach its record and the "
+    "owner's decision that references it. On the ask-first route, attach the owner's plans/decision/v1 whose refs "
+    "name the plan.",
     "build": "Build test-first. Attach each task, record the head commit with --head, run the check suite on it "
-    "and attach the run.",
-    "review": "Review the head commit with clean context and attach the review/report/v1. Fix blocking findings, "
-    "record the new head and review again.",
+    "and attach the run. Before advancing, ask the owner two of each attached understanding check's predict or edge "
+    "questions again, worded differently, and add them to its rechecks.",
+    "review": "Review the head commit with clean context and attach the review/report/v1. When the plan's UX says "
+    "No UI change or its Data says None, list the repository's UI-path and data-path controls, "
+    "/controls/<repo>/ui-paths and /controls/<repo>/data-paths, with `board call controls.check`, and report a "
+    "diff that touches a path they name as a high finding. Fix "
+    "blocking findings, record the new head and review again.",
     "land": "Draft the pull request with `board call changes.pr`, open it with the command it returns, and record its "
     "URL with --pull-request. Merging happens outside Board.",
     "done": "Nothing is left to do.",

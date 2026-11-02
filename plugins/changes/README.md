@@ -67,23 +67,32 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   documents, controls, decisions, evals and other changes the plan relies
   on.
 
+`changes/understanding/v1`, by convention at
+`/changes/<name>/understanding/<subject>`, records how the owner showed he
+understands a change's `data` or `ux`: the play-back and his corrections,
+each question with its round, kind (`predict`, `choose`, `explain` or
+`edge`), his answer and whether it matched the plan, each mismatch and
+whether the plan or his expectation changed to settle it, what was parked,
+and the questions asked again before review. The `understanding-check`
+skill in `claude-code/skills/` runs the check.
+
 ## Capabilities
 
 - `start --mount /repos/<name> --title '<title>' [--task <path> | --task-repo <repo>] [--name <name>] [--handle @<you>]`
-  creates the change in `plan` and a plan with empty Problem, Outcome and
-  Out of scope sections. `--task` names the task the change does, and must
-  be a `tasks/task/v2` (`changes::ref::wrong_type`). Without it, `start`
-  adds a task titled as the change through `board call tasks.add`, in
-  `--task-repo` or, when that is left out, in the repo the caller's git
-  remote routes to. A caller in a git repository with no `origin` is
-  refused with `changes::task::unrouted`. It reads `CODEOWNERS` (`.github/`, root, `docs/`,
-  the first found) to set the route and list `ask_first` patterns. `docs`
-  lists the contributing docs found (`CONTRIBUTING.md` at the root, in
-  `.github/` or in `docs/`, and `AGENTS.md`). `suite` is the first
-  inline-code path in them that holds a `runs/suite/v1`, looked up in the
-  repository's own board first. Refuses an existing name
-  (`changes::change::exists`) and a repository path holding nothing
-  (`changes::mount::not_found`).
+  creates the change in `plan` and a plan with empty Problem, Outcome,
+  Out of scope, UX and Data sections. `--task` names the task the change
+  does, and must be a `tasks/task/v2` (`changes::ref::wrong_type`). Without
+  it, `start` adds a task titled as the change through `board call
+  tasks.add`, in `--task-repo` or, when that is left out, in the repo the
+  caller's git remote routes to. A caller in a git repository with no
+  `origin` is refused with `changes::task::unrouted`. It reads `CODEOWNERS`
+  (`.github/`, root, `docs/`, the first found) to set the route and list
+  `ask_first` patterns. `docs` lists the contributing docs found
+  (`CONTRIBUTING.md` at the root, in `.github/` or in `docs/`, and
+  `AGENTS.md`). `suite` is the first inline-code path in them that holds a
+  `runs/suite/v1`, looked up in the repository's own board first. Refuses an
+  existing name (`changes::change::exists`) and a repository path holding
+  nothing (`changes::mount::not_found`).
 - `next --path /changes/<name>`: read-only. The phase, each gate check as
   `pass` or `missing` with a detail, and the instruction.
 - `attach --path /changes/<name> [--ref <path>] [--ticket <path>] [--pull <path>] [--task <path>] [--route <route>] [--head <sha>] [--issue <url>] [--pull-request <url>]`
@@ -94,8 +103,10 @@ at `<stamp>.md`. The newest stamp is the change's current plan.
   not a record of a type its list accepts (`changes::ref::wrong_type`).
 - `advance --path /changes/<name>` moves to the next phase when the gate
   passes. Otherwise it refuses, and `missing` lists the failed checks. The
-  code is that of the first failed check: `changes::prototype::never_lands`
-  for a prototype's `verdict` check, else `changes::gate::unmet`. Leaving `done` or `dropped` is
+  code is that of the first failed check: `changes::ux::not_agreed`,
+  `changes::ux::no_neighbours`, `changes::data::not_signed`,
+  `changes::prototype::never_lands` for a prototype's `verdict` check, else
+  `changes::gate::unmet`. Leaving `done` or `dropped` is
   `changes::phase::final`, which points to `open` and `start`.
 - `open [--kind build|prototype] [--limit <n>]`: read-only. Changes not
   `done` or `dropped`, by path, at most 100 by default, with `total`,
@@ -160,11 +171,37 @@ Board marks degraded satisfies nothing.
 
 | Leaving | Gate |
 | --- | --- |
-| plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. |
-| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. |
+| plan | Each plan section has text, `task` is set, and `route` is set. On `ask-first`, also a `plans/decision/v1` whose `refs` name the plan or the change. Any such decision passes, including a rejection. Then `ux`, `neighbours` and `data`, below. |
+| build | Every attached `tasks/task/v2` is `done` or `dropped`. A repeating task never reaches `done`, so drop it to release the gate. An attached `runs/run/v1` under `<suite>/runs/` of the check suite is full, clean, has no `fail` or `error`, and names `head` in `versions`. Each attached `changes/understanding/v1` of this change holds at least two `rechecks`, and every one of them matched. |
 | review | An attached `review/report/v1` whose `range` ends at `head`, whose `verdict` is not `changes`, and which has no `critical` or `high` finding. |
 | land | `pull_request` is set. Advancing enters `done`. |
 | build, for a prototype | Never passes: `verdict` ends a prototype instead. |
+
+The plan gate's last three checks:
+
+- `ux`: the UX section starts with "No UI change" followed by a reason,
+  or holds a `### Mockups` heading with a list under it. Each item of
+  that list names one mockup, by its first URL or, without one, by its
+  first board path in inline code. Other links in the section are not
+  mockups. Each mockup is named in the `urls` or `refs` of an attached
+  `plans/decision/v1` that the owner signed: a decision with
+  `written_by` set is an agent's stub and does not count.
+- `neighbours`: a UX section that lists mockups holds a `### Neighbours`
+  heading with a list under it: the open changes and artifacts in the same area,
+  and the components and flows the design reuses. The gate checks that the
+  list exists; the reviewer judges what it says.
+- `data`: the Data section starts with "None" as a word of its own,
+  followed by a full stop, a colon or nothing, or an attached
+  `plans/decision/v1` names in its `refs` an attached
+  `changes/understanding/v1` whose `change` is this change and whose
+  `subject` is `data`. As for mockups, a decision with `written_by` set
+  does not count.
+
+The gate cannot see the diff. At review, when the plan says "No UI change"
+or "None", the reviewer lists the repository's UI-path and data-path
+controls, `/controls/<repo>/ui-paths` and `/controls/<repo>/data-paths`,
+with `controls.check`, and reports a diff that touches a path they name as
+a high finding.
 
 Commits match when one is a prefix of the other and both have at least 7
 digits.

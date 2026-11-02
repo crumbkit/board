@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic.config import JsonDict
 from pydantic.json_schema import SkipJsonSchema
 
-from board_changes.change import CHANGE_TYPE, PLAN_TYPE, PULL_TYPES, TASK_TYPE, TICKET_TYPES
+from board_changes.change import CHANGE_TYPE, PLAN_TYPE, PULL_TYPES, TASK_TYPE, TICKET_TYPES, UNDERSTANDING_TYPE
 from board_changes.open import OPEN_LIMIT
 from board_changes.plan import PLAN_WORDS, USES_WORDS
 
@@ -124,6 +124,65 @@ class PlanRecord(BaseModel):
     tag: Literal["changes/plan/v1"] = Field(alias="$type", description="The record's type.")
     text: Ref = Field(description="The plan's Markdown text, beside this record.")
     uses: list[Ref] = Field(description="The records and documents the plan relies on.")
+
+
+class Asked(BaseModel):
+    """One question of an understanding check, the owner's answer, and whether it matches the plan."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
+
+    round: int = Field(ge=1, description="The round it was asked in; a round holds at most three questions.")
+    kind: Literal["predict", "choose", "explain", "edge"] = Field(description="The kind of question.")
+    question: Prose = Field(description="The question, as asked.")
+    answer: Prose = Field(description="The owner's answer, in his words.")
+    matches: bool = Field(description="Whether the answer matches the plan.")
+
+
+class Mismatch(BaseModel):
+    """An answer that differed from the plan, and which of the two changed to settle it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
+
+    question: Prose = Field(description="The question whose answer differed.")
+    difference: Prose = Field(description="How the answer and the plan differ, said plainly.")
+    settled: Literal["plan", "expectation"] = Field(
+        description="plan when the plan changed, expectation when the owner's expectation did."
+    )
+    how: Prose = Field(description="What changed.")
+
+
+class Recheck(BaseModel):
+    """A predict or edge question asked again, worded differently, before review."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
+
+    kind: Literal["predict", "edge"] = Field(description="The kind of question asked again.")
+    question: Prose = Field(description="The question, as asked again.")
+    answer: Prose = Field(description="The owner's answer.")
+    matches: bool = Field(description="Whether the answer matches the plan; a wrong one reopens that part.")
+
+
+class UnderstandingRecord(BaseModel):
+    """`changes/understanding/v1`: how the owner showed he understands a change's data or UX.
+
+    The owner's sign-off decision references this record in its `refs`.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, json_schema_extra=untitled)
+
+    tag: Literal["changes/understanding/v1"] = Field(alias="$type", description="The record's type.")
+    change: Annotated[str, Field(json_schema_extra={"format": "board-ref", "x-board-type": CHANGE_TYPE})] = Field(
+        description="The change whose plan was checked."
+    )
+    subject: Literal["data", "ux"] = Field(description="What was checked: the plan's Data or its UX.")
+    playback: Prose = Field(
+        description="What the agent played back: what is stored, where, who shares it, what users see."
+    )
+    corrections: list[Prose] = Field(description="Each correction the owner made to the play-back.")
+    questions: list[Asked] = Field(min_length=1, description="Each question asked, in order.")
+    mismatches: list[Mismatch] = Field(description="Each answer that differed from the plan, and how it was settled.")
+    parked: list[Prose] = Field(description="What was named and left out of scope.")
+    rechecks: list[Recheck] = Field(description="The questions asked again before review.")
 
 
 class PlanInput(Strict):
@@ -417,4 +476,5 @@ class PrOutput(Strict):
 
 
 CHANGE_SCHEMA_PATH = f"{CHANGE_TYPE}.schema.json"
+UNDERSTANDING_SCHEMA_PATH = f"{UNDERSTANDING_TYPE}.schema.json"
 PLAN_SCHEMA_PATH = f"{PLAN_TYPE}.schema.json"

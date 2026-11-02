@@ -9,6 +9,7 @@ from board_plugin.protocol import PluginError
 PLUGIN = "changes"
 CHANGE_TYPE = "changes/change/v1"
 PLAN_TYPE = "changes/plan/v1"
+UNDERSTANDING_TYPE = "changes/understanding/v1"
 # The record types a change's `tickets` and `pulls` may reference; the jira and github plugins own them.
 TICKET_TYPES = ("jira/issue/v1", "github/issue/v1")
 PULL_TYPES = ("github/pull/v1",)

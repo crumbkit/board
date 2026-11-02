@@ -1,5 +1,6 @@
 """`next`, `attach` and `advance` over a real board: the gate read from the references, and moving phases."""
 
+import json
 from typing import Any
 
 from conftest import HEAD, PLAN, TASK, Board, change, mount_repo, record, report, task
@@ -12,7 +13,15 @@ def test_next_reads_the_gate_from_the_plan_file_and_says_what_to_do(board: Board
     board.write("changes/t/plan.md", "# T\n\n## Problem\n\n## Outcome\n\n## Out of scope\n")
     output = board.call("next", {"path": PATH})
     assert (output["phase"], output["route"]) == ("plan", "owner")
-    assert [check["status"] for check in output["gate"]] == ["missing", "pass", "pass"]
+    statuses = {check["check"]: check["status"] for check in output["gate"]}
+    assert statuses == {
+        "plan": "missing",
+        "task": "pass",
+        "route": "pass",
+        "ux": "missing",
+        "neighbours": "pass",
+        "data": "missing",
+    }
     assert output["instruction"].startswith("Interview the owner")
     board.write("changes/t/plan.md", PLAN)
     output = board.call("next", {"path": PATH})
@@ -24,7 +33,7 @@ def test_advance_refuses_an_unmet_gate_naming_what_is_missing_and_moves_on_once_
     board.write("changes/t/plan.md", "# T\n")
     refused = board.refusal("advance", {"path": PATH})
     assert refused["code"] == "changes::gate::unmet"
-    assert refused["fields"]["missing"] == ["plan"]
+    assert refused["fields"]["missing"] == ["plan", "ux", "data"]
     assert board.read("changes/t.json")["phase"] == "plan"
     board.write("changes/t/plan.md", PLAN)
     assert board.call("advance", {"path": PATH}) == {"path": PATH, "from": "plan", "to": "build"}
@@ -213,3 +222,83 @@ def test_a_change_with_no_task_blocks_the_plan_gate_and_attaching_one_clears_it(
     assert board.refusal("attach", {"path": PATH, "task": "/notes/a"})["code"] == "changes::ref::wrong_type"
     board.call("attach", {"path": PATH, "task": TASK})
     assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def ux_plan(ux: str, data: str = "None.") -> str:
+    """The fixture plan with these UX and Data sections."""
+    return PLAN.split("## UX")[0] + f"## UX\n\n{ux}\n\n## Data\n\n{data}\n"
+
+
+def planned_change(board: Board, plan: str) -> None:
+    """An owner-routed change in plan whose plan file holds `plan`."""
+    board.write("changes/t.json", change(plan="/changes/t/plan.md", route="owner"))
+    board.write("changes/t/plan.md", plan)
+
+
+def decision(**fields: Any) -> str:  # noqa: ANN401 - the decision's other fields
+    """A decision with these refs or urls."""
+    return record(
+        "plans/decision/v1", decision="Agreed.", why="Seen.", session="s", decided="2026-11-01T10:00:00Z", **fields
+    )
+
+
+MOCKUP = "https://claude.ai/artifact/m1"
+
+
+def test_advance_refuses_a_mockup_the_owner_has_not_agreed_and_moves_on_once_a_decision_names_it(
+    board: Board,
+) -> None:
+    planned_change(board, ux_plan(f"### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"))
+    assert board.refusal("advance", {"path": PATH})["code"] == "changes::ux::not_agreed"
+    board.write("decisions/ux.json", decision(urls=[MOCKUP]))
+    board.call("attach", {"path": PATH, "ref": "/decisions/ux"})
+    assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def test_advance_refuses_mockups_with_no_neighbours_list_and_moves_on_once_one_is_written(board: Board) -> None:
+    board.write("decisions/ux.json", decision(urls=[MOCKUP]))
+    planned_change(board, ux_plan(f"### Mockups\n\n- {MOCKUP}"))
+    board.call("attach", {"path": PATH, "ref": "/decisions/ux"})
+    assert board.refusal("advance", {"path": PATH})["code"] == "changes::ux::no_neighbours"
+    board.write("changes/t/plan.md", ux_plan(f"### Mockups\n\n- {MOCKUP}\n\n### Neighbours\n\n- /changes/other\n"))
+    assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def understanding_record() -> str:
+    """An understanding check of /changes/t's data, every question answered as the plan has it."""
+    question = {"round": 1, "kind": "predict", "question": "Q?", "answer": "A.", "matches": True}
+    return record(
+        "changes/understanding/v1",
+        change=PATH,
+        subject="data",
+        playback="One record per call.",
+        corrections=[],
+        questions=[question],
+        mismatches=[],
+        parked=[],
+        rechecks=[],
+    )
+
+
+def test_advance_refuses_unsigned_data_and_moves_on_once_a_decision_references_the_understanding_check(
+    board: Board,
+) -> None:
+    planned_change(board, ux_plan("No UI change: it is headless.", data="One record per call, in the calls table."))
+    assert board.refusal("advance", {"path": PATH})["code"] == "changes::data::not_signed"
+    board.write("changes/t/understanding/data.json", understanding_record())
+    board.write("decisions/data.json", decision(refs=["/changes/t/understanding/data"]))
+    board.call("attach", {"path": PATH, "ref": "/changes/t/understanding/data"})
+    board.call("attach", {"path": PATH, "ref": "/decisions/data"})
+    assert board.call("advance", {"path": PATH})["to"] == "build"
+
+
+def test_the_understanding_schema_refuses_a_mismatch_left_unsettled_and_admits_a_settled_one(board: Board) -> None:
+    board.write("changes/t.json", change())
+    board.write("repos/x/README.md", "x")
+    mismatch = {"question": "Q?", "difference": "He expected one record per utterance.", "how": "The plan changed."}
+    body = json.loads(understanding_record())
+    board.write("u/open.json", json.dumps(body | {"mismatches": [mismatch]}))
+    board.write("u/settled.json", json.dumps(body | {"mismatches": [mismatch | {"settled": "plan"}]}))
+    report = board.json("check", "--all")
+    codes = {entry["logical"]: entry.get("code") for entry in report["data"] if entry["logical"].startswith("/u/")}
+    assert codes == {"/u/open": "board::record::invalid", "/u/settled": None}
