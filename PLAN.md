@@ -55,13 +55,11 @@ Every change, decision and artifact is recorded as small records written
 once, and each one's state is derived from which records exist. Build them in
 this order.
 
-1. [Repos](plan/repos.md).
+1. [Decisions](plan/decisions.md).
 
-2. [Decisions](plan/decisions.md).
+2. [Control scope](plan/control-scope.md).
 
-3. [Control scope](plan/control-scope.md).
-
-4. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
+3. [Work records](plan/work-records.md), then [inflight](plan/inflight.md).
 
 ## Out of scope
 
@@ -86,7 +84,8 @@ on main (`git show 226829b:PLAN.md`), as is the deleted HANDOFF.md.
   a colocated jj repository automatically with no setting. After M7, turn the
   sketch into a list of design gaps for a builder.
 - **Repositories across boards.** References into another board's
-  repository read `name:/path`; plan/repos.md builds the declaration. The
+  repository read `name:/path`; repo records are the declaration
+  (docs/architecture/paths/repos.md). The
   owner agreed it on 2026-10-05; it refines M8, and #55's content-addressed
   records are dropped. The `share` plugin, built in place of the `board copy`
   and `board share` it named, copies a record and what it needs into a

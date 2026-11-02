@@ -341,7 +341,9 @@ impl Kept {
         let fact = BlobFact {
             kind: classified.kind(),
             record_type: match &classified.content {
-                Content::Record { record_type, .. } => Some(record_type.clone()),
+                Content::Record { record_type, .. } | Content::Pointer { record_type, .. } => {
+                    Some(record_type.clone())
+                }
                 _ => None,
             },
             code: judged.as_ref().err().map(Fault::code),
