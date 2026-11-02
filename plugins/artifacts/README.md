@@ -74,8 +74,10 @@ by `at`, is the artifact's current version.
 by their newest version, or by `first_seen` for one with none, each with its
 fields and every version's `path`, `version`, `title` and `at`, newest
 first. `--account`, `--state` and `--area` keep the artifacts with that
-value. `--subject <path>` keeps those whose `subject` reaches the path, which
-`board refs` decides, so a link to a change finds its artifacts too.
+value. `--subject <path>` keeps those whose `subject` names the path or
+reaches it, which `board refs` decides, so a link to a change finds its
+artifacts too, and a subject that holds nothing any more still finds the
+artifacts that name it.
 `--unfiled true` keeps those with no subject or no `shows`. `--limit` is 1 to
 200 (50 by default). `total` counts every artifact that matched, `truncated`
 says whether the limit left some out, and `unreadable` counts the records
@@ -105,7 +107,9 @@ or `agreed` artifacts whose subject reaches one of its own.
 record lacks it, replaces `--shows`, and sets `--state` to `draft` or
 `shown`. `--supersedes <artifact>` marks that artifact `superseded`, with
 `superseded_by` naming this one, in the same commit. It refuses a call with
-nothing to change with `artifacts::set::nothing`, a path that holds no
+nothing to change with `artifacts::set::nothing`, a `--supersedes` that names
+the artifact being set with `artifacts::set::supersedes_itself`, a path that
+holds no
 artifact with `artifacts::artifact::not_found`, and a `--state` on an agreed
 or superseded artifact with `artifacts::state::settled`.
 
@@ -124,6 +128,13 @@ a pending effect in the personal board and the agree refuses with
 admits only the same artifact agreed with the same decision, and a record an
 agent writes cannot stand in for it. When the owner refuses, the agree
 refuses with `artifacts::agree::refused`.
+
+Soft limit: the schema requires only that an agreed artifact names an
+`agreed_by`, so a direct `board put` of the record with `"state": "agreed"`
+marks it agreed without Touch ID and leaves no effect. `artifacts.agree` is
+the only capability that agrees, and a gate that must trust the agreement,
+such as a UX gate that reads `state`, has to check for the owner's approved
+`artifacts.agree` effect at the artifact's path as well as `state`.
 
 ## Keeping the records current
 

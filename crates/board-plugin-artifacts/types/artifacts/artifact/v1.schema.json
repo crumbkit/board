@@ -77,8 +77,7 @@
     },
     "url": {
       "description": "The artifact's claude.ai link, such as https://claude.ai/artifact/AbCdEf0123456789xyzQ.",
-      "format": "uri",
-      "pattern": "^https?://([^/?#@]*@)?[^/?#@:][^/?#@]*([/?#]|$)",
+      "pattern": "^https://claude\\.ai/(code/)?artifact/[A-Za-z0-9_-]+$",
       "type": "string"
     }
   },

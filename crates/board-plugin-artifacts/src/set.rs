@@ -76,6 +76,16 @@ pub(crate) fn set(host: &dyn Host, input: &Value) -> Result<Value, PluginError> 
             &[("path", path)],
         ));
     }
+    if asked.supersedes.as_deref() == Some(path) {
+        return Err(refusal(
+            "artifacts::set::supersedes_itself",
+            format!(
+                "--supersedes names {path}, the artifact being set; pass the path of the older \
+                 artifact that {path} replaces"
+            ),
+            &[("path", path)],
+        ));
+    }
     let (mut record, blob) = held::artifact(host, path)?;
     if let Some(state) = asked.state {
         settable(path, &record)?;

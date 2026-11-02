@@ -1,6 +1,7 @@
 //! `artifacts.agree`: move an artifact to `agreed` once the owner approves
 //! it with Touch ID, naming the decision that accepts it.
 
+use board_model::Code;
 use board_ops::{Host, PluginError, Shown};
 use board_plugin::shape::Record;
 use schemars::JsonSchema;
@@ -13,9 +14,9 @@ use crate::records::{ArtifactRecord, Decision, State};
 /// The capability Board asks the owner to approve.
 const AGREE: &str = "artifacts.agree";
 /// Board has written the pending effect and the owner has not answered.
-const ASKED: &str = "board::settings::asked";
+const ASKED: &str = Code::SettingsAsked.as_str();
 /// The owner refused the effect.
-const REFUSED: &str = "board::settings::refused";
+const REFUSED: &str = Code::SettingsRefused.as_str();
 
 /// The artifact and the decision that accepts it.
 #[derive(Deserialize, JsonSchema)]

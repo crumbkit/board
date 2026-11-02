@@ -16,7 +16,7 @@ pub(super) enum Kind {
 use Kind::{Local, UntilAdopted};
 
 #[rustfmt::skip]
-pub(super) const UNSHARED: [(&str, &str, Kind, &str); 106] = [
+pub(super) const UNSHARED: [(&str, &str, Kind, &str); 107] = [
     // This repository's board's copy of the controls schema.
     (".board/controls/control/v1", "/paths/-", UntilAdopted, "BoardGlob (audit row 3)"),
     (".board/controls/control/v1", "/purpose", UntilAdopted, "Prose"),
@@ -25,6 +25,7 @@ pub(super) const UNSHARED: [(&str, &str, Kind, &str); 106] = [
     ("artifacts/artifact/v1", "/account", UntilAdopted, "Actor, once an account email has its own shape"),
     ("artifacts/artifact/v1", "/area/-", Local, "an area tag groups only artifacts, for finding neighbouring work"),
     ("artifacts/artifact/v1", "/first_seen", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
+    ("artifacts/artifact/v1", "/url", Local, "a claude.ai artifact link, narrower than the shared Url shape"),
     ("artifacts/version/v1", "/at", UntilAdopted, "Timestamp, as plans' (audit rows 37 to 41)"),
     ("artifacts/version/v1", "/session", UntilAdopted, "SessionId, as plans' (audit row 14)"),
     ("artifacts/version/v1", "/source", Local, "a file path on the machine that published, which only artifacts records"),

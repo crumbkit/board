@@ -3,6 +3,7 @@
 
 use std::collections::BTreeSet;
 
+use board_model::{Code, Refusal};
 use board_ops::{Absent, Host, PluginError};
 use board_plugin::shape::whole;
 use schemars::JsonSchema;
@@ -132,13 +133,22 @@ pub(crate) fn list(host: &dyn Host, input: &Value) -> Result<Value, PluginError>
 }
 
 /// The artifacts whose `subject` reaches `subject`, by their paths, from
-/// the records `board refs` finds pointing at it.
+/// the records `board refs` finds pointing at it. A subject that holds
+/// nothing has none, since nothing can link to it.
 pub(crate) fn about(host: &dyn Host, subject: &str) -> Result<BTreeSet<String>, PluginError> {
-    let answers = (host.refs(&[logical(subject)?], Absent::Refuse))
-        .map_err(|error| refused("refs", &error.refusal()))?;
+    let not_found = |refusal: &Refusal| refusal.code.as_str() == Code::PathNotFound.as_str();
     let mut paths = BTreeSet::new();
+    let answers = match host.refs(&[logical(subject)?], Absent::Refuse) {
+        Ok(answers) => answers,
+        Err(error) if not_found(&error.refusal()) => return Ok(paths),
+        Err(error) => return Err(refused("refs", &error.refusal())),
+    };
     for answer in answers {
-        let report = answer.map_err(|error| refused("refs", &error.refusal()))?;
+        let report = match answer {
+            Ok(report) => report,
+            Err(error) if not_found(&error.refusal()) => continue,
+            Err(error) => return Err(refused("refs", &error.refusal())),
+        };
         for incoming in report.to {
             let from_subject =
                 (incoming.pointers.iter()).any(|pointer| pointer.starts_with("/subject/"));
@@ -153,7 +163,10 @@ pub(crate) fn about(host: &dyn Host, subject: &str) -> Result<BTreeSet<String>, 
 fn matches(asked: &Input, about: Option<&BTreeSet<String>>, held: &Held) -> bool {
     let record = &held.record;
     (asked.account.as_ref()).is_none_or(|account| *account == record.account)
-        && about.is_none_or(|paths| paths.contains(&held.path))
+        && about.is_none_or(|paths| {
+            paths.contains(&held.path)
+                || (asked.subject.as_ref()).is_some_and(|subject| record.subject.contains(subject))
+        })
         && asked.state.is_none_or(|state| state == record.state)
         && (asked.area.as_ref()).is_none_or(|area| record.area.contains(area))
         && (!asked.unfiled || record.subject.is_empty() || record.shows.is_none())

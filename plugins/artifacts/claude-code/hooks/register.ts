@@ -2,6 +2,8 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import type { Claimed } from '../types'
+import { WINDOW, briefOf, claimOf, expanded, personalOf } from './brief'
+import type { Brief, Claim } from './brief'
 
 // After the Artifact tool answers, the mod records what it saw in the
 // personal board through `board --personal`: a publish or a read calls
@@ -13,11 +15,6 @@ import type { Claimed } from '../types'
 // failure is logged, never thrown.
 
 const ARTIFACT_URL = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/([A-Za-z0-9_-]+)$/
-// The first line of a builder's first message, which changes.brief writes.
-const BRIEF = /^board-brief: (\/changes\/[a-z0-9][a-z0-9-]*)\s*$/
-// A Bash command that claims a task, and the task's path in it.
-const CLAIM = /\btasks\.claim\b/
-const CLAIMED_PATH = /--path[= ]['"]?(\/[^\s'"]+)/
 // The Artifact tool's read result names the file that holds a large page.
 const SAVED = /saved to (\/.+?\.(html|md)) — /
 // It inlines a smaller page after its header, inside this tag when another session may have written it.
@@ -74,18 +71,16 @@ export function sentPage(source: string | undefined): Page | undefined {
   return source === undefined || ext === undefined ? undefined : { file: source, ext: ext as 'html' | 'md' }
 }
 
-/** The change a first message's `board-brief:` line names, if it starts with one. */
-export function briefOf(first: string | undefined): string | undefined {
-  return BRIEF.exec(first?.split('\n')[0] ?? '')?.[1]
-}
-
-/** What the agent still owes the artifact's record after a publish, or undefined when it owes nothing. */
-export function owed(recorded: Recorded): string | undefined {
+/** What the agent still owes the artifact's record after a publish, or undefined when it owes nothing. `unread` says the mod could not read the conversation's first message. */
+export function owed(recorded: Recorded, unread = false): string | undefined {
   const { path } = recorded
   const lines: string[] = []
   if (recorded.subject.length === 0) {
+    const why = unread
+      ? 'the mod could not read this conversation\'s first message, which has left the newest 4,096 entries Claude Code returns, and the conversation claimed no task'
+      : 'this conversation has no board-brief line and claimed no task'
     lines.push(
-      `The artifacts mod recorded ${path} with no subject, because this conversation has no board-brief line and claimed no task.`,
+      `The artifacts mod recorded ${path} with no subject, because ${why}.`,
       `Set the change or task it belongs to: board --personal call artifacts.set --path ${path} --subject /changes/<name>`,
     )
   }
@@ -168,15 +163,54 @@ function logRefusal($: EngineInterface, what: string, error: unknown) {
   $.ui.log(`board: ${what}: ${error instanceof Error ? error.message : String(error)}`, { to })
 }
 
-/** The change or task the conversation works on: its brief's change, else the task it claimed. */
-async function subjectOf($: EngineInterface, agentId: string | undefined): Promise<string[]> {
-  const messages = agentId === undefined ? await $.session.messages() : await $.session.messages({ agentId })
-  if (!('deny' in messages)) {
-    const change = briefOf(messages.find(message => message.role === 'user')?.text)
-    if (change !== undefined) return [change]
-  }
+// The change each agent's brief named, by session id and agent id ('' for the
+// main conversation), as the write guard keeps them. The message window holds
+// the newest 4096 entries, and a compaction replaces the first message, so a
+// brief found once is kept. Soft limit: an agent whose first publish comes
+// after its first message left that window finds no brief; the cache starts
+// over when the module reloads. Reading the transcript file would replace it.
+const briefs = new Map<string, string>()
+
+/** What the agent's first message says: the change its brief names, or none, and whether the message could be read at all. */
+export type Brief = { change: string } | { change: null; unread: boolean }
+
+/** The change the acting agent's first message names, read as the write guard reads it. */
+async function briefNamed($: EngineInterface, agentId: string | undefined): Promise<Brief> {
+  const key = `${await $.session.id()}\n${agentId ?? ''}`
+  const kept = briefs.get(key)
+  if (kept !== undefined) return { change: kept }
+  const messages = await $.session.messages(agentId === undefined ? {} : { agentId })
+  // A full window may have lost the first message, and its oldest row may be one another agent wrote.
+  if (!Array.isArray(messages) || messages.length >= WINDOW) return { change: null, unread: true }
+  const first = messages.find(m => m.role === 'user')
+  const named = first === undefined ? null : briefOf(first.text)
+  if (named === null) return { change: null, unread: false }
+  briefs.set(key, named)
+  return { change: named }
+}
+
+/**
+ * Whether a claim's board is the personal board, where the mod files the
+ * artifact: a claim with no `-C`, or one whose `-C` names the directory
+ * `personal` names in the board config, both spelled out. Soft limit: two
+ * spellings of one directory through a symbolic link or a relative path do
+ * not match, so such a claim is left out.
+ */
+async function inPersonal($: EngineInterface, claim: Claim): Promise<boolean> {
+  if (claim.board === undefined) return true
+  const home = await $.env.get('HOME')
+  const config = `${(await $.env.get('XDG_CONFIG_HOME')) || `${home}/.config`}/board/config.json`
+  if (!(await $.fs.exists(config))) return false
+  const personal = personalOf(await $.fs.read(config))
+  return personal !== undefined && expanded(personal, home) === expanded(claim.board, home)
+}
+
+/** The change or task the conversation works on: its brief's change, else the task it claimed, with what its brief said. */
+async function subjectOf($: EngineInterface, agentId: string | undefined): Promise<{ subject: string[]; brief: Brief }> {
+  const brief = await briefNamed($, agentId)
+  if (brief.change !== null) return { subject: [brief.change], brief }
   const task = (await read($, claimed))[agentId ?? '']
-  return task === undefined ? [] : [task]
+  return { subject: task === undefined ? [] : [task], brief }
 }
 
 /** Records the artifact through artifacts.record, then the version and its page when the version is new. Resolves what record answered. */
@@ -263,9 +297,12 @@ export const register: Register = on => {
   // unless its first message names a change.
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
     const ran = await next(e)
-    if (ran.deny !== undefined || ran.isError === true || !CLAIM.test(e.command)) return ran
-    const task = CLAIMED_PATH.exec(e.command)?.[1]
-    if (task !== undefined) await update($, claimed, all => ({ ...all, [e.agentId ?? '']: task }))
+    if (ran.deny !== undefined || ran.isError === true) return ran
+    const claim = claimOf(e.command)
+    // A task claimed in another board names a path there, not in the personal board.
+    if (claim !== undefined && (await inPersonal($, claim))) {
+      await update($, claimed, all => ({ ...all, [e.agentId ?? '']: claim.task }))
+    }
     return ran
   })
 
@@ -280,9 +317,9 @@ export const register: Register = on => {
       // A publish to another person's artifact, which the owner may edit, is not the owner's artifact.
       if (result.url === undefined || result.owned === false) return ran
       const page = sentPage(source)
-      const subject = await subjectOf($, e.agentId)
+      const { subject, brief } = await subjectOf($, e.agentId)
       const recorded = await record($, { url: result.url, version: result.version, title: result.title, description: e.description, source: page === undefined ? undefined : source, page, subject })
-      const told = recorded === undefined ? undefined : owed(recorded)
+      const told = recorded === undefined ? undefined : owed(recorded, brief.change === null && brief.unread)
       if (told !== undefined) return { ...ran, context: [...(ran.context ?? []), told] }
     } else if (action === 'read' && e.path === undefined && e.paths === undefined && e.type_url === undefined) {
       const result = ran.result as Read

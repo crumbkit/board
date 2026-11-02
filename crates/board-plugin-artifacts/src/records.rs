@@ -1,9 +1,11 @@
 //! The record types the plugin ships. Their schemas are generated from
 //! these structs; the files under `types/` are those schemas, committed.
 
-use board_plugin::shape::{Accepts, Prose, Record, Ref, Sha256, Tag, Url};
+use board_plugin::shape::{Accepts, Prose, Record, Ref, Sha256, Tag};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+use crate::import::ARTIFACT_URL;
 
 /// `artifacts/artifact/v1` at `/artifacts/<id>`: one claude.ai artifact.
 ///
@@ -25,7 +27,7 @@ pub struct ArtifactRecord {
     pub tag: Tag<Self>,
     #[schemars(
         description = "The artifact's claude.ai link, such as https://claude.ai/artifact/AbCdEf0123456789xyzQ.",
-        with = "Url"
+        regex(pattern = ARTIFACT_URL)
     )]
     pub url: String,
     /// The email address of the claude.ai account that published the artifact.

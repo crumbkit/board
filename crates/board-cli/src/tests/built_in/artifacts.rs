@@ -259,6 +259,28 @@ fn list_keeps_the_artifacts_whose_subject_reaches_the_path_through_a_link() {
 }
 
 #[test]
+fn list_keeps_the_artifacts_whose_subject_names_a_path_that_holds_nothing() {
+    let board = board();
+    board
+        .write(
+            "artifacts/A.json",
+            &artifact(A, &json!({"subject": ["/changes/gone"]})),
+        )
+        .write(
+            "artifacts/B.json",
+            &artifact(B, &json!({"subject": ["/changes/other"]})),
+        );
+    assert_eq!(
+        listed(&board, &["--subject", "/changes/gone"]),
+        ["/artifacts/A"]
+    );
+    assert_eq!(
+        listed(&board, &["--subject", "/changes/never"]),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn a_record_board_marks_degraded_is_counted_and_left_out_and_a_valid_one_is_listed() {
     let board = board();
     board
@@ -666,6 +688,25 @@ fn set_supersedes_the_old_artifact_in_the_same_commit() {
 }
 
 #[test]
+fn set_refuses_an_artifact_that_supersedes_itself_and_admits_one_that_supersedes_another() {
+    let board = board();
+    board
+        .write("artifacts/A.json", &artifact(A, &json!({"state": "shown"})))
+        .write("artifacts/B.json", &artifact(B, &json!({})));
+    let failure = board.refusal(
+        "artifacts.set",
+        &["--path", "/artifacts/B", "--supersedes", "/artifacts/B"],
+    );
+    assert_eq!(failure["code"], "artifacts::set::supersedes_itself");
+    assert_eq!(failure["fields"]["path"], "/artifacts/B");
+    assert_eq!(stored(&board, "artifacts/B.json")["state"], "draft");
+    board.call(
+        "artifacts.set",
+        &["--path", "/artifacts/B", "--supersedes", "/artifacts/A"],
+    );
+}
+
+#[test]
 fn set_refuses_a_state_on_an_agreed_artifact_and_admits_it_on_a_shown_one() {
     let board = board();
     let agreed = json!({"state": "agreed", "agreed_by": "/projects/a/decisions/d"});
@@ -813,6 +854,33 @@ fn agree_refuses_a_decision_that_is_missing_or_not_a_decision_without_asking_the
         );
         assert_eq!(failure["fields"]["decision"], decision);
     }
+    assert_eq!(personal.pending(), Vec::<String>::new());
+    let (_, asked) = agree(&personal, "/projects/a/decisions/steps");
+    assert_eq!(asked["code"], "artifacts::agree::asked", "{asked}");
+}
+
+#[test]
+fn agree_refuses_a_superseded_artifact_without_asking_the_owner_and_asks_for_a_shown_one() {
+    let personal = decided();
+    personal.write(
+        "artifacts/B.json",
+        &artifact(
+            B,
+            &json!({"state": "superseded", "superseded_by": "/artifacts/A"}),
+        ),
+    );
+    let ran = personal.run(&[
+        "--json",
+        "call",
+        "artifacts.agree",
+        "--path",
+        "/artifacts/B",
+        "--decision",
+        "/projects/a/decisions/steps",
+    ]);
+    let failure = json(&ran);
+    assert_eq!(failure["code"], "artifacts::state::settled", "{failure}");
+    assert_eq!(failure["fields"]["path"], "/artifacts/B");
     assert_eq!(personal.pending(), Vec::<String>::new());
     let (_, asked) = agree(&personal, "/projects/a/decisions/steps");
     assert_eq!(asked["code"], "artifacts::agree::asked", "{asked}");

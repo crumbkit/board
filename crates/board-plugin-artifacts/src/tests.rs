@@ -247,6 +247,69 @@ fn a_version_has_either_a_copy_with_its_hash_or_none_and_no_hash() {
     assert!(schema.validate(&version(&json!({"copy": "all"}))).is_err());
 }
 
+/// The brief line's pattern and parser in `text`: the `BRIEF` line, and
+/// `briefOf` from its doc comment to its closing brace.
+fn brief_parser(text: &str) -> String {
+    let pattern = (text.lines())
+        .find(|line| line.starts_with("const BRIEF = "))
+        .unwrap();
+    let start = text
+        .find("/** The change the first line of `text` names")
+        .unwrap();
+    let length = text[start..].find("\n}\n").unwrap() + 2;
+    format!("{pattern}\n{}", &text[start..start + length])
+}
+
+#[test]
+fn the_artifacts_mod_reads_the_brief_line_with_the_write_guards_parser() {
+    let guard = include_str!("../../../plugins/changes/claude-code/hooks/guard.ts");
+    let artifacts = include_str!("../../../plugins/artifacts/claude-code/hooks/brief.ts");
+    assert_eq!(brief_parser(artifacts), brief_parser(guard));
+    assert!(brief_parser(guard).contains("export function briefOf"));
+}
+
+#[test]
+fn an_artifact_is_a_claude_ai_link_an_account_and_a_time_with_its_zone() {
+    let schema = schema(ArtifactRecord::TYPE);
+    for (fields, admitted) in [
+        (json!({}), true),
+        (
+            json!({"url": "https://claude.ai/code/artifact/0b8a7c6e-1f2d-4c3b-9a8e-7d6c5b4a3f21"}),
+            true,
+        ),
+        (json!({"url": "https://example.com/artifact/AbCd"}), false),
+        (json!({"url": "https://claude.ai/artifact/../AbCd"}), false),
+        (json!({"url": "https://example.com/../elsewhere"}), false),
+        (json!({"account": ""}), false),
+        (json!({"first_seen": "2026-10-31T18:20:00"}), false),
+    ] {
+        let record = artifact(&fields);
+        assert_eq!(schema.validate(&record).is_ok(), admitted, "{fields}");
+    }
+}
+
+#[test]
+fn a_version_names_its_session_and_time_and_may_leave_its_version_id_out() {
+    let schema = schema(VersionRecord::TYPE);
+    let copied = json!({"sha256": "ab".repeat(32)});
+    assert!(schema.validate(&version(&copied)).is_ok());
+    let mut keyed = version(&copied);
+    keyed.as_object_mut().unwrap().remove("version");
+    assert!(schema.validate(&keyed).is_ok());
+    for fields in [
+        json!({"session": ""}),
+        json!({"at": "2026-10-31T18:20:00"}),
+        json!({"version": "1/2"}),
+        json!({"pinned": true}),
+    ] {
+        let mut record = version(&copied);
+        for (name, value) in fields.as_object().unwrap() {
+            record[name] = value.clone();
+        }
+        assert!(schema.validate(&record).is_err(), "{fields}");
+    }
+}
+
 #[test]
 fn a_capability_the_plugin_does_not_offer_is_refused_and_set_reaches_its_own_check() {
     let other: CapabilityName = "publish".parse().unwrap();

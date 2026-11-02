@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { briefOf, owed, readPage, sentPage } from '../hooks/register'
+import { briefOf, claimOf, expanded } from '../hooks/brief'
+import { owed, readPage, sentPage } from '../hooks/register'
 
 // These prove which `board`, `jq` and `shasum` commands the hook runs after
 // the Artifact tool answers, and what records and inputs it hands `board`. A
@@ -20,8 +21,20 @@ const whole = { stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 
 type Put = { path: string; body: unknown }
 
-/** Stands in for jq, shasum and board: `account.email` is what jq reads, `account.refuse` a code every board run refuses with, `imported` what artifacts.import answers, and `replaces` what artifacts.record names as `may_replace`. */
-function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown }, replaces = [] as string[], first = 'Publish the plan.' } = {}) {
+/** The board config, which names the personal board. */
+const CONFIG = '/home/owner/.config/board/config.json'
+
+/**
+ * Stands in for jq, shasum and board: `account.email` is what jq reads,
+ * `account.refuse` a code every board run refuses with, `imported` what
+ * artifacts.import answers, and `replaces` what artifacts.record names as
+ * `may_replace`. `conversation` is the first message and how many entries
+ * the conversation holds. The mod keeps a brief it finds for each session
+ * and agent, so a test whose first message is a brief passes its own
+ * `session`.
+ */
+function host(on: On, { imported = { written: [] as string[], known: 0, truncated: null as unknown }, replaces = [] as string[], first = 'Publish the plan.', session = 'session-1' } = {}) {
+  const conversation = { first, entries: 1 }
   const account = { email: 'owner@example.com', refuse: undefined as string | undefined }
   const held = new Map<string, unknown>()
   const writes: Put[] = []
@@ -66,10 +79,15 @@ function host(on: On, { imported = { written: [] as string[], known: 0, truncate
     logs.push({ text: e.text, to: e.to })
     return { value: undefined }
   })
-  on('session.id', () => ({ value: 'session-1' }))
-  on('session.messages', () => ({ value: [{ role: 'user', text: first, toolUses: [] }] }))
+  on('session.id', () => ({ value: session }))
+  on('session.messages', () => {
+    const rest = Array.from({ length: conversation.entries - 1 }, () => ({ role: 'assistant' as const, text: 'ok', toolUses: [] }))
+    return { value: [{ role: 'user', text: conversation.first, toolUses: [] }, ...rest] }
+  })
+  on('fs.exists', (_, e) => ({ value: e.path === CONFIG }))
+  on('fs.read', (_, e) => ({ value: e.path === CONFIG ? JSON.stringify({ personal: '~/Code/board', boards: ['~/Code/board'] }) : '' }))
   mock.env(on, { HOME: '/home/owner' })
-  return { account, held, writes, commands, logs, imports, recorded }
+  return { account, held, writes, commands, logs, imports, recorded, conversation }
 }
 
 const published = (version?: string) => ({
@@ -124,7 +142,7 @@ test('a first publish records the artifact, the page and the version, and a seco
 
 test('a publish files the artifact under the change its brief names, even after the conversation claimed a task', async ($, on) => {
   mock.clock(on, { now: NOW })
-  const { recorded } = host(on, { first: 'board-brief: /changes/flows-editor\n\nYou are the builder.' })
+  const { recorded } = host(on, { first: 'board-brief: /changes/flows-editor\n\nYou are the builder.', session: 'brief-and-claim' })
   on('tool.call', ({ tool }) => (tool === 'Bash' ? { result: { stdout: '{}', stderr: '', interrupted: false } } : published('1')))
   await $.tool.call({ tool: 'Bash', command: 'board -C ~/Code/board call tasks.claim --path /repos/notes/tasks/flows.md --owner s1' })
   await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
@@ -145,7 +163,7 @@ test('a publish with no brief files the artifact under the task the conversation
 
 test('a publish tells the agent to set the subject and shows it lacks, and which artifacts it may replace', async ($, on) => {
   mock.clock(on, { now: NOW })
-  host(on, { replaces: ['/artifacts/Old'], first: 'board-brief: /changes/flows-editor' })
+  host(on, { replaces: ['/artifacts/Old'], first: 'board-brief: /changes/flows-editor', session: 'brief-owes-shows' })
   on('tool.call', () => published('1'))
   const ran = await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
   expect(ran.context).toEqual([
@@ -388,11 +406,59 @@ test('every bracketed note between the header and an inline page is left out of 
   expect(sentPage(undefined)).toBeUndefined()
 })
 
-test('a brief is read only from the first line of the first message', () => {
+test('a brief is read only from the first line of the first message, as the write guard reads it', () => {
   expect(briefOf('board-brief: /changes/flows-editor\nYou are the builder.')).toBe('/changes/flows-editor')
-  expect(briefOf('You are the builder.\nboard-brief: /changes/flows-editor')).toBeUndefined()
-  expect(briefOf('board-brief: changes/flows-editor')).toBeUndefined()
-  expect(briefOf(undefined)).toBeUndefined()
+  expect(briefOf('\n  board-brief: /changes/flows-editor  \nmore')).toBe('/changes/flows-editor')
+  expect(briefOf('You are the builder.\nboard-brief: /changes/flows-editor')).toBeNull()
+  expect(briefOf('board-brief: changes/flows-editor')).toBeNull()
+  expect(briefOf('')).toBeNull()
+})
+
+test('a brief found once is kept after the conversation passes the window or is compacted', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { recorded, conversation } = host(on, { first: 'board-brief: /changes/flows-editor', session: 'long-builder' })
+  on('tool.call', () => published('1'))
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(recorded.at(-1)?.subject).toEqual(['/changes/flows-editor'])
+  conversation.first = 'This session is being continued from a previous conversation.'
+  conversation.entries = 4096
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(recorded.at(-1)?.subject).toEqual(['/changes/flows-editor'])
+})
+
+test('a full window with no kept brief files under the claimed task or nothing, and says the first message was unread', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { recorded, conversation } = host(on, { first: 'board-brief: /changes/flows-editor', session: 'full-window' })
+  conversation.entries = 4096
+  on('tool.call', () => published('1'))
+  const ran = await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(recorded.at(-1)?.subject).toEqual([])
+  expect(ran.context?.[0]).toMatch(/could not read this conversation's first message, which has left the newest 4,096 entries/)
+  conversation.entries = 4095
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(recorded.at(-1)?.subject).toEqual(['/changes/flows-editor'])
+})
+
+test('a claim is the --path that follows tasks.claim, and a piped or || claim is left out', () => {
+  expect(claimOf('board call artifacts.list --path /x && board call tasks.claim --path /tasks/y --owner s1')).toEqual({ task: '/tasks/y' })
+  expect(claimOf("board -C ~/Code/board call tasks.claim --path='/tasks/y'")).toEqual({ task: '/tasks/y', board: '~/Code/board' })
+  expect(claimOf('board call tasks.claim --path /tasks/y | jq .')).toBeUndefined()
+  expect(claimOf('board call tasks.claim --path /tasks/y || true')).toBeUndefined()
+  expect(claimOf('board call tasks.available --path /tasks')).toBeUndefined()
+  expect(expanded('~/Code/board/', '/home/owner')).toBe('/home/owner/Code/board')
+  expect(expanded('$HOME/Code/board', '/home/owner')).toBe('/home/owner/Code/board')
+})
+
+test('a task claimed in another board is not the subject, and one claimed in the personal board is', async ($, on) => {
+  mock.clock(on, { now: NOW })
+  const { recorded } = host(on)
+  on('tool.call', ({ tool }) => (tool === 'Bash' ? { result: { stdout: '{}', stderr: '', interrupted: false } } : published('1')))
+  await $.tool.call({ tool: 'Bash', command: 'board -C ~/Code/team call tasks.claim --path /tasks/elsewhere --owner s1' })
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(recorded.at(-1)?.subject).toEqual([])
+  await $.tool.call({ tool: 'Bash', command: 'board -C /home/owner/Code/board call tasks.claim --path /tasks/here --owner s1' })
+  await $.tool.call({ tool: 'Artifact', file_path: SOURCE })
+  expect(recorded.at(-1)?.subject).toEqual(['/tasks/here'])
 })
 
 test('a filed artifact that may replace nothing owes nothing, and one with no subject is told how to set it', () => {

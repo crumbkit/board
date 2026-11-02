@@ -70,9 +70,19 @@ A publish passes `artifacts.record` the work the conversation belongs to. It
 is the change that a `board-brief: /changes/<name>` line names, when that
 line starts the conversation's first user message, which
 `$.session.messages` gives for the main session and for a subagent alike.
-Without one, it is the task the conversation last claimed: after a Bash call
-that runs `tasks.claim` succeeds, the mod keeps the absolute `--path` it
-named for that conversation. A read passes no subject.
+The mod reads the line as the changes write guard does, with the same parser
+in `hooks/brief.ts`; a test of the artifacts crate keeps the two copies the
+same. It keeps a brief once found, for each session and agent, so a later
+compaction or a conversation past the newest 4,096 entries that
+`$.session.messages` returns keeps its subject. When the window is full and
+no brief was kept, the mod cannot read the first message and says so.
+
+Without a brief, it is the task the conversation last claimed: after a Bash
+call that runs `tasks.claim` succeeds, the mod keeps the absolute `--path`
+that follows `tasks.claim` for that conversation. It leaves out a claim piped
+onward or followed by `||`, whose failure Bash hides, and a claim whose `-C`
+names a board other than the personal board that `personal` in the board
+config names. A read passes no subject.
 
 After a publish, the mod adds a row the person does not see after the
 tool's result when the record lacks a subject or `shows`, giving the

@@ -44,7 +44,10 @@ artifact, ask yourself whether the new one replaces it. If it does, run
 
 ## Record the owner's agreement
 
-Only the owner's Touch ID moves an artifact to `agreed`. When the owner
+Agree an artifact only through `artifacts.agree`, which needs the owner's
+Touch ID. Never write `"state": "agreed"` with `board put`: the schema admits
+it, but it carries no approval, and a gate that checks the owner's approval
+will not count it. When the owner
 accepts an artifact, record a `plans/decision/v1` that says so, then run:
 
     board --personal call artifacts.agree --path /artifacts/<id> --decision <decision>
