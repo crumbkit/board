@@ -1246,7 +1246,8 @@
   ],
   "types": [
     "changes/change/v1",
-    "changes/plan/v1"
+    "changes/plan/v1",
+    "changes/understanding/v1"
   ],
   "version": "0.1.0"
 }

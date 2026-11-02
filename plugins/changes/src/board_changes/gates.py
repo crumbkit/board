@@ -4,13 +4,20 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
-from board_changes.change import TASK_TYPE, Change, kind_of
+from board_changes.change import TASK_TYPE, UNDERSTANDING_TYPE, Change, kind_of
 
 RUN_TYPE = "runs/run/v1"
 DECISION_TYPE = "plans/decision/v1"
 REPORT_TYPE = "review/report/v1"
 # The plan's sections the plan gate requires, by heading, compared without case.
-SECTIONS = ("Problem", "Outcome", "Out of scope")
+SECTIONS = ("Problem", "Outcome", "Out of scope", "UX", "Data")
+# How a UX section says it lists no mockups, and a Data section that it changes no data, at its start, without case.
+NO_UI = re.compile(r"^no ui change\b", re.IGNORECASE)
+NO_DATA = re.compile(r"^none\b", re.IGNORECASE)
+# A mockup a UX section lists: a URL, or a board path in inline code.
+MOCKUP_URL = re.compile(r"https?://[^\s)>\]]+")
+MOCKUP_PATH = re.compile(r"`(/[^`\s]+)`")
+LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+\S", re.MULTILINE)
 # Findings at these severities block the review gate.
 BLOCKING = ("critical", "high")
 # The fewest hex digits a commit is named by when compared with another.
@@ -20,7 +27,12 @@ HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*#*\s*$")
 FENCES = ("```", "~~~")
 # The refusal `advance` gives when a check with its own code is the first that is missing; any other is
 # `changes::gate::unmet`.
-CODES = {"verdict": "changes::prototype::never_lands"}
+CODES = {
+    "verdict": "changes::prototype::never_lands",
+    "ux": "changes::ux::not_agreed",
+    "neighbours": "changes::ux::no_neighbours",
+    "data": "changes::data::not_signed",
+}
 
 
 class Check(TypedDict):
@@ -98,7 +110,13 @@ def gate(observed: Observed) -> list[Check]:
         ]
         if observed.change.get("route") == "ask-first":
             checks.append(check("owner-approval", approval_missing(observed)))
-        return checks
+        found = sections(observed.plan or "")
+        return [
+            *checks,
+            check("ux", ux_missing(observed, found)),
+            check("neighbours", neighbours_missing(found)),
+            check("data", data_missing(observed, found)),
+        ]
     if phase == "build":
         return [check("tasks", tasks_missing(observed)), check("check-run", run_missing(observed))]
     if phase == "review":
@@ -139,6 +157,74 @@ def verdict_missing(observed: Observed) -> str:
     return (
         "a prototype never advances or lands; when it has answered its question, end it with "
         f"`board call changes.verdict --path {observed.path} --state settled --verdict '<one sentence>'`"
+    )
+
+
+def mockups(ux: str) -> list[str]:
+    """The mockups a UX section lists before its Neighbours, each once, in order: URLs and board paths in code."""
+    listed = re.split(r"^#{1,6}\s+neighbours\b", ux, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)[0]
+    urls = [url.rstrip(".,;:") for url in MOCKUP_URL.findall(listed)]
+    return list(dict.fromkeys([*urls, *MOCKUP_PATH.findall(listed)]))
+
+
+def named_by_decisions(observed: Observed) -> set[str]:
+    """Every URL and board path an attached decision names in its `urls` or `refs`."""
+    named: set[str] = set()
+    for _, body in of_type(observed, DECISION_TYPE):
+        for key in ("urls", "refs"):
+            values: list[Any] = body.get(key) or []
+            named.update(value for value in values if isinstance(value, str))
+    return named
+
+
+def ux_missing(observed: Observed, found: dict[str, str]) -> str | None:
+    """Whether the UX section says No UI change, or lists mockups that an attached decision names each of."""
+    ux = found.get("ux", "")
+    if NO_UI.match(ux):
+        return None
+    listed = mockups(ux)
+    if not listed:
+        return (
+            "the UX section neither starts with No UI change nor lists a mockup artifact by URL or by a board path "
+            "in inline code"
+        )
+    unagreed = [mockup for mockup in listed if mockup not in named_by_decisions(observed)]
+    if unagreed:
+        return "these mockups have no attached plans/decision/v1 that names them in its urls or refs: " + ", ".join(
+            unagreed
+        )
+    return None
+
+
+def neighbours_missing(found: dict[str, str]) -> str | None:
+    """Whether a UX section that lists mockups holds a Neighbours heading with a list under it."""
+    ux = found.get("ux", "")
+    neighbours = found.get("neighbours", "")
+    if NO_UI.match(ux) or not mockups(ux) or (neighbours in ux and LIST_ITEM.search(neighbours)):
+        return None
+    return (
+        "the UX section lists mockups but has no Neighbours heading with a list: name the open changes and "
+        "artifacts in the same area, and the components and flows the design reuses"
+    )
+
+
+def data_missing(observed: Observed, found: dict[str, str]) -> str | None:
+    """Whether the Data section says None, or an attached decision references this change's data understanding."""
+    if NO_DATA.match(found.get("data", "")):
+        return None
+    understood = {
+        path
+        for path, body in of_type(observed, UNDERSTANDING_TYPE)
+        if body.get("change") == observed.path and body.get("subject") == "data"
+    }
+    for _, body in of_type(observed, DECISION_TYPE):
+        refs: list[Any] = body.get("refs") or []
+        if understood.intersection(ref for ref in refs if isinstance(ref, str)):
+            return None
+    return (
+        "the Data section is not None, and no attached plans/decision/v1 references an attached "
+        f"{UNDERSTANDING_TYPE} of this change's data; run the understanding-check skill, then have the owner "
+        "sign a decision whose refs name its record"
     )
 
 

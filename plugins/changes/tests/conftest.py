@@ -268,4 +268,7 @@ def change(phase: str = "plan", **fields: Any) -> str:  # noqa: ANN401 - the rec
     return record("changes/change/v1", **(defaults | fields))
 
 
-PLAN = "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n"
+PLAN = (
+    "# Timeout\n\n## Problem\n\nSuites hang.\n\n## Outcome\n\nA suite stops.\n\n## Out of scope\n\nRetries.\n\n"
+    "## UX\n\nNo UI change: suites run headless.\n\n## Data\n\nNone.\n"
+)

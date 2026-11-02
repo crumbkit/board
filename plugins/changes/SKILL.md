@@ -46,7 +46,15 @@ lists every prototype with its verdict.
 ## Each phase
 
 - **plan**: interview the owner. Use your own planning skill where one is
-  configured. Write the plan's Problem, Outcome and Out of scope sections.
+  configured. Write the plan's Problem, Outcome, Out of scope, UX and Data
+  sections. UX starts with "No UI change" and a reason, or lists each
+  mockup by URL and a `### Neighbours` list of the open changes and
+  artifacts in the same area and the components the design reuses. Attach
+  the owner's decision that names each mockup in its `urls` or `refs`.
+  Data starts with "None", or holds the data shapes, where each is stored,
+  who reads and writes it and what users see; then run the
+  `understanding-check` skill and attach its record and the owner's
+  decision that references it.
   On the `ask-first` route, attach the owner's `plans/decision/v1` whose
   `refs` name the plan.
 - **build**: start each builder in a fresh agent whose first message
@@ -57,7 +65,9 @@ lists every prototype with its verdict.
   suite that `start` reported on the head commit, record the run, and attach
   it.
 - **review**: review the head commit with clean context and attach the
-  report. Fix every critical or high finding, record the new head, and
+  report. When the plan says "No UI change" or "None", list the
+  repository's UI-path and data-path controls with `controls.check`, and
+  report a diff that touches a path they name as a high finding. Fix every critical or high finding, record the new head, and
   review again.
 - **land**: add `## What the tests prove` and `## What the tests do not
   prove` sections to the plan with what the runs cannot show on their own.
@@ -71,6 +81,11 @@ lists every prototype with its verdict.
 ## Refusals
 
 - `changes::gate::unmet`: `missing` names the failed checks. Run `next`.
+- `changes::ux::not_agreed`: a mockup has no owner decision naming it, or
+  UX lists none and does not say "No UI change".
+- `changes::ux::no_neighbours`: add a Neighbours list under UX.
+- `changes::data::not_signed`: run the understanding check and attach its
+  record and the sign-off decision.
 - `changes::prototype::never_lands`: a prototype ends with `verdict`.
 - `changes::prototype::not_prototype`: only a prototype takes a verdict.
 - `changes::task::unrouted`: name the task with `--task`, or the repo to

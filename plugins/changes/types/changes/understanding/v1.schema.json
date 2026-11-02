@@ -1,0 +1,201 @@
+{
+  "$defs": {
+    "Asked": {
+      "additionalProperties": false,
+      "description": "One question of an understanding check, the owner's answer, and whether it matches the plan.",
+      "properties": {
+        "answer": {
+          "description": "The owner's answer, in his words.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "kind": {
+          "description": "The kind of question.",
+          "enum": [
+            "predict",
+            "choose",
+            "explain",
+            "edge"
+          ],
+          "type": "string"
+        },
+        "matches": {
+          "description": "Whether the answer matches the plan.",
+          "type": "boolean"
+        },
+        "question": {
+          "description": "The question, as asked.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "round": {
+          "description": "The round it was asked in; a round holds at most three questions.",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "round",
+        "kind",
+        "question",
+        "answer",
+        "matches"
+      ],
+      "title": "Asked",
+      "type": "object"
+    },
+    "Mismatch": {
+      "additionalProperties": false,
+      "description": "An answer that differed from the plan, and which of the two changed to settle it.",
+      "properties": {
+        "difference": {
+          "description": "How the answer and the plan differ, said plainly.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "how": {
+          "description": "What changed.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "question": {
+          "description": "The question whose answer differed.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "settled": {
+          "description": "plan when the plan changed, expectation when the owner's expectation did.",
+          "enum": [
+            "plan",
+            "expectation"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "difference",
+        "settled",
+        "how"
+      ],
+      "title": "Mismatch",
+      "type": "object"
+    },
+    "Recheck": {
+      "additionalProperties": false,
+      "description": "A predict or edge question asked again, worded differently, before review.",
+      "properties": {
+        "answer": {
+          "description": "The owner's answer.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        },
+        "matches": {
+          "description": "Whether the answer matches the plan; a wrong one reopens that part.",
+          "type": "boolean"
+        },
+        "question": {
+          "description": "The question, as asked again.",
+          "minLength": 1,
+          "type": "string",
+          "x-board-prose": true
+        }
+      },
+      "required": [
+        "question",
+        "answer",
+        "matches"
+      ],
+      "title": "Recheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "`changes/understanding/v1`: how the owner showed he understands a change's data or UX.\n\nThe owner's sign-off decision references this record in its `refs`.",
+  "properties": {
+    "$type": {
+      "const": "changes/understanding/v1",
+      "description": "The record's type.",
+      "type": "string"
+    },
+    "change": {
+      "description": "The change whose plan was checked.",
+      "format": "board-ref",
+      "type": "string",
+      "x-board-type": "changes/change/v1"
+    },
+    "corrections": {
+      "description": "Each correction the owner made to the play-back.",
+      "items": {
+        "minLength": 1,
+        "type": "string",
+        "x-board-prose": true
+      },
+      "type": "array"
+    },
+    "mismatches": {
+      "description": "Each answer that differed from the plan, and how it was settled.",
+      "items": {
+        "$ref": "#/$defs/Mismatch"
+      },
+      "type": "array"
+    },
+    "parked": {
+      "description": "What was named and left out of scope.",
+      "items": {
+        "minLength": 1,
+        "type": "string",
+        "x-board-prose": true
+      },
+      "type": "array"
+    },
+    "playback": {
+      "description": "What the agent played back: what is stored, where, who shares it, what users see.",
+      "minLength": 1,
+      "type": "string",
+      "x-board-prose": true
+    },
+    "questions": {
+      "description": "Each question asked, in order.",
+      "items": {
+        "$ref": "#/$defs/Asked"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "rechecks": {
+      "description": "The questions asked again before review.",
+      "items": {
+        "$ref": "#/$defs/Recheck"
+      },
+      "type": "array"
+    },
+    "subject": {
+      "description": "What was checked: the plan's Data or its UX.",
+      "enum": [
+        "data",
+        "ux"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "$type",
+    "change",
+    "subject",
+    "playback",
+    "corrections",
+    "questions",
+    "mismatches",
+    "parked",
+    "rechecks"
+  ],
+  "title": "UnderstandingRecord",
+  "type": "object"
+}

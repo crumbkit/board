@@ -56,11 +56,14 @@ def report(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the r
 
 
 def test_the_plan_gate_passes_when_each_plan_section_has_text_and_misses_when_one_is_empty() -> None:
-    assert statuses(observed("plan", route="owner")) == {"plan": "pass", "task": "pass", "route": "pass"}
+    assert set(statuses(observed("plan", route="owner")).values()) == {"pass"}
     [plan, *_] = gate(
         observed("plan", plan="# T\n\n## Problem\n\nX.\n\n## Outcome\n\n## out of scope\nY.\n", route="owner")
     )
-    assert (plan["status"], plan["detail"]) == ("missing", "the plan at /changes/t/plan.md has no text under: Outcome")
+    assert (plan["status"], plan["detail"]) == (
+        "missing",
+        "the plan at /changes/t/plan.md has no text under: Outcome, UX, Data",
+    )
 
 
 def test_the_plan_gate_misses_a_plan_file_that_is_not_there_and_passes_one_with_text() -> None:
@@ -70,7 +73,7 @@ def test_the_plan_gate_misses_a_plan_file_that_is_not_there_and_passes_one_with_
 
 
 def test_the_plan_gate_misses_a_change_with_no_route_and_passes_each_route() -> None:
-    [*_, route] = gate(observed("plan"))
+    [route] = [found for found in gate(observed("plan")) if found["check"] == "route"]
     assert (route["status"], route["detail"]) == (
         "missing",
         "the change records no route; set one with `board call changes.attach --path /changes/t --route <route>`",
@@ -151,3 +154,97 @@ def test_the_land_gate_needs_the_pull_request_url_and_done_has_no_gate() -> None
     assert statuses(observed("land")) == {"pull-request": "missing"}
     assert statuses(observed("land", pull_request="https://github.com/o/r/pull/1")) == {"pull-request": "pass"}
     assert gate(observed("done")) == []
+
+
+MOCKUP = "https://claude.ai/artifact/m1"
+NEIGHBOURS = "### Neighbours\n\n- /changes/flows-list, the same area.\n"
+UNDERSTOOD = "/changes/t/understanding/data"
+
+
+def planned(ux: str = "No UI change: it is headless.", data: str = "None.") -> str:
+    """The fixture plan with these UX and Data sections."""
+    return PLAN.split("## UX")[0] + f"## UX\n\n{ux}\n\n## Data\n\n{data}\n"
+
+
+def plan_checks(plan: str, records: dict[str, tuple[str, dict[str, Any]]] | None = None) -> dict[str, str]:
+    """Each plan-gate check's status for an owner-routed change with `plan`."""
+    return statuses(observed("plan", records, plan=plan, route="owner"))
+
+
+def agreed(*named: str) -> dict[str, tuple[str, dict[str, Any]]]:
+    """A decision whose `urls` name each URL and whose `refs` name each board path in `named`."""
+    urls = [name for name in named if name.startswith("http")]
+    refs = [name for name in named if name.startswith("/")]
+    return {"/d/ux": ("plans/decision/v1", {"decision": "Agreed.", "urls": urls, "refs": refs})}
+
+
+def detail(plan: str, name: str, records: dict[str, tuple[str, dict[str, Any]]] | None = None) -> str:
+    """The detail of the plan gate's check `name`."""
+    [found] = [c for c in gate(observed("plan", records, plan=plan, route="owner")) if c["check"] == name]
+    return found["detail"]
+
+
+def test_the_plan_gate_needs_text_under_ux_and_data() -> None:
+    bare = PLAN.split("## UX")[0] + "## UX\n\n## Data\n"
+    assert detail(bare, "plan") == "the plan at /changes/t/plan.md has no text under: UX, Data"
+    assert plan_checks(planned())["plan"] == "pass"
+
+
+def test_a_plan_with_no_ui_change_and_no_data_passes_the_ux_neighbours_and_data_checks() -> None:
+    checks = plan_checks(planned())
+    assert (checks["ux"], checks["neighbours"], checks["data"]) == ("pass", "pass", "pass")
+
+
+def test_ux_listing_no_mockup_is_missing_and_one_listing_an_agreed_mockup_passes() -> None:
+    vague = planned(ux=f"A new list view.\n\n{NEIGHBOURS}")
+    assert detail(vague, "ux") == (
+        "the UX section neither starts with No UI change nor lists a mockup artifact by URL or by a board path "
+        "in inline code"
+    )
+    listed = planned(ux=f"Mockup: {MOCKUP}.\n\n{NEIGHBOURS}")
+    assert plan_checks(listed, agreed(MOCKUP))["ux"] == "pass"
+
+
+def test_a_mockup_with_no_decision_naming_it_is_not_agreed_and_one_named_in_urls_or_refs_is() -> None:
+    plan = planned(ux=f"- {MOCKUP}\n- `/artifacts/m2`\n\n{NEIGHBOURS}")
+    assert detail(plan, "ux", agreed(MOCKUP)) == (
+        "these mockups have no attached plans/decision/v1 that names them in its urls or refs: /artifacts/m2"
+    )
+    assert plan_checks(plan, agreed(MOCKUP, "/artifacts/m2"))["ux"] == "pass"
+
+
+def test_ux_with_mockups_needs_a_neighbours_list_and_passes_with_one() -> None:
+    bare = planned(ux=f"- {MOCKUP}")
+    assert detail(bare, "neighbours", agreed(MOCKUP)) == (
+        "the UX section lists mockups but has no Neighbours heading with a list: name the open changes and "
+        "artifacts in the same area, and the components and flows the design reuses"
+    )
+    headed = planned(ux=f"- {MOCKUP}\n\n### Neighbours\n\nNone found.\n")
+    assert plan_checks(headed, agreed(MOCKUP))["neighbours"] == "missing"
+    assert plan_checks(planned(ux=f"- {MOCKUP}\n\n{NEIGHBOURS}"), agreed(MOCKUP))["neighbours"] == "pass"
+
+
+def understanding(**fields: Any) -> tuple[str, dict[str, Any]]:  # noqa: ANN401 - the record's other fields
+    """An understanding check of this change's data."""
+    return "changes/understanding/v1", {"change": PATH, "subject": "data"} | fields
+
+
+def signed(*refs: str) -> tuple[str, dict[str, Any]]:
+    """A data sign-off decision whose refs name `refs`."""
+    return "plans/decision/v1", {"decision": "Signed off.", "refs": list(refs)}
+
+
+def test_data_that_is_not_none_needs_a_decision_referencing_this_changes_understanding_check() -> None:
+    plan = planned(data="One record per call, in the calls table.")
+    assert detail(plan, "data") == (
+        "the Data section is not None, and no attached plans/decision/v1 references an attached "
+        "changes/understanding/v1 of this change's data; run the understanding-check skill, then have the owner "
+        "sign a decision whose refs name its record"
+    )
+    unsigned = {UNDERSTOOD: understanding()}
+    assert plan_checks(plan, unsigned)["data"] == "missing"
+    other = {UNDERSTOOD: understanding(change="/changes/other"), "/d/s": signed(UNDERSTOOD)}
+    assert plan_checks(plan, other)["data"] == "missing"
+    ux = {UNDERSTOOD: understanding(subject="ux"), "/d/s": signed(UNDERSTOOD)}
+    assert plan_checks(plan, ux)["data"] == "missing"
+    assert plan_checks(plan, {UNDERSTOOD: understanding(), "/d/s": signed(UNDERSTOOD)})["data"] == "pass"
