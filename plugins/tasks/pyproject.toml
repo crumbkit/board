@@ -1,6 +1,6 @@
 [project]
 name = "board-tasks"
-version = "0.3.0"
+version = "0.4.0"
 description = "Tasks to sweep, and the calls that change them, as a Board plugin."
 requires-python = ">=3.12"
 dependencies = ["board-plugin", "pydantic>=2.11"]
