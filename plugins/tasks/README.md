@@ -189,8 +189,12 @@ and `--due`, `--defer`, `--repeat`, `--ephemeral` and `--from_hour`; `after`
 and `contexts`, which are lists, come as JSON on stdin. `--repo` names the
 repo. Otherwise it is the one repo whose record covers the remote, from
 `--remote` or the caller's `origin`, else the personal repo, else `/`.
-`--parent <path>`, `--kind project` and `--brief <path>` write those fields,
-with paths in the task's own repo. Two
+`--parent <path>`, `--kind project` and `--brief <path>` write those fields.
+`--parent` and `--brief` take paths in the board, as `tree` lists them, and
+are written as paths in the task's own repo. A path in another repo is refused
+with `tasks::add::cross_repo`, and a parent that holds no task with
+`tasks::add::parent_not_found`, so `add` never writes a parent that reaches
+nothing. Two
 repos that could each hold it are refused with `tasks::repo::ambiguous`. A
 caller inside a git repository whose origin git does not give is refused with
 `tasks::repo::origin_unread`, since the task may belong to a work repo; pass

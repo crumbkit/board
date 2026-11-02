@@ -358,6 +358,7 @@ def test_a_stale_put_is_tried_again_on_a_new_read_and_a_landed_one_is_not_writte
 
 
 def test_add_writes_a_project_with_its_brief_under_a_parent(board: Board) -> None:
+    board.write("tasks/flows.md", task_v2("Flows"))
     flags = ("--kind", "project", "--brief", "/projects/flows/README.md", "--parent", "/tasks/flows.md")
     code, output = call(board, "add", "--title", "Flow document store", *flags)
     assert (code, output["path"]) == (0, "/tasks/flow-document-store.md"), output
@@ -429,3 +430,56 @@ def test_move_refuses_a_parent_in_another_repo_and_admits_one_in_the_tasks_own(p
         assert (code, refused["code"]) == (1, "tasks::move::cross_repo"), refused
         assert (refused["fields"]["path"], refused["fields"]["parent"]) == (path, parent)
     assert call(plan, "move", "--path", "/tasks/other.md", "--parent", "/tasks/plan.md")[0] == 0
+
+
+def test_add_takes_board_paths_for_parent_and_brief_and_writes_them_as_paths_in_the_tasks_repo(
+    board: Board, mounted: Path
+) -> None:
+    flags = ("--repo", "/repos/work", "--parent", "/repos/work/tasks/report.md")
+    code, output = call(board, "add", "--title", "Child", *flags, "--brief", "/repos/work/projects/x/README.md")
+    assert (code, output["path"]) == (0, "/repos/work/tasks/child.md"), output
+    text = (mounted / "tasks" / "child.md").read_text()
+    assert 'brief: "/projects/x/README.md"\nparent: "/tasks/report.md"\n' in text, text
+    code, tree = call(board, "tree", "--path", "/repos/work/tasks/report.md")
+    assert code == 0, tree
+    [child] = tree["tree"]["children"]
+    assert (child["path"], child["tree_path"], child["brief"]) == (
+        "/repos/work/tasks/child.md",
+        "report/child",
+        "/repos/work/projects/x/README.md",
+    )
+
+
+def test_add_refuses_a_parent_or_brief_in_another_repo_and_a_parent_that_holds_no_task(
+    board: Board, mounted: Path
+) -> None:
+    board.write("tasks/plan.md", task_v2("Plan"))
+    for flags, refusal in (
+        (("--parent", "/tasks/plan.md"), "tasks::add::cross_repo"),
+        (("--brief", "/projects/x/README.md"), "tasks::add::cross_repo"),
+        (("--parent", "/repos/work/tasks/gone.md"), "tasks::add::parent_not_found"),
+    ):
+        code, refused = call(board, "add", "--title", "Child", "--repo", "/repos/work", *flags)
+        assert (code, refused["code"]) == (1, refusal), refused
+        assert refused["fields"][flags[0].removeprefix("--")] == flags[1]
+    assert not (mounted / "tasks" / "child.md").exists()
+    code, output = call(
+        board, "add", "--title", "Child", "--repo", "/repos/work", "--parent", "/repos/work/tasks/report.md"
+    )
+    assert code == 0, output
+
+
+def test_move_inside_a_mount_writes_the_parent_as_a_path_in_that_repo(board: Board, mounted: Path) -> None:
+    assert call(board, "add", "--title", "Plan B", "--repo", "/repos/work")[0] == 0
+    code, output = call(
+        board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "/repos/work/tasks/plan-b.md"
+    )
+    assert (code, output["parent"]) == (0, "/repos/work/tasks/plan-b.md"), output
+    assert 'parent: "/tasks/plan-b.md"\n' in (mounted / "tasks" / "report.md").read_text()
+    code, tree = call(board, "tree", "--path", "/repos/work/tasks/plan-b.md")
+    assert (code, [child["tree_path"] for child in tree["tree"]["children"]]) == (0, ["plan-b/report"]), tree
+    assert call(board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "none")[0] == 0
+    cleared = (mounted / "tasks" / "report.md").read_text()
+    assert "parent:" not in cleared
+    assert call(board, "move", "--path", "/repos/work/tasks/report.md", "--parent", "none")[0] == 0
+    assert (mounted / "tasks" / "report.md").read_text() == cleared

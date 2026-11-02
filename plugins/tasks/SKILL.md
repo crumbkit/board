@@ -63,8 +63,9 @@ A project is a task with `kind: project`. Each task or project has at most one
 it.
 
 1. When agreed work belongs to a larger goal, add it under that goal:
-   `tasks.add --title '<title>' --parent <path in its repo>`. Start a project
-   with `--kind project`, and `--brief <path>` when it has a brief.
+   `tasks.add --title '<title>' --parent <path>`, with the path as
+   `tasks.tree` lists it. Start a project with `--kind project`, and
+   `--brief <path>` when it has a brief.
 2. A task that needs a project another task holds lists the project in
    `after`. Never give a task a second parent.
 3. Reshape the tree with `tasks.move --path <task> --parent <task>`, or

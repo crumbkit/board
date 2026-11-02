@@ -116,7 +116,7 @@ def available(request: CallRequest) -> dict[str, object]:
     if context is not None:
         tasks = [task for task in tasks if context in task.contexts]
     now = dt.datetime.now().astimezone()
-    sections = sweep(tasks, blocked, now, day_start(), cast("str | None", owner), places=places)
+    sections = sweep(tasks, blocked, places, now, day_start(), owner=cast("str | None", owner))
     return {
         **sections,
         "repos": roots,
@@ -125,6 +125,12 @@ def available(request: CallRequest) -> dict[str, object]:
         "cross_repo": links.crossing,
         "origin_unread": unread,
     }
+
+
+def held_by(found: list[repos.Listed], path: str) -> str:
+    """The root of the repo that holds the board path `path`: the mount whose root is its longest prefix, else `/`."""
+    roots = [at for at, _, _, _ in found if path.startswith(at.rstrip("/") + "/")]
+    return max(roots, key=len, default="/")
 
 
 def listing(board: Board) -> tuple[list[repos.Listed], list[list[Any]]]:
@@ -274,20 +280,20 @@ def read(rows: list[list[Any]], roots: list[str]) -> tuple[list[Task], int]:
     return tasks, degraded
 
 
-def sweep(  # noqa: PLR0913 - the tasks, what they wait on, the clock, the owner and the tree
+def sweep(  # noqa: PLR0913 - the tasks, what they wait on, their places in the tree, the clock and the owner
     tasks: list[Task],
     blocked: dict[str, list[str]],
+    places: dict[str, dict[str, Any]],
     now: dt.datetime,
     start: dt.timedelta,
-    owner: str | None = None,
     *,
-    places: dict[str, dict[str, Any]] | None = None,
+    owner: str | None = None,
 ) -> dict[str, dict[str, Any]]:
     """The sections of the sweep of open `tasks` at `now`, for a day that starts `start` after midnight.
 
     It does no I/O. With an `owner`, every section keeps the tasks that owner or nobody holds, and `held`
     lists the ones that owner holds that are not available. `waiting` still counts every task. `places` holds
-    each task's place in the tree; a task without one is a root with no subtasks.
+    each task's place in the tree, by its path.
     """
     day = today(now, start)
     waiting: dict[str, int] = {}
@@ -312,7 +318,7 @@ def sweep(  # noqa: PLR0913 - the tasks, what they wait on, the clock, the owner
             "owner": task.owner,
             "blocked_by": blocked.get(task.path, []),
             "waiting": waiting.get(task.path, 0),
-            **(places or {}).get(task.path, place(forest({}), {}, task.path)),
+            **places[task.path],
         }
         if free:
             shown["available"].append(item)

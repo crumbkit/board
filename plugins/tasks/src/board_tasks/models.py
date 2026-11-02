@@ -340,10 +340,11 @@ class AddInput(Strict):
     )
     kind: Literal["task", "project"] | SkipJsonSchema[None] = optional("task, as when left out, or project.")
     brief: str | SkipJsonSchema[None] = optional(
-        "The path, in the task's own repo, of a project's brief, such as /projects/flows/README.md.", pattern="^/"
+        "The board path, in the task's own repo, of a project's brief, such as /projects/flows/README.md.",
+        pattern="^/",
     )
     parent: str | SkipJsonSchema[None] = optional(
-        "The path, in the task's own repo, of the task it is part of, such as /tasks/ship-flows-editor.md.",
+        "The board path, in the task's own repo, of the task it is part of, such as /tasks/ship-flows-editor.md.",
         pattern=r"^/.*\.md$",
     )
     repo: str | SkipJsonSchema[None] = optional(

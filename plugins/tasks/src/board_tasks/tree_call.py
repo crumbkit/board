@@ -6,8 +6,8 @@ from board_plugin import repos
 from board_plugin.board import Board
 from board_plugin.protocol import CallRequest, PluginError
 
-from board_tasks.available import SHOWN, Links, Task, grown, listing, read, resolve, waited
-from board_tasks.tree import Forest, Node, subtasks, tree_path
+from board_tasks.available import SHOWN, Task, grown, held_by, listing, read, resolve, waited
+from board_tasks.tree import subtasks, tree_path
 
 
 def tree(request: CallRequest) -> dict[str, object]:
@@ -20,7 +20,7 @@ def tree(request: CallRequest) -> dict[str, object]:
         raise PluginError("tasks::tree::path_or_root", why, {"path": path, "root": given.get("root")})
     found, rows = listing(board)
     if path is not None:
-        roots = [holder(found, str(path))]
+        roots = [held_by(found, str(path))]
     else:
         name, remote = given.get("repo"), given.get("remote")
         unread = None
@@ -35,10 +35,26 @@ def tree(request: CallRequest) -> dict[str, object]:
         why = f"no task is at {path}; list the trees with `board call tasks.tree --root true`"
         raise PluginError("tasks::task::not_found", why, {"path": path})
     shown = [] if path is not None else sorted(forest.roots, key=lambda each: opened_first(by_path[each]))
-    grow = Grower(by_path, nodes, forest, links)
+
+    def node(at: str) -> dict[str, Any]:
+        """The node at `at`, with its children by title."""
+        task = by_path[at]
+        return {
+            "path": at,
+            "title": task.title,
+            "status": task.status,
+            "kind": task.kind,
+            "brief": task.brief,
+            "owner": task.owner,
+            "blocked_by": waited(links, forest, nodes, at),
+            "subtasks": subtasks(forest, nodes, at),
+            "tree_path": tree_path(forest, at),
+            "children": [node(child) for child in forest.children.get(at, [])],
+        }
+
     return {
-        "tree": None if path is None else grow.node(str(path)),
-        "roots": [grow.node(each) for each in shown[:SHOWN]],
+        "tree": None if path is None else node(str(path)),
+        "roots": [node(each) for each in shown[:SHOWN]],
         "total": len(shown),
         "repos": roots,
         "cycles": forest.cycles,
@@ -46,36 +62,6 @@ def tree(request: CallRequest) -> dict[str, object]:
     }
 
 
-def holder(found: list[repos.Listed], path: str) -> str:
-    """The root of the repo that holds `path`: the mount whose root is the longest prefix of it, else `/`."""
-    held = [at for at, _, _, _ in found if path.startswith(at.rstrip("/") + "/")]
-    return max(held, key=len, default="/")
-
-
 def opened_first(task: Task) -> tuple[bool, str, str]:
     """The order of top-level nodes: open ones first, then by title and path."""
     return task.status != "open", task.title, task.path
-
-
-class Grower:
-    """Builds the nested nodes of `tree`'s output from the tasks and the forest."""
-
-    def __init__(self, tasks: dict[str, Task], nodes: dict[str, Node], forest: Forest, links: Links) -> None:
-        """Hold what each node is built from."""
-        self.tasks, self.nodes, self.forest, self.links = tasks, nodes, forest, links
-
-    def node(self, path: str) -> dict[str, Any]:
-        """The node at `path`, with its children by title."""
-        task = self.tasks[path]
-        return {
-            "path": path,
-            "title": task.title,
-            "status": task.status,
-            "kind": task.kind,
-            "brief": task.brief,
-            "owner": task.owner,
-            "blocked_by": waited(self.links, self.forest, self.nodes, path),
-            "subtasks": subtasks(self.forest, self.nodes, path),
-            "tree_path": tree_path(self.forest, path),
-            "children": [self.node(child) for child in self.forest.children.get(path, [])],
-        }

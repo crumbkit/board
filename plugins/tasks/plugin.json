@@ -588,7 +588,7 @@
             "type": "array"
           },
           "brief": {
-            "description": "The path, in the task's own repo, of a project's brief, such as /projects/flows/README.md.",
+            "description": "The board path, in the task's own repo, of a project's brief, such as /projects/flows/README.md.",
             "title": "Brief",
             "type": "string"
           },
@@ -633,7 +633,7 @@
             "type": "string"
           },
           "parent": {
-            "description": "The path, in the task's own repo, of the task it is part of, such as /tasks/ship-flows-editor.md.",
+            "description": "The board path, in the task's own repo, of the task it is part of, such as /tasks/ship-flows-editor.md.",
             "title": "Parent",
             "type": "string"
           },

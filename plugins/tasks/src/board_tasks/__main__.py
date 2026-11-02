@@ -5,7 +5,7 @@ import sys
 from board_plugin.protocol import CallRequest, PluginError, main
 
 from board_tasks.available import available
-from board_tasks.trees import tree
+from board_tasks.tree_call import tree
 from board_tasks.write import add, claim, defer, done, drop, move, reviewed
 
 CALLS = {
