@@ -311,6 +311,21 @@ fn call_evals_about_help_lists_its_input_as_flags() {
     }
 }
 
+#[test]
+fn call_inflight_now_answers_from_a_warm_index_as_from_a_cold_one_without_the_changes_plugin() {
+    let board = Fixture::enabling(&["evals", "plans"]);
+    board.write("evals/a.json", &eval("planned"));
+    let before = board.answer("inflight.now", &[], false);
+    let refused = &before["changes"]["refused"];
+    assert_eq!(refused["capability"], "changes.open");
+    assert_eq!(refused["code"], "board::plugin::not_installed");
+    board.write("evals/b.json", &eval("running"));
+    let warm = board.answer("inflight.now", &["--limit", "1"], false);
+    assert_ne!(warm["evals"], before["evals"], "the change is seen");
+    assert_eq!(warm["evals"]["left_out"], 1);
+    assert_eq!(warm, board.answer("inflight.now", &["--limit", "1"], true));
+}
+
 /// A control in `/controls/docs` that limits `docs/*.md` to `max` words.
 fn docs_budget(max: u64) -> String {
     let control = json!({

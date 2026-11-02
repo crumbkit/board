@@ -253,6 +253,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-inflight"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-plugin-artifacts",
+ "board-plugin-evals",
+ "board-plugin-plans",
+ "board-scenario",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-jira"
 version = "0.0.0"
 dependencies = [
@@ -318,6 +334,7 @@ dependencies = [
  "board-plugin-boundary",
  "board-plugin-controls",
  "board-plugin-evals",
+ "board-plugin-inflight",
  "board-plugin-jira",
  "board-plugin-plans",
  "board-plugin-requests",

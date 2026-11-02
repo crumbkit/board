@@ -110,16 +110,20 @@ session reads nothing outside the board to learn what was in flight.
 
 ## Build
 
-Two pull requests.
+The `inflight` plugin is built into Board without agents, holders or
+`--stopped-at`, because Board does not yet record them
+(plugins/inflight/README.md). What remains:
 
 1. The runs mod: agent records, `works_on`, brief injection, the pull
    request gate, the `opened` record, the end of the decision stub with the
-   second migration run (plan/decisions.md). Its
-   tests cover each hook with a twin that is refused or left out.
-2. The `inflight` plugin. Its fixture is a board holding four changes
-   stopped at different steps, with running subagents, a waiting question
-   and an open pull request. The test asserts that `inflight.now
-   --stopped-at` lists each one with the right next step and actor.
+   second migration run (plan/decisions.md), and the change's holder and
+   worktree. Its tests cover each hook with a twin that is refused or left
+   out.
+2. `inflight.now` gains the agents of each change, the unattached agents,
+   `--holder` and `--stopped-at`. Its fixture is a board holding four
+   changes stopped at different steps, with running subagents, a waiting
+   question and an open pull request. The test asserts that `inflight.now
+   --stopped-at` lists each one with the right next step and its agents.
 
 Done when the owner, after a usage stop, rescues the work in flight with
 this query and nothing else.
