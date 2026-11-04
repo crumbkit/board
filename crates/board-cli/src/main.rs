@@ -5,6 +5,7 @@
 mod alias;
 mod complete;
 mod config;
+mod describe;
 mod effects;
 mod graft;
 mod plugin;

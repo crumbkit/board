@@ -311,26 +311,14 @@ replays this clone's commits onto the branch it follows.
 
 ## Commands
 
-| Command | Does |
-| --- | --- |
-| `board init` | write a minimal `.board/board.json` at this git repository's root unless one exists; commit nothing |
-| `board check [path]` | refresh, then report every entry; exit 1 if any is degraded |
-| `board get <path>...` | resolve and print each file's stored bytes, up to 16 MiB each, all from one run; with `--fetch`, an attachment's bytes from the store; see below |
-| `board ls <path>` | list a directory without following pointers, each entry with the status `check` gives it |
-| `board refs <path>...` | references to and from each object, and values in each target, all from one check of the board; see docs/architecture/index.md |
-| `board put <path>` | validate and write a record; with `--file`, write a file as given |
-| `board rm <path>` | remove one file and commit the removal; see Writes |
-| `board mount update <path>` | advance a mount to its `follow` |
-| `board sync [--no-push]` | fetch the branch this board follows, replay its own commits on top, push, and move HEAD |
-| `board query <sql>` | read-only SQL over the index |
-| `board plugin list` / `find` | installed plugins, and every capability or those that match the filters given |
-| `board plugin enable <name>` | write the plugin's schemas, then name it in `.board/board.json` |
-| `board type add <type>` | compile the schema on stdin and write it to `.board/types/`; see Writes |
-| `board call <plugin>.<capability>` | call a capability; see docs/plugins.md |
-| `board decide --op <plugin>.<capability> --path <path> [--text\|--record <file>]` | ask the owner to admit a plugin's op at a path, bound to the content it will write; see docs/architecture/writes/effects.md |
-| `board answer <id> <answer>` | the owner answers a plugin's pending effect; see docs/architecture/writes/effects.md |
-| `board serve` | serve this board's pages to a browser on 127.0.0.1 |
-| `board ui kinds` / `template` / `open` | the component kinds, a slot to fill, and a binding's page in a browser; see [architecture/ui/views.md](architecture/ui/views.md) |
+[crates/board-cli/docs/commands.md](../crates/board-cli/docs/commands.md)
+lists every command with its arguments, examples and effects. It is
+generated from the help, and a test fails when the two differ.
+[architecture/index.md](architecture/index.md) says how `refs` reads
+references, Writes covers `put`, `rm` and `type add`, docs/plugins.md
+covers `call`, [architecture/writes/effects.md](architecture/writes/effects.md)
+covers `decide` and `answer`, and [architecture/ui/views.md](architecture/ui/views.md)
+covers `ui`.
 
 [architecture/records/get.md](architecture/records/get.md) says how `board get`
 prints several files, its report, and how it bounds its output.

@@ -1,0 +1,5 @@
+PATH                 ABOUT
+board plugin         Work with plugins
+board plugin list    List the installed plugins, their capabilities and whether this board enables them
+board plugin find    List the installed plugins' capabilities, or those that match every filter
+board plugin enable  Enable an installed plugin: write the schemas it ships, then name it in .board/board.json

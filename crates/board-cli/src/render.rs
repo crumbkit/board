@@ -13,7 +13,9 @@ use board_ops::{
 };
 use board_tree::{Status, Synced};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
-use crumbkit::help::Leaf;
+use crumbkit::commands::COMMANDS_LIST;
+use crumbkit::help::{Effects, Goal, Group, Leaf};
+use crumbkit::schemas::{SCHEMAS_LIST, SCHEMAS_SHOW};
 use crumbkit::{Document, Listing, Prose};
 use serde_json::{Map, Value, json};
 
@@ -36,30 +38,89 @@ pub(crate) use plugins::{CALL_REPORT, call, plugin_find, plugin_list};
 pub(crate) use refs::{REFS_HELP, refs};
 pub(crate) use ui::{serve, ui_kinds, ui_open, ui_template};
 
-/// The leaf of each command, with the document it prints.
+/// The leaf of each command, with the document it prints and its effects.
+/// `call` may write and may reach other systems, as the capability it runs
+/// decides, so it declares the most a capability can do.
 pub(crate) const LEAVES: &[Leaf] = &[
-    Leaf::new(&["init"]).document(INIT),
-    Leaf::new(&["check"]).document(CHECK),
-    get::LEAF,
-    Leaf::new(&["ls"]).document(LS),
-    refs::LEAF,
-    Leaf::new(&["put"]).document(PUT),
-    Leaf::new(&["rm"]).document(PUT),
-    Leaf::new(&["sync"]).document(SYNC),
-    Leaf::new(&["mount", "update"]).document(MOUNT_UPDATE),
-    plugins::LIST,
-    plugins::FIND,
-    Leaf::new(&["plugin", "enable"]).document(ENABLE),
-    Leaf::new(&["type", "add"]).document(PUT),
-    plugins::CALL,
-    Leaf::new(&["query"]).document(QUERY),
-    Leaf::new(&["decide"]).document(effects::DECIDE),
-    Leaf::new(&["answer"]).document(effects::ANSWER),
-    ui::LEAVES[0],
-    ui::LEAVES[1],
-    ui::LEAVES[2],
-    ui::LEAVES[3],
+    Leaf::new(&["init"])
+        .document(INIT)
+        .effects(ADDS.idempotent()),
+    Leaf::new(&["check"]).document(CHECK).effects(READS),
+    get::LEAF.effects(READS.open_world()),
+    Leaf::new(&["ls"]).document(LS).effects(READS),
+    refs::LEAF.effects(READS),
+    Leaf::new(&["put"])
+        .document(PUT)
+        .effects(CHANGES.open_world()),
+    Leaf::new(&["rm"]).document(PUT).effects(CHANGES),
+    Leaf::new(&["sync"])
+        .document(SYNC)
+        .effects(ADDS.open_world()),
+    (Leaf::new(&["mount", "update"]).document(MOUNT_UPDATE)).effects(CHANGES.idempotent()),
+    plugins::LIST.effects(READS),
+    plugins::FIND.effects(READS),
+    (Leaf::new(&["plugin", "enable"]).document(ENABLE)).effects(ADDS.idempotent()),
+    Leaf::new(&["type", "add"]).document(PUT).effects(ADDS),
+    plugins::CALL.effects(CHANGES.open_world()),
+    Leaf::new(&["query"]).document(QUERY).effects(READS),
+    Leaf::new(&["decide"])
+        .document(effects::DECIDE)
+        .effects(ADDS.idempotent()),
+    Leaf::new(&["answer"])
+        .document(effects::ANSWER)
+        .effects(CHANGES),
+    ui::LEAVES[0].effects(READS),
+    ui::LEAVES[1].effects(READS),
+    ui::LEAVES[2].effects(READS),
+    ui::LEAVES[3].effects(READS.open_world()),
+    Leaf::new(&["commands", "list"])
+        .document(COMMANDS_LIST)
+        .effects(READS),
+    Leaf::new(&["schemas", "list"])
+        .document(SCHEMAS_LIST)
+        .effects(READS),
+    Leaf::new(&["schemas", "show"])
+        .document(SCHEMAS_SHOW)
+        .effects(READS),
 ];
+
+/// A command that changes nothing.
+const READS: Effects = Effects::read_only();
+/// A command that adds and overwrites nothing.
+const ADDS: Effects = Effects::additive();
+/// A command that may overwrite or remove what a board holds.
+const CHANGES: Effects = Effects::destructive();
+
+/// The root's commands under the goal each serves, in the order its help
+/// lists them.
+pub(crate) const GOALS: Group = Group::new(
+    &[],
+    &[
+        Goal::new("These commands make and check a board", &["init", "check"]),
+        Goal::new(
+            "These commands read files and records",
+            &["get", "ls", "refs", "query"],
+        ),
+        Goal::new(
+            "These commands write files, records and types",
+            &["put", "rm", "type"],
+        ),
+        Goal::new(
+            "These commands follow remotes and mounts",
+            &["sync", "mount"],
+        ),
+        Goal::new("These commands find and run plugins", &["plugin", "call"]),
+        Goal::new(
+            "These commands ask the owner and record the answer",
+            &["decide", "answer"],
+        ),
+        Goal::new("These commands show the board's pages", &["serve", "ui"]),
+        Goal::new(
+            "These commands describe Board's commands and documents",
+            &["commands", "schemas"],
+        ),
+    ],
+);
 
 /// The bytes of stdout one run prints before crumbkit cuts a listing or
 /// leaves the remaining paths of `get` or `refs` out.
