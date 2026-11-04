@@ -86,6 +86,7 @@ impl Agent {
             directory: None,
             input: prompt.as_bytes(),
             deadline: timeout,
+            added: &[],
         };
         let Exited {
             code,

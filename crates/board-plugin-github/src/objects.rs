@@ -6,7 +6,7 @@ use board_ops::{Host, Limit, PluginError, literal};
 use board_plugin::shape::Record;
 use schemars::JsonSchema;
 use serde::Serialize;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::records::{IssueRecord, PullRecord};
 
@@ -145,4 +145,29 @@ pub(crate) fn held(host: &dyn Host, object: &Object) -> Result<Option<Held>, Plu
             "does not read as a pull or issue record".to_owned(),
         )),
     }
+}
+
+/// Writes the record of `kind` for `object` with an expect-none put, and
+/// returns its path and body.
+pub(crate) fn write(
+    host: &dyn Host,
+    object: &Object,
+    kind: Kind,
+    url: &str,
+    title: Option<&str>,
+) -> Result<(String, Map<String, Value>), PluginError> {
+    let mut record = Map::new();
+    record.insert("$type".to_owned(), Value::from(kind.record_type()));
+    record.insert("owner".to_owned(), Value::from(object.owner.as_str()));
+    record.insert("repo".to_owned(), Value::from(object.repo.as_str()));
+    record.insert("number".to_owned(), Value::from(object.number));
+    record.insert("url".to_owned(), Value::from(url));
+    if let Some(title) = title {
+        record.insert("title".to_owned(), Value::from(title));
+    }
+    let path = object.path(kind);
+    let line = json!({"path": path, "expect": "none", "record": record});
+    (host.put(&[line]))
+        .map_err(|error| PluginError::board_refused("github", "put --batch", &error.refusal()))?;
+    Ok((path, record))
 }

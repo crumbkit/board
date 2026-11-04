@@ -53,8 +53,10 @@ Board is called. `artifacts`, `boundary`, `controls`, `plans`, `evals`, `runs`,
     config through board-tree, so no process starts. It is `Outside`
     without a caller or a repository, `Url`, or `Unread` with why the
     repository gave none.
-  - `run(process)` starts a program, such as git, gh or an agent, and
-    `cached` and `cache` keep a small value by content hash
+  - `run(process)` starts a program, such as git, gh or an agent;
+    `run_hiding`, which implementors override, starts one without some
+    variables; `places` names a directory's mounts; and `cached` and
+    `cache` keep a small value by content hash
     ([built-in/running.md](built-in/running.md)).
 - `board_ops::agent` starts a clean-context model agent, the argv a person
   names in a variable, through `Host::run` in an empty directory, and

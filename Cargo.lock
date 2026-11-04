@@ -261,9 +261,11 @@ dependencies = [
  "board-ops",
  "board-plugin",
  "board-validate",
+ "regex",
  "schemars",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

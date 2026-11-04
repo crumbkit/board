@@ -36,10 +36,11 @@ fn verify(personal: &Personal, flags: &[&str]) -> Value {
 }
 
 #[test]
-fn a_passing_crossing_verifies_by_digest_and_by_its_content() {
+fn a_passing_crossing_verifies_by_digest_and_by_its_content_naming_the_boundaries_it_was_checked_against()
+ {
     let personal = Personal::new();
     let digest = checked(&personal, "Fine.", None);
-    let expected = json!({"digest": digest, "crossing": format!("/crossings/{digest}"), "passed": true, "result": null});
+    let expected = json!({"digest": digest, "crossing": format!("/crossings/{digest}"), "passed": true, "result": null, "boundaries": ["/boundaries/octo"]});
     assert_eq!(verify(&personal, &["--digest", &digest]), expected);
     let (_, document) = personal.call("verify", &request("Fine."));
     assert_eq!(output(&document), &expected);
@@ -145,7 +146,7 @@ fn a_passing_recheck_keeps_the_recorded_result_and_a_failing_one_drops_it() {
     assert_eq!(checked(&personal, "Fine.", Some("Fine")), digest);
     assert_eq!(
         verify(&personal, &["--digest", &digest]),
-        json!({"digest": digest, "crossing": format!("/crossings/{digest}"), "passed": false, "result": null})
+        json!({"digest": digest, "crossing": format!("/crossings/{digest}"), "passed": false, "result": null, "boundaries": ["/boundaries/octo"]})
     );
 }
 

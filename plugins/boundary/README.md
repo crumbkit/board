@@ -89,6 +89,13 @@ control without a rule a rule, and names `board call <action>` and
 `board --personal call boundary.check` to run again. A pattern control
 shown `match-only` never reveals its expression here either.
 
+`boundary.covers --action <action> --to <destination> [--from <checkout>]`
+returns `boundaries`, the sorted paths of the boundaries a check of that
+action, destination and checkout would apply, by the same rules. It checks
+and writes nothing. It refuses with `boundary::boundary::invalid` as `check`
+does. The github plugin's Claude Code mod asks it, through `github.covers`,
+before a raw `git push` or `gh` write.
+
 ## Overrides
 
 The owner can let one exact content through a failed check without
@@ -125,9 +132,10 @@ changing a rule. Only a failed check asks; a passing check writes no effect.
   one by deleting its seen record from `/effects/seen/`.
 
 `boundary.verify` takes `--digest`, or `action`, `to` and `parts` on stdin,
-and returns `digest`, `crossing` (null when there is none), `passed` and
-`result`. `passed` is true only while the boundaries that match the
-crossing's action, destination and checkout are the ones it was checked
+and returns `digest`, `crossing` (null when there is none), `passed`,
+`result` and `boundaries`, the paths the crossing was checked against.
+`passed` is true only while the boundaries that match the crossing's
+action, destination and checkout are the ones it was checked
 against. It does not notice an edit to a matched boundary's checks or to a
 control's rule, so a gate that must see those runs `check` again. Giving
 both, or a part of the content, is `boundary::verify::bad_input`.

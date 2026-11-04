@@ -6,6 +6,7 @@
 
 use super::*;
 
+mod covers;
 mod overrides;
 mod verify;
 

@@ -371,7 +371,21 @@ fn board_lists_the_plugin_as_enabled_and_enabling_wrote_the_schemas_it_ships() {
         .unwrap();
     assert_eq!(
         (&plugin["status"], &plugin["enabled"], &plugin["offers"]),
-        (&json!("ok"), &json!(true), &json!(["ref"]))
+        (
+            &json!("ok"),
+            &json!(true),
+            &json!([
+                "ref",
+                "push",
+                "pr-create",
+                "pr-edit",
+                "comment",
+                "issue-create",
+                "install-hook",
+                "pre-push",
+                "covers"
+            ])
+        )
     );
     let shipped = shipped("github");
     assert_eq!(shipped.len(), 2, "the pull and issue schemas");
@@ -389,7 +403,7 @@ fn a_capability_the_plugin_does_not_offer_is_refused_by_board_and_ref_is_answere
     );
     let refused = board
         .board
-        .refusal("github.push", &["--ref", "octo/widgets#7"]);
+        .refusal("github.merge", &["--ref", "octo/widgets#7"]);
     assert_eq!(refused["code"], "board::plugin::not_installed", "{refused}");
     assert_eq!(board.call("octo/widgets#7")["written"], false);
 }
@@ -411,3 +425,8 @@ fn ref_answers_from_a_warm_index_as_from_a_cold_one_after_the_record_changes() {
     assert_eq!(warm, board.board.answer("github.ref", &flags, true));
     assert_eq!(board.gh_calls(), 0);
 }
+
+mod desk;
+mod hook;
+mod push;
+mod send;
