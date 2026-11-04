@@ -22,3 +22,13 @@ checks, refusals and codes are the same.
   approval is checked against the owner's allowed signers file
   (docs/architecture/writes/effects.md). An `op` that is not
   `<plugin>.<capability>` is `board::cli::usage`.
+- `sync(push, deadline)` syncs the host's board as `board sync` does, or
+  `board sync --no-push` without `push`. A plugin syncs a notes clone on
+  the host `board(Elsewhere::Directory(clone))` gives, as `board -C <clone>
+  sync` does. It waits for the board lock no longer than `board sync`, and
+  its fetches and pushes share what is left of `deadline`. git still
+  running when it passes is stopped, and the sync is
+  `board::sync::timeout`.
+- `mount_update(path, deadline)` moves a mount as `board mount update`
+  does, waiting for the lock no longer than `deadline` or that command;
+  past it, the update is `board::put::locked`.

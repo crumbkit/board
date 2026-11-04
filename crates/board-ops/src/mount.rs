@@ -1,6 +1,8 @@
 //! `board mount update`: advancing a mount to the commit its `follow` ref
 //! names (docs/architecture.md, Writes).
 
+use std::time::Duration;
+
 use board_model::{BINARY_NAME, Code, LogicalPath, ObjectId, Refusal};
 use board_tree::{LOCK_WAIT, Lock, Pin, PinError, Target};
 
@@ -20,11 +22,16 @@ impl Board {
     /// Rewrites the mount pointer at `path`, which is not followed, to the
     /// commit its `follow` ref names now, through put with the pointer's
     /// blob as the expect. The pointer is read under the lock the write
-    /// holds. A mount already there is left as it is.
-    pub fn mount_update(&self, path: &LogicalPath) -> Result<MountUpdateReport, MountError> {
+    /// holds, which it waits for up to `wait` or [`LOCK_WAIT`], whichever
+    /// is shorter. A mount already there is left as it is.
+    pub fn mount_update(
+        &self,
+        path: &LogicalPath,
+        wait: Duration,
+    ) -> Result<MountUpdateReport, MountError> {
         let lock = self
             .repository()
-            .lock(LOCK_WAIT)
+            .lock(wait.min(LOCK_WAIT))
             .map_err(|error| MountError::Put(error.into()))?;
         let Pin {
             target,

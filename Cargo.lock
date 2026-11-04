@@ -418,6 +418,7 @@ name = "board-tree"
 version = "0.0.0"
 dependencies = [
  "board-model",
+ "board-plugin",
  "board-scenario",
  "gix",
  "proptest",

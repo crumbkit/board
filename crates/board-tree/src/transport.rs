@@ -8,20 +8,46 @@
 
 use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::process::{Command, ExitStatus, Output, Stdio};
+
+use board_plugin::Group;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::git::Repository;
 use crate::write::sync::SyncError;
 
-/// How long a fetch or push may run before Board stops git.
+/// How long `board sync` may run before Board stops git. It starts before
+/// the wait for the board lock and covers every fetch, push and replay.
 pub const GIT_DEADLINE: Duration = Duration::from_mins(1);
 
 /// How often a run checks whether git has finished.
 const POLL: Duration = Duration::from_millis(10);
-/// How long git has to exit after SIGTERM, and its pipes to close after
-/// it exits.
+/// How long git's pipes have to close after it exits.
 const GRACE: Duration = Duration::from_secs(1);
+
+/// How long one sync may run, from when it was made: every fetch and push
+/// it starts shares it.
+#[derive(Clone, Copy, Debug)]
+pub struct Deadline {
+    started: Instant,
+    given: Duration,
+}
+
+impl Deadline {
+    /// A deadline `given` from now.
+    pub fn after(given: Duration) -> Self {
+        Self {
+            started: Instant::now(),
+            given,
+        }
+    }
+
+    /// The time left, zero once it has passed.
+    pub fn left(&self) -> Duration {
+        self.given.saturating_sub(self.started.elapsed())
+    }
+}
 
 /// The remote branch that the branch HEAD is on follows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +58,50 @@ pub struct Upstream {
     pub branch: String,
     /// The ref here that tracks it, such as `refs/remotes/origin/main`.
     pub(crate) tracking: String,
+}
+
+/// How git reaches a remote over ssh, as `GIT_SSH_COMMAND` gives it: the
+/// owner's command with `-o BatchMode=yes` added, so ssh asks for no
+/// passphrase or host key. git runs in a process group of its own, where a
+/// prompt would stop it until the deadline, so a sync that needs one fails
+/// at once instead.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Ssh(pub(crate) String);
+
+impl Repository {
+    /// The ssh command git would run, as git chooses it: `GIT_SSH_COMMAND`
+    /// or `core.sshCommand`, then `GIT_SSH`, then `ssh`, with `BatchMode`
+    /// added unless `ssh.variant`, or the program's name, says it is not
+    /// OpenSSH. gix reads the variables through git's config, as git does.
+    pub(crate) fn ssh(&self) -> Ssh {
+        let config = self.git().config_snapshot();
+        let shell = |key: &str| config.string(key).map(|value| value.to_string());
+        let command = (shell("core.sshCommand").filter(|command| !command.is_empty()))
+            .or_else(|| {
+                shell("gitoxide.ssh.commandWithoutShellFallback")
+                    .filter(|program| !program.is_empty())
+                    .map(|program| format!("'{}'", program.replace('\'', "'\\''")))
+            })
+            .unwrap_or_else(|| "ssh".to_owned());
+        let variant = shell("ssh.variant").unwrap_or_default().to_lowercase();
+        let program = command.split_whitespace().next().unwrap_or_default();
+        let name = program
+            .trim_matches(['\'', '"'])
+            .rsplit('/')
+            .next()
+            .unwrap_or_default();
+        let openssh = match variant.as_str() {
+            "" | "auto" => !["plink", "putty", "tortoiseplink"]
+                .iter()
+                .any(|other| name.to_lowercase().starts_with(other)),
+            other => other == "ssh",
+        };
+        if openssh {
+            Ssh(format!("{command} -o BatchMode=yes"))
+        } else {
+            Ssh(command)
+        }
+    }
 }
 
 /// What a push did: moved the remote branch, or was refused by the remote
@@ -47,7 +117,8 @@ pub(crate) enum Pushed {
 pub(crate) fn fetch(
     workdir: &Path,
     upstream: &Upstream,
-    deadline: Duration,
+    ssh: &Ssh,
+    deadline: Deadline,
 ) -> Result<(), SyncError> {
     let refspec = format!("+refs/heads/{}:{}", upstream.branch, upstream.tracking);
     let arguments = [
@@ -59,7 +130,7 @@ pub(crate) fn fetch(
         &upstream.remote,
         &refspec,
     ];
-    let output = run(workdir, &arguments, "fetch", upstream, deadline)?;
+    let output = run(workdir, &arguments, "fetch", upstream, ssh, deadline)?;
     if output.status.success() {
         return Ok(());
     }
@@ -71,7 +142,8 @@ pub(crate) fn push(
     workdir: &Path,
     upstream: &Upstream,
     commit: &str,
-    deadline: Duration,
+    ssh: &Ssh,
+    deadline: Deadline,
 ) -> Result<Pushed, SyncError> {
     let refspec = format!("{commit}:refs/heads/{}", upstream.branch);
     let arguments = [
@@ -83,7 +155,7 @@ pub(crate) fn push(
         &upstream.remote,
         &refspec,
     ];
-    let output = run(workdir, &arguments, "push", upstream, deadline)?;
+    let output = run(workdir, &arguments, "push", upstream, ssh, deadline)?;
     if output.status.success() {
         return Ok(Pushed::Done);
     }
@@ -103,38 +175,50 @@ pub(crate) fn rejected(stdout: &[u8]) -> Option<String> {
 }
 
 /// Runs git with `arguments` in `workdir` and returns what it printed.
-/// Git still running when `deadline` passes is stopped, and the run is
+/// Git leads a process group of its own through board-plugin's process
+/// module, which stops the whole group, ssh and what it started included,
+/// when Board gets SIGINT, SIGTERM or SIGHUP. When `deadline` passes with
+/// git still running, the group is stopped the same way and the run is
 /// [`SyncError::TimedOut`], so a hung remote holds the board lock no longer
-/// than the deadline. A helper git started, such as ssh, that outlives git
-/// holds no Board lock.
+/// than the sync's deadline. A helper that outlives a git that finished
+/// holds no Board lock. Neither git nor ssh may ask anything: git gets
+/// `GIT_TERMINAL_PROMPT=0` and `ssh` as its `GIT_SSH_COMMAND`.
 fn run(
     workdir: &Path,
     arguments: &[&str],
     operation: &'static str,
     upstream: &Upstream,
-    deadline: Duration,
+    ssh: &Ssh,
+    deadline: Deadline,
 ) -> Result<Output, SyncError> {
-    let mut child = Command::new("git")
+    let mut command = Command::new("git");
+    command
         .arg("-C")
         .arg(workdir)
         .args(arguments)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_SSH_COMMAND", &ssh.0)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|source| SyncError::NotStarted { source })?;
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
-    let until = Instant::now() + deadline;
+        .stderr(Stdio::piped());
+    // A signal that stops Board mid-sync removes the board lock and git's
+    // index lock that gix holds, so the next write is not refused.
+    board_plugin::clean_up_on_signals(gix::tempfile::registry::cleanup_tempfiles);
+    let left = deadline.left();
+    let mut child =
+        Group::spawn(&mut command).map_err(|source| SyncError::NotStarted { source })?;
+    let stdout = drain(child.stdout());
+    let stderr = drain(child.stderr());
     let stopped = loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(finished(status, stdout, stderr)),
-            Ok(None) if Instant::now() < until => thread::sleep(POLL),
+            Ok(None) if !deadline.left().is_zero() => thread::sleep(POLL),
             Ok(None) => {
                 break SyncError::TimedOut {
                     operation,
                     remote: upstream.remote.clone(),
-                    deadline,
+                    left,
+                    deadline: deadline.given,
                 };
             }
             Err(error) => {
@@ -147,7 +231,7 @@ fn run(
             }
         }
     };
-    stop(&mut child);
+    child.stop();
     Err(stopped)
 }
 
@@ -171,24 +255,6 @@ fn finished(status: ExitStatus, stdout: Drained, stderr: Drained) -> Output {
         stdout: read(stdout),
         stderr: read(stderr),
     }
-}
-
-/// Sends git SIGTERM, on which git removes the lock files it holds, gives it
-/// [`GRACE`] to exit, then kills it and reaps it. Off Unix, git is killed at
-/// once.
-fn stop(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        use rustix::process::{Pid, Signal, kill_process};
-        if kill_process(Pid::from_child(child), Signal::TERM).is_ok() {
-            let until = Instant::now() + GRACE;
-            while Instant::now() < until && matches!(child.try_wait(), Ok(None)) {
-                thread::sleep(POLL);
-            }
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 /// A pipe of git's, read to its end on a thread of its own.

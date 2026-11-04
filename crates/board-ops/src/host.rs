@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use board_model::{CapabilityName, Code, Fields, LogicalPath, PluginName, RecordType, Refusal};
 use board_plugin::child::{Exited, Process, ProcessError};
@@ -16,11 +16,13 @@ use serde_json::{Map, Value};
 
 use crate::effects::{Asker, DecideReport, Shown};
 use crate::known::{self, KnownBoards};
+use crate::mount::{MountError, MountUpdateReport};
 use crate::plugins::Plugins;
 use crate::put::{PutError, PutReport};
 use crate::query::{MAX_LIMIT, QueryError, QueryReport};
 use crate::read::{GetReport, ReadError};
 use crate::refs::{Absent, RefsError, RefsReport};
+use crate::sync::{SyncError, Synced};
 use crate::{Board, OpenError};
 
 /// A plugin compiled into Board, which runs in Board's own process.
@@ -80,6 +82,23 @@ pub trait Host {
         path: &LogicalPath,
         shown: Option<&Shown>,
     ) -> Result<DecideReport, Box<Refusal>>;
+    /// Syncs this host's board as `board sync` does, or as `board sync
+    /// --no-push` without `push`, within `deadline`: it waits for the board
+    /// lock no longer than `board sync` does, and git still fetching or
+    /// pushing when the deadline passes is stopped, which is
+    /// `board::sync::timeout`. A plugin syncs a notes clone on the host
+    /// [`Host::board`] gives for the clone's directory, as `board -C <clone>
+    /// sync` does.
+    fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError>;
+    /// Moves the mount at `path` to the commit its `follow` names, as
+    /// `board mount update` does, waiting for the board lock no longer than
+    /// `deadline` or that command, whichever is shorter; past it, the update
+    /// is `board::put::locked`.
+    fn mount_update(
+        &self,
+        path: &LogicalPath,
+        deadline: Duration,
+    ) -> Result<MountUpdateReport, MountError>;
     fn settings(&self) -> &Settings;
     /// The `origin` of the git repository holding the caller's directory,
     /// as `git remote get-url origin` there gives it, read from git's
@@ -180,7 +199,7 @@ pub struct Run<'a> {
     /// directory, removed when it exits.
     pub directory: Option<&'a Path>,
     pub input: &'a [u8],
-    pub deadline: std::time::Duration,
+    pub deadline: Duration,
     /// Variables set for this process alone, over the settings' variables
     /// of the same names, such as a result a hook the process runs reads.
     pub added: &'a [(&'a str, &'a str)],
@@ -486,6 +505,18 @@ impl Host for Hosted<'_> {
         let mut board = self.again().map_err(|error| opened(&error))?;
         board.ask_as(asker);
         (board.decide_op(op, path, shown)).map_err(|error| Box::new(error.refusal()))
+    }
+
+    fn sync(&self, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+        self.board.sync(push, deadline)
+    }
+
+    fn mount_update(
+        &self,
+        path: &LogicalPath,
+        deadline: Duration,
+    ) -> Result<MountUpdateReport, MountError> {
+        self.board.mount_update(path, deadline)
     }
 
     fn settings(&self) -> &Settings {

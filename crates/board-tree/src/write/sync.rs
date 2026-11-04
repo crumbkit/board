@@ -14,7 +14,7 @@ use gix::object::tree::EntryKind;
 use super::entries::{stage_entry, unstage_entry};
 use super::{Lock, Staged, WriteError};
 use crate::git::{GitError, Repository, model_id};
-use crate::transport::{self, Pushed, Upstream};
+use crate::transport::{self, Deadline, Pushed, Upstream};
 
 /// How many times a sync fetches and pushes before it gives up.
 pub const ATTEMPTS: u32 = 3;
@@ -89,23 +89,25 @@ impl Repository {
     /// index and the working tree move to the result. A file the remote
     /// changed that is edited here stops the sync before it pushes or
     /// writes; one edited after that, such as during the push, is kept as
-    /// edited and listed in `kept`. `lock` is the board lock. Each fetch
-    /// and push that runs past `deadline` is stopped.
-    pub fn sync(&self, lock: &Lock, push: bool, deadline: Duration) -> Result<Synced, SyncError> {
+    /// edited and listed in `kept`. `lock` is the board lock. Every fetch
+    /// and push shares `deadline`, and the one running when it passes is
+    /// stopped.
+    pub fn sync(&self, lock: &Lock, push: bool, deadline: Deadline) -> Result<Synced, SyncError> {
         let upstream = self.upstream()?;
+        let ssh = self.ssh();
         let old = self.head()?;
         let old_files = self.files_of(old)?;
         let mut reason = String::new();
         let (attempts, fetched, new, replayed, pushed, changes) = 'synced: {
             for attempts in 1..=ATTEMPTS {
-                transport::fetch(self.path(), &upstream, deadline)?;
+                transport::fetch(self.path(), &upstream, &ssh, deadline)?;
                 let fetched = self.tracking(&upstream)?;
                 let (new, replayed) = self.replay(old, fetched)?;
                 let changes = self.changes(&old_files, &self.files_of(Some(new))?)?;
                 if !push || new == fetched {
                     break 'synced (attempts, fetched, new, replayed, false, changes);
                 }
-                match transport::push(self.path(), &upstream, &new.to_string(), deadline)? {
+                match transport::push(self.path(), &upstream, &new.to_string(), &ssh, deadline)? {
                     Pushed::Done => {
                         break 'synced (attempts, fetched, new, replayed, true, changes);
                     }
@@ -403,6 +405,19 @@ fn fields_at(path: &str) -> Fields {
     LogicalPath::of_physical(path).map_or_else(|_| Fields::default(), |path| Fields::at(&path))
 }
 
+/// `duration` in seconds for a message, to a tenth: `1 second`,
+/// `0.4 seconds`, `60 seconds`.
+fn seconds(duration: Duration) -> String {
+    let tenths = (duration.as_millis() + 50) / 100;
+    let text = if tenths.is_multiple_of(10) {
+        (tenths / 10).to_string()
+    } else {
+        format!("{}.{}", tenths / 10, tenths % 10)
+    };
+    let unit = if text == "1" { "second" } else { "seconds" };
+    format!("{text} {unit}")
+}
+
 /// A sync that stopped. The local commits stay where they are.
 #[derive(Debug, thiserror::Error)]
 pub enum SyncError {
@@ -420,10 +435,16 @@ pub enum SyncError {
         status: String,
         stderr: Vec<u8>,
     },
-    #[error("git did not {operation} {remote} within {} seconds, so Board stopped it", deadline.as_secs())]
+    #[error(
+        "git did not {operation} {remote} in the {} the sync had left of its {}, so Board stopped it",
+        seconds(*left),
+        seconds(*deadline)
+    )]
     TimedOut {
         operation: &'static str,
         remote: String,
+        /// What was left of the deadline when this git run started.
+        left: Duration,
         deadline: Duration,
     },
     #[error("{path} changed on the remote and in a commit here that is not pushed")]

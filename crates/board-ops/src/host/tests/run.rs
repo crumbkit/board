@@ -55,6 +55,16 @@ impl Host for Recording {
         unreachable!("this host runs processes only")
     }
 
+    fn sync(&self, _: bool, _: std::time::Duration) -> Result<crate::Synced, crate::SyncError> {
+        unreachable!("this host syncs nothing")
+    }
+    fn mount_update(
+        &self,
+        _: &board_model::LogicalPath,
+        _: std::time::Duration,
+    ) -> Result<crate::MountUpdateReport, crate::MountError> {
+        unreachable!("this host updates no mount")
+    }
     fn settings(&self) -> &Settings {
         &self.settings
     }
