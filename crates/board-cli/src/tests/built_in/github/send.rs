@@ -1,7 +1,7 @@
 //! `pr-create`, `pr-edit`, `comment` and `issue-create`: gh runs only after
 //! the boundary passes what it would send.
 
-use super::desk::{Desk, remove};
+use super::desk::{Desk, executable, put_file, remove};
 use super::*;
 
 const PULL_URL: &str = "https://github.com/Octo/Widgets/pull/12";
@@ -336,4 +336,39 @@ fn a_crossing_that_cannot_be_completed_after_a_comment_is_posted_says_it_was_sen
     );
     desk.gh_also("");
     assert_eq!(desk.output("comment", &flags)["sent"], url);
+}
+
+#[test]
+fn pr_create_failing_after_the_push_says_the_pull_request_was_not_opened_and_running_it_again_opens_it()
+ {
+    let desk = Desk::new();
+    desk.git(&desk.checkout(), &["switch", "-q", "-c", "feature"]);
+    let sha = desk.commit("Add a lever");
+    // A pre-push hook that removes the crossings, so the push goes but its
+    // result cannot be recorded.
+    let hook = desk.checkout().join(".git/hooks/pre-push");
+    let crossings = desk.personal.workdir().join("crossings");
+    put_file(
+        &hook,
+        &format!("#!/bin/sh\nrm -rf '{}'\n", crossings.display()),
+    );
+    executable(&hook);
+    desk.gh_answers(&json!(format!("{PULL_URL}\n")), 0, "");
+    let flags = ["--title", "Add a lever", "--body", "Levers lift."];
+    let (ran, failure) = desk.call("pr-create", &flags);
+    assert_eq!(ran.code, 1, "{failure}");
+    assert_eq!(desk.remote_head("feature"), Some(sha));
+    assert_eq!(desk.gh_calls(), 0);
+    let message = failure["message"].as_str().unwrap();
+    assert!(
+        message.contains("the pull request was not opened"),
+        "{message}"
+    );
+    assert!(
+        message.contains("run pr-create again to open it"),
+        "{message}"
+    );
+    assert!(!message.contains("do not send it again"), "{message}");
+    remove(&hook);
+    assert_eq!(desk.output("pr-create", &flags)["sent"], PULL_URL);
 }

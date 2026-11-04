@@ -194,7 +194,15 @@ fn pushed(
     };
     let line = git::push(host, top, &branch, head, &handed)?;
     let pushed_already = |error| {
-        let lead = format!("{head} was already pushed to {branch} on origin");
+        let lead = match action {
+            Pushing::Push => {
+                format!("{head} was already pushed to {branch} on origin, so do not push it again")
+            }
+            Pushing::PrCreate => format!(
+                "{head} was pushed to {branch} on origin, but the pull request was not opened; \
+                 run pr-create again to open it"
+            ),
+        };
         after_sent(&lead, &line, error)
     };
     crossing::record(&*place.personal, &passed.digest, &line).map_err(pushed_already)?;
@@ -442,14 +450,15 @@ pub(crate) fn issue_create(host: &dyn Host, input: &Value) -> Result<Value, Plug
 
 /// `error`, a failure after GitHub took the content at `url`, saying so.
 fn sent_already(url: &str, error: PluginError) -> PluginError {
-    after_sent(&format!("{url} was already sent"), url, error)
+    let lead = format!("{url} was already sent, so do not send it again");
+    after_sent(&lead, url, error)
 }
 
-/// `error`, a failure after the content reached GitHub, which `lead` says
-/// and `sent` names, so that running the action again does not send it a
-/// second time.
+/// `error`, a failure after content reached GitHub, starting with `lead`,
+/// which says what was sent and whether to run the action again, and
+/// naming what GitHub returned, `sent`, in `fields.sent`.
 fn after_sent(lead: &str, sent: &str, mut error: PluginError) -> PluginError {
-    error.message = format!("{lead}, so do not send it again; {}", error.message);
+    error.message = format!("{lead}; {}", error.message);
     error.fields.insert("sent".to_owned(), Value::from(sent));
     error
 }

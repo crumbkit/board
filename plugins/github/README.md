@@ -157,7 +157,9 @@ Refusals:
   written or a crossing that cannot take its result, keeps its own code but
   starts its message by saying the content was already sent and must not be
   sent again. `fields.sent` names the pull request's, issue's or comment's
-  URL, or git's line for a push.
+  URL, or git's line for a push. When `pr-create` fails after its push but
+  before gh runs, the message says the commits were pushed but the pull
+  request was not opened, and that running `pr-create` again opens it.
 - `github::remote::unknown`: a URL could reach GitHub, but the plugin cannot
   tell which repository it names.
 - `github::push::not_commit`: the pre-push hook found a ref whose object is a
