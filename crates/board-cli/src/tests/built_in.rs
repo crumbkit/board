@@ -733,6 +733,7 @@ mod controls;
 mod evals;
 mod github;
 mod jira;
+mod notes;
 mod plans;
 mod prompts;
 mod runs;

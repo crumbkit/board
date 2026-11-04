@@ -84,6 +84,7 @@ fn settings(variables: &[(&str, &str)]) -> Settings {
     Settings {
         now: UNIX_EPOCH,
         day_start: None,
+        utc_offset: 0,
         caller: None,
         environment: Variables(
             (variables.iter())

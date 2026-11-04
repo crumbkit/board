@@ -78,6 +78,7 @@ fn host() -> Bare {
     Bare(Settings {
         now: SystemTime::UNIX_EPOCH,
         day_start: None,
+        utc_offset: 0,
         caller: None,
         environment: Variables(vec![("PATH".to_owned(), OsString::from("/usr/bin:/bin"))]),
         cache_home: None::<PathBuf>,

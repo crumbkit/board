@@ -10,13 +10,14 @@ name = "board"
 path = "src/main.rs"
 
 [features]
-default = ["artifacts", "boundary", "controls", "evals", "github", "jira", "plans", "prompts", "requests", "runs", "share"]
+default = ["artifacts", "boundary", "controls", "evals", "github", "jira", "notes", "plans", "prompts", "requests", "runs", "share"]
 artifacts = ["board-plugins/artifacts"]
 boundary = ["board-plugins/boundary"]
 controls = ["board-plugins/controls"]
 evals = ["board-plugins/evals"]
 github = ["board-plugins/github"]
 jira = ["board-plugins/jira"]
+notes = ["board-plugins/notes"]
 plans = ["board-plugins/plans"]
 prompts = ["board-plugins/prompts"]
 requests = ["board-plugins/requests"]
@@ -33,6 +34,7 @@ board-tree.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 crumbkit = { workspace = true, features = ["complete"] }
+jiff.workspace = true
 nix.workspace = true
 schemars.workspace = true
 serde.workspace = true

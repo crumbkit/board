@@ -43,6 +43,7 @@ pub(crate) fn local(files: &[(&str, &str)]) -> Local {
         settings: Settings {
             now: std::time::SystemTime::UNIX_EPOCH,
             day_start: None,
+            utc_offset: 0,
             caller: None,
             environment: Variables::default(),
             cache_home: None,

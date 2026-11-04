@@ -559,6 +559,7 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
                 "count": now.as_secs(),
                 "day_start": settings.day_start,
                 "caller": settings.caller,
+                "utc_offset": settings.utc_offset,
             }))
         }),
     )]));
@@ -573,6 +574,7 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
         environment: Environment {
             day_start: Some(OsString::from("07:00")),
             caller: Some(OsString::from("/work/repo")),
+            utc_offset: -36_000,
             ..Environment::default()
         },
         ..Plugins::default()
@@ -581,13 +583,17 @@ fn a_built_in_reads_its_settings_from_the_host_in_place_of_its_environment() {
     let now = output["count"].as_u64().unwrap();
     assert!((before..=seconds()).contains(&now), "{output}");
     assert_eq!(
-        (&output["day_start"], &output["caller"]),
-        (&json!("07:00"), &json!("/work/repo"))
+        (
+            &output["day_start"],
+            &output["caller"],
+            &output["utc_offset"]
+        ),
+        (&json!("07:00"), &json!("/work/repo"), &json!(-36_000))
     );
     let unset = call_base(&board, &Plugins::default()).unwrap().output;
     assert_eq!(
-        (&unset["day_start"], &unset["caller"]),
-        (&Value::Null, &Value::Null)
+        (&unset["day_start"], &unset["caller"], &unset["utc_offset"]),
+        (&Value::Null, &Value::Null, &json!(0))
     );
 }
 
@@ -849,6 +855,7 @@ impl Caller {
         Self(Settings {
             now: UNIX_EPOCH,
             day_start: None,
+            utc_offset: 0,
             caller: caller.map(std::path::Path::to_path_buf),
             environment: Variables::default(),
             cache_home: None,
@@ -936,6 +943,7 @@ fn a_cache_place_is_plain_names_under_the_cache_home_and_none_without_one() {
     let mut settings = Settings {
         now: UNIX_EPOCH,
         day_start: None,
+        utc_offset: 0,
         caller: None,
         environment: Variables::default(),
         cache_home: Some(std::path::PathBuf::from("/cache")),

@@ -121,6 +121,7 @@ dependencies = [
  "clap_complete",
  "crumbkit",
  "crumbkit-test",
+ "jiff",
  "nix",
  "proptest",
  "schemars",
@@ -284,6 +285,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "board-plugin-notes"
+version = "0.0.0"
+dependencies = [
+ "board-model",
+ "board-ops",
+ "board-plugin",
+ "board-repos",
+ "board-scenario",
+ "board-tree",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "board-plugin-plans"
 version = "0.0.0"
 dependencies = [
@@ -365,6 +381,7 @@ dependencies = [
  "board-plugin-evals",
  "board-plugin-github",
  "board-plugin-jira",
+ "board-plugin-notes",
  "board-plugin-plans",
  "board-plugin-prompts",
  "board-plugin-requests",

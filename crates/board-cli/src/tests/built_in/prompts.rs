@@ -10,9 +10,9 @@ mod list;
 mod schema;
 
 /// The notes plugin's `notes/repo/v1` schema, which a notes repo holds so
-/// its `notes-repo.json` reads as valid. notes is still a Python plugin.
+/// its `notes-repo.json` reads as valid.
 const NOTES_SCHEMA: &str =
-    include_str!("../../../../../plugins/notes/types/notes/repo/v1.schema.json");
+    include_str!("../../../../board-plugin-notes/types/notes/repo/v1.schema.json");
 
 /// A board that enables prompts, keeping each repo it mounts.
 struct Board {

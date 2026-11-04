@@ -160,6 +160,7 @@ fn real() -> Real {
         settings: Settings {
             now: SystemTime::now(),
             day_start: None,
+            utc_offset: 0,
             caller: None,
             cache_home: None,
             environment: Variables(

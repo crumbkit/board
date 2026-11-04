@@ -1,20 +1,13 @@
 # notes
 
-This plugin is still a Python program (docs/plugins/python.md). A new plugin
-is a crate built into Board (docs/plugins/built-in/writing.md).
-
-A Board plugin that appends to and reads notes in notes repos: git
+A Board plugin, built into Board as `crates/board-plugin-notes`, that appends to and reads notes in notes repos: git
 repositories of Markdown notes in the layout of
 [Reflect](https://github.com/team-reflect/reflect-open). `add` appends a
 section to today's daily note or to a topic's note, and `daily` reads a
 day's daily note. The plugin ships one record type, `notes/repo/v1`.
 
-Install it from this checkout:
-
-    uv sync --frozen --no-dev
-    ln -s "$PWD" "${XDG_DATA_HOME:-$HOME/.local/share}/board/plugins/notes"
-
-Then run `board plugin enable notes` in a board.
+Run `board plugin enable notes` in a board, which writes the schema the
+plugin ships to `.board/types/notes/`.
 
 ## Notes repos
 
@@ -80,13 +73,13 @@ A call picks one repo:
    otherwise refused as `notes::repo::ambiguous`, so a session in a
    repository that no record covers never reads a personal note by default.
 
-There is no caller's remote when the directory has no `origin`, or when git
-fails or takes over ten seconds, so a lone repo whose record covers
-something takes no call without a remote.
+There is no caller's remote when the directory has no `origin`, or when its
+git config cannot be read, so a lone repo whose record covers something
+takes no call without a remote.
 
 So a note from a remote that a repo's record excludes never reaches that
 repo unless it is named. The caller's remote is the `origin` of the
-directory Board was started in, which Board passes as `BOARD_CALLER_DIR`;
+directory Board was started in, read from its git config;
 `--remote` overrides it, and `--repo` makes it unread. A GitHub remote is matched in any of its forms,
 such as `https://github.com/example-org/home.git`,
 `git@github.com:example-org/home.git`, an ssh host alias that starts with
@@ -111,17 +104,16 @@ and is then left in the clone's working tree, uncommitted.
 The person's day starts at `day_start`, such as `"07:00"`, in
 `$XDG_CONFIG_HOME/board/config.json` (`~/.config/board/config.json` by
 default), the file where Board lists known boards. Board refuses a value
-that is not `HH:MM` as `board::config::invalid` and passes it to the plugin
-as `BOARD_DAY_START`. Without it the day starts at midnight. It is applied
+that is not `HH:MM` as `board::config::invalid`. Without it the day starts at midnight. It is applied
 when a call runs and never stored: with a day that starts at 07:00, a note
 at 01:00 goes to yesterday's daily note under `## 01:00`, and `daily` reads
-yesterday's note. The shared `board_plugin.day` module does the arithmetic.
+yesterday's note. The `board-repos` crate does the arithmetic.
 
 ## Capabilities
 
 `add --text <markdown> [--repo <path>] [--remote <remote>] [--topic
 <title>]` appends `## HH:MM` and the text, by the local time of the
-caller's `TZ`, to `daily/YYYY-MM-DD.md` for the person's day. Text that is
+time zone Board reads from `TZ` or the system, to `daily/YYYY-MM-DD.md` for the person's day. Text that is
 only whitespace is refused; trailing whitespace is dropped and leading
 indentation kept. With `--topic`, it appends to `notes/<slug>.md`, the slug
 derived from the title as Reflect's `slugForTitle` derives it, and starts a
@@ -179,8 +171,7 @@ written. Once the text is committed, a refused push in step 4 never refuses
 the call: `unpushed` names the code, because a retry would add the text
 twice.
 
-The plugin runs git only to read the caller's `origin`, which changes
-nothing, so it leaves no merge or rebase behind.
+Board's sync never merges, so a call leaves no merge or rebase behind.
 One race remains: when the phone pushes a change to the same note between
 step 1 and step 4, the push sync refuses with `board::sync::conflict`, and
 the commit stays in this clone with `unpushed` naming the code. Board cannot
@@ -190,9 +181,7 @@ devices, and pushes it. Replacing this needs Board to report the remote's
 blob on a conflict and to let a sync drop a commit, which no other plugin
 needs yet.
 
-Board passes the plugin no `SSH_AUTH_SOCK`, so `board sync` cannot push to
-a remote that authenticates through ssh-agent. Use an HTTPS remote with a
-credential helper, such as `gh auth setup-git`.
+Each sync and pin has git's deadline of 60 seconds.
 
 ## Codes
 
@@ -212,38 +201,20 @@ credential helper, such as `gh auth setup-git`.
 - `notes::note::not_text`: the note is not UTF-8 text, so nothing can be
   appended to it; `path` names it.
 - `notes::board::refused`: Board refused, with Board's code in `code`.
-- `notes::call::unknown_capability`, `notes::protocol::bad_request`.
+- `notes::call::unknown_capability`.
 
 ## Tests
 
-The suite runs the real `board` against a board that mounts a notes repo,
-the repo's bare remote, and a second clone standing in for the phone. It
-shows that a note reaches the remote in the file for the date in the
-caller's `TZ`, that the phone's push is merged before the append, and that
-a commit Reflect made in the clone is kept and pushed. It shows that an
-uncommitted edit, a sync conflict and a phone push over an uncommitted edit
-each park the text without leaving a merge, that a note and sibling both
-holding edits are busy, and that a refused push after the commit is
-reported, not raised. Four adds to one note run at once, and each section
-lands exactly once. They usually collide, but no test forces
-`board::put::stale`.
-
-Other tests show that a mount without `daily/` is not a notes repo, that
-the board's own `daily/` makes it one and is written without a sync, with a
-null `commit` when the board does not commit puts, and that a put there
-whose HEAD moved is written once while an inbox put through a mount is
-tried again at its own name and left uncommitted when HEAD keeps moving.
-They show that a note goes to the one
-repo covering the remote of the directory Board ran in, that `--remote`
-overrides it, that a note no single repo covers goes to the personal inbox
-with its candidates, unparked even when the clone cannot sync, and to a
-second name when the first is taken, and that the only repo refuses a
-remote its record excludes, or any remote when it has no record. They show
-that a token in a remote is neither stored nor shown, and that `daily`
-without a remote reads the personal note. They show that a record without its schema is
-refused by name, that `daily` is refused when no single repo covers the
-remote, and that with a day starting at 07:00 a note at 01:00, in a time
-zone chosen so the call runs then, lands in yesterday's daily note. The
-suite does not run Reflect, so it does not show how Reflect merges a commit
-left unpushed by the race above, or whether Reflect shows `inbox/`. The
-slug cases were checked against `slugForTitle` on every code point.
+`crates/board-cli/src/tests/built_in/notes.rs` and its modules run the
+`board` binary in process against a board that mounts a notes repo, the
+repo's bare remote, and a second clone standing in for the phone. They show
+that the phone's push is merged before the append, that a commit Reflect
+made in the clone is kept and pushed, that an uncommitted edit, a sync
+conflict and a phone push over an uncommitted edit each park the text, and
+that a refused push after the commit is reported. They show the routing
+rules above, the inbox's names and frontmatter, and the day across UTC
+offsets and `day_start`. The crate's own tests write through a real mount
+that a second Board writes to between the read and the put.
+`crates/board-cli/tests/notes.rs` runs the built binary with `TZ` set. No
+test runs Reflect, so none shows how Reflect merges a commit left unpushed
+by the race above, or whether Reflect shows `inbox/`.

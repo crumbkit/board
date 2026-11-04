@@ -705,7 +705,7 @@ board init
   fails with board::config::not_found
   hint
 
-board call notes.due
+board call journal.due
   fails with board::plugin::not_enabled
   hint
 
@@ -762,9 +762,9 @@ board tk due
   run board call tasks.due
     exits 0
 
-board call notes.due
+board call journal.due
   fails with board::plugin::schema_differs
-  run board plugin enable notes
+  run board plugin enable journal
     exits 0
 
 board plugin list
